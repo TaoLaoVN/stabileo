@@ -162,6 +162,37 @@ function createResultsStore() {
 
   return {
     get results() { return results; },
+    /** True when ANY result of any kind is present. Used by the mutation hook
+     *  to decide whether an edit must clear stale results. Covers 2D + 3D base,
+     *  per-case/per-combo/envelope, every advanced result (2D + 3D), and the
+     *  moving-load envelope plus an in-flight moving-load run — an advanced-only
+     *  or moving-load-only run leaves `results`/`results3D` null, so guarding on
+     *  those alone would skip invalidation entirely. */
+    get hasAnyResults(): boolean {
+      return (
+        results !== null ||
+        results3D !== null ||
+        singleResults !== null ||
+        singleResults3D !== null ||
+        perCase.size > 0 ||
+        perCombo.size > 0 ||
+        perCase3D.size > 0 ||
+        perCombo3D.size > 0 ||
+        envelope !== null ||
+        envelope3D !== null ||
+        pdeltaResult !== null ||
+        modalResult !== null ||
+        bucklingResult !== null ||
+        plasticResult !== null ||
+        spectralResult !== null ||
+        pdeltaResult3D !== null ||
+        modalResult3D !== null ||
+        bucklingResult3D !== null ||
+        spectralResult3D !== null ||
+        movingLoadEnvelope !== null ||
+        movingLoadRunning
+      );
+    },
     get diagramType() { return diagramType; },
     set diagramType(v: DiagramType) {
       diagramType = v;
@@ -561,9 +592,19 @@ function createResultsStore() {
       plasticResult = null;
       plasticStep = 0;
       spectralResult = null;
+      // 3D advanced results were previously only nulled in clearAdvanced()
+      // (called on a new advanced run), so a plain model edit left stale mode
+      // shapes / P-Delta / buckling / spectral 3D results rendered as current.
+      pdeltaResult3D = null;
+      modalResult3D = null;
+      bucklingResult3D = null;
+      spectralResult3D = null;
       movingLoadShowEnvelope = false;
       movingLoadRunning = false;
       movingLoadProgress = null;
+      // Abort any in-flight moving-load solve before dropping the controller,
+      // otherwise a running analysis can resurrect pre-edit forces after clear().
+      movingLoadAbortController?.abort();
       movingLoadAbortController = null;
       showReactions = false;
       showConstraintForces = false;

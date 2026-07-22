@@ -12,7 +12,7 @@ import { shouldProjectModelToXZ } from '../geometry/coordinate-system';
 // This ensures results never persist after the model changes,
 // regardless of whether liveCalc is ON or OFF.
 modelStore._setOnMutation(() => {
-  if (resultsStore.results || resultsStore.results3D) {
+  if (resultsStore.hasAnyResults || verificationStore.hasResults) {
     resultsStore.clear();
     verificationStore.clear();
   }

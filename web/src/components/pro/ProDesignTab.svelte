@@ -385,6 +385,17 @@
     if (!isAutoDesign && reinf) {
       userModifiedElems = new Set([...userModifiedElems, elemId]);
     }
+    // Trust repair: a user-provided reinforcement edit invalidates any previously
+    // computed design/verification status (viewport overlay + summary), which was
+    // derived from the prior reinforcement. Rebar commits reassign model.elements
+    // directly and bypass modelStore's mutation hook, so this invalidation must be
+    // explicit here. Skipped for auto-design (Run Design / Accept Auto-Design) so a
+    // freshly published design run isn't wiped by the reinforcement it just applied.
+    // Intentionally NOT bumpModelVersion(): forces are independent of rebar, so no
+    // re-solve is warranted.
+    if (commit && !isAutoDesign) {
+      verificationStore.clear();
+    }
   }
 
   /** Publish accumulated reinforcement edits: reassign the Map (Svelte 5 Map
