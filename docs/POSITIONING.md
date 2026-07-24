@@ -26,7 +26,9 @@ The stronger current claim is:
 
 That claim is now supported by more than raw category count:
 
-- latest reported full-suite status of `5896` passing tests and `0` failures
+- latest reported full-suite status of `5587` passing engine-coupled tests and `0` failures
+  (plus `1192` reference-formula self-checks counted separately — see `docs/BENCHMARKS.md`
+  "Test taxonomy")
 - explicit benchmark-gate suites for constraints, contact, shells, reduction, sparse / conditioning paths, and sparse 3D parity
 - solver-core work that now includes constraints, shells, contact, SSI, fiber nonlinear analysis, imperfections, creep / shrinkage, and reduction
 - an explicit multi-family shell story (`MITC4`, `MITC9`, `SHB8-ANS`, and curved shells) with research-driven selection guidance instead of opaque defaults

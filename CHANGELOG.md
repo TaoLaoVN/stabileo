@@ -308,4 +308,6 @@ New tests: 39 tests across 4 new test files (model-zcoord, zup-results-sync-proj
 
 ### Validation
 
-- latest reported full-suite status reached `5908` passing tests with `0` failures
+- latest reported full-suite status reached `5587` passing engine-coupled tests with `0` failures
+  (plus `1192` reference-formula self-checks counted separately — see `docs/BENCHMARKS.md`
+  "Test taxonomy")

@@ -523,7 +523,7 @@ Protect major solver paths with visible, release-grade proof. This is how the so
 - **Real-model regression suite:** collect saved models from real users (with permission) or generate realistic messy models (mixed element types, irregular topology, nearly-coplanar shells, short members, eccentric connections). These catch failures that textbook benchmarks miss.
 - **WASM vs native parity tests:** run the same solver inputs through both native `cargo test` and the WASM build, compare results to machine precision. Catches f64 rounding differences, memory layout issues, and WASM-specific codegen bugs.
 - Make missing-fixture behavior explicit in parity/fuzz suites: missing required fixtures should fail or be reported as ignored/skipped infrastructure, never silently count as passing verification
-- **Mutation testing:** use `cargo-mutants` or equivalent to measure whether the test suite actually catches regressions. A test suite with 5908 passing tests is worthless if mutating the solver code doesn't fail any of them.
+- **Mutation testing:** use `cargo-mutants` or equivalent to measure whether the test suite actually catches regressions. A test suite with thousands of passing tests is worthless if mutating the solver code doesn't fail any of them — a lesson this codebase already learned once, when 151 formula-self-check files were found padding the "validation" count without ever calling the engine (see `docs/BENCHMARKS.md` "Test taxonomy").
 - **Design-automation regression tests:** verify that code-check inputs, governing-case extraction, and report-grade metadata remain stable on representative building workflows, not only that raw solve numbers match
 
 **Done when:**
