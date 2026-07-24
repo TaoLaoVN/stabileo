@@ -164,6 +164,10 @@ fn chain_depth_3_equal_dof_uz() {
 
     let result = linear::solve_3d(&input).expect("Chain depth 3 should solve successfully");
 
+    assert!(!result.structured_diagnostics.iter()
+        .any(|d| d.code == DiagnosticCode::CircularConstraint),
+        "valid chain must not be flagged circular");
+
     let tips: Vec<f64> = [2, 4, 6, 8].iter()
         .map(|&id| result.displacements.iter().find(|d| d.node_id == id).unwrap().uz)
         .collect();
@@ -253,6 +257,10 @@ fn tree_topology_equal_dof() {
 
     let result = linear::solve_3d(&input).expect("Tree topology should solve successfully");
 
+    assert!(!result.structured_diagnostics.iter()
+        .any(|d| d.code == DiagnosticCode::CircularConstraint),
+        "valid chain must not be flagged circular");
+
     let tips: Vec<f64> = [2, 4, 6, 8, 10].iter()
         .map(|&id| result.displacements.iter().find(|d| d.node_id == id).unwrap().uz)
         .collect();
@@ -328,20 +336,82 @@ fn circular_constraint_does_not_panic() {
 
     match result {
         Ok(res) => {
-            // If it succeeds, check that CircularConstraint diagnostic is emitted
-            let has_circular = res.structured_diagnostics.iter()
-                .any(|d| d.code == DiagnosticCode::CircularConstraint);
-            println!("Circular constraint solved OK, circular diag={}", has_circular);
-            // All displacements must be finite (no NaN/Inf)
             for d in &res.displacements {
                 assert!(d.ux.is_finite() && d.uy.is_finite() && d.uz.is_finite(),
-                    "Circular constraint produced NaN/Inf at node {}", d.node_id);
+                    "3-cycle produced NaN/Inf at node {}", d.node_id);
             }
+            let has_circ = res.structured_diagnostics.iter()
+                .any(|d| d.code == DiagnosticCode::CircularConstraint);
+            assert!(has_circ,
+                "Expected CircularConstraint diagnostic for 3-cycle. Got: {:?}",
+                res.structured_diagnostics.iter().map(|d| &d.code).collect::<Vec<_>>());
         }
-        Err(e) => {
-            // Returning an error is also acceptable -- the key is no panic
-            println!("Circular constraint returned error (acceptable): {}", e);
+        Err(e) => println!("3-cycle returned error (acceptable): {}", e),
+    }
+}
+
+/// A -> B -> C -> D -> A circular EqualDOF chain (depth 4).
+/// Must emit a CircularConstraint diagnostic covering the full 4-cycle,
+/// same contract as the depth-3 case.
+#[test]
+fn circular_constraint_depth_4_does_not_panic() {
+    let l = 4.0;
+    let nodes = vec![
+        (1, 0.0, 0.0, 0.0), (2, l, 0.0, 0.0),
+        (3, 0.0, 3.0, 0.0), (4, l, 3.0, 0.0),
+        (5, 0.0, 6.0, 0.0), (6, l, 6.0, 0.0),
+        (7, 0.0, 9.0, 0.0), (8, l, 9.0, 0.0),
+    ];
+    let elems = vec![
+        (1, "frame", 1, 2, 1, 1),
+        (2, "frame", 3, 4, 1, 1),
+        (3, "frame", 5, 6, 1, 1),
+        (4, "frame", 7, 8, 1, 1),
+    ];
+    let sups = vec![
+        (1, fixed()), (3, fixed()), (5, fixed()), (7, fixed()),
+    ];
+    let loads = vec![SolverLoad3D::Nodal(SolverNodalLoad3D {
+        node_id: 2, fx: 0.0, fy: 0.0, fz: -10.0,
+        mx: 0.0, my: 0.0, mz: 0.0, bw: None,
+    })];
+
+    let mut input = make_3d_input(
+        nodes,
+        vec![(1, E, NU)],
+        vec![(1, A, IY, IZ, J)],
+        elems, sups, loads,
+    );
+
+    // Circular chain: 2->4->6->8->2 (uz)
+    input.constraints.push(Constraint::EqualDOF(EqualDOFConstraint {
+        master_node: 4, slave_node: 2, dofs: vec![2],
+    }));
+    input.constraints.push(Constraint::EqualDOF(EqualDOFConstraint {
+        master_node: 6, slave_node: 4, dofs: vec![2],
+    }));
+    input.constraints.push(Constraint::EqualDOF(EqualDOFConstraint {
+        master_node: 8, slave_node: 6, dofs: vec![2],
+    }));
+    input.constraints.push(Constraint::EqualDOF(EqualDOFConstraint {
+        master_node: 2, slave_node: 8, dofs: vec![2],
+    }));
+
+    let result = linear::solve_3d(&input);
+
+    match result {
+        Ok(res) => {
+            for d in &res.displacements {
+                assert!(d.ux.is_finite() && d.uy.is_finite() && d.uz.is_finite(),
+                    "4-cycle produced NaN/Inf at node {}", d.node_id);
+            }
+            let has_circ = res.structured_diagnostics.iter()
+                .any(|d| d.code == DiagnosticCode::CircularConstraint);
+            assert!(has_circ,
+                "Expected CircularConstraint diagnostic for 4-cycle. Got: {:?}",
+                res.structured_diagnostics.iter().map(|d| &d.code).collect::<Vec<_>>());
         }
+        Err(e) => println!("4-cycle returned error (acceptable): {}", e),
     }
 }
 

@@ -168,21 +168,71 @@ pub fn validate_constraints(
         }
     }
 
-    // 2. Circular dependencies: A depends on B depends on A
-    for (&dep_dof, masters) in &master_of {
-        for &m in masters {
-            if let Some(m_masters) = master_of.get(&m) {
-                if m_masters.contains(&dep_dof) {
-                    let n1 = reverse_map.get(&dep_dof).map(|&(n, _)| n).unwrap_or(0);
-                    let n2 = reverse_map.get(&m).map(|&(n, _)| n).unwrap_or(0);
-                    diags.push(StructuredDiagnostic::global(
-                        DiagnosticCode::CircularConstraint,
-                        Severity::Error,
-                        format!("Circular constraint: DOF {} (node {}) ↔ DOF {} (node {})",
-                            dep_dof, n1, m, n2),
-                    ).with_dofs(vec![dep_dof, m]).with_nodes(vec![n1, n2]).with_phase("constraints"));
+    // 2. Circular dependencies: any cycle in the slave->master graph
+    //    (A->B->...->A), found by depth-first search — not just pairwise A<->B.
+    {
+        fn dfs_cycles(
+            node: usize,
+            graph: &HashMap<usize, HashSet<usize>>,
+            path: &mut Vec<usize>,
+            done: &mut HashSet<usize>,
+            cycles: &mut Vec<Vec<usize>>,
+        ) {
+            if let Some(pos) = path.iter().position(|&d| d == node) {
+                cycles.push(path[pos..].to_vec());
+                return;
+            }
+            if done.contains(&node) {
+                return;
+            }
+            path.push(node);
+            if let Some(masters) = graph.get(&node) {
+                let mut ms: Vec<usize> = masters.iter().copied().collect();
+                ms.sort_unstable();
+                for m in ms {
+                    dfs_cycles(m, graph, path, done, cycles);
                 }
             }
+            path.pop();
+            done.insert(node);
+        }
+
+        let mut cycles: Vec<Vec<usize>> = Vec::new();
+        let mut done: HashSet<usize> = HashSet::new();
+        let mut starts: Vec<usize> = master_of.keys().copied().collect();
+        starts.sort_unstable();
+        for s in starts {
+            let mut path = Vec::new();
+            dfs_cycles(s, &master_of, &mut path, &mut done, &mut cycles);
+        }
+
+        // One diagnostic per unique cycle (dedup up to rotation).
+        let mut seen: HashSet<Vec<usize>> = HashSet::new();
+        for cycle in cycles {
+            let mut norm = cycle.clone();
+            let min_pos = norm.iter().enumerate()
+                .min_by_key(|&(_, v)| *v)
+                .map(|(i, _)| i)
+                .unwrap_or(0);
+            norm.rotate_left(min_pos);
+            if !seen.insert(norm) {
+                continue;
+            }
+            let node_ids: Vec<usize> = cycle.iter()
+                .map(|d| reverse_map.get(d).map(|&(n, _)| n).unwrap_or(0))
+                .collect();
+            let dof_path = cycle.iter()
+                .map(|d| d.to_string())
+                .collect::<Vec<_>>()
+                .join(" -> ");
+            diags.push(StructuredDiagnostic::global(
+                DiagnosticCode::CircularConstraint,
+                Severity::Error,
+                format!(
+                    "Circular constraint chain: DOFs {} -> back to start (nodes {:?})",
+                    dof_path, node_ids
+                ),
+            ).with_dofs(cycle).with_nodes(node_ids).with_phase("constraints"));
         }
     }
 
