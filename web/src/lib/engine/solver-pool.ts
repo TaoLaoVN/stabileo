@@ -8,7 +8,7 @@
 import { getWasmBytes } from './wasm-solver';
 
 interface PendingSolve {
-  resolve: (json: string) => void;
+  resolve: (result: any) => void;
   reject: (err: Error) => void;
 }
 
@@ -57,7 +57,7 @@ function createWorker(wasmModule: WebAssembly.Module): Promise<PoolWorker> {
         if (p) {
           pw.pending.delete(msg.id);
           if (msg.error) p.reject(new Error(msg.error));
-          else p.resolve(msg.resultJson);
+          else p.resolve(msg.result);
         }
       }
     };
@@ -99,17 +99,17 @@ export function isPoolReady(): boolean {
 /**
  * Solve multiple 3D cases in parallel across the worker pool.
  *
- * @param cases Array of { id, json } where json is the serialized SolverInput3D
- * @returns Map from id to parsed result JSON string
+ * @param cases Array of { id, input } where input is the plain-object wire form of SolverInput3D
+ * @returns Map from id to the solved result object (structured-cloned from the worker)
  */
 export async function solveParallel(
-  cases: Array<{ id: number; json: string }>,
-): Promise<Map<number, string>> {
+  cases: Array<{ id: number; input: any }>,
+): Promise<Map<number, any>> {
   if (pool.length === 0) {
     throw new Error('Worker pool not initialized. Call initPool() first.');
   }
 
-  const results = new Map<number, string>();
+  const results = new Map<number, any>();
 
   // Distribute cases round-robin across workers
   const promises: Promise<void>[] = [];
@@ -117,18 +117,18 @@ export async function solveParallel(
   for (let i = 0; i < cases.length; i++) {
     const workerIdx = i % pool.length;
     const pw = pool[workerIdx];
-    const { id, json } = cases[i];
+    const { id, input } = cases[i];
     const msgId = nextId++;
 
     const promise = new Promise<void>((resolve, reject) => {
       pw.pending.set(msgId, {
-        resolve: (resultJson: string) => {
-          results.set(id, resultJson);
+        resolve: (result: any) => {
+          results.set(id, result);
           resolve();
         },
         reject: (err: Error) => reject(err),
       });
-      pw.worker.postMessage({ type: 'solve3d', id: msgId, json });
+      pw.worker.postMessage({ type: 'solve3d', id: msgId, input });
     });
 
     promises.push(promise);
