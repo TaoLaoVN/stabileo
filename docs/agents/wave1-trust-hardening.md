@@ -359,5 +359,5 @@ SolverInput3D structs. Do NOT guess the API — read the types and existing test
 **Why not all parallel:** D (advanced solver CI) could normalize wrong assumptions if the convention gates from C aren't in place yet. A (property tests) could produce noisy false failures without the field-name contracts from C to anchor expectations.
 
 **After all 4 pass, run full suites:**
-- `cd engine && cargo test` (expect 5919+ tests)
+- `cd engine && cargo test` (expect 5919+ tests — blended count predating the engine-coupled/reference split)
 - `cd web && npx vitest run` (expect 1946+ tests)

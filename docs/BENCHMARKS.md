@@ -25,10 +25,10 @@ The benchmark ledger below is curated. It is narrower than the full automated te
 
 Current measured inventory:
 
-- Engine-coupled tests (call the solver / its public functions): `5587` passing, `0` failures.
+- Engine-coupled tests (call the solver / its public functions): `5590` passing, `0` failures.
 - Reference-formula self-checks (`engine/tests/reference/`, textbook/code formulas recomputed
   inline — NOT engine verification): `1192` passing. Counted separately by design.
-- `25` integration test files (`182` integration test functions)
+- `25` integration test files (`186` integration test functions)
 - dedicated property / differential fuzz coverage (`90` passing tests)
 - explicit benchmark-gate suites for constraints, contact, shells, reduction, sparse / conditioning paths, sparse 3D parity, and sparse modal / buckling / harmonic behavior
 - explicit CI gate stages for shell benchmarks, shell acceptance models, and constraint benchmarks

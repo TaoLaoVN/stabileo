@@ -65,7 +65,7 @@ Audited and fixed 60+ Z-up/Y-up axis convention inconsistencies across 30+ files
 - **axis validation**: added `validateAxisSafety()` to detect 2D files with non-zero Z coordinates on load
 - **autosave**: `restoreAutosave()` now restores `analysisMode` and `axisConvention3D`
 
-New tests: 39 tests across 4 new test files (model-zcoord, zup-results-sync-projection, fixture-support-metadata, file-save-load). All 1946 web tests and 5919 engine tests pass.
+New tests: 39 tests across 4 new test files (model-zcoord, zup-results-sync-projection, fixture-support-metadata, file-save-load). All 1946 web tests and 5919 engine tests pass. (blended count predating the engine-coupled/reference split — see docs/BENCHMARKS.md 'Test taxonomy')
 
 ### Added
 
@@ -308,6 +308,6 @@ New tests: 39 tests across 4 new test files (model-zcoord, zup-results-sync-proj
 
 ### Validation
 
-- latest reported full-suite status reached `5587` passing engine-coupled tests with `0` failures
+- latest reported full-suite status reached `5590` passing engine-coupled tests with `0` failures
   (plus `1192` reference-formula self-checks counted separately — see `docs/BENCHMARKS.md`
   "Test taxonomy")
