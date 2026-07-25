@@ -49,18 +49,24 @@ function createHistoryStore() {
     get undoCount() { return undoStack.length; },
     get redoCount() { return redoStack.length; },
 
-    pushState(): void {
+    /**
+     * Push the current model onto the undo stack.
+     *
+     * `notifyMutation` (default true) preserves the historical behaviour: bump
+     * modelVersion so App.svelte's reactive effect clears stale results. Pass
+     * `false` for a reinforcement-only transaction — reinforcement does not affect
+     * the analysis, so bumping would destroy valid results and force a re-solve.
+     */
+    pushState(opts?: { notifyMutation?: boolean }): void {
       const snapshot = modelStore.snapshot();
       undoStack.push(snapshot);
       if (undoStack.length > MAX_HISTORY) {
         undoStack.shift();
       }
       redoStack = [];
-      // Bump modelVersion so the reactive $effect in App.svelte detects the change
-      // and clears stale results. This is a no-op when called via _pushUndo (which
-      // already increments modelVersion), but ensures direct pushState() callers
-      // (e.g. ElementEditor) also trigger result invalidation.
-      modelStore.bumpModelVersion();
+      if (opts?.notifyMutation !== false) {
+        modelStore.bumpModelVersion();
+      }
     },
 
     undo(): void {
@@ -99,7 +105,10 @@ function createHistoryStore() {
   // Wire into model store after module initialization settles so this store
   // can survive circular imports in tests/SSR.
   queueMicrotask(() => {
-    modelStore?._setHistoryPush?.(() => store.pushState());
+    // The silent variant (used by reinforcementTransaction) is registered by the
+    // same call: modelStore wraps this fn for the notifying path and uses it raw
+    // for the silent path.
+    modelStore?._setHistoryPush?.(() => store.pushState({ notifyMutation: false }));
   });
 
   return store;
