@@ -12,6 +12,7 @@
 mod common;
 
 use common::make_3d_input;
+use common::make_input;
 use dedaliano_engine::solver::linear;
 use dedaliano_engine::types::*;
 use std::collections::HashMap;
@@ -1065,4 +1066,118 @@ fn linear_mpc_chained_with_equal_dof() {
         (d6.uz - expected_u4z).abs() < tol,
         "Full chain: u_6_z={:.8e}, expected 0.5*u_2_z={:.8e}", d6.uz, expected_u4z
     );
+}
+
+// ==================== Prescribed displacement through constraints ====================
+
+/// EqualDOF slave must follow a settled (prescribed-displacement) master.
+#[test]
+fn equal_dof_slave_follows_settled_master_3d() {
+    // Beam 1—2—3 along X, fixed at 1 and 3; node 1 support settles dz = -0.01.
+    // EqualDOF ties node 2 uz (slave) to node 1 uz (master).
+    let mut input = make_3d_input(
+        vec![(1, 0.0, 0.0, 0.0), (2, 4.0, 0.0, 0.0), (3, 8.0, 0.0, 0.0)],
+        vec![(1, E, NU)],
+        vec![(1, A, IY, IZ, J)],
+        vec![(1, "frame", 1, 2, 1, 1), (2, "frame", 2, 3, 1, 1)],
+        vec![(1, fixed()), (3, fixed())],
+        vec![],
+    );
+    for sup in input.supports.values_mut() {
+        if sup.node_id == 1 {
+            sup.dz = Some(-0.01);
+        }
+    }
+    input.constraints.push(Constraint::EqualDOF(EqualDOFConstraint {
+        master_node: 1,
+        slave_node: 2,
+        dofs: vec![2], // uz
+    }));
+
+    let res = linear::solve_3d(&input).expect("solve");
+    let u2 = res.displacements.iter().find(|d| d.node_id == 2).expect("node 2");
+    assert!(
+        (u2.uz - (-0.01)).abs() < 1e-9,
+        "slave node 2 must follow settled master: uz = {}, expected -0.01",
+        u2.uz
+    );
+}
+
+/// Depth-2 chain: both slaves follow the settled master.
+#[test]
+fn equal_dof_chain_follows_settled_master_3d() {
+    let mut input = make_3d_input(
+        vec![(1, 0.0, 0.0, 0.0), (2, 4.0, 0.0, 0.0), (3, 8.0, 0.0, 0.0), (4, 12.0, 0.0, 0.0)],
+        vec![(1, E, NU)],
+        vec![(1, A, IY, IZ, J)],
+        vec![(1, "frame", 1, 2, 1, 1), (2, "frame", 2, 3, 1, 1), (3, "frame", 3, 4, 1, 1)],
+        vec![(1, fixed()), (4, fixed())],
+        vec![],
+    );
+    for sup in input.supports.values_mut() {
+        if sup.node_id == 1 {
+            sup.dz = Some(-0.02);
+        }
+    }
+    // chain: node 3 uz <- node 2 uz <- node 1 uz (settled)
+    input.constraints.push(Constraint::EqualDOF(EqualDOFConstraint {
+        master_node: 1, slave_node: 2, dofs: vec![2],
+    }));
+    input.constraints.push(Constraint::EqualDOF(EqualDOFConstraint {
+        master_node: 2, slave_node: 3, dofs: vec![2],
+    }));
+
+    let res = linear::solve_3d(&input).expect("solve");
+    for nid in [2usize, 3] {
+        let u = res.displacements.iter().find(|d| d.node_id == nid).expect("node");
+        assert!(
+            (u.uz - (-0.02)).abs() < 1e-9,
+            "chained slave {} must follow settled master: uz = {}",
+            nid, u.uz
+        );
+    }
+    // Settlement of a doubly-fixed beam is self-equilibrated: reactions sum to zero.
+    let sum_fz: f64 = res.reactions.iter().map(|r| r.fz).sum();
+    assert!(sum_fz.abs() < 1e-6, "settlement reactions must self-equilibrate: {}", sum_fz);
+}
+
+/// 2D analog: EqualDOF slave must follow a settled (prescribed-displacement)
+/// master. Same 3-node beam pattern as the 3D test above, using the 2D
+/// SolverInput with dz settlement and EqualDOF on the vertical DOF (index 1).
+#[test]
+fn equal_dof_slave_follows_settled_master_2d() {
+    // Beam 1—2—3 along X, fixed at 1 and 3; node 1 support settles dz = -0.01.
+    // EqualDOF ties node 2 uz (slave) to node 1 uz (master).
+    let mut input = make_input(
+        vec![(1, 0.0, 0.0), (2, 4.0, 0.0), (3, 8.0, 0.0)],
+        vec![(1, E, NU)],
+        vec![(1, A, IZ)],
+        vec![
+            (1, "frame", 1, 2, 1, 1, false, false),
+            (2, "frame", 2, 3, 1, 1, false, false),
+        ],
+        vec![(1, 1, "fixed"), (2, 3, "fixed")],
+        vec![],
+    );
+    for sup in input.supports.values_mut() {
+        if sup.node_id == 1 {
+            sup.dz = Some(-0.01);
+        }
+    }
+    input.constraints.push(Constraint::EqualDOF(EqualDOFConstraint {
+        master_node: 1,
+        slave_node: 2,
+        dofs: vec![1], // uz
+    }));
+
+    let res = linear::solve_2d(&input).expect("solve");
+    let u2 = res.displacements.iter().find(|d| d.node_id == 2).expect("node 2");
+    assert!(
+        (u2.uz - (-0.01)).abs() < 1e-9,
+        "slave node 2 must follow settled master: uz = {}, expected -0.01",
+        u2.uz
+    );
+    // Settlement of a doubly-fixed beam is self-equilibrated: reactions sum to zero.
+    let sum_fz: f64 = res.reactions.iter().map(|r| r.rz).sum();
+    assert!(sum_fz.abs() < 1e-6, "settlement reactions must self-equilibrate: {}", sum_fz);
 }

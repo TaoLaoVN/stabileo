@@ -837,6 +837,34 @@ pub fn solve_constrained_2d(input: &ConstrainedInput) -> Result<AnalysisResults,
         }
     }
 
+    // Particular solution: free slaves of restrained (prescribed) masters must
+    // follow them. u_f = C_ff * q + u_p with u_p = C_fr * u_r (restrained
+    // independent columns of C times their prescribed values).
+    let mut u_p = vec![0.0; nf];
+    for (j, &d) in ct.independent_dofs.iter().enumerate() {
+        if d >= nf {
+            let v = u_r[d - nf];
+            if v != 0.0 {
+                for i in 0..nf {
+                    u_p[i] += ct.c_matrix[i * n_indep + j] * v;
+                }
+            }
+        }
+    }
+    let has_up = u_p.iter().any(|&v| v != 0.0);
+    // Kept only when has_up: K_ff*u_p, needed later to un-do the RHS
+    // correction when recovering the true (non-double-counted) constraint
+    // forces below.
+    let mut k_ff_up_opt: Option<Vec<f64>> = None;
+    if has_up {
+        // RHS correction: f_f -= K_ff * u_p (the -K_fr*u_r term already exists).
+        let k_ff_up = mat_vec_rect(&k_ff, &u_p, nf, nf);
+        for i in 0..nf {
+            f_f[i] -= k_ff_up[i];
+        }
+        k_ff_up_opt = Some(k_ff_up);
+    }
+
     // K_reduced = C_ff^T * K_ff * C_ff
     // F_reduced = C_ff^T * F_f
     let k_reduced = ct_k_c(&c_ff, &k_ff, nf, n_free_indep);
@@ -859,7 +887,12 @@ pub fn solve_constrained_2d(input: &ConstrainedInput) -> Result<AnalysisResults,
     };
 
     // Recover free DOF displacements: u_f = C_ff * u_indep
-    let u_f = c_times_u(&c_ff, &u_indep, nf, n_free_indep);
+    let mut u_f = c_times_u(&c_ff, &u_indep, nf, n_free_indep);
+    if has_up {
+        for i in 0..nf {
+            u_f[i] += u_p[i];
+        }
+    }
 
     // Build full displacement vector
     let mut u_full = vec![0.0; n];
@@ -877,6 +910,44 @@ pub fn solve_constrained_2d(input: &ConstrainedInput) -> Result<AnalysisResults,
         reactions_vec[i] = k_rf_uf[i] + k_rr_ur[i] - f_r[i];
     }
 
+    // Compute constraint forces at dependent DOFs. Use f_f as it stood
+    // *before* the K_ff*u_p correction above — that correction only exists
+    // to keep the reduced (free-free) system's RHS consistent for solving
+    // q; reusing the already-corrected f_f here would double-count u_p's
+    // contribution and misreport the constraint force.
+    let fcs = FreeConstraintSystem { c_ff, n_free_indep, nf };
+    let raw_forces = match &k_ff_up_opt {
+        Some(k_ff_up) => {
+            let mut f_f_true = f_f.clone();
+            for i in 0..nf { f_f_true[i] += k_ff_up[i]; }
+            fcs.compute_constraint_forces(&k_ff, &u_f, &f_f_true)
+        }
+        None => fcs.compute_constraint_forces(&k_ff, &u_f, &f_f),
+    };
+    let constraint_forces = map_dof_forces_to_constraint_forces(&raw_forces, &dof_num);
+
+    // A constraint force carried into a RESTRAINED (prescribed) master is not
+    // otherwise reflected anywhere: the master's own equilibrium row isn't
+    // part of the reduced free-DOF system (its value is already known via
+    // u_r), so the plain K_rf*u_f + K_rr*u_r - F_r reaction formula misses
+    // the force the master-slave link transmits into that support. Add it
+    // back with the same C^T redistribution used for the free-DOF reduction,
+    // restricted to the restrained-independent columns of C — this is what
+    // keeps ΣReactions in equilibrium with the (zero, for pure settlement)
+    // applied load.
+    if k_ff_up_opt.is_some() {
+        for &(i, g_i) in &raw_forces {
+            for (j, &d) in ct.independent_dofs.iter().enumerate() {
+                if d >= nf {
+                    let coeff = ct.c_matrix[i * n_indep + j];
+                    if coeff != 0.0 {
+                        reactions_vec[d - nf] += coeff * g_i;
+                    }
+                }
+            }
+        }
+    }
+
     let displacements = linear::build_displacements_2d(&dof_num, &u_full);
     let mut reactions = linear::build_reactions_2d(
         &input.solver, &dof_num, &reactions_vec, &f_r, nf, &u_full,
@@ -886,11 +957,6 @@ pub fn solve_constrained_2d(input: &ConstrainedInput) -> Result<AnalysisResults,
         &input.solver, &dof_num, &u_full,
     );
     element_forces.sort_by_key(|ef| ef.element_id);
-
-    // Compute constraint forces at dependent DOFs
-    let fcs = FreeConstraintSystem { c_ff, n_free_indep, nf };
-    let raw_forces = fcs.compute_constraint_forces(&k_ff, &u_f, &f_f);
-    let constraint_forces = map_dof_forces_to_constraint_forces(&raw_forces, &dof_num);
 
     // Compute actual residual: ||K_ff*u_f - f_f|| / ||f_f||
     let rel_residual = {
@@ -1028,6 +1094,34 @@ pub fn solve_constrained_3d(input: &ConstrainedInput3D) -> Result<AnalysisResult
         }
     }
 
+    // Particular solution: free slaves of restrained (prescribed) masters must
+    // follow them. u_f = C_ff * q + u_p with u_p = C_fr * u_r (restrained
+    // independent columns of C times their prescribed values).
+    let mut u_p = vec![0.0; nf];
+    for (j, &d) in ct.independent_dofs.iter().enumerate() {
+        if d >= nf {
+            let v = u_r[d - nf];
+            if v != 0.0 {
+                for i in 0..nf {
+                    u_p[i] += ct.c_matrix[i * n_indep + j] * v;
+                }
+            }
+        }
+    }
+    let has_up = u_p.iter().any(|&v| v != 0.0);
+    // Kept only when has_up: K_ff*u_p, needed later to un-do the RHS
+    // correction when recovering the true (non-double-counted) constraint
+    // forces below.
+    let mut k_ff_up_opt: Option<Vec<f64>> = None;
+    if has_up {
+        // RHS correction: f_f -= K_ff * u_p (the -K_fr*u_r term already exists).
+        let k_ff_up = mat_vec_rect(&k_ff, &u_p, nf, nf);
+        for i in 0..nf {
+            f_f[i] -= k_ff_up[i];
+        }
+        k_ff_up_opt = Some(k_ff_up);
+    }
+
     let k_reduced = ct_k_c(&c_ff, &k_ff, nf, n_free_indep);
     let f_reduced = ct_f(&c_ff, &f_f, nf, n_free_indep);
 
@@ -1058,7 +1152,12 @@ pub fn solve_constrained_3d(input: &ConstrainedInput3D) -> Result<AnalysisResult
         }
     };
 
-    let u_f = c_times_u(&c_ff, &u_indep, nf, n_free_indep);
+    let mut u_f = c_times_u(&c_ff, &u_indep, nf, n_free_indep);
+    if has_up {
+        for i in 0..nf {
+            u_f[i] += u_p[i];
+        }
+    }
 
     let mut u_full = vec![0.0; n];
     for i in 0..nf { u_full[i] = u_f[i]; }
@@ -1074,6 +1173,44 @@ pub fn solve_constrained_3d(input: &ConstrainedInput3D) -> Result<AnalysisResult
         reactions_vec[i] = k_rf_uf[i] + k_rr_ur[i] - f_r[i];
     }
 
+    // Compute constraint forces at dependent DOFs. Use f_f as it stood
+    // *before* the K_ff*u_p correction above — that correction only exists
+    // to keep the reduced (free-free) system's RHS consistent for solving
+    // q; reusing the already-corrected f_f here would double-count u_p's
+    // contribution and misreport the constraint force.
+    let fcs = FreeConstraintSystem { c_ff, n_free_indep, nf };
+    let raw_forces = match &k_ff_up_opt {
+        Some(k_ff_up) => {
+            let mut f_f_true = f_f.clone();
+            for i in 0..nf { f_f_true[i] += k_ff_up[i]; }
+            fcs.compute_constraint_forces(&k_ff, &u_f, &f_f_true)
+        }
+        None => fcs.compute_constraint_forces(&k_ff, &u_f, &f_f),
+    };
+    let constraint_forces = map_dof_forces_to_constraint_forces(&raw_forces, &dof_num);
+
+    // A constraint force carried into a RESTRAINED (prescribed) master is not
+    // otherwise reflected anywhere: the master's own equilibrium row isn't
+    // part of the reduced free-DOF system (its value is already known via
+    // u_r), so the plain K_rf*u_f + K_rr*u_r - F_r reaction formula misses
+    // the force the master-slave link transmits into that support. Add it
+    // back with the same C^T redistribution used for the free-DOF reduction,
+    // restricted to the restrained-independent columns of C — this is what
+    // keeps ΣReactions in equilibrium with the (zero, for pure settlement)
+    // applied load.
+    if k_ff_up_opt.is_some() {
+        for &(i, g_i) in &raw_forces {
+            for (j, &d) in ct.independent_dofs.iter().enumerate() {
+                if d >= nf {
+                    let coeff = ct.c_matrix[i * n_indep + j];
+                    if coeff != 0.0 {
+                        reactions_vec[d - nf] += coeff * g_i;
+                    }
+                }
+            }
+        }
+    }
+
     let displacements = linear::build_displacements_3d(&dof_num, &u_full);
     let element_forces = linear::compute_internal_forces_3d(&input.solver, &dof_num, &u_full);
 
@@ -1082,11 +1219,6 @@ pub fn solve_constrained_3d(input: &ConstrainedInput3D) -> Result<AnalysisResult
         &input.solver, &dof_num, &reactions_vec, &f_r, nf, &u_full,
     );
     reactions.sort_by_key(|r| r.node_id);
-
-    // Compute constraint forces at dependent DOFs
-    let fcs = FreeConstraintSystem { c_ff, n_free_indep, nf };
-    let raw_forces = fcs.compute_constraint_forces(&k_ff, &u_f, &f_f);
-    let constraint_forces = map_dof_forces_to_constraint_forces(&raw_forces, &dof_num);
 
     // Compute actual residual: ||K_ff*u_f - f_f|| / ||f_f||
     let rel_residual = {
