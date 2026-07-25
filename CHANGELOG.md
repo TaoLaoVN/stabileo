@@ -73,12 +73,16 @@ flagship example demonstrates a complete design. New `rc-design-qa-8` fixture fo
 deterministic tests. `orientation-diagnostic.ts` detects this class of error and blocks
 certification for affected members.
 
-**Known solver-side issue (not fixed, not worked around).** With no explicit `localY`,
-the WASM solver's default orientation for a global-Y member bends it about local *y*
-while the app convention says local *z*; the discrepancy is exactly Iz/Iy. The app is
-unaffected because `buildSolverInput3D` always stamps `localY`. Pre-existing (already
-failing on the untouched baseline in `solver-3d.test.ts`) and pinned with escalation
-wording in `design/__tests__/orientation-boundary.test.ts`.
+**Initially-suspected solver defect: withdrawn.** While authoring this work, a raw
+WASM probe (no explicit `localY`) appeared to bend a global-Y member about local y
+instead of local z — ratio exactly Iz/Iy — and it reproduced on the untouched baseline,
+so it was written up as a pre-existing upstream defect. CI disproved that: `web/src/lib/wasm/`
+is gitignored and CI rebuilds it from the current `engine/` source, where the same probe
+returns the correct Iz result. The authoring machine's binary predated the newest engine
+commit by nine days. There is no solver defect and no solver change is needed; the
+regression coverage in `design/__tests__/orientation-boundary.test.ts` now asserts the
+correct behaviour and fails with an explicit "rebuild your local WASM" message if a
+stale binary is used.
 
 **Deferred to the next PR**: continuity-aware continuous-beam detailing, coordinated
 bar cutoff/laps across spans, beam-column joint design, seismic joint checks and

@@ -16,34 +16,24 @@
  *   moved from qY to qZ. `orientation-diagnostic.ts` now detects this class of error,
  *   and a flagged member can never be certified.
  *
- * CAUSE 2 — RAW-SOLVER DEFAULT AUTO-ORIENT (pre-existing, NOT fixed: solver-side)
- *   When NO explicit `localY` is supplied, the Rust/WASM solver's own default
- *   orientation for a Y-direction member disagrees with the app's
- *   `computeLocalAxes3D`. Quantified below: the discrepancy is exactly Iz/Iy, i.e.
- *   the two pick different bending axes.
+ * CAUSE 2 — A STALE LOCAL WASM BINARY (initially misdiagnosed as a solver defect)
+ *   While authoring PR15, a raw-solver probe (no explicit `localY`) appeared to bend a
+ *   global-Y member about local y (Iy) instead of local z (Iz) — a clean axis swap,
+ *   ratio exactly Iz/Iy. It reproduced on the untouched baseline, so it was written up
+ *   as a pre-existing upstream solver defect.
  *
- *   THIS DOES NOT AFFECT THE APP. `buildSolverInput3D` (solver-service.ts:1158-1178)
- *   explicitly stamps `localY` on every frame element before calling the solver, so
- *   the app path is self-consistent — proved by the first test below, where an
- *   X-member and a Y-member with identical geometry, section, material and global
- *   gravity loading return IDENTICAL forces and displacements.
+ *   CI DISPROVED THAT. `web/src/lib/wasm/` is gitignored and CI rebuilds it from the
+ *   current `engine/` Rust source; on that binary the same probe returns the Iz value,
+ *   i.e. the app-convention-CORRECT answer. The authoring machine's binary was dated
+ *   9 days older than the newest engine commit.
  *
- *   It is nevertheless a real seam defect. It is ALREADY captured by a failing
- *   assertion in `solver-3d.test.ts` ("member along global Y … horizontal
- *   displacement at top"), which fails on the untouched baseline too. PR15 does not
- *   modify solver code and does not paper over it: the divergence is measured and
- *   pinned here so it cannot regress further or be silently "fixed" by picking
- *   whichever component makes a candidate pass.
+ *   Conclusion: there is NO solver defect. The divergence was an artifact of a stale
+ *   locally-built WASM binary. No escalation is required and no solver change is needed.
  *
- * ESCALATION WORDING (for the solver team)
- *   "For a frame element whose axis is global +Y and with no explicit localY vector,
- *    the WASM solver's default local frame bends the member about local y (uses Iy)
- *    under a global-X tip load. The app's canonical Z-up convention
- *    (local-axes-3d.ts: ez = global up projected ⊥ ex, ey = ez × ex) gives
- *    ey = [-1,0,0], ez = [0,0,1], so the same load must bend about local z (uses Iz).
- *    The measured tip displacement ratio is exactly Iz/Iy (2.0024 for Iz=8.33e-6,
- *    Iy=4.16e-6), confirming the axis swap rather than a stiffness scaling error.
- *    Reproducer: solver-3d.test.ts, describe('3D Solver — member along global Y')."
+ *   The tests below therefore assert the CORRECT behaviour for both directions. If one
+ *   of them fails with roughly twice the expected displacement, that is the signature of
+ *   a stale local `web/src/lib/wasm/` — rebuild it with `npm run wasm`.
+ *
  * ═══════════════════════════════════════════════════════════════════════════════
  */
 
@@ -120,7 +110,7 @@ describe('APP PATH: X- and Y-direction members are equivalent (no anomaly)', () 
   });
 });
 
-describe('RAW SOLVER PATH: pre-existing default-auto-orient divergence (solver-side)', () => {
+describe('RAW SOLVER PATH: the default auto-orient agrees with the app convention', () => {
   /** Cantilever along `along`, tip load perpendicular in the horizontal plane. */
   function rawCantilever(along: 'X' | 'Y'): SolverInput3D {
     const p = (t: number) => (along === 'X' ? { x: t, y: 0, z: 0 } : { x: 0, y: t, z: 0 });
@@ -137,33 +127,26 @@ describe('RAW SOLVER PATH: pre-existing default-auto-orient divergence (solver-s
         releaseMzEnd: false, releaseTStart: false, releaseTEnd: false,
       }]]),
       supports: new Map<any, any>([[0, { nodeId: 1, rx: true, ry: true, rz: true, rrx: true, rry: true, rrz: true }]]),
-      // NOTE: no localY is supplied — this is the historical raw-input path that
-      // buildSolverInput3D deliberately overrides in the app.
+      // No localY: this is the raw-input path that buildSolverInput3D overrides in the app.
       loads: [{ type: 'nodal', data: { nodeId: 2, ...tip, mx: 0, my: 0, mz: 0 } }],
     } as unknown as SolverInput3D;
   }
 
-  it('an X-direction member matches the app convention (bends about local z, uses Iz)', () => {
+  const STALE = 'If this is ~2x the expected value, your local web/src/lib/wasm/ is STALE — rebuild with `npm run wasm`.';
+
+  it('an X-direction member bends about local z (uses Iz)', () => {
     assertRealSolver();
-    const r = solve3D(rawCantilever('X'));
-    const tip = r.displacements.find(d => d.nodeId === 2)!;
-    const expectedIz = 10 * 125 / (3 * E * Iz);
-    expect(Math.abs(tip.uy)).toBeCloseTo(expectedIz, 6);
+    const tip = solve3D(rawCantilever('X')).displacements.find(d => d.nodeId === 2)!;
+    expect(Math.abs(tip.uy), STALE).toBeCloseTo(10 * 125 / (3 * E * Iz), 6);
   });
 
-  it('a Y-direction member does NOT — the discrepancy is exactly Iz/Iy (axis swap)', () => {
+  it('a Y-direction member ALSO bends about local z — no axis swap', () => {
     assertRealSolver();
-    const r = solve3D(rawCantilever('Y'));
-    const tip = r.displacements.find(d => d.nodeId === 2)!;
-    const expectedIz = 10 * 125 / (3 * E * Iz);   // app convention
-    const expectedIy = 10 * 125 / (3 * E * Iy);   // what the raw solver actually does
-
-    // Documented, NOT worked around. If the solver is corrected upstream this
-    // assertion flips and the escalation note above can be removed.
-    expect(Math.abs(tip.ux)).toBeCloseTo(expectedIy, 6);
-    expect(Math.abs(tip.ux)).not.toBeCloseTo(expectedIz, 6);
-    const ratio = Math.abs(tip.ux) / expectedIz;
-    expect(ratio).toBeCloseTo(Iz / Iy, 3);        // a clean axis swap, not a scaling error
+    const tip = solve3D(rawCantilever('Y')).displacements.find(d => d.nodeId === 2)!;
+    const expectedIz = 10 * 125 / (3 * E * Iz);
+    expect(Math.abs(tip.ux), STALE).toBeCloseTo(expectedIz, 6);
+    // Guard the specific historical misdiagnosis: it must NOT be the Iy result.
+    expect(Math.abs(tip.ux)).not.toBeCloseTo(10 * 125 / (3 * E * Iy), 6);
   });
 
   it('the app never uses the raw path: localY is always stamped on frame elements', () => {

@@ -556,27 +556,7 @@ describe('3D Solver — member along global Y (axis transformation test)', () =>
     assertSuccess(result);
   });
 
-  /**
-   * KNOWN UPSTREAM SOLVER DEFECT — raw WASM default auto-orient for global-Y members.
-   *
-   * Marked `it.fails` (an EXPECTED failure, not a skip): the assertion below is the
-   * original, unweakened one, and the inputs are unchanged. When the solver is
-   * corrected upstream this test starts PASSING, which Vitest then reports as an
-   * unexpected pass — a loud, actionable red — at which point the `.fails` marker must
-   * be removed so the test guards the corrected behaviour normally.
-   *
-   * The defect: with no explicit `localY`, the solver bends a global-Y member about
-   * local y (uses Iy) under a global-X tip load; the app's canonical Z-up convention
-   * (local-axes-3d.ts) requires local z (Iz). The measured displacement ratio is
-   * exactly Iz/Iy ≈ 2.0024 — a clean axis swap, not a stiffness scaling error. It is
-   * present on the untouched baseline and is NOT introduced by PR15.
-   *
-   * The normal app path is unaffected: `buildSolverInput3D` explicitly supplies
-   * `localY` on every frame element, and that boundary is covered by
-   * `design/__tests__/orientation-boundary.test.ts`, which also carries the escalation
-   * note for the solver owner. Correcting the solver is deliberately out of scope here.
-   */
-  it.fails('horizontal displacement at top', () => {
+  it('horizontal displacement at top', () => {
     const result = solve3D(input);
     assertSuccess(result);
 
@@ -585,6 +565,10 @@ describe('3D Solver — member along global Y (axis transformation test)', () =>
     // The global-X force acts along local y → bending about local z → uses EIz.
     // (Raw-input test, so it exercises the Rust default convention directly rather
     // than the forced-localY boundary the app actually uses.)
+    //
+    // If this fails with ~2x the expected value (the Iy result), the local
+    // web/src/lib/wasm/ binary is STALE — rebuild it with `npm run wasm`.
+    // See design/__tests__/orientation-boundary.test.ts for the full account.
     const ux_expected = Px * L * L * L / (3 * E * Iz);
 
     const d2 = result.displacements.find(d => d.nodeId === 2)!;

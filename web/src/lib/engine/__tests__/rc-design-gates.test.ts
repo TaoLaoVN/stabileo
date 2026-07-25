@@ -262,27 +262,23 @@ describe('GATE: fixture corrections', () => {
   });
 });
 
-describe('GATE: the known upstream solver defect stays visible', () => {
-  it('is marked as an EXPECTED failure, not skipped or deleted', () => {
+describe('GATE: the stale-WASM misdiagnosis cannot silently return', () => {
+  it('the global-Y raw-solver test is a normal test, not an expected failure', () => {
     const s = read('./solver-3d.test.ts');
-    // it.fails → the assertion still runs; when the solver is corrected the test
-    // becomes an UNEXPECTED PASS, which Vitest reports as red.
-    expect(s).toContain("it.fails('horizontal displacement at top'");
-    expect(s).not.toContain("it.skip('horizontal displacement at top'");
-    expect(s).not.toContain("it.todo('horizontal displacement at top'");
-    // The original, unweakened assertion must survive.
+    // CI (which rebuilds the WASM from the current engine source) proved there is no
+    // solver defect: the divergence seen while authoring PR15 came from a stale local
+    // binary. The test must therefore assert the correct behaviour normally.
+    expect(s).toContain("it('horizontal displacement at top'");
+    expect(s).not.toContain('it.fails');
     expect(s).toContain('const ux_expected = Px * L * L * L / (3 * E * Iz);');
-    expect(s).toContain('expect(d2.ux).toBeCloseTo(ux_expected, 4);');
-    // And it must be explained, with a pointer to the boundary coverage.
-    expect(s).toContain('KNOWN UPSTREAM SOLVER DEFECT');
-    expect(s).toContain('orientation-boundary.test.ts');
-    expect(s).toContain('buildSolverInput3D` explicitly supplies');
+    expect(s).toContain('npm run wasm');
   });
 
-  it('the boundary coverage carries escalation wording for the solver owner', () => {
+  it('the boundary coverage records the stale-binary finding and its symptom', () => {
     const s = read('../design/__tests__/orientation-boundary.test.ts');
-    expect(s).toContain('ESCALATION WORDING');
-    expect(s).toContain('Iz/Iy');
-    expect(s).toContain('2.0024');
+    expect(s).toContain('STALE LOCAL WASM BINARY');
+    expect(s).toContain('there is NO solver defect');
+    expect(s).toContain('no axis swap');
+    expect(s).toContain('npm run wasm');
   });
 });
