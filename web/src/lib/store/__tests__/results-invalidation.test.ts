@@ -89,12 +89,16 @@ describe('PR15 result & verification invalidation on model mutation', () => {
     verificationStore.setDesignResults(results, summary);
     expect(verificationStore.hasResults).toBe(true);
     // No solver results at all — the old guard checked only resultsStore, so it
-    // would have left verification status stranded on the mutated model.
+    // would have left verification status stranded on the mutated model. The hook is
+    // now UNCONDITIONAL so the analysis revision can never fail to advance.
     expect(resultsStore.hasAnyResults).toBe(false);
+    const revBefore = verificationStore.analysisRevision;
 
     modelStore.addNode(0, 0, 0);
 
     expect(verificationStore.hasResults).toBe(false);
+    expect(verificationStore.analysisRevision).toBeGreaterThan(revBefore);
+    expect(verificationStore.hasDemandData).toBe(false);
   });
 
   it('5. modelStore.restore(snapshot) clears stale results and verification', () => {
@@ -110,10 +114,13 @@ describe('PR15 result & verification invalidation on model mutation', () => {
     expect(resultsStore.hasAnyResults).toBe(true);
     expect(verificationStore.hasResults).toBe(true);
 
+    const revBefore = verificationStore.analysisRevision;
+
     modelStore.restore(snap);
 
     expect(resultsStore.hasAnyResults).toBe(false);
     expect(verificationStore.hasResults).toBe(false);
+    expect(verificationStore.analysisRevision).toBeGreaterThan(revBefore);
   });
 
   it('bonus: a 2D advanced-only run (plastic) is also invalidated', () => {
