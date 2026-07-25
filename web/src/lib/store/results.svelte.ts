@@ -7,6 +7,9 @@ import type { GoverningPerElement, GoverningPerElement3D } from '../engine/gover
 import type { MovingLoadEnvelope } from '../engine/moving-loads';
 import type { PDeltaResult, PDeltaResult3D, ModalResult, ModalResult3D, BucklingResult, BucklingResult3D, PlasticResult, SpectralResult, SpectralResult3D } from '../engine/result-types';
 import { get2DDisplayDisplacementVertical } from '../geometry/coordinate-system';
+// Counts published structural analyses so browser tests can assert that a
+// reinforcement-only edit triggers none. Covers the worker/parallel solve paths too.
+import { noteStructuralSolve } from '../utils/solve-counter';
 
 export type DiagramType = 'none' | 'moment' | 'shear' | 'axial' | 'deformed' | 'colorMap' | 'axialColor' | 'verification' | 'influenceLine' | 'modeShape' | 'bucklingMode' | 'plasticHinges' | 'despiece'
   // 3D-specific diagram types
@@ -631,6 +634,7 @@ function createResultsStore() {
     get results3D() { return results3D; },
 
     setResults3D(r: AnalysisResults3D, preserveDiagram = false) {
+      noteStructuralSolve();
       results3D = r;
       singleResults3D = r;
       showReactions = false;
@@ -698,6 +702,7 @@ function createResultsStore() {
     setGoverning3D(g: Map<number, GoverningPerElement3D>) { governing3D = g; },
 
     setCombinationResults3D(pc: Map<number, AnalysisResults3D>, pco: Map<number, AnalysisResults3D>, env: FullEnvelope3D) {
+      noteStructuralSolve();
       perCase3D = pc;
       perCombo3D = pco;
       envelope3D = env;
