@@ -13,10 +13,16 @@
  *
  * Two production builds are slow (~35 s total), hence the extended timeout. This is the
  * only test in the suite that shells out to a build.
+ *
+ * The builds run ASYNCHRONOUSLY on purpose. A synchronous `execFileSync` blocks the
+ * Vitest worker's event loop for the whole build, which starves its RPC heartbeat and
+ * makes the run die with `[vitest-worker]: Timeout calling "onTaskUpdate"` even though
+ * every test passed. Awaiting `execFile` keeps the worker responsive.
  */
 
 import { describe, it, expect, afterAll } from 'vitest';
-import { execFileSync } from 'node:child_process';
+import { execFile } from 'node:child_process';
+import { promisify } from 'node:util';
 import { readdirSync, readFileSync, rmSync, existsSync } from 'node:fs';
 import { resolve, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -31,12 +37,14 @@ const HOOK_MARKERS = ['__stabileoActions', 'canvasInkRatio', 'e2eQueryEnabled'];
 const OUT_OFF = '.dist-hookgate-off';
 const OUT_ON = '.dist-hookgate-on';
 
-function build(outDir: string, env: Record<string, string>): void {
-  execFileSync('npx', ['vite', 'build', '--outDir', outDir, '--emptyOutDir', '--logLevel', 'error'], {
+const execFileAsync = promisify(execFile);
+
+async function build(outDir: string, env: Record<string, string>): Promise<void> {
+  await execFileAsync('npx', ['vite', 'build', '--outDir', outDir, '--emptyOutDir', '--logLevel', 'error'], {
     cwd: WEB_ROOT,
     env: { ...process.env, ...env },
-    stdio: 'pipe',
     timeout: 240_000,
+    maxBuffer: 32 * 1024 * 1024,
   });
 }
 
@@ -60,8 +68,8 @@ function cleanup(): void {
 describe('E2E hook build-time gating', () => {
   afterAll(cleanup);
 
-  it('a normal production build contains NO test-hook code', () => {
-    build(OUT_OFF, {});
+  it('a normal production build contains NO test-hook code', async () => {
+    await build(OUT_OFF, {});
     const js = bundleText(OUT_OFF);
     expect(js.length, 'the build must produce JavaScript assets').toBeGreaterThan(10_000);
     for (const marker of HOOK_MARKERS) {
@@ -71,8 +79,8 @@ describe('E2E hook build-time gating', () => {
     expect(js.includes('__stabileo')).toBe(false);
   }, 300_000);
 
-  it('a VITE_E2E=1 build DOES contain the test-hook code', () => {
-    build(OUT_ON, { VITE_E2E: '1' });
+  it('a VITE_E2E=1 build DOES contain the test-hook code', async () => {
+    await build(OUT_ON, { VITE_E2E: '1' });
     const js = bundleText(OUT_ON);
     expect(js.length).toBeGreaterThan(10_000);
     for (const marker of HOOK_MARKERS) {
