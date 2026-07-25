@@ -948,9 +948,17 @@ pub fn solve_constrained_2d(input: &ConstrainedInput) -> Result<AnalysisResults,
         }
     }
 
+    // Reverse inclined transforms on displacements before building results —
+    // mirrors linear::solve_2d so the constrained path reports reactions and
+    // displacements in the same GLOBAL axes as the equilibrium summary below
+    // (reactions_vec/f_r stay in the rotated frame; only u_full is reversed).
+    for it in &asm.inclined_transforms_2d {
+        assembly::reverse_inclined_transform_2d(&mut u_full, &it.dofs, &it.r);
+    }
+
     let displacements = linear::build_displacements_2d(&dof_num, &u_full);
-    let mut reactions = linear::build_reactions_2d(
-        &input.solver, &dof_num, &reactions_vec, &f_r, nf, &u_full,
+    let mut reactions = linear::build_reactions_2d_inclined(
+        &input.solver, &dof_num, &reactions_vec, &f_r, nf, &u_full, &asm.inclined_transforms_2d,
     );
     reactions.sort_by_key(|r| r.node_id);
     let mut element_forces = linear::compute_internal_forces_2d(
@@ -1211,12 +1219,20 @@ pub fn solve_constrained_3d(input: &ConstrainedInput3D) -> Result<AnalysisResult
         }
     }
 
+    // Reverse inclined transforms on displacements before building results —
+    // mirrors linear::solve_3d so the constrained path reports reactions and
+    // displacements in the same GLOBAL axes as the equilibrium summary below
+    // (reactions_vec/f_r stay in the rotated frame; only u_full is reversed).
+    for it in &asm.inclined_transforms {
+        assembly::reverse_inclined_transform(&mut u_full, &it.dofs, &it.r);
+    }
+
     let displacements = linear::build_displacements_3d(&dof_num, &u_full);
     let element_forces = linear::compute_internal_forces_3d(&input.solver, &dof_num, &u_full);
 
     // Build reactions for output
-    let mut reactions = linear::build_reactions_3d(
-        &input.solver, &dof_num, &reactions_vec, &f_r, nf, &u_full,
+    let mut reactions = linear::build_reactions_3d_inclined(
+        &input.solver, &dof_num, &reactions_vec, &f_r, nf, &u_full, &asm.inclined_transforms,
     );
     reactions.sort_by_key(|r| r.node_id);
 

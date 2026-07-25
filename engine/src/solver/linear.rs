@@ -1453,7 +1453,7 @@ pub(crate) fn build_reactions_2d(
     reactions
 }
 
-fn build_reactions_2d_inclined(
+pub(crate) fn build_reactions_2d_inclined(
     input: &SolverInput,
     dof_num: &DofNumbering,
     reactions_vec: &[f64],
@@ -1539,7 +1539,7 @@ pub(crate) fn build_reactions_3d(
 }
 
 /// Build 3D reactions with inclined support back-transformation.
-fn build_reactions_3d_inclined(
+pub(crate) fn build_reactions_3d_inclined(
     input: &SolverInput3D,
     dof_num: &DofNumbering,
     reactions_vec: &[f64],
