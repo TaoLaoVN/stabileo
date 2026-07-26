@@ -1,3 +1,4 @@
+import type { ProjectCodeSettings } from '../codes/project-code-settings';
 // Undo/Redo history store using full model snapshots
 import { modelStore } from './model.svelte';
 import type { Release } from './model.svelte';
@@ -35,6 +36,9 @@ export interface ModelSnapshot {
   /** Joint/spring/bearing primitives. Each entry is [id, ConnectorElement-shaped object]. */
   connectors?: Array<[number, { id: number; nodeI: number; nodeJ: number; kAxial?: number; kShear?: number; kMoment?: number; kShearZ?: number; kBendY?: number; kBendZ?: number }]>;
   nextId: { node: number; material: number; section: number; element: number; support: number; load: number; loadCase?: number; combination?: number; plate?: number; quad?: number; connector?: number };
+  /** Jurisdiction, adopted regulation editions and concrete data. Absent on
+   *  models saved before this existed — see migrateCodeSettings. */
+  codeSettings?: ProjectCodeSettings;
 }
 
 const MAX_HISTORY = 50;

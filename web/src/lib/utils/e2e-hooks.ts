@@ -80,6 +80,10 @@ export interface StabileoTestHooks {
   undoCount(): number;
   /** Non-background pixel count of the main canvas — a blank-render sanity check. */
   canvasInkRatio(): number;
+  /** Project regulation settings, as persisted. Read-only. */
+  codeSettings(): unknown;
+  /** Verifier id on an element's certificate — carries the edition it was produced under. */
+  certificateVerifierId(elementId: number): string | null;
 }
 
 /**
@@ -176,6 +180,9 @@ export function installE2EHooks(): void {
     orientationSuspectCount: () => verificationStore.orientationSuspectCount,
     undoCount: () => historyStore.undoCount,
     canvasInkRatio,
+    codeSettings: () => JSON.parse(JSON.stringify(modelStore.model.codeSettings ?? null)),
+    certificateVerifierId: (id: number) =>
+      verificationStore.outcomeFor(id)?.certificate?.verifierId ?? null,
   };
   const actions: StabileoTestActions = {
     loadExample: async (name: string) => { await modelStore.loadExample(name); },

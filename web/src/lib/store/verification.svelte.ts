@@ -180,6 +180,32 @@ function createVerificationStore() {
       dropCache();
     },
 
+    /**
+     * The project's design code or edition changed.
+     *
+     * Deliberately NOT invalidateAnalysis(): that clears the member contexts, and
+     * clearing state the user did not ask to lose is the exact regression PR15 was
+     * written to repair. The reinforcement itself lives on the model and is untouched
+     * here — what stops being valid is the verdicts, because they were reached under a
+     * different rule set.
+     *
+     * Bumping demandRevision is what forces every memoised verification to recompute
+     * under the new adapter; the design table stays on screen, showing "not verified"
+     * rather than a stale pass.
+     */
+    invalidateForCodeChange() {
+      demandRevision++;
+      runSummary = null;
+      concreteVerifs = [];
+      steelVerifs = [];
+      concreteMap = new Map();
+      steelMap = new Map();
+      designResults = [];
+      designMap = new Map();
+      designSummary = null;
+      dropCache();
+    },
+
     // ── Retained demand ──
     /** Publish freshly computed member contexts (station demands + geometry). */
     setDemandData(next: Map<number, MemberContext>, issues: OrientationIssue[] = []) {

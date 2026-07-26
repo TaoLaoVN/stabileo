@@ -56,7 +56,17 @@ function createDesignRunStore() {
   /** Members whose provisional (failing) candidate was retained for review. */
   let provisionalIds = $state<Set<number>>(new Set());
 
+  /**
+   * The adapter for the active code, resolved against the project's chosen edition.
+   *
+   * CIRSOC 201 ships as two independent adapters. Selecting "CIRSOC" in the UI while
+   * the project says 2005 must reach the 2005 adapter, otherwise the project would be
+   * verified against rules and clause numbers it did not ask for.
+   */
   function adapter(id: DesignCodeId = verificationStore.activeCodeId) {
+    if (id === 'cirsoc' && modelStore.model.codeSettings?.concreteEdition === '2005') {
+      return getDesignCode('cirsoc-2005');
+    }
     return getDesignCode(id);
   }
 
@@ -83,6 +93,11 @@ function createDesignRunStore() {
         orientationSuspect: orient.suspect,
         analysisRevision: verificationStore.analysisRevision,
         demandRevision: verificationStore.demandRevision + 1,
+        // The project decides which edition governs and what the aggregate size is.
+        // Without this the design would silently run under the built-in default rather
+        // than under what the project states it is designed to.
+        codeEdition: modelStore.model.codeSettings?.concreteEdition,
+        concrete: modelStore.model.codeSettings?.concrete,
       });
       verificationStore.setDemandData(contexts, orient.issues);
       resultsStore.diagramType = 'verification';

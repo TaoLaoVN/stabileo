@@ -1,3 +1,6 @@
+import {
+  defaultCodeSettings, migrateCodeSettings, type ProjectCodeSettings,
+} from '../codes/project-code-settings';
 // Model store - manages the structural model
 import type { KinematicResult } from '../engine/kinematic-2d';
 import type { SolverInput, FullEnvelope, AnalysisResults } from '../engine/types';
@@ -484,6 +487,19 @@ export interface StructureModel {
    *  Models saved before this metadata existed load WITHOUT it and are then
    *  evaluated under the corrected convention (no legacy mode) — see file.ts. */
   localAxisConvention?: 'zUpStrongAxis';
+  /**
+   * Jurisdiction, adopted regulation editions and concrete data.
+   *
+   * Lives on the model rather than in a side store so it travels through every
+   * persistence path for free — .ded save/open, tab capture/restore, URL sharing and
+   * autosave all go through snapshot()/restore(). A project that records which edition
+   * it was designed to is not optional metadata: it is what makes a stored certificate
+   * interpretable later.
+   *
+   * Absent on models saved before this existed; `migrateCodeSettings` turns that into
+   * an explicit CIRSOC 201-2005 project rather than silently adopting the 2025 default.
+   */
+  codeSettings?: ProjectCodeSettings;
 }
 
 export type { AnalysisResults };
@@ -538,6 +554,7 @@ function createModelStore() {
     constraints: [],
     connectors: new Map(),
     localAxisConvention: 'zUpStrongAxis',
+    codeSettings: defaultCodeSettings(),
   });
 
   let lastKinematicResult = $state<KinematicResult | null>(null);
@@ -903,6 +920,9 @@ function createModelStore() {
         // Stamp the corrected local-axis convention on every snapshot/save so
         // models written from now on are self-describing.
         localAxisConvention: snap.localAxisConvention ?? 'zUpStrongAxis',
+        codeSettings: snap.codeSettings
+          ? (JSON.parse(JSON.stringify(snap.codeSettings)) as ProjectCodeSettings)
+          : defaultCodeSettings(),
       };
       if (snap.provenance) {
         result.provenance = {
@@ -1010,6 +1030,9 @@ function createModelStore() {
       // under the corrected convention (the only one). The "old model" note is
       // surfaced at the .ded boundary (file.ts), not here.
       model.localAxisConvention = s.localAxisConvention ?? 'zUpStrongAxis';
+      // Migration is deliberate, not a fallback: a project with no settings is stamped
+      // CIRSOC 201-2005, the edition its stored results were actually checked against.
+      model.codeSettings = migrateCodeSettings(s.codeSettings).settings;
     },
 
     /** Explicit user action: clear the CAD-draft "unreviewed" tag. */
@@ -1554,6 +1577,9 @@ function createModelStore() {
       model.quads = new Map();
       model.constraints = [];
       model.connectors = new Map();
+      // A new model is a new project: it adopts the edition in force, not whatever the
+      // previously open project happened to be designed to.
+      model.codeSettings = defaultCodeSettings();
       // Reset materials/sections to defaults
       model.materials = new Map([[1, { ...defaultMaterial }]]);
       model.sections = new Map([[1, { ...defaultSection }]]);
