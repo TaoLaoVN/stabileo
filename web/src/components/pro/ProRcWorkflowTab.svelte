@@ -14,28 +14,30 @@
    * which edition and which aggregate size a result belongs to.
    */
   import ProDesignTab from './ProDesignTab.svelte';
-  import CodeSettingsPanel from './design/CodeSettingsPanel.svelte';
+  import ProjectRegulationsPanel from './design/ProjectRegulationsPanel.svelte';
   import { t } from '../../lib/i18n/store.svelte';
-  import { modelStore } from '../../lib/store/model.svelte';
+  import { regulationsStore } from '../../lib/store/regulations.svelte';
 
-  /** An unstated aggregate size is an assumption the reviewer has to see. */
+  /**
+   * The header badge reflects anything the reviewer has to see without opening the panel:
+   * a pending regulation change, an incomplete configuration, or a stack problem.
+   */
   const needsAttention = $derived(
-    modelStore.model.codeSettings?.concrete.maxAggregateSizeMm === null ||
-    modelStore.model.codeSettings?.jurisdiction.basis === 'unstated',
+    regulationsStore.pending.length > 0 || regulationsStore.validation.problems.length > 0,
   );
 </script>
 
 <div class="rc-workflow">
   <details class="code-settings-disclosure" data-testid="code-settings-disclosure">
     <summary>
-      {t('codes.title')}
+      {t('regulations.title')}
       {#if needsAttention}
         <span class="attention" data-testid="code-settings-attention" aria-label={t('codes.provenance.assumed')}>
           {t('codes.provenance.assumed')}
         </span>
       {/if}
     </summary>
-    <CodeSettingsPanel />
+    <ProjectRegulationsPanel />
   </details>
   <ProDesignTab />
 </div>

@@ -1,3 +1,5 @@
+import type { StoredRegulations } from '../codes/roles';
+import type { RevisionVector } from '../codes/revisions';
 import type { ProjectCodeSettings } from '../codes/project-code-settings';
 // Undo/Redo history store using full model snapshots
 import { modelStore } from './model.svelte';
@@ -39,6 +41,10 @@ export interface ModelSnapshot {
   /** Jurisdiction, adopted regulation editions and concrete data. Absent on
    *  models saved before this existed — see migrateCodeSettings. */
   codeSettings?: ProjectCodeSettings;
+  /** Code-neutral regulation stack. */
+  regulations?: StoredRegulations;
+  /** Revision vector every downstream result is stamped against. */
+  revisions?: RevisionVector;
 }
 
 const MAX_HISTORY = 50;

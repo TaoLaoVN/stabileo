@@ -7,7 +7,8 @@ import es from '../locales/es';
  * back to English when a key is missing, so a missing Spanish key is invisible at
  * runtime and would ship as untranslated text in the app's primary UI language.
  */
-const PREFIXES = ['codes.', 'loads.cirsoc101.', 'loads.cirsoc102.'];
+const PREFIXES = ['codes.', 'loads.cirsoc101.', 'loads.cirsoc102.',
+  'regulations.', 'revisions.', 'loadPlan.', 'materials.', 'maturity.'];
 
 function keysWithPrefix(dict: Record<string, string>): string[] {
   return Object.keys(dict).filter((k) => PREFIXES.some((p) => k.startsWith(p))).sort();
@@ -19,7 +20,7 @@ describe('regulation and load-generation i18n', () => {
   });
 
   it('added a non-trivial number of keys', () => {
-    expect(keysWithPrefix(en).length).toBeGreaterThanOrEqual(60);
+    expect(keysWithPrefix(en).length).toBeGreaterThanOrEqual(140);
   });
 
   it('never leaves a value empty or equal to its key', () => {

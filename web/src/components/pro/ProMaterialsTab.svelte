@@ -1,6 +1,8 @@
 <script lang="ts">
   import { modelStore, uiStore } from '../../lib/store';
-  import { t } from '../../lib/i18n';
+  import { t, tp } from '../../lib/i18n';
+  import { regulationsStore } from '../../lib/store/regulations.svelte';
+  import { DAGG_MAX_MM, DAGG_MIN_MM } from '../../lib/codes/project-code-settings';
   import {
     MATERIAL_CATEGORIES, searchPresets,
     type MaterialPreset,
@@ -17,6 +19,7 @@
   let newNu = $state('');
   let newRho = $state('');
   let newFy = $state('');
+  let aggError = $state<string | null>(null);
 
   const materials = $derived([...modelStore.materials.values()]);
 
@@ -45,6 +48,30 @@
     });
     newName = ''; newE = ''; newNu = ''; newRho = ''; newFy = '';
     showCustom = false;
+  }
+
+  /**
+   * Set (or clear) the maximum nominal coarse-aggregate size.
+   *
+   * Changing it does NOT invalidate the analysis or the member design: it changes whether
+   * the bars fit, not what the section can carry. The revision graph records that as a
+   * `detailingSpec` change, so the solve and the verification survive.
+   */
+  function setAggregate(id: number, raw: string) {
+    aggError = null;
+    const trimmed = raw.trim();
+    if (trimmed === '') {
+      modelStore.updateMaterial(id, { maxAggregateSizeMm: null });
+      regulationsStore.noteChange('detailingSpec');
+      return;
+    }
+    const v = Number(trimmed.replace(',', '.'));
+    if (!Number.isFinite(v) || v < DAGG_MIN_MM || v > DAGG_MAX_MM) {
+      aggError = tp('materials.aggregateInvalid', { min: DAGG_MIN_MM, max: DAGG_MAX_MM });
+      return;
+    }
+    modelStore.updateMaterial(id, { maxAggregateSizeMm: v });
+    regulationsStore.noteChange('detailingSpec');
   }
 
   function removeMat(id: number) {
@@ -137,6 +164,7 @@
             <th>{t('field.poisson')}</th>
             <th>{t('field.density')}</th>
             <th>fy</th>
+            <th title={t('materials.aggregateHelp')}>{t('materials.aggregateShort')}</th>
             <th></th>
           </tr>
         </thead>
@@ -149,19 +177,39 @@
               <td class="col-num">{m.nu}</td>
               <td class="col-num">{m.rho}</td>
               <td class="col-num">{m.fy ?? '—'}</td>
+              <td class="col-num">
+                <!-- Maximum nominal coarse-aggregate size: a MIX property, so it lives on
+                     the material. Blank means "not stated", which the design surface then
+                     reports as an explicit assumption rather than a silent default. -->
+                <input
+                  class="agg-input" type="text" inputmode="decimal"
+                  data-testid={`mat-aggregate-${m.id}`}
+                  aria-label={t('materials.aggregate')}
+                  value={m.maxAggregateSizeMm ?? ''}
+                  placeholder={t('materials.aggregateNotStated')}
+                  onchange={(e) => setAggregate(m.id, e.currentTarget.value)}
+                />
+              </td>
               <td><button class="del-btn" onclick={() => removeMat(m.id)}>×</button></td>
             </tr>
           {/each}
           {#if materials.length === 0}
-            <tr><td colspan="7" class="no-results">{t('pro.noMaterials')}</td></tr>
+            <tr><td colspan="8" class="no-results">{t('pro.noMaterials')}</td></tr>
           {/if}
         </tbody>
       </table>
+      {#if aggError}
+        <p class="agg-error" role="alert" data-testid="mat-aggregate-error">{aggError}</p>
+      {/if}
+      <p class="agg-note">{t('materials.aggregateNote')}</p>
     </div>
   </div>
 </div>
 
 <style>
+  .agg-input { width: 4.5rem; padding: 0.1rem 0.25rem; text-align: right; }
+  .agg-error { margin: 0.35rem 0 0; padding: 0.3rem 0.5rem; border-radius: 4px; background: #7a1f1f; color: #ffe3e3; font-size: 0.8rem; }
+  .agg-note { margin: 0.35rem 0 0; font-size: 0.76rem; opacity: 0.75; line-height: 1.35; }
   .pro-mat {
     display: flex;
     flex-direction: column;

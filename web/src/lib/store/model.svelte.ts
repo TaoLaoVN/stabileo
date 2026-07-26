@@ -33,6 +33,20 @@ export interface Material {
   nu: number;
   rho: number; // kN/m³
   fy?: number; // MPa (yield stress for stress verification)
+  /**
+   * Maximum nominal coarse-aggregate size, mm, or null when the project has not stated it.
+   *
+   * This lives on the MATERIAL, not on the regulation settings. It is a property of the
+   * concrete mixture — CIRSOC 200 territory — and CIRSOC 201-2025 §25.2.1 merely consumes
+   * it inside the minimum clear-spacing rule. Having the regulation panel own it was a
+   * category error: it made the value look like a code choice rather than a mix design.
+   *
+   * `null` is meaningful and persisted: it is what keeps the fallback visible as an
+   * assumption on every subsequent open instead of baking 20 mm in permanently.
+   */
+  maxAggregateSizeMm?: number | null;
+  /** Placed by shotcrete, which caps d_agg at 13 mm (§26.4.2.1(a)(13)). */
+  shotcrete?: boolean;
 }
 
 export interface Section {
@@ -500,6 +514,15 @@ export interface StructureModel {
    * an explicit CIRSOC 201-2005 project rather than silently adopting the 2025 default.
    */
   codeSettings?: ProjectCodeSettings;
+  /**
+   * Code-neutral regulation stack: one adapter bound per role.
+   *
+   * Supersedes `codeSettings`, which was CIRSOC-specific. `codeSettings` is retained only
+   * so an older saved project can still be read and migrated; nothing writes it.
+   */
+  regulations?: StoredRegulations;
+  /** The revision vector every downstream result is stamped against. */
+  revisions?: RevisionVector;
 }
 
 export type { AnalysisResults };
