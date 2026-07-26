@@ -15,6 +15,8 @@
    */
   import ProDesignTab from './ProDesignTab.svelte';
   import ProjectRegulationsPanel from './design/ProjectRegulationsPanel.svelte';
+  import DetailingWorkflow from './design/DetailingWorkflow.svelte';
+  import { detailingStore } from '../../lib/store/detailing.svelte';
   import { t } from '../../lib/i18n/store.svelte';
   import { regulationsStore } from '../../lib/store/regulations.svelte';
 
@@ -39,14 +41,26 @@
     </summary>
     <ProjectRegulationsPanel />
   </details>
+  <details class="detailing-disclosure" data-testid="detailing-disclosure">
+    <summary>
+      {t('detailing.title')}
+      {#if detailingStore.assemblies.length > 0}
+        <span class="count" data-testid="detailing-count">{detailingStore.assemblies.length}</span>
+      {/if}
+    </summary>
+    <DetailingWorkflow />
+  </details>
   <ProDesignTab />
 </div>
 
 <style>
   .rc-workflow { display: flex; flex-direction: column; height: 100%; overflow: hidden; }
   .rc-workflow > :global(*:last-child) { flex: 1; overflow: hidden; }
-  .code-settings-disclosure { flex: 0 0 auto; border-bottom: 1px solid rgba(128, 128, 128, 0.3); }
+  .code-settings-disclosure,
+  .detailing-disclosure { flex: 0 0 auto; border-bottom: 1px solid rgba(128, 128, 128, 0.3); }
   .code-settings-disclosure[open] { max-height: 55vh; overflow: auto; }
+  .detailing-disclosure[open] { max-height: 70vh; overflow: auto; }
+  .count { font-size: 0.72rem; font-weight: 600; padding: 0.1rem 0.4rem; border-radius: 3px; background: rgba(128,128,128,0.3); }
   summary {
     cursor: pointer;
     padding: 0.45rem 1rem;
