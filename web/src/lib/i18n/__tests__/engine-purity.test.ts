@@ -63,7 +63,9 @@ function strippedSource(source: string): string {
   return source
     .replace(/\/\*[\s\S]*?\*\//g, '')
     .replace(/^\s*\/\/.*$/gm, '')
-    .replace(/clause\(\s*'[^']*'\s*,\s*'[^']*'\s*,\s*'[^']*'[^)]*\)/g, 'clause()')
+    // Tolerant of non-literal arguments: `clause('cirsoc-201', edition, 'Tabla 25.3.1', …)`
+    // passes the edition as a variable, which a literals-only pattern would miss.
+    .replace(/clause\((?:[^()']|'(?:[^'\\]|\\.)*')*\)/g, 'clause()')
     .replace(/^\s*(?:title|instrument|published):\s*'(?:[^'\\]|\\.)*',?$/gm, '')
     .replace(/throw new Error\(\s*(?:'(?:[^'\\]|\\.)*'|`(?:[^`\\]|\\.)*`)(?:\s*\+\s*(?:'(?:[^'\\]|\\.)*'|`(?:[^`\\]|\\.)*`))*\s*,?\s*\)/g, 'throw new Error()');
 }
