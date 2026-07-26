@@ -191,7 +191,7 @@ export function repairConflicts(
   bars: readonly BarPath[],
   requiredClearFor: (a: BarPath, b: BarPath) => number,
   tolerances: CollisionTolerances = DEFAULT_TOLERANCES,
-  classifyFor?: (a: BarPath, b: BarPath, overlapping: boolean) => PairClassification,
+  classifyFor?: (a: BarPath, b: BarPath, surfaceClearance: number) => PairClassification,
 ): RepairResult {
   const attempts: RepairAttempt[] = [];
   const trace: string[] = [];
@@ -470,8 +470,8 @@ export function coordinateFloor(input: FloorCoordinationInput): FloorCoordinatio
     memberKindOf: input.memberKindOf ?? (() => undefined),
     layerOf: input.layerOf,
   };
-  const classifyFor = (a: BarPath, b: BarPath, overlapping: boolean) =>
-    classifyPair(a, b, classificationContext, overlapping);
+  const classifyFor = (a: BarPath, b: BarPath, surfaceClearance: number) =>
+    classifyPair(a, b, classificationContext, surfaceClearance);
 
   const repair = repairConflicts(
     layered.bars, requiredClearFor, input.tolerances, classifyFor);

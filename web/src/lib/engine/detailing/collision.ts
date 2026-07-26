@@ -237,7 +237,9 @@ export function detectCollisions(
    * REPLACES `requiredClearFor` and can also declare a pair not reportable at all —
    * required containment and orthogonal crossings are relationships, not defects.
    */
-  classifyFor?: (a: BarPath, b: BarPath, overlapping: boolean) => PairClassification,
+  classifyFor?: (
+    a: BarPath, b: BarPath, surfaceClearance: number,
+  ) => PairClassification,
 ): CollisionResult {
   const raw = bars.map((path) => samplePath(path));
   const maxRadius = bars.reduce((m, b) => Math.max(m, b.diameterMm / 2000), 0);
@@ -276,23 +278,28 @@ export function detectCollisions(
 
     for (const j of candidates) {
       const b = sampled[j];
-      let worst: { clearance: number; at: Point3 } | null = null;
+      let worst: { clearance: number; at: Point3; surface: number } | null = null;
 
       for (let m = 0; m + 1 < a.points.length; m++) {
         for (let n = 0; n + 1 < b.points.length; n++) {
           narrowPhaseTests++;
           const { distance, at } = segmentDistance(
             a.points[m], a.points[m + 1], b.points[n], b.points[n + 1]);
-          // Surface to surface, less the placement tolerance.
-          const clearance = distance - a.radius - b.radius - tolerances.placement;
-          if (worst === null || clearance < worst.clearance) worst = { clearance, at };
+          // `surface` is the true geometry; `clearance` also carries the placement
+          // tolerance. The classifier must see only the former — a tolerance allowance is
+          // not interpenetration, and treating it as one turns every tie point into a clash.
+          const surface = distance - a.radius - b.radius;
+          const clearance = surface - tolerances.placement;
+          if (worst === null || clearance < worst.clearance) {
+            worst = { clearance, at, surface };
+          }
         }
       }
       if (worst === null) continue;
 
       // Classify BEFORE judging. The class decides the rule and whether a shortfall is a
       // defect at all; a tie around its own longitudinals is not a clash.
-      const cls = classifyFor?.(a.path, b.path, worst.clearance < 0);
+      const cls = classifyFor?.(a.path, b.path, worst.surface);
       if (cls && !cls.reportable) continue;
       const required = cls
         ? cls.requiredClear

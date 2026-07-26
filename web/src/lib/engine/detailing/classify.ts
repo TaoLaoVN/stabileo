@@ -144,24 +144,35 @@ function spacingFor(
 }
 
 /**
+ * Bars that are MEANT to touch may touch.
+ *
+ * A tie around its longitudinals and a slab mat's crossing bars are in contact by design,
+ * so their surface distance is about zero. Only a real interpenetration — centrelines
+ * driven into each other, as when a beam bar runs straight through a column bar — is a
+ * defect. This is the depth past contact at which that becomes true.
+ */
+export const CONTACT_ALLOWANCE = 0.002;
+
+/**
  * Classify one pair.
  *
- * `overlapping` is supplied by the caller because only the collision pass knows the
- * measured surface-to-surface distance; a negative distance is interpenetration and
- * outranks every other class.
+ * `surfaceClearance` is the measured surface-to-surface distance WITHOUT any placement
+ * tolerance, in metres. Negative means the surfaces interpenetrate.
+ *
+ * ── Order matters ──────────────────────────────────────────────────
+ *
+ * The contact relationships are tested BEFORE interpenetration, not after. Checking
+ * "do they overlap?" first classifies every tie point and every slab-mat crossing as a
+ * prohibited overlap, because bars that are tied together do touch — that is what tying
+ * means. A whole floor of orthogonal slab mat reported as eleven thousand impossibilities
+ * is what that ordering produces.
  */
 export function classifyPair(
-  a: BarPath, b: BarPath, ctx: ClassificationContext, overlapping: boolean,
+  a: BarPath, b: BarPath, ctx: ClassificationContext, surfaceClearance: number,
 ): PairClassification {
-  // 1. Physical interpenetration. No rule makes this acceptable.
-  if (overlapping) {
-    return {
-      pairClass: 'prohibitedOverlap', requiredClear: 0, reportable: true, refs: [],
-      labelKey: 'detailing.pairClass.prohibitedOverlap',
-    };
-  }
+  const interpenetrates = surfaceClearance < -CONTACT_ALLOWANCE;
 
-  // 2. A tie or stirrup around the bars it confines is doing its job.
+  // 1. A tie or stirrup around the bars it confines is doing its job. It touches them.
   const oneTransverse = a.role === 'transverse' || b.role === 'transverse';
   const bothTransverse = a.role === 'transverse' && b.role === 'transverse';
   if (oneTransverse && !bothTransverse && sharesMember(a, b)) {
@@ -171,15 +182,29 @@ export function classifyPair(
     };
   }
 
-  // 3. Crossing bars are tied in contact; clear spacing governs bars running alongside.
+  // 2. Crossing bars are tied in contact. Clear spacing governs bars running ALONGSIDE
+  //    each other; for a crossing the only question is whether they interpenetrate.
   if (parallelism(a, b) < PARALLEL_THRESHOLD) {
     return {
-      pairClass: 'orthogonalCrossing', requiredClear: 0, reportable: false, refs: [],
-      labelKey: 'detailing.pairClass.orthogonalCrossing',
+      pairClass: interpenetrates ? 'prohibitedOverlap' : 'orthogonalCrossing',
+      requiredClear: 0,
+      reportable: interpenetrates,
+      refs: [],
+      labelKey: interpenetrates
+        ? 'detailing.pairClass.prohibitedOverlap'
+        : 'detailing.pairClass.orthogonalCrossing',
     };
   }
 
-  // 4. Parallel. Same face and different layers is the §25.2.2 case.
+  // 3. Parallel bars that interpenetrate. No rule makes this acceptable.
+  if (interpenetrates) {
+    return {
+      pairClass: 'prohibitedOverlap', requiredClear: 0, reportable: true, refs: [],
+      labelKey: 'detailing.pairClass.prohibitedOverlap',
+    };
+  }
+
+  // 4. Parallel and clear of each other. Same face, different layers is §25.2.2.
   const la = ctx.layerOf?.(a.id);
   const lb = ctx.layerOf?.(b.id);
   if (sharesMember(a, b) && la !== undefined && lb !== undefined && la !== lb) {
