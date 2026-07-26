@@ -43,8 +43,12 @@ import {
   generateBeamBars, type BentUpPolicy, type MomentStation, type SupportKind,
 } from './generate-beam';
 import { generateColumnStack, type ColumnLift, type IncidentBeamAtJoint } from './generate-column';
-import { freeChannels, placeInChannels } from './joint-packing';
-import { minClearSpacingColumn, minClearSpacingInLayer } from '../../codes/cirsoc201/spacing';
+import { generateLayoutCandidates, type KeepOut } from './candidates';
+import {
+  coordinate, type CoordinationResult, type JointConstraint, type MemberVariable,
+} from './coordination-search';
+import { DEFAULT_TOLERANCES } from './collision';
+import { minClearSpacingColumn } from '../../codes/cirsoc201/spacing';
 import { coordinateFloor, type FloorCoordinationResult, type JointInput, type MemberBars } from './coordinate-floor';
 import type { DetailingAssembly } from './assembly';
 import { deriveMaturity } from '../../codes/maturity';
@@ -276,6 +280,14 @@ export interface RunDetailingResult {
   coordination: FloorCoordinationResult[];
   /** Members skipped, with the reason, so nothing disappears silently. */
   skipped: Array<{ elementId: number; key: string }>;
+  /**
+   * The global layout search: outcome, statistics and infeasible joints.
+   *
+   * Reported rather than folded into a pass/fail, because "no assignment exists"
+   * (DETAILING_INADEQUATE) and "we ran out of budget" (SEARCH_EXHAUSTED) demand different
+   * responses from the engineer and must never be conflated.
+   */
+  layoutSearch: CoordinationResult;
 }
 
 /**
@@ -290,7 +302,19 @@ export function runDetailing(input: RunDetailingInput): RunDetailingResult {
   const readiness = detailingReadiness(input);
   const skipped: Array<{ elementId: number; key: string }> = [];
   if (!readiness.ready) {
-    return { assemblies: [], readiness, coordination: [], skipped };
+    return {
+      assemblies: [], readiness, coordination: [], skipped,
+      layoutSearch: {
+        outcome: 'COORDINATED', envelope: 'beamLayoutsOnly',
+        assignment: new Map(), infeasibleJoints: [],
+        emptiedDomains: [],
+        stats: {
+          candidatesGenerated: 0, domainsRemovedByPropagation: 0, dpStates: 0,
+          dpTransitions: 0, branchNodes: 0, compatibilityChecks: 0,
+          compatibilityCacheHits: 0, truncated: false,
+        },
+      },
+    };
   }
 
   const detailable = new Set(readiness.detailable);
@@ -439,62 +463,125 @@ export function runDetailing(input: RunDetailingInput): RunDetailingResult {
   }
 
   /**
-   * Transverse positions a beam's bars may occupy, threaded past the column bars at BOTH
-   * of its ends.
+   * Choose every beam's transverse arrangement GLOBALLY, before any bar is generated.
    *
-   * Both ends together, and once: a straight bar moved sideways to clear one column moves
-   * at the other end too, so resolving each joint separately just undoes the previous one.
-   * The keep-outs from the two end cages are unioned and the bars placed in what is left.
+   * Two per-joint heuristics were built and measured before this and both made the
+   * flagship worse, for the same structural reason: a beam spans two joints, so its
+   * transverse position is one decision that has to hold at both ends, and fixing one end
+   * at a time makes each fix undo the last.
    *
-   * NOT CURRENTLY WIRED. Measured on the 408-member flagship it made the result WORSE:
-   * overlaps 409 -> 461, because packing bars into the free channels clusters them, and
-   * the clustering costs more in bar-to-bar clearance than it buys in column clearance.
-   * The primitives are right and tested; the objective is not. Threading needs to choose
-   * positions that minimise TOTAL conflict, not merely avoid the column bars, and that is
-   * the search this function does not yet do. Left in place, unused and documented,
-   * rather than shipped as an improvement it is not.
+   * So the decision is taken once, for every beam at once, by the coordination search:
+   * each beam gets a domain of complete legal layouts, each joint contributes the column
+   * cage its beams must thread past, and the search finds an assignment satisfying all of
+   * them together — or reports which of the four honest outcomes applies.
    */
-  function threadingSlots(
-    elementId: number, count: number, diameterMm: number,
-  ): number[] | undefined {
-    const el = input.elements.get(elementId);
-    const ctx = input.contexts.get(elementId);
-    if (!el || !ctx || count === 0) return undefined;
-    const nI = input.nodes.get(el.nodeI);
-    const nJ = input.nodes.get(el.nodeJ);
-    if (!nI || !nJ) return undefined;
+  function coordinateBeamLayouts(): {
+    slots: Map<number, number[]>;
+    result: CoordinationResult;
+  } {
+    const placement = DEFAULT_TOLERANCES.placement;
+    const members: MemberVariable[] = [];
+    const perBeam = new Map<number, { dia: number; count: number; t: { x: number; y: number } }>();
 
-    const dx = nJ.x - nI.x, dy = nJ.y - nI.y;
-    const L = Math.hypot(dx, dy) || 1;
-    // MUST match `transverseAxis(axis, up)` in the generator, which is axis × up. The
-    // opposite handedness mirrors every slot onto the obstacle it was meant to avoid.
-    const t = { x: dy / L, y: -dx / L };
+    for (const id of beams) {
+      const ctx = input.contexts.get(id);
+      const el = input.elements.get(id);
+      const accepted = input.outcomes.get(id)?.accepted;
+      const groups = accepted ? beamGroups(accepted) : null;
+      if (!ctx || !el || !groups) continue;
+      const nI = input.nodes.get(el.nodeI);
+      const nJ = input.nodes.get(el.nodeJ);
+      if (!nI || !nJ) continue;
 
-    const cover = ctx.material.cover;
-    const tie = ctx.material.stirrupDia / 1000;
-    const beamHalf = Math.max(0, ctx.section.b / 2 - cover - tie);
-    if (beamHalf <= 0) return undefined;
+      const dx = nJ.x - nI.x, dy = nJ.y - nI.y;
+      const L = Math.hypot(dx, dy) || 1;
+      // Must match `transverseAxis(axis, up)` in the generator, which is axis × up.
+      const t = { x: dy / L, y: -dx / L };
 
-    const colSpacing = minClearSpacingColumn(input.edition, {
-      barDiameterMm: diameterMm, maxAggregateSizeMm: input.maxAggregateSizeMm,
-    });
-    const obstacles: Array<{ at: number; halfKeepOut: number }> = [];
-    for (const n of [nI, nJ]) {
-      for (const c of columnBarsNear(n)) {
-        obstacles.push({
-          at: (c.x - n.x) * t.x + (c.y - n.y) * t.y,
-          halfKeepOut: c.diameterMm / 2000 + colSpacing.minClear / 2,
-        });
+      // The widest group governs: one arrangement serves the whole member.
+      const count = Math.max(groups.bottom.count, groups.topStart.count, groups.topEnd.count);
+      const dia = Math.max(
+        groups.bottom.diameterMm, groups.topStart.diameterMm, groups.topEnd.diameterMm);
+      const clearWidth = Math.max(0.02,
+        ctx.section.b - 2 * (ctx.material.cover + ctx.material.stirrupDia / 1000));
+
+      const lockedAcross = (input.lockedBars ?? [])
+        .filter((b) => b.ownerElementIds.includes(id))
+        .map((b) => {
+          const p = b.segments[0]?.start;
+          if (!p) return null;
+          return (p.x - nI.x) * t.x + (p.y - nI.y) * t.y;
+        })
+        .filter((x): x is number => x !== null);
+
+      const domain = generateLayoutCandidates({
+        count, diameterMm: dia, clearWidth, edition: input.edition,
+        maxAggregateSizeMm: input.maxAggregateSizeMm, memberKind: 'beam',
+        placementTolerance: placement,
+        lockedAcross: lockedAcross.length > 0 ? lockedAcross : undefined,
+      });
+      if (domain.length === 0) continue;
+
+      perBeam.set(id, { dia, count, t });
+      members.push({ elementId: id, domain, diameterMm: dia, neighbours: [] });
+    }
+
+    // Joints: one per node where beams meet, carrying the column cage as keep-outs.
+    const byNode = new Map<number, number[]>();
+    for (const id of perBeam.keys()) {
+      const el = input.elements.get(id)!;
+      for (const nid of [el.nodeI, el.nodeJ]) {
+        byNode.set(nid, [...(byNode.get(nid) ?? []), id]);
       }
     }
-    if (obstacles.length === 0) return undefined;
 
-    const channels = freeChannels(beamHalf, obstacles);
-    const beamSpacing = minClearSpacingInLayer(input.edition, {
-      barDiameterMm: diameterMm, maxAggregateSizeMm: input.maxAggregateSizeMm,
-    });
-    return placeInChannels(channels, count, diameterMm, beamSpacing.minClear) ?? undefined;
+    const joints: JointConstraint[] = [];
+    for (const [nodeId, ids] of [...byNode.entries()].sort((a, b) => a[0] - b[0])) {
+      const n = input.nodes.get(nodeId);
+      if (!n) continue;
+      const cage = columnBarsNear(n);
+      if (cage.length === 0 && ids.length < 2) continue;
+
+      const keepOutsFor = new Map<number, KeepOut[]>();
+      for (const id of ids) {
+        const info = perBeam.get(id)!;
+        // A beam bar CROSSES a column bar; it does not run alongside it. §25.2.3 governs
+        // the spacing between a column's own longitudinals, and the classifier that judges
+        // the finished cage requires zero clear distance for a crossing — crossing bars are
+        // tied in contact. Demanding 40 mm here made the search stricter than the check it
+        // feeds, and declared infeasible what the checker would have passed.
+        //
+        // What a crossing genuinely needs is not to INTERPENETRATE, with the placement
+        // tolerance as the guard.
+        keepOutsFor.set(id, cage.map((c) => ({
+          at: (c.x - n.x) * info.t.x + (c.y - n.y) * info.t.y,
+          halfWidth: c.diameterMm / 2000 + placement,
+        })));
+      }
+      joints.push({
+        jointId: `n${nodeId}`,
+        elementIds: [...ids].sort((a, b) => a - b),
+        keepOutsFor,
+        relation: (a, b) => {
+          const ta = perBeam.get(a)?.t;
+          const tb = perBeam.get(b)?.t;
+          if (!ta || !tb) return 'independent';
+          // Same plan axis: the two beams continue through this support as one run, so
+          // their bars must line up. Different axis: the layer allocation stacks them.
+          return Math.abs(ta.x * tb.x + ta.y * tb.y) > 0.7 ? 'collinear' : 'crossing';
+        },
+      });
+    }
+
+    const result = coordinate({ members, joints });
+    const slots = new Map<number, number[]>();
+    for (const [id, layout] of result.assignment) {
+      slots.set(id, layout.slots.map((sl) => sl.across));
+    }
+    return { slots, result };
   }
+
+  const layoutChoice = coordinateBeamLayouts();
 
   // ── Beams ──
   for (const id of beams) {
@@ -536,6 +623,7 @@ export function runDetailing(input: RunDetailingInput): RunDetailingResult {
       origin: nodePoint(nI),
       axis: unit(nodePoint(nI), nodePoint(nJ)),
       up: { x: 0, y: 0, z: 1 },
+      transverseSlots: layoutChoice.slots.get(id),
       bentUp: input.bentUp ?? { seismicDesign: 'unstated', optOut: false },
     } as never);
 
@@ -654,7 +742,10 @@ export function runDetailing(input: RunDetailingInput): RunDetailingResult {
     coordination.push(result);
   }
 
-  return { assemblies, readiness, coordination, skipped };
+  return {
+    assemblies, readiness, coordination, skipped,
+    layoutSearch: layoutChoice.result,
+  };
 }
 
 /** Beam-column joints at one level, with the incident beams in plan. */
