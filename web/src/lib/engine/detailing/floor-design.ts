@@ -325,7 +325,14 @@ export function buildFloorAssembly(input: FloorAssemblyInput): FloorAssemblyResu
   const placementFor = (a: BarPath, b: BarPath) =>
     isParallel(a, b) ? (input.tolerances?.placement ?? DEFAULT_TOLERANCES.placement) : 0;
 
-  const collision = detectCollisions(bars, input.tolerances, requiredClearFor, placementFor);
+  // `classifyFor` is left undefined here on purpose: this floor pass already expresses the
+  // same physics through `requiredClearFor` (zero clear distance for a crossing) and
+  // `placementFor` (no placement error between bars that are tied). Passing `placementFor`
+  // positionally into the classifier slot — which is what happened when the classifier was
+  // added ahead of it — makes every pair return a number where a classification is
+  // expected, and the whole check silently inverts.
+  const collision = detectCollisions(
+    bars, input.tolerances, requiredClearFor, undefined, placementFor);
   const conflicts: BarConflict[] = collision.conflicts;
   trace.push(
     `Verificación de interferencias sobre ${bars.length} barra(s): ` +
