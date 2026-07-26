@@ -8,29 +8,27 @@ Path template (see `playwright.config.ts`):
 
 | Platform | `overlay-legend.png` | `batch-dialog.png` | Notes |
 |---|---|---|---|
-| `darwin/` | ✅ committed | ✅ committed | Generated on the authoring machine. **Local development only** — CI never reads these. |
-| `linux/`  | ⏳ pending | ⏳ pending | See below. |
+| `linux/`  | ✅ 699 × 28  | ✅ 900 × 386 | **Authoritative — this is what CI compares against.** Generated on `ubuntu-latest` with the pinned Chromium + SwiftShader. |
+| `darwin/` | ✅ 696 × 34  | ✅ 900 × 392 | Local macOS development only. CI never reads these. |
 
-## Why the Linux baselines are not committed yet
+The two platforms produce different image heights because font rasterisation differs;
+that is exactly why a Darwin image may never be renamed into `linux/`.
 
-They must be produced in a real Linux Playwright/Chromium/SwiftShader environment.
-The authoring machine is macOS (Darwin 24.6.0, arm64) with **no container or VM
-runtime available** — `docker`, `podman`, `nerdctl`, `lima`, `colima`, `vagrant`,
-`multipass` and `qemu` are all absent, and installing one is an environment change
-outside this change's scope.
+## How the Linux baselines were produced
 
-The Darwin images were deliberately **not** copied or renamed into `linux/`: a
-cross-platform-renamed PNG is a fabricated baseline and would compare against
-different font rendering and rasterisation.
+They could not be generated on the authoring machine (macOS arm64, no container or VM
+runtime available). Instead the CI `e2e` job generated them:
 
-## How to land them
+1. The `run-e2e` label was added to the pull request, which enables the slow suite and
+   the visual-baseline step.
+2. That step runs `npx playwright test --grep "visual baselines" --update-snapshots`,
+   writing `e2e/__screenshots__/linux/`.
+3. The step uploads them as the `linux-screenshot-baselines` artifact.
+4. The artifact was downloaded, both images were inspected, and they were committed
+   here unmodified.
 
-The CI `e2e` job runs the visual spec with `--update-snapshots`, writes
-`e2e/__screenshots__/linux/*.png`, and uploads them as the
-`linux-screenshot-baselines` artifact. Download that artifact from the first run and
-commit its two files here.
-
-Alternatively, reproduce locally with the official pinned container:
+To regenerate after an intentional UI change, either add the `run-e2e` label and let CI
+rewrite them, or reproduce locally with the pinned container:
 
 ```sh
 docker run --rm -it -v "$PWD":/w -w /w/web \
@@ -39,6 +37,10 @@ docker run --rm -it -v "$PWD":/w -w /w/web \
          npx playwright test --grep "visual baselines" --update-snapshots'
 ```
 
+## Blocking policy
+
 Both comparisons use `expect.soft(...)` and the CI step is `continue-on-error`, so a
-missing or mismatched baseline is informational and never fails the job. The DOM,
-store-hook and functional browser assertions remain blocking.
+pixel mismatch is **informational and never fails the job** on this first landing.
+Promote them to blocking once they have proven stable across a few runs.
+
+The DOM, store-hook and functional browser assertions are and remain **blocking**.
