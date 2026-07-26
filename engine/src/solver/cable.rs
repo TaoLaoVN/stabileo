@@ -288,8 +288,6 @@ pub fn solve_cable_2d(
     }
 
     // Build results
-    let displacements = linear::build_displacements_2d(&dof_num, &u_full);
-
     let nr = n - nf;
     let rest_idx: Vec<usize> = (nf..n).collect();
     let free_idx: Vec<usize> = (0..nf).collect();
@@ -302,16 +300,29 @@ pub fn solve_cable_2d(
         reactions_vec[i] = k_rf_uf[i] - f_r[i];
     }
 
-    let mut reactions = linear::build_reactions_2d(input, &dof_num, &reactions_vec, &f_r, nf, &u_full);
+    // Reverse inclined transforms on displacements before building results —
+    // mirrors linear::solve_2d so cable analysis reports reactions and
+    // displacements in GLOBAL axes (reactions_vec/f_r stay in the rotated
+    // frame; only u_full is reversed).
+    for it in &base_asm.inclined_transforms_2d {
+        assembly::reverse_inclined_transform_2d(&mut u_full, &it.dofs, &it.r);
+    }
+
+    let displacements = linear::build_displacements_2d(&dof_num, &u_full);
+    let mut reactions = linear::build_reactions_2d_inclined(
+        input, &dof_num, &reactions_vec, &f_r, nf, &u_full, &base_asm.inclined_transforms_2d,
+    );
     reactions.sort_by_key(|r| r.node_id);
 
     let mut element_forces = linear::compute_internal_forces_2d(input, &dof_num, &u_full);
     element_forces.sort_by_key(|ef| ef.element_id);
 
-    // Compute constraint forces if constraints are active
+    // Compute constraint forces if constraints are active. Uses u_f/base_asm.f
+    // (pre-reversal, rotated-frame convention) — u_full has already been
+    // reversed above for reporting, so it can no longer be sliced here.
     let constraint_forces = if let Some(ref fcs) = cs {
         let k_ff = extract_submatrix(&base_asm.k, n, &free_idx, &free_idx);
-        let raw = fcs.compute_constraint_forces(&k_ff, &u_full[..nf], &base_asm.f[..nf]);
+        let raw = fcs.compute_constraint_forces(&k_ff, &u_f, &base_asm.f[..nf]);
         super::constraints::map_dof_forces_to_constraint_forces(&raw, &dof_num)
     } else {
         vec![]
@@ -537,8 +548,6 @@ pub fn solve_cable_3d(
         }
     }
 
-    let displacements = linear::build_displacements_3d(&dof_num, &u_full);
-
     let nr = n - nf;
     let rest_idx: Vec<usize> = (nf..n).collect();
     let free_idx: Vec<usize> = (0..nf).collect();
@@ -551,16 +560,27 @@ pub fn solve_cable_3d(
         reactions_vec[i] = k_rf_uf[i] - f_r[i];
     }
 
-    let mut reactions = linear::build_reactions_3d(input, &dof_num, &reactions_vec, &f_r, nf, &u_full);
+    // Reverse inclined transforms on displacements before building results —
+    // mirrors linear::solve_3d so cable analysis reports reactions and
+    // displacements in GLOBAL axes.
+    for it in &base_asm.inclined_transforms {
+        assembly::reverse_inclined_transform(&mut u_full, &it.dofs, &it.r);
+    }
+
+    let displacements = linear::build_displacements_3d(&dof_num, &u_full);
+    let mut reactions = linear::build_reactions_3d_inclined(
+        input, &dof_num, &reactions_vec, &f_r, nf, &u_full, &base_asm.inclined_transforms,
+    );
     reactions.sort_by_key(|r| r.node_id);
 
     let mut element_forces = linear::compute_internal_forces_3d(input, &dof_num, &u_full);
     element_forces.sort_by_key(|ef| ef.element_id);
 
-    // Compute constraint forces if constraints are active
+    // Compute constraint forces if constraints are active. Uses u_f/base_asm.f
+    // (pre-reversal, rotated-frame convention) — see 2D solve_cable for why.
     let constraint_forces = if let Some(ref fcs) = cs {
         let k_ff = extract_submatrix(&base_asm.k, n, &free_idx, &free_idx);
-        let raw = fcs.compute_constraint_forces(&k_ff, &u_full[..nf], &base_asm.f[..nf]);
+        let raw = fcs.compute_constraint_forces(&k_ff, &u_f, &base_asm.f[..nf]);
         super::constraints::map_dof_forces_to_constraint_forces(&raw, &dof_num)
     } else {
         vec![]

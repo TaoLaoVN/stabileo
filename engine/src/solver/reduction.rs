@@ -276,10 +276,6 @@ pub fn guyan_reduce_2d(input: &GuyanInput) -> Result<GuyanResult, String> {
     let mut u_full = vec![0.0; n];
     for i in 0..nf { u_full[i] = u_f[i]; }
 
-    // Build results
-    let displacements = super::linear::build_displacements_2d(&dof_num, &u_full);
-    let element_forces = super::linear::compute_internal_forces_2d(&input.solver, &dof_num, &u_full);
-
     // Compute reactions: R = K_rf * u_f + K_rr * u_r - F_r
     let nr = n - nf;
     let free_idx2: Vec<usize> = (0..nf).collect();
@@ -294,8 +290,19 @@ pub fn guyan_reduce_2d(input: &GuyanInput) -> Result<GuyanResult, String> {
     for i in 0..nr {
         reactions_vec[i] = k_rf_uf[i] + k_rr_ur[i] - f_r[i];
     }
-    let reactions = super::linear::build_reactions_2d(
-        &input.solver, &dof_num, &reactions_vec, &f_r, nf, &u_full,
+
+    // Reverse inclined transforms on displacements before building results —
+    // mirrors linear::solve_2d so Guyan reduction reports reactions and
+    // displacements in GLOBAL axes.
+    for it in &asm.inclined_transforms_2d {
+        assembly::reverse_inclined_transform_2d(&mut u_full, &it.dofs, &it.r);
+    }
+
+    // Build results
+    let displacements = super::linear::build_displacements_2d(&dof_num, &u_full);
+    let element_forces = super::linear::compute_internal_forces_2d(&input.solver, &dof_num, &u_full);
+    let reactions = super::linear::build_reactions_2d_inclined(
+        &input.solver, &dof_num, &reactions_vec, &f_r, nf, &u_full, &asm.inclined_transforms_2d,
     );
 
     Ok(GuyanResult {
@@ -724,9 +731,6 @@ pub fn guyan_reduce_3d(input: &GuyanInput3D) -> Result<GuyanResult3D, String> {
     let mut u_full = vec![0.0; n];
     for i in 0..nf { u_full[i] = u_f[i]; }
 
-    // Build 3D results
-    let displacements = super::linear::build_displacements_3d(&dof_num, &u_full);
-
     // Compute reactions: R = K_rf * u_f - F_r
     let sasm_full = assembly::assemble_sparse_3d(&input.solver, &dof_num, true);
     let nr = n - nf;
@@ -741,8 +745,15 @@ pub fn guyan_reduce_3d(input: &GuyanInput3D) -> Result<GuyanResult3D, String> {
             for i in 0..nr {
                 reactions_vec[i] = k_rf_uf[i] - f_r[i];
             }
-            super::linear::build_reactions_3d(
-                &input.solver, &dof_num, &reactions_vec, &f_r, nf, &u_full,
+
+            // Reverse inclined transforms on displacements before building
+            // results — mirrors linear::solve_3d.
+            for it in &sasm_full.inclined_transforms {
+                assembly::reverse_inclined_transform(&mut u_full, &it.dofs, &it.r);
+            }
+
+            super::linear::build_reactions_3d_inclined(
+                &input.solver, &dof_num, &reactions_vec, &f_r, nf, &u_full, &sasm_full.inclined_transforms,
             )
         } else {
             vec![]
@@ -750,6 +761,9 @@ pub fn guyan_reduce_3d(input: &GuyanInput3D) -> Result<GuyanResult3D, String> {
     } else {
         vec![]
     };
+
+    // Build 3D results
+    let displacements = super::linear::build_displacements_3d(&dof_num, &u_full);
 
     Ok(GuyanResult3D {
         k_condensed,

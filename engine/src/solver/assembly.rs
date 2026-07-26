@@ -56,7 +56,12 @@ pub fn inclined_rotation_matrix_2d(theta: f64) -> [[f64; 2]; 2] {
 
 /// Apply 2D inclined support rotation to K and F at the given translational DOFs.
 /// Rotates rows/columns of K and entries of F using 2×2 R.
-fn apply_inclined_transform_2d(k: &mut [f64], f: &mut [f64], n: usize,
+///
+/// `pub(crate)`: also called by corotational.rs and material_nonlinear.rs,
+/// whose tangent-stiffness assembly is hand-rolled per NR iteration (not
+/// routed through assemble_2d), so they must apply the same rotation
+/// themselves to stay consistent with the reference load vector.
+pub(crate) fn apply_inclined_transform_2d(k: &mut [f64], f: &mut [f64], n: usize,
                                dofs: &[usize; 2], r: &[[f64; 2]; 2]) {
     // Rotate columns: for each row i, K[i, dofs] = K[i, dofs_orig] * R^T
     for i in 0..n {
@@ -140,7 +145,10 @@ pub fn inclined_rotation_matrix(nx: f64, ny: f64, nz: f64) -> [[f64; 3]; 3] {
 
 /// Apply inclined support rotation to K and F at the given translational DOFs.
 /// Rotates rows/columns of K and entries of F using R.
-fn apply_inclined_transform(k: &mut [f64], f: &mut [f64], n: usize,
+///
+/// `pub(crate)`: also called by corotational.rs and material_nonlinear.rs
+/// 3D paths — see the 2D twin's doc comment for why.
+pub(crate) fn apply_inclined_transform(k: &mut [f64], f: &mut [f64], n: usize,
                             dofs: &[usize; 3], r: &[[f64; 3]; 3]) {
     // Rotate columns: for each row i, K[i, dofs] = K[i, dofs_orig] * R^T
     for i in 0..n {
