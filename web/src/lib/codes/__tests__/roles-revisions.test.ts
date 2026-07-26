@@ -1,7 +1,10 @@
 import { describe, it, expect } from 'vitest';
+import { teAt } from '../../i18n/engine-text';
+import { shippedLocales } from '../../i18n/store.svelte';
 import {
   DESIGN_ONLY_ROLES, LOAD_AFFECTING_ROLES, REGULATION_ROLES, ROLE_CATALOG,
-  bindRole, defaultRegulations, findOption, isLoadAffecting, migrateRegulations,
+  bindRole, bindingLabel, defaultRegulations, isLoadAffecting, migrateRegulations,
+  optionLabel,
   optionsForRole, pendingRequiresLoadRegeneration, pendingRoles, regulationStamps,
   roleUsable, unsetBinding, validateStack, type ProjectRegulations,
 } from '../roles';
@@ -13,30 +16,36 @@ import {
 // ─── Catalogue ───────────────────────────────────────────────────
 
 describe('regulation catalogue', () => {
-  it('has no duplicate display name within a role — the shipped defect', () => {
+  it('has no duplicate rendered label within a role, in ANY shipped locale', () => {
     // Both CIRSOC 201 adapters were labelled "CIRSOC 201" and a user could not tell them
-    // apart. The module asserts this at import; this test states the requirement.
-    for (const role of REGULATION_ROLES) {
-      const names = optionsForRole(role).map((o) => o.displayName);
-      expect(new Set(names).size, `role ${role}`).toBe(names.length);
+    // apart. Asserting on the RENDERED label in every locale is the real requirement:
+    // uniqueness of the key pair would not catch a translation that dropped {edition}.
+    for (const locale of shippedLocales()) {
+      for (const role of REGULATION_ROLES) {
+        const labels = optionsForRole(role).map((o) => teAt(optionLabel(o), locale));
+        expect(new Set(labels).size, `role ${role} in ${locale}: ${labels.join(' | ')}`)
+          .toBe(labels.length);
+      }
     }
   });
 
   it('names both concrete editions distinctly, with the edition in the label', () => {
-    const names = optionsForRole('concrete').map((o) => o.displayName);
-    expect(names).toContain('CIRSOC 201 (2025)');
-    expect(names).toContain('CIRSOC 201 (2005)');
+    for (const locale of ['en', 'es']) {
+      const labels = optionsForRole('concrete').map((o) => teAt(optionLabel(o), locale));
+      expect(labels, locale).toContain('CIRSOC 201 (2025)');
+      expect(labels, locale).toContain('CIRSOC 201 (2005)');
+    }
   });
 
   it('offers a seismic role, so CIRSOC 103 is not a hardcoded tab', () => {
     const seismic = optionsForRole('seismic');
     expect(seismic.length).toBeGreaterThan(0);
-    expect(seismic.some((o) => /INPRES-CIRSOC 103/.test(o.displayName))).toBe(true);
+    expect(seismic.some((o) => o.nameKey === 'regulations.name.inpres103')).toBe(true);
   });
 
   it('offers a steel role including CIRSOC 301, honestly unsupported', () => {
     const steel = optionsForRole('steel');
-    const c301 = steel.find((o) => /CIRSOC 301/.test(o.displayName));
+    const c301 = steel.find((o) => o.nameKey === 'regulations.name.cirsoc301');
     expect(c301).toBeDefined();
     expect(c301!.maturity).toBe('UNSUPPORTED');
   });
@@ -65,7 +74,7 @@ describe('role bindings', () => {
   it('seeds a new project with the editions in force', () => {
     const r = defaultRegulations();
     expect(r.concrete.adapterId).toBe('cirsoc');
-    expect(r.concrete.displayName).toBe('CIRSOC 201 (2025)');
+    expect(teAt(bindingLabel(r.concrete), 'en')).toBe('CIRSOC 201 (2025)');
     expect(r.basis.adapterId).toBe('cirsoc101-2025-basis');
     expect(r.wind.adapterId).toBe('cirsoc102-2025');
     expect(r.concrete.state).toBe('applied');
@@ -81,9 +90,11 @@ describe('role bindings', () => {
     expect(() => bindRole('steel', 'cirsoc')).toThrow(/not an option for role/);
   });
 
-  it('copies the display name so a stored project stays readable', () => {
+  it('copies the name key so a stored project stays readable', () => {
     const b = bindRole('concrete', 'cirsoc-2005');
-    expect(b.displayName).toBe('CIRSOC 201 (2005)');
+    expect(b.nameKey).toBe('regulations.name.cirsoc201');
+    expect(teAt(bindingLabel(b), 'en')).toBe('CIRSOC 201 (2005)');
+    expect(teAt(bindingLabel(b), 'es')).toBe('CIRSOC 201 (2005)');
     expect(b.edition).toBe('2005');
   });
 
@@ -197,7 +208,7 @@ describe('provenance stamps', () => {
     expect(roles).toContain('wind');
     expect(roles).not.toContain('steel');   // unset
     const conc = s.find((x) => x.role === 'concrete')!;
-    expect(conc.displayName).toBe('CIRSOC 201 (2025)');
+    expect(teAt(conc.label, 'en')).toBe('CIRSOC 201 (2025)');
     expect(conc.maturity).toBe('VALIDATED');
   });
 
@@ -236,7 +247,7 @@ describe('migration from the CIRSOC-specific v1 shape', () => {
     const wire = JSON.parse(JSON.stringify({ version: 2, roles: original }));
     const back = migrateRegulations(wire).stored.roles;
     expect(back.seismic.adapterId).toBe('inpres103-2018');
-    expect(back.concrete.displayName).toBe('CIRSOC 201 (2025)');
+    expect(teAt(bindingLabel(back.concrete), 'en')).toBe('CIRSOC 201 (2025)');
   });
 
   it('defaults a missing or corrupt payload without throwing', () => {

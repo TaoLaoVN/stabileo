@@ -17,6 +17,8 @@
  * Pure: no store imports, no Svelte runes. Safe to use from workers and tests.
  */
 
+import type { EngineMessage } from './message';
+
 // ─── Regulation identity ─────────────────────────────────────────
 
 export type RegulationId =
@@ -162,9 +164,16 @@ export interface ClauseRef {
   edition: RegulationEdition;
   /** e.g. '25.2.1', '2.3.2', '1.13-1' (an equation), 'Tabla 4.1'. */
   clause: string;
-  /** Optional human label, e.g. 'separación mínima de armaduras'. */
+  /**
+   * Developer annotation naming the clause, e.g. 'separación mínima de armaduras'.
+   *
+   * NOT user-facing and never rendered: `formatClause()` prints regulation, edition and
+   * clause number only. It exists so a reader of this source knows which rule a bare
+   * `'25.2.1'` refers to. The engine-purity gate treats it as a comment, so it may stay in
+   * the language of the regulation being cited.
+   */
   label?: string;
-  /** Recorded when the app resolved an ambiguity conservatively. */
+  /** Recorded when the app resolved an ambiguity conservatively. Developer annotation. */
   note?: string;
 }
 
@@ -240,8 +249,13 @@ export interface ProvenancedValue<T = number> {
   origin: ValueOrigin;
   /** Empty only for `project` and `override` origins. */
   refs: ClauseRef[];
-  /** Required when `origin === 'assumed'`: what was assumed and why. */
-  assumption?: string;
+  /**
+   * Required when `origin === 'assumed'`: what was assumed and why.
+   *
+   * Structured, not prose: this text reaches the UI, the PDF, DXF notes and the XLSX
+   * assumptions sheet, each of which translates it at its own boundary.
+   */
+  assumption?: EngineMessage;
   /** Unit label for display, e.g. 'kN/m²', 'mm'. */
   unit?: string;
 }
@@ -258,7 +272,9 @@ export function derived<T>(value: T, refs: ClauseRef[], unit?: string): Provenan
   return { value, origin: 'derived', refs, unit };
 }
 
-export function assumed<T>(value: T, assumption: string, refs: ClauseRef[] = [], unit?: string): ProvenancedValue<T> {
+export function assumed<T>(
+  value: T, assumption: EngineMessage, refs: ClauseRef[] = [], unit?: string,
+): ProvenancedValue<T> {
   return { value, origin: 'assumed', refs, assumption, unit };
 }
 
@@ -278,8 +294,10 @@ export function needsAttention(v: ProvenancedValue<unknown>): boolean {
 }
 
 /** Collect every assumption in a set of values, for the report's assumptions block. */
-export function collectAssumptions(values: readonly ProvenancedValue<unknown>[]): string[] {
+export function collectAssumptions(
+  values: readonly ProvenancedValue<unknown>[],
+): EngineMessage[] {
   return values
-    .filter((v) => v.origin === 'assumed' && v.assumption)
-    .map((v) => v.assumption as string);
+    .filter((v) => v.origin === 'assumed' && v.assumption !== undefined)
+    .map((v) => v.assumption!);
 }

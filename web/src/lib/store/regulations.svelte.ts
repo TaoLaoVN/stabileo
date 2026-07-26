@@ -185,7 +185,7 @@ function createRegulationsStore() {
         const prev = displaced[role];
         next[role] = prev !== undefined
           ? { ...prev }
-          : { ...next[role], state: 'unset', adapterId: null, displayName: '', edition: '' };
+          : { ...next[role], state: 'unset', adapterId: null, nameKey: '', edition: '' };
       }
       writeRoles(next);
       displaced = {};

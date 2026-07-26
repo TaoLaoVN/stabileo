@@ -17,6 +17,7 @@ import {
   type ClauseRef, type ProvenancedValue, type RegulationEdition,
   assumed, clause, fromProject, overridden,
 } from './regulation';
+import { msg, round, type EngineMessage } from './message';
 
 // ─── Jurisdiction ────────────────────────────────────────────────
 
@@ -99,9 +100,7 @@ export function resolveMaxAggregateSize(data: ConcreteProjectData): ProvenancedV
   }
   return assumed(
     DAGG_ASSUMED_MM,
-    'Tamaño máximo nominal del agregado grueso no indicado en el proyecto. Se adoptó ' +
-    `${DAGG_ASSUMED_MM} mm, valor habitual en la práctica argentina. NO es un valor por ` +
-    'defecto reglamentario: CIRSOC 201-2025 no fija uno. Verificar contra la mezcla real.',
+    msg('codes.aggregate.assumed', { mm: DAGG_ASSUMED_MM }),
     [clause('cirsoc-201', '2025', '25.2.1', 'separación libre mínima de armaduras')],
     'mm',
   );
@@ -110,7 +109,7 @@ export function resolveMaxAggregateSize(data: ConcreteProjectData): ProvenancedV
 export interface AggregateValidation {
   ok: boolean;
   /** Human-readable problems, each already citing its clause. */
-  problems: Array<{ message: string; refs: ClauseRef[] }>;
+  problems: Array<{ message: EngineMessage; refs: ClauseRef[] }>;
 }
 
 /**
@@ -143,7 +142,7 @@ export function validateMaxAggregateSize(
 
   if (!Number.isFinite(daggMm) || daggMm < DAGG_MIN_MM || daggMm > DAGG_MAX_MM) {
     problems.push({
-      message: `d_agg = ${daggMm} mm está fuera del rango admitido (${DAGG_MIN_MM}–${DAGG_MAX_MM} mm).`,
+      message: msg('codes.aggregate.outOfRange', { dagg: daggMm, min: DAGG_MIN_MM, max: DAGG_MAX_MM }),
       refs: [limitRef],
     });
     // A value this far off makes the remaining comparisons meaningless.
@@ -152,7 +151,7 @@ export function validateMaxAggregateSize(
 
   if (shotcrete && daggMm > DAGG_SHOTCRETE_MAX_MM) {
     problems.push({
-      message: `Hormigón proyectado: d_agg = ${daggMm} mm excede el límite de ${DAGG_SHOTCRETE_MAX_MM} mm.`,
+      message: msg('codes.aggregate.shotcreteLimit', { dagg: daggMm, limit: DAGG_SHOTCRETE_MAX_MM }),
       refs: [clause('cirsoc-201', '2025', '26.4.2.1(a)(13)', 'hormigón proyectado')],
     });
   }
@@ -160,22 +159,23 @@ export function validateMaxAggregateSize(
   const { leastFormDimensionMm, slabThicknessMm, minClearSpacingMm } = geometry;
   if (leastFormDimensionMm !== undefined && daggMm > leastFormDimensionMm / 5) {
     problems.push({
-      message: `d_agg = ${daggMm} mm excede 1/5 de la menor separación entre encofrados ` +
-        `(${(leastFormDimensionMm / 5).toFixed(1)} mm).`,
+      message: msg('codes.aggregate.formDimension', {
+        dagg: daggMm, limit: round(leastFormDimensionMm / 5, 1),
+      }),
       refs: [limitRef],
     });
   }
   if (slabThicknessMm !== undefined && daggMm > slabThicknessMm / 3) {
     problems.push({
-      message: `d_agg = ${daggMm} mm excede 1/3 del espesor de la losa ` +
-        `(${(slabThicknessMm / 3).toFixed(1)} mm).`,
+      message: msg('codes.aggregate.slabThickness', { dagg: daggMm, limit: round(slabThicknessMm / 3, 1) }),
       refs: [limitRef],
     });
   }
   if (minClearSpacingMm !== undefined && daggMm > 0.75 * minClearSpacingMm) {
     problems.push({
-      message: `d_agg = ${daggMm} mm excede 3/4 de la separación libre mínima especificada ` +
-        `(${(0.75 * minClearSpacingMm).toFixed(1)} mm).`,
+      message: msg('codes.aggregate.clearSpacing', {
+        dagg: daggMm, limit: round(0.75 * minClearSpacingMm, 1),
+      }),
       refs: [limitRef, clause('cirsoc-201', '2025', '25.2.1')],
     });
   }
@@ -320,10 +320,10 @@ export function codeSettingsSummary(s: ProjectCodeSettings): {
     jurisdiction:
       s.jurisdiction.basis === 'unstated'
         ? assumed(
-            s.jurisdiction.name || '(no indicada)',
-            'Jurisdicción y base de adopción no indicadas. CIRSOC es obligatorio para obra ' +
-            'pública nacional; su aplicación provincial o municipal depende de la adopción ' +
-            'local (Res. 11/2026, art. 2).',
+            // An empty name stays empty: the boundary renders "not stated", because only
+            // the boundary knows the reader's language.
+            s.jurisdiction.name,
+            msg('codes.jurisdiction.unstatedAssumption'),
           )
         : fromProject(s.jurisdiction.name),
   };

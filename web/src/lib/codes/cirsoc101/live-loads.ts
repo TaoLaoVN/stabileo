@@ -19,6 +19,7 @@
  */
 
 import { clause, type ClauseRef } from '../regulation';
+import { msg, round, type EngineMessage } from '../message';
 
 const T41 = clause('cirsoc-101', '2025', 'Tabla 4.1',
   'sobrecargas mínimas uniformemente distribuidas y concentradas');
@@ -27,11 +28,32 @@ export type OccupancyCategory =
   | 'residential' | 'office' | 'commercial' | 'education' | 'health' | 'assembly'
   | 'industrial' | 'storage' | 'parking' | 'roof' | 'circulation' | 'other';
 
+/**
+ * What kind of occupancy this is, where the distinction changes a factor.
+ *
+ * This replaces a regex over the Spanish label. `/garaje/i` matched both `garaje_autos`
+ * and `garaje_camiones`, so a truck garage was being handed the §4.7.5 twenty-percent
+ * reduction that the clause grants only to *passenger vehicle* garages — and it stopped
+ * working entirely the moment the label was translated.
+ */
+export type AssemblyKind =
+  /** §4.7.5: passenger vehicle garages, the only garages the 20 % reduction covers. */
+  | 'passengerGarage'
+  /** Trucks and buses. Excluded from the reduction; Table 4.1 cross-references §4.10. */
+  | 'truckGarage'
+  /** Places of public assembly. Blocks both the reduction and Exception 1. */
+  | 'publicAssembly';
+
 export interface OccupancyEntry {
   key: string;
-  /** As printed in Table 4.1. */
-  labelEs: string;
-  labelEn: string;
+  /**
+   * i18n key of the Table 4.1 row label.
+   *
+   * The table's text lives in the locale files, not here: this module is pure and must not
+   * reach the i18n store, and the label appears in the UI, the report and the XLSX sheet
+   * with three different width budgets.
+   */
+  labelKey: string;
   category: OccupancyCategory;
   /** Uniform imposed load Lo, kN/m². Null when Table 4.1 refers to an article instead. */
   uniformKNm2: number | null;
@@ -42,17 +64,20 @@ export interface OccupancyEntry {
    * reduced L factor and, separately, blocks the §4.7.5 live-load reduction.
    */
   garageOrPublicAssembly?: boolean;
+  /** Which kind, where the clause treats them differently. Set iff the flag above is. */
+  assemblyKind?: AssemblyKind;
   /** Table 4.1 sends the reader elsewhere; recorded verbatim so the UI can say so. */
   seeArticle?: string;
   refs: ClauseRef[];
 }
 
 const e = (
-  key: string, labelEs: string, labelEn: string, category: OccupancyCategory,
+  key: string, category: OccupancyCategory,
   uniformKNm2: number | null, concentratedKN: number | null = null,
   extra: Partial<OccupancyEntry> = {},
 ): OccupancyEntry => ({
-  key, labelEs, labelEn, category, uniformKNm2, concentratedKN, refs: [T41], ...extra,
+  key, labelKey: `loads.occupancy.${key}`, category, uniformKNm2, concentratedKN,
+  refs: [T41], ...extra,
 });
 
 /**
@@ -66,147 +91,105 @@ const e = (
  */
 export const OCCUPANCY_TABLE_2025: readonly OccupancyEntry[] = Object.freeze([
   // Archivos
-  e('archivos', 'Archivos', 'Filing areas', 'office', 7.0),
+  e('archivos', 'office', 7.0),
 
   // Áreas de reunión — every one is a place of public assembly
-  e('reunion_asientos_fijos', 'Áreas de reunión — asientos fijos, sujetos al piso',
-    'Assembly — fixed seats secured to the floor', 'assembly', 3.0, null, { garageOrPublicAssembly: true }),
-  e('reunion_vestibulos', 'Áreas de reunión — vestíbulos',
-    'Assembly — lobbies', 'assembly', 5.0, null, { garageOrPublicAssembly: true }),
-  e('reunion_asientos_moviles', 'Áreas de reunión — asientos móviles',
-    'Assembly — movable seats', 'assembly', 5.0, null, { garageOrPublicAssembly: true }),
-  e('reunion_plataformas', 'Áreas de reunión — plataformas de montaje',
-    'Assembly — stage platforms', 'assembly', 5.0, null, { garageOrPublicAssembly: true }),
-  e('reunion_escenarios', 'Áreas de reunión — pisos de escenarios',
-    'Assembly — stage floors', 'assembly', 7.0, null, { garageOrPublicAssembly: true }),
-  e('reunion_proyeccion', 'Áreas de reunión — salas de proyección',
-    'Assembly — projection rooms', 'assembly', 5.0, null, { garageOrPublicAssembly: true }),
-  e('reunion_otras', 'Áreas de reunión — otras',
-    'Assembly — other areas', 'assembly', 5.0, null, { garageOrPublicAssembly: true }),
+  e('reunion_asientos_fijos', 'assembly', 3.0, null, { garageOrPublicAssembly: true, assemblyKind: 'publicAssembly' }),
+  e('reunion_vestibulos', 'assembly', 5.0, null, { garageOrPublicAssembly: true, assemblyKind: 'publicAssembly' }),
+  e('reunion_asientos_moviles', 'assembly', 5.0, null, { garageOrPublicAssembly: true, assemblyKind: 'publicAssembly' }),
+  e('reunion_plataformas', 'assembly', 5.0, null, { garageOrPublicAssembly: true, assemblyKind: 'publicAssembly' }),
+  e('reunion_escenarios', 'assembly', 7.0, null, { garageOrPublicAssembly: true, assemblyKind: 'publicAssembly' }),
+  e('reunion_proyeccion', 'assembly', 5.0, null, { garageOrPublicAssembly: true, assemblyKind: 'publicAssembly' }),
+  e('reunion_otras', 'assembly', 5.0, null, { garageOrPublicAssembly: true, assemblyKind: 'publicAssembly' }),
 
   // Azoteas y terrazas
-  e('azotea_publica', 'Azoteas y terrazas — donde pueden congregarse personas',
-    'Roof terraces — where people may congregate', 'roof', 5.0, null, { garageOrPublicAssembly: true }),
-  e('azotea_privada', 'Azoteas accesibles privadamente',
-    'Privately accessible roof terraces', 'roof', 3.0),
-  e('azotea_inaccesible', 'Azoteas inaccesibles', 'Inaccessible roof terraces', 'roof', 1.0),
+  e('azotea_publica', 'roof', 5.0, null, { garageOrPublicAssembly: true, assemblyKind: 'publicAssembly' }),
+  e('azotea_privada', 'roof', 3.0),
+  e('azotea_inaccesible', 'roof', 1.0),
 
   // Balcones
-  e('balcon_vivienda', 'Balcones — viviendas en general',
-    'Balconies — dwellings generally', 'residential', 5.0),
-  e('balcon_casa_pequena', 'Balcones — casas de 1 y 2 familias, hasta 10 m²',
-    'Balconies — one- and two-family houses, up to 10 m²', 'residential', 3.0),
-  e('balcon_otros', 'Balcones — otros casos', 'Balconies — other cases', 'residential', null, null,
+  e('balcon_vivienda', 'residential', 5.0),
+  e('balcon_casa_pequena', 'residential', 3.0),
+  e('balcon_otros', 'residential', null, null,
     { seeArticle: '4.11' }),
 
   // Baños
-  e('bano_vivienda', 'Baños — viviendas', 'Bathrooms — dwellings', 'residential', 2.0),
-  e('bano_otros', 'Baños — otros destinos', 'Bathrooms — other occupancies', 'other', 3.0),
+  e('bano_vivienda', 'residential', 2.0),
+  e('bano_otros', 'other', 3.0),
 
   // Bibliotecas
-  e('biblioteca_lectura', 'Bibliotecas — salas de lectura',
-    'Libraries — reading rooms', 'education', 3.0, 4.5),
-  e('biblioteca_deposito', 'Bibliotecas — salas de almacenamiento de libros',
-    'Libraries — book stacks', 'education', 7.0, 4.5),
-  e('biblioteca_pasillos_sup', 'Bibliotecas — pasillos en pisos superiores a planta baja',
-    'Libraries — corridors above ground floor', 'circulation', 4.0, 4.5),
-  e('biblioteca_pasillos_pb', 'Bibliotecas — pasillos en planta baja',
-    'Libraries — ground floor corridors', 'circulation', 5.0, 4.5),
+  e('biblioteca_lectura', 'education', 3.0, 4.5),
+  e('biblioteca_deposito', 'education', 7.0, 4.5),
+  e('biblioteca_pasillos_sup', 'circulation', 4.0, 4.5),
+  e('biblioteca_pasillos_pb', 'circulation', 5.0, 4.5),
 
   // Cielorrasos con posibilidad de almacenamiento
-  e('cielorraso_liviano', 'Cielorrasos — áreas de almacenamiento liviano',
-    'Ceilings — light storage areas', 'storage', 1.0),
-  e('cielorraso_ocasional', 'Cielorrasos — áreas de almacenamiento ocasional',
-    'Ceilings — occasional storage areas', 'storage', 0.5),
-  e('cielorraso_mantenimiento', 'Cielorrasos — accesibles con fines de mantenimiento',
-    'Ceilings — accessible for maintenance', 'other', null, 1.0),
+  e('cielorraso_liviano', 'storage', 1.0),
+  e('cielorraso_ocasional', 'storage', 0.5),
+  e('cielorraso_mantenimiento', 'other', null, 1.0),
 
   // Cocinas
-  e('cocina_vivienda', 'Cocinas — viviendas', 'Kitchens — dwellings', 'residential', 2.0),
-  e('cocina_otros', 'Cocinas — otros destinos', 'Kitchens — other occupancies', 'other', 4.0),
+  e('cocina_vivienda', 'residential', 2.0),
+  e('cocina_otros', 'other', 4.0),
 
   // Comercios
-  e('comercio_minorista_pb', 'Comercios — venta minorista, planta baja',
-    'Retail — ground floor', 'commercial', 5.0, 4.5),
-  e('comercio_minorista_sup', 'Comercios — venta minorista, pisos superiores',
-    'Retail — upper floors', 'commercial', 4.0, 4.5),
-  e('comercio_mayorista', 'Comercios — venta mayorista, todos los pisos',
-    'Wholesale — all floors', 'commercial', 6.0, 4.5),
+  e('comercio_minorista_pb', 'commercial', 5.0, 4.5),
+  e('comercio_minorista_sup', 'commercial', 4.0, 4.5),
+  e('comercio_mayorista', 'commercial', 6.0, 4.5),
 
   // Cuartos de máquinas
-  e('cuarto_maquinas', 'Cuartos de máquinas y calderas',
-    'Machine and boiler rooms', 'industrial', 7.5),
+  e('cuarto_maquinas', 'industrial', 7.5),
 
   // Cubiertas de techo
-  e('cubierta_usual', 'Cubiertas de techo — planas, inclinadas y curvas usuales',
-    'Roofs — ordinary flat, pitched and curved', 'roof', 1.0),
-  e('cubierta_jardin', 'Cubiertas utilizadas para jardines en terrazas y azoteas',
-    'Roofs used as roof gardens', 'roof', 5.0),
-  e('cubierta_toldos', 'Toldos y marquesinas — construcciones de tela sobre esqueleto',
-    'Awnings and canopies — fabric on a frame', 'roof', 0.25, null,
+  e('cubierta_usual', 'roof', 1.0),
+  e('cubierta_jardin', 'roof', 5.0),
+  e('cubierta_toldos', 'roof', 0.25, null,
     { seeArticle: 'no reducible' }),
-  e('cubierta_cerramiento', 'Cubiertas de cerramiento (pantalla) para patios, piscinas, pérgolas',
-    'Screen enclosures for patios, pools, pergolas', 'roof', 0.25, 1.0,
+  e('cubierta_cerramiento', 'roof', 0.25, 1.0,
     { seeArticle: 'no reducible' }),
-  e('cubierta_otras', 'Cubiertas — todas las demás construcciones',
-    'Roofs — all other constructions', 'roof', 1.0),
+  e('cubierta_otras', 'roof', 1.0),
 
   // Depósitos
-  e('deposito_liviano', 'Depósitos — liviano', 'Storage — light', 'storage', 6.0),
-  e('deposito_pesado', 'Depósitos — pesado', 'Storage — heavy', 'storage', 12.0, null,
+  e('deposito_liviano', 'storage', 6.0),
+  e('deposito_pesado', 'storage', 12.0, null,
     { seeArticle: '4.13' }),
 
   // Escaleras
-  e('escalera_privada', 'Escaleras fijas — viviendas uni y bifamiliares y hoteles en áreas privadas',
-    'Fixed stairs — one/two-family dwellings and private hotel areas', 'circulation', 2.0),
-  e('escalera_otros', 'Escaleras fijas — todos los demás destinos',
-    'Fixed stairs — all other occupancies', 'circulation', 5.0),
+  e('escalera_privada', 'circulation', 2.0),
+  e('escalera_otros', 'circulation', 5.0),
 
-  e('escotillas', 'Escotillas y claraboyas', 'Hatches and skylights', 'other', null, 1.0),
+  e('escotillas', 'other', null, 1.0),
 
   // Escuelas
-  e('escuela_aulas', 'Escuelas — aulas', 'Schools — classrooms', 'education', 3.0, 4.5),
-  e('escuela_pasillos_sup', 'Escuelas — pasillos y corredores en pisos superiores',
-    'Schools — corridors above ground floor', 'circulation', 4.0, 4.5),
-  e('escuela_pasillos_pb', 'Escuelas — pasillos y corredores en planta baja',
-    'Schools — ground floor corridors', 'circulation', 5.0, 4.5),
+  e('escuela_aulas', 'education', 3.0, 4.5),
+  e('escuela_pasillos_sup', 'circulation', 4.0, 4.5),
+  e('escuela_pasillos_pb', 'circulation', 5.0, 4.5),
 
   // Entrepiso liviano
-  e('entrepiso_liviano', 'Entrepiso liviano', 'Light mezzanine', 'other', null, 1.0),
+  e('entrepiso_liviano', 'other', null, 1.0),
 
   // Garajes
-  e('garaje_autos', 'Garajes — vehículos de pasajeros',
-    'Garages — passenger vehicles', 'parking', 2.5, null, { garageOrPublicAssembly: true }),
-  e('garaje_camiones', 'Garajes — camiones y ómnibus',
-    'Garages — trucks and buses', 'parking', null, null,
-    { garageOrPublicAssembly: true, seeArticle: '4.10.3' }),
+  e('garaje_autos', 'parking', 2.5, null, { garageOrPublicAssembly: true, assemblyKind: 'passengerGarage' }),
+  e('garaje_camiones', 'parking', null, null,
+    { garageOrPublicAssembly: true, assemblyKind: 'truckGarage', seeArticle: '4.10.3' }),
 
   // Hospitales
-  e('hospital_habitaciones', 'Hospitales — habitaciones',
-    'Hospitals — patient rooms', 'health', 2.0, 4.5),
-  e('hospital_quirofanos', 'Hospitales — quirófanos y laboratorios',
-    'Hospitals — operating rooms and laboratories', 'health', 3.0, 4.5),
-  e('hospital_corredores', 'Hospitales — corredores sobre planta baja',
-    'Hospitals — corridors above ground floor', 'circulation', 4.0, 4.5),
+  e('hospital_habitaciones', 'health', 2.0, 4.5),
+  e('hospital_quirofanos', 'health', 3.0, 4.5),
+  e('hospital_corredores', 'circulation', 4.0, 4.5),
 
   // Oficinas
-  e('oficina', 'Oficinas', 'Offices', 'office', 2.5, 9.0),
-  e('oficina_corredores_sup', 'Oficinas — corredores en pisos superiores',
-    'Offices — corridors above ground floor', 'circulation', 4.0, 9.0),
-  e('oficina_corredores_pb', 'Oficinas — corredores y vestíbulos en planta baja',
-    'Offices — ground floor corridors and lobbies', 'circulation', 5.0, 9.0),
+  e('oficina', 'office', 2.5, 9.0),
+  e('oficina_corredores_sup', 'circulation', 4.0, 9.0),
+  e('oficina_corredores_pb', 'circulation', 5.0, 9.0),
 
   // Viviendas
-  e('vivienda', 'Viviendas — ambientes en general',
-    'Dwellings — rooms generally', 'residential', 2.0),
-  e('vivienda_dormitorio', 'Viviendas — dormitorios',
-    'Dwellings — bedrooms', 'residential', 2.0),
+  e('vivienda', 'residential', 2.0),
+  e('vivienda_dormitorio', 'residential', 2.0),
 
   // Fábricas y talleres
-  e('fabrica_liviana', 'Fábricas y talleres — livianos',
-    'Factories and workshops — light', 'industrial', 6.0, null, { seeArticle: '4.12.1' }),
-  e('fabrica_pesada', 'Fábricas y talleres — pesados',
-    'Factories and workshops — heavy', 'industrial', 12.0, null, { seeArticle: '4.12.1' }),
+  e('fabrica_liviana', 'industrial', 6.0, null, { seeArticle: '4.12.1' }),
+  e('fabrica_pesada', 'industrial', 12.0, null, { seeArticle: '4.12.1' }),
 ]);
 
 export function findOccupancy(key: string): OccupancyEntry | undefined {
@@ -265,8 +248,13 @@ export interface ReductionResult {
   ratio: number;
   /** True when any reduction was applied. */
   reduced: boolean;
-  /** Why the result is what it is — shown in the derivation report. */
-  reason: string;
+  /**
+   * Why the result is what it is — shown in the derivation report.
+   *
+   * Structured: the same explanation appears in the Loads preview, the PDF basis block and
+   * a DXF general note, and each of those translates it itself.
+   */
+  reason: EngineMessage;
   refs: ClauseRef[];
 }
 
@@ -283,12 +271,12 @@ export function reduceLiveLoad(inputs: ReductionInputs): ReductionResult {
   const kllAt = kll * at;
   const eqRef = clause('cirsoc-101', '2025', '4.7.2', 'reducción en sobrecargas uniformes');
 
-  const none = (reason: string, refs: ClauseRef[]): ReductionResult =>
+  const none = (reason: EngineMessage, refs: ClauseRef[]): ReductionResult =>
     ({ lKNm2: lo, ratio: 1, reduced: false, reason, refs });
 
   // §4.7.5 — public assembly areas are not reduced.
   if (inputs.publicAssembly) {
-    return none('Lugares destinados a reuniones públicas: la sobrecarga no se reduce.',
+    return none(msg('loads.cirsoc101.reduction.publicAssembly'),
       [clause('cirsoc-101', '2025', '4.7.5', 'lugares destinados a reuniones públicas')]);
   }
 
@@ -297,8 +285,9 @@ export function reduceLiveLoad(inputs: ReductionInputs): ReductionResult {
     const cap = 1.5 * inputs.oneWaySlabSpanM;
     if (inputs.tributaryWidthM > cap) {
       return none(
-        `Losa en una dirección: el ancho tributario (${inputs.tributaryWidthM.toFixed(2)} m) ` +
-        `excede 1,5 × la luz (${cap.toFixed(2)} m). No se aplica reducción.`,
+        msg('loads.cirsoc101.reduction.oneWaySlabWidthExceeded', {
+          width: round(inputs.tributaryWidthM, 2), cap: round(cap, 2),
+        }),
         [clause('cirsoc-101', '2025', '4.7.6', 'limitaciones para losas en una sola dirección')]);
     }
   }
@@ -309,10 +298,10 @@ export function reduceLiveLoad(inputs: ReductionInputs): ReductionResult {
     const ref = clause('cirsoc-101', '2025', '4.7.4', 'garajes para vehículos de pasajeros');
     if (floorsSupported >= 2) {
       return { lKNm2: 0.8 * lo, ratio: 0.8, reduced: true,
-        reason: 'Garaje de vehículos de pasajeros, elemento que soporta dos o más pisos: reducción del 20 %.',
+        reason: msg('loads.cirsoc101.reduction.passengerGarageMultiFloor'),
         refs: [ref] };
     }
-    return none('Garaje de vehículos de pasajeros: la sobrecarga no se reduce.', [ref]);
+    return none(msg('loads.cirsoc101.reduction.passengerGarage'), [ref]);
   }
 
   // §4.7.3 — loads exceeding 5 kN/m² are not reduced, except members supporting 2+
@@ -321,17 +310,18 @@ export function reduceLiveLoad(inputs: ReductionInputs): ReductionResult {
     const ref = clause('cirsoc-101', '2025', '4.7.3', 'sobrecargas pesadas');
     if (floorsSupported >= 2) {
       return { lKNm2: 0.8 * lo, ratio: 0.8, reduced: true,
-        reason: `Lo = ${lo} kN/m² > 5 kN/m² y el elemento soporta dos o más pisos: reducción del 20 %.`,
+        reason: msg('loads.cirsoc101.reduction.heavyMultiFloor', { lo }),
         refs: [ref] };
     }
-    return none(`Lo = ${lo} kN/m² > 5 kN/m²: la sobrecarga no se reduce.`, [ref]);
+    return none(msg('loads.cirsoc101.reduction.heavy', { lo }), [ref]);
   }
 
   // §4.7.2 — the general expression applies only from K_LL·A_t ≥ 37 m².
   if (!(kllAt >= REDUCTION_THRESHOLD_M2)) {
     return none(
-      `K_LL·A_t = ${kll} × ${at.toFixed(1)} = ${kllAt.toFixed(1)} m² < ${REDUCTION_THRESHOLD_M2} m²: ` +
-      'no corresponde reducción.',
+      msg('loads.cirsoc101.reduction.belowThreshold', {
+        kll, at: round(at, 1), kllAt: round(kllAt, 1), threshold: REDUCTION_THRESHOLD_M2,
+      }),
       [eqRef, T42]);
   }
 
@@ -344,12 +334,13 @@ export function reduceLiveLoad(inputs: ReductionInputs): ReductionResult {
     lKNm2: Math.min(l, lo),
     ratio: Math.min(l, lo) / lo,
     reduced: Math.min(l, lo) < lo,
-    reason:
-      `K_LL·A_t = ${kll} × ${at.toFixed(1)} = ${kllAt.toFixed(1)} m². ` +
-      `L = ${lo} (0,25 + 4,57/√${kllAt.toFixed(1)}) = ${raw.toFixed(3)} kN/m²` +
-      (clamped
-        ? `, limitado a ${floorsSupported >= 2 ? '0,4' : '0,5'} Lo = ${floor.toFixed(3)} kN/m².`
-        : '.'),
+    // Two keys rather than one with a conditional tail: a translator must be able to
+    // reorder the clamp clause, which a concatenated suffix forbids.
+    reason: msg(clamped ? 'loads.cirsoc101.reduction.appliedClamped' : 'loads.cirsoc101.reduction.applied', {
+      kll, at: round(at, 1), kllAt: round(kllAt, 1), lo,
+      raw: round(raw, 3), floorFactor: floorsSupported >= 2 ? 0.4 : 0.5,
+      floorValue: round(floor, 3),
+    }),
     refs: [eqRef, T42],
   };
 }

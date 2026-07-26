@@ -1,4 +1,5 @@
 import { describe, it, expect } from 'vitest';
+import { teAllAt, teAt } from '../../../i18n/engine-text';
 import {
   buildLoadPlan, combinationSymbols, describePlanDelta, levelsWithPlanArea,
   type LoadModelData, type LoadPlanInput,
@@ -140,7 +141,7 @@ describe('level plan areas come from real geometry', () => {
     // 6 m bay, 4 beams: 4 × 6 × 0.09 × 25 = 54 kN, plus half the columns each side.
     expect(lv.selfWeightKN).toBeGreaterThan(50);
     expect(lv.superimposedKN).toBeCloseTo(1.8 * 36, 6);
-    expect(p.derivation.join(' ')).toMatch(/de la extensión real de los nodos/);
+    expect(teAllAt(p.derivation, 'es').join(' ')).toMatch(/de la extensión real de los nodos/);
   });
 
   it('gives different levels different weights', () => {
@@ -162,13 +163,13 @@ describe('CIRSOC 101 imposed loads', () => {
   it('applies the §4.7.2 reduction and records why', () => {
     const p = buildLoadPlan(input({ applyLiveReduction: true }));
     expect(p.factors.liveReduced.value).toBeLessThanOrEqual(p.factors.occupancy.value);
-    expect(p.derivation.join(' ')).toMatch(/K_LL·A_t|no corresponde reducción/);
+    expect(teAllAt(p.derivation, 'es').join(' ')).toMatch(/K_LL·A_t|no corresponde reducción/);
   });
 
   it('skips the reduction when the project says so, and says so', () => {
     const p = buildLoadPlan(input({ applyLiveReduction: false }));
     expect(p.factors.liveReduced.value).toBe(p.factors.occupancy.value);
-    expect(p.derivation.join(' ')).toMatch(/no aplicada por decisión del proyecto/);
+    expect(teAllAt(p.derivation, 'es').join(' ')).toMatch(/no aplicada por decisión del proyecto/);
   });
 
   it('BLOCKS on an occupancy whose table entry is a cross-reference', () => {
@@ -206,7 +207,7 @@ describe('combinations come from the basis role', () => {
   it('generates the §2.3.2 set and cites it', () => {
     const p = buildLoadPlan(input());
     expect(p.combinations.length).toBeGreaterThan(0);
-    expect(p.combinations.some((c) => c.label === '1,4 D')).toBe(true);
+    expect(p.combinations.some((c) => c.label === '1.4 D')).toBe(true);
     expect(p.refs.some((r) => r.clause === '2.3.2')).toBe(true);
   });
 
@@ -232,7 +233,7 @@ describe('combinations come from the basis role', () => {
 
   it('records the Exception 1 decision in the derivation', () => {
     const p = buildLoadPlan(input({ occupancyKey: 'vivienda' }));
-    expect(p.derivation.join(' ')).toMatch(/Excepción 1/);
+    expect(teAllAt(p.derivation, 'es').join(' ')).toMatch(/Excepción 1/);
   });
 });
 
@@ -261,18 +262,20 @@ describe('wind uses the CIRSOC 102-2025 engine', () => {
 
   it('records the unsurveyed K_zt as an assumption', () => {
     const p = windOn({ kztSurveyed: false });
-    expect(p.assumptions.join(' ')).toMatch(/relevamiento del sitio/);
+    expect(teAllAt(p.assumptions, 'es').join(' ')).toMatch(/relevamiento del sitio/);
   });
 
   it('produces no wind forces for a flexible building, and says why', () => {
     const p = windOn({ rigid: false });
     expect(p.nodal.some((n) => n.caseType === 'W')).toBe(false);
-    expect(p.unsupportedKeys.some((u) => /1\.9\.5/.test(String(u.params?.text ?? '')))).toBe(true);
+    expect(p.unsupportedKeys.map((u) => u.key))
+      .toContain('loads.cirsoc102.unsupported.flexibleBuilding');
+    expect(teAllAt(p.unsupportedKeys, 'es').join(' ')).toMatch(/1\.9\.5/);
   });
 
   it('always reports the torsional cases as not covered', () => {
-    expect(windOn().unsupportedKeys.some((u) => /torsionales/.test(String(u.params?.text ?? ''))))
-      .toBe(true);
+    expect(windOn().unsupportedKeys.map((u) => u.key))
+      .toContain('loads.cirsoc102.unsupported.torsionalCases');
   });
 
   it('adds a wind case per requested direction', () => {
@@ -298,7 +301,7 @@ describe('seismic uses the real level masses', () => {
     const W = p.factors.seismicWeight!.value;
     expect(W).toBeGreaterThan(0);
     expect(p.factors.baseShear!.value).toBeCloseTo(0.15 * W, 6);
-    expect(p.derivation.join(' ')).toMatch(/de las masas reales por nivel/);
+    expect(teAllAt(p.derivation, 'es').join(' ')).toMatch(/de las masas reales por nivel/);
   });
 
   it('distributes by W·h and sums to V0', () => {
@@ -309,7 +312,7 @@ describe('seismic uses the real level masses', () => {
 
   it('flags an unstated live participation as an assumption', () => {
     const p = seismicPlan({ liveParticipation: null });
-    expect(p.assumptions.join(' ')).toMatch(/no la indica/);
+    expect(teAllAt(p.assumptions, 'es').join(' ')).toMatch(/no la indica/);
   });
 
   it('does not flag a stated participation', () => {
@@ -367,21 +370,89 @@ describe('the plan is a plan, not a mutation', () => {
     expect(p.cases.find((c) => c.type === 'E')!.existingId).toBeNull();
   });
 
-  it('diffs against what the model already has', () => {
+  it('adds to the existing loads when replace is off — the count the audit caught', () => {
+    // The preview used to report the plan's own counts as "after" regardless of the flag.
+    // With replace OFF, applying a 16-load plan to a model holding 4 leaves 20, not 16,
+    // and a user who trusted the preview would have silently doubled their loads.
     const p = buildLoadPlan(input());
-    const d = describePlanDelta(p, { distributed: 4, nodal: 0, combinations: 2, caseTypes: ['D', 'L'] });
-    expect(d.before.distributed).toBe(4);
-    expect(d.after.distributed).toBe(p.distributed.length);
-    expect(d.changes).toBe(true);
+    const current = { distributed: 4, nodal: 0, combinations: 2, caseTypes: ['D', 'L'] };
+    const keep = describePlanDelta(p, current, { replaceExisting: false });
+    expect(keep.before.distributed).toBe(4);
+    expect(keep.after.distributed).toBe(4 + p.distributed.length);
+    expect(keep.changes).toBe(true);
+
+    const replace = describePlanDelta(p, current, { replaceExisting: true });
+    expect(replace.after.distributed).toBe(p.distributed.length);
   });
 
-  it('reports no change when the plan matches the model exactly', () => {
+  it('warns that regenerating into existing cases double-counts them', () => {
+    const p = buildLoadPlan(input());
+    const d = describePlanDelta(
+      p, { distributed: 4, nodal: 0, combinations: 2, caseTypes: ['D', 'L'] },
+      { replaceExisting: false });
+    expect(d.warnings.map((w) => w.key))
+      .toContain('loadPlan.warning.addedOnTopOfExisting');
+    expect(d.dispositions.filter((x) => x.action === 'regenerated').map((x) => x.caseType))
+      .toEqual(['D', 'L']);
+    expect(d.dispositions.every((x) => x.lossy)).toBe(true);
+  });
+
+  it('never drops a load case silently — every removal is explained', () => {
+    // A model carrying W and E from an earlier run, re-planned with wind and seismic off.
+    // The plan stops producing them; the combinations stop referencing them. Both the
+    // disposition and a warning must say so, in both flag states.
+    const p = buildLoadPlan(input());
+    expect(p.cases.map((c) => c.type).sort()).toEqual(['D', 'L']);
+    const current = {
+      distributed: 8, nodal: 12, combinations: 12, caseTypes: ['D', 'E', 'L', 'W'],
+    };
+
+    for (const replaceExisting of [false, true]) {
+      const d = describePlanDelta(p, current, { replaceExisting });
+      expect(d.removedCaseTypes).toEqual(['E', 'W']);
+
+      // Every case type present before or after has a stated fate. No elisions.
+      expect(d.dispositions.map((x) => x.caseType)).toEqual(['D', 'E', 'L', 'W']);
+      for (const t of ['E', 'W']) {
+        const x = d.dispositions.find((y) => y.caseType === t)!;
+        expect(x.action).toBe(replaceExisting ? 'cleared' : 'retained');
+        expect(x.lossy).toBe(true);
+        // Rendered in both locales, so the explanation is never a bare key.
+        for (const locale of ['en', 'es']) {
+          expect(teAt(x.reason, locale)).not.toMatch(/^loadPlan\./);
+          expect(teAt(x.reason, locale)).toContain(t);
+        }
+      }
+      expect(d.warnings.map((w) => w.key)).toEqual(
+        expect.arrayContaining([replaceExisting
+          ? 'loadPlan.warning.caseCleared'
+          : 'loadPlan.warning.caseRetainedNotCombined']));
+      // One warning per dropped case, so neither E nor W is folded into the other.
+      expect(d.warnings.filter((w) => w.params?.caseType === 'E')).toHaveLength(1);
+      expect(d.warnings.filter((w) => w.params?.caseType === 'W')).toHaveLength(1);
+    }
+  });
+
+  it('reports no change only when the plan truly changes nothing', () => {
     const p = buildLoadPlan(input({ generateCombinations: false }));
-    const d = describePlanDelta(p, {
+    // With replace ON and the model already equal to the plan, nothing moves.
+    expect(describePlanDelta(p, {
       distributed: p.distributed.length, nodal: p.nodal.length,
       combinations: 0, caseTypes: ['D', 'L'],
-    });
-    expect(d.changes).toBe(false);
+    }, { replaceExisting: true }).changes).toBe(false);
+
+    // With replace OFF the same call DOES change the model — it doubles the loads.
+    expect(describePlanDelta(p, {
+      distributed: p.distributed.length, nodal: p.nodal.length,
+      combinations: 0, caseTypes: ['D', 'L'],
+    }, { replaceExisting: false }).changes).toBe(true);
+  });
+
+  it('echoes the flag its counts were computed under', () => {
+    const p = buildLoadPlan(input());
+    const c = { distributed: 0, nodal: 0, combinations: 0, caseTypes: [] as string[] };
+    expect(describePlanDelta(p, c, { replaceExisting: true }).replaceExisting).toBe(true);
+    expect(describePlanDelta(p, c, { replaceExisting: false }).replaceExisting).toBe(false);
   });
 
   it('names the case types a plan adds', () => {
@@ -391,7 +462,7 @@ describe('the plan is a plan, not a mutation', () => {
       regulations: reg,
       seismic: { enabled: true, coefficient: 0.15, liveParticipation: 0.25, directions: { x: true, y: false } },
     }));
-    const d = describePlanDelta(p, { distributed: 0, nodal: 0, combinations: 0, caseTypes: ['D', 'L'] });
+    const d = describePlanDelta(p, { distributed: 0, nodal: 0, combinations: 0, caseTypes: ['D', 'L'] }, { replaceExisting: false });
     expect(d.addedCaseTypes).toContain('E');
   });
 });

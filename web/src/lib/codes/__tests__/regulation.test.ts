@@ -1,4 +1,6 @@
 import { describe, it, expect } from 'vitest';
+import { msg } from '../message';
+import { teAt } from '../../i18n/engine-text';
 import {
   REGULATIONS, assertSameEdition, assumed, clause, collectAssumptions, derived,
   editionsOf, findRegulation, formatClause, fromCode, fromProject, needsAttention,
@@ -73,13 +75,14 @@ describe('provenanced values', () => {
     expect(needsAttention(fromCode(0.85, []))).toBe(false);
     expect(needsAttention(fromProject(25))).toBe(false);
     expect(needsAttention(derived(1.2, []))).toBe(false);
-    expect(needsAttention(assumed(20, 'no project data'))).toBe(true);
+    expect(needsAttention(assumed(20, msg('test.noProjectData')))).toBe(true);
   });
 
-  it('collects assumption text for the report block', () => {
+  it('collects assumption messages for the report block', () => {
     expect(collectAssumptions([
-      fromCode(1, []), assumed(20, 'd_agg not stated'), assumed(1, 'Kzt not surveyed'),
-    ])).toEqual(['d_agg not stated', 'Kzt not surveyed']);
+      fromCode(1, []), assumed(20, msg('test.daggNotStated')),
+      assumed(1, msg('test.kztNotSurveyed')),
+    ]).map((m) => m.key)).toEqual(['test.daggNotStated', 'test.kztNotSurveyed']);
   });
 });
 
@@ -155,7 +158,9 @@ describe('maximum aggregate size (CIRSOC 201-2025 §25.2 / §26.4)', () => {
     expect(v.value).toBe(DAGG_ASSUMED_MM);
     expect(v.origin).toBe('assumed');
     expect(needsAttention(v)).toBe(true);
-    expect(v.assumption).toMatch(/NO es un valor por defecto reglamentario/);
+    expect(v.assumption?.key).toBe('codes.aggregate.assumed');
+    expect(teAt(v.assumption!, 'es')).toMatch(/NO es un valor por defecto reglamentario/);
+    expect(teAt(v.assumption!, 'en')).toMatch(/NOT a regulatory default/);
   });
 
   it('accepts a value that satisfies all three §26.4.2.1(a)(5) limits', () => {
@@ -168,7 +173,9 @@ describe('maximum aggregate size (CIRSOC 201-2025 §25.2 / §26.4)', () => {
   it('rejects d_agg above 1/5 of the least form dimension', () => {
     const r = validateMaxAggregateSize(25, { leastFormDimensionMm: 100 });
     expect(r.ok).toBe(false);
-    expect(r.problems[0].message).toMatch(/1\/5 de la menor separación/);
+    expect(r.problems[0].message.key).toBe('codes.aggregate.formDimension');
+    expect(teAt(r.problems[0].message, 'es')).toMatch(/1\/5 de la menor separación/);
+    expect(teAt(r.problems[0].message, 'en')).toMatch(/1\/5 of the narrowest dimension/);
     expect(r.problems[0].refs[0].clause).toBe('26.4.2.1(a)(5)');
   });
 

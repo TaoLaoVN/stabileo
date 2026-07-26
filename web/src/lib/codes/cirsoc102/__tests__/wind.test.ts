@@ -1,4 +1,5 @@
 import { describe, it, expect } from 'vitest';
+import { teAllAt, teAt } from '../../../i18n/engine-text';
 import {
   CP_SIDE_WALL, CP_WINDWARD_WALL, EXPOSURE_CONSTANTS, G_RIGID, KD,
   applyMinimumWindLoad, classifyEnclosure, computeWindPressures, cpLeewardWall,
@@ -163,7 +164,10 @@ describe('Fig. 2.4-1 — external pressure coefficients', () => {
   it('declares slopes below 10° unsupported rather than approximating', () => {
     const r = roofCp(0.5, 5);
     expect(r.windward).toEqual([]);
-    expect(r.unsupported).toMatch(/distancia horizontal desde el borde/);
+    expect(r.unsupported?.key).toBe('loads.cirsoc102.unsupported.shallowRoofParallelRidge');
+    // Rendered, so the assertion also proves the key is translated in both locales.
+    expect(teAt(r.unsupported!, 'es')).toMatch(/distancia horizontal desde el borde/);
+    expect(teAt(r.unsupported!, 'en')).toMatch(/horizontal distance from the windward edge/);
   });
 });
 
@@ -229,18 +233,26 @@ describe('§1.13 Eq. (1.13-1) and §2.4.1 Eq. (2.4-1) end to end', () => {
   it('refuses to produce pressures for a flexible building', () => {
     const r = computeWindPressures(project({ rigid: false }));
     expect(r.pressures).toEqual([]);
-    expect(r.unsupported.join(' ')).toMatch(/1\.9\.5/);
+    expect(r.unsupported.map((u) => u.key))
+      .toContain('loads.cirsoc102.unsupported.flexibleBuilding');
+    expect(teAllAt(r.unsupported, 'es').join(' ')).toMatch(/1\.9\.5/);
+    expect(teAllAt(r.unsupported, 'en').join(' ')).toMatch(/1\.9\.5/);
   });
 
   it('always declares the torsional cases unsupported rather than omitting them silently', () => {
     const r = computeWindPressures(project());
-    expect(r.unsupported.join(' ')).toMatch(/torsionales 2 y 4/);
+    expect(r.unsupported.map((u) => u.key))
+      .toContain('loads.cirsoc102.unsupported.torsionalCases');
+    expect(teAllAt(r.unsupported, 'es').join(' ')).toMatch(/torsionales 2 y 4/);
+    expect(teAllAt(r.unsupported, 'en').join(' ')).toMatch(/cases 2 and 4/);
   });
 
   it('records K_zt = 1,0 as an assumption when the site was not surveyed', () => {
     const r = computeWindPressures(project({ kztSurveyed: false }));
     expect(r.factors.kzt.origin).toBe('assumed');
-    expect(r.assumptions.join(' ')).toMatch(/relevamiento del sitio/);
+    expect(r.assumptions.map((a) => a.key)).toContain('loads.cirsoc102.assumed.kzt');
+    expect(teAllAt(r.assumptions, 'es').join(' ')).toMatch(/relevamiento del sitio/);
+    expect(teAllAt(r.assumptions, 'en').join(' ')).toMatch(/without a site survey/);
     const surveyed = computeWindPressures(project({ kztSurveyed: true }));
     expect(surveyed.factors.kzt.origin).toBe('project');
     expect(surveyed.assumptions).toEqual([]);

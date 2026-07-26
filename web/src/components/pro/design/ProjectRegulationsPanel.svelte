@@ -11,10 +11,11 @@
    * to Loads where the before/after preview lives.
    */
   import { t, tp } from '../../../lib/i18n';
+  import { te } from '../../../lib/i18n/engine-text';
   import { regulationsStore } from '../../../lib/store/regulations.svelte';
   import { uiStore } from '../../../lib/store/ui.svelte';
   import {
-    REGULATION_ROLES, isLoadAffecting, optionsForRole,
+    REGULATION_ROLES, isLoadAffecting, optionLabel, optionsForRole,
     type RegulationRole, type RoleBinding,
   } from '../../../lib/codes/roles';
   import { consequenceOf } from '../../../lib/codes/revisions';
@@ -32,7 +33,7 @@
     if (adapterId === '') return;
     const r = regulationsStore.requestChange(role, adapterId);
     if (r.kind === 'refused') {
-      refusal = r.problems.map((p) => tp(p.key, p.params)).join(' ');
+      refusal = r.problems.map((p) => te({ key: p.key, params: p.params })).join(' ');
       return;
     }
     if (r.kind === 'needsLoadReview') {
@@ -119,7 +120,7 @@
           >
             <option value="">{t('regulations.none')}</option>
             {#each opts as o (o.adapterId)}
-              <option value={o.adapterId}>{o.displayName}</option>
+              <option value={o.adapterId}>{te(optionLabel(o))}</option>
             {/each}
           </select>
 
@@ -174,7 +175,7 @@
       <strong>{t('regulations.stackProblems')}</strong>
       <ul>
         {#each validation.problems as p (p.key + p.roles.join())}
-          <li class={p.severity}>{tp(p.key, p.params)}</li>
+          <li class={p.severity}>{te({ key: p.key, params: p.params })}</li>
         {/each}
       </ul>
     </div>

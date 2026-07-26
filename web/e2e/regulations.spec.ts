@@ -245,8 +245,11 @@ test.describe('@smoke regulation-backed load generation', () => {
 
     // Turning the §4.7.2 reduction off must change what the derivation says.
     expect(without).not.toBe(withRed);
-    expect(without).toMatch(/no aplicada por decisión del proyecto/i);
-    expect(withRed).toMatch(/K_LL·A_t|no corresponde reducción/);
+    // English, because the fixture boots in English. Before the engine-message refactor
+    // these two assertions read Spanish and passed anyway — which was the whole defect:
+    // the derivation was Spanish no matter what language the user had chosen.
+    expect(without).toMatch(/reduction not applied, by project decision/i);
+    expect(withRed).toMatch(/K_LL·A_t|no reduction applies/);
   });
 
   test('R13 — an occupancy that Table 4.1 cross-references is refused, not invented', async ({ pro: page }) => {

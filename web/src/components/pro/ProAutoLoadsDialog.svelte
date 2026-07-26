@@ -1,6 +1,7 @@
 <script lang="ts">
   import { modelStore, uiStore } from '../../lib/store';
   import { t, tp, i18n } from '../../lib/i18n';
+  import { te } from '../../lib/i18n/engine-text';
   // The ONE authoritative generator. The legacy auto-loads / wind-loads production path
   // is gone: it implemented the 2005 editions, had no wind pressure coefficients, and
   // built the seismic weight on a literal "* 50 // rough 50m2 per floor".
@@ -11,6 +12,8 @@
   import type { ElementKind } from '../../lib/codes/cirsoc101/live-loads';
   import type { Enclosure, Exposure } from '../../lib/codes/cirsoc102/wind';
   import { regulationsStore } from '../../lib/store/regulations.svelte';
+  import { bindingLabel } from '../../lib/codes/roles';
+  import { messageIdentity } from '../../lib/codes/message';
   import { DUCTILITY_TABLE, type SeismicZone, type SoilType, type ImportanceGroup,
     type DuctilityKey, type StructureSystem, computeSa, approximatePeriod,
     reductionFactor, IMPORTANCE_FACTORS, SPECTRAL_PARAMS,
@@ -180,18 +183,56 @@
     recordRoleConfiguration();
     const p = buildLoadPlan(planInput());
     plan = p;
-    delta = describePlanDelta(p, {
-      distributed: modelStore.loads.filter(l => l.type === 'distributed').length,
-      nodal: modelStore.loads.filter(l => l.type === 'nodal').length,
+    // The flag has to go in: the same plan produces a different model depending on it, and
+    // reporting the plan's own counts as "after" was the defect the audit caught.
+    delta = describePlanDelta(p, currentLoadState(), { replaceExisting: clearExisting });
+  }
+
+  /**
+   * The model's current load counts, as the delta needs them.
+   *
+   * BOTH the 2D and 3D variants count. `addDistributedLoad3D` — which is what this dialog
+   * applies with — stores `type: 'distributed3d'`, so filtering on `'distributed'` alone
+   * reported zero existing loads in every PRO model. The "before" column then read 0 no
+   * matter how many times the user had already generated, and the double-count warning
+   * never fired on the quantity it was warning about.
+   */
+  const DISTRIBUTED_TYPES = ['distributed', 'distributed3d'] as const;
+  const NODAL_TYPES = ['nodal', 'nodal3d'] as const;
+
+  function currentLoadState() {
+    const count = (types: readonly string[]) =>
+      modelStore.loads.filter(l => types.includes(l.type)).length;
+    return {
+      distributed: count(DISTRIBUTED_TYPES),
+      nodal: count(NODAL_TYPES),
       combinations: modelStore.model.combinations.length,
       caseTypes: modelStore.model.loadCases.map(c => c.type),
-    });
+    };
+  }
+
+  /**
+   * Toggling "replace existing loads" changes what Apply will do, so the preview has to
+   * follow it. Leaving a stale preview on screen while the flag says otherwise is exactly
+   * the kind of quiet disagreement between UI and behaviour this repair is about.
+   */
+  function onClearExistingChange(next: boolean) {
+    clearExisting = next;
+    if (plan && plan.outcome === 'READY') {
+      delta = describePlanDelta(plan, currentLoadState(), { replaceExisting: next });
+    }
   }
 
   /** Step 2 — commit the previewed plan and invalidate downstream. */
   function handleApply() {
     const p = plan;
     if (!p || p.outcome !== 'READY') return;
+    if (delta && delta.replaceExisting !== clearExisting) {
+      // Cannot happen through the UI, but applying a plan whose preview described a
+      // different outcome is the one thing this dialog must never do.
+      applyError = t('autoLoad.previewStale');
+      return;
+    }
     applyError = null;
 
     if (clearExisting) {
@@ -274,7 +315,7 @@
           {#each regulationsStore.stamps.filter(s => ['basis','loads','wind','seismic'].includes(s.role)) as st (st.role)}
             <li>
               <span class="al-reg-role">{t(`regulations.role.${st.role}`)}</span>
-              <span class="al-reg-name">{st.displayName}</span>
+              <span class="al-reg-name">{te(st.label)}</span>
               <span class="al-reg-state al-state-{st.state}">{t(`regulations.state.${st.state}`)}</span>
             </li>
           {/each}
@@ -300,7 +341,7 @@
         <legend>{t('autoLoad.liveLoads')} ({occupancyQ} kN/m²)</legend>
         <select bind:value={selectedOccupancy} class="al-select">
           {#each OCCUPANCY_TABLE_2025 as occ}
-            <option value={occ.key}>{isEs ? occ.labelEs : occ.labelEn}{occ.uniformKNm2 !== null ? ` — ${occ.uniformKNm2} kN/m²` : ''}</option>
+            <option value={occ.key}>{t(occ.labelKey)}{occ.uniformKNm2 !== null ? ` — ${occ.uniformKNm2} kN/m²` : ''}</option>
           {/each}
         </select>
       </fieldset>
@@ -311,7 +352,7 @@
           <label class="al-check-legend">
             <input type="checkbox" bind:checked={enableSeismic}
                    disabled={!seismicAvailable} data-testid="al-enable-seismic" />
-            {t('autoLoad.seismic')} ({regulationsStore.binding('seismic').displayName || t('regulations.none')})
+            {t('autoLoad.seismic')} ({te(bindingLabel(regulationsStore.binding('seismic')))})
           </label>
         </legend>
         {#if !seismicAvailable}
@@ -404,7 +445,7 @@
           <label class="al-check-legend">
             <input type="checkbox" bind:checked={enableWind}
                    disabled={!windAvailable} data-testid="al-enable-wind" />
-            {t('autoLoad.wind')} ({regulationsStore.binding('wind').displayName || t('regulations.none')})
+            {t('autoLoad.wind')} ({te(bindingLabel(regulationsStore.binding('wind')))})
           </label>
         </legend>
         {#if !windAvailable}
@@ -465,7 +506,8 @@
       <fieldset class="al-fieldset">
         <legend>{t('autoLoad.options')}</legend>
         <label class="al-check"><input type="checkbox" bind:checked={genCombos} data-testid="al-gen-combos" /> {t('autoLoad.genCombos')}</label>
-        <label class="al-check"><input type="checkbox" bind:checked={clearExisting} data-testid="al-clear" /> {t('autoLoad.clearExisting')}</label>
+        <label class="al-check"><input type="checkbox" checked={clearExisting} data-testid="al-clear"
+          onchange={(e) => onClearExistingChange(e.currentTarget.checked)} /> {t('autoLoad.clearExisting')}</label>
         <label class="al-check">
           <input type="checkbox" bind:checked={applyLiveReduction} data-testid="al-live-reduction" />
           {t('autoLoad.applyLiveReduction')}
@@ -495,7 +537,7 @@
         {#if plan.outcome === 'BLOCKED'}
           <p class="al-error" data-testid="al-blocked">{t('autoLoad.blocked')}</p>
           <ul class="al-list">
-            {#each plan.blockedKeys as b (b.key)}<li>{tp(b.key, b.params)}</li>{/each}
+            {#each plan.blockedKeys as b (b.key)}<li>{te(b)}</li>{/each}
           </ul>
         {:else}
           {#if delta}
@@ -513,6 +555,27 @@
             {#if delta.addedCaseTypes.length > 0}
               <p data-testid="al-added-cases">{tp('autoLoad.addedCases', { types: delta.addedCaseTypes.join(', ') })}</p>
             {/if}
+
+            <!-- Every load case gets a stated fate. A case that stops participating in the
+                 combinations must never just quietly stop appearing. -->
+            {#if delta.warnings.length > 0}
+              <div class="al-error" data-testid="al-case-warnings" role="alert">
+                <strong>{t('autoLoad.caseWarnings')}</strong>
+                <ul class="al-list">
+                  {#each delta.warnings as w (messageIdentity(w))}<li>{te(w)}</li>{/each}
+                </ul>
+              </div>
+            {/if}
+            <details data-testid="al-dispositions">
+              <summary>{tp('autoLoad.dispositions', { count: delta.dispositions.length })}</summary>
+              <ul class="al-list">
+                {#each delta.dispositions as d (d.caseType)}
+                  <li class:al-lossy={d.lossy} data-testid={`al-disposition-${d.caseType}`}>
+                    <code>{d.caseType}</code> — {te(d.reason)}
+                  </li>
+                {/each}
+              </ul>
+            </details>
           {/if}
           <p><strong>{t('autoLoad.designLive')}:</strong> {plan.factors.liveReduced.value.toFixed(2)} kN/m²
             ({tp('autoLoad.fromTableLo', { lo: plan.factors.occupancy.value.toFixed(2) })})</p>
@@ -524,18 +587,18 @@
           {#if plan.assumptions.length > 0}
             <div class="al-warn" data-testid="al-assumptions">
               <strong>{t('autoLoad.assumptions')}</strong>
-              <ul class="al-list">{#each plan.assumptions as a (a)}<li>{a}</li>{/each}</ul>
+              <ul class="al-list">{#each plan.assumptions as a (messageIdentity(a))}<li>{te(a)}</li>{/each}</ul>
             </div>
           {/if}
           {#if plan.unsupportedKeys.length > 0}
             <div class="al-warn" data-testid="al-unsupported">
               <strong>{t('autoLoad.notCovered')}</strong>
-              <ul class="al-list">{#each plan.unsupportedKeys as u (u.key + JSON.stringify(u.params ?? {}))}<li>{tp(u.key, u.params)}</li>{/each}</ul>
+              <ul class="al-list">{#each plan.unsupportedKeys as u (messageIdentity(u))}<li>{te(u)}</li>{/each}</ul>
             </div>
           {/if}
           <details data-testid="al-derivation">
             <summary>{t('autoLoad.derivation')}</summary>
-            <ul class="al-list">{#each plan.derivation as d (d)}<li>{d}</li>{/each}</ul>
+            <ul class="al-list">{#each plan.derivation as d, i (i)}<li>{te(d)}</li>{/each}</ul>
           </details>
           <p class="al-warn">{t('autoLoad.applyInvalidates')}</p>
         {/if}
@@ -568,6 +631,7 @@
   .al-state-applied { background: #14532d; color: #dcfce7; }
   .al-state-pending { background: #7a5b00; color: #fff6dd; }
   .al-state-stale { background: #7a1f1f; color: #ffe3e3; }
+  .al-lossy { color: #fca5a5; }
   .al-preview { padding: 0.6rem 1rem; border-top: 1px solid #2a2a4a; max-height: 40vh; overflow: auto; font-size: 0.82rem; }
   .al-preview h3 { margin: 0 0 0.4rem; font-size: 0.9rem; }
   .al-delta { width: 100%; border-collapse: collapse; margin: 0.3rem 0; }

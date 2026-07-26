@@ -38,6 +38,7 @@
  */
 
 import type { ClauseRef } from './regulation';
+import { msg, type EngineMessage } from './message';
 
 export type Maturity = 'VALIDATED' | 'IMPLEMENTED_PROVISIONAL' | 'UNSUPPORTED';
 
@@ -72,11 +73,11 @@ export interface MaturityRecord {
    * IMPLEMENTED_PROVISIONAL — a provisional result with no stated route out of it is
    * just an excuse.
    */
-  promotionPath?: string;
+  promotionPath?: EngineMessage;
   /** Why the calculation is unsupported. Required whenever the state is UNSUPPORTED. */
-  unsupportedReason?: string;
+  unsupportedReason?: EngineMessage;
   /** Assumptions a reviewer must see, verbatim. */
-  assumptions: readonly string[];
+  assumptions: readonly EngineMessage[];
 }
 
 /**
@@ -91,9 +92,9 @@ export function deriveMaturity(input: {
   implemented: boolean;
   refs: readonly ClauseRef[];
   benchmarks: readonly BenchmarkRecord[];
-  assumptions?: readonly string[];
-  unsupportedReason?: string;
-  promotionPath?: string;
+  assumptions?: readonly EngineMessage[];
+  unsupportedReason?: EngineMessage;
+  promotionPath?: EngineMessage;
 }): MaturityRecord {
   const assumptions = input.assumptions ?? [];
 
@@ -103,7 +104,7 @@ export function deriveMaturity(input: {
       refs: input.refs,
       benchmarks: input.benchmarks,
       unsupportedReason: input.unsupportedReason
-        ?? 'No implementado: la demanda o la regla requerida no puede calcularse con los datos disponibles.',
+        ?? msg('maturity.unsupported.notImplemented'),
       assumptions,
     };
   }
@@ -114,7 +115,7 @@ export function deriveMaturity(input: {
       maturity: 'UNSUPPORTED',
       refs: [],
       benchmarks: input.benchmarks,
-      unsupportedReason: 'Cálculo sin fundamento reglamentario citado.',
+      unsupportedReason: msg('maturity.unsupported.noClauseCited'),
       assumptions,
     };
   }
@@ -129,8 +130,7 @@ export function deriveMaturity(input: {
     refs: input.refs,
     benchmarks: input.benchmarks,
     promotionPath: input.promotionPath
-      ?? 'Incorporar al menos un ejemplo resuelto externo (reglamento, bibliografía o ' +
-         'publicación) como benchmark de tipo "external" y verificar la concordancia.',
+      ?? msg('maturity.promotion.needsExternalBenchmark'),
     assumptions,
   };
 }
@@ -176,9 +176,5 @@ export function worstMaturity(list: readonly Maturity[]): Maturity {
  *
  * Deliberately explicit that software approval is not professional sign-off.
  */
-export const PROVISIONAL_DRAWING_NOTE =
-  'CÁLCULO PROVISORIO — Uno o más verificaciones de esta lámina están implementadas y ' +
-  'fundamentadas en el reglamento, con hipótesis y ecuaciones expuestas, pero no cuentan ' +
-  'todavía con contraste contra un ejemplo resuelto externo. Requieren revisión y ' +
-  'aceptación expresa del profesional actuante. La aprobación por software no constituye ' +
-  'firma profesional.';
+export const PROVISIONAL_DRAWING_NOTE: EngineMessage =
+  msg('maturity.provisionalDrawingNote');

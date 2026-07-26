@@ -32,6 +32,7 @@
 import type { ClauseRef, RegulationEdition, RegulationId } from './regulation';
 import { findRegulation } from './regulation';
 import type { Maturity } from './maturity';
+import { msg, type EngineMessage, type MessageParam } from './message';
 
 // ─── Roles ───────────────────────────────────────────────────────
 
@@ -69,10 +70,17 @@ export interface RoleOption {
   regulation?: RegulationId;
   edition: RegulationEdition | string;
   /**
-   * Display name INCLUDING the edition. This is what fixes the duplicate label: the two
-   * CIRSOC 201 adapters are "CIRSOC 201 (2025)" and "CIRSOC 201 (2005)".
+   * i18n key of the regulation's name, WITHOUT the edition.
+   *
+   * The rendered label is `t(nameKey)` with `{edition}` interpolated, so the two CIRSOC 201
+   * adapters read "CIRSOC 201 (2025)" and "CIRSOC 201 (2005)" — the duplicate-label defect
+   * is fixed structurally, because `edition` is part of the template rather than something
+   * a catalogue author has to remember to type.
+   *
+   * A regulation's *name* is a proper noun and is the same in every locale; the surrounding
+   * template is not, which is why this is a key and not a literal.
    */
-  displayName: string;
+  nameKey: string;
   /** Regulation family, for the compatibility rules. */
   family: 'cirsoc' | 'eurocode' | 'aci-aisc' | 'other';
   maturity: Maturity;
@@ -86,123 +94,123 @@ export interface RoleOption {
  * The catalogue.
  *
  * Editions come from `REGULATIONS` where one exists, so the legal-status metadata stays
- * in one place. `displayName` always carries the edition.
+ * in one place. The rendered label always carries the edition — see `nameKey`.
  */
 export const ROLE_CATALOG: readonly RoleOption[] = Object.freeze([
   // ── basis / combinations ──
   {
     adapterId: 'cirsoc101-2025-basis', role: 'basis', regulation: 'cirsoc-101',
-    edition: '2025', displayName: 'CIRSOC 101 (2025)', family: 'cirsoc',
+    edition: '2025', nameKey: 'regulations.name.cirsoc101', family: 'cirsoc',
     maturity: 'VALIDATED', requiresConfig: false,
   },
   {
     adapterId: 'cirsoc101-2005-basis', role: 'basis', regulation: 'cirsoc-101',
-    edition: '2005', displayName: 'CIRSOC 101 (2005)', family: 'cirsoc',
+    edition: '2005', nameKey: 'regulations.name.cirsoc101', family: 'cirsoc',
     maturity: 'IMPLEMENTED_PROVISIONAL', requiresConfig: false,
     noteKey: 'regulations.note.legacyEdition',
   },
   {
     adapterId: 'en1990', role: 'basis', edition: 'EN 1990:2002',
-    displayName: 'Eurocode — EN 1990 (2002)', family: 'eurocode',
+    nameKey: 'regulations.name.en1990', family: 'eurocode',
     maturity: 'UNSUPPORTED', requiresConfig: false,
     noteKey: 'regulations.note.notImplemented',
   },
   // ── imposed / permanent loads ──
   {
     adapterId: 'cirsoc101-2025-loads', role: 'loads', regulation: 'cirsoc-101',
-    edition: '2025', displayName: 'CIRSOC 101 (2025)', family: 'cirsoc',
+    edition: '2025', nameKey: 'regulations.name.cirsoc101', family: 'cirsoc',
     maturity: 'VALIDATED', requiresConfig: true,
   },
   {
     adapterId: 'cirsoc101-2005-loads', role: 'loads', regulation: 'cirsoc-101',
-    edition: '2005', displayName: 'CIRSOC 101 (2005)', family: 'cirsoc',
+    edition: '2005', nameKey: 'regulations.name.cirsoc101', family: 'cirsoc',
     maturity: 'IMPLEMENTED_PROVISIONAL', requiresConfig: true,
     noteKey: 'regulations.note.legacyEdition',
   },
   {
     adapterId: 'en1991-1-1', role: 'loads', edition: 'EN 1991-1-1',
-    displayName: 'Eurocode — EN 1991-1-1', family: 'eurocode',
+    nameKey: 'regulations.name.en1991_1_1', family: 'eurocode',
     maturity: 'UNSUPPORTED', requiresConfig: false,
     noteKey: 'regulations.note.notImplemented',
   },
   // ── wind ──
   {
     adapterId: 'cirsoc102-2025', role: 'wind', regulation: 'cirsoc-102',
-    edition: '2025', displayName: 'CIRSOC 102 (2025)', family: 'cirsoc',
+    edition: '2025', nameKey: 'regulations.name.cirsoc102', family: 'cirsoc',
     maturity: 'VALIDATED', requiresConfig: true,
   },
   {
     adapterId: 'cirsoc102-2005', role: 'wind', regulation: 'cirsoc-102',
-    edition: '2005', displayName: 'CIRSOC 102 (2005)', family: 'cirsoc',
+    edition: '2005', nameKey: 'regulations.name.cirsoc102', family: 'cirsoc',
     maturity: 'IMPLEMENTED_PROVISIONAL', requiresConfig: true,
     noteKey: 'regulations.note.legacyEdition',
   },
   {
     adapterId: 'en1991-1-4', role: 'wind', edition: 'EN 1991-1-4',
-    displayName: 'Eurocode — EN 1991-1-4', family: 'eurocode',
+    nameKey: 'regulations.name.en1991_1_4', family: 'eurocode',
     maturity: 'UNSUPPORTED', requiresConfig: false,
     noteKey: 'regulations.note.notImplemented',
   },
   // ── seismic: selected through the ROLE, never a hardcoded tab ──
   {
     adapterId: 'inpres103-2018', role: 'seismic', regulation: 'inpres-cirsoc-103-i',
-    edition: '2018', displayName: 'INPRES-CIRSOC 103 (I 2018 / II 2005)', family: 'cirsoc',
+    edition: '2018', nameKey: 'regulations.name.inpres103', family: 'cirsoc',
     maturity: 'IMPLEMENTED_PROVISIONAL', requiresConfig: true,
     noteKey: 'regulations.note.seismicSuppliedEditions',
   },
   {
     adapterId: 'en1998-1', role: 'seismic', edition: 'EN 1998-1',
-    displayName: 'Eurocode 8 — EN 1998-1', family: 'eurocode',
+    nameKey: 'regulations.name.en1998_1', family: 'eurocode',
     maturity: 'UNSUPPORTED', requiresConfig: false,
     noteKey: 'regulations.note.notImplemented',
   },
   // ── reinforced concrete: the two editions are now DISTINCT ──
   {
     adapterId: 'cirsoc', role: 'concrete', regulation: 'cirsoc-201',
-    edition: '2025', displayName: 'CIRSOC 201 (2025)', family: 'cirsoc',
+    edition: '2025', nameKey: 'regulations.name.cirsoc201', family: 'cirsoc',
     maturity: 'VALIDATED', requiresConfig: false,
   },
   {
     adapterId: 'cirsoc-2005', role: 'concrete', regulation: 'cirsoc-201',
-    edition: '2005', displayName: 'CIRSOC 201 (2005)', family: 'cirsoc',
+    edition: '2005', nameKey: 'regulations.name.cirsoc201', family: 'cirsoc',
     maturity: 'IMPLEMENTED_PROVISIONAL', requiresConfig: false,
     noteKey: 'regulations.note.legacyEdition',
   },
   {
     adapterId: 'eurocode', role: 'concrete', edition: 'EN 1992-1-1',
-    displayName: 'Eurocode 2 — EN 1992-1-1', family: 'eurocode',
+    nameKey: 'regulations.name.en1992_1_1', family: 'eurocode',
     maturity: 'UNSUPPORTED', requiresConfig: false,
     noteKey: 'regulations.note.notImplemented',
   },
   {
     adapterId: 'aci-aisc', role: 'concrete', edition: 'ACI 318-19',
-    displayName: 'ACI 318 (2019)', family: 'aci-aisc',
+    nameKey: 'regulations.name.aci318', family: 'aci-aisc',
     maturity: 'UNSUPPORTED', requiresConfig: false,
     noteKey: 'regulations.note.notImplemented',
   },
   // ── steel: CIRSOC 301 now EXISTS in the surface, honestly unsupported ──
   {
     adapterId: 'cirsoc301-2018', role: 'steel', regulation: 'cirsoc-301',
-    edition: '2018', displayName: 'CIRSOC 301 (2018)', family: 'cirsoc',
+    edition: '2018', nameKey: 'regulations.name.cirsoc301', family: 'cirsoc',
     maturity: 'UNSUPPORTED', requiresConfig: false,
     noteKey: 'regulations.note.textAvailableNotImplemented',
   },
   {
     adapterId: 'eurocode3', role: 'steel', edition: 'EN 1993-1-1',
-    displayName: 'Eurocode 3 — EN 1993-1-1', family: 'eurocode',
+    nameKey: 'regulations.name.en1993_1_1', family: 'eurocode',
     maturity: 'UNSUPPORTED', requiresConfig: false,
     noteKey: 'regulations.note.notImplemented',
   },
   // ── masonry / timber ──
   {
     adapterId: 'masonry', role: 'masonry', edition: 'TMS 402-16',
-    displayName: 'TMS 402 (2016)', family: 'other',
+    nameKey: 'regulations.name.tms402', family: 'other',
     maturity: 'UNSUPPORTED', requiresConfig: false,
     noteKey: 'regulations.note.notImplemented',
   },
   {
     adapterId: 'nds', role: 'timber', edition: 'NDS 2018',
-    displayName: 'NDS (2018)', family: 'other',
+    nameKey: 'regulations.name.nds', family: 'other',
     maturity: 'UNSUPPORTED', requiresConfig: false,
     noteKey: 'regulations.note.notImplemented',
   },
@@ -224,12 +232,16 @@ export function findOption(adapterId: string): RoleOption | undefined {
  */
 function assertUniqueDisplayNames(): void {
   for (const role of REGULATION_ROLES) {
-    const names = optionsForRole(role).map((o) => o.displayName);
-    const dup = names.find((n, i) => names.indexOf(n) !== i);
+    // Identity is (name, edition), which is exactly what the rendered label shows. Two
+    // options may share a nameKey — that is the CIRSOC 201 case — but never an edition
+    // with it. A locale-level test renders the labels in every shipped language and
+    // repeats this check on the actual strings.
+    const labels = optionsForRole(role).map((o) => `${o.nameKey}|${o.edition}`);
+    const dup = labels.find((n, i) => labels.indexOf(n) !== i);
     if (dup !== undefined) {
       throw new Error(
-        `Regulation catalogue: role "${role}" has two options displayed as "${dup}". ` +
-        'A user cannot tell them apart. Include the edition in displayName.',
+        `Regulation catalogue: role "${role}" has two options that render identically ` +
+        `(${dup}). A user cannot tell them apart.`,
       );
     }
   }
@@ -238,6 +250,28 @@ function assertUniqueDisplayNames(): void {
   if (dupId !== undefined) throw new Error(`Duplicate adapterId in catalogue: ${dupId}`);
 }
 assertUniqueDisplayNames();
+
+/**
+ * The `{ key, params }` a surface needs to render an option's label.
+ *
+ * Every consumer — the role selector, the load derivation, the report's basis block —
+ * builds the label the same way, so "CIRSOC 201" can never appear without its edition.
+ */
+export function optionLabel(o: RoleOption): EngineMessage {
+  return msg(o.nameKey, { edition: String(o.edition) });
+}
+
+/**
+ * The label of whatever is bound to a role, or an explicit "not selected" message.
+ *
+ * Never returns an empty string: a blank where a regulation name belongs reads as a
+ * rendering bug, and a report that silently omits the governing code is worse than one
+ * that says it has none.
+ */
+export function bindingLabel(b: RoleBinding): EngineMessage {
+  if (!b.adapterId || !b.nameKey) return msg('regulations.none');
+  return msg(b.nameKey, { edition: b.edition });
+}
 
 // ─── Bindings ────────────────────────────────────────────────────
 
@@ -256,8 +290,11 @@ export interface RoleBinding {
   role: RegulationRole;
   /** Null when unset. */
   adapterId: string | null;
-  /** Copied from the catalogue at bind time so a stored project stays readable. */
-  displayName: string;
+  /**
+   * i18n key of the regulation name, copied at bind time so a stored project stays
+   * readable even if the catalogue later drops the adapter. Render with `edition`.
+   */
+  nameKey: string;
   edition: string;
   maturity: Maturity;
   /** Free text: province, municipality, or "national public works". */
@@ -277,7 +314,7 @@ export interface RoleBinding {
 
 export function unsetBinding(role: RegulationRole): RoleBinding {
   return {
-    role, adapterId: null, displayName: '', edition: '',
+    role, adapterId: null, nameKey: '', edition: '',
     maturity: 'UNSUPPORTED', jurisdiction: '', adoption: 'unstated',
     settings: {}, configComplete: false, state: 'unset',
     appliedAtRevision: null, refs: [],
@@ -294,7 +331,7 @@ export function bindRole(
   }
   return {
     role, adapterId,
-    displayName: opt.displayName, edition: String(opt.edition), maturity: opt.maturity,
+    nameKey: opt.nameKey, edition: String(opt.edition), maturity: opt.maturity,
     jurisdiction: over.jurisdiction ?? '', adoption: over.adoption ?? 'unstated',
     settings: over.settings ?? {},
     configComplete: !opt.requiresConfig,
@@ -331,7 +368,7 @@ export interface StackProblem {
   roles: RegulationRole[];
   /** i18n key. */
   key: string;
-  params?: Record<string, string | number>;
+  params?: Record<string, MessageParam>;
 }
 
 export interface StackValidation {
@@ -370,15 +407,15 @@ export function validateStack(reg: ProjectRegulations): StackValidation {
     }
     if (opt.maturity === 'UNSUPPORTED') {
       problems.push({ severity: 'error', roles: [role], key: 'regulations.problem.unsupportedAdapter',
-        params: { name: opt.displayName } });
+        params: { name: msg(opt.nameKey, { edition: String(opt.edition) }) } });
     }
     if (!b.configComplete) {
       problems.push({ severity: 'warning', roles: [role], key: 'regulations.problem.configIncomplete',
-        params: { name: opt.displayName } });
+        params: { name: msg(opt.nameKey, { edition: String(opt.edition) }) } });
     }
     if (b.adoption === 'unstated' && opt.maturity !== 'UNSUPPORTED') {
       problems.push({ severity: 'warning', roles: [role], key: 'regulations.problem.adoptionUnstated',
-        params: { name: opt.displayName } });
+        params: { name: msg(opt.nameKey, { edition: String(opt.edition) }) } });
     }
   }
 
@@ -393,7 +430,7 @@ export function validateStack(reg: ProjectRegulations): StackValidation {
     problems.push({
       severity: 'error', roles: ['basis', 'loads'],
       key: 'regulations.problem.basisLoadsFamilyMismatch',
-      params: { basis: reg.basis.displayName, loads: reg.loads.displayName },
+      params: { basis: bindingLabel(reg.basis), loads: bindingLabel(reg.loads) },
     });
   }
 
@@ -403,7 +440,7 @@ export function validateStack(reg: ProjectRegulations): StackValidation {
       problems.push({
         severity: 'warning', roles: ['basis', role],
         key: 'regulations.problem.materialFamilyDiffers',
-        params: { material: reg[role].displayName, basis: reg.basis.displayName },
+        params: { material: bindingLabel(reg[role]), basis: bindingLabel(reg.basis) },
       });
     }
   }
@@ -441,7 +478,8 @@ export function pendingRequiresLoadRegeneration(reg: ProjectRegulations): boolea
 
 export interface RegulationStamp {
   role: RegulationRole;
-  displayName: string;
+  /** Render at the boundary: `te(label)`. */
+  label: EngineMessage;
   edition: string;
   jurisdiction: string;
   adoption: RoleBinding['adoption'];
@@ -462,7 +500,7 @@ export function regulationStamps(reg: ProjectRegulations): RegulationStamp[] {
       ? findRegulation(opt.regulation, opt.edition as RegulationEdition)
       : undefined;
     out.push({
-      role, displayName: b.displayName, edition: b.edition,
+      role, label: bindingLabel(b), edition: b.edition,
       jurisdiction: b.jurisdiction, adoption: b.adoption,
       maturity: b.maturity, state: b.state,
       inForce: info?.inForce?.instrument,
@@ -492,7 +530,7 @@ export interface RegulationsMigration {
   stored: StoredRegulations;
   /** Aggregate size rescued from a v1 payload, for the material store to adopt. */
   rescuedAggregateMm: number | null;
-  notices: Array<{ key: string; params?: Record<string, string | number> }>;
+  notices: Array<{ key: string; params?: Record<string, MessageParam> }>;
 }
 
 export function migrateRegulations(raw: unknown): RegulationsMigration {

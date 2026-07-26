@@ -1,4 +1,5 @@
 import { describe, it, expect } from 'vitest';
+import { formatCombinationLabel, teAt } from '../../../i18n/engine-text';
 import {
   generateCombinations, liveLoadFactorInCompanion, type CombinationInputs,
 } from '../combinations';
@@ -17,7 +18,7 @@ describe('CIRSOC 101-2025 §2.3.2 — the seven basic combinations', () => {
   it('always emits 1,4 D', () => {
     const c = generateCombinations(inputs({}));
     expect(c).toHaveLength(1);
-    expect(c[0].label).toBe('1,4 D');
+    expect(c[0].label).toBe('1.4 D');
     expect(c[0].refs[0].clause).toBe('2.3.2');
     expect(c[0].refs[0].edition).toBe('2025');
   });
@@ -27,21 +28,21 @@ describe('CIRSOC 101-2025 §2.3.2 — the seven basic combinations', () => {
     const c = generateCombinations(inputs({ L: true }, { maxLoKNm2: 2.0 }));
     const two = c.filter((x) => x.basic === 2);
     expect(two).toHaveLength(1);
-    expect(two[0].label).toBe('1,2 D + 1,6 L');
+    expect(two[0].label).toBe('1.2 D + 1.6 L');
   });
 
   it('expands (Lr ó S ó R) into one combination per present companion', () => {
     const c = generateCombinations(inputs({ L: true, Lr: true, S: true, R: true }));
     const two = c.filter((x) => x.basic === 2);
     expect(two.map((x) => x.id).sort()).toEqual(['2-Lr', '2-R', '2-S']);
-    expect(two.find((x) => x.id === '2-Lr')!.label).toBe('1,2 D + 1,6 L + 0,5 Lr');
+    expect(two.find((x) => x.id === '2-Lr')!.label).toBe('1.2 D + 1.6 L + 0.5 Lr');
   });
 
   it('emits combination 3 in both the L and the 0,5 W variants', () => {
     const c = generateCombinations(inputs({ L: true, Lr: true, W: true }, { maxLoKNm2: 2.0 }));
     const three = c.filter((x) => x.basic === 3);
     expect(three.map((x) => x.id).sort()).toEqual(['3-Lr-L', '3-Lr-W']);
-    expect(three.find((x) => x.id === '3-Lr-W')!.label).toBe('1,2 D + 1,6 Lr + 0,5 W');
+    expect(three.find((x) => x.id === '3-Lr-W')!.label).toBe('1.2 D + 1.6 Lr + 0.5 W');
   });
 
   it('emits 4 and 6 when wind is present, and 5 and 7 when seismic is', () => {
@@ -64,14 +65,14 @@ describe('CIRSOC 101-2025 §2.3.2 — the seven basic combinations', () => {
 
   it('applies 0,2 S in combination 5', () => {
     const five = generateCombinations(inputs({ E: true, S: true })).find((x) => x.basic === 5)!;
-    expect(five.label).toBe('1,2 D + 1,0 E + 0,2 S');
+    expect(five.label).toBe('1.2 D + 1.0 E + 0.2 S');
   });
 
   it('reproduces the printed combination 4 exactly', () => {
     const c = generateCombinations(inputs({ L: true, W: true, Lr: true }, { maxLoKNm2: 10 }));
     const four = c.find((x) => x.id === '4-Lr')!;
     // Lo > 5 kN/m², so Exception 1 does not apply and L keeps factor 1,0.
-    expect(four.label).toBe('1,2 D + 1,0 W + 1,0 L + 0,5 Lr');
+    expect(four.label).toBe('1.2 D + 1.0 W + 1.0 L + 0.5 Lr');
   });
 });
 
@@ -79,7 +80,9 @@ describe('§2.3.2 Exception 1 — reduced L factor in combinations 3, 4 and 5', 
   it('applies 0,5 when Lo <= 5 kN/m² and there is no garage or public assembly', () => {
     const r = liveLoadFactorInCompanion(inputs({}, { maxLoKNm2: 5.0 }));
     expect(r.factor).toBe(0.5);
-    expect(r.note).toMatch(/Excepción 1 aplicada/);
+    expect(r.note!.key).toBe('loads.cirsoc101.exception1.applied');
+    expect(teAt(r.note!, 'es')).toMatch(/Excepción 1 aplicada/);
+    expect(teAt(r.note!, 'en')).toMatch(/Exception 1 applied/);
   });
 
   it('does not apply above 5 kN/m²', () => {
@@ -90,53 +93,56 @@ describe('§2.3.2 Exception 1 — reduced L factor in combinations 3, 4 and 5', 
     const r = liveLoadFactorInCompanion(
       inputs({}, { maxLoKNm2: 2.0, hasGarageOrPublicAssembly: true }));
     expect(r.factor).toBe(1.0);
-    expect(r.note).toMatch(/garaje o de reunión pública/);
+    expect(r.note!.key).toBe('loads.cirsoc101.exception1.blockedByAssembly');
+    expect(teAt(r.note!, 'es')).toMatch(/garaje o de reunión pública/);
   });
 
   it('stays conservative when Lo is unknown', () => {
     const r = liveLoadFactorInCompanion(inputs({}));
     expect(r.factor).toBe(1.0);
-    expect(r.note).toMatch(/conservador/);
+    expect(r.note!.key).toBe('loads.cirsoc101.exception1.unknownLo');
+    expect(teAt(r.note!, 'es')).toMatch(/conservador/);
   });
 
   it('feeds the generated combinations and records why', () => {
     const four = generateCombinations(inputs({ L: true, W: true }, { maxLoKNm2: 2.0 }))
       .find((x) => x.basic === 4)!;
-    expect(four.label).toBe('1,2 D + 1,0 W + 0,5 L');
-    expect(four.notes.join(' ')).toMatch(/Excepción 1 aplicada/);
+    expect(four.label).toBe('1.2 D + 1.0 W + 0.5 L');
+    expect(four.notes.map((n) => n.key)).toContain('loads.cirsoc101.exception1.applied');
   });
 });
 
 describe('§2.3.2 — fluid load F and earth pressure H', () => {
   it('gives F the same factor as D, in combinations 1 through 5 and 7', () => {
     const c = generateCombinations(inputs({ F: true, W: true, E: true }));
-    expect(c.find((x) => x.basic === 1)!.label).toBe('1,4 D + 1,4 F');
-    expect(c.find((x) => x.basic === 7)!.label).toBe('0,9 D + 1,0 E + 0,9 F');
+    expect(c.find((x) => x.basic === 1)!.label).toBe('1.4 D + 1.4 F');
+    expect(c.find((x) => x.basic === 7)!.label).toBe('0.9 D + 1.0 E + 0.9 F');
     // Combination 6 is excluded: the printed rule says "1 hasta 5 y 7".
     expect(c.find((x) => x.basic === 6)!.terms.some((t) => t.symbol === 'F')).toBe(false);
   });
 
   it('uses 1,6 H when H adds to the primary variable effect', () => {
     const c = generateCombinations(inputs({ H: true }, { earthPressureAction: 'adds' }));
-    expect(c[0].label).toBe('1,4 D + 1,6 H');
+    expect(c[0].label).toBe('1.4 D + 1.6 H');
   });
 
   it('uses 0,9 H when H opposes and is permanent', () => {
     const c = generateCombinations(inputs({ H: true },
       { earthPressureAction: 'opposes', earthPressurePermanent: true }));
-    expect(c[0].label).toBe('1,4 D + 0,9 H');
+    expect(c[0].label).toBe('1.4 D + 0.9 H');
   });
 
   it('drops H entirely when it opposes and is not permanent', () => {
     const c = generateCombinations(inputs({ H: true }, { earthPressureAction: 'opposes' }));
-    expect(c[0].label).toBe('1,4 D');
-    expect(c[0].notes.join(' ')).toMatch(/factor 0/);
+    expect(c[0].label).toBe('1.4 D');
+    expect(c[0].notes.map((n) => n.key))
+      .toContain('loads.cirsoc101.note.hOpposesTemporary');
   });
 
   it('generates both cases rather than guessing when the direction is unstated', () => {
     const c = generateCombinations(inputs({ H: true }));
     expect(c.map((x) => x.id)).toEqual(['1-H+', '1-H-']);
-    expect(c[0].notes.join(' ')).toMatch(/no indicado en el proyecto/);
+    expect(c[0].notes.map((n) => n.key)).toContain('loads.cirsoc101.note.hUnknownAdding');
   });
 });
 
@@ -182,7 +188,8 @@ describe('§4.7.2 — live-load reduction, Eq. (4.1)', () => {
     const r = reduceLiveLoad({ loKNm2: 2.5, tributaryAreaM2: 18, elementKind: 'interiorBeam', floorsSupported: 1 });
     expect(r.reduced).toBe(false);
     expect(r.lKNm2).toBe(2.5);
-    expect(r.reason).toContain(`< ${REDUCTION_THRESHOLD_M2}`);
+    expect(r.reason.key).toBe('loads.cirsoc101.reduction.belowThreshold');
+    expect(r.reason.params?.threshold).toBe(REDUCTION_THRESHOLD_M2);
   });
 
   it('reduces exactly per the printed expression', () => {
@@ -198,7 +205,12 @@ describe('§4.7.2 — live-load reduction, Eq. (4.1)', () => {
   it('never falls below 0,5 Lo for a member supporting one floor', () => {
     const r = reduceLiveLoad({ loKNm2: 2.0, tributaryAreaM2: 5000, elementKind: 'interiorColumn', floorsSupported: 1 });
     expect(r.lKNm2).toBeCloseTo(1.0, 9);
-    expect(r.reason).toContain('0,5 Lo');
+    // The clamp is a distinct key, and the floor factor is a parameter rather than text,
+    // so the assertion survives translation.
+    expect(r.reason.key).toBe('loads.cirsoc101.reduction.appliedClamped');
+    expect(r.reason.params?.floorFactor).toBe(0.5);
+    expect(teAt(r.reason, 'en')).toMatch(/limited to 0.5 Lo/);
+    expect(teAt(r.reason, 'es')).toMatch(/limitado a 0,5 Lo/);
   });
 
   it('allows 0,4 Lo for a member supporting two or more floors', () => {

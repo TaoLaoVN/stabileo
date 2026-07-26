@@ -36,18 +36,19 @@ import {
   type CombinationInputs, type LoadCombinationSpec, type LoadSymbol,
 } from '../../codes/cirsoc101/combinations';
 import {
-  ROOF_MIN_KNM2, findOccupancy, reduceLiveLoad,
+  findOccupancy, reduceLiveLoad,
   type ElementKind, type OccupancyEntry,
 } from '../../codes/cirsoc101/live-loads';
 import {
-  applyMinimumWindLoad, computeWindPressures, velocityPressure,
+  applyMinimumWindLoad, computeWindPressures,
   type Enclosure, type Exposure, type WindProject,
 } from '../../codes/cirsoc102/wind';
 import {
   assumed, clause, fromProject, type ClauseRef, type ProvenancedValue,
 } from '../../codes/regulation';
+import { dedupeMessages, msg, round, type EngineMessage } from '../../codes/message';
 import type { ProjectRegulations } from '../../codes/roles';
-import { findOption, roleUsable } from '../../codes/roles';
+import { findOption, optionLabel, roleUsable } from '../../codes/roles';
 
 // ─── Model slice ─────────────────────────────────────────────────
 
@@ -162,14 +163,14 @@ export interface LoadPlan {
     baseShear?: ProvenancedValue<number>;
   };
   levels: LevelMass[];
-  assumptions: string[];
-  /** i18n keys of conditions the plan could not cover. */
-  unsupportedKeys: Array<{ key: string; params?: Record<string, string | number> }>;
+  assumptions: EngineMessage[];
+  /** Conditions the plan could not cover. */
+  unsupportedKeys: EngineMessage[];
   refs: ClauseRef[];
-  /** Human-readable derivation, one line per decision. */
-  derivation: string[];
-  /** Reasons the plan is BLOCKED. i18n keys. */
-  blockedKeys: Array<{ key: string; params?: Record<string, string | number> }>;
+  /** The derivation, one message per decision, in the order the decisions were made. */
+  derivation: EngineMessage[];
+  /** Reasons the plan is BLOCKED. */
+  blockedKeys: EngineMessage[];
 }
 
 const R101 = (c: string, l?: string) => clause('cirsoc-101', '2025', c, l);
@@ -248,8 +249,8 @@ function findCase(model: LoadModelData, type: string, nameMatch?: string): numbe
  * reported rather than silently substituted with a default.
  */
 export function buildLoadPlan(input: LoadPlanInput): LoadPlan {
-  const derivation: string[] = [];
-  const assumptions: string[] = [];
+  const derivation: EngineMessage[] = [];
+  const assumptions: EngineMessage[] = [];
   const refs: ClauseRef[] = [];
   const unsupportedKeys: LoadPlan['unsupportedKeys'] = [];
   const blockedKeys: LoadPlan['blockedKeys'] = [];
@@ -257,17 +258,17 @@ export function buildLoadPlan(input: LoadPlanInput): LoadPlan {
   // ── Role gates ──
   for (const role of ['basis', 'loads'] as const) {
     if (!roleUsable(input.regulations, role)) {
-      blockedKeys.push({
-        key: 'loadPlan.blocked.roleUnusable',
-        params: { role, name: input.regulations[role].displayName || '—' },
-      });
+      blockedKeys.push(msg('loadPlan.blocked.roleUnusable', {
+        role: `regulations.role.${role}`,
+        name: input.regulations[role].adapterId ?? '',
+      }));
     }
   }
   if (input.wind?.enabled && !roleUsable(input.regulations, 'wind')) {
-    blockedKeys.push({ key: 'loadPlan.blocked.windRoleUnusable' });
+    blockedKeys.push(msg('loadPlan.blocked.windRoleUnusable'));
   }
   if (input.seismic?.enabled && !roleUsable(input.regulations, 'seismic')) {
-    blockedKeys.push({ key: 'loadPlan.blocked.seismicRoleUnusable' });
+    blockedKeys.push(msg('loadPlan.blocked.seismicRoleUnusable'));
   }
 
   const empty: LoadPlan = {
@@ -282,7 +283,7 @@ export function buildLoadPlan(input: LoadPlanInput): LoadPlan {
   if (blockedKeys.length > 0) return empty;
 
   const loadsOpt = findOption(input.regulations.loads.adapterId!)!;
-  derivation.push(`${loadsOpt.displayName}`);
+  derivation.push(msg('loadPlan.derivation.basis', { regulation: optionLabel(loadsOpt) }));
 
   // ── Dead ──
   const deadTotal = input.dead.reduce((s, d) => s + d.q, 0);
@@ -291,18 +292,21 @@ export function buildLoadPlan(input: LoadPlanInput): LoadPlan {
   // ── Live: Table 4.1 then §4.7.2 ──
   const occ: OccupancyEntry | undefined = findOccupancy(input.occupancyKey);
   if (!occ) {
-    blockedKeys.push({ key: 'loadPlan.blocked.unknownOccupancy', params: { key: input.occupancyKey } });
+    blockedKeys.push(msg('loadPlan.blocked.unknownOccupancy', { key: input.occupancyKey }));
     return { ...empty, blockedKeys };
   }
   if (occ.uniformKNm2 === null) {
-    blockedKeys.push({
-      key: 'loadPlan.blocked.occupancyCrossReference',
-      params: { article: occ.seeArticle ?? '—' },
-    });
+    blockedKeys.push(msg('loadPlan.blocked.occupancyCrossReference', {
+      article: occ.seeArticle ?? '', occupancy: occ.labelKey,
+    }));
     return { ...empty, blockedKeys };
   }
   refs.push(...occ.refs);
   const lo = occ.uniformKNm2;
+  derivation.push(msg('loadPlan.derivation.occupancy', {
+    occupancy: msg(occ.labelKey), lo,
+  }));
+  derivation.push(msg('loadPlan.derivation.dead', { total: round(deadTotal, 3) }));
 
   const levelsRaw = levelsWithPlanArea(input.model);
   const levelOfNode = new Map<number, number>();
@@ -320,14 +324,16 @@ export function buildLoadPlan(input: LoadPlanInput): LoadPlan {
     const red = reduceLiveLoad({
       loKNm2: lo, tributaryAreaM2, elementKind: input.reductionElementKind,
       floorsSupported: input.floorsSupported,
-      passengerGarage: occ.garageOrPublicAssembly && /garaje/i.test(occ.labelEs),
-      publicAssembly: occ.garageOrPublicAssembly && !/garaje/i.test(occ.labelEs),
+      // Structured, not sniffed from the label: `garaje_camiones` is a garage but not a
+      // *passenger* garage, and §4.7.4's 20 % applies only to passenger vehicles.
+      passengerGarage: occ.assemblyKind === 'passengerGarage',
+      publicAssembly: occ.assemblyKind === 'publicAssembly',
     });
     liveDesign = red.lKNm2;
     refs.push(...red.refs);
     derivation.push(red.reason);
   } else {
-    derivation.push('Reducción de sobrecarga no aplicada por decisión del proyecto.');
+    derivation.push(msg('loadPlan.derivation.reductionDisabled'));
   }
 
   // ── Cases ──
@@ -350,7 +356,7 @@ export function buildLoadPlan(input: LoadPlanInput): LoadPlan {
   // ── Level masses from real geometry ──
   const sw = selfWeightByLevel(input.model, levelOfNode, levelsRaw.length);
   if (sw.skipped > 0) {
-    const note = `${sw.skipped} elemento(s) sin sección o densidad válida quedaron fuera del peso propio.`;
+    const note = msg('loadPlan.assumption.selfWeightSkipped', { count: sw.skipped });
     assumptions.push(note);
     derivation.push(note);
   }
@@ -358,12 +364,10 @@ export function buildLoadPlan(input: LoadPlanInput): LoadPlan {
   const participation: ProvenancedValue<number> = input.seismic?.liveParticipation !== null
     && input.seismic?.liveParticipation !== undefined
     ? fromProject(input.seismic.liveParticipation)
-    : assumed(0.25,
-        'Fracción de sobrecarga incluida en el peso sísmico adoptada como 0,25. Depende del ' +
-        'destino de la construcción y el proyecto no la indica.',
+    : assumed(0.25, msg('loadPlan.assumption.liveParticipation', { fraction: 0.25 }),
         [clause('inpres-cirsoc-103-i', '2018', '6.2', 'peso sísmico efectivo')]);
   if (participation.origin === 'assumed' && input.seismic?.enabled) {
-    assumptions.push(participation.assumption as string);
+    assumptions.push(participation.assumption!);
   }
 
   const levels: LevelMass[] = levelsRaw.map((lv, i) => {
@@ -378,11 +382,11 @@ export function buildLoadPlan(input: LoadPlanInput): LoadPlan {
     };
   });
   for (const lv of levels) {
-    derivation.push(
-      `Nivel +${lv.elevation.toFixed(2)} m: área en planta ${lv.planAreaM2.toFixed(1)} m² ` +
-      `(de la extensión real de los nodos), peso propio ${lv.selfWeightKN.toFixed(1)} kN, ` +
-      `permanente ${lv.superimposedKN.toFixed(1)} kN, ` +
-      `Wi = ${lv.weightKN.toFixed(1)} kN.`);
+    derivation.push(msg('loadPlan.derivation.level', {
+      elevation: round(lv.elevation, 2), area: round(lv.planAreaM2, 1),
+      selfWeight: round(lv.selfWeightKN, 1), superimposed: round(lv.superimposedKN, 1),
+      weight: round(lv.weightKN, 1),
+    }));
   }
 
   // ── Wind ──
@@ -412,7 +416,7 @@ export function buildLoadPlan(input: LoadPlanInput): LoadPlan {
       const res = computeWindPressures(project);
       refs.push(...res.factors.kd.refs, ...res.factors.kh.refs);
       assumptions.push(...res.assumptions);
-      for (const u of res.unsupported) unsupportedKeys.push({ key: 'loadPlan.unsupported.verbatim', params: { text: u } });
+      unsupportedKeys.push(...res.unsupported);
 
       if (res.pressures.length === 0) continue;
       windQh = fromProject(res.qhNm2, 'N/m²');
@@ -432,8 +436,9 @@ export function buildLoadPlan(input: LoadPlanInput): LoadPlan {
         const min = applyMinimumWindLoad(force * 1000, across * tribH, 0);
         const applied = min.totalN / 1000;
         if (min.governedByMinimum) {
-          unsupportedKeys.push({ key: 'loadPlan.note.windMinimumGoverns',
-            params: { level: lv.elevation.toFixed(2) } });
+          unsupportedKeys.push(msg('loadPlan.note.windMinimumGoverns', {
+            level: round(lv.elevation, 2),
+          }));
           refs.push(...min.refs);
         }
         const per = applied / Math.max(1, lv.nodeIds.length);
@@ -449,9 +454,10 @@ export function buildLoadPlan(input: LoadPlanInput): LoadPlan {
         type: 'W', nameKey: 'autoLoad.windCaseDir',
         nameParams: { dir: dir.toUpperCase(), v: input.wind.basicSpeed },
       });
-      derivation.push(
-        `Viento ${dir.toUpperCase()}: qh = ${res.qhNm2.toFixed(0)} N/m², presión neta ` +
-        `${net.toFixed(3)} kPa sobre un frente de ${across.toFixed(1)} m.`);
+      derivation.push(msg('loadPlan.derivation.wind', {
+        dir: dir.toUpperCase(), qh: round(res.qhNm2, 0),
+        net: round(net, 3), front: round(across, 1),
+      }));
     }
   }
 
@@ -462,7 +468,7 @@ export function buildLoadPlan(input: LoadPlanInput): LoadPlan {
     const elevated = levels.filter((l) => l.elevation > 0 && l.weightKN > 0);
     const W = elevated.reduce((s, l) => s + l.weightKN, 0);
     if (W <= 0) {
-      unsupportedKeys.push({ key: 'loadPlan.unsupported.noSeismicMass' });
+      unsupportedKeys.push(msg('loadPlan.unsupported.noSeismicMass'));
     } else {
       const C = input.seismic.coefficient;
       const V0 = C * W;
@@ -490,9 +496,9 @@ export function buildLoadPlan(input: LoadPlanInput): LoadPlan {
         cases.push({ existingId: findCase(input.model, 'E', 'Y'), type: 'E',
           nameKey: 'autoLoad.seismicCaseDir', nameParams: { dir: 'Y' } });
       }
-      derivation.push(
-        `Sismo: W = ${W.toFixed(1)} kN de las masas reales por nivel, C = ${C.toFixed(4)}, ` +
-        `V0 = ${V0.toFixed(1)} kN.`);
+      derivation.push(msg('loadPlan.derivation.seismic', {
+        weight: round(W, 1), coefficient: round(C, 4), baseShear: round(V0, 1),
+      }));
     }
   }
 
@@ -513,7 +519,7 @@ export function buildLoadPlan(input: LoadPlanInput): LoadPlan {
     const exc = liveLoadFactorInCompanion(ci);
     if (exc.note) derivation.push(exc.note);
     refs.push(R101('2.3.2', 'combinaciones básicas'));
-    derivation.push(`${combinations.length} combinación(es) generadas.`);
+    derivation.push(msg('loadPlan.derivation.combinationCount', { count: combinations.length }));
   }
 
   return {
@@ -526,46 +532,160 @@ export function buildLoadPlan(input: LoadPlanInput): LoadPlan {
       windQh, seismicWeight, baseShear,
     },
     levels,
-    assumptions: [...new Set(assumptions)],
+    assumptions: dedupeMessages(assumptions),
     unsupportedKeys, refs, derivation, blockedKeys: [],
   };
 }
 
 // ─── Delta, for the before/after preview ─────────────────────────
 
+/**
+ * What happens to one load case type when the plan is applied.
+ *
+ * This type exists because the preview used to lie. It reported `after` as the plan's own
+ * counts, which is only true when the user has ticked "replace existing loads"; with the
+ * box clear, applying a 28-load plan to a model that already had 28 leaves 56, not 28. And
+ * a model carrying W and E cases from an earlier run, re-planned with wind and seismic
+ * switched off, silently lost every combination that referenced them — the plan simply
+ * stopped mentioning them and nothing said so.
+ *
+ * So every case type present before or after now gets an explicit disposition, and the
+ * preview is a function of the replace flag rather than of wishful thinking.
+ */
+export type CaseAction =
+  /** The plan creates this case; the model had none. */
+  | 'created'
+  /** The plan regenerates loads into a case that already exists. */
+  | 'regenerated'
+  /**
+   * The model has this case, the plan does not produce it, and replace is OFF — so its
+   * loads survive untouched. Combinations that referenced it are still regenerated
+   * without it, which is why this is reported rather than passed over.
+   */
+  | 'retained'
+  /** The model has this case, the plan does not produce it, and replace is ON: deleted. */
+  | 'cleared';
+
+export interface CaseDisposition {
+  caseType: string;
+  action: CaseAction;
+  /** Why — always present, so no disposition is unexplained. */
+  reason: EngineMessage;
+  /** True when the user loses data or a case stops participating in combinations. */
+  lossy: boolean;
+}
+
 export interface PlanDelta {
   /** Loads the model currently has, by case type. */
   before: { distributed: number; nodal: number; combinations: number; cases: string[] };
+  /** Loads the model WILL have. Accounts for the replace flag. */
   after: { distributed: number; nodal: number; combinations: number; cases: string[] };
   /** New case types the plan introduces. */
   addedCaseTypes: string[];
   /** Case types the plan no longer produces. */
   removedCaseTypes: string[];
+  /** One entry per case type touched, added or left behind. Never elides one. */
+  dispositions: CaseDisposition[];
+  /** Dispositions a user must see before applying. Rendered as warnings, not notes. */
+  warnings: EngineMessage[];
   /** True when the plan changes anything at all. */
   changes: boolean;
+  /** Echo of the flag the counts were computed under. */
+  replaceExisting: boolean;
 }
 
+export interface CurrentLoadState {
+  distributed: number;
+  nodal: number;
+  combinations: number;
+  caseTypes: string[];
+  /** Existing load counts per case type. Enables an honest `after` when replace is off. */
+  perCaseType?: Record<string, { distributed: number; nodal: number }>;
+}
+
+/**
+ * The before/after the user sees, computed under the flag they actually have set.
+ *
+ * `replaceExisting` is not optional: getting it wrong is the defect this signature exists
+ * to prevent, so a caller has to state it.
+ */
 export function describePlanDelta(
   plan: LoadPlan,
-  current: { distributed: number; nodal: number; combinations: number; caseTypes: string[] },
+  current: CurrentLoadState,
+  options: { replaceExisting: boolean },
 ): PlanDelta {
-  const afterTypes = [...new Set(plan.cases.map((c) => c.type))].sort();
+  const replace = options.replaceExisting;
+  const afterTypes = [...new Set(plan.cases.map((c) => String(c.type)))].sort();
   const beforeTypes = [...new Set(current.caseTypes)].sort();
   const added = afterTypes.filter((t) => !beforeTypes.includes(t));
   const removed = beforeTypes.filter((t) => !afterTypes.includes(t));
-  const before = {
-    distributed: current.distributed, nodal: current.nodal,
-    combinations: current.combinations, cases: beforeTypes,
-  };
-  const after = {
-    distributed: plan.distributed.length, nodal: plan.nodal.length,
-    combinations: plan.combinations.length, cases: afterTypes,
-  };
+
+  const dispositions: CaseDisposition[] = [];
+  for (const t of afterTypes) {
+    const existed = beforeTypes.includes(t);
+    dispositions.push({
+      caseType: t,
+      action: existed ? 'regenerated' : 'created',
+      reason: msg(existed
+        ? 'loadPlan.disposition.regenerated'
+        : 'loadPlan.disposition.created', { caseType: t }),
+      // Regenerating into a case that keeps its old loads doubles them up. Say so.
+      lossy: existed && !replace,
+    });
+  }
+  for (const t of removed) {
+    dispositions.push({
+      caseType: t,
+      action: replace ? 'cleared' : 'retained',
+      reason: msg(replace
+        ? 'loadPlan.disposition.cleared'
+        : 'loadPlan.disposition.retained', { caseType: t }),
+      lossy: true,
+    });
+  }
+  dispositions.sort((a, b) => a.caseType.localeCompare(b.caseType));
+
+  // Counts. With replace ON the plan is the whole model; with it OFF the plan is added to
+  // what is there, except combinations, which are always regenerated wholesale.
+  const after = replace
+    ? {
+        distributed: plan.distributed.length, nodal: plan.nodal.length,
+        combinations: plan.combinations.length, cases: afterTypes,
+      }
+    : {
+        distributed: current.distributed + plan.distributed.length,
+        nodal: current.nodal + plan.nodal.length,
+        combinations: current.combinations + plan.combinations.length,
+        cases: [...new Set([...beforeTypes, ...afterTypes])].sort(),
+      };
+
+  const warnings: EngineMessage[] = [];
+  for (const t of removed) {
+    // The load case is one thing; its participation in the combinations is another, and
+    // that participation ends either way. That is the part users were not being told.
+    warnings.push(msg(replace
+      ? 'loadPlan.warning.caseCleared'
+      : 'loadPlan.warning.caseRetainedNotCombined', { caseType: t }));
+  }
+  if (!replace) {
+    const duplicated = afterTypes.filter((t) => beforeTypes.includes(t));
+    if (duplicated.length > 0) {
+      warnings.push(msg('loadPlan.warning.addedOnTopOfExisting', {
+        cases: duplicated.join(', '), count: duplicated.length,
+      }));
+    }
+  }
+
   return {
-    before, after, addedCaseTypes: added, removedCaseTypes: removed,
-    changes: before.distributed !== after.distributed
-      || before.nodal !== after.nodal
-      || before.combinations !== after.combinations
+    before: {
+      distributed: current.distributed, nodal: current.nodal,
+      combinations: current.combinations, cases: beforeTypes,
+    },
+    after, addedCaseTypes: added, removedCaseTypes: removed,
+    dispositions, warnings, replaceExisting: replace,
+    changes: current.distributed !== after.distributed
+      || current.nodal !== after.nodal
+      || current.combinations !== after.combinations
       || added.length > 0 || removed.length > 0,
   };
 }

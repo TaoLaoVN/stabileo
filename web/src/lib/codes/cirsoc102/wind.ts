@@ -47,6 +47,7 @@ import {
   assumed, clause, derived, fromCode, fromProject,
   type ClauseRef, type ProvenancedValue,
 } from '../regulation';
+import { msg, type EngineMessage } from '../message';
 
 // ─── Exposure ────────────────────────────────────────────────────
 
@@ -245,8 +246,8 @@ export interface RoofCpResult {
   windward: number[];
   leeward: number[];
   refs: ClauseRef[];
-  /** Set when the geometry falls outside the printed table. */
-  unsupported?: string;
+  /** Set when the geometry falls outside the printed table. Translated at the boundary. */
+  unsupported?: EngineMessage;
 }
 
 /**
@@ -265,10 +266,7 @@ export function roofCp(hOverL: number, thetaDeg: number): RoofCpResult {
   if (thetaDeg < 10) {
     return {
       windward: [], leeward: [], refs: [REF_CP],
-      unsupported:
-        'Cubiertas con pendiente menor que 10° y viento paralelo a la cumbrera requieren ' +
-        'la tabla por distancia horizontal desde el borde a barlovento (Figura 2.4-1), ' +
-        'que necesita la geometría de la cubierta zona por zona. No implementado.',
+      unsupported: msg('loads.cirsoc102.unsupported.shallowRoofParallelRidge'),
     };
   }
   const bucket = hOverLBucket(hOverL);
@@ -356,9 +354,9 @@ export interface WindResult {
   /** §2.1.5 minimum values, N/m². */
   minimum: { wallNm2: number; roofNm2: number; refs: ClauseRef[] };
   /** Capabilities the project needed that are not implemented. Never empty silently. */
-  unsupported: string[];
+  unsupported: EngineMessage[];
   /** Every assumption made, for the report's assumptions block. */
-  assumptions: string[];
+  assumptions: EngineMessage[];
 }
 
 /** §1.9.4 — gust-effect factor for a rigid building. */
@@ -381,17 +379,14 @@ export function velocityPressure(z: number, p: WindProject): number {
  * investigated and the governing one is not knowable in advance.
  */
 export function computeWindPressures(p: WindProject): WindResult {
-  const unsupported: string[] = [];
-  const assumptions: string[] = [];
+  const unsupported: EngineMessage[] = [];
+  const assumptions: EngineMessage[] = [];
 
   if (!p.rigid) {
-    unsupported.push(
-      'Edificio flexible o dinámicamente sensible: el factor de efecto de ráfaga requiere ' +
-      'el artículo 1.9.5 (frecuencia natural, amortiguamiento y la expresión completa de ' +
-      'G_f), que no está implementado. No se generan cargas de viento.');
+    unsupported.push(msg('loads.cirsoc102.unsupported.flexibleBuilding'));
   }
   if (p.meanRoofHeight > 1000) {
-    unsupported.push('Altura media de cubierta mayor que 1000 m: fuera de la Tabla 1.13-1.');
+    unsupported.push(msg('loads.cirsoc102.unsupported.heightAboveTable', { limit: 1000 }));
   }
 
   const kd = KD[p.structureKind];
@@ -402,12 +397,8 @@ export function computeWindPressures(p: WindProject): WindResult {
 
   const kztValue: ProvenancedValue<number> = p.kztSurveyed
     ? fromProject(p.kzt)
-    : assumed(1.0,
-        'Factor topográfico K_zt adoptado igual a 1,00 sin relevamiento del sitio. ' +
-        'El artículo 1.8 lo exige mayor que 1,00 cuando la construcción se ubica sobre ' +
-        'lomas, escarpas o colinas aisladas que cumplen sus condiciones. Verificar.',
-        [REF_KZT]);
-  if (!p.kztSurveyed) assumptions.push(kztValue.assumption as string);
+    : assumed(1.0, msg('loads.cirsoc102.assumed.kzt'), [REF_KZT]);
+  if (!p.kztSurveyed && kztValue.assumption) assumptions.push(kztValue.assumption);
 
   const factors: WindResult['factors'] = {
     V: fromProject(p.basicSpeed, 'm/s'),
@@ -468,10 +459,7 @@ export function computeWindPressures(p: WindProject): WindResult {
 
   // §2.4.6 — the four design load cases. Cases 2 and 4 apply a torsional eccentricity
   // that the frame model has no way to receive as a surface pressure.
-  unsupported.push(
-    'Casos de carga torsionales 2 y 4 del artículo 2.4.6 no implementados: requieren ' +
-    'aplicar la excentricidad e = ±0,15 B sobre el diafragma, lo que el modelo de barras ' +
-    'no recibe como presión de superficie. Se generan los casos 1 y 3.');
+  unsupported.push(msg('loads.cirsoc102.unsupported.torsionalCases'));
 
   return {
     factors,

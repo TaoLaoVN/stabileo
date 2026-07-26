@@ -35,6 +35,7 @@
  */
 
 import { clause, type ClauseRef } from '../regulation';
+import { msg, type EngineMessage } from '../message';
 
 /** The load symbols of §2.2, as used by the combinations. */
 export type LoadSymbol = 'D' | 'L' | 'Lr' | 'S' | 'R' | 'W' | 'E' | 'F' | 'H' | 'T';
@@ -50,11 +51,18 @@ export interface LoadCombinationSpec {
   /** Which of the seven printed combinations this came from. */
   basic: 1 | 2 | 3 | 4 | 5 | 6 | 7;
   terms: CombinationTerm[];
-  /** Rendered form, e.g. "1,2 D + 1,6 L + 0,5 Lr". */
+  /**
+   * Canonical notation, e.g. `1.2 D + 1.6 L + 0.5 Lr`.
+   *
+   * Deliberately locale-neutral: this is a formula, and it is also the stable identity a
+   * test and a stored combination are matched on. `formatCombinationLabel()` at the i18n
+   * boundary renders it with the reader's decimal separator, so a Spanish user sees
+   * `1,2 D + 1,6 L`.
+   */
   label: string;
   refs: ClauseRef[];
-  /** Notes attached by an exception that was applied. */
-  notes: string[];
+  /** Notes attached by an exception that was applied. Translated at the boundary. */
+  notes: EngineMessage[];
 }
 
 export interface CombinationInputs {
@@ -86,8 +94,8 @@ const REF_EXC1 = clause('cirsoc-101', '2025', '2.3.2 Excepción 1', 'factor de c
 const REF_EXC2 = clause('cirsoc-101', '2025', '2.3.2 Excepción 2', 'S como carga de nieve sobre cubierta plana');
 
 function fmt(f: number): string {
-  // Argentine decimal comma, matching how the regulation prints the factors.
-  return f.toFixed(1).replace('.', ',');
+  // A point, not the regulation's comma: see `label` above. The boundary re-separates.
+  return f.toFixed(1);
 }
 
 function label(terms: CombinationTerm[]): string {
@@ -103,27 +111,29 @@ function label(terms: CombinationTerm[]): string {
  * Exported because the exception is a decision a reviewing engineer will want to see
  * justified, not a hidden constant.
  */
-export function liveLoadFactorInCompanion(inputs: CombinationInputs): { factor: number; note: string | null } {
+export function liveLoadFactorInCompanion(
+  inputs: CombinationInputs,
+): { factor: number; note: EngineMessage | null } {
   const lo = inputs.maxLoKNm2;
   if (inputs.hasGarageOrPublicAssembly) {
     return {
       factor: 1.0,
-      note: 'Excepción 1 no aplicable: hay áreas de garaje o de reunión pública.',
+      note: msg('loads.cirsoc101.exception1.blockedByAssembly'),
     };
   }
   if (lo === undefined) {
     return {
       factor: 1.0,
-      note: 'Excepción 1 no aplicada: no se conoce Lo de Tabla 4.1. Se usa L con factor 1,0 (conservador).',
+      note: msg('loads.cirsoc101.exception1.unknownLo'),
     };
   }
   if (lo <= 5.0) {
     return {
       factor: 0.5,
-      note: `Excepción 1 aplicada: Lo = ${lo} kN/m² ≤ 5 kN/m² y no hay garaje ni reunión pública.`,
+      note: msg('loads.cirsoc101.exception1.applied', { lo }),
     };
   }
-  return { factor: 1.0, note: `Excepción 1 no aplicable: Lo = ${lo} kN/m² > 5 kN/m².` };
+  return { factor: 1.0, note: msg('loads.cirsoc101.exception1.heavyLo', { lo }) };
 }
 
 /**
@@ -150,7 +160,7 @@ export function generateCombinations(inputs: CombinationInputs): LoadCombination
     suffix: string,
     terms: CombinationTerm[],
     refs: ClauseRef[],
-    notes: string[],
+    notes: EngineMessage[],
   ) => {
     const withFH = applyFluidAndEarth(basic, terms, inputs);
     for (const variant of withFH) {
@@ -181,7 +191,7 @@ export function generateCombinations(inputs: CombinationInputs): LoadCombination
           ...(p.L ? [{ symbol: 'L' as LoadSymbol, factor: 1.6 }] : []),
           { symbol: c, factor: 0.5 },
         ], [REF_BASIC, ...(c === 'S' ? [REF_EXC2] : [])],
-        c === 'S' ? ['S se toma como carga de nieve sobre cubierta plana (Excepción 2).'] : []);
+        c === 'S' ? [msg('loads.cirsoc101.note.snowAsFlatRoof')] : []);
       }
     }
   }
@@ -217,7 +227,7 @@ export function generateCombinations(inputs: CombinationInputs): LoadCombination
       for (const c of roofCompanions) {
         push(4, `-${c}`, [...base, { symbol: c, factor: 0.5 }],
           [REF_BASIC, REF_EXC1, ...(c === 'S' ? [REF_EXC2] : [])],
-          [...notes, ...(c === 'S' ? ['S se toma como carga de nieve sobre cubierta plana (Excepción 2).'] : [])]);
+          [...notes, ...(c === 'S' ? [msg('loads.cirsoc101.note.snowAsFlatRoof')] : [])]);
       }
     }
   }
@@ -231,7 +241,7 @@ export function generateCombinations(inputs: CombinationInputs): LoadCombination
       ...(p.S ? [{ symbol: 'S' as LoadSymbol, factor: 0.2 }] : []),
     ], [REF_BASIC, REF_EXC1, ...(p.S ? [REF_EXC2] : [])],
     [...(p.L && excNote ? [excNote] : []),
-     ...(p.S ? ['S se toma como carga de nieve sobre cubierta plana (Excepción 2).'] : [])]);
+     ...(p.S ? [msg('loads.cirsoc101.note.snowAsFlatRoof')] : [])]);
   }
 
   // ── 6. 0,9 D + 1,0 W ──
@@ -247,7 +257,7 @@ interface Variant {
   suffix: string;
   terms: CombinationTerm[];
   refs: ClauseRef[];
-  notes: string[];
+  notes: EngineMessage[];
 }
 
 /**
@@ -263,13 +273,13 @@ function applyFluidAndEarth(
 ): Variant[] {
   let withF = terms;
   const refs: ClauseRef[] = [];
-  const notes: string[] = [];
+  const notes: EngineMessage[] = [];
 
   if (inputs.present.F && basic !== 6) {
     const dFactor = terms.find((t) => t.symbol === 'D')?.factor ?? 1.0;
     withF = [...terms, { symbol: 'F', factor: dFactor }];
     refs.push(clause('cirsoc-101', '2025', '2.3.2', 'cargas debidas a fluidos F'));
-    notes.push('F se incluye con el mismo factor de carga que D.');
+    notes.push(msg('loads.cirsoc101.note.fSameFactorAsD'));
   }
 
   if (!inputs.present.H) {
@@ -279,16 +289,16 @@ function applyFluidAndEarth(
   const hRef = clause('cirsoc-101', '2025', '2.3.2', 'empuje lateral del suelo H');
   const action = inputs.earthPressureAction ?? 'unknown';
   const opposingFactor = inputs.earthPressurePermanent ? 0.9 : 0;
-  const opposingNote = inputs.earthPressurePermanent
-    ? 'H se opone al efecto de la carga variable primaria y es permanente: factor 0,9.'
-    : 'H se opone al efecto de la carga variable primaria y no es permanente: factor 0.';
+  const opposingNote = msg(inputs.earthPressurePermanent
+    ? 'loads.cirsoc101.note.hOpposesPermanent'
+    : 'loads.cirsoc101.note.hOpposesTemporary');
 
   if (action === 'adds') {
     return [{
       suffix: '',
       terms: [...withF, { symbol: 'H', factor: 1.6 }],
       refs: [...refs, hRef],
-      notes: [...notes, 'H se suma al efecto de la carga variable primaria: factor 1,6.'],
+      notes: [...notes, msg('loads.cirsoc101.note.hAdds')],
     }];
   }
   if (action === 'opposes') {
@@ -306,17 +316,13 @@ function applyFluidAndEarth(
       suffix: '-H+',
       terms: [...withF, { symbol: 'H', factor: 1.6 }],
       refs: [...refs, hRef],
-      notes: [...notes,
-        'Sentido de H no indicado en el proyecto: se generan ambos casos. Este es el ' +
-        'caso en que H se suma al efecto variable primario (factor 1,6).'],
+      notes: [...notes, msg('loads.cirsoc101.note.hUnknownAdding')],
     },
     {
       suffix: '-H-',
       terms: opposingFactor === 0 ? withF : [...withF, { symbol: 'H', factor: opposingFactor }],
       refs: [...refs, hRef],
-      notes: [...notes,
-        'Sentido de H no indicado en el proyecto: se generan ambos casos. Este es el ' +
-        `caso en que H se opone (factor ${fmt(opposingFactor)}).`],
+      notes: [...notes, msg('loads.cirsoc101.note.hUnknownOpposing', { factor: opposingFactor })],
     },
   ];
 }
