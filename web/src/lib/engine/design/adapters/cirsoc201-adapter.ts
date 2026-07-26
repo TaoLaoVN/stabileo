@@ -29,6 +29,14 @@ import { recommendSection, type AdviceDemands } from '../section-advice';
 import { DEFAULT_OBJECTIVE, type ObjectiveSpec } from '../objective';
 import { UTILIZATION_CONVENTION, type LimitingConstraint, type SectionRecommendation, type DesignReason } from '../outcome';
 import {
+  minClearSpacingFor,
+} from '../../../codes/cirsoc201/spacing';
+import { clause } from '../../../codes/regulation';
+import type { RegulationEdition } from '../../../codes/regulation';
+import {
+  CIRSOC201_CAPABILITIES_2005, CIRSOC201_CAPABILITIES_2025, CIRSOC201_CLAUSES,
+} from './cirsoc201-capabilities';
+import {
   registerDesignCode,
   type CodeCapabilities, type CodeProvenance, type DemandRequirement,
   type DesignCodeAdapter, type DetailingLimits, type InputValidation,
@@ -36,8 +44,16 @@ import {
 
 export const CIRSOC_VERIFIER_ID = 'cirsoc201.provided.v2';
 
+/**
+ * Legacy coarse flags, kept because the UI still reads them.
+ *
+ * `curtailment` is now FALSE. It was true, and it was an over-claim: the verifier can
+ * rate a curtailment the user supplied, but the app cannot produce one. The two
+ * questions have different answers and are now asked separately — see the five-facet
+ * matrix in ./cirsoc201-capabilities.ts, which is the authority.
+ */
 const CAPABILITIES: CodeCapabilities = {
-  beams: { flexure: true, shear: true, torsion: false, regions: true, curtailment: true, anchorage: true },
+  beams: { flexure: true, shear: true, torsion: false, regions: true, curtailment: false, anchorage: true },
   columns: { axialFlexure: true, biaxial: true, slenderness: true, ties: true },
   walls: false,
   sectionShapes: ['rect'],
@@ -45,12 +61,14 @@ const CAPABILITIES: CodeCapabilities = {
   sectionRecommendation: true,
 };
 
-export const cirsoc201Adapter: DesignCodeAdapter = {
-  id: 'cirsoc',
+function makeAdapter(edition: RegulationEdition): DesignCodeAdapter {
+ return {
+  id: edition === '2025' ? 'cirsoc' : 'cirsoc-2005',
   name: 'CIRSOC 201',
-  version: '2005',
+  version: edition,
   utilizationConvention: UTILIZATION_CONVENTION,
   capabilities: CAPABILITIES,
+  capabilityMatrix: edition === '2025' ? CIRSOC201_CAPABILITIES_2025 : CIRSOC201_CAPABILITIES_2005,
 
   requiredDemands(): DemandRequirement {
     return {
@@ -95,8 +113,15 @@ export const cirsoc201Adapter: DesignCodeAdapter = {
     const rhoMin = isColumn
       ? COLUMN_LIMITS.rhoMin
       : Math.max(0.25 * Math.sqrt(fc) / fy, 1.4 / fy);
+    // CIRSOC 201 §25.2.1/§25.2.3 (2025) or §7.6.1/§7.6.3 (2005). The bar diameter is
+    // not known here, so this reports the requirement for the smallest standard bar;
+    // the verifier and the generator evaluate the rule per actual diameter.
+    const spacing = minClearSpacingFor(edition, isColumn ? 'column' : 'beam', {
+      barDiameterMm: 8,
+      maxAggregateSizeMm: ctx.material.maxAggregateSize.value,
+    });
     return {
-      minClearSpacing: 0.025,
+      minClearSpacing: spacing.minClear,
       ld: (d: number) => requiredLd(d, fc, fy),
       ldh: (d: number) => requiredLdh(d, fc, fy),
       lapSplice: (d: number) => 1.3 * requiredLd(d, fc, fy),
@@ -131,7 +156,14 @@ export const cirsoc201Adapter: DesignCodeAdapter = {
       },
       ctx.stations,
       ctx.modelData as never,
-      { axes: ctx.axes, slenderDeltaNs: ctx.slenderDeltaNs },
+      {
+        axes: ctx.axes,
+        slenderDeltaNs: ctx.slenderDeltaNs,
+        spacingRule: {
+          edition: ctx.codeEdition,
+          maxAggregateSizeMm: ctx.material.maxAggregateSize.value,
+        },
+      },
     );
   },
 
@@ -171,13 +203,30 @@ export const cirsoc201Adapter: DesignCodeAdapter = {
 
   provenance(): CodeProvenance {
     return {
-      codeId: 'cirsoc',
+      codeId: edition === '2025' ? 'cirsoc' : 'cirsoc-2005',
       codeName: 'CIRSOC 201',
-      codeVersion: '2005',
-      verifierId: CIRSOC_VERIFIER_ID,
-      clauses: ['§10.2', '§10.3', '§10.5', '§10.9.1', '§11.2', '§11.5', '§7.6.1', '§7.10.5', '§12.2'],
+      codeVersion: edition,
+      // v3 adds the edition to the verifier identity. A v2 certificate did not record
+      // which edition produced it, so v2 and v3 results are not interchangeable.
+      verifierId: `${CIRSOC_VERIFIER_ID}.${edition}`,
+      clauses: CIRSOC201_CLAUSES[edition],
     };
   },
-};
+ };
+}
 
-registerDesignCode(cirsoc201Adapter);
+/** CIRSOC 201-2025 — the edition in force. Default for new projects. */
+export const cirsoc201Adapter2025: DesignCodeAdapter = makeAdapter('2025');
+
+/**
+ * CIRSOC 201-2005 — legacy, selectable for projects designed before the 2025 edition
+ * came into force. An independent adapter with its own clause map; it shares an
+ * implementation but never a rule or a clause identifier with 2025.
+ */
+export const cirsoc201Adapter2005: DesignCodeAdapter = makeAdapter('2005');
+
+/** Back-compat alias: the default adapter is now the edition in force. */
+export const cirsoc201Adapter = cirsoc201Adapter2025;
+
+registerDesignCode(cirsoc201Adapter2025);
+registerDesignCode(cirsoc201Adapter2005);

@@ -22,6 +22,8 @@ import {
 } from '../station-design-forces';
 import { resolveDesignAxes, type DesignAxes } from './design-axes';
 import type { LimitingConstraint } from './outcome';
+import type { ProvenancedValue, RegulationEdition } from '../../codes/regulation';
+import { resolveMaxAggregateSize, type ConcreteProjectData } from '../../codes/project-code-settings';
 
 export interface RectSection {
   id: number;
@@ -39,6 +41,15 @@ export interface CodeMaterials {
   cover: number;
   /** Assumed stirrup diameter used for cover/depth arithmetic (mm). */
   stirrupDia: number;
+  /**
+   * Maximum nominal coarse-aggregate size (mm), already resolved from project data.
+   *
+   * Carries its own provenance because CIRSOC 201-2025 §25.2.1 puts it inside the
+   * mandatory clear-spacing rule while no edition states a default: a design run where
+   * this was assumed rather than stated is a materially different document, and the
+   * certificate has to be able to say which one it is.
+   */
+  maxAggregateSize: ProvenancedValue<number>;
 }
 
 /** Model slices the builder reads. Structurally typed so tests can pass literals. */
@@ -66,6 +77,11 @@ export interface MemberContext {
   /** True when this member's force components look inconsistent with its
    *  geometry — certification is blocked (O6). */
   orientationSuspect: boolean;
+  /**
+   * Edition of CIRSOC 201 this member is being designed to. Every rule the adapter
+   * applies and every clause it cites is resolved against this and nothing else.
+   */
+  codeEdition: RegulationEdition;
   analysisRevision: number;
   demandRevision: number;
   /** Reasons the member cannot be designed at all, if any. */
@@ -78,6 +94,8 @@ export interface MemberContext {
 export const DEFAULT_COVER = 0.025;      // m
 export const DEFAULT_STIRRUP_DIA = 8;    // mm
 export const DEFAULT_REBAR_FY = 420;     // MPa
+/** CIRSOC 201-2025 — the edition legally in force since 22-01-2026 (Res. 11/2026). */
+export const DEFAULT_CODE_EDITION: RegulationEdition = '2025';
 
 /** Build the memoised critical-section map for all beams in one pass. */
 export function buildCriticalSectionMap(
@@ -116,6 +134,10 @@ export interface BuildContextOptions {
   cover?: number;
   stirrupDia?: number;
   rebarFy?: number;
+  /** Edition of CIRSOC 201 to design to. Defaults to the edition in force. */
+  codeEdition?: RegulationEdition;
+  /** Project concrete data. Absent aggregate size becomes a visible assumption. */
+  concrete?: ConcreteProjectData;
 }
 
 /**
@@ -161,6 +183,10 @@ export function buildMemberContext(
   const cover = opts.cover ?? DEFAULT_COVER;
   const stirrupDia = opts.stirrupDia ?? DEFAULT_STIRRUP_DIA;
   const fy = opts.rebarFy ?? DEFAULT_REBAR_FY;
+  const codeEdition = opts.codeEdition ?? DEFAULT_CODE_EDITION;
+  const maxAggregateSize = resolveMaxAggregateSize(
+    opts.concrete ?? { maxAggregateSizeMm: null, shotcrete: false },
+  );
 
   const axes = resolveDesignAxes(elementType, { b, h }, demands);
   if (axes.basis === 'no-demand' && !blocking.includes('missingDemand')) blocking.push('missingDemand');
@@ -170,12 +196,13 @@ export function buildMemberContext(
     elementType,
     L,
     section: { id: sec?.id ?? -1, name: sec?.name ?? '—', b, h },
-    material: { fc: fc ?? 0, fy, cover, stirrupDia },
+    material: { fc: fc ?? 0, fy, cover, stirrupDia, maxAggregateSize },
     demands,
     stations,
     criticalSections: opts.criticalSections?.get(elementId),
     axes,
     slenderDeltaNs: Math.max(1, opts.slenderDeltaNs?.get(elementId) ?? 1),
+    codeEdition,
     orientationSuspect: opts.orientationSuspect?.has(elementId) ?? false,
     analysisRevision: opts.analysisRevision ?? 0,
     demandRevision: opts.demandRevision ?? 0,

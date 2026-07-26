@@ -21,6 +21,10 @@ import type { AnalysisResults3D } from './types-3d';
 import type { ProvidedReinforcement, RebarGroup, RebarLayer, StirrupDef, BeamRegions, BeamContinuity, LongBarGroup, ColumnReinforcement } from '../store/model.svelte';
 import type { Node, Element, Section, Support } from '../store/model.svelte';
 import { evaluateDiagramAt } from './diagrams-3d';
+import {
+  minClearBetweenLayers, minClearSpacingColumn, minClearSpacingInLayer,
+} from '../codes/cirsoc201/spacing';
+import type { RegulationEdition } from '../codes/regulation';
 import { REBAR_DB, classifyElement } from './codes/argentina/cirsoc201';
 // Axis resolution + the shared utilization convention. Both modules import only
 // TYPES from this file, so there is no runtime import cycle.
@@ -693,9 +697,24 @@ export interface SectionLayout {
  * @param cover Clear cover (m)
  * @param stirrupDia Stirrup diameter (mm)
  */
+/**
+ * Which edition's spacing rule to apply, and the aggregate size it needs.
+ *
+ * Optional everywhere so existing callers keep working. The default reproduces the
+ * pre-2025 behaviour exactly (2005 clauses, no aggregate term), so adding the parameter
+ * cannot move a result on its own — only passing a 2025 edition can.
+ */
+export interface SpacingRule {
+  edition: RegulationEdition;
+  maxAggregateSizeMm: number;
+}
+
+export const LEGACY_SPACING_RULE: SpacingRule = { edition: '2005', maxAggregateSizeMm: 0 };
+
 export function computeFaceLayout(
   layers: RebarLayer[], face: 'top' | 'bottom',
   b: number, h: number, cover: number, stirrupDia: number,
+  rule: SpacingRule = LEGACY_SPACING_RULE,
 ): FaceLayout {
   const stirDia_m = stirrupDia / 1000;
   const availW = b - 2 * cover - 2 * stirDia_m;
@@ -707,7 +726,10 @@ export function computeFaceLayout(
   for (const layer of layers) {
     const barDia_m = layer.diameter / 1000;
     const n = layer.count;
-    const minGap = Math.max(barDia_m, 0.025);
+    // CIRSOC 201 §25.2.1 (2025) / §7.6.1 (2005).
+    const minGap = minClearSpacingInLayer(rule.edition, {
+      barDiameterMm: layer.diameter, maxAggregateSizeMm: rule.maxAggregateSizeMm,
+    }).minClear;
 
     // Check fit
     const reqW = n * barDia_m + Math.max(0, n - 1) * minGap;
@@ -753,9 +775,10 @@ export function computeFaceLayout(
 export function computeSectionLayout(
   topLayers: RebarLayer[], bottomLayers: RebarLayer[],
   b: number, h: number, cover: number, stirrupDia: number,
+  rule: SpacingRule = LEGACY_SPACING_RULE,
 ): SectionLayout {
-  const top = computeFaceLayout(topLayers, 'top', b, h, cover, stirrupDia);
-  const bottom = computeFaceLayout(bottomLayers, 'bottom', b, h, cover, stirrupDia);
+  const top = computeFaceLayout(topLayers, 'top', b, h, cover, stirrupDia, rule);
+  const bottom = computeFaceLayout(bottomLayers, 'bottom', b, h, cover, stirrupDia, rule);
   const allBars = [...bottom.bars, ...top.bars];
   const issues: SpacingIssue[] = [];
   const stirDia_m = stirrupDia / 1000;
@@ -770,7 +793,10 @@ export function computeSectionLayout(
         const prev = rowBars[i - 1];
         const curr = rowBars[i];
         const clear = (curr.x - prev.x) - (prev.diameter / 2000) - (curr.diameter / 2000);
-        const minClear = Math.max(curr.diameter / 1000, prev.diameter / 1000, 0.025);
+        const minClear = minClearSpacingInLayer(rule.edition, {
+          barDiameterMm: Math.max(curr.diameter, prev.diameter),
+          maxAggregateSizeMm: rule.maxAggregateSizeMm,
+        }).minClear;
         if (clear < minClear - 0.001) {
           issues.push({
             type: 'horizontal', face: fl.face, row: rn, barIndex: i,
@@ -796,7 +822,7 @@ export function computeSectionLayout(
       const prevDia = prevRow[0].diameter / 1000;
       const currDia = currRow[0].diameter / 1000;
       const vertClear = vertDist - prevDia / 2 - currDia / 2;
-      const minVertClear = Math.max(currDia, prevDia, 0.025);
+      const minVertClear = Math.max(currDia, prevDia, minClearBetweenLayers(rule.edition).minClear);
       if (vertClear < minVertClear - 0.001) {
         issues.push({
           type: 'vertical', face: fl.face, row: rowNums[i],
@@ -812,11 +838,12 @@ export function computeSectionLayout(
     const botTopY = Math.max(...bottom.bars.map(b => b.y + b.diameter / 2000));
     const topBotY = Math.min(...top.bars.map(b => b.y - b.diameter / 2000));
     const crossClear = topBotY - botTopY;
-    if (crossClear < 0.025 - 0.001) {
+    const minCrossClear = minClearBetweenLayers(rule.edition).minClear;
+    if (crossClear < minCrossClear - 0.001) {
       issues.push({
         type: 'overlap', face: 'cross', row: -1,
-        actual: +crossClear.toFixed(4), required: 0.025,
-        description: `Top/bottom bars overlap or too close: ${(crossClear*1000).toFixed(0)}mm clear (min 25mm)`,
+        actual: +crossClear.toFixed(4), required: +minCrossClear.toFixed(4),
+        description: `Top/bottom bars overlap or too close: ${(crossClear*1000).toFixed(0)}mm clear (min ${(minCrossClear*1000).toFixed(0)}mm)`,
       });
     }
   }
@@ -902,6 +929,7 @@ export function computeColumnLayout(
   count: number, diameter: number,
   b: number, h: number, cover: number, stirrupDia: number,
   colReinf?: ColumnReinforcement,
+  rule: SpacingRule = LEGACY_SPACING_RULE,
 ): ColumnLayout {
   const resolved = resolveColumnReinf(colReinf, { count, diameter });
   if (!resolved) return { bars: [], totalArea: 0, b, h, issues: [], constructible: true };
@@ -945,8 +973,16 @@ export function computeColumnLayout(
 
   // Constructibility checks
   const issues: SpacingIssue[] = [];
-  const maxBarDia = Math.max(resolved.cornerDia, resolved.faceDia) / 1000;
-  const minClear = Math.max(maxBarDia, 0.025, 0.04);
+  // CIRSOC 201 §25.2.3 (2025) / §7.6.3 (2005): max(40 mm, 1.5 db, (4/3) dagg).
+  //
+  // This previously read max(db, 25 mm, 40 mm), which drops the 1.5 db term entirely and
+  // under-reports the requirement for every bar from Ø28 up — at Ø32 the code asks for
+  // 48 mm and the check accepted 40 mm. Corrected in BOTH editions, because it was
+  // wrong in both.
+  const minClear = minClearSpacingColumn(rule.edition, {
+    barDiameterMm: Math.max(resolved.cornerDia, resolved.faceDia),
+    maxAggregateSizeMm: rule.maxAggregateSizeMm,
+  }).minClear;
 
   for (let i = 0; i < bars.length; i++) {
     const a = bars[i];
@@ -1028,6 +1064,7 @@ export interface LayerFitResult {
  */
 export function checkRowFit(
   layers: RebarLayer[], b: number, cover: number, stirrupDia: number,
+  rule: SpacingRule = LEGACY_SPACING_RULE,
 ): LayerFitResult {
   const stirDia_m = stirrupDia / 1000;
   const availW = b - 2 * cover - 2 * stirDia_m;
@@ -1036,7 +1073,9 @@ export function checkRowFit(
 
   for (const layer of layers) {
     const barDia_m = layer.diameter / 1000;
-    const minGap = Math.max(barDia_m, 0.025); // CIRSOC 201 §7.6.1
+    const minGap = minClearSpacingInLayer(rule.edition, {
+      barDiameterMm: layer.diameter, maxAggregateSizeMm: rule.maxAggregateSizeMm,
+    }).minClear;
     const n = layer.count;
     // Required width: n bars + (n-1) gaps
     const reqW = n * barDia_m + Math.max(0, n - 1) * minGap;
@@ -1642,8 +1681,14 @@ export function verifyProvidedReinforcement(
     axes?: DesignAxes;
     /** Slenderness moment magnifier for columns (>= 1). Default 1 (short column). */
     slenderDeltaNs?: number;
+    /**
+     * Edition + aggregate size governing minimum clear spacing. Defaults to the legacy
+     * 2005 rule so callers that have not been migrated keep their current behaviour.
+     */
+    spacingRule?: SpacingRule;
   },
 ): ProvidedRebarResult {
+  const spacingRule = options?.spacingRule ?? LEGACY_SPACING_RULE;
   const emptyResult = (status: ProvidedRebarResult['overallStatus']): ProvidedRebarResult => ({
     elementId, elementType, hasProvided: !!provided, checks: [], overallStatus: status,
     worstUtilization: 0, checkedAxes: [], strengthCheckCount: 0,
@@ -1949,7 +1994,7 @@ export function verifyProvidedReinforcement(
     ];
     for (const fs of fitSets) {
       if (fs.layers.length === 0) continue;
-      const fit = checkRowFit(fs.layers, section.b, section.cover, section.stirrupDia);
+      const fit = checkRowFit(fs.layers, section.b, section.cover, section.stirrupDia, spacingRule);
       for (const rf of fit.rows) {
         if (!rf.fits) {
           checks.push({
@@ -1968,7 +2013,7 @@ export function verifyProvidedReinforcement(
     // ─── Vertical fit / cover / overlap from the full section layout ───
     const stirDiaEff = (stirSupport ?? stirSpan)?.diameter ?? section.stirrupDia;
     if (bottomLayers.length > 0 || topStartLayers.length > 0) {
-      const layout = computeSectionLayout(topStartLayers, bottomLayers, section.b, section.h, section.cover, stirDiaEff);
+      const layout = computeSectionLayout(topStartLayers, bottomLayers, section.b, section.h, section.cover, stirDiaEff, spacingRule);
       for (const issue of layout.issues) {
         if (issue.type === 'horizontal') continue; // already reported by checkRowFit
         checks.push({
@@ -1984,7 +2029,7 @@ export function verifyProvidedReinforcement(
   if (elementType === 'column' && section) {
     const colResolved = resolveColumnReinf(provided.column, provided.longitudinal);
     const colLayout = colResolved
-      ? computeColumnLayout(colResolved.totalCount, colResolved.cornerDia, section.b, section.h, section.cover, section.stirrupDia, provided.column)
+      ? computeColumnLayout(colResolved.totalCount, colResolved.cornerDia, section.b, section.h, section.cover, section.stirrupDia, provided.column, spacingRule)
       : undefined;
     const colBars = colLayout?.bars;
 

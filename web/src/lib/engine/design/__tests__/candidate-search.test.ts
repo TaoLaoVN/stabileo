@@ -116,7 +116,9 @@ describe('designMember — outcomes and budgets', () => {
     expect(o.accepted).toBeDefined();
     expect(o.certificate).toBeDefined();
     expect(o.certificate!.rebarHash).toBe(rebarHash(o.accepted));
-    expect(o.certificate!.verifierId).toBe('cirsoc201.provided.v2');
+    // The verifier id now carries the edition. A v2 certificate did not record which
+    // edition produced it, so v2 and v2.<edition> results are not interchangeable.
+    expect(o.certificate!.verifierId).toBe('cirsoc201.provided.v2.2025');
     expect(o.certificate!.worstUtilization).toBeLessThanOrEqual(UTIL_FAIL_THRESHOLD);
     expect(o.certificate!.designTarget).toBe(DESIGN_TARGET_UTILIZATION);
     expect(o.certificate!.checkedAxes.length).toBeGreaterThan(0);
@@ -245,11 +247,46 @@ describe('runDesign — cancellation and partial honesty', () => {
 describe('design-code adapter conformance (parameterised over the registry)', () => {
   const adapters = listDesignCodes();
 
-  it('registers CIRSOC plus every unsupported code', () => {
+  it('registers both CIRSOC editions plus every unsupported code', () => {
+    // 'cirsoc' is CIRSOC 201-2025, the edition in force. 'cirsoc-2005' is the legacy
+    // adapter, independent and with its own clause map.
     expect(adapters.map(a => a.id).sort()).toEqual(
-      ['aci-aisc', 'cfs', 'cirsoc', 'eurocode', 'masonry', 'nds'].sort(),
+      ['aci-aisc', 'cfs', 'cirsoc', 'cirsoc-2005', 'eurocode', 'masonry', 'nds'].sort(),
     );
     expect(unsupportedAdapters.length).toBe(5);
+  });
+
+  it('never lets the two CIRSOC editions share a clause identifier', () => {
+    const c2025 = adapters.find(a => a.id === 'cirsoc')!.provenance();
+    const c2005 = adapters.find(a => a.id === 'cirsoc-2005')!.provenance();
+    expect(c2025.codeVersion).toBe('2025');
+    expect(c2005.codeVersion).toBe('2005');
+    // The two clause LISTS must differ — the 2025 edition renumbered the subject
+    // matter, so identical lists would mean one was copied rather than read.
+    expect(c2025.clauses).not.toEqual(c2005.clauses);
+    expect(c2025.verifierId).not.toBe(c2005.verifierId);
+
+    // Note deliberately NOT asserted: that the two lists share no raw string. They do —
+    // "§10.5" exists in both editions and means different things in each (2025: column
+    // design strength; 2005: a flexure-and-axial-load article). That collision is
+    // exactly why a bare clause number is not an identifier and why ClauseRef carries
+    // the edition. The real invariant is checked below.
+  });
+
+  it('tags every capability clause with the declaring adapter\'s own edition', () => {
+    // The invariant that a shared clause number cannot violate: no matrix entry may
+    // cite an edition other than the one its adapter implements.
+    for (const id of ['cirsoc', 'cirsoc-2005'] as const) {
+      const a = adapters.find(x => x.id === id)!;
+      const edition = a.provenance().codeVersion;
+      for (const key of Object.keys(a.capabilityMatrix) as Array<keyof typeof a.capabilityMatrix>) {
+        for (const ref of a.capabilityMatrix[key].refs) {
+          // Seismic capabilities correctly cite INPRES-CIRSOC 103, not CIRSOC 201.
+          if (ref.regulation !== 'cirsoc-201') continue;
+          expect(ref.edition, `${id} / ${String(key)} / §${ref.clause}`).toBe(edition);
+        }
+      }
+    }
   });
 
   for (const a of adapters) {
