@@ -1,4 +1,5 @@
 import { describe, it, expect } from 'vitest';
+import { teAt } from '../../../i18n/engine-text';
 import {
   ELEVATION_X, LAYERS, PLAN, barArcs, buildSchedule, buildTitleBlock, drawElevation,
   drawSection, project, scheduleToAoa, sheetToDxf, sheetToSvg,
@@ -181,8 +182,12 @@ describe('title block honesty', () => {
       sheetNumber: 'H', title: 'X',
       assembly: assembly({ maturity: 'IMPLEMENTED_PROVISIONAL' }), clauses,
     });
-    expect(t.provisionalNote).toMatch(/CÁLCULO PROVISORIO/);
-    expect(t.provisionalNote).toMatch(/no constituye firma profesional/);
+    // Structured now: the note is rendered by whichever writer emits the sheet, so the
+    // same drawing can go out in Spanish while the UI stays English.
+    expect(t.provisionalNote?.key).toBe('maturity.provisionalDrawingNote');
+    expect(teAt(t.provisionalNote!, 'es')).toMatch(/CÁLCULO PROVISORIO/);
+    expect(teAt(t.provisionalNote!, 'es')).toMatch(/no constituye firma profesional/);
+    expect(teAt(t.provisionalNote!, 'en')).toMatch(/PROVISIONAL CALCULATION/);
   });
 
   it('omits the provisional note when everything is validated', () => {

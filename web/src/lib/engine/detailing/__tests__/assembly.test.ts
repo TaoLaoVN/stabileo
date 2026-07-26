@@ -1,4 +1,5 @@
 import { describe, it, expect } from 'vitest';
+import { teAt } from '../../../i18n/engine-text';
 import {
   DETAILING_SCHEMA_VERSION, applyReview, assignMarks, emptyDetailingStore,
   evaluateState, invalidateAffected, isDemandStale, isReviewStale, lockedBars,
@@ -71,7 +72,9 @@ describe('validation maturity', () => {
       ],
     });
     expect(m.maturity).toBe('IMPLEMENTED_PROVISIONAL');
-    expect(m.promotionPath).toMatch(/ejemplo resuelto externo/);
+    expect(m.promotionPath?.key).toBe('maturity.promotion.needsExternalBenchmark');
+    expect(teAt(m.promotionPath!, 'es')).toMatch(/ejemplo resuelto externo/);
+    expect(teAt(m.promotionPath!, 'en')).toMatch(/external worked example/);
   });
 
   it('reaches VALIDATED only with an external benchmark', () => {

@@ -29,6 +29,8 @@
 import type { BarPath, Point3 } from '../../codes/cirsoc201/bar-geometry';
 import { samplePath } from '../../codes/cirsoc201/bar-geometry';
 import { PROVISIONAL_DRAWING_NOTE, type Maturity } from '../../codes/maturity';
+import type { EngineMessage } from '../../codes/message';
+import { teAt } from '../../i18n/engine-text';
 import { formatClause, type ClauseRef } from '../../codes/regulation';
 import type { BarConflict } from './collision';
 import type { BarMark, DetailingAssembly, UnsupportedCondition } from './assembly';
@@ -86,7 +88,14 @@ export interface TitleBlock {
   superseded: boolean;
   maturity: Maturity;
   /** Shown when maturity is provisional. */
-  provisionalNote?: string;
+  /**
+   * The provisional-calculation warning, structured.
+   *
+   * A drawing is a document: an Argentine engineer wants it in Spanish even when reading
+   * the app in English, so every writer below takes an explicit `locale` and renders this
+   * at the point of emission rather than receiving finished text.
+   */
+  provisionalNote?: EngineMessage;
   /** Scale denominator, e.g. 50 for 1:50. */
   scale: number;
 }
@@ -364,7 +373,7 @@ function num(v: number): string {
  * entities where the geometry is a circular arc, so a hook opens in CAD as an arc rather
  * than as a chain of chords.
  */
-export function sheetToDxf(sheet: Sheet, arcs: DrawnArc[] = []): string {
+export function sheetToDxf(sheet: Sheet, arcs: DrawnArc[] = [], locale = 'es'): string {
   const out: string[] = [
     '0', 'SECTION', '2', 'HEADER',
     '9', '$ACADVER', '1', 'AC1009',
@@ -424,7 +433,7 @@ export function sheetToDxf(sheet: Sheet, arcs: DrawnArc[] = []): string {
   if (sheet.title.reviewer) put(`Revisado por: ${sheet.title.reviewer} (${sheet.title.reviewedAt ?? ''})`);
   if (sheet.title.clauses.length > 0) put(`Artículos: ${sheet.title.clauses.join('; ')}`);
   if (sheet.title.superseded) put('*** SUPERSEDED — la revisión revisada ya no es la vigente ***');
-  if (sheet.title.provisionalNote) put(sheet.title.provisionalNote);
+  if (sheet.title.provisionalNote) put(teAt(sheet.title.provisionalNote, locale));
   for (const n of sheet.notes) put(n);
 
   out.push('0', 'ENDSEC', '0', 'EOF');
@@ -553,7 +562,7 @@ export function buildSchedule(
 }
 
 /** Schedule as rows of strings, ready for XLSX or CSV. */
-export function scheduleToAoa(s: ScheduleTable, title: TitleBlock): (string | number)[][] {
+export function scheduleToAoa(s: ScheduleTable, title: TitleBlock, locale = 'es'): (string | number)[][] {
   const out: (string | number)[][] = [
     [title.title],
     ['Reglamento', title.codeEdition],
@@ -561,7 +570,7 @@ export function scheduleToAoa(s: ScheduleTable, title: TitleBlock): (string | nu
   ];
   if (title.reviewer) out.push(['Revisado por', title.reviewer, title.reviewedAt ?? '']);
   if (title.superseded) out.push(['*** SUPERSEDED ***']);
-  if (title.provisionalNote) out.push([title.provisionalNote]);
+  if (title.provisionalNote) out.push([teAt(title.provisionalNote, locale)]);
   out.push([]);
   out.push(['Marca', 'Ø (mm)', 'Forma', 'Cant.', 'Largo corte (m)', 'Largo total (m)',
     'Peso (kg)', 'Barras 12 m', 'Recorte (m)']);
@@ -599,7 +608,7 @@ function esc(s: string): string {
  * Model y is up; SVG y is down, so the whole drawing is emitted inside a flip transform
  * rather than negating every coordinate at the point of use — one place to get right.
  */
-export function sheetToSvg(sheet: Sheet, widthPx = 1200): string {
+export function sheetToSvg(sheet: Sheet, widthPx = 1200, locale = 'es'): string {
   const { min, max } = sheet.extents;
   const pad = 0.5;
   const w = Math.max(1e-6, max.x - min.x + 2 * pad);
@@ -659,7 +668,7 @@ export function sheetToSvg(sheet: Sheet, widthPx = 1200): string {
   line(`${sheet.title.codeEdition} · Escala 1:${sheet.title.scale} · Revisión ${sheet.title.revision} · ${sheet.title.reviewState}`);
   if (sheet.title.reviewer) line(`Revisado por: ${sheet.title.reviewer} — ${sheet.title.reviewedAt ?? ''}`);
   if (sheet.title.clauses.length > 0) line(`Artículos: ${sheet.title.clauses.join('; ')}`, 'normal', '#444', 0.07);
-  if (sheet.title.provisionalNote) line(sheet.title.provisionalNote, 'bold', '#8a5a00', 0.07);
+  if (sheet.title.provisionalNote) line(teAt(sheet.title.provisionalNote, locale), 'bold', '#8a5a00', 0.07);
   for (const n of sheet.notes) line(n, 'normal', '#a11', 0.07);
 
   if (sheet.title.superseded) {
