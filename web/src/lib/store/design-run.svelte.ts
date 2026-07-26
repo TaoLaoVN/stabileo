@@ -16,6 +16,7 @@
 import { modelStore } from './model.svelte';
 import { regulationsStore } from './regulations.svelte';
 import type { RegulationEdition } from '../codes/regulation';
+import { detailingStore } from './detailing.svelte';
 import { resultsStore } from './results.svelte';
 import { verificationStore } from './verification.svelte';
 import { computeStationDemands, runCirsocDesign } from '../engine/verification-service';
@@ -222,6 +223,11 @@ function createDesignRunStore() {
       for (const id of written) { auto.add(id); manual.delete(id); }
       autoDesigned = auto;
       manualOverrides = manual;
+
+      // A user who has just verified a floor wants its bars. Detailing runs automatically
+      // unless the project has opted out — the explicit Generate command stays either way,
+      // so the automatic path is a convenience, never the only way in.
+      if (detailingStore.autoGenerate) detailingStore.generate();
     }
   }
 

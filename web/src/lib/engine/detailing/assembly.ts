@@ -136,8 +136,16 @@ export interface AssemblyProvenance {
 export interface DetailingAssembly {
   id: string;
   kind: AssemblyKind;
-  /** Human label, e.g. 'Eje B — Nivel +3,40'. */
+  /**
+   * Human label.
+   *
+   * `labelKey` + `labelParams` is the current form and is what the UI renders; `label` is
+   * kept as the fallback for projects stored before the split and for a caller that has
+   * genuinely free text (a user-named assembly). An assembly must never render blank.
+   */
   label: string;
+  labelKey?: string;
+  labelParams?: Record<string, string | number>;
   /** Members in order along the line or up the stack. */
   elementIds: number[];
   /** Physical bars. A bar spanning two members appears once, owned by both. */

@@ -1,4 +1,5 @@
 import { describe, it, expect } from 'vitest';
+import { teAllAt, teAt } from '../../../i18n/engine-text';
 import {
   ASSUMED_JD_RATIO, MAX_EQUILIBRIUM_RESIDUAL, PHI_JOINT_SHEAR, checkJointShear,
   effectiveJointArea, jointFreeBody, jointNominalShear, jointStrengthCoefficient,
@@ -103,7 +104,9 @@ describe('§15.4.1.1 — the free body', () => {
   it('surfaces jd as an assumption, not a code value', () => {
     const fb = jointFreeBody([beam(1, 200, 1)], 0);
     expect(fb.jd.origin).toBe('assumed');
-    expect(fb.jd.assumption).toMatch(/no un valor reglamentario/);
+    expect(fb.jd.assumption?.key).toBe('detailing.joint.assumedJd');
+    expect(teAt(fb.jd.assumption!, 'es')).toMatch(/no un valor reglamentario/);
+    expect(teAt(fb.jd.assumption!, 'en')).toMatch(/not a regulatory one/);
   });
 
   it('closes to zero residual for a consistent free body', () => {
@@ -160,7 +163,8 @@ describe('the D8c gate — validate or declare unsupported', () => {
   it('declares UNSUPPORTED when there are no incident beams', () => {
     const r = checkJointShear({ ...base, beams: [], columnShear: 100 });
     expect(r.status).toBe('UNSUPPORTED');
-    expect(r.unsupportedReason).toMatch(/cuerpo libre/);
+    expect(r.unsupportedReason?.key).toBe('detailing.joint.unsupported.noIncidentBeams');
+    expect(teAt(r.unsupportedReason!, 'es')).toMatch(/cuerpo libre/);
   });
 
   it('declares UNSUPPORTED for a biaxial joint instead of checking one direction', () => {
@@ -169,19 +173,25 @@ describe('the D8c gate — validate or declare unsupported', () => {
       ...base, beams: [beam(1, 150, 1)], columnShear: 100, biaxial: true,
     });
     expect(r.status).toBe('UNSUPPORTED');
-    expect(r.unsupportedReason).toMatch(/ambas direcciones/);
-    expect(r.memo.join(' ')).toMatch(/NO VERIFICADO/);
+    expect(r.unsupportedReason?.key).toBe('detailing.joint.unsupported.biaxial');
+    expect(teAt(r.unsupportedReason!, 'es')).toMatch(/ambas direcciones/);
+    expect(teAllAt(r.memo, 'es').join(' ')).toMatch(/NO VERIFICADO/);
+    expect(teAllAt(r.memo, 'en').join(' ')).toMatch(/NOT VERIFIED/);
   });
 
   it('reports the residual in the memo of a verified joint', () => {
     const r = checkJointShear({ ...base, beams: [beam(1, 150, 1)], columnShear: 100 });
-    expect(r.memo.join('\n')).toMatch(/Residuo de equilibrio/);
-    expect(r.memo.join('\n')).toMatch(/límite 2 %/);
+    expect(r.memo.map((m) => m.key)).toContain('detailing.joint.memo.residual');
+    const es = teAllAt(r.memo, 'es').join('\n');
+    expect(es).toMatch(/Residuo de equilibrio/);
+    expect(es).toMatch(/límite 2 %/);
   });
 
   it('carries the jd assumption onto the result', () => {
     const r = checkJointShear({ ...base, beams: [beam(1, 150, 1)], columnShear: 100 });
-    expect(r.assumptions.join(' ')).toMatch(/jd = 0.875 d/);
+    expect(r.assumptions.map((a) => a.key)).toContain('detailing.joint.assumedJd');
+    expect(teAllAt(r.assumptions, 'es').join(' ')).toMatch(/jd = 0,875 d/);
+    expect(teAllAt(r.assumptions, 'en').join(' ')).toMatch(/jd = 0.875 d/);
   });
 
   it('never returns OK with a utilization it did not compute', () => {

@@ -534,6 +534,14 @@ export interface StructureModel {
    * review record has to survive a save/load cycle or it is not a record.
    */
   detailing?: DetailingStore;
+  /**
+   * Run detailing automatically after a successful design run. Default ON (undefined is
+   * treated as on), so a user who verifies a floor gets its bars without a second command.
+   * Persisted with the model because it is a project decision, not a browser preference.
+   */
+  detailingAuto?: boolean;
+  /** Project-level opt-out from bent-up (cranked) bars. */
+  detailingBentUpOptOut?: boolean;
 }
 
 export type { AnalysisResults };

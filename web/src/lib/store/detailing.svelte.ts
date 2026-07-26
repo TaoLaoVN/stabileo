@@ -22,8 +22,72 @@ import {
   type Sheet,
 } from '../engine/detailing/drawings';
 import { clause } from '../codes/regulation';
+import {
+  detailingReadiness, runDetailing,
+  type DetailingReadiness, type RunDetailingResult,
+} from '../engine/detailing/run-detailing';
+import { verificationStore } from './verification.svelte';
+import { regulationsStore } from './regulations.svelte';
+import type { RegulationEdition } from '../codes/regulation';
+import type { MemberDesignOutcome } from '../engine/design/outcome';
+import type { BentUpPolicy } from '../engine/detailing/generate-beam';
+import { DAGG_ASSUMED_MM } from '../codes/project-code-settings';
 
 export type SheetSelection = 'elevation' | 'section';
+
+/** Design outcomes as a map, which is what the pipeline consumes. */
+function designOutcomeMap(): ReadonlyMap<number, MemberDesignOutcome> {
+  const out = new Map<number, MemberDesignOutcome>();
+  for (const id of verificationStore.contexts.keys()) {
+    const o = verificationStore.outcomeFor(id);
+    if (o) out.set(id, o);
+  }
+  return out;
+}
+
+/** The concrete edition currently bound to the `concrete` role. */
+function currentConcreteEdition(): RegulationEdition {
+  const e = regulationsStore.binding('concrete').edition;
+  return (e === '2005' ? '2005' : '2025') as RegulationEdition;
+}
+
+/**
+ * Maximum aggregate size, from the materials.
+ *
+ * PR16 moved this off the regulation panel and onto the material, where a mix property
+ * belongs. The largest value across the concretes in use governs the bar spacing, which is
+ * the conservative reading when a model mixes mixes.
+ */
+function resolveAggregate(): number {
+  let max = 0;
+  for (const m of modelStore.model.materials.values()) {
+    const d = (m as { maxAggregateSizeMm?: number | null }).maxAggregateSizeMm;
+    if (typeof d === 'number' && d > max) max = d;
+  }
+  return max > 0 ? max : DAGG_ASSUMED_MM;
+}
+
+/** Highest revision among existing assemblies, so a regeneration increments. */
+function maxRevision(assemblies: readonly DetailingAssembly[]): number {
+  let r = 0;
+  for (const a of assemblies) r = Math.max(r, a.detailingRevision ?? 0);
+  return r;
+}
+
+/**
+ * The project's bent-up bar policy.
+ *
+ * `unstated` until the seismic role says otherwise, and no bent-up bar is generated under
+ * `unstated`. PR19 supplies the seismic verdict; until then the conservative reading holds.
+ */
+function bentUpPolicy(): BentUpPolicy {
+  const optOut = modelStore.model.detailingBentUpOptOut === true;
+  const seismicBound = regulationsStore.bound('seismic');
+  return {
+    seismicDesign: seismicBound ? 'required' : 'unstated',
+    optOut,
+  };
+}
 
 function createDetailingStore() {
   let selectedId = $state<string | null>(null);
@@ -32,6 +96,15 @@ function createDetailingStore() {
   let sectionAt = $state(0);
   let lastError = $state<string | null>(null);
   let reviewOpen = $state(false);
+  let generating = $state(false);
+  /**
+   * Project policy: run detailing automatically after a successful design.
+   *
+   * On by default, because a user who has just verified a floor wants its bars. Opt-out
+   * exists because regenerating is not free on a large model and some users detail once,
+   * at the end. Persisted with the model, not with the browser: it is a project decision.
+   */
+  let lastRun = $state<RunDetailingResult | null>(null);
 
   const store = $derived<DetailingStore>(modelStore.model.detailing ?? emptyDetailingStore());
   const assemblies = $derived(store.assemblies);
@@ -101,6 +174,67 @@ function createDetailingStore() {
 
     openReview(): void { reviewOpen = true; lastError = null; },
     closeReview(): void { reviewOpen = false; },
+
+    get generating() { return generating; },
+    get lastRun() { return lastRun; },
+
+    /**
+     * Are the prerequisites for detailing satisfied, and if not, exactly which?
+     *
+     * Drives the enabled/disabled state of the Generate command and the text beside it.
+     * Cheap: it inspects outcomes, it does not generate anything.
+     */
+    get readiness(): DetailingReadiness {
+      return detailingReadiness({
+        contexts: verificationStore.contexts,
+        outcomes: designOutcomeMap(),
+      });
+    },
+
+    get autoGenerate() { return modelStore.model.detailingAuto !== false; },
+    setAutoGenerate(on: boolean): void { modelStore.model.detailingAuto = on; },
+
+    /**
+     * THE production entry point: verified design → coordinated assemblies → model.
+     *
+     * This is the call the forensic audit found missing. Everything downstream —
+     * persistence, revision invalidation, review, drawings, exports — hangs off the
+     * assemblies it writes.
+     */
+    generate(opts: { verifierId?: string } = {}): RunDetailingResult | null {
+      generating = true;
+      lastError = null;
+      try {
+        const result = runDetailing({
+          contexts: verificationStore.contexts,
+          outcomes: designOutcomeMap(),
+          nodes: modelStore.nodes as never,
+          elements: modelStore.elements as never,
+          edition: currentConcreteEdition(),
+          verifierId: opts.verifierId ?? '',
+          demandRevision: verificationStore.demandRevision,
+          previousRevision: maxRevision(store.assemblies),
+          maxAggregateSizeMm: resolveAggregate(),
+          lockedBars: store.assemblies.flatMap((a) => a.bars.filter((b) => b.locked)),
+          bentUp: bentUpPolicy(),
+        });
+        lastRun = result;
+        write({ ...store, assemblies: result.assemblies });
+        if (!result.assemblies.some((a) => a.id === selectedId)) {
+          selectedId = result.assemblies[0]?.id ?? null;
+        }
+        // Detailing is downstream of reinforcement. Nothing upstream moved, so the graph
+        // preserves the loads, the analysis and the design, and invalidates only the
+        // detailing and the document — no solve is required.
+        regulationsStore.noteChange('reinforcementEdit');
+        return result;
+      } catch (e) {
+        lastError = String(e instanceof Error ? e.message : e);
+        return null;
+      } finally {
+        generating = false;
+      }
+    },
 
     /** Replace the whole set — used after a regeneration run. */
     setAssemblies(next: DetailingAssembly[]): void {

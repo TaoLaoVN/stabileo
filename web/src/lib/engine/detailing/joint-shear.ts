@@ -56,6 +56,7 @@
  */
 
 import { assumed, clause, type ClauseRef, type ProvenancedValue } from '../../codes/regulation';
+import { msg, round, type EngineMessage } from '../../codes/message';
 
 export type JointContinuity = 'continuous' | 'other';
 export type JointConfinement = 'confined' | 'unconfined';
@@ -185,10 +186,7 @@ export function jointFreeBody(
 ): JointFreeBody {
   const jd = assumed(
     ASSUMED_JD_RATIO,
-    `Brazo elástico interno adoptado como jd = ${ASSUMED_JD_RATIO} d. El artículo ` +
-    '15.4.1.1 requiere las fuerzas de tracción y compresión generadas por flexión sin ' +
-    'prescribir cómo obtener jd; este es un valor habitual para secciones rectangulares, ' +
-    'no un valor reglamentario.',
+    msg('detailing.joint.assumedJd', { ratio: ASSUMED_JD_RATIO }),
     [R_VU],
   );
 
@@ -267,11 +265,11 @@ export interface JointShearCheck {
   utilization: number;
   freeBody: JointFreeBody;
   area: JointArea;
-  memo: string[];
+  memo: EngineMessage[];
   refs: ClauseRef[];
-  unsupportedReason?: string;
+  unsupportedReason?: EngineMessage;
   /** Every assumption made, for the certificate's assumptions block. */
-  assumptions: string[];
+  assumptions: EngineMessage[];
 }
 
 export function checkJointShear(opts: {
@@ -294,36 +292,31 @@ export function checkJointShear(opts: {
 }): JointShearCheck {
   const area = effectiveJointArea(opts);
   const freeBody = jointFreeBody(opts.beams, opts.columnShear);
-  const assumptions = [freeBody.jd.assumption as string];
-  const memo: string[] = [];
+  const assumptions = freeBody.jd.assumption ? [freeBody.jd.assumption] : [];
+  const memo: EngineMessage[] = [];
 
-  const fail = (reason: string): JointShearCheck => ({
+  const fail = (reason: EngineMessage): JointShearCheck => ({
     status: 'UNSUPPORTED', Vu: freeBody.Vu, phiVn: 0, utilization: 0,
     freeBody, area, memo: [...memo, reason], refs: [R_VU, R_AJ],
     unsupportedReason: reason, assumptions,
   });
 
   if (opts.beams.length === 0) {
-    return fail('No hay vigas incidentes en este nudo; no se puede plantear el cuerpo libre.');
+    return fail(msg('detailing.joint.unsupported.noIncidentBeams'));
   }
 
   if (opts.biaxial) {
     // Two directions with different A_j and different incident beams. Doing it in one
     // direction and calling the joint verified would be a false pass.
-    return fail(
-      'Nudo con vigas en ambas direcciones del plano. La verificación biaxial requiere ' +
-      'plantear el corte en cada dirección con su propia Aj y combinar los efectos; ' +
-      'no está implementada. Corte del nudo NO VERIFICADO.');
+    return fail(msg('detailing.joint.unsupported.biaxial'));
   }
 
   // ── The D8c gate ──
   if (!Number.isFinite(freeBody.residual) || freeBody.residual > MAX_EQUILIBRIUM_RESIDUAL) {
-    return fail(
-      `El cuerpo libre del nudo no cierra: residuo de equilibrio ` +
-      `${(freeBody.residual * 100).toFixed(2)} % de la mayor fuerza contribuyente, contra ` +
-      `un límite de ${(MAX_EQUILIBRIUM_RESIDUAL * 100).toFixed(0)} %. Corte del nudo NO ` +
-      'VERIFICADO: un resultado obtenido de un cuerpo libre que no cierra no es una ' +
-      'verificación.');
+    return fail(msg('detailing.joint.unsupported.equilibriumResidual', {
+      residual: round(freeBody.residual * 100, 2),
+      limit: round(MAX_EQUILIBRIUM_RESIDUAL * 100, 0),
+    }));
   }
 
   const { Vn, coefficient, refs: vnRefs } = jointNominalShear(
@@ -332,15 +325,23 @@ export function checkJointShear(opts: {
   const utilization = phiVn > 0 ? Math.abs(freeBody.Vu) / phiVn : Infinity;
 
   memo.push(
-    `Cuerpo libre a media altura del nudo (15.4.1.1): ` +
-    freeBody.tensions.map((t) => `T${t.elementId} = ${t.T.toFixed(1)} kN`).join(', ') +
-    `, Vcol = ${freeBody.columnShear.toFixed(1)} kN → Vu = ${freeBody.Vu.toFixed(1)} kN.`,
-    `Residuo de equilibrio ${(freeBody.residual * 100).toFixed(3)} % (límite ` +
-    `${(MAX_EQUILIBRIUM_RESIDUAL * 100).toFixed(0)} %).`,
-    `Aj = ${area.depth.toFixed(3)} × ${area.effectiveWidth.toFixed(3)} = ` +
-    `${area.aj.toFixed(4)} m² (15.4.2.4, gobierna ${area.governedBy}).`,
-    `Vn = ${coefficient.toFixed(1)} λ √f´c Aj = ${Vn.toFixed(1)} kN; ` +
-    `φVn = ${phiVn.toFixed(1)} kN contra Vu = ${Math.abs(freeBody.Vu).toFixed(1)} kN.`);
+    msg('detailing.joint.memo.freeBody', {
+      tensions: freeBody.tensions
+        .map((t) => `T${t.elementId} = ${round(t.T, 1)} kN`).join(', '),
+      columnShear: round(freeBody.columnShear, 1), vu: round(freeBody.Vu, 1),
+    }),
+    msg('detailing.joint.memo.residual', {
+      residual: round(freeBody.residual * 100, 3),
+      limit: round(MAX_EQUILIBRIUM_RESIDUAL * 100, 0),
+    }),
+    msg('detailing.joint.memo.effectiveArea', {
+      depth: round(area.depth, 3), width: round(area.effectiveWidth, 3),
+      aj: round(area.aj, 4), governedBy: area.governedBy,
+    }),
+    msg('detailing.joint.memo.nominalShear', {
+      coefficient: round(coefficient, 1), vn: round(Vn, 1),
+      phiVn: round(phiVn, 1), vu: round(Math.abs(freeBody.Vu), 1),
+    }));
 
   return {
     status: utilization <= 1.0 ? 'OK' : 'FAIL',

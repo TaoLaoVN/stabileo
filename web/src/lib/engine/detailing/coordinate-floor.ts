@@ -66,6 +66,8 @@ export interface JointInput {
 export interface FloorCoordinationInput {
   assemblyId: string;
   label: string;
+  labelKey?: string;
+  labelParams?: Record<string, string | number>;
   kind: DetailingAssembly['kind'];
   elementIds: number[];
   members: MemberBars[];
@@ -295,6 +297,8 @@ export function coordinateFloor(input: FloorCoordinationInput): FloorCoordinatio
     id: input.assemblyId,
     kind: input.kind,
     label: input.label,
+    labelKey: input.labelKey,
+    labelParams: input.labelParams,
     elementIds: input.elementIds,
     bars: repair.bars,
     marks,

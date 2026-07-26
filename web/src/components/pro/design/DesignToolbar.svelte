@@ -12,6 +12,7 @@
   import { regulationsStore } from '../../../lib/store/regulations.svelte';
   import { te } from '../../../lib/i18n/engine-text';
   import { bindingLabel } from '../../../lib/codes/roles';
+  import { detailingStore } from '../../../lib/store/detailing.svelte';
   import OutcomeBadge from './OutcomeBadge.svelte';
 
   interface Props {
@@ -74,6 +75,25 @@
   const orientCount = $derived(verificationStore.orientationSuspectCount);
   const provisionalCount = $derived(designRunStore.provisionalIds.size);
 
+  // ── Detailing ──
+  // The audit's headline finding was that the detailing engines had no production caller.
+  // This is it: a visible command, enabled exactly when the prerequisites hold, and when
+  // it is not, saying which members are in the way and how many.
+  const detailingReady = $derived(detailingStore.readiness);
+  const hasDetailing = $derived(detailingStore.assemblies.length > 0);
+  const detailingBusy = $derived(detailingStore.generating);
+
+  /** Precise prerequisites, so a disabled button is never a dead end. */
+  const detailingBlockers = $derived(
+    detailingReady.prerequisites.map((p) => tp(p.key, { n: p.count,
+      ids: p.elementIds.slice(0, 6).join(', ') })).join(' '),
+  );
+
+  function generateDetailing() {
+    detailingStore.generate();
+  }
+
+
 </script>
 
 <div class="toolbar" data-testid="design-toolbar">
@@ -120,12 +140,35 @@
     <button class="cmd cmd-all" data-testid="cmd-design-all" onclick={onDesignAll}
             disabled={!canDesign}>{t('design.cmd.designAll')}</button>
 
+    <button class="cmd cmd-detailing" data-testid="cmd-generate-detailing"
+            onclick={generateDetailing}
+            disabled={!detailingReady.ready || detailingBusy || busy}
+            title={detailingReady.ready ? '' : detailingBlockers}>
+      {detailingBusy
+        ? t('detailing.cmd.generating')
+        : hasDetailing ? t('detailing.cmd.regenerate') : t('detailing.cmd.generate')}
+    </button>
+
     {#if busy}
       <button class="cmd cmd-cancel" data-testid="cmd-cancel" onclick={() => designRunStore.cancel()}>
         {t('design.cmd.cancel')}
       </button>
     {/if}
   </div>
+
+  <!-- Why the command is unavailable, in the open, with counts. -->
+  {#if !detailingReady.ready && detailingBlockers}
+    <p class="detailing-blockers" data-testid="detailing-prerequisites">
+      {detailingBlockers}
+    </p>
+  {/if}
+
+  <label class="detailing-auto" data-testid="detailing-auto-label">
+    <input type="checkbox" data-testid="detailing-auto"
+           checked={detailingStore.autoGenerate}
+           onchange={(e) => detailingStore.setAutoGenerate(e.currentTarget.checked)} />
+    {t('detailing.cmd.autoAfterDesign')}
+  </label>
 
   {#if busy && designRunStore.progress}
     {@const p = designRunStore.progress}
@@ -271,6 +314,9 @@
   .progress-fill { height: 100%; background: #4ecdc4; transition: width 0.15s linear; }
   .progress-text { font-size: 0.7rem; color: #9ab; font-family: monospace; }
 
+  .cmd-detailing { background: #1e4570; }
+  .detailing-blockers { margin: 0.3rem 0 0; font-size: 0.76rem; opacity: 0.85; }
+  .detailing-auto { display: inline-flex; gap: 0.3rem; align-items: center; font-size: 0.76rem; margin-top: 0.3rem; }
   .counts { display: flex; gap: 9px; flex-wrap: wrap; font-size: 0.72rem; font-family: monospace; }
   .count { color: #aab; }
   .count-sep { color: #445; }

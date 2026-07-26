@@ -53,7 +53,30 @@
   <aside class="assemblies" aria-label={t('detailing.assemblies')}>
     <h4>{t('detailing.assemblies')}</h4>
     {#if detailingStore.assemblies.length === 0}
-      <p class="empty" data-testid="detailing-empty">{t('detailing.none')}</p>
+      <!--
+        The empty state used to read "run the detailing pipeline from the design tab",
+        which described a control that did not exist. It is now the control itself, plus
+        the exact prerequisites when it cannot run.
+      -->
+      <div class="empty" data-testid="detailing-empty">
+        <p>{t('detailing.emptyTitle')}</p>
+        <button class="generate" data-testid="detailing-empty-generate"
+                onclick={() => detailingStore.generate()}
+                disabled={!detailingStore.readiness.ready || detailingStore.generating}>
+          {detailingStore.generating
+            ? t('detailing.cmd.generating') : t('detailing.cmd.generate')}
+        </button>
+        {#if !detailingStore.readiness.ready}
+          <ul class="prereqs" data-testid="detailing-empty-prereqs">
+            {#each detailingStore.readiness.prerequisites as p (p.key)}
+              <li>{tp(p.key, { n: p.count, ids: p.elementIds.slice(0, 6).join(', ') })}</li>
+            {/each}
+          </ul>
+        {/if}
+        {#if detailingStore.lastError}
+          <p class="err" role="alert" data-testid="detailing-error">{detailingStore.lastError}</p>
+        {/if}
+      </div>
     {:else}
       <ul role="listbox" aria-label={t('detailing.assemblies')}>
         {#each detailingStore.assemblies as a (a.id)}
@@ -65,7 +88,7 @@
               data-testid={`assembly-${a.id}`}
               onclick={() => detailingStore.select(a.id)}
             >
-              <span class="label">{a.label}</span>
+              <span class="label">{a.labelKey ? tp(a.labelKey, a.labelParams ?? {}) : a.label}</span>
               <span class="state state-{a.state.toLowerCase()}">{t(`detailing.state.${a.state}`)}</span>
               {#if a.maturity !== 'VALIDATED'}
                 <span class="maturity">{t(maturityLabelKey(a.maturity))}</span>
@@ -113,7 +136,7 @@
         <div class="notice warning" data-testid="unsupported-list">
           <strong>{t('detailing.unsupported')}</strong>
           <ul>
-            {#each selected.unsupported as u (u.key + u.message)}
+            {#each selected.unsupported as u, i (i)}
               <li>{u.message}</li>
             {/each}
           </ul>
