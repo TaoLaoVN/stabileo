@@ -44,6 +44,7 @@ import {
   type BarPath, type HookAngle, type Point3,
 } from '../../codes/cirsoc201/bar-geometry';
 import { minClearBetweenLayers, minClearSpacingInLayer } from '../../codes/cirsoc201/spacing';
+import { DEFAULT_TOLERANCES } from './collision';
 import { clause, type ClauseRef, type RegulationEdition } from '../../codes/regulation';
 
 // ─── Inputs ──────────────────────────────────────────────────────
@@ -413,8 +414,19 @@ export function layoutBarRow(opts: {
   minClear: number;
   /** Minimum clear distance between layers, m. */
   layerClear: number;
+  /**
+   * Placement tolerance allowance, m.
+   *
+   * The code minimum is a requirement on the finished cage, and bars are never exactly
+   * where the drawing puts them — which is why the collision check subtracts a placement
+   * tolerance before comparing. A layout drawn EXACTLY at the minimum therefore fails its
+   * own check by that tolerance, every time. A detailer allows for it; so does this.
+   */
+  placementTolerance?: number;
 }): { slots: BarSlot[]; layers: number; perLayer: number; fits: boolean } {
-  const { count, clearWidth, minClear, layerClear } = opts;
+  const { count, clearWidth, layerClear } = opts;
+  const tol = opts.placementTolerance ?? 0.010;
+  const minClear = opts.minClear + tol;
   const d = opts.diameterMm / 1000;
   if (count <= 0) return { slots: [], layers: 0, perLayer: 0, fits: true };
 
@@ -537,6 +549,7 @@ export function generateBeamBars(input: BeamGenerationInput): GeneratedBeam {
     const layout = layoutBarRow({
       count, diameterMm: dia, clearWidth,
       minClear: spacing.minClear, layerClear: layerSpacing.minClear,
+      placementTolerance: DEFAULT_TOLERANCES.placement,
     });
     if (!layout.fits && count > 1) {
       unsupported.push(
