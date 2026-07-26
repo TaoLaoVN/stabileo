@@ -284,7 +284,11 @@ describe('beam bar generation', () => {
       ({ x: i * 0.6, mPos: 200, mNeg: 0, v: 100 }));
     const g = generateBeamBars(input({ stations: flat }));
     expect(g.bars.some((b) => b.id.includes('bot-run'))).toBe(true);
-    expect(g.unsupported.join(' ')).toMatch(/se ejecutan continuas/);
+    // Reported in the trace, NOT as an unsupported condition: running the bars through is
+    // the correct outcome, and calling it unsupported blocked CONSTRUCTIBLE for every
+    // ordinary beam, which made the review workflow unreachable.
+    expect(g.trace.join(' ')).toMatch(/se corre completa/);
+    expect(g.unsupported.join(' ')).not.toMatch(/corte teórico/);
   });
 
   it('generates top bars at both supports', () => {

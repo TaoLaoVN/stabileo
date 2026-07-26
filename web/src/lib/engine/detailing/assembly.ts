@@ -162,6 +162,14 @@ export interface DetailingAssembly {
   /** Demand revision the bars were generated against. Mismatch means stale. */
   demandRevision: number;
   state: ReviewState;
+  /**
+   * Why the assembly is not at the next state up.
+   *
+   * Computed by `evaluateState` and now CARRIED, not discarded. Without this the panel
+   * showed "COORDINATED" beside a review that silently refused, and the user had no way
+   * to learn what stood between them and a constructible cage.
+   */
+  stateBlockers?: string[];
   review?: ReviewRecord;
   /** Worst maturity across every calculation in the assembly. */
   maturity: Maturity;

@@ -308,6 +308,7 @@ export function coordinateFloor(input: FloorCoordinationInput): FloorCoordinatio
     detailingRevision: (input.previousRevision ?? 0) + 1,
     demandRevision: input.demandRevision,
     state: evaluation.state,
+    stateBlockers: evaluation.blockers,
     maturity: worstMaturity(maturities),
     provenance: {
       edition: input.edition,

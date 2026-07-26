@@ -4426,5 +4426,13 @@ const en: Record<string, string> = {
   'detailing.joint.memo.effectiveArea': 'Aj = {depth} × {width} = {aj} m² (§15.4.2.4, governed by {governedBy}).',
   'detailing.joint.memo.nominalShear': 'Vn = {coefficient} λ √f′c Aj = {vn} kN; φVn = {phiVn} kN against Vu = {vu} kN.',
 
+  'detailing.barsCount': 'Longitudinal reinforcement ({n} bars)',
+  'detailing.lockBar': 'Lock',
+  'detailing.unlockBar': 'Unlock',
+  'detailing.barRole.longitudinal': 'Longitudinal',
+  'detailing.barRole.transverse': 'Transverse',
+
+  'detailing.blockersTitle': 'Why this assembly is still {state}',
+
 };
 export default en;

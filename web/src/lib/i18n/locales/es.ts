@@ -4388,5 +4388,13 @@ const es: Record<string, string> = {
   'detailing.joint.memo.effectiveArea': 'Aj = {depth} × {width} = {aj} m² (art. 15.4.2.4, gobierna {governedBy}).',
   'detailing.joint.memo.nominalShear': 'Vn = {coefficient} λ √f´c Aj = {vn} kN; φVn = {phiVn} kN contra Vu = {vu} kN.',
 
+  'detailing.barsCount': 'Armadura longitudinal ({n} barras)',
+  'detailing.lockBar': 'Fijar',
+  'detailing.unlockBar': 'Liberar',
+  'detailing.barRole.longitudinal': 'Longitudinal',
+  'detailing.barRole.transverse': 'Transversal',
+
+  'detailing.blockersTitle': 'Por qué este conjunto sigue en {state}',
+
 };
 export default es;

@@ -143,19 +143,57 @@
         </div>
       {/if}
 
+      <!--
+        Longitudinal reinforcement, bar by bar, with the lock control the coordination
+        pipeline honours. Without this the "locked bars survive regeneration" guarantee is
+        real in the engine and unreachable in the product.
+      -->
+      <!-- What stands between this assembly and the next state up. -->
+      {#if (selected.stateBlockers ?? []).length > 0}
+        <div class="notice warning" data-testid="state-blockers">
+          <strong>{tp('detailing.blockersTitle', { state: t(`detailing.state.${selected.state}`) })}</strong>
+          <ul>
+            {#each selected.stateBlockers ?? [] as b, i (i)}<li>{b}</li>{/each}
+          </ul>
+        </div>
+      {/if}
+
+      <details class="bars" data-testid="bar-list">
+        <summary>{tp('detailing.barsCount', { n: selected.bars.length })}</summary>
+        <ul class="barlist">
+          {#each selected.bars as bar (bar.id)}
+            <li data-testid={`bar-${bar.id}`} class:locked={bar.locked}>
+              <span class="bar-id">{bar.id}</span>
+              <span class="bar-dia">Ø{bar.diameterMm}</span>
+              <span class="bar-len">{bar.cuttingLength.toFixed(2)} m</span>
+              <span class="bar-role">{t(`detailing.barRole.${bar.role}`)}</span>
+              <button data-testid="bar-lock" class="lock"
+                      aria-pressed={bar.locked === true}
+                      onclick={() => detailingStore.toggleLock(bar.id)}>
+                {bar.locked ? t('detailing.unlockBar') : t('detailing.lockBar')}
+              </button>
+            </li>
+          {/each}
+        </ul>
+      </details>
+
       <nav class="conflicts" aria-label={t('detailing.conflicts')}>
         {#if detailingStore.conflicts.length === 0}
           <p class="ok" data-testid="no-conflicts">{t('detailing.noConflicts')}</p>
         {:else}
           {@const c = detailingStore.currentConflict}
-          <div class="conflict-nav">
-            <button onclick={() => detailingStore.prevConflict()} aria-label={t('detailing.prevConflict')}>‹</button>
+          <div class="conflict-nav" data-testid="conflict-nav">
+            <button data-testid="conflict-prev"
+                    onclick={() => detailingStore.prevConflict()}
+                    aria-label={t('detailing.prevConflict')}>‹</button>
             <span data-testid="conflict-counter">
               {tp('detailing.conflictOf', {
                 i: detailingStore.conflictIndex + 1, n: detailingStore.conflicts.length,
               })}
             </span>
-            <button onclick={() => detailingStore.nextConflict()} aria-label={t('detailing.nextConflict')}>›</button>
+            <button data-testid="conflict-next"
+                    onclick={() => detailingStore.nextConflict()}
+                    aria-label={t('detailing.nextConflict')}>›</button>
           </div>
           {#if c}
             <p class="notice error" data-testid="conflict-detail">
@@ -172,6 +210,7 @@
           <label>
             <input
               type="radio" name="sheetKind" value="elevation"
+              data-testid="sheet-kind-elevation"
               checked={detailingStore.sheetKind === 'elevation'}
               onchange={() => detailingStore.setSheetKind('elevation')}
             />
@@ -180,6 +219,7 @@
           <label>
             <input
               type="radio" name="sheetKind" value="section"
+              data-testid="sheet-kind-section"
               checked={detailingStore.sheetKind === 'section'}
               onchange={() => detailingStore.setSheetKind('section')}
             />
@@ -229,7 +269,7 @@
 
       <section class="review" aria-labelledby="review-title">
         <h5 id="review-title">{t('detailing.review')}</h5>
-        <p class="disclaimer">{t('detailing.notLegalSignoff')}</p>
+        <p class="disclaimer" data-testid="review-disclaimer">{t('detailing.notLegalSignoff')}</p>
 
         {#if selected.review}
           <p class="reviewed" data-testid="review-record">
@@ -314,6 +354,15 @@
   .notice.warning { background: #7a5b00; color: #fff6dd; }
   .notice.error { background: #7a1f1f; color: #ffe3e3; }
   .ok { color: #6ee7b7; }
+  details.bars { margin: 0.5rem 0; }
+  details.bars summary { cursor: pointer; font-size: 0.8rem; }
+  ul.barlist { list-style: none; margin: 0.3rem 0 0; padding: 0; max-height: 16rem; overflow: auto; }
+  ul.barlist > li { display: flex; gap: 0.5rem; align-items: center; font-size: 0.76rem; padding: 0.15rem 0; border-top: 1px solid rgba(128,128,128,0.2); }
+  ul.barlist > li.locked { background: rgba(30, 69, 112, 0.35); }
+  .bar-id { font-family: monospace; min-width: 7rem; }
+  .bar-dia, .bar-len { min-width: 4rem; }
+  .bar-role { flex: 1; opacity: 0.8; }
+  .lock { font-size: 0.7rem; padding: 0.05rem 0.35rem; }
   .conflict-nav { display: flex; align-items: center; gap: 0.5rem; }
   .conflict-nav button { min-width: 1.8rem; }
   fieldset { border: 1px solid rgba(128,128,128,0.35); border-radius: 4px; padding: 0.3rem 0.5rem; }

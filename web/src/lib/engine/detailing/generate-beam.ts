@@ -457,9 +457,11 @@ export function generateBeamBars(input: BeamGenerationInput): GeneratedBeam {
     const xRight = theoreticalCutoff(input.stations, 'mPos', peakPos, retained, midpoint, input.L);
 
     if (xLeft === null || xRight === null) {
-      unsupported.push(
-        'No se encontró un punto de corte teórico para la armadura inferior dentro del ' +
-        'tramo; las barras inferiores se ejecutan continuas.');
+      // NOT an unsupported condition. Running the bottom bars continuous is the correct
+      // and conservative outcome when the envelope never drops far enough to curtail —
+      // §9.7.3.8 requires continuity into the supports regardless. Reporting it as
+      // unsupported held every ordinary beam at COORDINATED and made CONSTRUCTIBLE, and
+      // therefore the whole review-and-issue workflow, unreachable in practice.
       trace.push('Sin punto de corte teórico: la armadura inferior se corre completa.');
       for (let i = 0; i < curtailable; i++) {
         bars.push(buildStraightBarWithHooks({
