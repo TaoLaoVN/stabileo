@@ -63,7 +63,9 @@ async function seedInto(page: import('@playwright/test').Page, assemblies: Json[
 async function openPanel(page: import('@playwright/test').Page) {
   const d = page.getByTestId('detailing-disclosure');
   await expect(d).toBeVisible();
-  await d.locator('summary').click();
+  // Direct child only: the detailing panel now nests disclosures of its own
+  // (the longitudinal bar list), so a descendant match is ambiguous.
+  await d.locator('> summary').click();
 }
 
 test.describe('@smoke floor design', () => {
