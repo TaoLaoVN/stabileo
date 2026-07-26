@@ -43,7 +43,7 @@ import {
   buildStraightBarWithHooks, minMandrelDiameter, standardHook,
   type BarPath, type HookAngle, type Point3,
 } from '../../codes/cirsoc201/bar-geometry';
-import { minClearSpacingInLayer } from '../../codes/cirsoc201/spacing';
+import { minClearBetweenLayers, minClearSpacingInLayer } from '../../codes/cirsoc201/spacing';
 import { clause, type ClauseRef, type RegulationEdition } from '../../codes/regulation';
 
 // ─── Inputs ──────────────────────────────────────────────────────
@@ -366,6 +366,90 @@ export function mergeStirrupZones(zones: readonly StirrupZone[], L: number): Sti
   return out;
 }
 
+
+// ─── Transverse bar layout ───────────────────────────────────────
+
+/** One bar's position within a face's reinforcement, relative to the member axis. */
+export interface BarSlot {
+  /** Offset across the section width, m. Positive toward `transverse`. */
+  across: number;
+  /** Offset from the face, m, positive INTO the section (layer 0 is closest to the face). */
+  intoSection: number;
+  layer: number;
+}
+
+/**
+ * Lay a group of bars out across the section, in layers when one row will not hold them.
+ *
+ * ── Why this exists ────────────────────────────────────────────────
+ *
+ * Every bar in a group used to be emitted at the SAME point: `for (i = 0; i < count; i++)`
+ * with an identical start and end, differing only in the id. Four bottom bars were four
+ * coincident bars. On the 408-member flagship that produced 393 same-member overlap
+ * conflicts in a single floor assembly — the collision detector correctly reporting that a
+ * cage cannot contain four bars in one place, against a generator that had never been asked
+ * where the second bar goes.
+ *
+ * Bars are centred on the section and spread at the code's clear spacing. When the row is
+ * full the remainder starts a new layer inward, at the §25.2.2 clear distance between
+ * layers, with the layers themselves centred so the group stays symmetric.
+ */
+export function layoutBarRow(opts: {
+  count: number;
+  diameterMm: number;
+  /** Section width available between the stirrup legs, m. */
+  clearWidth: number;
+  /** Minimum clear spacing between bars in a layer, m. */
+  minClear: number;
+  /** Minimum clear distance between layers, m. */
+  layerClear: number;
+}): { slots: BarSlot[]; layers: number; perLayer: number; fits: boolean } {
+  const { count, clearWidth, minClear, layerClear } = opts;
+  const d = opts.diameterMm / 1000;
+  if (count <= 0) return { slots: [], layers: 0, perLayer: 0, fits: true };
+
+  // How many fit in one layer, at least one so a narrow section still produces geometry
+  // rather than nothing — the shortfall is reported by `fits`.
+  const perLayer = Math.max(1, Math.min(count,
+    Math.floor((clearWidth + minClear) / (d + minClear))));
+  const layers = Math.ceil(count / perLayer);
+  const fits = perLayer * layers >= count && perLayer >= Math.min(count, 2);
+
+  const slots: BarSlot[] = [];
+  let placed = 0;
+  for (let layer = 0; layer < layers; layer++) {
+    const inThis = Math.min(perLayer, count - placed);
+    // Centre each layer on the section: pitch is the code spacing, and a single bar sits
+    // on the centreline rather than against a face.
+    const pitch = inThis > 1
+      ? Math.min(d + minClear, (clearWidth - d) / (inThis - 1))
+      : 0;
+    const span = pitch * (inThis - 1);
+    for (let k = 0; k < inThis; k++) {
+      slots.push({
+        across: -span / 2 + k * pitch,
+        intoSection: layer * (d + layerClear),
+        layer,
+      });
+    }
+    placed += inThis;
+  }
+  return { slots, layers, perLayer, fits };
+}
+
+/** Unit vector across the section: the member axis rotated into the plane of `up`. */
+export function transverseAxis(axis: Point3, up: Point3): Point3 {
+  // axis × up, normalised. For a horizontal beam with up = +z this is the in-plan normal,
+  // which is exactly the direction bars spread along.
+  const c = {
+    x: axis.y * up.z - axis.z * up.y,
+    y: axis.z * up.x - axis.x * up.z,
+    z: axis.x * up.y - axis.y * up.x,
+  };
+  const L = Math.hypot(c.x, c.y, c.z);
+  return L < 1e-9 ? { x: 0, y: 1, z: 0 } : { x: c.x / L, y: c.y / L, z: c.z / L };
+}
+
 // ─── Generation ──────────────────────────────────────────────────
 
 export interface GeneratedBeam {
@@ -378,10 +462,23 @@ export interface GeneratedBeam {
   refs: ClauseRef[];
   /** Conditions the generator could not satisfy; the caller surfaces these. */
   unsupported: string[];
+  /**
+   * Layer index per bar id.
+   *
+   * Emitted rather than inferred: the collision classifier needs it to apply §25.2.2
+   * between layers instead of the in-layer rule, and reconstructing it from geometry
+   * downstream would be guessing at a decision this function already made.
+   */
+  barLayers: Record<string, number>;
 }
 
 function add(p: Point3, v: Point3, k: number): Point3 {
   return { x: p.x + v.x * k, y: p.y + v.y * k, z: p.z + v.z * k };
+}
+
+/** Translate a point by a slot offset vector. */
+function shift(p: Point3, o: Point3): Point3 {
+  return { x: p.x + o.x, y: p.y + o.y, z: p.z + o.z };
 }
 
 /**
@@ -416,6 +513,40 @@ export function generateBeamBars(input: BeamGenerationInput): GeneratedBeam {
     barDiameterMm: input.bottom.diameterMm, maxAggregateSizeMm: input.maxAggregateSizeMm,
   });
   refs.push(...spacing.refs);
+  const layerSpacing = minClearBetweenLayers(input.edition);
+  refs.push(...layerSpacing.refs);
+
+  // Bars spread across the section between the stirrup legs, and stack inward in layers
+  // when the row is full. Without this every bar in a group lands on the same point.
+  const across = transverseAxis(input.axis, input.up);
+  const clearWidth = Math.max(0.02, input.b - 2 * barOffset);
+
+  /** Place `count` bars of `dia` on a face, returning one offset vector per bar. */
+  const barLayers: Record<string, number> = {};
+  const placeGroup = (count: number, dia: number, faceUpward: boolean) => {
+    const layout = layoutBarRow({
+      count, diameterMm: dia, clearWidth,
+      minClear: spacing.minClear, layerClear: layerSpacing.minClear,
+    });
+    if (!layout.fits && count > 1) {
+      unsupported.push(
+        `No entran ${count}Ø${dia} en un ancho libre de ${(clearWidth * 1000).toFixed(0)} mm ` +
+        `respetando la separación mínima; se disponen en ${layout.layers} capa(s).`);
+    }
+    if (layout.layers > 1) {
+      trace.push(
+        `${count}Ø${dia} dispuestas en ${layout.layers} capa(s) de hasta ` +
+        `${layout.perLayer} barra(s) (25.2.2).`);
+    }
+    // Layer 0 sits at the face; deeper layers move toward the section centre.
+    const inward = faceUpward ? -1 : 1;
+    return layout.slots.map((slot) => ({
+      layer: slot.layer,
+      x: across.x * slot.across + input.up.x * slot.intoSection * inward,
+      y: across.y * slot.across + input.up.y * slot.intoSection * inward,
+      z: across.z * slot.across + input.up.z * slot.intoSection * inward,
+    }));
+  };
 
   // ── Bottom bars: continuity into the supports (§9.7.3.8) ──
   const continueFraction = input.supportI === 'simple' || input.supportJ === 'simple' ? 1 / 3 : 1 / 4;
@@ -437,12 +568,15 @@ export function generateBeamBars(input: BeamGenerationInput): GeneratedBeam {
     refs.push(...standardHook(input.bottom.diameterMm, 90, 'longitudinal', input.edition).refs);
   }
 
+  const botSlots = placeGroup(input.bottom.count, input.bottom.diameterMm, false);
   for (let i = 0; i < continuing; i++) {
+    const o = botSlots[i] ?? { layer: 0, x: 0, y: 0, z: 0 };
+    barLayers[`e${input.elementId}-bot-cont-${i}`] = o.layer;
     bars.push(buildStraightBarWithHooks({
       id: `e${input.elementId}-bot-cont-${i}`,
       diameterMm: input.bottom.diameterMm, role: 'longitudinal',
-      start: add(add(input.origin, input.axis, -EMBED), input.up, zBot),
-      end: add(add(input.origin, input.axis, input.L + EMBED), input.up, zBot),
+      start: shift(add(add(input.origin, input.axis, -EMBED), input.up, zBot), o),
+      end: shift(add(add(input.origin, input.axis, input.L + EMBED), input.up, zBot), o),
       axis: input.axis, hookNormal: input.up,
       startHook: anchorHook, endHook: anchorHook,
       ownerElementIds: [input.elementId], edition: input.edition,
@@ -464,11 +598,13 @@ export function generateBeamBars(input: BeamGenerationInput): GeneratedBeam {
       // therefore the whole review-and-issue workflow, unreachable in practice.
       trace.push('Sin punto de corte teórico: la armadura inferior se corre completa.');
       for (let i = 0; i < curtailable; i++) {
+        const o = botSlots[continuing + i] ?? { layer: 0, x: 0, y: 0, z: 0 };
+        barLayers[`e${input.elementId}-bot-run-${i}`] = o.layer;
         bars.push(buildStraightBarWithHooks({
           id: `e${input.elementId}-bot-run-${i}`,
           diameterMm: input.bottom.diameterMm, role: 'longitudinal',
-          start: add(add(input.origin, input.axis, -EMBED), input.up, zBot),
-          end: add(add(input.origin, input.axis, input.L + EMBED), input.up, zBot),
+          start: shift(add(add(input.origin, input.axis, -EMBED), input.up, zBot), o),
+          end: shift(add(add(input.origin, input.axis, input.L + EMBED), input.up, zBot), o),
           axis: input.axis, hookNormal: input.up,
           ownerElementIds: [input.elementId], edition: input.edition,
         }));
@@ -494,11 +630,13 @@ export function generateBeamBars(input: BeamGenerationInput): GeneratedBeam {
       const from = Math.max(0, cutL.actual);
       const to = Math.min(input.L, cutR.actual);
       for (let i = 0; i < curtailable; i++) {
+        const o = botSlots[continuing + i] ?? { layer: 0, x: 0, y: 0, z: 0 };
+        barLayers[`e${input.elementId}-bot-cut-${i}`] = o.layer;
         bars.push(buildStraightBarWithHooks({
           id: `e${input.elementId}-bot-cut-${i}`,
           diameterMm: input.bottom.diameterMm, role: 'longitudinal',
-          start: add(add(input.origin, input.axis, from), input.up, zBot),
-          end: add(add(input.origin, input.axis, to), input.up, zBot),
+          start: shift(add(add(input.origin, input.axis, from), input.up, zBot), o),
+          end: shift(add(add(input.origin, input.axis, to), input.up, zBot), o),
           axis: input.axis, hookNormal: input.up,
           ownerElementIds: [input.elementId], edition: input.edition,
         }));
@@ -535,12 +673,15 @@ export function generateBeamBars(input: BeamGenerationInput): GeneratedBeam {
     const zTopBar = halfH - barOffset - t.group.diameterMm / 2000;
     const from = atStart ? -EMBED : Math.min(input.L, cut.actual);
     const to = atStart ? Math.max(0, cut.actual) : input.L + EMBED;
+    const topSlots = placeGroup(t.group.count, t.group.diameterMm, true);
     for (let i = 0; i < t.group.count; i++) {
+      const o = topSlots[i] ?? { layer: 0, x: 0, y: 0, z: 0 };
+      barLayers[`e${input.elementId}-top${t.side}-${i}`] = o.layer;
       bars.push(buildStraightBarWithHooks({
         id: `e${input.elementId}-top${t.side}-${i}`,
         diameterMm: t.group.diameterMm, role: 'longitudinal',
-        start: add(add(input.origin, input.axis, from), input.up, zTopBar),
-        end: add(add(input.origin, input.axis, to), input.up, zTopBar),
+        start: shift(add(add(input.origin, input.axis, from), input.up, zTopBar), o),
+        end: shift(add(add(input.origin, input.axis, to), input.up, zTopBar), o),
         axis: input.axis, hookNormal: { x: -input.up.x, y: -input.up.y, z: -input.up.z },
         startHook: atStart && input.supportI === 'simple' ? 90 : undefined,
         endHook: !atStart && input.supportJ === 'simple' ? 90 : undefined,
@@ -581,5 +722,5 @@ export function generateBeamBars(input: BeamGenerationInput): GeneratedBeam {
   trace.push(`${stirrupZones.length} zona(s) de estribos tras fusionar solapes ` +
     '(en cada solape gobierna la separación menor).');
 
-  return { bars, cutoffs, stirrupZones, bentUp, trace, refs, unsupported };
+  return { bars, cutoffs, stirrupZones, bentUp, trace, refs, unsupported, barLayers };
 }

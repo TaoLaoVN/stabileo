@@ -327,6 +327,8 @@ export function runDetailing(input: RunDetailingInput): RunDetailingResult {
   }
 
   const memberBarsById = new Map<number, MemberBars>();
+  /** Layer index per bar, reported by the generators, for the §25.2.2 classification. */
+  const barLayers = new Map<string, number>();
 
   for (const [stackId, liftsRaw] of stacks) {
     const lifts = [...liftsRaw].sort((a, b) => a.baseZ - b.baseZ);
@@ -454,6 +456,7 @@ export function runDetailing(input: RunDetailingInput): RunDetailingResult {
       bentUp: input.bentUp ?? { seismicDesign: 'unstated', optOut: false },
     } as never);
 
+    for (const [barId, layer] of Object.entries(gen.barLayers)) barLayers.set(barId, layer);
     memberBarsById.set(id, {
       elementId: id,
       bars: gen.bars,
@@ -515,6 +518,8 @@ export function runDetailing(input: RunDetailingInput): RunDetailingResult {
       lockedBars: input.lockedBars,
       // Without this the joint coordinator's layer allocation is recorded and never
       // applied, and every pair of beams meeting at a column overlaps.
+      memberKindOf: (id) => input.contexts.get(id)?.elementType,
+      layerOf: (barId) => barLayers.get(barId),
       nodePositionOf: (id) => {
         const n = input.nodes.get(id);
         return n ? { x: n.x, y: n.y, z: Z(n) } : undefined;

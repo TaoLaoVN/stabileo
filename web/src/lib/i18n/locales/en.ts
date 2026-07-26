@@ -4436,5 +4436,12 @@ const en: Record<string, string> = {
 
   'detailing.skip.liftProducedNoBars': 'This column lift produced no bars of its own; its reinforcement is carried by an adjacent lift of the same stack.',
 
+  'detailing.pairClass.requiredContainment': 'Tie or stirrup enclosing the bars it confines',
+  'detailing.pairClass.orthogonalCrossing': 'Bars crossing and tied in contact',
+  'detailing.pairClass.sameLayerSpacing': 'Clear spacing within one layer (§25.2.1 / §25.2.3)',
+  'detailing.pairClass.betweenLayerSpacing': 'Clear distance between layers (§25.2.2)',
+  'detailing.pairClass.crossMemberSpacing': 'Clear spacing between bars of different members',
+  'detailing.pairClass.prohibitedOverlap': 'Bar surfaces interpenetrate — physically impossible',
+
 };
 export default en;

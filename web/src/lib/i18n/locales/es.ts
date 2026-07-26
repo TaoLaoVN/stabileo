@@ -4398,5 +4398,12 @@ const es: Record<string, string> = {
 
   'detailing.skip.liftProducedNoBars': 'Este tramo de columna no produjo barras propias; su armadura la lleva un tramo contiguo del mismo montante.',
 
+  'detailing.pairClass.requiredContainment': 'Estribo o zuncho que encierra las barras que confina',
+  'detailing.pairClass.orthogonalCrossing': 'Barras que se cruzan y se atan en contacto',
+  'detailing.pairClass.sameLayerSpacing': 'Separación libre dentro de una capa (art. 25.2.1 / 25.2.3)',
+  'detailing.pairClass.betweenLayerSpacing': 'Separación libre entre capas (art. 25.2.2)',
+  'detailing.pairClass.crossMemberSpacing': 'Separación libre entre barras de elementos distintos',
+  'detailing.pairClass.prohibitedOverlap': 'Las superficies de las barras se interpenetran — físicamente imposible',
+
 };
 export default es;

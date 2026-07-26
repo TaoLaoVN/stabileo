@@ -34,6 +34,7 @@ import {
 import {
   DEFAULT_TOLERANCES, detectCollisions, type BarConflict, type CollisionTolerances,
 } from './collision';
+import { classifyPair, type ClassificationContext, type PairClassification } from './classify';
 import { coordinateJoint, type IncidentBeamAtJoint, type JointCoordination } from './generate-column';
 
 // ─── Inputs ──────────────────────────────────────────────────────
@@ -96,6 +97,10 @@ export interface FloorCoordinationInput {
    * pre-existing behaviour and is why this is explicit rather than assumed.
    */
   nodePositionOf?: (nodeId: number) => { x: number; y: number; z: number } | undefined;
+  /** Member kind per element, so a beam bar is judged by §25.2.1 and not §25.2.3. */
+  memberKindOf?: (elementId: number) => 'beam' | 'column' | 'wall' | 'slab' | undefined;
+  /** Layer index per bar, so bars in different layers get the §25.2.2 rule. */
+  layerOf?: (barId: string) => number | undefined;
 }
 
 // ─── Repair ──────────────────────────────────────────────────────
@@ -178,12 +183,13 @@ export function repairConflicts(
   bars: readonly BarPath[],
   requiredClearFor: (a: BarPath, b: BarPath) => number,
   tolerances: CollisionTolerances = DEFAULT_TOLERANCES,
+  classifyFor?: (a: BarPath, b: BarPath, overlapping: boolean) => PairClassification,
 ): RepairResult {
   const attempts: RepairAttempt[] = [];
   const trace: string[] = [];
   let working = bars.map((b) => ({ ...b, segments: b.segments.map((s) => ({ ...s })) }));
 
-  let result = detectCollisions(working, tolerances, requiredClearFor);
+  let result = detectCollisions(working, tolerances, requiredClearFor, classifyFor);
   const initial = result.conflicts.length;
   if (initial === 0) {
     return { bars: working, conflicts: [], attempts, trace: ['Sin conflictos.'] };
@@ -239,7 +245,7 @@ export function repairConflicts(
       }
     }
     working = [...byId.values()].map((b) => ({ ...b, segments: b.segments.map((sg) => ({ ...sg })) }));
-    result = detectCollisions(working, tolerances, requiredClearFor);
+    result = detectCollisions(working, tolerances, requiredClearFor, classifyFor);
     const cleared = before - result.conflicts.length;
     attempts.push({ rung, cleared, remaining: result.conflicts.length });
     trace.push(
@@ -448,7 +454,19 @@ export function coordinateFloor(input: FloorCoordinationInput): FloorCoordinatio
     },
   ).minClear;
 
-  const repair = repairConflicts(layered.bars, requiredClearFor, input.tolerances);
+  // Classify before judging: a tie around its own longitudinals is not a clash, a beam bar
+  // is not held to the column rule, and crossing bars are tied in contact.
+  const classificationContext: ClassificationContext = {
+    edition: input.edition,
+    maxAggregateSizeMm: input.maxAggregateSizeMm,
+    memberKindOf: input.memberKindOf ?? (() => undefined),
+    layerOf: input.layerOf,
+  };
+  const classifyFor = (a: BarPath, b: BarPath, overlapping: boolean) =>
+    classifyPair(a, b, classificationContext, overlapping);
+
+  const repair = repairConflicts(
+    layered.bars, requiredClearFor, input.tolerances, classifyFor);
   trace.push(...repair.trace);
 
   // Route unresolved conflicts to their joint where one matches, so the UI can navigate.

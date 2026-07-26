@@ -30,6 +30,7 @@
 
 import type { BarPath, Point3 } from '../../codes/cirsoc201/bar-geometry';
 import { samplePath } from '../../codes/cirsoc201/bar-geometry';
+import type { PairClass, PairClassification } from './classify';
 
 export interface CollisionTolerances {
   /**
@@ -67,6 +68,15 @@ export interface BarConflict {
   shortfall: number;
   /** Element ids involved, for routing the conflict to a member in the UI. */
   elementIds: number[];
+  /**
+   * What the pair IS. Set when a classifier was supplied; without one every pair is
+   * measured against a single rule, which is how ~11,000 "conflicts" on the flagship
+   * turned out to include beam bars held to the column rule and crossing bars held to a
+   * spacing rule that governs bars running alongside each other.
+   */
+  pairClass?: PairClass;
+  /** i18n key naming the class, for the conflict list. */
+  classLabelKey?: string;
 }
 
 interface SampledBar {
@@ -222,6 +232,12 @@ export function detectCollisions(
   bars: readonly BarPath[],
   tolerances: CollisionTolerances = DEFAULT_TOLERANCES,
   requiredClearFor?: (a: BarPath, b: BarPath) => number,
+  /**
+   * Classifies a pair given whether their surfaces interpenetrate. When supplied it
+   * REPLACES `requiredClearFor` and can also declare a pair not reportable at all —
+   * required containment and orthogonal crossings are relationships, not defects.
+   */
+  classifyFor?: (a: BarPath, b: BarPath, overlapping: boolean) => PairClassification,
 ): CollisionResult {
   const raw = bars.map((path) => samplePath(path));
   const maxRadius = bars.reduce((m, b) => Math.max(m, b.diameterMm / 2000), 0);
@@ -260,10 +276,6 @@ export function detectCollisions(
 
     for (const j of candidates) {
       const b = sampled[j];
-      const required = requiredClearFor
-        ? requiredClearFor(a.path, b.path)
-        : tolerances.requiredClear;
-
       let worst: { clearance: number; at: Point3 } | null = null;
 
       for (let m = 0; m + 1 < a.points.length; m++) {
@@ -277,6 +289,16 @@ export function detectCollisions(
         }
       }
       if (worst === null) continue;
+
+      // Classify BEFORE judging. The class decides the rule and whether a shortfall is a
+      // defect at all; a tie around its own longitudinals is not a clash.
+      const cls = classifyFor?.(a.path, b.path, worst.clearance < 0);
+      if (cls && !cls.reportable) continue;
+      const required = cls
+        ? cls.requiredClear
+        : requiredClearFor
+          ? requiredClearFor(a.path, b.path)
+          : tolerances.requiredClear;
 
       const shortfall = required - worst.clearance;
       if (shortfall <= 0) continue;
@@ -298,6 +320,8 @@ export function detectCollisions(
         at: worst.at,
         clearance: +worst.clearance.toFixed(5),
         required: +required.toFixed(5),
+        pairClass: cls?.pairClass,
+        classLabelKey: cls?.labelKey,
         shortfall: +shortfall.toFixed(5),
         elementIds: [...new Set([...a.path.ownerElementIds, ...b.path.ownerElementIds])].sort((x, y) => x - y),
       });
