@@ -4396,5 +4396,7 @@ const es: Record<string, string> = {
 
   'detailing.blockersTitle': 'Por qué este conjunto sigue en {state}',
 
+  'detailing.skip.liftProducedNoBars': 'Este tramo de columna no produjo barras propias; su armadura la lleva un tramo contiguo del mismo montante.',
+
 };
 export default es;

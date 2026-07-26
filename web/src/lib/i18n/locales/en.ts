@@ -4434,5 +4434,7 @@ const en: Record<string, string> = {
 
   'detailing.blockersTitle': 'Why this assembly is still {state}',
 
+  'detailing.skip.liftProducedNoBars': 'This column lift produced no bars of its own; its reinforcement is carried by an adjacent lift of the same stack.',
+
 };
 export default en;

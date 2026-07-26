@@ -179,6 +179,18 @@ function nodePoint(n: DetailingModelNode): Point3 {
   return { x: n.x, y: n.y, z: Z(n) };
 }
 
+/** The lift whose elevation range contains a bar's start, for un-owned splice bars. */
+function nearestLiftTo(bar: BarPath, lifts: readonly ColumnLift[]): number {
+  const z = bar.segments[0]?.start.z ?? 0;
+  let best = lifts[0];
+  let bestGap = Infinity;
+  for (const l of lifts) {
+    const gap = z < l.baseZ ? l.baseZ - z : z > l.topZ ? z - l.topZ : 0;
+    if (gap < bestGap) { bestGap = gap; best = l; }
+  }
+  return best.elementId;
+}
+
 /** True for a member close enough to vertical to be a column lift. */
 function isColumnLike(i: DetailingModelNode, j: DetailingModelNode): boolean {
   const dz = Math.abs(Z(j) - Z(i));
@@ -358,19 +370,45 @@ export function runDetailing(input: RunDetailingInput): RunDetailingResult {
       roofTermination: true,
     });
 
-    // Attribute the stack's bars to its lowest lift: an assembly is per level, and the
-    // stack's identity is the column line, not any one member.
-    const owner = lifts[0].elementId;
-    memberBarsById.set(owner, {
-      elementId: owner,
-      bars: gen.bars,
-      unsupported: gen.unsupported,
-      maturity: deriveMaturity({
-        implemented: true, refs: [...gen.refs, ...anchor.refs], benchmarks: [],
-      }).maturity,
-      refs: [...gen.refs, ...anchor.refs],
-      trace: gen.trace,
-    });
+    // ── Attribute each bar to the lift that owns it ──
+    //
+    // The stack is generated as a unit because splices, transitions and the splice-free
+    // zone through each joint only make sense across lifts. But an ASSEMBLY is per member:
+    // filing the whole stack under its lowest lift left every other lift owned by nothing,
+    // which is how 140 verified columns vanished from the UI, the schedule and the
+    // drawings while the run still reported success.
+    const byOwner = new Map<number, BarPath[]>();
+    for (const bar of gen.bars) {
+      // A bar with no owner (a splice bar spanning a transition) is filed with the lift it
+      // starts in, so it is drawn and scheduled exactly once.
+      const owners = bar.ownerElementIds.length > 0
+        ? bar.ownerElementIds
+        : [nearestLiftTo(bar, lifts)];
+      const owner = owners[0];
+      byOwner.set(owner, [...(byOwner.get(owner) ?? []), bar]);
+    }
+
+    const stackRefs = [...gen.refs, ...anchor.refs];
+    const stackMaturity = deriveMaturity({
+      implemented: true, refs: stackRefs, benchmarks: [],
+    }).maturity;
+
+    for (const lift of lifts) {
+      const bars = byOwner.get(lift.elementId) ?? [];
+      memberBarsById.set(lift.elementId, {
+        elementId: lift.elementId,
+        bars,
+        // Stack-level conditions are reported once, on the lowest lift, so a single
+        // unsupported condition does not multiply by the number of storeys.
+        unsupported: lift.elementId === lifts[0].elementId ? gen.unsupported : [],
+        maturity: stackMaturity,
+        refs: stackRefs,
+        trace: lift.elementId === lifts[0].elementId ? gen.trace : [],
+      });
+      if (bars.length === 0) {
+        skipped.push({ elementId: lift.elementId, key: 'detailing.skip.liftProducedNoBars' });
+      }
+    }
   }
 
   // ── Beams ──
@@ -475,6 +513,12 @@ export function runDetailing(input: RunDetailingInput): RunDetailingResult {
       membersVerified: true,
       coordinated: true,
       lockedBars: input.lockedBars,
+      // Without this the joint coordinator's layer allocation is recorded and never
+      // applied, and every pair of beams meeting at a column overlaps.
+      nodePositionOf: (id) => {
+        const n = input.nodes.get(id);
+        return n ? { x: n.x, y: n.y, z: Z(n) } : undefined;
+      },
     });
     assemblies.push(result.assembly);
     coordination.push(result);

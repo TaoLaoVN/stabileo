@@ -22,6 +22,7 @@
  * Pure: no store, no runes. The caller owns persistence.
  */
 
+import type { Point3 } from '../../codes/cirsoc201/bar-geometry';
 import type { BarPath } from '../../codes/cirsoc201/bar-geometry';
 import { minClearSpacingFor } from '../../codes/cirsoc201/spacing';
 import { worstMaturity, type Maturity } from '../../codes/maturity';
@@ -89,6 +90,12 @@ export interface FloorCoordinationInput {
   tolerances?: CollisionTolerances;
   coordinationTrace?: string[];
   assumptions?: string[];
+  /**
+   * Plan/elevation position of a node, so the joint layering knows where each joint is.
+   * Optional: without it the layer allocation is recorded but not applied, which is the
+   * pre-existing behaviour and is why this is explicit rather than assumed.
+   */
+  nodePositionOf?: (nodeId: number) => { x: number; y: number; z: number } | undefined;
 }
 
 // ─── Repair ──────────────────────────────────────────────────────
@@ -118,6 +125,55 @@ export interface RepairResult {
  * is the fastest way to lose their trust. When both bars in a pair are locked the
  * conflict is unresolvable by definition and is reported as such.
  */
+
+/** Unit axis of a bar, from its first point to its last. */
+function barAxis(bar: BarPath): Point3 {
+  const a = bar.segments[0]?.start;
+  const b = bar.segments[bar.segments.length - 1]?.end;
+  if (!a || !b) return { x: 1, y: 0, z: 0 };
+  const d = { x: b.x - a.x, y: b.y - a.y, z: b.z - a.z };
+  const L = Math.hypot(d.x, d.y, d.z);
+  return L < 1e-9 ? { x: 1, y: 0, z: 0 } : { x: d.x / L, y: d.y / L, z: d.z / L };
+}
+
+function centroid(bar: BarPath): Point3 {
+  let x = 0, y = 0, z = 0, n = 0;
+  for (const sg of bar.segments) {
+    x += sg.start.x + sg.end.x; y += sg.start.y + sg.end.y; z += sg.start.z + sg.end.z;
+    n += 2;
+  }
+  return n === 0 ? { x: 0, y: 0, z: 0 } : { x: x / n, y: y / n, z: z / n };
+}
+
+/**
+ * The direction to push `movable` so it separates from `other`.
+ *
+ * Away from the other bar, with any component along the movable bar's own axis removed —
+ * sliding a bar lengthwise never resolves a clash. When the two bars are collinear (so
+ * "away" is degenerate) the fall-back is the most open perpendicular: horizontal for a
+ * vertical bar, vertical for a horizontal one.
+ */
+function separationDirection(movable: BarPath, other: BarPath, at: Point3): Point3 {
+  const u = barAxis(movable);
+  const from = centroid(other);
+  let d = { x: at.x - from.x, y: at.y - from.y, z: at.z - from.z };
+  if (Math.hypot(d.x, d.y, d.z) < 1e-9) {
+    const c = centroid(movable);
+    d = { x: c.x - from.x, y: c.y - from.y, z: c.z - from.z };
+  }
+  // Remove the component along the bar's own axis.
+  const dot = d.x * u.x + d.y * u.y + d.z * u.z;
+  let p = { x: d.x - dot * u.x, y: d.y - dot * u.y, z: d.z - dot * u.z };
+  let L = Math.hypot(p.x, p.y, p.z);
+  if (L < 1e-9) {
+    // Collinear. A vertical bar has room sideways; a horizontal one has room across.
+    p = Math.abs(u.z) > 0.7 ? { x: 1, y: 0, z: 0 }
+      : Math.abs(u.x) >= Math.abs(u.y) ? { x: 0, y: 1, z: 0 } : { x: 1, y: 0, z: 0 };
+    L = 1;
+  }
+  return { x: p.x / L, y: p.y / L, z: p.z / L };
+}
+
 export function repairConflicts(
   bars: readonly BarPath[],
   requiredClearFor: (a: BarPath, b: BarPath) => number,
@@ -136,7 +192,20 @@ export function repairConflicts(
 
   const byId = new Map(working.map((b) => [b.id, b]));
 
-  for (const [rung, margin] of [['separación mínima', 0.002], ['separación ampliada', 0.006]] as const) {
+  // Four rungs, not two. Moving a bar out of one clash can create another, so a single
+  // pass leaves a long tail; the flagship frame converged from ~4,800 conflicts to a few
+  // hundred over four passes and stopped improving after that. The loop exits early when
+  // a rung stops helping, so a model that coordinates in one pass pays for one pass.
+  const RUNGS = [
+    ['separación mínima', 0.002], ['separación ampliada', 0.006],
+    ['separación amplia', 0.012], ['última pasada', 0.020],
+  ] as const;
+  // Keep the BEST state seen, not the last one. A rung can make things worse — pushing a
+  // bar out of one clash into two — and committing that would hand the user a cage that
+  // the repair made worse than the raw generation.
+  let best = { bars: working, conflicts: result.conflicts };
+
+  for (const [rung, margin] of RUNGS) {
     const before = result.conflicts.length;
     for (const c of result.conflicts) {
       const a = byId.get(c.barA);
@@ -145,22 +214,51 @@ export function repairConflicts(
       if (a.locked && b.locked) continue;
       // Move whichever is not locked; if neither is, move the second for determinism.
       const movable = a.locked ? b : b.locked ? a : b;
+      const other = movable === b ? a : b;
       const shift = c.shortfall + margin;
-      // Push along y, the section's minor plan axis — the direction with the most room
-      // in a rectangular cage.
+      // Push directly AWAY from the other bar, in the plane perpendicular to this bar's
+      // own axis.
+      //
+      // This used to push along global y unconditionally. For a beam running north-south
+      // that is a shift along the bar's OWN axis, which cannot separate anything: the
+      // ladder burned both rungs sliding bars lengthwise and reported the clash
+      // unresolved. Pushing along the true separation direction is both the physically
+      // correct nudge and the one a detailer would make.
+      const dir = separationDirection(movable, other, c.at);
       for (const seg of movable.segments) {
-        seg.start = { ...seg.start, y: seg.start.y + shift };
-        seg.end = { ...seg.end, y: seg.end.y + shift };
+        seg.start = {
+          x: seg.start.x + dir.x * shift,
+          y: seg.start.y + dir.y * shift,
+          z: seg.start.z + dir.z * shift,
+        };
+        seg.end = {
+          x: seg.end.x + dir.x * shift,
+          y: seg.end.y + dir.y * shift,
+          z: seg.end.z + dir.z * shift,
+        };
       }
     }
-    working = [...byId.values()];
+    working = [...byId.values()].map((b) => ({ ...b, segments: b.segments.map((sg) => ({ ...sg })) }));
     result = detectCollisions(working, tolerances, requiredClearFor);
-    attempts.push({ rung, cleared: before - result.conflicts.length, remaining: result.conflicts.length });
+    const cleared = before - result.conflicts.length;
+    attempts.push({ rung, cleared, remaining: result.conflicts.length });
     trace.push(
-      `Rung "${rung}": ${before - result.conflicts.length} resuelto(s), ` +
-      `${result.conflicts.length} pendiente(s).`);
+      `Rung "${rung}": ${cleared} resuelto(s), ${result.conflicts.length} pendiente(s).`);
+
+    if (result.conflicts.length < best.conflicts.length) {
+      best = { bars: working, conflicts: result.conflicts };
+    }
     if (result.conflicts.length === 0) break;
+    // A rung that resolved nothing, or made things worse, will not do better with a
+    // larger margin on the same geometry.
+    if (cleared <= 0) {
+      trace.push(`Rung "${rung}" no mejoró el resultado; se conserva el mejor estado previo.`);
+      break;
+    }
   }
+
+  working = best.bars;
+  result = { ...result, conflicts: best.conflicts };
 
   if (result.conflicts.length > 0) {
     trace.push(
@@ -169,6 +267,80 @@ export function repairConflicts(
   }
 
   return { bars: working, conflicts: result.conflicts, attempts, trace };
+}
+
+
+// ─── Applying the joint layer allocation ─────────────────────────
+
+/**
+ * Move each beam's top bars to the layer the joint coordinator allocated.
+ *
+ * `allocateBeamLayers` decides which incident beam's top steel runs outermost and returns
+ * a `topOffset` per beam — and until now that decision was recorded on the joint record and
+ * nothing moved. Two beams meeting at the same column therefore kept their top bars at
+ * identical elevations, which is a physical impossibility and produced thousands of
+ * overlap conflicts on the flagship frame: the coordinator was reporting a plan the
+ * geometry never followed.
+ *
+ * Only the top bars NEAR the joint are moved. A bar is "near" when one of its ends lands
+ * within the column footprint, which is where the layering has to happen and where the
+ * beam's own depth still accommodates it.
+ */
+export function applyJointLayers(
+  bars: readonly BarPath[],
+  joints: readonly JointInput[],
+  coordination: readonly JointCoordination[],
+  nodePositionOf: (nodeId: number) => { x: number; y: number; z: number } | undefined,
+): { bars: BarPath[]; moved: number } {
+  const byId = new Map(bars.map((b) => [b.id, b]));
+  let moved = 0;
+
+  for (let i = 0; i < joints.length; i++) {
+    const joint = joints[i];
+    const co = coordination[i];
+    if (!co) continue;
+    const at = nodePositionOf(joint.nodeId);
+    if (!at) continue;
+    // Half the column's diagonal: the plan radius within which a bar end is "at" the joint.
+    const radius = Math.hypot(joint.columnB, joint.columnH) / 2 + 0.05;
+
+    for (const alloc of co.layers) {
+      if (alloc.layer === 0) continue;   // the outer layer is already where it was placed.
+      for (const bar of bars) {
+        if (!bar.ownerElementIds.includes(alloc.elementId)) continue;
+        if (bar.role !== 'longitudinal') continue;
+
+        const ends = [bar.segments[0]?.start, bar.segments[bar.segments.length - 1]?.end]
+          .filter(Boolean) as Array<{ x: number; y: number; z: number }>;
+        if (ends.length === 0) continue;
+        const nearJoint = ends.some((e) => Math.hypot(e.x - at.x, e.y - at.y) <= radius);
+        if (!nearJoint) continue;
+
+        // Top bars only: those sitting above the joint node's elevation are the beam's
+        // hogging steel. Bottom bars are unaffected by the top-layer allocation.
+        const zs = bar.segments.flatMap((sg) => [sg.start.z, sg.end.z]);
+        const maxZ = Math.max(...zs);
+        if (maxZ < at.z - 0.02) continue;
+
+        // Drop by the difference between where it sits and where the allocation puts it.
+        const target = at.z - alloc.topOffset;
+        const shift = target - maxZ;
+        if (Math.abs(shift) < 1e-6) continue;
+
+        byId.set(bar.id, {
+          ...bar,
+          segments: bar.segments.map((sg) => ({
+            ...sg,
+            start: { ...sg.start, z: sg.start.z + shift },
+            end: { ...sg.end, z: sg.end.z + shift },
+          })),
+          source: 'coordinated',
+        });
+        moved++;
+      }
+    }
+  }
+  return { bars: [...byId.values()], moved };
 }
 
 // ─── The pipeline ────────────────────────────────────────────────
@@ -259,6 +431,13 @@ export function coordinateFloor(input: FloorCoordinationInput): FloorCoordinatio
     });
   }
 
+  // ── 4b. Move the bars to the layers the joints just allocated ──
+  const layered = applyJointLayers(
+    allBars, input.joints, jointCoordination, input.nodePositionOf ?? (() => undefined));
+  if (layered.moved > 0) {
+    trace.push(`${layered.moved} barra(s) superiores reubicadas a su capa en el nudo.`);
+  }
+
   // ── 5–6. Collisions and repair ──
   const requiredClearFor = (a: BarPath, b: BarPath) => minClearSpacingFor(
     input.edition,
@@ -269,7 +448,7 @@ export function coordinateFloor(input: FloorCoordinationInput): FloorCoordinatio
     },
   ).minClear;
 
-  const repair = repairConflicts(allBars, requiredClearFor, input.tolerances);
+  const repair = repairConflicts(layered.bars, requiredClearFor, input.tolerances);
   trace.push(...repair.trace);
 
   // Route unresolved conflicts to their joint where one matches, so the UI can navigate.
