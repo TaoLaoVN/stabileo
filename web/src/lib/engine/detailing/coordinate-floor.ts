@@ -35,6 +35,7 @@ import {
   DEFAULT_TOLERANCES, detectCollisions, type BarConflict, type CollisionTolerances,
 } from './collision';
 import { classifyPair, type ClassificationContext, type PairClassification } from './classify';
+import type { JointVolume } from './joint-packing';
 import { coordinateJoint, type IncidentBeamAtJoint, type JointCoordination } from './generate-column';
 
 // ─── Inputs ──────────────────────────────────────────────────────
@@ -101,6 +102,13 @@ export interface FloorCoordinationInput {
   memberKindOf?: (elementId: number) => 'beam' | 'column' | 'wall' | 'slab' | undefined;
   /** Layer index per bar, so bars in different layers get the §25.2.2 rule. */
   layerOf?: (barId: string) => number | undefined;
+  /**
+   * Joint volumes with their column bar positions, for the threading pass.
+   *
+   * Supplied separately from `joints` because the layer allocation only needs the incident
+   * beams, while threading needs the column cage the beam bars have to pass through.
+   */
+  jointVolumes?: readonly JointVolume[];
 }
 
 // ─── Repair ──────────────────────────────────────────────────────

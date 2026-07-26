@@ -43,6 +43,8 @@ import {
   generateBeamBars, type BentUpPolicy, type MomentStation, type SupportKind,
 } from './generate-beam';
 import { generateColumnStack, type ColumnLift, type IncidentBeamAtJoint } from './generate-column';
+import { freeChannels, placeInChannels } from './joint-packing';
+import { minClearSpacingColumn, minClearSpacingInLayer } from '../../codes/cirsoc201/spacing';
 import { coordinateFloor, type FloorCoordinationResult, type JointInput, type MemberBars } from './coordinate-floor';
 import type { DetailingAssembly } from './assembly';
 import { deriveMaturity } from '../../codes/maturity';
@@ -330,6 +332,29 @@ export function runDetailing(input: RunDetailingInput): RunDetailingResult {
   /** Layer index per bar, reported by the generators, for the §25.2.2 classification. */
   const barLayers = new Map<string, number>();
 
+  /**
+   * Column bars whose line passes through a node's plan position and elevation.
+   *
+   * Read from the bars the column generator actually produced, not recomputed: threading
+   * must dodge the real cage, and a second derivation of "where the column bars are" is a
+   * second thing that can disagree with the drawing.
+   */
+  function columnBarsNear(n: DetailingModelNode) {
+    const out: Array<{ diameterMm: number; x: number; y: number }> = [];
+    for (const mb of memberBarsById.values()) {
+      if (input.contexts.get(mb.elementId)?.elementType !== 'column') continue;
+      for (const bar of mb.bars) {
+        const p = bar.segments[0]?.start;
+        if (!p) continue;
+        if (Math.hypot(p.x - n.x, p.y - n.y) > 1.0) continue;
+        const zs = bar.segments.flatMap((sg) => [sg.start.z, sg.end.z]);
+        if (Math.min(...zs) > Z(n) + 0.02 || Math.max(...zs) < Z(n) - 0.02) continue;
+        out.push({ diameterMm: bar.diameterMm, x: p.x, y: p.y });
+      }
+    }
+    return out;
+  }
+
   for (const [stackId, liftsRaw] of stacks) {
     const lifts = [...liftsRaw].sort((a, b) => a.baseZ - b.baseZ);
     const first = input.contexts.get(lifts[0].elementId)!;
@@ -413,6 +438,64 @@ export function runDetailing(input: RunDetailingInput): RunDetailingResult {
     }
   }
 
+  /**
+   * Transverse positions a beam's bars may occupy, threaded past the column bars at BOTH
+   * of its ends.
+   *
+   * Both ends together, and once: a straight bar moved sideways to clear one column moves
+   * at the other end too, so resolving each joint separately just undoes the previous one.
+   * The keep-outs from the two end cages are unioned and the bars placed in what is left.
+   *
+   * NOT CURRENTLY WIRED. Measured on the 408-member flagship it made the result WORSE:
+   * overlaps 409 -> 461, because packing bars into the free channels clusters them, and
+   * the clustering costs more in bar-to-bar clearance than it buys in column clearance.
+   * The primitives are right and tested; the objective is not. Threading needs to choose
+   * positions that minimise TOTAL conflict, not merely avoid the column bars, and that is
+   * the search this function does not yet do. Left in place, unused and documented,
+   * rather than shipped as an improvement it is not.
+   */
+  function threadingSlots(
+    elementId: number, count: number, diameterMm: number,
+  ): number[] | undefined {
+    const el = input.elements.get(elementId);
+    const ctx = input.contexts.get(elementId);
+    if (!el || !ctx || count === 0) return undefined;
+    const nI = input.nodes.get(el.nodeI);
+    const nJ = input.nodes.get(el.nodeJ);
+    if (!nI || !nJ) return undefined;
+
+    const dx = nJ.x - nI.x, dy = nJ.y - nI.y;
+    const L = Math.hypot(dx, dy) || 1;
+    // MUST match `transverseAxis(axis, up)` in the generator, which is axis × up. The
+    // opposite handedness mirrors every slot onto the obstacle it was meant to avoid.
+    const t = { x: dy / L, y: -dx / L };
+
+    const cover = ctx.material.cover;
+    const tie = ctx.material.stirrupDia / 1000;
+    const beamHalf = Math.max(0, ctx.section.b / 2 - cover - tie);
+    if (beamHalf <= 0) return undefined;
+
+    const colSpacing = minClearSpacingColumn(input.edition, {
+      barDiameterMm: diameterMm, maxAggregateSizeMm: input.maxAggregateSizeMm,
+    });
+    const obstacles: Array<{ at: number; halfKeepOut: number }> = [];
+    for (const n of [nI, nJ]) {
+      for (const c of columnBarsNear(n)) {
+        obstacles.push({
+          at: (c.x - n.x) * t.x + (c.y - n.y) * t.y,
+          halfKeepOut: c.diameterMm / 2000 + colSpacing.minClear / 2,
+        });
+      }
+    }
+    if (obstacles.length === 0) return undefined;
+
+    const channels = freeChannels(beamHalf, obstacles);
+    const beamSpacing = minClearSpacingInLayer(input.edition, {
+      barDiameterMm: diameterMm, maxAggregateSizeMm: input.maxAggregateSizeMm,
+    });
+    return placeInChannels(channels, count, diameterMm, beamSpacing.minClear) ?? undefined;
+  }
+
   // ── Beams ──
   for (const id of beams) {
     const ctx = input.contexts.get(id)!;
@@ -487,6 +570,30 @@ export function runDetailing(input: RunDetailingInput): RunDetailingResult {
     byLevel.set(lvl, list);
   }
 
+  /**
+   * Plan offsets of the column bars at each level, taken from the bars the generator
+   * actually produced rather than recomputed. Threading has to dodge the real cage.
+   */
+  const columnBarsAtLevel = (level: number, centre: { x: number; y: number }) => {
+    const out: Array<{ id: string; diameterMm: number; dx: number; dy: number }> = [];
+    for (const mb of memberBarsById.values()) {
+      const ctx = input.contexts.get(mb.elementId);
+      if (ctx?.elementType !== 'column') continue;
+      for (const bar of mb.bars) {
+        const zs = bar.segments.flatMap((sg) => [sg.start.z, sg.end.z]);
+        // The bar must actually pass through this level to obstruct it.
+        if (Math.min(...zs) > level + 0.02 || Math.max(...zs) < level - 0.02) continue;
+        const p = bar.segments[0]?.start;
+        if (!p) continue;
+        const dx = p.x - centre.x;
+        const dy = p.y - centre.y;
+        if (Math.hypot(dx, dy) > 1.5) continue;   // a different column line
+        out.push({ id: bar.id, diameterMm: bar.diameterMm, dx, dy });
+      }
+    }
+    return out.sort((a, b) => a.id.localeCompare(b.id));
+  };
+
   const assemblies: DetailingAssembly[] = [];
   const coordination: FloorCoordinationResult[] = [];
 
@@ -518,6 +625,24 @@ export function runDetailing(input: RunDetailingInput): RunDetailingResult {
       lockedBars: input.lockedBars,
       // Without this the joint coordinator's layer allocation is recorded and never
       // applied, and every pair of beams meeting at a column overlaps.
+      jointVolumes: joints.map((j) => {
+        const n = input.nodes.get(j.nodeId)!;
+        const cctx = input.contexts.get(j.elementIds[0]);
+        return {
+          id: j.id, nodeId: j.nodeId,
+          centre: { x: n.x, y: n.y, z: Z(n) },
+          columnB: j.columnB, columnH: j.columnH,
+          cover: cctx?.material.cover ?? 0.025,
+          tieDia: cctx?.material.stirrupDia ?? 8,
+          columnBars: columnBarsAtLevel(Z(n), { x: n.x, y: n.y }),
+          beams: j.beams.map((b) => ({
+            elementId: b.elementId,
+            direction: b.direction,
+            depth: b.depth,
+            width: input.contexts.get(b.elementId)?.section.b ?? 0.2,
+          })),
+        };
+      }),
       memberKindOf: (id) => input.contexts.get(id)?.elementType,
       layerOf: (barId) => barLayers.get(barId),
       nodePositionOf: (id) => {

@@ -94,6 +94,16 @@ export interface BeamGenerationInput {
   axis: Point3;
   /** Unit vector pointing "up" in the section (toward the top face). */
   up: Point3;
+  /**
+   * Transverse positions this beam's bars must occupy, m from the section centreline.
+   *
+   * Supplied by the caller when the beam has to thread between the column bars at its
+   * ends. It has to be decided ONCE, for the whole bar, because a beam spans two joints:
+   * moving a straight bar sideways to clear one column moves it at the other end too, so
+   * a post-hoc nudge at each joint simply undoes itself. Absent, bars are centred on the
+   * section at the code spacing.
+   */
+  transverseSlots?: readonly number[];
   /** Bent-up bar policy — see `BentUpPolicy`. */
   bentUp: BentUpPolicy;
 }
@@ -540,7 +550,11 @@ export function generateBeamBars(input: BeamGenerationInput): GeneratedBeam {
     }
     // Layer 0 sits at the face; deeper layers move toward the section centre.
     const inward = faceUpward ? -1 : 1;
-    return layout.slots.map((slot) => ({
+    const slots = input.transverseSlots && input.transverseSlots.length >= count
+      // Threading positions win: they were chosen against the real column cage.
+      ? layout.slots.map((slot, i) => ({ ...slot, across: input.transverseSlots![i] }))
+      : layout.slots;
+    return slots.map((slot) => ({
       layer: slot.layer,
       x: across.x * slot.across + input.up.x * slot.intoSection * inward,
       y: across.y * slot.across + input.up.y * slot.intoSection * inward,
