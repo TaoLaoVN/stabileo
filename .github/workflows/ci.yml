@@ -221,18 +221,23 @@ jobs:
       # block on day one are how e2e suites end up disabled. Promote once the Linux
       # baselines have proven stable across a few runs.
       #
-      # LINUX BASELINES: they could not be generated on the authoring machine (macOS
-      # arm64 with no container/VM runtime — see the PR note). This step writes them
-      # under web/e2e/__screenshots__/linux/ on the first run and uploads them as an
-      # artifact; commit that artifact to land the real Linux baselines. Until then the
-      # comparison is informational only.
-      - name: E2E visual baselines (non-blocking, writes missing Linux baselines)
+      # LINUX BASELINES: now committed under web/e2e/__screenshots__/linux/, so this
+      # step COMPARES against them. It must not pass --update-snapshots: that would
+      # overwrite the baselines every run and leave the pixel gate permanently inert,
+      # silently accepting any visual regression.
+      #
+      # Still continue-on-error and the two assertions are still expect.soft, so a
+      # mismatch is informational for this first landing. Promote to blocking once the
+      # baselines have proven stable. To intentionally refresh them, run the job once
+      # with UPDATE_SNAPSHOTS=1.
+      - name: E2E visual baselines (non-blocking comparison)
         if: github.ref == 'refs/heads/main' || contains(github.event.pull_request.labels.*.name, 'run-e2e')
         continue-on-error: true
         working-directory: web
-        run: npx playwright test --grep "visual baselines" --update-snapshots
+        run: npx playwright test --grep "visual baselines" ${{ vars.UPDATE_SNAPSHOTS == '1' && '--update-snapshots' || '' }}
 
-      - name: Upload generated Linux screenshot baselines
+      # Uploaded for diagnostics: on a mismatch this carries the actual/diff images.
+      - name: Upload Linux screenshot baselines / diffs
         if: always()
         uses: actions/upload-artifact@v4
         with:
