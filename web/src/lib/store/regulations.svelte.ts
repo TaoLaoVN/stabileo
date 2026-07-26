@@ -47,6 +47,14 @@ export type ChangeRequest =
 function createRegulationsStore() {
   /** Set when a load-affecting change is staged, so the UI can show the banner. */
   let reviewRequested = $state<RegulationRole | null>(null);
+  /**
+   * Bindings displaced by a staged change, so Cancel can put them back.
+   *
+   * Without this, cancelling cleared the role instead of restoring what was applied
+   * before — the user lost a binding by changing their mind, which is worse than the
+   * change they cancelled.
+   */
+  let displaced = $state<Partial<Record<RegulationRole, RoleBinding>>>({});
 
   const stored = $derived<StoredRegulations>(
     modelStore.model.regulations
@@ -73,7 +81,21 @@ function createRegulationsStore() {
     get reviewRequested() { return reviewRequested; },
 
     binding(role: RegulationRole): RoleBinding { return roles[role]; },
+    /** Bound, supported AND configured — ready to produce results. */
     usable(role: RegulationRole): boolean { return roleUsable(roles, role); },
+    /**
+     * Bound to a supported adapter, regardless of whether its settings are filled in yet.
+     *
+     * The Loads dialog needs this rather than `usable`: it IS the surface that supplies
+     * the wind and seismic settings, so gating its own controls on `configComplete` was
+     * circular — the checkbox stayed disabled because the configuration was missing, and
+     * the configuration was missing because the checkbox was disabled.
+     */
+    bound(role: RegulationRole): boolean {
+      const b = roles[role];
+      if (!b.adapterId) return false;
+      return findOption(b.adapterId)?.maturity !== 'UNSUPPORTED';
+    },
 
     /** Is a stamped output still valid? */
     fresh(s: StageStamp | null | undefined) { return freshness(s, revisions); },
@@ -115,6 +137,8 @@ function createRegulationsStore() {
         return { kind: 'refused', problems: blocking };
       }
 
+      // Remember what we displaced BEFORE writing, so Cancel is lossless.
+      if (displaced[role] === undefined) displaced = { ...displaced, [role]: previous };
       writeRoles(next);
 
       if (isLoadAffecting(role)) {
@@ -147,22 +171,24 @@ function createRegulationsStore() {
         next[role] = { ...next[role], state: 'applied', appliedAtRevision: rev.regulationConfig + 1 };
       }
       writeRoles(next);
+      displaced = {};
       const { revisions: bumped, consequence } = applyChange(rev, kind);
       writeRevisions(bumped);
       reviewRequested = null;
       return consequence;
     },
 
-    /** Discard staged bindings and leave the applied stack untouched. */
+    /** Discard staged bindings, restoring exactly what was applied before. */
     cancelPending(): void {
       const next = { ...roles };
       for (const role of pendingRoles(roles)) {
-        const prevId = next[role].appliedAtRevision !== null ? next[role].adapterId : null;
-        next[role] = prevId
-          ? { ...next[role], state: 'applied' }
+        const prev = displaced[role];
+        next[role] = prev !== undefined
+          ? { ...prev }
           : { ...next[role], state: 'unset', adapterId: null, displayName: '', edition: '' };
       }
       writeRoles(next);
+      displaced = {};
       reviewRequested = null;
     },
 

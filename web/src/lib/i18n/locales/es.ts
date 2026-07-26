@@ -4156,5 +4156,8 @@ const es: Record<string, string> = {
   'autoLoad.seismicNeedsRole': 'Las cargas sísmicas requieren un reglamento sísmico asignado al proyecto.',
   'autoLoad.windNeedsRole': 'Las cargas de viento requieren un reglamento de viento asignado al proyecto.',
   'autoLoad.openRegulations': 'Abrir Reglamentos del proyecto',
+  'maturity.validated': 'Validado',
+  'maturity.provisional': 'Provisorio',
+  'maturity.unsupported': 'No soportado',
 };
 export default es;

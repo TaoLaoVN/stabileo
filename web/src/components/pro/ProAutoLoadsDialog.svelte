@@ -49,8 +49,10 @@
   // Off by default: seismic loads require a bound seismic regulation, and a dialog that
   // starts with them on would block every fresh project's preview.
   let enableSeismic = $state(false);
-  const seismicAvailable = $derived(regulationsStore.usable('seismic'));
-  const windAvailable = $derived(regulationsStore.usable('wind'));
+  // `bound`, not `usable`: this dialog supplies the settings, so gating on
+  // configComplete would be circular.
+  const seismicAvailable = $derived(regulationsStore.bound('seismic'));
+  const windAvailable = $derived(regulationsStore.bound('wind'));
   let seismicZone = $state<SeismicZone>(4);
   let soilType = $state<SoilType>('SD');
   let importanceGroup = $state<ImportanceGroup>('B');
@@ -376,13 +378,20 @@
             <label><input type="checkbox" bind:checked={seismicDirectionZ} /> {t('autoLoad.dirZ')}</label>
           </div>
 
+          <!-- The seismic figures come from the PLAN, whose level masses are real. The
+               old block read T / Sa / R off a preview object that no longer exists and
+               crashed the whole tab on undefined.toFixed. -->
           {#if seismicPreview}
-            <div class="al-preview">
-              <div class="al-preview-title">{t('autoLoad.preview')}</div>
-              <div class="al-preview-row">T ≈ {seismicPreview.T.toFixed(3)} s | Sa = {seismicPreview.Sa.toFixed(3)}g | R = {seismicPreview.R.toFixed(1)}</div>
-              <div class="al-preview-row">V₀ = {seismicPreview.V0.toFixed(1)} kN ({(seismicPreview.V0 / seismicPreview.W * 100).toFixed(1)}% W)</div>
-              {#each seismicPreview.floors as f}
-                <div class="al-preview-floor">h={f.elevation.toFixed(1)}m → F={f.Fk.toFixed(1)} kN</div>
+            <div class="al-seismic-preview" data-testid="al-seismic-preview">
+              <div class="al-preview-title">{t('autoLoad.previewTitle')}</div>
+              <div class="al-preview-row">
+                {tp('autoLoad.baseShear', {
+                  w: seismicPreview.W.toFixed(1), v: seismicPreview.V0.toFixed(1) })}
+              </div>
+              {#each seismicPreview.levels as lv (lv.elevation)}
+                <div class="al-preview-floor">
+                  +{lv.elevation.toFixed(2)} m → Wi = {lv.weightKN.toFixed(1)} kN
+                </div>
               {/each}
             </div>
           {/if}
@@ -569,6 +578,7 @@
   .al-list { margin: 0.2rem 0 0; padding-left: 1.1rem; }
   .al-row { display: flex; align-items: center; gap: 0.4rem; margin: 0.2rem 0; }
   .al-row label { min-width: 11rem; }
+  .al-seismic-preview { margin-top: 6px; font-size: 0.78rem; opacity: 0.9; }
   .al-link { background: none; border: none; text-decoration: underline; color: inherit; cursor: pointer; padding: 0; font: inherit; }
   .al-overlay {
     position: fixed; inset: 0; z-index: 9999;

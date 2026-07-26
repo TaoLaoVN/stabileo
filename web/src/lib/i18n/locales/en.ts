@@ -4194,5 +4194,8 @@ const en: Record<string, string> = {
   'autoLoad.seismicNeedsRole': 'Seismic loads need a seismic regulation bound to the project.',
   'autoLoad.windNeedsRole': 'Wind loads need a wind regulation bound to the project.',
   'autoLoad.openRegulations': 'Open Project regulations',
+  'maturity.validated': 'Validated',
+  'maturity.provisional': 'Provisional',
+  'maturity.unsupported': 'Not supported',
 };
 export default en;
