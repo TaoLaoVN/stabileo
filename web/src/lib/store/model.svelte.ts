@@ -1,6 +1,9 @@
 import {
   defaultCodeSettings, migrateCodeSettings, type ProjectCodeSettings,
 } from '../codes/project-code-settings';
+import {
+  emptyDetailingStore, migrateDetailingStore, type DetailingStore,
+} from '../engine/detailing/assembly';
 // Model store - manages the structural model
 import type { KinematicResult } from '../engine/kinematic-2d';
 import type { SolverInput, FullEnvelope, AnalysisResults } from '../engine/types';
@@ -523,6 +526,14 @@ export interface StructureModel {
   regulations?: StoredRegulations;
   /** The revision vector every downstream result is stamped against. */
   revisions?: RevisionVector;
+  /**
+   * Coordinated detailing assemblies.
+   *
+   * Persisted with the model for the same reason codeSettings is: a coordinated floor
+   * that has to be regenerated on every open is not a deliverable, and the engineer's
+   * review record has to survive a save/load cycle or it is not a record.
+   */
+  detailing?: DetailingStore;
 }
 
 export type { AnalysisResults };
@@ -578,6 +589,7 @@ function createModelStore() {
     connectors: new Map(),
     localAxisConvention: 'zUpStrongAxis',
     codeSettings: defaultCodeSettings(),
+    detailing: emptyDetailingStore(),
   });
 
   let lastKinematicResult = $state<KinematicResult | null>(null);
@@ -946,6 +958,9 @@ function createModelStore() {
         codeSettings: snap.codeSettings
           ? (JSON.parse(JSON.stringify(snap.codeSettings)) as ProjectCodeSettings)
           : defaultCodeSettings(),
+        detailing: snap.detailing
+          ? (JSON.parse(JSON.stringify(snap.detailing)) as DetailingStore)
+          : emptyDetailingStore(),
       };
       if (snap.provenance) {
         result.provenance = {
@@ -1056,6 +1071,7 @@ function createModelStore() {
       // Migration is deliberate, not a fallback: a project with no settings is stamped
       // CIRSOC 201-2005, the edition its stored results were actually checked against.
       model.codeSettings = migrateCodeSettings(s.codeSettings).settings;
+      model.detailing = migrateDetailingStore(s.detailing).store;
     },
 
     /** Explicit user action: clear the CAD-draft "unreviewed" tag. */
@@ -1603,6 +1619,7 @@ function createModelStore() {
       // A new model is a new project: it adopts the edition in force, not whatever the
       // previously open project happened to be designed to.
       model.codeSettings = defaultCodeSettings();
+      model.detailing = emptyDetailingStore();
       // Reset materials/sections to defaults
       model.materials = new Map([[1, { ...defaultMaterial }]]);
       model.sections = new Map([[1, { ...defaultSection }]]);
