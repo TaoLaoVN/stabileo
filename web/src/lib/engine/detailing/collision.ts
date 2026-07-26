@@ -377,6 +377,16 @@ export function detectCollisions(
     tangentA?: Point3, tangentB?: Point3,
   ) => PairClassification,
   /**
+   * Per-pair placement tolerance override.
+   *
+   * The flat tolerance models two bars that are supposed to be a set distance apart and
+   * might each be out of position. It does NOT model two bars that are supposed to be in
+   * CONTACT — a slab mat's crossing bars are tied together, so there is no independent
+   * placement error to allow for between them. Charging one turns every tie point into a
+   * 10 mm interpenetration.
+   */
+  placementFor?: (a: BarPath, b: BarPath) => number,
+  /**
    * Escape hatch for the equivalence gate, NOT a production knob.
    *
    * `prune: false` disables the bounding-box rejection and tests every segment pair
@@ -418,7 +428,7 @@ export function detectCollisions(
 
   const prune = options?.prune !== false;
   /** Everything except the two radii, which vary per pair. */
-  const pairCutoff = maxReportableClear(bars, tolerances) + tolerances.placement;
+  const maxClear = maxReportableClear(bars, tolerances);
 
   const conflicts = new Map<string, BarConflict>();
   let narrowPhaseTests = 0;
@@ -432,20 +442,30 @@ export function detectCollisions(
 
     for (const j of candidates) {
       const b = sampled[j];
+      // Placement is needed before the sweep; `required` is resolved after the pair has
+      // been classified, because the class chooses the rule.
+      const placement = placementFor
+        ? placementFor(a.path, b.path)
+        : tolerances.placement;
 
       // ── Reject what cannot be reported, before measuring it ──
       //
       // A conflict is only ever raised when `clearance < required`, i.e. when the centreline
-      // distance is under `required + placement + rA + rB`. `maxReportableClear` is an upper
-      // bound on `required` for every pair in the run, so two boxes further apart than this
-      // cannot produce one — whatever the exact distance turns out to be.
+      // distance is under `required + placement + rA + rB`. `maxClear` is an upper bound on
+      // `required` for every pair in the run, so two boxes further apart than this cannot
+      // produce one — whatever the exact distance turns out to be.
+      //
+      // The bound is built from THIS pair's placement rather than the global one. A caller
+      // may hand back a larger allowance for some pairs than `tolerances.placement`, and a
+      // cutoff derived from the global value would then reject a pair that was reportable.
+      // Per-pair costs one addition and is sound for any `placementFor`.
       //
       // That matters because the narrow phase was O(nA × nB) over every sampled segment of
       // both bars with no early exit. Two six-metre bars that touch at one point still had
       // every one of their segment pairs measured: 7,6 million segment tests for 151 000 bar
       // pairs on the flagship, about fifty per pair. Skipping provably-irrelevant pairs
       // changes no result — it removes work whose answer was already known.
-      const cutoff = pairCutoff + a.radius + b.radius;
+      const cutoff = maxClear + placement + a.radius + b.radius;
       const cutoffSq = cutoff * cutoff;
       if (prune && boxGapSq(a.box, b.box) > cutoffSq) continue;
 
@@ -464,11 +484,12 @@ export function detectCollisions(
           narrowPhaseTests++;
           const { distance, at } = segmentDistance(
             a.points[m], a.points[m + 1], b.points[n], b.points[n + 1]);
-          // `surface` is the true geometry; `clearance` also carries the placement
-          // tolerance. The classifier must see only the former — a tolerance allowance is
-          // not interpenetration, and treating it as one turns every tie point into a clash.
+          // `surface` is the true geometry; `clearance` also carries this pair's
+          // placement tolerance. The classifier must see only the former — a tolerance
+          // allowance is not interpenetration, and treating it as one turns every tie
+          // point into a clash.
           const surface = distance - a.radius - b.radius;
-          const clearance = surface - tolerances.placement;
+          const clearance = surface - placement;
           if (worst === null || clearance < worst.clearance) {
             worst = { clearance, at, surface, m, n };
           }

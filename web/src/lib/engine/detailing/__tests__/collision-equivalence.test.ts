@@ -39,9 +39,20 @@ const CTX: ClassificationContext = {
 const classify = (a: BarPath, b: BarPath, s: number, ta?: never, tb?: never) =>
   classifyPair(a, b, CTX, s, ta, tb);
 
-/** Everything a caller can observe, in a comparable shape. */
-function shapeOf(bars: readonly BarPath[], withClassifier: boolean) {
-  const args = [bars, DEFAULT_TOLERANCES, undefined, withClassifier ? classify : undefined] as const;
+/**
+ * Everything a caller can observe, in a comparable shape.
+ *
+ * `placementFor` is threaded through because the pruning cutoff is built from the pair's
+ * own placement allowance. A per-pair allowance therefore reaches the optimisation, and
+ * the gate has to exercise it or the two paths could diverge exactly where they are used.
+ */
+function shapeOf(
+  bars: readonly BarPath[], withClassifier: boolean,
+  placementFor?: (a: BarPath, b: BarPath) => number,
+) {
+  const args = [
+    bars, DEFAULT_TOLERANCES, undefined, withClassifier ? classify : undefined, placementFor,
+  ] as const;
   const fast = detectCollisions(...args);
   const slow = detectCollisions(...args, { prune: false });
   const norm = (r: typeof fast) => r.conflicts.map((c) => ({
@@ -53,8 +64,11 @@ function shapeOf(bars: readonly BarPath[], withClassifier: boolean) {
   return { fast, slow, fastN: norm(fast), slowN: norm(slow) };
 }
 
-function expectEquivalent(bars: readonly BarPath[], label: string, withClassifier = true) {
-  const { fast, slow, fastN, slowN } = shapeOf(bars, withClassifier);
+function expectEquivalent(
+  bars: readonly BarPath[], label: string, withClassifier = true,
+  placementFor?: (a: BarPath, b: BarPath) => number,
+) {
+  const { fast, slow, fastN, slowN } = shapeOf(bars, withClassifier, placementFor);
   // Same conflicts, in the same order, with the same ids and the same classification.
   expect(fastN, `${label}: conflict list`).toEqual(slowN);
   expect(fast.constructible, `${label}: constructible flag`).toBe(slow.constructible);
@@ -128,6 +142,15 @@ describe('optimised and exhaustive agree on synthetic geometry', () => {
 
   it('unrelated bars crossing at right angles', () => {
     expectEquivalent([straight('a', 0, 0), crossing('x', 2)], 'orthogonal crossing');
+    // A per-pair allowance feeds the pruning cutoff. Both directions are exercised: an
+    // allowance below the flat tolerance (a tied crossing) and one above it, which is the
+    // case a cutoff built from the global tolerance would have wrongly rejected.
+    expectEquivalent([straight('a', 0, 0), crossing('x', 2)], 'crossing, zero allowance',
+      true, () => 0);
+    expectEquivalent([straight('a', 0, 0), crossing('x', 2)], 'crossing, generous allowance',
+      true, () => 0.05);
+    expectEquivalent([straight('a', 0, 0), straight('b', 0.05, 0)], 'parallel, generous allowance',
+      true, () => 0.05);
     expectEquivalent([straight('a', 0, 0), crossing('x', 2, 32)], 'crossing, big bar');
   });
 
