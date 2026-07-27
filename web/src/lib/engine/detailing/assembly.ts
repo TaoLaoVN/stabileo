@@ -30,6 +30,7 @@ import type { ClauseRef, RegulationEdition } from '../../codes/regulation';
 import type { Maturity } from '../../codes/maturity';
 import type { BarConflict } from './collision';
 import type { ConstructibilityAssessment } from './constructibility';
+import type { EngineMessage } from '../../codes/message';
 
 export const DETAILING_SCHEMA_VERSION = 1;
 
@@ -130,8 +131,14 @@ export interface AssemblyProvenance {
   coordinationCost?: number;
   /** The coordinator's decision trace. */
   trace: string[];
-  /** Assumptions carried by any calculation in the assembly. */
-  assumptions: string[];
+  /**
+   * Assumptions carried by any calculation in the assembly.
+   *
+   * Structured, not prose: these reach certificates, reports and exports, so they have to
+   * be translatable. PR16's rule that pure engines never emit user-facing text applies
+   * here as much as anywhere.
+   */
+  assumptions: EngineMessage[];
 }
 
 export interface DetailingAssembly {

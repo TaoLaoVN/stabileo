@@ -26,6 +26,7 @@ import type { Point3 } from '../../codes/cirsoc201/bar-geometry';
 import type { BarPath } from '../../codes/cirsoc201/bar-geometry';
 import { minClearSpacingFor } from '../../codes/cirsoc201/spacing';
 import type { ConstructibilityAssessment } from './constructibility';
+import type { EngineMessage } from '../../codes/message';
 import { worstMaturity, type Maturity } from '../../codes/maturity';
 import type { ClauseRef, RegulationEdition } from '../../codes/regulation';
 import {
@@ -92,7 +93,13 @@ export interface FloorCoordinationInput {
   lockedBars?: BarPath[];
   tolerances?: CollisionTolerances;
   coordinationTrace?: string[];
-  assumptions?: string[];
+  /**
+   * Assumptions to carry into the assembly's provenance.
+   *
+   * Structured messages, because they reach certificates, reports and exports and must be
+   * translatable at the i18n boundary like everything else an engine emits.
+   */
+  assumptions?: EngineMessage[];
   /**
    * Plan/elevation position of a node, so the joint layering knows where each joint is.
    * Optional: without it the layer allocation is recorded but not applied, which is the
