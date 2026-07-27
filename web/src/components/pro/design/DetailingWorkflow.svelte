@@ -13,12 +13,80 @@
    * refusal reason is shown verbatim rather than being turned into a disabled button
    * with no explanation.
    */
-  import { t, tp } from '../../../lib/i18n';
+  import { t, tp, i18n } from '../../../lib/i18n';
   import { detailingStore } from '../../../lib/store/detailing.svelte';
   import { REVIEW_STATES, reviewRank } from '../../../lib/engine/detailing/assembly';
   import { maturityLabelKey } from '../../../lib/codes/maturity';
+  import {
+    renderReportHtml, renderDrawings, renderSchedule,
+  } from '../../../lib/engine/detailing/document-render';
+  import { exportToExcel } from '../../../lib/export/excel';
 
   let engineer = $state('');
+  let docError = $state<string | null>(null);
+
+  /**
+   * Build the document, or say why not.
+   *
+   * Every export goes through this, so all three consume the SAME model instance and the
+   * same revision. Building one per button would let a report and a drawing disagree about
+   * what they describe, which is the failure the DocumentModel exists to prevent.
+   */
+  function currentDoc() {
+    docError = null;
+    const doc = detailingStore.buildDocument({
+      author: engineer.trim() || t('detailing.doc.unnamedAuthor'),
+      at: new Date().toISOString(),
+    });
+    if (!doc) docError = t('detailing.doc.noCoordinated');
+    return doc;
+  }
+
+  function downloadBlob(name: string, type: string, content: string) {
+    const url = URL.createObjectURL(new Blob([content], { type }));
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = name;
+    a.click();
+    URL.revokeObjectURL(url);
+  }
+
+  function exportReport() {
+    const doc = currentDoc();
+    if (!doc) return;
+    const html = renderReportHtml(
+      doc,
+      { locale: i18n.locale, projectName: t('detailing.doc.project') },
+      (k, params) => tp(k, params ?? {}),
+    );
+    // Printed through the browser rather than a bundled PDF writer: better typography,
+    // no dependency, and the user picks the paper size.
+    const w = window.open('', '_blank');
+    if (w) { w.document.write(html); w.document.close(); w.focus(); w.print(); }
+    else downloadBlob(`detailing-rev${doc.revision.number}.html`, 'text/html', html);
+  }
+
+  function exportDxf() {
+    const doc = currentDoc();
+    if (!doc) return;
+    const set = renderDrawings(doc, {
+      locale: i18n.locale, projectName: t('detailing.doc.project'),
+    });
+    downloadBlob(`detailing-rev${doc.revision.number}.dxf`, 'application/dxf', set.dxf);
+  }
+
+  function exportXlsx() {
+    const doc = currentDoc();
+    if (!doc) return;
+    const sheets = renderSchedule(doc, {
+      locale: i18n.locale, projectName: t('detailing.doc.project'),
+    });
+    exportToExcel({
+      filename: `detailing-rev${doc.revision.number}.xlsx`,
+      onlyExtras: true,
+      extraSheets: sheets.map((s) => ({ name: s.name, rows: s.aoa })),
+    });
+  }
   let notes = $state('');
   let acknowledged = $state<string[]>([]);
 
@@ -267,6 +335,54 @@
         </table>
       {/if}
 
+      <!-- ── Documents ──────────────────────────────────────────────
+           All three exports build from ONE DocumentModel, so a report, a drawing set and
+           a schedule of the same floor cannot disagree about what they describe. -->
+      <section class="documents" data-testid="documents" aria-labelledby="documents-title">
+        <h3 id="documents-title">{t('detailing.doc.title')}</h3>
+
+        {#if detailingStore.document}
+          {@const d = detailingStore.document}
+          <p class="doc-state" data-testid="doc-readiness">
+            <span class="badge badge-{d.readiness.toLowerCase()}">{t(`detailing.doc.readiness.${d.readiness}`)}</span>
+            <span data-testid="doc-revision">{tp('detailing.doc.revision', { n: d.revision.number })}</span>
+            <span data-testid="doc-maturity">{t(maturityLabelKey(d.maturity))}</span>
+          </p>
+          {#if d.openConflicts.length > 0}
+            <p class="warn" data-testid="doc-conflicts">
+              {tp('detailing.doc.conflicts', { n: d.openConflicts.length })}
+            </p>
+          {/if}
+        {:else}
+          <p class="muted" data-testid="doc-none">{t('detailing.doc.notBuilt')}</p>
+        {/if}
+
+        <div class="doc-actions">
+          <button data-testid="doc-report" onclick={exportReport}>{t('detailing.doc.report')}</button>
+          <button data-testid="doc-dxf" onclick={exportDxf}>{t('detailing.doc.dxf')}</button>
+          <button data-testid="doc-xlsx" onclick={exportXlsx}>{t('detailing.doc.xlsx')}</button>
+        </div>
+
+        {#if docError}
+          <p class="err" role="alert" data-testid="doc-error">{docError}</p>
+        {/if}
+
+        {#if detailingStore.supersededDocuments.length > 0}
+          <details class="superseded-docs" data-testid="superseded-docs">
+            <summary>{tp('detailing.doc.supersededCount',
+              { n: detailingStore.supersededDocuments.length })}</summary>
+            <ul>
+              {#each detailingStore.supersededDocuments as sd (sd.revision.number)}
+                <li data-testid={`superseded-${sd.revision.number}`}>
+                  {tp('detailing.doc.supersededItem',
+                    { n: sd.revision.number, by: sd.supersededBy ?? 0 })}
+                </li>
+              {/each}
+            </ul>
+          </details>
+        {/if}
+      </section>
+
       <section class="review" aria-labelledby="review-title">
         <h5 id="review-title">{t('detailing.review')}</h5>
         <p class="disclaimer" data-testid="review-disclaimer">{t('detailing.notLegalSignoff')}</p>
@@ -373,6 +489,15 @@
   caption { text-align: left; font-weight: 600; padding-bottom: 0.25rem; }
   th, td { border: 1px solid rgba(128,128,128,0.3); padding: 0.2rem 0.4rem; text-align: right; }
   th[scope='col'], td:first-child, td:nth-child(3) { text-align: left; }
+  .documents { margin-top: 14px; padding-top: 10px; border-top: 1px solid var(--border, #ddd); }
+  .doc-actions { display: flex; gap: 8px; flex-wrap: wrap; margin: 8px 0; }
+  .doc-state { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; font-size: 12px; }
+  .badge { padding: 2px 8px; border-radius: 3px; font-weight: 600; font-size: 11px; }
+  .badge-review_draft, .badge-superseded { background: #fde2e2; color: #900; }
+  .badge-for_review { background: #fff4d6; color: #7a5200; }
+  .badge-reviewed, .badge-issued { background: #e6f5e6; color: #175; }
+  .superseded-docs { margin-top: 8px; font-size: 12px; }
+
   .review { margin-top: 0.75rem; border-top: 1px solid rgba(128,128,128,0.3); padding-top: 0.6rem; }
   .disclaimer { font-size: 0.75rem; opacity: 0.8; margin: 0 0 0.4rem; }
   .field { display: block; margin: 0.35rem 0; }

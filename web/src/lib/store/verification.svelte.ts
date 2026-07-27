@@ -162,8 +162,26 @@ function createVerificationStore() {
       : result.overallStatus === 'warn' ? 'warn' : 'ok';
   }
 
+  /** The reinforcement currently attached to a member, for hashing and for documents. */
+  function reinforcementFor(elementId: number): ProvidedReinforcement | undefined {
+    return reinforcementProvider?.(elementId) ?? undefined;
+  }
+
+  /**
+   * The rebar hash the cached certificate was issued against.
+   *
+   * Empty when nothing has been verified. A document compares this with the hash of the
+   * reinforcement actually in the model; disagreement means the certificate describes
+   * geometry that no longer exists, which is worse than having no certificate at all.
+   */
+  function certifiedHashFor(elementId: number): string {
+    return providedCache.get(elementId)?.key.split('|')[0] ?? '';
+  }
+
   return {
     reverifyAtFinalDepth,
+    reinforcementFor,
+    certifiedHashFor,
     // ── Legacy accessors (backward compat) ──
     get concrete() { return concreteVerifs; },
     get steel() { return steelVerifs; },

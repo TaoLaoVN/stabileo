@@ -96,6 +96,14 @@ export interface DocumentAssembly {
   constructibility?: ConstructibilityAssessment;
   maturity: Maturity;
   assumptions: EngineMessage[];
+  /**
+   * The persisted assembly this was built from.
+   *
+   * Carried so the drawing builders — which need marks, joints and stirrup zones, not just
+   * bars — still read from the document rather than from a second source that can drift
+   * out of step with it.
+   */
+  source: DetailingAssembly;
 }
 
 export interface DocumentModel {
@@ -256,6 +264,7 @@ export function buildDocumentModel(input: {
       constructibility: a.constructibility,
       maturity: a.maturity,
       assumptions: [...(a.provenance?.assumptions ?? [])],
+      source: a,
     };
   });
 

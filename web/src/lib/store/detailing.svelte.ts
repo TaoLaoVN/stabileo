@@ -27,6 +27,11 @@ import {
   type DetailingReadiness, type RunDetailingResult,
 } from '../engine/detailing/run-detailing';
 import { verificationStore } from './verification.svelte';
+import { rebarHash } from '../engine/design/rebar-hash';
+import {
+  buildDocumentModel, supersede,
+  type CertificateEntry, type DocumentModel,
+} from '../engine/detailing/document-model';
 import { regulationsStore } from './regulations.svelte';
 import type { RegulationEdition } from '../codes/regulation';
 import type { MemberDesignOutcome } from '../engine/design/outcome';
@@ -122,6 +127,10 @@ function createDetailingStore() {
    * at the end. Persisted with the model, not with the browser: it is a project decision.
    */
   let lastRun = $state<RunDetailingResult | null>(null);
+  let currentDocument = $state<DocumentModel | null>(null);
+  let supersededDocs = $state<DocumentModel[]>([]);
+  /** Monotonic per project. Bumped on supersession, never reused. */
+  let documentRevision = $state(1);
 
   const store = $derived<DetailingStore>(modelStore.model.detailing ?? emptyDetailingStore());
   const assemblies = $derived(store.assemblies);
@@ -132,6 +141,21 @@ function createDetailingStore() {
   const conflicts = $derived<BarConflict[]>(
     (selected?.conflicts ?? []).filter((c) => c.severity !== 'marginal'),
   );
+
+  /**
+   * Anything that changes what a document describes retires it.
+   *
+   * Loads, analysis, reinforcement, detailing geometry, the spacing margin, review, and
+   * regulation settings all reach here. Non-destructive: the old revision keeps its number
+   * and content and moves to the superseded list. A stale document must never remain
+   * current, because "current" is exactly the claim a builder relies on.
+   */
+  function retireDocument(): void {
+    if (!currentDocument) return;
+    documentRevision += 1;
+    supersededDocs = [...supersededDocs, supersede(currentDocument, documentRevision)];
+    currentDocument = null;
+  }
 
   function write(next: DetailingStore): void {
     modelStore.model.detailing = next;
@@ -247,6 +271,10 @@ function createDetailingStore() {
           bentUp: bentUpPolicy(),
         });
         lastRun = result;
+        // Regeneration produces new geometry, so any document describing the old geometry
+        // stops being current. This is the commonest supersession trigger by far and it
+        // does not go through setAssemblies, which is why it is retired here explicitly.
+        retireDocument();
         write({ ...store, assemblies: result.assemblies });
         if (!result.assemblies.some((a) => a.id === selectedId)) {
           selectedId = result.assemblies[0]?.id ?? null;
@@ -266,12 +294,15 @@ function createDetailingStore() {
 
     /** Replace the whole set — used after a regeneration run. */
     setAssemblies(next: DetailingAssembly[]): void {
+      // New geometry: whatever the old document drew is no longer what exists.
+      retireDocument();
       write({ ...store, assemblies: next });
       if (!next.some((a) => a.id === selectedId)) selectedId = next[0]?.id ?? null;
     },
 
     /** Targeted invalidation after an element edit. */
     invalidate(changedElements: Iterable<number>): string[] {
+      retireDocument();
       const r = invalidateAffected(store, changedElements);
       write(r.store);
       return r.invalidated;
@@ -279,6 +310,7 @@ function createDetailingStore() {
 
     /** Pin or unpin a bar; a pinned bar is a hard constraint on regeneration. */
     toggleLock(barId: string): void {
+      retireDocument();
       if (!selected) return;
       replace({
         ...selected,
@@ -292,6 +324,9 @@ function createDetailingStore() {
      */
     review(record: Omit<ReviewRecord, 'revision'>): boolean {
       if (!selected) return false;
+      // A review changes the readiness a document may claim, so the previous one is no
+      // longer current — even though the geometry is unchanged.
+      retireDocument();
       const r = applyReview(selected, record, provisionalKeys(selected));
       if (!r.ok || !r.assembly) {
         lastError = r.reason ?? 'No se pudo registrar la revisión.';
@@ -346,6 +381,77 @@ function createDetailingStore() {
         clauses: [clause('cirsoc-201', selected.provenance.edition, '25.2')],
       });
     },
+
+    /**
+     * Build the DocumentModel from the CURRENT coordinated state.
+     *
+     * The single production caller. Everything the three exports print comes from the
+     * object this returns, so a report, a drawing set and a schedule of the same floor
+     * cannot disagree about the revision, the conflicts or the steel.
+     *
+     * Returns null when there is no coordinated detailing. That is not an error and must
+     * not be papered over with the legacy per-member reinforcement: the pre-coordination
+     * arrangement is a different thing from a coordinated cage, and showing one while
+     * labelling it the other is the failure this whole workflow exists to prevent.
+     */
+    buildDocument(opts: { author: string; at: string }): DocumentModel | null {
+      if (store.assemblies.length === 0) return null;
+      const laps = lastRun?.lapping.laps ?? [];
+      const certificates: CertificateEntry[] = [];
+      for (const a of store.assemblies) {
+        for (const id of a.elementIds) {
+          const reinf = verificationStore.reinforcementFor(id);
+          const result = verificationStore.providedFor(id);
+          const current = reinf ? rebarHash(reinf) : '';
+          const certified = verificationStore.certifiedHashFor(id);
+          certificates.push({
+            elementId: id,
+            certifiedHash: certified,
+            currentHash: current,
+            // Empty on either side means the question was never answered, which is not a
+            // match. Silence is not agreement.
+            matches: certified !== '' && current !== '' && certified === current,
+            verifierId: a.provenance.verifierId,
+            status: result?.overallStatus === 'ok' ? 'ok'
+              : result?.overallStatus === 'warn' ? 'warn'
+                : result?.overallStatus === 'fail' ? 'fail' : 'notRun',
+          });
+        }
+      }
+      const doc = buildDocumentModel({
+        seriesId: 'detailing',
+        revision: {
+          number: documentRevision,
+          at: opts.at,
+          author: opts.author,
+          detailingRevision: maxRevision(store.assemblies),
+          demandRevision: verificationStore.demandRevision,
+        },
+        regulations: [{ id: 'cirsoc-201', edition: currentConcreteEdition() }],
+        assemblies: store.assemblies,
+        laps,
+        certificates,
+      });
+      currentDocument = doc;
+      return doc;
+    },
+
+    /** The document built by the last `buildDocument`, if any. */
+    get document(): DocumentModel | null { return currentDocument; },
+
+    /** Documents kept for the record after a later revision replaced them. */
+    get supersededDocuments(): DocumentModel[] { return supersededDocs; },
+
+    /**
+     * Retire the current document.
+     *
+     * Called whenever anything the document depends on changes — loads, analysis,
+     * reinforcement, detailing geometry, the spacing margin, review, or regulation
+     * settings. Non-destructive: the old revision keeps its number and content and moves
+     * to the superseded list, because a project that cannot show what it previously issued
+     * cannot answer the only question that matters after something goes wrong.
+     */
+    supersedeDocuments(): void { retireDocument(); },
 
     clear(): void {
       write(emptyDetailingStore());
