@@ -338,27 +338,40 @@ export function applyJointLayers(
 
     for (const alloc of co.layers) {
       if (alloc.layer === 0) continue;   // the outer layer is already where it was placed.
-      for (const bar of bars) {
-        if (!bar.ownerElementIds.includes(alloc.elementId)) continue;
-        if (bar.role !== 'longitudinal') continue;
 
+      // ── Move the mat, do not flatten it ──────────────────────────
+      //
+      // This used to compute `target − maxZ` PER BAR and snap each one to `target`. The
+      // allocation carries one `topOffset` per ELEMENT, so every top bar of that member
+      // landed on a single plane — and a member whose top steel is in two layers had those
+      // layers collapsed onto each other. `placeGroup` had already separated them by the
+      // §25.2.2 clear distance, correctly, and this threw that away; the collision engine
+      // then reported the two coincident layers as prohibited overlaps, and the repair
+      // ladder shifted them apart IN PLAN, destroying the vertical alignment too.
+      //
+      // What the allocation actually decides is where this beam's top mat sits relative to
+      // the other beams at the joint. The mat's own internal layering belongs to the
+      // member. So the shift is computed ONCE, from the element's outermost bar, and the
+      // whole mat moves rigidly.
+      const mat = bars.filter((bar) => {
+        if (!bar.ownerElementIds.includes(alloc.elementId)) return false;
+        if (bar.role !== 'longitudinal') return false;
         const ends = [bar.segments[0]?.start, bar.segments[bar.segments.length - 1]?.end]
           .filter(Boolean) as Array<{ x: number; y: number; z: number }>;
-        if (ends.length === 0) continue;
-        const nearJoint = ends.some((e) => Math.hypot(e.x - at.x, e.y - at.y) <= radius);
-        if (!nearJoint) continue;
+        if (ends.length === 0) return false;
+        if (!ends.some((e) => Math.hypot(e.x - at.x, e.y - at.y) <= radius)) return false;
+        // Top bars only: those above the joint node's elevation are the hogging steel.
+        return Math.max(...bar.segments.flatMap((sg) => [sg.start.z, sg.end.z]))
+          >= at.z - 0.02;
+      });
+      if (mat.length === 0) continue;
 
-        // Top bars only: those sitting above the joint node's elevation are the beam's
-        // hogging steel. Bottom bars are unaffected by the top-layer allocation.
-        const zs = bar.segments.flatMap((sg) => [sg.start.z, sg.end.z]);
-        const maxZ = Math.max(...zs);
-        if (maxZ < at.z - 0.02) continue;
+      const outermost = Math.max(...mat.flatMap((bar) =>
+        bar.segments.flatMap((sg) => [sg.start.z, sg.end.z])));
+      const shift = (at.z - alloc.topOffset) - outermost;
+      if (Math.abs(shift) < 1e-6) continue;
 
-        // Drop by the difference between where it sits and where the allocation puts it.
-        const target = at.z - alloc.topOffset;
-        const shift = target - maxZ;
-        if (Math.abs(shift) < 1e-6) continue;
-
+      for (const bar of mat) {
         byId.set(bar.id, {
           ...bar,
           segments: bar.segments.map((sg) => ({
