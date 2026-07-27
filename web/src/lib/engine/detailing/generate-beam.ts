@@ -576,13 +576,24 @@ export function generateBeamBars(input: BeamGenerationInput): GeneratedBeam {
   const barLayers: Record<string, number> = {};
 
   /**
-   * Stable layer identity for a bar. `e184:bottom:0`.
+   * Stable layer identity for a bar. `e184:bottom:0`, `e184:topI:1`.
    *
    * The generator knows which layer it placed each bar in, so it says so instead of leaving
-   * every consumer to re-derive it from elevations. Face is part of the identity because
-   * top and bottom are referenced from opposite surfaces and cross different steel.
+   * every consumer to re-derive it from elevations.
+   *
+   * Three parts, and each earns its place:
+   *
+   *   element  a layer belongs to one member.
+   *   face     top and bottom are referenced from opposite surfaces and cross different
+   *            steel; they are independent problems.
+   *   REGION   `topI` and `topJ` are the hogging steel at the two ENDS. They share a face
+   *            and a layer index and are different bars in different places, metres apart.
+   *            Without the region they shared an id, and the repair ladder — which moves a
+   *            layer as a rigid body — moved the far support's bars when it nudged the near
+   *            one. Bottom bars have no such split: continuous and curtailed bottom steel
+   *            sit in one row at one elevation and genuinely are one layer.
    */
-  const layerId = (face: 'bottom' | 'top', layer: number) =>
+  const layerId = (face: string, layer: number) =>
     `e${input.elementId}:${face}:${layer}`;
   const placeGroup = (count: number, dia: number, faceUpward: boolean) => {
     const layout = layoutBarRow({
@@ -768,7 +779,7 @@ export function generateBeamBars(input: BeamGenerationInput): GeneratedBeam {
       barLayers[`e${input.elementId}-top${t.side}-${i}`] = o.layer;
       bars.push(buildStraightBarWithHooks({
         id: `e${input.elementId}-top${t.side}-${i}`,
-        layerId: layerId('top', o.layer),
+        layerId: layerId(`top${t.side}`, o.layer),
         diameterMm: t.group.diameterMm, role: 'longitudinal',
         start: shift(add(add(input.origin, input.axis, from), input.up, zTopBar), o),
         end: shift(add(add(input.origin, input.axis, to), input.up, zTopBar), o),
