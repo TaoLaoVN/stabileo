@@ -4,7 +4,7 @@
   import { reviewModel, buildArtifact, buildModel, buildModelContext, type ReviewModelResponse, type ReviewFinding, type BuildModelResponse, type ConversationMessage, type SolverDiagnosticMsg } from '../lib/ai/client';
   import { runGlobalSolve } from '../lib/engine/live-calc';
   import type { ModelSnapshot } from '../lib/store/history.svelte';
-  import { compactSnapshotForAi, isValidReleaseShape } from '../lib/ai/build-model';
+  import { compactSnapshotForAi, isValidReleaseShape, normalizeSnapshotReleases } from '../lib/ai/build-model';
 
   type AiTab = 'review' | 'explain' | 'query' | 'build';
   let activeTab = $state<AiTab>('build');
@@ -250,17 +250,21 @@
         return;
       }
 
+      // Normalize typed end releases (drops any extra keys the AI slipped
+      // into a well-shaped releaseI/releaseJ) before the draft touches the store.
+      const normalizedSnap = normalizeSnapshotReleases(snap);
+
       // Push undo state and preview the draft on canvas immediately
       historyStore.pushState();
-      fastRebuild(snap as unknown as ModelSnapshot);
-      pendingDraft = snap;
+      fastRebuild(normalizedSnap as unknown as ModelSnapshot);
+      pendingDraft = normalizedSnap;
 
       chatMessages.push({
         role: 'ai',
         text: resp.message,
         changeSummary: resp.changeSummary,
         rawAiResponse: resp.rawAiResponse,
-        draft: snap,
+        draft: normalizedSnap,
         meta: {
           modelUsed: resp.meta.modelUsed,
           latencyMs: resp.meta.latencyMs,
@@ -391,9 +395,11 @@
         return;
       }
 
+      const normalizedSnap = normalizeSnapshotReleases(snap);
+
       historyStore.pushState();
-      fastRebuild(snap as unknown as ModelSnapshot);
-      pendingDraft = snap;
+      fastRebuild(normalizedSnap as unknown as ModelSnapshot);
+      pendingDraft = normalizedSnap;
       lastSolverDiagnostics = [];
 
       chatMessages.push({
@@ -401,7 +407,7 @@
         text: resp.message,
         changeSummary: resp.changeSummary,
         rawAiResponse: resp.rawAiResponse,
-        draft: snap,
+        draft: normalizedSnap,
         meta: resp.meta ? { modelUsed: resp.meta.modelUsed, latencyMs: resp.meta.latencyMs, tokens: resp.meta.inputTokens + resp.meta.outputTokens } : undefined,
       });
       scrollChatToBottom();

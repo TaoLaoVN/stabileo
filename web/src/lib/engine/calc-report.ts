@@ -9,6 +9,7 @@
 import type { Node, Material, Section, Element, Support } from '../store/model.svelte';
 import type { AnalysisResults } from './types';
 import type { AnalysisResults3D } from './types-3d';
+import { releaseLabel } from '../export/excel';
 
 // ─── Types ───────────────────────────────────────────────────────
 
@@ -232,7 +233,9 @@ function buildModelSection(data: CalcReportData): string {
   const showElems = elemCondensed ? [...data.elements.slice(0, 20), null, ...data.elements.slice(-5)] : data.elements;
   for (const e of showElems) {
     if (!e) { h.push(`<tr><td colspan="7" style="text-align:center;color:#888">... ${elemCount - 25} more elements ...</td></tr>`); continue; }
-    const hinges = (e.hingeStart ? 'I' : '') + (e.hingeEnd ? 'J' : '') || '—';
+    const iLabel = releaseLabel(e.releaseI);
+    const jLabel = releaseLabel(e.releaseJ);
+    const hinges = iLabel || jLabel ? `I: ${iLabel || '—'} · J: ${jLabel || '—'}` : '—';
     h.push(`<tr><td>${e.id}</td><td>${e.type}</td><td>${e.nodeI}</td><td>${e.nodeJ}</td><td>${e.materialId}</td><td>${e.sectionId}</td><td>${hinges}</td></tr>`);
   }
   h.push('</table>');
@@ -384,17 +387,17 @@ function buildDisplacementsSection(data: CalcReportData): string {
     const disps = data.results2D.displacements;
     let maxMag = 0, maxNodeId = 0;
     for (const d of disps) {
-      const mag = Math.sqrt(d.ux ** 2 + (d.uz ?? d.uy ?? 0) ** 2);
+      const mag = Math.sqrt(d.ux ** 2 + (d.uz ?? 0) ** 2);
       if (mag > maxMag) { maxMag = mag; maxNodeId = d.nodeId; }
     }
     h.push(`<div class="summary-box"><div class="label">Maximum displacement</div><div class="value">${fmt(maxMag * 1000, 3)} mm</div><div class="label">at node ${maxNodeId}</div></div>`);
 
     h.push('<table><tr><th>Node</th><th>ux (mm)</th><th>uz (mm)</th><th>θy (rad)</th><th>|u| (mm)</th></tr>');
     for (const d of disps) {
-      const uz = d.uz ?? d.uy ?? 0;
+      const uz = d.uz ?? 0;
       const mag = Math.sqrt(d.ux ** 2 + uz ** 2);
       const isMax = d.nodeId === maxNodeId;
-      h.push(`<tr${isMax ? ' class="governing"' : ''}><td>${d.nodeId}</td><td class="num">${fmt(d.ux * 1000, 3)}</td><td class="num">${fmt(uz * 1000, 3)}</td><td class="num">${fmt(d.ry ?? d.rz ?? 0, 6)}</td><td class="num">${fmt(mag * 1000, 3)}</td></tr>`);
+      h.push(`<tr${isMax ? ' class="governing"' : ''}><td>${d.nodeId}</td><td class="num">${fmt(d.ux * 1000, 3)}</td><td class="num">${fmt(uz * 1000, 3)}</td><td class="num">${fmt(d.ry ?? 0, 6)}</td><td class="num">${fmt(mag * 1000, 3)}</td></tr>`);
     }
     h.push('</table>');
   }

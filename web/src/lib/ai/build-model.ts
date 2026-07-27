@@ -72,8 +72,10 @@ export function isValidReleaseShape(value: unknown): boolean {
 /** Normalize an AI-returned release value to a full Release, defaulting
  *  absent flags (or the whole object) to NO_RELEASE — the same normalization
  *  `modelStore.restore()` applies on every apply path (undo/redo, file load,
- *  and the Build tab's `fastRebuild()`). Callers should validate the shape
- *  first via `isValidReleaseShape`; this does not throw on malformed input. */
+ *  and the Build tab's `fastRebuild()`). Called via `normalizeSnapshotReleases`
+ *  from the Build tab's Apply flow, after `isValidReleaseShape` has confirmed
+ *  the shape; this function itself does not throw on malformed input, so
+ *  callers must still validate first. */
 export function normalizeAiRelease(value: unknown): Release {
   if (value === undefined || value === null || typeof value !== 'object' || Array.isArray(value)) {
     return { ...NO_RELEASE };
@@ -86,4 +88,26 @@ export function normalizeAiRelease(value: unknown): Release {
     ...(r.slide === 'x' || r.slide === 'z' ? { slide: r.slide } : {}),
     ...(r.slideAxis === 'global' || r.slideAxis === 'local' ? { slideAxis: r.slideAxis } : {}),
   };
+}
+
+/** Normalize releaseI/releaseJ on every element of an AI-returned snapshot
+ *  before it reaches `fastRebuild()`/`modelStore.restore()`. `isValidReleaseShape`
+ *  only guards the shape — it does not strip unknown extra keys, so e.g.
+ *  `{ mz: true, junk: 1 }` passes the guard unchanged and `junk` would
+ *  otherwise land in the store. This maps each present release through
+ *  `normalizeAiRelease` so only the known `Release` fields survive; an
+ *  element whose releaseI/releaseJ is absent is left absent (`modelStore.restore()`
+ *  defaults it to NO_RELEASE). Safe no-op if `elements` is missing/not an array. */
+export function normalizeSnapshotReleases<T extends Record<string, unknown>>(snapshot: T): T {
+  if (!snapshot || !Array.isArray(snapshot.elements)) return snapshot;
+  const elements = (snapshot.elements as Array<[number, Record<string, unknown>]>).map(([id, el]) => {
+    if (el.releaseI === undefined && el.releaseJ === undefined) {
+      return [id, el] as [number, Record<string, unknown>];
+    }
+    const normalized = { ...el };
+    if (el.releaseI !== undefined) normalized.releaseI = normalizeAiRelease(el.releaseI);
+    if (el.releaseJ !== undefined) normalized.releaseJ = normalizeAiRelease(el.releaseJ);
+    return [id, normalized] as [number, Record<string, unknown>];
+  });
+  return { ...snapshot, elements };
 }

@@ -1616,6 +1616,8 @@ const zh: Translations = {
   'excel.nodeJ': '节点 J',
   'excel.material': '材料',
   'excel.section': '截面',
+  'excel.releaseI': '释放 I',
+  'excel.releaseJ': '释放 J',
   'excel.yes': '是',
   'excel.no': '否',
   'excel.noResults': '无结果 - 请先计算',

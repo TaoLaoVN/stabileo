@@ -1624,6 +1624,8 @@ const ja: Translations = {
   'excel.nodeJ': '節点 J',
   'excel.material': '材料',
   'excel.section': '断面',
+  'excel.releaseI': '解放 I',
+  'excel.releaseJ': '解放 J',
   'excel.yes': 'はい',
   'excel.no': 'いいえ',
   'excel.noResults': '結果なし — 先に計算してください',

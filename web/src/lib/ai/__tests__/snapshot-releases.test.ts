@@ -20,6 +20,7 @@ import {
   compactSnapshotForAi,
   isValidReleaseShape,
   normalizeAiRelease,
+  normalizeSnapshotReleases,
 } from '../build-model';
 
 describe('serializeElementForAi (outgoing compaction)', () => {
@@ -131,6 +132,64 @@ describe('isValidReleaseShape / normalizeAiRelease (apply-path guard)', () => {
   it('rejects malformed shapes: invalid slide/slideAxis enum values', () => {
     expect(isValidReleaseShape({ slide: 'y' })).toBe(false);
     expect(isValidReleaseShape({ slideAxis: 'diagonal' })).toBe(false);
+  });
+});
+
+describe('normalizeSnapshotReleases (wired into the Build tab Apply flow before fastRebuild())', () => {
+  it('strips unknown keys from a well-shaped release (isValidReleaseShape admits extras)', () => {
+    const snapshot = {
+      elements: [
+        [1, {
+          id: 1, type: 'frame', nodeI: 1, nodeJ: 2, materialId: 1, sectionId: 1,
+          releaseI: { mz: true, junk: 1 },
+        }],
+      ],
+    };
+    // Sanity: the shape guard alone lets the extra key through unchanged.
+    expect(isValidReleaseShape((snapshot.elements[0][1] as any).releaseI)).toBe(true);
+
+    const out = normalizeSnapshotReleases(snapshot);
+    const el = (out.elements as any)[0][1];
+    expect(el.releaseI).toEqual({ my: false, mz: true, t: false });
+    expect(el.releaseI).not.toHaveProperty('junk');
+  });
+
+  it('leaves an absent releaseI/releaseJ absent (restore() defaults it, not this function)', () => {
+    const snapshot = {
+      elements: [
+        [1, { id: 1, type: 'frame', nodeI: 1, nodeJ: 2, materialId: 1, sectionId: 1 }],
+      ],
+    };
+    const out = normalizeSnapshotReleases(snapshot);
+    const el = (out.elements as any)[0][1];
+    expect(el).not.toHaveProperty('releaseI');
+    expect(el).not.toHaveProperty('releaseJ');
+  });
+
+  it('normalizes releaseI and releaseJ independently on the same element', () => {
+    const snapshot = {
+      elements: [
+        [1, {
+          id: 1, type: 'frame', nodeI: 1, nodeJ: 2, materialId: 1, sectionId: 1,
+          releaseJ: { my: true, extra: 'x' },
+        }],
+      ],
+    };
+    const out = normalizeSnapshotReleases(snapshot);
+    const el = (out.elements as any)[0][1];
+    expect(el).not.toHaveProperty('releaseI');
+    expect(el.releaseJ).toEqual({ my: true, mz: false, t: false });
+  });
+
+  it('is a safe no-op when elements is missing or not an array', () => {
+    expect(normalizeSnapshotReleases({ foo: 'bar' } as any)).toEqual({ foo: 'bar' });
+    expect(normalizeSnapshotReleases({ elements: 'not-an-array' } as any)).toEqual({ elements: 'not-an-array' });
+  });
+
+  it('leaves non-element fields untouched', () => {
+    const snapshot = { nodes: [[1, { id: 1, x: 0, y: 0 }]], elements: [] };
+    const out = normalizeSnapshotReleases(snapshot);
+    expect(out.nodes).toEqual(snapshot.nodes);
   });
 });
 
