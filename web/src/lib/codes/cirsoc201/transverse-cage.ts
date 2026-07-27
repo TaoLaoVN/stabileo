@@ -82,7 +82,9 @@ import {
   straightSegment, type BarPath, type BarSegment, type HookAngle, type HookGeometry,
   type Point3,
 } from './bar-geometry';
-import { legOffsetsAcross, type TransverseSpacingLimits } from './transverse-spacing';
+import {
+  LENGTH_EPS, legOffsetsAcross, type TransverseSpacingLimits,
+} from './transverse-spacing';
 import { clause, type ClauseRef } from '../regulation';
 
 // ─── Shapes ──────────────────────────────────────────────────────
@@ -183,6 +185,13 @@ export interface StirrupSetInput {
   hookOrientation: 'a' | 'b';
   /** Maximum nominal coarse-aggregate size, mm — §25.7.2.1(a) clear-spacing term. */
   maxAggregateSizeMm: number;
+  /**
+   * Table 9.7.6.2.2 across-width limit, m.
+   *
+   * Passed in because it decides whether an interior leg may be snapped to a bar position: both
+   * that limit and §25.3.5(d) are mandatory, and when they conflict the spacing limit governs.
+   */
+  acrossMax?: number;
 }
 
 function add(p: Point3, v: Point3, k: number): Point3 {
@@ -444,6 +453,71 @@ export interface StirrupSetResult {
  * A required crosstie is never a numeric third leg: it is a fabricated piece with its own
  * path, hooks, cutting length and mark.
  */
+/**
+ * Interior leg offsets, snapped to longitudinal bar positions that exist on BOTH faces.
+ *
+ * §25.3.5(d) requires a crosstie's hooks to embrace the peripheral longitudinal bars, so an
+ * interior leg belongs AT a bar, not at an arbitrary fraction of the width. Candidates are the
+ * across-offsets that carry a bar near the top face and near the bottom face alike; the chooser
+ * picks the `legs − 2` of them whose positions come closest to an even division, which keeps the
+ * across-width gaps as uniform as the real bar layout allows.
+ *
+ * When no shared candidate exists the even division is returned unchanged. That leg will fail the
+ * §25.7.1.2 containment check, which is the honest outcome: the section cannot host the crosstie
+ * the table requires, and the caller reports it rather than drawing a tie that grips nothing.
+ */
+export function chooseInteriorLegOffsets(
+  bars: readonly LongitudinalBarRef[],
+  halfAcross: number,
+  legs: number,
+  evenDivision: readonly number[],
+  acrossMax: number,
+  tolerance = 0.006,
+): { offsets: number[]; snapped: boolean } {
+  const wanted = Math.max(0, legs - 2);
+  const target = evenDivision.slice(1, evenDivision.length - 1);
+  if (wanted === 0) return { offsets: [], snapped: true };
+
+  // Shared candidates: an across-offset carrying a bar BOTH above and below the centreline, so a
+  // crosstie there can embrace a peripheral bar at each end (§25.3.5(d)).
+  const upper = bars.filter((b) => b.up > 0);
+  const lower = bars.filter((b) => b.up <= 0);
+  const shared = [...new Set(lower.map((b) => +b.across.toFixed(6)))]
+    .filter((a) => Math.abs(a) < halfAcross - 1e-9)
+    .filter((a) => upper.some((u) => Math.abs(u.across - a) <= tolerance))
+    .sort((x, y) => x - y);
+
+  const worstGap = (interior: readonly number[]): number => {
+    const all = [-halfAcross, ...interior, halfAcross];
+    let w = 0;
+    for (let i = 1; i < all.length; i++) w = Math.max(w, all[i] - all[i - 1]);
+    return w;
+  };
+
+  // Best subset of shared candidates of the required size, by smallest worst gap. `wanted` is 1
+  // or 2 in practice and the candidate list is a handful of bars, so exhaustive is fine and
+  // deterministic — which matters more here than cleverness.
+  let best: number[] | null = null;
+  const pick = (start: number, chosen: number[]) => {
+    if (chosen.length === wanted) {
+      if (best === null || worstGap(chosen) < worstGap(best)) best = [...chosen];
+      return;
+    }
+    for (let i = start; i < shared.length; i++) pick(i + 1, [...chosen, shared[i]]);
+  };
+  pick(0, []);
+
+  // Table 9.7.6.2.2's across-width limit and §25.3.5(d) are BOTH "debe". A snapped set that
+  // breaks the spacing limit is not a compromise worth making — measured: snapping a third leg to
+  // the nearest shared bar on a 6Ø12 mat put it 12 mm from the corner leg and left a 230 mm gap
+  // against a 200 mm limit. So spacing wins, the even division is used, and §25.7.1.2 then
+  // reports that the leg grips only one face. Both facts reach the engineer.
+  if (best !== null && worstGap(best) <= acrossMax + LENGTH_EPS) {
+    return { offsets: [...best].sort((x, y) => x - y), snapped: true };
+  }
+  return { offsets: [...target], snapped: false };
+}
+
 export function buildStirrupSet(input: StirrupSetInput): StirrupSetResult {
   const unsupported: ClauseRef[] = [];
   if (!hookAnchorageIsSupported(input.stirrupDiaMm)) {
@@ -455,14 +529,28 @@ export function buildStirrupSet(input: StirrupSetInput): StirrupSetResult {
   }
 
   const legs = Math.max(2, Math.floor(input.legs));
-  const offsets = legOffsetsAcross(legs, input.b, input.cover, input.stirrupDiaMm);
+  const even = legOffsetsAcross(legs, input.b, input.cover, input.stirrupDiaMm);
+  const { halfAcross } = stirrupCentrelineHalfExtents(
+    input.b, input.h, input.cover, input.stirrupDiaMm);
 
+  // Interior legs SNAP to real longitudinal bar positions.
+  //
+  // §25.3.5(d): a crosstie's hooks "deben abrazar las barras longitudinales periféricas". A leg
+  // at a mathematically even division grips nothing when no bar happens to sit there — measured
+  // on the row-2 fixture, whose 6Ø12 bottom mat has no centreline bar, so an equally-divided
+  // third leg embraced air. Equal division is the fallback, not the rule.
+  const chosen = chooseInteriorLegOffsets(
+    input.longitudinalBars, halfAcross, legs, even, // No limit supplied means DO NOT SNAP. Snapping without knowing the across-width limit can
+    // place a leg that breaks it, which is how a third leg once landed 12 mm from the corner.
+    input.acrossMax ?? 0);
+  const interior = chosen.offsets;
+
+  const offsets = [-halfAcross, ...interior, halfAcross];
   const pieces: TransversePiece[] = [buildClosedStirrup(input)];
-  // Interior legs — everything between the two the closed stirrup already provides.
-  for (let i = 1; i < offsets.length - 1; i++) {
-    pieces.push(buildCrosstie(input, offsets[i], i));
+  for (let i = 0; i < interior.length; i++) {
+    pieces.push(buildCrosstie(input, interior[i], i + 1));
   }
-  return { pieces, legOffsets: [...offsets], unsupported };
+  return { pieces, legOffsets: offsets, unsupported };
 }
 
 // ─── Station sequence ────────────────────────────────────────────

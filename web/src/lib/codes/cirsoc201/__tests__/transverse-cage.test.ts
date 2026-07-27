@@ -79,7 +79,8 @@ describe('the cage and the spacing rule agree on where legs are', () => {
 
   it('a two-leg set puts its legs exactly on the evaluator offsets', () => {
     const set = buildStirrupSet(input({ legs: 2 }));
-    expect(set.legOffsets).toEqual(legOffsetsAcross(2, B, COVER, DS));
+    const want2 = legOffsetsAcross(2, B, COVER, DS);
+    set.legOffsets.forEach((o, i) => expect(o).toBeCloseTo(want2[i], 9));
     expect(legsProvided(set.pieces)).toBe(2);
   });
 
@@ -98,7 +99,9 @@ describe('the cage and the spacing rule agree on where legs are', () => {
     const set = buildStirrupSet(input({ legs: 4, b: 0.9 }));
     expect(set.pieces.filter((p) => p.shape === 'crosstie')).toHaveLength(2);
     expect(legsProvided(set.pieces)).toBe(4);
-    expect(set.legOffsets).toEqual(legOffsetsAcross(4, 0.9, COVER, DS));
+    const want = legOffsetsAcross(4, 0.9, COVER, DS);
+    expect(set.legOffsets).toHaveLength(want.length);
+    set.legOffsets.forEach((o, i) => expect(o).toBeCloseTo(want[i], 9));
   });
 });
 

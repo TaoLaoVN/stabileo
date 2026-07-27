@@ -104,31 +104,21 @@ describe('qa-8 — row 1 everywhere, so real stirrups and NO crossties', () => {
     }
   });
 
-  it('§25.7.1.2 is CHECKED, and reports every corner that contains no bar', () => {
-    // MEASURED, and not the blanket compliance this originally asserted. `layoutBarRow`
-    // centres each mat at the §25.2.1 clear spacing plus the placement tolerance, so on some
-    // members the outermost bottom bar lands ~29 mm inboard of the stirrup corner (bar
-    // ±93,3 mm vs corner ±122 mm, 6Ø12 in a 300 mm web) and those bends grip nothing. On
-    // others — element 7's 7Ø10 mat — the outer bar does reach the corner and the clause is
-    // satisfied. It is member-dependent, so the assertion is per member.
-    //
-    // The cage geometry is correct; the LONGITUDINAL placement policy does not seat corner
-    // bars in the corners. Asserting compliance would have hidden that.
-    let withLoose = 0, clean = 0;
+  it('§25.7.1.2 is FULLY satisfied — every bend contains a longitudinal bar', () => {
+    // Row 1 throughout, so 2 legs and no crossties. Spreading layer 0 seats the outer bar
+    // against the leg, so every closed-stirrup corner grips a bar by construction. This block
+    // asserted the VIOLATION two commits ago, when the mat was centred and left the corners
+    // empty (bar ±93,3 mm against a corner at ±122 mm, 6Ø12 in a 300 mm web).
     for (const [id, g] of out) {
-      const loose = bendsWithoutLongitudinalBar(g.transverse);
-      if (loose.length > 0) {
-        withLoose++;
-        // Counted on the result, so the defect is data the product can show.
-        expect(g.transverseFindings.bendsWithoutBar, `element ${id}`).toBe(loose.length);
-      } else {
-        clean++;
-        expect(g.transverseFindings.bendsWithoutBar, `element ${id}`).toBe(0);
+      expect(bendsWithoutLongitudinalBar(g.transverse), `element ${id}`).toEqual([]);
+      expect(g.transverseFindings.bendsWithoutBar, `element ${id}`).toBe(0);
+      expect(g.unsupported.filter((u) => u.includes('25.7.1.2')), `element ${id}`).toEqual([]);
+      for (const p of g.transverse) {
+        for (const c of p.cornerContainment) {
+          expect(c.longitudinalBarId, `element ${id} ${p.path.id}`).toBeTruthy();
+        }
       }
     }
-    // Both outcomes occur on this fixture, which is what makes the check meaningful.
-    expect(withLoose + clean).toBe(out.size);
-    expect(withLoose).toBeGreaterThan(0);
   });
 
   it('does NOT apply the column clause §25.7.2.3(b) to a beam', () => {
@@ -232,31 +222,42 @@ describe('row-2 fixture — crossties are FABRICATED, not counted', () => {
     }
   });
 
-  it('§25.7.1.2 is CHECKED, and reports every corner that contains no bar', () => {
-    // MEASURED, and not the blanket compliance this originally asserted. `layoutBarRow`
-    // centres each mat at the §25.2.1 clear spacing plus the placement tolerance, so on some
-    // members the outermost bottom bar lands ~29 mm inboard of the stirrup corner (bar
-    // ±93,3 mm vs corner ±122 mm, 6Ø12 in a 300 mm web) and those bends grip nothing. On
-    // others — element 7's 7Ø10 mat — the outer bar does reach the corner and the clause is
-    // satisfied. It is member-dependent, so the assertion is per member.
+  it('§25.7.1.2: satisfied at every STIRRUP bend; the centreline crosstie is the exception', () => {
+    // MEASURED, and the exception is real rather than a tolerance artefact.
     //
-    // The cage geometry is correct; the LONGITUDINAL placement policy does not seat corner
-    // bars in the corners. Asserting compliance would have hidden that.
-    let withLoose = 0, clean = 0;
+    // Spreading layer 0 fixed every closed-stirrup corner: the outer bar now seats against the
+    // leg. What remains is the CROSSTIE. Row 2 needs a third leg, and the interior leg falls on
+    // the section centreline, where this fixture has no bar to embrace — its bottom mat is 6Ø12,
+    // an EVEN count, so no bar sits at across = 0. The top mat is 7Ø10 and does have one.
+    //
+    // The cage tries to snap the interior leg to an offset carrying a bar on BOTH faces
+    // (§25.3.5(d)), but no such offset also satisfies Table 9.7.6.2.2's 200 mm across-width
+    // limit here, and that limit wins because both are mandatory. So the leg stays on the even
+    // division and reports that it grips only one face.
+    //
+    // The fix is a DESIGN change, not a geometry one: the candidate search must be able to offer
+    // an odd bottom count so a centreline bar exists. That is the named next step.
     for (const [id, g] of out) {
       const loose = bendsWithoutLongitudinalBar(g.transverse);
-      if (loose.length > 0) {
-        withLoose++;
-        // Counted on the result, so the defect is data the product can show.
-        expect(g.transverseFindings.bendsWithoutBar, `element ${id}`).toBe(loose.length);
-      } else {
-        clean++;
-        expect(g.transverseFindings.bendsWithoutBar, `element ${id}`).toBe(0);
+      const stirrupBends = g.transverse.filter((p) => p.shape === 'closedStirrup');
+      // Every closed-stirrup corner now grips a bar.
+      expect(bendsWithoutLongitudinalBar(stirrupBends), `element ${id} stirrups`).toEqual([]);
+      // What is left is crossties only, and it is reported as a blocker.
+      expect(loose.length, `element ${id}`).toBeGreaterThan(0);
+      const looseIds = new Set(loose.map((b) => b.pieceId));
+      for (const pid of looseIds) expect(pid).toContain('crosstie');
+      expect(g.unsupported.some((u) => u.includes('25.7.1.2')), `element ${id}`).toBe(true);
+    }
+  });
+
+  it('every closed-stirrup bend names the bar it restrains', () => {
+    for (const [id, g] of out) {
+      for (const p of g.transverse.filter((x) => x.shape === 'closedStirrup')) {
+        for (const c of p.cornerContainment) {
+          expect(c.longitudinalBarId, `element ${id} ${p.path.id}`).toBeTruthy();
+        }
       }
     }
-    // Both outcomes occur on this fixture, which is what makes the check meaningful.
-    expect(withLoose + clean).toBe(out.size);
-    expect(withLoose).toBeGreaterThan(0);
   });
 
   it('does NOT apply the column clause §25.7.2.3(b) to a beam', () => {

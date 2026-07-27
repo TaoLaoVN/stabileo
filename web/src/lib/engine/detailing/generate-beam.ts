@@ -441,9 +441,24 @@ export interface BarSlot {
  * cage cannot contain four bars in one place, against a generator that had never been asked
  * where the second bar goes.
  *
- * Bars are centred on the section and spread at the code's clear spacing. When the row is
- * full the remainder starts a new layer inward, at the §25.2.2 clear distance between
- * layers, with the layers themselves centred so the group stays symmetric.
+ * ── Co-designed with the stirrup cage ──────────────────────────────
+ *
+ * The first version packed each layer at the MINIMUM clear spacing and centred it. That is
+ * legal under §25.2.1 but it leaves the outermost bar inboard of the stirrup bend — measured:
+ * ±93,3 mm against a corner at ±122 mm for 6Ø12 in a 300 mm web — and §25.7.1.2 requires every
+ * bend of a closed stirrup to CONTAIN a longitudinal bar. A centred mat satisfies the spacing
+ * clause and violates the restraint clause.
+ *
+ * So layer 0 is SPREAD to the full available width instead. The outermost bar centre lands at
+ * `(clearWidth − d_b)/2`, and since `clearWidth = b − 2·(cover + d_s)` while the leg centreline
+ * sits at `b/2 − cover − d_s/2`, the two differ by exactly `(d_s + d_b)/2` — the bar seated
+ * against the leg. The bend contains it by construction rather than by luck. Spreading only
+ * ever INCREASES clear spacing, so §25.2.1 stays satisfied and more comfortably.
+ *
+ * Upper layers are NOT spread independently. §25.2.2 requires "las barras de las capas
+ * superiores directamente sobre las de las capas inferiores", so an upper layer takes a centred
+ * subset of layer 0's positions and every upper bar sits directly above a lower one. Spreading
+ * a 2-bar second layer to the full width would put it at the extremes with nothing beneath.
  */
 export function layoutBarRow(opts: {
   count: number;
@@ -477,18 +492,21 @@ export function layoutBarRow(opts: {
   const fits = perLayer * layers >= count && perLayer >= Math.min(count, 2);
 
   const slots: BarSlot[] = [];
+  // Layer 0 spread to the full available width, so its outer bars seat against the stirrup
+  // legs and §25.7.1.2's bends contain a bar by construction.
+  const inFirst = Math.min(perLayer, count);
+  const basePitch = inFirst > 1 ? (clearWidth - d) / (inFirst - 1) : 0;
+  const baseAcross = (k: number) => (inFirst > 1 ? -(clearWidth - d) / 2 + k * basePitch : 0);
+
   let placed = 0;
   for (let layer = 0; layer < layers; layer++) {
     const inThis = Math.min(perLayer, count - placed);
-    // Centre each layer on the section: pitch is the code spacing, and a single bar sits
-    // on the centreline rather than against a face.
-    const pitch = inThis > 1
-      ? Math.min(d + minClear, (clearWidth - d) / (inThis - 1))
-      : 0;
-    const span = pitch * (inThis - 1);
+    // §25.2.2: an upper layer sits DIRECTLY ABOVE layer 0's bars, so it takes a centred subset
+    // of layer 0's positions rather than a spread of its own.
+    const offset = Math.floor((inFirst - inThis) / 2);
     for (let k = 0; k < inThis; k++) {
       slots.push({
-        across: -span / 2 + k * pitch,
+        across: layer === 0 ? baseAcross(k) : baseAcross(offset + k),
         intoSection: layer * (d + layerClear),
         layer,
       });
@@ -950,6 +968,9 @@ export function generateBeamBars(input: BeamGenerationInput): GeneratedBeam {
         // is practice: alternate every station rather than claim a requirement.
         hookOrientation: si % 2 === 0 ? 'a' : 'b',
         maxAggregateSizeMm: input.maxAggregateSizeMm,
+        // Table 9.7.6.2.2's across-width limit for this zone, so the cage can decide whether an
+        // interior leg may be snapped to a bar position without breaking the spacing limit.
+        acrossMax: z.acrossMax,
       });
       if (set.unsupported.length > 0) {
         unsupported.push(...set.unsupported.map((r) => formatClause(r)));
