@@ -46,8 +46,13 @@ export interface CollisionTolerances {
 }
 
 export const DEFAULT_TOLERANCES: CollisionTolerances = {
-  // 10 mm is the usual placement tolerance for cages assembled off-site and lowered in.
-  placement: 0.010,
+  // ZERO by default. CIRSOC's minimum clear spacing IS the construction requirement, and
+  // the regulation prescribes no further margin between parallel bars. A hardcoded 10 mm
+  // here was silently deducted from every measured clearance, so a cage drawn exactly at
+  // the code minimum failed its own check by that amount — every pair, every model.
+  // A project that wants a more conservative cage raises `placement`; nothing has to argue
+  // the default back down to what the code says.
+  placement: 0,
   requiredClear: 0.025,
   marginalBand: 0.005,
 };
@@ -308,7 +313,12 @@ export function detectCollisions(
           : tolerances.requiredClear;
 
       const shortfall = required - worst.clearance;
-      if (shortfall <= 0) continue;
+      // A micron of floating-point dust is not a clearance violation. A pair drawn to
+      // exactly the code minimum computes to 0.024999999999999998 against 0.025 and would
+      // otherwise be reported against the very requirement it satisfies — which, now that
+      // the default additional margin is zero, is the commonest case in the model rather
+      // than an edge case.
+      if (shortfall <= 1e-9) continue;
 
       const severity: ConflictSeverity =
         worst.clearance < 0 ? 'overlap'

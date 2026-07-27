@@ -13,7 +13,7 @@
 import { describe, it, expect } from 'vitest';
 import {
   assessSpacing, prescribedTolerances, worstCaseEffectiveDepth,
-  DEFAULT_PLACEMENT_POLICY, ASSUMED_SPACING_ALLOWANCE_M,
+  DEFAULT_PLACEMENT_POLICY, DEFAULT_SPACING_MARGIN_M, normaliseMargin,
 } from '../placement';
 import { teAt } from '../../../i18n/engine-text';
 
@@ -48,25 +48,75 @@ describe('Table 26.6.2.1(a) — what CIRSOC does prescribe', () => {
   });
 });
 
-describe('code compliance and placement robustness are separate answers', () => {
+describe('the default additional margin is ZERO', () => {
   const CODE = 0.040;
 
-  it('at exactly the code minimum: LEGAL but NOT robust', () => {
-    // The combination the product must be able to express: keep the certificate, withhold
-    // CONSTRUCTIBLE.
-    const a = assessSpacing({ codeMinimum: CODE, achievedNominalClear: CODE });
-    expect(a.codeLegal).toBe(true);
-    expect(a.placementRobust).toBe(false);
-    expect(a.worstCasePlacedClear).toBeCloseTo(CODE - ASSUMED_SPACING_ALLOWANCE_M, 9);
+  it('is exactly 0 mm', () => {
+    expect(DEFAULT_SPACING_MARGIN_M).toBe(0);
+    expect(DEFAULT_PLACEMENT_POLICY.spacingAllowance).toBe(0);
   });
 
-  it('at the target: legal AND robust', () => {
+  it('makes the target equal the code minimum', () => {
+    const a = assessSpacing({ codeMinimum: CODE, achievedNominalClear: CODE });
+    expect(a.targetNominalClear).toBeCloseTo(CODE, 9);
+  });
+
+  it('lets a code-minimum layout be placement-robust', () => {
+    // The regulatory minimum IS the construction requirement. Nothing further is implied,
+    // and a cage drawn to it no longer fails its own check.
+    const a = assessSpacing({ codeMinimum: CODE, achievedNominalClear: CODE });
+    expect(a.codeLegal).toBe(true);
+    expect(a.placementRobust).toBe(true);
+    expect(a.worstCasePlacedClear).toBeCloseTo(CODE, 9);
+  });
+
+  it('adds no caveat, because zero asserts nothing beyond the regulation', () => {
+    const a = assessSpacing({ codeMinimum: CODE, achievedNominalClear: CODE });
+    expect(a.allowanceIsAssumed).toBe(false);
+    expect(a.assumption).toBeUndefined();
+  });
+
+  it('rejects a negative margin rather than loosening the code', () => {
+    expect(normaliseMargin(-0.005)).toBe(0);
+    expect(normaliseMargin(null)).toBe(0);
+    expect(normaliseMargin(Number.NaN)).toBe(0);
+    expect(normaliseMargin(0.005)).toBeCloseTo(0.005, 9);
+  });
+});
+
+describe('a positive project margin makes the target stricter', () => {
+  const CODE = 0.040;
+  const POLICY = { spacingAllowance: 0.010, stated: true };
+
+  it('raises the target by exactly that amount', () => {
     const a = assessSpacing({
-      codeMinimum: CODE, achievedNominalClear: CODE + ASSUMED_SPACING_ALLOWANCE_M,
+      codeMinimum: CODE, achievedNominalClear: CODE, policy: POLICY,
+    });
+    expect(a.targetNominalClear).toBeCloseTo(CODE + 0.010, 9);
+  });
+
+  it('leaves a code-minimum layout LEGAL but not robust', () => {
+    // Structurally verified, and below the project's own target: the combination that must
+    // keep the certificate and withhold CONSTRUCTIBLE.
+    const a = assessSpacing({
+      codeMinimum: CODE, achievedNominalClear: CODE, policy: POLICY,
+    });
+    expect(a.codeLegal).toBe(true);
+    expect(a.placementRobust).toBe(false);
+    expect(a.worstCasePlacedClear).toBeCloseTo(CODE - 0.010, 9);
+  });
+
+  it('at the raised target: legal AND robust', () => {
+    const a = assessSpacing({
+      codeMinimum: CODE, achievedNominalClear: CODE + 0.010, policy: POLICY,
     });
     expect(a.codeLegal).toBe(true);
     expect(a.placementRobust).toBe(true);
   });
+});
+
+describe('code compliance and placement robustness stay separate answers', () => {
+  const CODE = 0.040;
 
   it('below the minimum: neither', () => {
     const a = assessSpacing({ codeMinimum: CODE, achievedNominalClear: 0.035 });
@@ -74,10 +124,19 @@ describe('code compliance and placement robustness are separate answers', () => 
     expect(a.placementRobust).toBe(false);
   });
 
-  it('the real 28Ø12 case stays code-legal', () => {
-    // 46.9 mm against 40 mm. Legal, keeps its PR15 certificate, and is not robust under a
-    // 10 mm allowance — which is a reason to withhold CONSTRUCTIBLE, never to refuse a cage.
+  it('the real 28Ø12 case is legal AND robust at the zero default', () => {
+    // 46.9 mm against 40 mm required. Under the old hardcoded 10 mm it was refused a cage
+    // outright; at the decided default it is simply what it always was — compliant.
     const a = assessSpacing({ codeMinimum: 0.040, achievedNominalClear: 0.0469 });
+    expect(a.codeLegal).toBe(true);
+    expect(a.placementRobust).toBe(true);
+  });
+
+  it('…and becomes non-robust only if the PROJECT asks for more', () => {
+    const a = assessSpacing({
+      codeMinimum: 0.040, achievedNominalClear: 0.0469,
+      policy: { spacingAllowance: 0.010, stated: true },
+    });
     expect(a.codeLegal).toBe(true);
     expect(a.placementRobust).toBe(false);
   });
@@ -91,15 +150,16 @@ describe('code compliance and placement robustness are separate answers', () => 
   });
 });
 
-describe('the allowance is an assumption until the project states it', () => {
-  it('flags the default as assumed, and says why, in both languages', () => {
-    const a = assessSpacing({ codeMinimum: 0.040, achievedNominalClear: 0.040 });
+describe('an ADDED margin is attributed; the zero default is not', () => {
+  it('flags an unstated non-zero margin, and says CIRSOC does not set it', () => {
+    const a = assessSpacing({
+      codeMinimum: 0.040, achievedNominalClear: 0.040,
+      policy: { spacingAllowance: 0.010, stated: false },
+    });
     expect(a.allowanceIsAssumed).toBe(true);
-    expect(a.assumption).toBeDefined();
     for (const locale of ['en', 'es']) {
       const text = teAt(a.assumption!, locale);
       expect(text).not.toBe(a.assumption!.key);
-      // It must say plainly that CIRSOC does not set this.
       expect(text).toMatch(/CIRSOC/);
     }
   });
@@ -123,9 +183,8 @@ describe('the allowance is an assumption until the project states it', () => {
     expect(a.placementRobust).toBe(true);
   });
 
-  it('the default policy is the assumed one', () => {
+  it('the default policy adds nothing and claims nothing', () => {
     expect(DEFAULT_PLACEMENT_POLICY.stated).toBe(false);
-    expect(DEFAULT_PLACEMENT_POLICY.spacingAllowance)
-      .toBeCloseTo(ASSUMED_SPACING_ALLOWANCE_M, 9);
+    expect(DEFAULT_PLACEMENT_POLICY.spacingAllowance).toBe(0);
   });
 });

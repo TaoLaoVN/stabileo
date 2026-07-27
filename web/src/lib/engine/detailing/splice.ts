@@ -144,27 +144,32 @@ export function classifySplice(
 /**
  * Pair the incoming bars with the outgoing ones, transversely.
  *
- * Contact where the positions coincide, non-contact within the §25.5.1.3 limit, and a
- * refusal when a bar has no partner close enough. Greedy nearest-first, which is
- * deterministic and is also what a detailer does.
+ * ── Order-preserving, not greedy-nearest ───────────────────────────
+ *
+ * Both sets are sorted and matched i-th to i-th. That is optimal for one-dimensional
+ * matching — it minimises the WORST offset, which is the quantity §25.5.1.3 bounds — and it
+ * is also the only physically sensible answer: bars in a lap do not cross over one another
+ * on their way to their partners.
+ *
+ * A greedy nearest-first pass looks reasonable and is neither. Taking the closest partner
+ * for each bar in turn spends the central positions early and strands the outermost bar
+ * with whatever is left on the far side. On the flagship's last unresolved member it paired
+ * seven bars within 47 mm and then offered the eighth a partner 162 mm away, over the
+ * 114 mm limit, and declared the whole transition impossible.
  */
 function pairUp(
   from: readonly number[], to: readonly number[], maxPitch: number,
 ): Array<{ fromAcross: number; toAcross: number; offset: number }> | null {
-  const remaining = [...to].sort((a, b) => a - b);
+  const sortedFrom = [...from].sort((a, b) => a - b);
+  const sortedTo = [...to].sort((a, b) => a - b);
+  const n = Math.min(sortedFrom.length, sortedTo.length);
   const out: Array<{ fromAcross: number; toAcross: number; offset: number }> = [];
-  for (const f of [...from].sort((a, b) => a - b)) {
-    let best = -1;
-    let bestD = Infinity;
-    for (let i = 0; i < remaining.length; i++) {
-      const d = Math.abs(remaining[i] - f);
-      if (d < bestD) { bestD = d; best = i; }
-    }
-    if (best < 0) break;             // more incoming bars than outgoing: the rest terminate
-    if (bestD > maxPitch + 1e-9) return null;
-    out.push({ fromAcross: f, toAcross: remaining[best], offset: bestD });
-    remaining.splice(best, 1);
+  for (let i = 0; i < n; i++) {
+    const offset = Math.abs(sortedTo[i] - sortedFrom[i]);
+    if (offset > maxPitch + 1e-9) return null;
+    out.push({ fromAcross: sortedFrom[i], toAcross: sortedTo[i], offset });
   }
+  // Any surplus incoming bars simply terminate with legal anchorage; that is not a failure.
   return out;
 }
 

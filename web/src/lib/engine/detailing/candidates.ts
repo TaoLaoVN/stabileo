@@ -69,7 +69,12 @@ export interface CandidateRequest {
   edition: RegulationEdition;
   maxAggregateSizeMm: number;
   memberKind: 'beam' | 'column' | 'wall' | 'slab';
-  /** Placement tolerance to ADD to the nominal spacing, m. */
+  /**
+   * Additional bar-spacing margin above the regulatory minimum, m.
+   *
+   * A PROJECT property, zero by default. It only ever WIDENS the drawing; it is never
+   * subtracted from what the code allows, and it never vetoes a certified arrangement.
+   */
   placementTolerance: number;
   /**
    * Transverse positions the user pinned. A locked bar restricts the domain — candidates

@@ -415,17 +415,16 @@ export function layoutBarRow(opts: {
   /** Minimum clear distance between layers, m. */
   layerClear: number;
   /**
-   * Placement tolerance allowance, m.
+   * Additional bar-spacing margin above the regulatory minimum, m.
    *
-   * The code minimum is a requirement on the finished cage, and bars are never exactly
-   * where the drawing puts them — which is why the collision check subtracts a placement
-   * tolerance before comparing. A layout drawn EXACTLY at the minimum therefore fails its
-   * own check by that tolerance, every time. A detailer allows for it; so does this.
+   * A PROJECT property, zero by default: CIRSOC prescribes no margin between parallel bars
+   * beyond §25.2.1/§25.2.3, and adding one silently would present a number with no clause
+   * as a requirement. An engineer may raise it to get a more conservative cage.
    */
   placementTolerance?: number;
 }): { slots: BarSlot[]; layers: number; perLayer: number; fits: boolean } {
   const { count, clearWidth, layerClear } = opts;
-  const tol = opts.placementTolerance ?? 0.010;
+  const tol = opts.placementTolerance ?? 0;
   const minClear = opts.minClear + tol;
   const d = opts.diameterMm / 1000;
   if (count <= 0) return { slots: [], layers: 0, perLayer: 0, fits: true };

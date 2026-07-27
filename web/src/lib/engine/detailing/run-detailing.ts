@@ -766,7 +766,11 @@ export function runDetailing(input: RunDetailingInput): RunDetailingResult {
               // Provided/required at a support is routinely ≥ 2 for the continuing steel,
               // but the conservative default is Class B and it is what is assumed here.
               areaRatio: 1.0,
-              availableLength: ctxA.L / 2,
+              // A lap at a support reaches into BOTH adjacent spans, so the room available
+              // is half of each, not half of one. Counting only the near span refused a
+              // legal lap on any member whose own half-length was shorter than the lap —
+              // which on the flagship was the single remaining stranded beam.
+              availableLength: (ctxA.L + (input.contexts.get(bId)?.L ?? ctxA.L)) / 2,
               edition: input.edition,
               maxAggregateSizeMm: input.maxAggregateSizeMm,
             });

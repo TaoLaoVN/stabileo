@@ -4420,5 +4420,9 @@ const es: Record<string, string> = {
   'codes.placement.legalNotRobust': 'La separación libre de {achieved} mm cumple los {required} mm que exige el reglamento, pero baja a {worst} mm con la tolerancia de colocación de {allowance} mm: es reglamentaria, no robusta a la colocación.',
   'codes.placement.allowanceAssumed': 'La tolerancia transversal de colocación de {allowance} mm es una HIPÓTESIS DEL PROYECTO, no un valor del CIRSOC. La Tabla 26.6.2.1(a) fija tolerancias solo para la altura efectiva y el recubrimiento; no fija ninguna para la separación entre barras paralelas. Definila en las propiedades de detallado del proyecto.',
 
+  'codes.placement.legalAtCodeMinimum': 'La separación libre de {achieved} mm cumple los {required} mm que exige el reglamento. No hay margen adicional definido por el proyecto.',
+  'material.spacingMargin': 'Margen adicional entre barras',
+  'material.spacingMarginHelp': 'Margen adicional definido por el proyecto por encima del mínimo reglamentario. CIRSOC no prescribe este valor.',
+
 };
 export default es;

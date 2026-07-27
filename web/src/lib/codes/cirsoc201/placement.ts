@@ -42,25 +42,42 @@ import { msg, round, type EngineMessage } from '../message';
 export const DEPTH_BAND_MM = 200;
 
 /**
- * The transverse-spacing allowance the app assumes, in metres.
+ * Default additional transverse bar-spacing margin: ZERO.
  *
- * NOT a CIRSOC value. Ten millimetres is ordinary site practice for cages assembled off
- * site and lowered in, and it is the number the collision check has always used — but it
- * is an assumption, it is editable, and every result derived from it says so.
+ * CIRSOC's minimum clear spacing IS the construction requirement. The regulation prescribes
+ * no further margin between parallel bars, so the app adds none by default and never
+ * implies one is required.
+ *
+ * The engine previously carried a hardcoded 10 mm here and applied it as though it were
+ * part of the code minimum. That vetoed arrangements the verifier had already certified —
+ * a 28Ø12 column at 46.9 mm clear against a 40 mm requirement was refused for being under
+ * 40 + 10 — and it presented a number with no clause as a regulatory threshold.
+ *
+ * An engineer who wants a more conservative cage raises it. Nobody has to argue the default
+ * back down to what the code actually says.
  */
-export const ASSUMED_SPACING_ALLOWANCE_M = 0.010;
+export const DEFAULT_SPACING_MARGIN_M = 0;
 
 export interface PlacementPolicy {
-  /** Transverse spacing allowance, m. Project property, not a code value. */
+  /**
+   * Additional margin above the regulatory minimum, m. A PROJECT property. Zero by default,
+   * never negative — this can only ever make the detailing more conservative.
+   */
   spacingAllowance: number;
-  /** True when the project has stated this value rather than accepting the default. */
+  /** True when the project has stated a value rather than accepting the zero default. */
   stated: boolean;
 }
 
 export const DEFAULT_PLACEMENT_POLICY: PlacementPolicy = {
-  spacingAllowance: ASSUMED_SPACING_ALLOWANCE_M,
+  spacingAllowance: DEFAULT_SPACING_MARGIN_M,
   stated: false,
 };
+
+/** Clamp a project-entered margin: non-negative, and finite. */
+export function normaliseMargin(value: number | null | undefined): number {
+  if (typeof value !== 'number' || !Number.isFinite(value) || value <= 0) return 0;
+  return value;
+}
 
 /** Tolerances CIRSOC DOES prescribe, for one member. */
 export interface PrescribedTolerances {
@@ -133,7 +150,12 @@ export interface SpacingAssessment {
   placementRobust: boolean;
   /** codeMinimum + placementAllowance, m. What a NEW arrangement should aim for. */
   targetNominalClear: number;
-  /** True when the allowance is an assumption rather than a stated project property. */
+  /**
+   * True when a NON-ZERO margin is in force without the project having stated it.
+   *
+   * The zero default needs no caveat: it asserts nothing beyond the regulation. Only an
+   * added margin is a claim that has to be attributed.
+   */
   allowanceIsAssumed: boolean;
   refs: ClauseRef[];
   /** Human-readable, translated at the boundary. */
@@ -169,12 +191,13 @@ export function assessSpacing(input: {
     codeLegal,
     placementRobust,
     targetNominalClear: input.codeMinimum + allowance,
-    allowanceIsAssumed: !policy.stated,
+    allowanceIsAssumed: !policy.stated && allowance > 0,
     refs: input.refs ?? [],
     summary: msg(
       !codeLegal ? 'codes.placement.notLegal'
-        : placementRobust ? 'codes.placement.legalAndRobust'
-          : 'codes.placement.legalNotRobust',
+        : allowance <= 0 ? 'codes.placement.legalAtCodeMinimum'
+          : placementRobust ? 'codes.placement.legalAndRobust'
+            : 'codes.placement.legalNotRobust',
       {
         achieved: round(input.achievedNominalClear * 1000, 1),
         required: round(input.codeMinimum * 1000, 1),
@@ -182,9 +205,9 @@ export function assessSpacing(input: {
         worst: round(worst * 1000, 1),
       },
     ),
-    assumption: policy.stated ? undefined : msg('codes.placement.allowanceAssumed', {
-      allowance: round(allowance * 1000, 1),
-    }),
+    assumption: (!policy.stated && allowance > 0)
+      ? msg('codes.placement.allowanceAssumed', { allowance: round(allowance * 1000, 1) })
+      : undefined,
   };
 }
 

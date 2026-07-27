@@ -62,9 +62,10 @@ describe('bounded repair ladder', () => {
   });
 
   it('respects the supplied clearance rule', () => {
-    // 60 mm apart: fine at 25 mm required, short at 40 mm.
-    expect(repairConflicts([bar('a', 0), bar('b', 0.060)], () => 0.025).attempts).toEqual([]);
-    expect(repairConflicts([bar('a', 0), bar('b', 0.060)], () => 0.040).attempts.length)
+    // 55 mm apart gives a 35 mm surface gap at the zero default: fine against 25 mm
+    // required, short against 40 mm.
+    expect(repairConflicts([bar('a', 0), bar('b', 0.055)], () => 0.025).attempts).toEqual([]);
+    expect(repairConflicts([bar('a', 0), bar('b', 0.055)], () => 0.040).attempts.length)
       .toBeGreaterThan(0);
   });
 

@@ -205,20 +205,38 @@ describe('collision engine', () => {
   });
 
   it('reports a clearance shortfall with the numbers, not a bare boolean', () => {
-    // Ø20 bars 40 mm apart: surface gap 20 mm, less 10 mm placement = 10 mm available
-    // against 25 mm required.
-    const r = detectCollisions([straightBar('a', 0, 0), straightBar('b', 0.040, 0)]);
+    // Ø20 bars 32 mm apart: surface gap 12 mm against 25 mm required. No placement is
+    // deducted — the decided default additional margin is zero, so what is measured is
+    // what is compared.
+    const r = detectCollisions([straightBar('a', 0, 0), straightBar('b', 0.032, 0)]);
     expect(r.conflicts).toHaveLength(1);
     const c = r.conflicts[0];
     expect(c.severity).toBe('clearance');
-    expect(c.clearance).toBeCloseTo(0.010, 4);
+    expect(c.clearance).toBeCloseTo(0.012, 4);
     expect(c.required).toBeCloseTo(0.025, 4);
-    expect(c.shortfall).toBeCloseTo(0.015, 4);
+    expect(c.shortfall).toBeCloseTo(0.013, 4);
+  });
+
+  it('a code-minimum pair is clean at the zero default', () => {
+    // Exactly 25 mm clear. Under the old hardcoded 10 mm this reported a conflict against
+    // the very requirement it satisfies.
+    const r = detectCollisions([straightBar('a', 0, 0), straightBar('b', 0.045, 0)]);
+    expect(r.conflicts).toEqual([]);
+  });
+
+  it('a positive project margin is deducted when the project asks for one', () => {
+    // The margin is opt-in and only ever makes the check stricter.
+    const r = detectCollisions(
+      [straightBar('a', 0, 0), straightBar('b', 0.045, 0)],
+      { placement: 0.010, requiredClear: 0.025, marginalBand: 0.005 },
+    );
+    expect(r.conflicts).toHaveLength(1);
+    expect(r.conflicts[0].clearance).toBeCloseTo(0.015, 4);
   });
 
   it('grades a near miss as marginal rather than failing it', () => {
     // Available 22 mm against 25 mm required -> 3 mm short, inside the 5 mm band.
-    const r = detectCollisions([straightBar('a', 0, 0), straightBar('b', 0.052, 0)]);
+    const r = detectCollisions([straightBar('a', 0, 0), straightBar('b', 0.042, 0)]);
     expect(r.conflicts[0].severity).toBe('marginal');
     expect(r.constructible).toBe(true);
   });
@@ -239,8 +257,8 @@ describe('collision engine', () => {
   });
 
   it('accepts a per-pair required clearance from the code rule', () => {
-    const bars = [straightBar('a', 0, 0), straightBar('b', 0.060, 0)];
-    // 30 mm surface gap, 20 mm after tolerance. Fine at 25 mm, short at 40 mm.
+    const bars = [straightBar('a', 0, 0), straightBar('b', 0.055, 0)];
+    // 35 mm surface gap at the zero default. Fine against 25 mm, short against 40 mm.
     expect(detectCollisions(bars, DEFAULT_TOLERANCES, () => 0.025).conflicts).toEqual([]);
     expect(detectCollisions(bars, DEFAULT_TOLERANCES, () => 0.040).conflicts).toHaveLength(1);
   });
