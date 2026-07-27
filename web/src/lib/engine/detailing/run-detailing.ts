@@ -705,6 +705,8 @@ export function runDetailing(input: RunDetailingInput): RunDetailingResult {
    */
   function coordinateBeamLayouts(): {
     slots: Map<number, number[]>;
+    /** Layer index per slot, parallel to `slots`. */
+    slotLayers: Map<number, number[]>;
     result: CoordinationResult;
     /** The joints the assignment closed, ready for `materialiseLaps`. */
     transitions: PlannedTransition[];
@@ -968,8 +970,12 @@ export function runDetailing(input: RunDetailingInput): RunDetailingResult {
 
     const result = coordinate({ members, joints });
     const slots = new Map<number, number[]>();
+    // The layer travels with the position. A candidate arranged in two layers repeats its
+    // `across` values by design, and a bare list of them is ambiguous.
+    const slotLayers = new Map<number, number[]>();
     for (const [id, layout] of result.assignment) {
       slots.set(id, layout.slots.map((sl) => sl.across));
+      slotLayers.set(id, layout.slots.map((sl) => sl.layer ?? 0));
     }
 
     // ── Plan the physical transition at every joint the assignment closed ──
@@ -1047,7 +1053,7 @@ export function runDetailing(input: RunDetailingInput): RunDetailingResult {
       }
     }
 
-    return { slots, result, transitions };
+    return { slots, slotLayers, result, transitions };
   }
 
   const layoutChoice = coordinateBeamLayouts();
@@ -1098,6 +1104,7 @@ export function runDetailing(input: RunDetailingInput): RunDetailingResult {
       axis: unit(nodePoint(nI), nodePoint(nJ)),
       up: { x: 0, y: 0, z: 1 },
       transverseSlots: layoutChoice.slots.get(id),
+      transverseLayers: layoutChoice.slotLayers.get(id),
       layerRaise: layerRaiseOf.get(id) ?? 0,
       bentUp: input.bentUp ?? { seismicDesign: 'unstated', optOut: false },
     } as never);

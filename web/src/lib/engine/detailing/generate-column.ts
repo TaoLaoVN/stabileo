@@ -277,9 +277,27 @@ export function generateColumnStack(input: ColumnStackInput): GeneratedColumnSta
     // Perimeter positions, corners first then faces, deterministic — unless the
     // coordination search chose an arrangement, in which case that is the cage.
     let positions: Array<{ x: number; y: number }>;
-    if (input.barPositions && input.barPositions.length >= lift.bars.count) {
-      positions = input.barPositions.map((p) => ({ x: p.x, y: p.y }));
+    // The coordinated arrangement is taken only if it is actually usable: the right
+    // NUMBER of bars, and no two of them in the same place.
+    //
+    // Both guards earned their place. The override used to map the whole array rather
+    // than the first `count`, so a longer list silently added bars the design never
+    // called for; and it never checked for repeats, so a list carrying a position twice
+    // put two bars on one point — which reads downstream as a bar interpenetrating
+    // itself, not as the missing bar it actually is.
+    const chosen = input.barPositions?.slice(0, lift.bars.count) ?? null;
+    const chosenDistinct = chosen !== null
+      && chosen.length === lift.bars.count
+      && new Set(chosen.map((p) => `${Math.round(p.x * 1e5)}:${Math.round(p.y * 1e5)}`)).size
+        === chosen.length;
+    if (chosen && chosenDistinct) {
+      positions = chosen.map((p) => ({ x: p.x, y: p.y }));
     } else {
+      if (chosen && chosen.length === lift.bars.count) {
+        unsupported.push(
+          `La disposición coordinada de ${lift.bars.count}Ø${lift.bars.diameterMm} ` +
+          `repite posiciones; se usa la disposición perimetral generada.`);
+      }
       positions = [
         { x: -halfB, y: -halfH }, { x: halfB, y: -halfH },
         { x: halfB, y: halfH }, { x: -halfB, y: halfH },

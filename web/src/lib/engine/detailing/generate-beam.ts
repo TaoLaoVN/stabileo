@@ -111,6 +111,17 @@ export interface BeamGenerationInput {
    * section at the code spacing.
    */
   transverseSlots?: readonly number[];
+  /**
+   * Layer index of each entry in `transverseSlots`, parallel array.
+   *
+   * Without it the override is unsound. A coordinated candidate may itself be arranged in
+   * two layers, so its `across` values REPEAT — bar 0 and bar 4 legitimately share a
+   * transverse position because they sit at different depths. Flattening that to a bare
+   * list and applying it to a generator layout with a different layer split put two Ø32
+   * bars on the same point, which is where 1,090 of the flagship's "same-member overlaps"
+   * came from: not a clash between two bars, but one bar drawn twice.
+   */
+  transverseLayers?: readonly number[];
   /** Bent-up bar policy — see `BentUpPolicy`. */
   bentUp: BentUpPolicy;
 }
@@ -572,10 +583,30 @@ export function generateBeamBars(input: BeamGenerationInput): GeneratedBeam {
     }
     // Layer 0 sits at the face; deeper layers move toward the section centre.
     const inward = faceUpward ? -1 : 1;
-    const slots = input.transverseSlots && input.transverseSlots.length >= count
-      // Threading positions win: they were chosen against the real column cage.
-      ? layout.slots.map((slot, i) => ({ ...slot, across: input.transverseSlots![i] }))
-      : layout.slots;
+    // Threading positions win: they were chosen against the real column cage. But they
+    // only win as complete slots — position AND layer — because a position without its
+    // layer is ambiguous the moment the candidate has more than one.
+    const override = input.transverseSlots && input.transverseSlots.length >= count
+      ? layout.slots.map((slot, i) => ({
+        ...slot,
+        across: input.transverseSlots![i],
+        layer: input.transverseLayers?.[i] ?? slot.layer,
+        intoSection: input.transverseLayers
+          ? (input.transverseLayers[i] ?? slot.layer) * (dia / 1000 + layerSpacing.minClear)
+          : slot.intoSection,
+      }))
+      : null;
+
+    // Belt and braces. Two bars of one group may never occupy one point, whatever the
+    // candidate said — a coincident pair is not a tight detail, it is a missing bar.
+    const distinct = (xs: typeof layout.slots) =>
+      new Set(xs.map((x) => `${x.layer}:${Math.round(x.across * 1e5)}`)).size === xs.length;
+    const slots = override && distinct(override) ? override : layout.slots;
+    if (override && !distinct(override)) {
+      unsupported.push(
+        `La disposición coordinada de ${count}Ø${dia} repite posiciones; ` +
+        `se usa la disposición generada.`);
+    }
     return slots.map((slot) => ({
       layer: slot.layer,
       x: across.x * slot.across + input.up.x * slot.intoSection * inward,
