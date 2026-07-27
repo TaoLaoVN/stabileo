@@ -29,6 +29,8 @@ import {
 } from '../../codes/cirsoc201/bar-geometry';
 import { clause, type ClauseRef, type RegulationEdition } from '../../codes/regulation';
 import { worstMaturity, type Maturity } from '../../codes/maturity';
+import { dedupeMessages, type EngineMessage } from '../../codes/message';
+import { assessConstructibility } from './constructibility';
 import { assignMarks, evaluateState, type DetailingAssembly, type UnsupportedCondition } from './assembly';
 import {
   DEFAULT_TOLERANCES, detectCollisions, type BarConflict, type CollisionTolerances,
@@ -253,7 +255,10 @@ export function buildFloorAssembly(input: FloorAssemblyInput): FloorAssemblyResu
   const unsupported: UnsupportedCondition[] = [];
   const maturities: Maturity[] = [];
   const bars: BarPath[] = [];
-  const assumptions: string[] = [];
+  // EngineMessage, not string. PR16 converted maturity assumptions to structured messages
+  // so they could be translated at the i18n boundary; this collector was still typed as
+  // prose, which typechecked only because nothing downstream read the elements.
+  const assumptions: EngineMessage[] = [];
 
   for (const s of input.slabs) {
     const panelBars = generateSlabBars(s.geometry, s.design.layers, input.edition);
@@ -339,10 +344,35 @@ export function buildFloorAssembly(input: FloorAssemblyInput): FloorAssemblyResu
     `${conflicts.length} conflicto(s), ${collision.barPairsTested} par(es) evaluado(s).`);
 
   const marks = assignMarks(bars, 'F');
+  // The twelve-condition gate, measured on what this floor actually produced.
+  //
+  // A slab/wall/footing assembly has no beam-line search and no splice transitions, so
+  // those conditions are vacuously satisfied — but the conflict count, the unsupported
+  // rules and the verification status are all real measurements, and CONSTRUCTIBLE is
+  // withheld on any of them exactly as it is for a beam floor.
+  const prohibited = conflicts.filter((c) => c.pairClass === 'prohibitedOverlap').length;
+  const constructibility = assessConstructibility({
+    completeEnvelope: true,
+    searchTruncated: false,
+    applicableMembers: 1,
+    assignedMembers: 1,
+    selectedTransitions: 0,
+    materialisedTransitions: 0,
+    unmaterialisedTransitions: 0,
+    prohibitedConflicts: prohibited,
+    reverifiedMembers: input.membersVerified ? 1 : 0,
+    certificateHashMatches: input.membersVerified ? 1 : 0,
+    spacingNotCodeLegal: conflicts.filter((c) => c.pairClass === 'sameLayerSpacing'
+      || c.pairClass === 'betweenLayerSpacing' || c.pairClass === 'crossMemberSpacing').length,
+    spacingNotPlacementRobust: 0,
+    unsupportedRules: unsupported.length,
+    staleAssemblies: 0,
+  });
   const evaluation = evaluateState({
     bars, conflicts, unsupported,
     membersVerified: input.membersVerified,
     coordinated: true,
+    constructibility,
   });
   trace.push(
     `Estado alcanzado: ${evaluation.state}` +
@@ -350,6 +380,7 @@ export function buildFloorAssembly(input: FloorAssemblyInput): FloorAssemblyResu
 
   return {
     assembly: {
+      constructibility,
       id: input.assemblyId,
       kind: 'beamLine',
       label: input.label,
@@ -367,7 +398,10 @@ export function buildFloorAssembly(input: FloorAssemblyInput): FloorAssemblyResu
       maturity: worstMaturity(maturities),
       provenance: {
         edition: input.edition, verifierId: input.verifierId,
-        trace, assumptions: [...new Set(assumptions)],
+        trace,
+        // Dedupe by identity rather than by object reference: two engines producing the
+        // same assumption with the same parameters are one assumption to the reader.
+        assumptions: dedupeMessages(assumptions),
       },
     },
     trace,
