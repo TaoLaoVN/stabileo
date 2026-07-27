@@ -301,9 +301,33 @@ export function packJoints(input: JointPackingInput): JointPackingResult {
         maxAggregateSizeMm: input.maxAggregateSizeMm,
       });
 
-      for (const [, group] of [...byLevel.entries()].sort((a, b) => a[0] - b[0])) {
+      // ── Thread the whole stack, not one level at a time ──────────
+      //
+      // §25.2.2: "las barras de las capas superiores deben colocarse exactamente sobre las
+      // de las capas inferiores". Threading each level independently picks its own nearest
+      // free channel for each level and the layers stop lining up — the upper bars end up
+      // nested between the lower ones instead of above them, which is precisely what the
+      // clause forbids and what the QA fixture showed at 12 mm plan pitch.
+      //
+      // So the plan positions are chosen ONCE, for the level with the most bars, and every
+      // other level reuses the same transverse coordinates. A level with fewer bars takes
+      // the first N positions, deterministically, so the arrangement is stable and every
+      // upper bar sits over a lower one.
+      const levels = [...byLevel.entries()].sort((a, b) => a[0] - b[0]);
+      const widest = levels.reduce(
+        (m, [, g]) => (g.length > m.length ? g : m), levels[0]?.[1] ?? []);
+      const stackDia = Math.max(...beamBars.map((b) => b.diameterMm), 0);
+      const stackPositions = widest.length > 0
+        ? placeInChannels(channels, widest.length, stackDia, beamSpacing.minClear)
+        : [];
+
+      for (const [, group] of levels) {
         const dia = Math.max(...group.map((b) => b.diameterMm));
-        const positions = placeInChannels(channels, group.length, dia, beamSpacing.minClear);
+        // Reuse the stack's columns; fall back to a per-level solve only if the stack
+        // itself could not be placed, so a failure is reported once and not per level.
+        const positions = stackPositions === null
+          ? placeInChannels(channels, group.length, dia, beamSpacing.minClear)
+          : stackPositions.slice(0, group.length);
         if (positions === null) {
           conflicts.push({
             jointId: joint.id, kind: 'noFreeChannel', elementIds: [beam.elementId],
