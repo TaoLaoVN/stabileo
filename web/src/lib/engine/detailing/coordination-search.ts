@@ -87,6 +87,17 @@ export interface JointConstraint {
    *   'independent' no interaction beyond each clearing the joint's own obstacles.
    */
   relation: (a: number, b: number) => 'collinear' | 'crossing' | 'independent';
+  /**
+   * Is there a code-legal splice connecting these two collinear layouts?
+   *
+   * Supplied by the caller because the answer needs development lengths, demand envelopes
+   * and the physical room available — none of which belong in a compatibility relation.
+   * Arc consistency keeps a candidate when AT LEAST ONE legal transition reaches the
+   * neighbouring domain; it must never require identical layouts.
+   */
+  transitionExists?: (
+    aId: number, aLayout: LayoutCandidate, bId: number, bLayout: LayoutCandidate,
+  ) => boolean;
 }
 
 export interface SearchLimits {
@@ -249,25 +260,26 @@ export function pairCompatible(
 
   switch (joint.relation(a.elementId, b.elementId)) {
     case 'collinear': {
-      // Two ways for a run to pass through a support, and both are legitimate:
+      // Three ways a run passes a support, and the code names all three:
       //
-      //   CONTINUOUS  same bar size, same positions — one bar carries on through. This is
-      //               what the objective prefers, because it is one bar and one mark.
-      //   LAPPED      the two sets sit SIDE BY SIDE through the joint and lap. Required
-      //               whenever the sizes differ, which they routinely do when each span
-      //               was sized independently.
+      //   CONTINUOUS      same size, same positions — one bar carries through.
+      //   CONTACT LAP     §25.5.1.2 — the two bars TOUCH. Clear spacing is measured to
+      //                   ADJACENT bars, not to the partner.
+      //   NON-CONTACT LAP §25.5.1.3 — apart, within min(lst/5, 150 mm).
       //
-      // Demanding continuity alone emptied 282 of 248 beam domains on the flagship: every
-      // pair of adjacent spans that the design search had given different bar sizes was
-      // declared impossible, when a lap is the ordinary answer.
+      // The rule here used to be "identical, or fully separated in plan". Full separation
+      // is not one of the code's options, and demanding it is what stranded fifty members:
+      // two 8-bar beams over one support were being asked for sixteen transverse positions
+      // in a 284 mm section, when §25.5.1.2 asks for eight, each holding a lapped pair.
       if (a.diameterMm === b.diameterMm && a.layout.id === b.layout.id) {
         return { ok: true, worstOverlap: 0 };
       }
-      const asKeepOut: KeepOut[] = b.layout.slots.map((s) => ({
-        at: s.across, halfWidth: b.diameterMm / 2000,
-      }));
-      const lap = candidateClears(a.layout, a.diameterMm, asKeepOut);
-      return { ok: lap.ok, worstOverlap: lap.worstOverlap };
+      const legal = joint.transitionExists?.(
+        a.elementId, a.layout, b.elementId, b.layout);
+      // Without a transition oracle the conservative answer is the code's own default:
+      // a contact lap is available whenever the bar sizes match.
+      const fallback = a.diameterMm === b.diameterMm;
+      return { ok: legal ?? fallback, worstOverlap: 0 };
     }
 
     case 'crossing':

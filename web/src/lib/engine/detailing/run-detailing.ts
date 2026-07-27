@@ -51,6 +51,8 @@ import {
   coordinate, type CoordinationResult, type JointConstraint, type MemberVariable,
 } from './coordination-search';
 import { DEFAULT_TOLERANCES } from './collision';
+import { transitionExists } from './splice';
+import { deriveDevelopment } from '../../codes/cirsoc201/anchorage';
 import { minClearSpacingColumn } from '../../codes/cirsoc201/spacing';
 import { coordinateFloor, type FloorCoordinationResult, type JointInput, type MemberBars } from './coordinate-floor';
 import type { DetailingAssembly } from './assembly';
@@ -743,6 +745,32 @@ export function runDetailing(input: RunDetailingInput): RunDetailingResult {
         jointId: `n${nodeId}`,
         elementIds: [...ids].sort((a, b) => a - b),
         keepOutsFor,
+        // Is a code-legal splice available between two collinear layouts? §25.5.1.2's
+        // contact lap is the ordinary answer and needs no plan separation at all.
+        transitionExists: (aId, aLayout, bId, bLayout) => {
+          const ia = perBeam.get(aId);
+          const ib = perBeam.get(bId);
+          if (!ia || !ib) return false;
+          const ctxA = input.contexts.get(aId);
+          if (!ctxA) return false;
+          const dev = deriveDevelopment({
+            diameterMm: Math.max(ia.dia, ib.dia),
+            fy: ctxA.material.fy, fc: ctxA.material.fc,
+            favourableSpacing: true, edition: input.edition,
+          });
+          return transitionExists(
+            aLayout.slots.map((sl) => sl.across),
+            bLayout.slots.map((sl) => sl.across),
+            Math.max(ia.dia, ib.dia), dev,
+            {
+              // Provided/required at a support is routinely ≥ 2 for the continuing steel,
+              // but the conservative default is Class B and it is what is assumed here.
+              areaRatio: 1.0,
+              availableLength: ctxA.L / 2,
+              edition: input.edition,
+              maxAggregateSizeMm: input.maxAggregateSizeMm,
+            });
+        },
         relation: (a, b) => {
           const ta = perBeam.get(a)?.t;
           const tb = perBeam.get(b)?.t;

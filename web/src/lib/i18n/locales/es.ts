@@ -4405,5 +4405,12 @@ const es: Record<string, string> = {
   'detailing.pairClass.crossMemberSpacing': 'Separación libre entre barras de elementos distintos',
   'detailing.pairClass.prohibitedOverlap': 'Las superficies de las barras se interpenetran — físicamente imposible',
 
+  'detailing.splice.noPairing': 'Ninguna barra puede aparearse con otra del lado opuesto dentro del límite transversal de {maxPitch} mm del art. 25.5.1.3, por lo que no es posible un empalme por yuxtaposición.',
+  'detailing.splice.pitchExceeded': 'Un par empalmado queda a {offset} mm transversales, por encima de los {limit} mm que el art. 25.5.1.3 admite para un empalme sin contacto.',
+  'detailing.splice.tooShort': '{groups} grupo(s) escalonado(s) con empalme de {lap} m requieren {needed} m, y solo hay {available} m disponibles.',
+  'detailing.splice.continuous': 'Las barras continúan a través del apoyo sin empalme.',
+  'detailing.splice.contact': 'Empalme en contacto Clase {spliceClass} de {lap} mm (art. 25.5.1.2), {groups} grupo(s) escalonado(s), como máximo {fraction} % de las barras empalmadas en una misma sección.',
+  'detailing.splice.nonContact': 'Empalme sin contacto Clase {spliceClass} de {lap} mm con desfase transversal de {offset} mm (art. 25.5.1.3), {groups} grupo(s) escalonado(s), como máximo {fraction} % empalmado en una sección.',
+
 };
 export default es;

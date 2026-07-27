@@ -154,16 +154,16 @@ describe('global coordination succeeds where per-joint choice cannot', () => {
     expect(candidateClears(chosen, 16, farBlocks).ok).toBe(true);
   });
 
-  it('two beams continuing through a support are given the SAME arrangement', () => {
-    // Continuity, not avoidance. The bars run on through the joint, so their transverse
-    // positions must line up or the run does not exist and the lap has nothing to lap on.
+  it('two beams continuing through a support are coordinated, by continuity or by lap', () => {
     const dom = () => candidates(2, 16, 0.40);
     const r = coordinate({
       members: [variable(1, dom(), 16), variable(2, dom(), 16)],
       joints: [joint('J', [1, 2], {}, () => 'collinear')],
     });
     expect(r.outcome).toBe('CONSTRUCTIBLE');
-    expect(r.assignment.get(1)!.id).toBe(r.assignment.get(2)!.id);
+    // The objective prefers one continuous bar — one piece, one mark — but a lap is a
+    // legal outcome too, and demanding identity is what stranded fifty members.
+    expect(r.assignment.size).toBe(2);
   });
 
   it('two beams CROSSING at a joint are layered, so their layouts are free', () => {
@@ -336,6 +336,37 @@ describe('pairCompatible reads the relation, not just the geometry', () => {
   const c = () => candidates(2, 16, 0.40)[0];
   const other = () => candidates(2, 16, 0.40)[1];
 
+  it('collinear members of the same size may LAP — §25.5.1.2, no separation needed', () => {
+    // This block previously demanded that differing layouts be rejected, which is not one
+    // of the code's options. §25.5.1.2 permits a contact lap: the two bars touch, and clear
+    // spacing is measured to ADJACENT bars. Requiring identical layouts stranded fifty
+    // flagship members that had an ordinary lap available.
+    const j = joint('J', [1, 2], {}, () => 'collinear');
+    expect(pairCompatible(j,
+      { elementId: 1, diameterMm: 16, layout: c() },
+      { elementId: 2, diameterMm: 16, layout: c() }).ok).toBe(true);
+    expect(pairCompatible(j,
+      { elementId: 1, diameterMm: 16, layout: c() },
+      { elementId: 2, diameterMm: 16, layout: other() }).ok).toBe(true);
+  });
+
+  it('without an oracle it falls back to the code default, not to identity', () => {
+    const j = joint('J', [1, 2], {}, () => 'collinear');
+    expect(pairCompatible(j,
+      { elementId: 1, diameterMm: 16, layout: c() },
+      { elementId: 2, diameterMm: 20, layout: other() }).ok).toBe(false);
+  });
+
+  it('an oracle may permit differing bar sizes, and is believed', () => {
+    // Different sizes lap legally all the time; whether THIS pair can is a question about
+    // development length and available room, which the oracle owns.
+    const permissive = joint('J', [1, 2], {}, () => 'collinear');
+    permissive.transitionExists = () => true;
+    expect(pairCompatible(permissive,
+      { elementId: 1, diameterMm: 16, layout: c() },
+      { elementId: 2, diameterMm: 20, layout: c() }).ok).toBe(true);
+  });
+
   it('crossing members are stacked in layers, so any pair of layouts works', () => {
     const j = joint('J', [1, 2], {}, () => 'crossing');
     expect(pairCompatible(j,
@@ -343,24 +374,14 @@ describe('pairCompatible reads the relation, not just the geometry', () => {
       { elementId: 2, diameterMm: 16, layout: other() }).ok).toBe(true);
   });
 
-  it('collinear members must MATCH — continuity, not avoidance', () => {
-    // The error that made 246 of 248 flagship beams "infeasible": two beams continuing
-    // through a support were asked to keep their bars apart, when the run only exists if
-    // the bars line up.
-    const j = joint('J', [1, 2], {}, () => 'collinear');
-    expect(pairCompatible(j,
+  it('an oracle may permit differing bar sizes, and is believed', () => {
+    // Different sizes lap legally all the time; whether THIS pair can is a question about
+    // development length and available room, which the oracle owns.
+    const permissive = joint('J', [1, 2], {}, () => 'collinear');
+    permissive.transitionExists = () => true;
+    expect(pairCompatible(permissive,
       { elementId: 1, diameterMm: 16, layout: c() },
-      { elementId: 2, diameterMm: 16, layout: c() }).ok).toBe(true);
-    expect(pairCompatible(j,
-      { elementId: 1, diameterMm: 16, layout: c() },
-      { elementId: 2, diameterMm: 16, layout: other() }).ok).toBe(false);
-  });
-
-  it('collinear members of different bar size cannot be continuous', () => {
-    const j = joint('J', [1, 2], {}, () => 'collinear');
-    expect(pairCompatible(j,
-      { elementId: 1, diameterMm: 16, layout: c() },
-      { elementId: 2, diameterMm: 20, layout: c() }).ok).toBe(false);
+      { elementId: 2, diameterMm: 20, layout: c() }).ok).toBe(true);
   });
 
   it('either member failing the joint own obstacles fails the pair', () => {

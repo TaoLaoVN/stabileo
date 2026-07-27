@@ -4443,5 +4443,12 @@ const en: Record<string, string> = {
   'detailing.pairClass.crossMemberSpacing': 'Clear spacing between bars of different members',
   'detailing.pairClass.prohibitedOverlap': 'Bar surfaces interpenetrate — physically impossible',
 
+  'detailing.splice.noPairing': 'No bar can be paired with one on the other side within the {maxPitch} mm transverse limit of §25.5.1.3, so no lap splice is possible here.',
+  'detailing.splice.pitchExceeded': 'A lap pair sits {offset} mm apart transversely, above the {limit} mm permitted by §25.5.1.3 for a non-contact splice.',
+  'detailing.splice.tooShort': '{groups} staggered group(s) at a {lap} m lap need {needed} m, and only {available} m is available.',
+  'detailing.splice.continuous': 'Bars continue through the support without a splice.',
+  'detailing.splice.contact': 'Class {spliceClass} contact lap of {lap} mm (§25.5.1.2), {groups} staggered group(s), at most {fraction} % of bars spliced at any one section.',
+  'detailing.splice.nonContact': 'Class {spliceClass} non-contact lap of {lap} mm with a {offset} mm transverse offset (§25.5.1.3), {groups} staggered group(s), at most {fraction} % spliced at one section.',
+
 };
 export default en;
