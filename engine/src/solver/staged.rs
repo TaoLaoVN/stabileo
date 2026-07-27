@@ -37,9 +37,10 @@ pub fn solve_staged_2d(input: &StagedInput) -> Result<StagedAnalysisResults, Str
 
     // Staged construction's custom assembly (assemble_stage_2d, below) hardcodes
     // inclined_transforms_2d: vec![] — it never rotates K/F for inclined
-    // supports, so reactions would silently be reported in the rotated
-    // support-local frame. Reject explicitly until that assembly carries
-    // transforms, rather than reporting wrong-frame results.
+    // supports. This means the solve would silently treat an inclined roller
+    // as a flat roller (wrong boundary condition and wrong stiffness), not
+    // just mis-report results. Reject explicitly until that assembly carries
+    // transforms.
     let has_inclined = input.supports.values().any(|s| {
         s.support_type == "inclinedRoller"
     });
