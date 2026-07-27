@@ -89,14 +89,14 @@ See also: `../research/solver_safety_and_validation_hardening.md` for the fuller
 **Step 6 — constraint maturity / solver-path consistency**
 - `Broader shell + nonlinear invariant coverage`
 - `Constraint system depth (chained, eccentric, cross-solver parity)`
-- `3D release-contract cleanup and honest surfaces`
+- ~~`3D release-contract cleanup and honest surfaces`~~ — DONE (2026-07-27)
   - Type: contract cleanup + UI truthfulness
-  - Status: partially landed — the solver/schema moved to per-axis 3D releases, but web output types, analyzer oracles, and some UI/store surfaces still leak generic `hingeStart` / `hingeEnd` semantics
-  - Done when: 3D outputs, editor/detail/table views, and any visualization/store helpers stop exposing ambiguous generic hinges and use the explicit release contract consistently
-- `Typed Release per element end`
+  - Status: DONE — 3D viewport renders per-axis releases with accurate cache signature (f7bc88a); StepWizard detailed 3D solver condenses per axis incl. torsion with WASM-parity testing (f5186cf); Excel exports per-axis release columns (c41941c); AI snapshot carries typed releases both directions (b9da0a0); disclosure i18n deployed to all 14 locales (a74d403). Remaining exception: engine `CurvedBeamInput.hinge_start/hinge_end` booleans are deliberately untouched (engine schema scope; no breaking change to input contract).
+  - Done when: ✓ 3D outputs, editor/detail/table views, and visualization/store helpers expose the explicit release contract consistently; generic hinges removed from web surfaces
+- ~~`Typed Release per element end`~~ — DONE (2026-07-27)
   - Type: structural cleanup
-  - Status: planned; current 3D release state is still spread across loose booleans and ad hoc mappings
-  - Done when: solver, web, and analyzer code share one typed source of truth for end releases instead of duplicating six independent flags
+  - Status: DONE — model layer (Element.releaseI/releaseJ per axis), 3D wire contract (releaseMyStart..releaseTEnd), output contract, DedalFile v2 + URL-share sv:4 migrations, and editor/table/property UI all landed end-to-end. Remaining exception: engine `CurvedBeamInput` booleans remain (engine schema; no web-layer breakage).
+  - Done when: ✓ solver, web, and analyzer code share typed Release as source of truth; end releases use explicit per-axis contract instead of generic hinges
 - `Pre-solve release/topology diagnostics`
   - Type: diagnostics layer
   - Status: planned after typed releases; the goal is actionable unreachable-DOF diagnostics for release/support topology, not replacement of numerical rank checks
