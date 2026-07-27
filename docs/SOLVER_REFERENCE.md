@@ -51,6 +51,18 @@ Depending on mode and element family, that expands into:
 - deformed shape
 - envelopes and combinations
 
+### Reaction and displacement reporting contract
+
+All solver outputs — per-node reactions, displacements, and equilibrium sums — are
+reported in GLOBAL axes on every analysis path, including rotated/inclined supports
+(the solve itself uses the rotated support frame internally and back-transforms before
+reporting). This also holds for the internal iteration of the geometric/material
+nonlinear paths (corotational, material nonlinearity): per-iteration state updates
+operate on the same consistently back-rotated frame, not the raw mixed-frame solve
+vector. Staged construction currently rejects inclined supports explicitly rather
+than mis-reporting. Support-local reaction components are not yet exposed; if added,
+they will be an additive field, not a change to the global-frame default.
+
 ## 4. Diagnostics and Trust
 
 The repo treats trust as a first-class product surface, not a hidden implementation detail.
