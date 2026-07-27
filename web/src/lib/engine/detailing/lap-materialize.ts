@@ -58,8 +58,16 @@ import type { SpliceClass, SpliceSchedule, TransitionKind } from './splice';
 const SAME_POSITION_M = 0.004;
 /** A bar end within this distance of the joint is a bar that terminates AT the joint. */
 const AT_JOINT_M = 0.35;
-/** Two bars at the same level within this vertical distance share a layer. */
+/** Two bars within this vertical distance of one another belong to the same layer. */
 const SAME_LEVEL_M = 0.020;
+/**
+ * How far apart two members' corresponding layers may sit and still be lapped, m.
+ *
+ * Generous, because the members meeting at a support routinely differ in depth and in bar
+ * size, and neither makes their top steel a different layer. Beyond it there is genuinely
+ * no counterpart.
+ */
+const LAYER_MATCH_M = 0.080;
 
 /**
  * A materialised lap: the interval over which two real bars coexist, in global coordinates.
@@ -206,16 +214,43 @@ function endpointsAt(
   return out;
 }
 
-/** Group endpoints into layers by vertical position, so a top bar never laps a bottom bar. */
-function byLevel(eps: Endpoint[]): Map<string, Endpoint[]> {
-  const groups = new Map<string, Endpoint[]>();
-  for (const e of eps) {
-    const key = (Math.round(e.level / SAME_LEVEL_M) * SAME_LEVEL_M).toFixed(3);
-    const g = groups.get(key);
-    if (g) g.push(e); else groups.set(key, [e]);
+/**
+ * Group endpoints into physical layers.
+ *
+ * ── Why not rounding ───────────────────────────────────────────────
+ *
+ * This used to key on `round(level / 20 mm)`. Fixed-grid rounding has a boundary, and two
+ * bars a few millimetres apart land on opposite sides of it whenever they happen to
+ * straddle one. A Ø32 top bar and a Ø20 top bar sit 6 mm apart in elevation — the bar
+ * centre is half a diameter below the face — so at a support where the two members carry
+ * different diameters they fell into different buckets, never paired, and their steel
+ * simply coexisted. That was 405 parallel cross-member overlaps.
+ *
+ * The elevation difference was never a layer difference. Diameter is bar geometry; it is
+ * not a layer identity. What makes a layer is the face, the elevation the bars actually
+ * share, and the region they run through.
+ *
+ * Single-linkage clustering has no grid and therefore no boundary: bars join a layer when
+ * they are within `SAME_LEVEL_M` OF A BAR ALREADY IN IT, which is the physical question.
+ * A top mat and a bottom mat are half a metre apart and never merge; a Ø32 and a Ø20 in
+ * the same mat are 6 mm apart and always do.
+ */
+function byLevel(eps: Endpoint[]): Endpoint[][] {
+  const sorted = [...eps].sort((a, b) => a.level - b.level || a.across - b.across);
+  const clusters: Endpoint[][] = [];
+  for (const e of sorted) {
+    const last = clusters[clusters.length - 1];
+    const prev = last?.[last.length - 1];
+    if (prev && e.level - prev.level <= SAME_LEVEL_M) last.push(e);
+    else clusters.push([e]);
   }
-  for (const g of groups.values()) g.sort((a, b) => a.across - b.across);
-  return groups;
+  for (const c of clusters) c.sort((a, b) => a.across - b.across);
+  return clusters;
+}
+
+/** Mean elevation of a cluster, for matching one side's layers against the other's. */
+function meanLevel(c: readonly Endpoint[]): number {
+  return c.reduce((s, e) => s + e.level, 0) / Math.max(1, c.length);
 }
 
 /**
@@ -304,9 +339,25 @@ export function materialiseLaps(input: MaterialisationInput): MaterialisationRes
     const toLevels = byLevel(endpointsAt(toBars, t, 'to'));
 
     let produced = 0;
-    for (const [level, fromEps] of fromLevels) {
-      const toEps = toLevels.get(level);
-      if (!toEps || toEps.length === 0) continue;
+    // Match each incoming layer to the outgoing layer at the same elevation. Ordered by
+    // height on both sides, so bottom pairs with bottom and top with top even when the two
+    // members have different depths or different bar sizes.
+    const usedTo = new Set<number>();
+    for (const fromEps of fromLevels) {
+      const fromZ = meanLevel(fromEps);
+      let bestIdx = -1;
+      let bestGap = Number.POSITIVE_INFINITY;
+      toLevels.forEach((cand, idx) => {
+        if (usedTo.has(idx)) return;
+        const gap = Math.abs(meanLevel(cand) - fromZ);
+        if (gap < bestGap) { bestGap = gap; bestIdx = idx; }
+      });
+      // A layer with no counterpart within one layer's height is not a lap; those bars
+      // terminate with their own anchorage and that is not a failure.
+      if (bestIdx < 0 || bestGap > LAYER_MATCH_M) continue;
+      usedTo.add(bestIdx);
+      const toEps = toLevels[bestIdx];
+      if (toEps.length === 0) continue;
 
       // Order-preserving, exactly as `pairUp`: bars in a lap do not cross over each other.
       const n = Math.min(fromEps.length, toEps.length);

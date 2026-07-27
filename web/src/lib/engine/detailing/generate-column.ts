@@ -102,6 +102,62 @@ export interface ColumnTransition {
   refs: ClauseRef[];
 }
 
+
+/**
+ * Vertical gap between one face's hook tier and the next, m.
+ *
+ * On top of a bar diameter, so two tiers clear each other by a whole bar. Four tiers add
+ * roughly three bar diameters to the top of the cage, which sits inside the roof slab or
+ * beam depth and costs nothing.
+ */
+const HOOK_TIER_GAP = 0.005;
+
+/**
+ * Which face a column bar belongs to, and which way its roof hook turns.
+ *
+ * ── The defect this replaces ───────────────────────────────────────
+ *
+ * Every roof hook used to turn along ±x: `hookNormal: { x: -Math.sign(p.x) || 1, y: 0 }`.
+ * So every bar on one face pointed its 12db extension along the SAME line at the SAME
+ * elevation, and adjacent bars simply overlapped. On the flagship two Ø20 bars on the
+ * y = −211 face ran from x = −141 to 99 and from x = −71 to 169, two millimetres apart in
+ * z. That is 214 prohibited overlaps, and none of them was a crank: §10.7.4 offset bars
+ * never entered into it, because the bars are straight.
+ *
+ * ── The rule ───────────────────────────────────────────────────────
+ *
+ * A bar's hook turns inward perpendicular to the face it sits on, so every extension on
+ * one face is parallel to its neighbours and offset from them by the bar spacing. That
+ * alone fixes same-face overlap.
+ *
+ * It does not fix opposite and adjacent faces: a −y bar's extension runs +y, a +y bar's
+ * runs −y, and in a 400 mm column two 240 mm extensions on the same line still meet. So
+ * each face also gets its own elevation tier. Within a tier all extensions are parallel
+ * and never meet; across tiers they are at different heights and cannot.
+ *
+ * Corner bars sit on two faces and are assigned to exactly one, deterministically: the
+ * face they are closer to, ties broken by face order. A corner bar must not be counted
+ * twice or left out.
+ */
+function faceOf(
+  p: { x: number; y: number }, halfB: number, halfH: number,
+): { tier: number; inward: Point3 } {
+  // Distance to each face, in face order: −y, +x, +y, −x.
+  const d = [
+    Math.abs(p.y + halfH),
+    Math.abs(p.x - halfB),
+    Math.abs(p.y - halfH),
+    Math.abs(p.x + halfB),
+  ];
+  const inward: Point3[] = [
+    { x: 0, y: 1, z: 0 }, { x: -1, y: 0, z: 0 },
+    { x: 0, y: -1, z: 0 }, { x: 1, y: 0, z: 0 },
+  ];
+  let best = 0;
+  for (let i = 1; i < 4; i++) if (d[i] < d[best] - 1e-9) best = i;
+  return { tier: best, inward: inward[best] };
+}
+
 /** §10.7.4 — the maximum slope of an offset bent bar, expressed as run/rise. */
 export const MAX_OFFSET_SLOPE = 1 / 6;
 
@@ -354,15 +410,21 @@ export function generateColumnStack(input: ColumnStackInput): GeneratedColumnSta
 
     for (let k = 0; k < Math.min(positions.length, lift.bars.count); k++) {
       const p = positions[k];
+      const face = roofHook ? faceOf(p, halfB, halfH) : null;
+      // Each face's hooks get their own elevation, so extensions that run along the same
+      // axis never share a plane. See `faceOf` and `HOOK_TIER_GAP`.
+      const tierLift = face ? face.tier * (lift.bars.diameterMm / 1000 + HOOK_TIER_GAP) : 0;
       const start: Point3 = { x: lift.centre.x + p.x, y: lift.centre.y + p.y, z: lift.baseZ };
-      const end: Point3 = { x: lift.centre.x + p.x, y: lift.centre.y + p.y, z: topZ };
+      const end: Point3 = {
+        x: lift.centre.x + p.x, y: lift.centre.y + p.y, z: topZ - tierLift,
+      };
       bars.push(buildStraightBarWithHooks({
         id: `${input.stackId}-L${i}-v${k}`,
         diameterMm: lift.bars.diameterMm, role: 'longitudinal',
         start, end,
         axis: { x: 0, y: 0, z: 1 },
-        // Roof hooks turn inward, toward the column centre.
-        hookNormal: { x: -Math.sign(p.x) || 1, y: 0, z: 0 },
+        // Roof hooks turn inward, PERPENDICULAR TO THE BAR'S OWN FACE.
+        hookNormal: face ? face.inward : { x: 1, y: 0, z: 0 },
         endHook: roofHook,
         ownerElementIds: [lift.elementId], edition: input.edition,
       }));

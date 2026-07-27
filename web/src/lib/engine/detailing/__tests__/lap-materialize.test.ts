@@ -391,3 +391,88 @@ describe('liveness — the mechanism must actually run', () => {
     expect(before - after).toBe(r.fused.length);
   });
 });
+
+describe('layer identity is physical, not diametral', () => {
+  /**
+   * The 405 parallel cross-member overlaps.
+   *
+   * Layers were keyed on `round(level / 20 mm)`. A fixed grid has boundaries, and a Ø32
+   * top bar sits 6 mm lower than a Ø20 one — the centre is half a diameter below the face
+   * — so at a support where the two members carried different sizes the two bars landed in
+   * different buckets, were never paired, and their steel simply coexisted along the
+   * member.
+   *
+   * That 6 mm was never a layer difference. Diameter is bar geometry.
+   */
+  const OFFSET = 0.06;
+
+  it('laps a Ø32 top bar to a Ø20 top bar across a support', () => {
+    const big = buildStraightBarWithHooks({
+      id: 'a', diameterMm: 32, role: 'longitudinal',
+      start: { x: 0, y: 0, z: 0.634 }, end: { x: 5, y: 0, z: 0.634 },
+      axis: X, hookNormal: UP, ownerElementIds: [1],
+    });
+    const small = buildStraightBarWithHooks({
+      id: 'b', diameterMm: 20, role: 'longitudinal',
+      start: { x: 5, y: OFFSET, z: 0.640 }, end: { x: 10, y: OFFSET, z: 0.640 },
+      axis: X, hookNormal: UP, ownerElementIds: [2],
+    });
+    const r = materialiseLaps({
+      barsByMember: new Map([[1, [big]], [2, [small]]]),
+      transitions: [transition([0], [OFFSET])],
+    });
+    expect(r.unmaterialised).toEqual([]);
+    expect(r.laps.length + r.fused.length).toBe(1);
+  });
+
+  it('a 6 mm difference never splits a layer, wherever it falls on the old grid', () => {
+    // Sweep the pair across a whole 20 mm grid cell. Under fixed rounding some offsets
+    // straddled a boundary and some did not, which is exactly why the bug was intermittent.
+    for (let k = 0; k < 20; k++) {
+      const z = 0.600 + k * 0.001;
+      const a = buildStraightBarWithHooks({
+        id: 'a', diameterMm: 32, role: 'longitudinal',
+        start: { x: 0, y: 0, z }, end: { x: 5, y: 0, z },
+        axis: X, hookNormal: UP, ownerElementIds: [1],
+      });
+      const b = buildStraightBarWithHooks({
+        id: 'b', diameterMm: 20, role: 'longitudinal',
+        start: { x: 5, y: OFFSET, z: z + 0.006 }, end: { x: 10, y: OFFSET, z: z + 0.006 },
+        axis: X, hookNormal: UP, ownerElementIds: [2],
+      });
+      const r = materialiseLaps({
+        barsByMember: new Map([[1, [a]], [2, [b]]]),
+        transitions: [transition([0], [OFFSET])],
+      });
+      expect(r.laps.length + r.fused.length, `z = ${z.toFixed(3)}`).toBe(1);
+    }
+  });
+
+  it('still refuses to lap a top bar to a bottom bar', () => {
+    // The clustering must not have made layering permissive. Half a metre apart is a
+    // different mat, not a different diameter.
+    const bottom = bar('a', 1, 0, 5, 0, 0.05);
+    const top = bar('b', 2, 5, 10, 0, 0.60);
+    const r = materialiseLaps({
+      barsByMember: new Map([[1, [bottom]], [2, [top]]]),
+      transitions: [transition([0], [0])],
+    });
+    expect(r.laps).toHaveLength(0);
+    expect(r.fused).toHaveLength(0);
+  });
+
+  it('pairs bottom with bottom and top with top when both are present', () => {
+    const r = materialiseLaps({
+      barsByMember: new Map([
+        [1, [bar('a-bot', 1, 0, 5, 0, 0.05), bar('a-top', 1, 0, 5, 0, 0.60)]],
+        [2, [bar('b-bot', 2, 5, 10, OFFSET, 0.05), bar('b-top', 2, 5, 10, OFFSET, 0.60)]],
+      ]),
+      transitions: [transition([0], [OFFSET])],
+    });
+    expect(r.laps).toHaveLength(2);
+    for (const lap of r.laps) {
+      const bottomPair = lap.fromBarId.includes('bot');
+      expect(lap.toBarId.includes('bot')).toBe(bottomPair);
+    }
+  });
+});
