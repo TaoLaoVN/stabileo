@@ -222,6 +222,21 @@ pub fn solve_cable_2d(
                 let cs = ci.cos_a * ci.sin_a;
 
                 // Correction matrix: adds (E_eq - E) * A/L contribution
+                //
+                // KNOWN RESIDUAL GAP: `dk` is built in the true-global (cos_a,
+                // sin_a) cable frame and added directly at `cable_dofs`
+                // positions into `k_global`, which is already in the rotated
+                // (mixed) frame for any inclined-support DOFs (base_asm.k came
+                // out of assemble_2d with apply_inclined_transform_2d already
+                // applied). If a cable end happens to sit on an inclined-
+                // support node, this correction is added unrotated — it would
+                // need to be rotated the same way apply_inclined_transform_2d
+                // rotates a full K (see assembly.rs), scoped to just this 4×4
+                // block. Not implemented: cable-on-inclined-support is a rare
+                // combination and doing this correctly needs either a per-
+                // iteration full-matrix rotation pass (expensive) or a new
+                // local-block rotation helper — deferred as documented,
+                // low-severity residual gap (see C4 review Finding 2).
                 let dk = [
                     [diff * c2,  diff * cs, -diff * c2, -diff * cs],
                     [diff * cs,  diff * s2, -diff * cs, -diff * s2],
@@ -257,14 +272,25 @@ pub fn solve_cable_2d(
             u_full[i] = u_f[i];
         }
 
-        // Update cable tensions from deformed geometry
+        // Update cable tensions from deformed geometry.
+        // Tension is a geometric (TRUE global) quantity, but u_full stores
+        // inclined-support DOFs in the rotated (tangent, normal) support-local
+        // frame — build a true-global scratch copy before using it here (and,
+        // on the final iteration, this also becomes the basis for the
+        // reported cable_forces tension below). Mirrors the reversal used
+        // elsewhere in this file for reporting.
+        let mut u_geom = u_full.clone();
+        for it in &base_asm.inclined_transforms_2d {
+            assembly::reverse_inclined_transform_2d(&mut u_geom, &it.dofs, &it.r);
+        }
+
         let mut max_tension_change = 0.0_f64;
 
         for ci in &cables {
-            let u_xi = dof_num.global_dof(ci.node_i_id, 0).map(|d| u_full[d]).unwrap_or(0.0);
-            let u_yi = dof_num.global_dof(ci.node_i_id, 1).map(|d| u_full[d]).unwrap_or(0.0);
-            let u_xj = dof_num.global_dof(ci.node_j_id, 0).map(|d| u_full[d]).unwrap_or(0.0);
-            let u_yj = dof_num.global_dof(ci.node_j_id, 1).map(|d| u_full[d]).unwrap_or(0.0);
+            let u_xi = dof_num.global_dof(ci.node_i_id, 0).map(|d| u_geom[d]).unwrap_or(0.0);
+            let u_yi = dof_num.global_dof(ci.node_i_id, 1).map(|d| u_geom[d]).unwrap_or(0.0);
+            let u_xj = dof_num.global_dof(ci.node_j_id, 0).map(|d| u_geom[d]).unwrap_or(0.0);
+            let u_yj = dof_num.global_dof(ci.node_j_id, 1).map(|d| u_geom[d]).unwrap_or(0.0);
 
             let dx_def = ci.dx + u_xj - u_xi;
             let dy_def = ci.dy + u_yj - u_yi;
@@ -477,6 +503,15 @@ pub fn solve_cable_3d(
                 let ea_l = ci.ea / ci.l0;
                 let diff = (e_eq_factor - 1.0) * ea_l;
 
+                // KNOWN RESIDUAL GAP (3D twin of the 2D dk comment above): this
+                // correction is assembled in the true-global cable direction
+                // and added directly at the raw node/dof indices into
+                // `k_global`, which is already rotated for any inclined-
+                // support DOFs. If a cable end sits on an inclined-support
+                // node, the correction should be rotated the same way
+                // apply_inclined_transform (assembly.rs) rotates a full K,
+                // scoped to this local block. Not implemented — deferred as a
+                // documented, low-severity residual gap (C4 review Finding 2).
                 for a in 0..2 {
                     for b in 0..2 {
                         let sign = if a == b { 1.0 } else { -1.0 };
@@ -516,14 +551,23 @@ pub fn solve_cable_3d(
             u_full[i] = u_f[i];
         }
 
+        // Tension is a geometric (TRUE global) quantity — build a true-global
+        // scratch copy before using u_full here (and, on the final iteration,
+        // as the basis for the reported cable_forces tension below). See the
+        // 2D solver's identical comment.
+        let mut u_geom = u_full.clone();
+        for it in &base_asm.inclined_transforms {
+            assembly::reverse_inclined_transform(&mut u_geom, &it.dofs, &it.r);
+        }
+
         let mut max_tension_change = 0.0_f64;
 
         for ci in &cables {
             let u_i: Vec<f64> = (0..3).map(|d| {
-                dof_num.global_dof(ci.node_i_id, d).map(|dd| u_full[dd]).unwrap_or(0.0)
+                dof_num.global_dof(ci.node_i_id, d).map(|dd| u_geom[dd]).unwrap_or(0.0)
             }).collect();
             let u_j: Vec<f64> = (0..3).map(|d| {
-                dof_num.global_dof(ci.node_j_id, d).map(|dd| u_full[dd]).unwrap_or(0.0)
+                dof_num.global_dof(ci.node_j_id, d).map(|dd| u_geom[dd]).unwrap_or(0.0)
             }).collect();
 
             let dx_def = ci.dx + u_j[0] - u_i[0];

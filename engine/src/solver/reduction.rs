@@ -734,7 +734,20 @@ pub fn guyan_reduce_3d(input: &GuyanInput3D) -> Result<GuyanResult3D, String> {
     // Compute reactions: R = K_rf * u_f - F_r
     let sasm_full = assembly::assemble_sparse_3d(&input.solver, &dof_num, true);
     let nr = n - nf;
+
+    // Reverse inclined transforms on displacements before building results —
+    // mirrors linear::solve_3d. Hoisted out of the `nr > 0` / `k_full` branch
+    // below: `inclined_transforms` is a plain field of `sasm_full` (not
+    // gated by `k_full`), and reversing is a no-op when the vec is empty —
+    // which it always is when nr == 0 (no restrained DOFs means no inclined
+    // supports either), so this is unconditionally safe to run here.
+    for it in &sasm_full.inclined_transforms {
+        assembly::reverse_inclined_transform(&mut u_full, &it.dofs, &it.r);
+    }
+
     let reactions = if nr > 0 {
+        // `build_k_full = true` was passed above, so `k_full` is guaranteed
+        // `Some` here; the `if let` is a defensive fallback, not a real path.
         if let Some(ref k_full) = sasm_full.k_full {
             let free_idx2: Vec<usize> = (0..nf).collect();
             let rest_idx: Vec<usize> = (nf..n).collect();
@@ -744,12 +757,6 @@ pub fn guyan_reduce_3d(input: &GuyanInput3D) -> Result<GuyanResult3D, String> {
             let mut reactions_vec = vec![0.0; nr];
             for i in 0..nr {
                 reactions_vec[i] = k_rf_uf[i] - f_r[i];
-            }
-
-            // Reverse inclined transforms on displacements before building
-            // results — mirrors linear::solve_3d.
-            for it in &sasm_full.inclined_transforms {
-                assembly::reverse_inclined_transform(&mut u_full, &it.dofs, &it.r);
             }
 
             super::linear::build_reactions_3d_inclined(

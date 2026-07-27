@@ -426,3 +426,85 @@ fn staged_rejects_inclined_supports_3d() {
     assert!(err.to_lowercase().contains("inclined"),
         "error should mention 'inclined': {err}");
 }
+
+// ── C4 review Finding 1 regression guard ────────────────────────────────────
+//
+// `update_element_states[_3d]` must receive TRUE global displacements during
+// the NR loop (see material_nonlinear.rs). Before the fix, it received the
+// mixed-frame `u_full` directly, so yield-demand evaluation for elements
+// adjacent to an inclined support was computed against the wrong-frame
+// displacement of that node.
+//
+// Discriminator: at angle=0°, `inclinedRoller` restrains the exact same
+// physical DOF as a plain `rollerX` (uz fixed, free in x) — but unlike
+// rollerX it still creates a nontrivial inclined-transform entry (R =
+// diag(-1, 1), an involution: apply-then-reverse round-trips to the same
+// global values when done correctly). So inclinedRoller@0° exercises the
+// mixed-frame reversal machinery on every NR iteration even though the
+// restrained direction is identical to rollerX. If the reversal is applied
+// correctly, solving the two models must produce IDENTICAL hinge activation
+// (and displacements); before the fix, the un-reversed u_full corrupted the
+// yield-demand calculation at node 2's adjacent elements (1 and 2) during
+// the NR loop, breaking this equivalence.
+#[test]
+fn material_nonlinear_plastic_inclined_hinge_frame() {
+    let mut section_capacities = HashMap::new();
+    // Np effectively infinite (axial demand ~14-26 stays well under it) so
+    // the interaction criterion is driven by bending; Mp=0.1 is well below
+    // the elastic-range moments (~0.12-0.33 at every node of this triangle,
+    // per the plain material_nonlinear gate test above), so a hinge reliably
+    // activates at node 2 (and elsewhere) under the same load already used
+    // by `material_nonlinear_path_inclined_reactions_global`.
+    section_capacities.insert("1".to_string(), SectionCapacity { np: 1000.0, mp: 0.1, zp: None });
+
+    let build = |support_type: &str, angle: Option<f64>| -> NonlinearMaterialInput {
+        let mut model = inclined_model_2d(false);
+        model.supports.insert("2".to_string(), SolverSupport {
+            id: 2, node_id: 2, support_type: support_type.to_string(),
+            kx: None, ky: None, kz: None, dx: None, dz: None, dry: None, angle,
+        });
+        NonlinearMaterialInput {
+            solver: model,
+            material_models: HashMap::new(),
+            section_capacities: section_capacities.clone(),
+            max_iter: 30,
+            tolerance: 1e-8,
+            n_increments: 4,
+        }
+    };
+
+    let res_inclined = material_nonlinear::solve_nonlinear_material_2d(&build("inclinedRoller", Some(0.0)))
+        .expect("inclinedRoller@0 solve");
+    let res_roller = material_nonlinear::solve_nonlinear_material_2d(&build("rollerX", None))
+        .expect("rollerX solve");
+
+    // Sanity: this load/capacity combination must actually activate a hinge
+    // adjacent to node 2 (elements 1 and 2 both touch it), otherwise the
+    // test below isn't discriminating anything.
+    let touches_node2 = |st: &ElementPlasticStatus| st.element_id == 1 || st.element_id == 2;
+    let any_yielded_near_node2 = res_roller.element_status.iter()
+        .any(|s| touches_node2(s) && s.state != "elastic");
+    assert!(any_yielded_near_node2,
+        "test setup must actually activate a hinge adjacent to node 2 (got: {:?})",
+        res_roller.element_status);
+
+    assert_eq!(res_inclined.element_status.len(), res_roller.element_status.len());
+    for (si, sr) in res_inclined.element_status.iter().zip(res_roller.element_status.iter()) {
+        assert_eq!(si.element_id, sr.element_id);
+        assert_eq!(si.state, sr.state,
+            "element {}: inclinedRoller@0 state '{}' != rollerX state '{}'",
+            si.element_id, si.state, sr.state);
+        assert!((si.utilization - sr.utilization).abs() < 1e-9,
+            "element {} utilization mismatch: inclinedRoller@0={} rollerX={}",
+            si.element_id, si.utilization, sr.utilization);
+    }
+
+    for node_id in [1usize, 2, 3] {
+        let d1 = res_inclined.results.displacements.iter().find(|d| d.node_id == node_id).unwrap();
+        let d2 = res_roller.results.displacements.iter().find(|d| d.node_id == node_id).unwrap();
+        assert!((d1.ux - d2.ux).abs() < 1e-9,
+            "node {node_id} ux mismatch: inclinedRoller@0={} rollerX={}", d1.ux, d2.ux);
+        assert!((d1.uz - d2.uz).abs() < 1e-9,
+            "node {node_id} uz mismatch: inclinedRoller@0={} rollerX={}", d1.uz, d2.uz);
+    }
+}

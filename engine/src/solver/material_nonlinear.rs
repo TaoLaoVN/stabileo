@@ -198,7 +198,19 @@ pub fn solve_nonlinear_material_2d(
             }
 
             // Update element yield states from current internal forces.
-            update_element_states(solver, input, &dof_num, &u_full, &mut states);
+            // update_element_states -> compute_internal_forces_2d assumes
+            // TRUE global nodal displacements for its per-element local-frame
+            // transforms; u_full stores inclined-support DOFs in the rotated
+            // (tangent, normal) support-local frame. Reverse that rotation on
+            // a fresh scratch copy (u_full just changed via delta_u above, so
+            // the u_geom built earlier in this iteration is stale) before
+            // evaluating yield demand — matches the reversal used for f_int
+            // above and for the final build_element_status call.
+            let mut u_geom = u_full.clone();
+            for it in &asm.inclined_transforms_2d {
+                assembly::reverse_inclined_transform_2d(&mut u_geom, &it.dofs, &it.r);
+            }
+            update_element_states(solver, input, &dof_num, &u_geom, &mut states);
         }
 
         if !converged_increment {
@@ -942,7 +954,15 @@ pub fn solve_nonlinear_material_3d(
                 u_full[nf + i] = load_factor * u_r[i];
             }
 
-            update_element_states_3d(solver, input, &dof_num, &u_full, &mut states);
+            // See the 2D solver's identical comment: update_element_states_3d
+            // -> compute_internal_forces_3d assumes TRUE global displacements;
+            // reverse the inclined rotation on a fresh scratch copy (u_full
+            // just changed via delta_u above) before evaluating yield demand.
+            let mut u_geom = u_full.clone();
+            for it in &asm.inclined_transforms {
+                assembly::reverse_inclined_transform(&mut u_geom, &it.dofs, &it.r);
+            }
+            update_element_states_3d(solver, input, &dof_num, &u_geom, &mut states);
         }
 
         if !converged_increment {
