@@ -4402,6 +4402,9 @@ const es: Record<string, string> = {
   'detailing.pairClass.orthogonalCrossing': 'Barras que se cruzan y se atan en contacto',
   'detailing.pairClass.sameLayerSpacing': 'Separación libre dentro de una capa (art. 25.2.1 / 25.2.3)',
   'detailing.pairClass.betweenLayerSpacing': 'Separación libre entre capas (art. 25.2.2)',
+  'detailing.pairClass.spliceLap': 'Empalme por yuxtaposición',
+  'detailing.lap.noBars': 'Nudo {joint}: no hay barras generadas para empalmar',
+  'detailing.lap.noPairedEnds': 'Nudo {joint}: no coinciden extremos de barras en un mismo nivel',
   'detailing.pairClass.crossMemberSpacing': 'Separación libre entre barras de elementos distintos',
   'detailing.pairClass.prohibitedOverlap': 'Las superficies de las barras se interpenetran — físicamente imposible',
 

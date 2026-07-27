@@ -4440,6 +4440,9 @@ const en: Record<string, string> = {
   'detailing.pairClass.orthogonalCrossing': 'Bars crossing and tied in contact',
   'detailing.pairClass.sameLayerSpacing': 'Clear spacing within one layer (§25.2.1 / §25.2.3)',
   'detailing.pairClass.betweenLayerSpacing': 'Clear distance between layers (§25.2.2)',
+  'detailing.pairClass.spliceLap': 'Lap splice',
+  'detailing.lap.noBars': 'Joint {joint}: no generated bars to lap',
+  'detailing.lap.noPairedEnds': 'Joint {joint}: no bar ends meet at a common level',
   'detailing.pairClass.crossMemberSpacing': 'Clear spacing between bars of different members',
   'detailing.pairClass.prohibitedOverlap': 'Bar surfaces interpenetrate — physically impossible',
 

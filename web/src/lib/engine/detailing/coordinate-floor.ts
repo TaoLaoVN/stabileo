@@ -100,6 +100,8 @@ export interface FloorCoordinationInput {
   nodePositionOf?: (nodeId: number) => { x: number; y: number; z: number } | undefined;
   /** Member kind per element, so a beam bar is judged by §25.2.1 and not §25.2.3. */
   memberKindOf?: (elementId: number) => 'beam' | 'column' | 'wall' | 'slab' | undefined;
+  /** Supplied once laps are materialised; see `ClassificationContext.isLapPair`. */
+  isLapPair?: (aId: string, bId: string) => 'contact' | 'nonContact' | undefined;
   /** Layer index per bar, so bars in different layers get the §25.2.2 rule. */
   layerOf?: (barId: string) => number | undefined;
   /**
@@ -469,6 +471,7 @@ export function coordinateFloor(input: FloorCoordinationInput): FloorCoordinatio
     maxAggregateSizeMm: input.maxAggregateSizeMm,
     memberKindOf: input.memberKindOf ?? (() => undefined),
     layerOf: input.layerOf,
+    isLapPair: input.isLapPair,
   };
   const classifyFor = (a: BarPath, b: BarPath, surfaceClearance: number) =>
     classifyPair(a, b, classificationContext, surfaceClearance);

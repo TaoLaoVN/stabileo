@@ -51,7 +51,9 @@ import {
   coordinate, type CoordinationResult, type JointConstraint, type MemberVariable,
 } from './coordination-search';
 import { DEFAULT_TOLERANCES } from './collision';
-import { transitionExists } from './splice';
+import { planSplice, transitionExists } from './splice';
+import { materialiseLaps, lapIndex, lapBetween, type PlannedTransition, type LapInterval } from './lap-materialize';
+import type { EngineMessage } from '../../codes/message';
 import { deriveDevelopment } from '../../codes/cirsoc201/anchorage';
 import { minClearSpacingColumn } from '../../codes/cirsoc201/spacing';
 import { coordinateFloor, type FloorCoordinationResult, type JointInput, type MemberBars } from './coordinate-floor';
@@ -293,6 +295,22 @@ export interface RunDetailingResult {
    * responses from the engineer and must never be conflated.
    */
   layoutSearch: CoordinationResult;
+  /**
+   * What the splice schedules actually BUILT.
+   *
+   * Separate from `layoutSearch` on purpose. The search reports whether a legal assignment
+   * exists; this reports whether the steel was placed. A run with a CONSTRUCTIBLE outcome
+   * and zero laps and zero fusions has coordinated nothing, and that combination has to be
+   * visible rather than inferable.
+   */
+  lapping: {
+    /** Physical laps built, each with its interval, class and clause provenance. */
+    laps: LapInterval[];
+    /** Pairs that were the same bar all along and are now one BarPath. */
+    fused: number;
+    /** Transitions the search closed but the geometry could not build, with the reason. */
+    unmaterialised: Array<{ jointId: string; reason: EngineMessage }>;
+  };
 }
 
 /**
@@ -309,6 +327,7 @@ export function runDetailing(input: RunDetailingInput): RunDetailingResult {
   if (!readiness.ready) {
     return {
       assemblies: [], readiness, coordination: [], skipped,
+      lapping: { laps: [], fused: 0, unmaterialised: [] },
       layoutSearch: {
         outcome: 'CONSTRUCTIBLE', envelope: 'beamsAndColumns',
         evidence: {
@@ -363,6 +382,16 @@ export function runDetailing(input: RunDetailingInput): RunDetailingResult {
   }
 
   const memberBarsById = new Map<number, MemberBars>();
+
+  /**
+   * Lap lookup for the classifier, installed once `materialiseLaps` has run.
+   *
+   * Undefined before materialisation, deliberately: a splice schedule that has not been
+   * built is a claim about what could be done, and treating it as a lap would excuse
+   * clashes between bars that are still two separate, unconnected pieces of steel.
+   */
+  let lapLookup: ((aId: string, bId: string) => 'contact' | 'nonContact' | undefined)
+    | undefined;
   /** Layer index per bar, reported by the generators, for the §25.2.2 classification. */
   const barLayers = new Map<string, number>();
 
@@ -647,6 +676,8 @@ export function runDetailing(input: RunDetailingInput): RunDetailingResult {
   function coordinateBeamLayouts(): {
     slots: Map<number, number[]>;
     result: CoordinationResult;
+    /** The joints the assignment closed, ready for `materialiseLaps`. */
+    transitions: PlannedTransition[];
   } {
     const placement = DEFAULT_TOLERANCES.placement;
     const members: MemberVariable[] = [];
@@ -847,7 +878,83 @@ export function runDetailing(input: RunDetailingInput): RunDetailingResult {
     for (const [id, layout] of result.assignment) {
       slots.set(id, layout.slots.map((sl) => sl.across));
     }
-    return { slots, result };
+
+    // ── Plan the physical transition at every joint the assignment closed ──
+    //
+    // The search only ever asked whether a legal splice EXISTS. That is the right question
+    // for arc consistency and the wrong one to stop at: an existence proof does not extend
+    // a bar. Here the same clause path is walked again for the assignment that actually
+    // won, and this time the schedule is kept — lap length, class, stagger and the
+    // longitudinal interval each pair occupies — so `materialiseLaps` can build the steel.
+    const transitions: PlannedTransition[] = [];
+    for (const [, ids] of lineMembers) {
+      if (ids.length < 2) continue;
+      const ordered = [...ids].sort((a, b) => {
+        const ma = members.find((x) => x.elementId === a);
+        const mb = members.find((x) => x.elementId === b);
+        return (ma?.lineIndex ?? 0) - (mb?.lineIndex ?? 0);
+      });
+      for (let i = 0; i + 1 < ordered.length; i++) {
+        const aId = ordered[i];
+        const bId = ordered[i + 1];
+        const la = result.assignment.get(aId);
+        const lb = result.assignment.get(bId);
+        const ia = perBeam.get(aId);
+        const ib = perBeam.get(bId);
+        const ctxA = input.contexts.get(aId);
+        const ctxB = input.contexts.get(bId);
+        if (!la || !lb || !ia || !ib || !ctxA || !ctxB) continue;
+
+        // The shared node IS the joint. Two members on a line that do not share one are
+        // not adjacent, whatever their ordering says.
+        const ea = input.elements.get(aId);
+        const eb = input.elements.get(bId);
+        if (!ea || !eb) continue;
+        const shared = [ea.nodeI, ea.nodeJ].find((n) => n === eb.nodeI || n === eb.nodeJ);
+        if (shared === undefined) continue;
+        const jn = input.nodes.get(shared);
+        if (!jn) continue;
+
+        const dev = deriveDevelopment({
+          diameterMm: Math.max(ia.dia, ib.dia),
+          fy: ctxA.material.fy, fc: ctxA.material.fc,
+          favourableSpacing: true, edition: input.edition,
+        });
+        const attempt = planSplice({
+          from: la.slots.map((sl) => sl.across),
+          to: lb.slots.map((sl) => sl.across),
+          diameterMm: Math.max(ia.dia, ib.dia),
+          development: dev,
+          areaRatio: 1.0,
+          groups: 1,
+          availableLength: (ctxA.L + ctxB.L) / 2,
+          edition: input.edition,
+          maxAggregateSizeMm: input.maxAggregateSizeMm,
+        });
+        if (!attempt.ok || !attempt.schedule) continue;
+
+        // Axis points from the `from` member toward the `to` member, which is the
+        // direction the continuing bar travels.
+        const bMid = (() => {
+          const p = input.nodes.get(eb.nodeI);
+          const q = input.nodes.get(eb.nodeJ);
+          return p && q ? { x: (p.x + q.x) / 2, y: (p.y + q.y) / 2 } : { x: jn.x, y: jn.y };
+        })();
+        const raw = { x: bMid.x - jn.x, y: bMid.y - jn.y };
+        const rl = Math.hypot(raw.x, raw.y) || 1;
+        transitions.push({
+          jointId: `n${shared}`,
+          fromElementId: aId,
+          toElementId: bId,
+          jointPoint: { x: jn.x, y: jn.y, z: Z(jn) },
+          axis: { x: raw.x / rl, y: raw.y / rl, z: 0 },
+          across: { x: ia.t.x, y: ia.t.y, z: 0 },
+          schedule: attempt.schedule,
+        });
+      }
+    }
+
+    return { slots, result, transitions };
   }
 
   const layoutChoice = coordinateBeamLayouts();
@@ -908,6 +1015,26 @@ export function runDetailing(input: RunDetailingInput): RunDetailingResult {
       trace: gen.trace,
     });
   }
+
+  // ── Materialise the laps: schedules become steel ──
+  //
+  // Until this runs, the "coordinated" floor is two members meeting end to end with a
+  // compatibility claim between them. Nothing is continuous, nothing is lapped, and the
+  // collision engine sees two independent bar sets sharing a joint with no reason to be
+  // there. Every conflict count taken before this point was measured on that state.
+  const materialised = materialiseLaps({
+    barsByMember: new Map([...memberBarsById].map(([id, mb]) => [id, mb.bars])),
+    transitions: layoutChoice.transitions,
+  });
+  for (const [id, bars] of materialised.barsByMember) {
+    const mb = memberBarsById.get(id);
+    if (mb) mb.bars = bars;
+  }
+  const laps = lapIndex(materialised.laps);
+  lapLookup = (aId: string, bId: string) => {
+    const lap = lapBetween(laps, aId, bId);
+    return lap ? (lap.kind === 'contactLap' ? 'contact' : 'nonContact') : undefined;
+  };
 
   // ── Group into one assembly per level, and coordinate each ──
   const levelOf = (id: number): number => {
@@ -1002,6 +1129,9 @@ export function runDetailing(input: RunDetailingInput): RunDetailingResult {
       }),
       memberKindOf: (id) => input.contexts.get(id)?.elementType,
       layerOf: (barId) => barLayers.get(barId),
+      // Materialised laps are a detail, not a defect. Before materialisation this is
+      // undefined and every pair is judged by plain clear spacing, which is correct.
+      isLapPair: (a, b) => lapLookup?.(a, b),
       nodePositionOf: (id) => {
         const n = input.nodes.get(id);
         return n ? { x: n.x, y: n.y, z: Z(n) } : undefined;
@@ -1014,6 +1144,11 @@ export function runDetailing(input: RunDetailingInput): RunDetailingResult {
   return {
     assemblies, readiness, coordination, skipped,
     layoutSearch: layoutChoice.result,
+    lapping: {
+      laps: materialised.laps,
+      fused: materialised.fused.length,
+      unmaterialised: materialised.unmaterialised,
+    },
   };
 }
 

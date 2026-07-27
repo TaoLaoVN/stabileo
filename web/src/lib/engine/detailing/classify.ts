@@ -31,7 +31,7 @@ import type { BarPath, Point3 } from '../../codes/cirsoc201/bar-geometry';
 import {
   minClearBetweenLayers, minClearSpacingColumn, minClearSpacingInLayer,
 } from '../../codes/cirsoc201/spacing';
-import type { ClauseRef, RegulationEdition } from '../../codes/regulation';
+import { clause, type ClauseRef, type RegulationEdition } from '../../codes/regulation';
 
 /**
  * What relationship two bars are in.
@@ -57,6 +57,19 @@ export type PairClass =
   | 'betweenLayerSpacing'
   /** Parallel bars belonging to different members meeting at a joint or support. */
   | 'crossMemberSpacing'
+  /**
+   * Two halves of a lap splice, §25.5.1.2 or §25.5.1.3.
+   *
+   * A lap is a DETAIL, and it is the one place in the code where two parallel bars are
+   * meant to run alongside each other close enough to touch. Judging the pair by §25.2.1
+   * clear spacing reports the detail as the defect — which is exactly what happened to
+   * every materialised lap in the flagship before this class existed.
+   *
+   * A contact lap has no spacing requirement at all: the bars are supposed to be in
+   * contact. A non-contact lap has a MAXIMUM, not a minimum — §25.5.1.3 bounds how far
+   * apart the two halves may drift, and that is checked against `maxOffset`, not here.
+   */
+  | 'spliceLap'
   /** Bar surfaces interpenetrate. Never acceptable, never tolerance-adjusted. */
   | 'prohibitedOverlap';
 
@@ -79,6 +92,14 @@ export interface ClassificationContext {
   memberKindOf: (elementId: number) => 'beam' | 'column' | 'wall' | 'slab' | undefined;
   /** Layer index per bar id, when the generator recorded one. */
   layerOf?: (barId: string) => number | undefined;
+  /**
+   * Are these two bars the two halves of a materialised lap?
+   *
+   * Supplied only after `materialiseLaps` has run. Before materialisation nothing is a
+   * lap, and the classifier must not pretend otherwise — an unmaterialised schedule is a
+   * compatibility claim, not steel.
+   */
+  isLapPair?: (aId: string, bId: string) => 'contact' | 'nonContact' | undefined;
 }
 
 /** Unit direction of a bar, first point to last. */
@@ -196,7 +217,27 @@ export function classifyPair(
     };
   }
 
-  // 3. Parallel bars that interpenetrate. No rule makes this acceptable.
+  // 3. The two halves of a lap. §25.5.1.2 puts them in contact ON PURPOSE.
+  const lap = ctx.isLapPair?.(a.id, b.id);
+  if (lap) {
+    return {
+      pairClass: 'spliceLap',
+      requiredClear: 0,
+      // Interpenetration is still wrong: touching is contact, sharing a centreline is not
+      // a lap, it is two bars drawn on top of one another.
+      reportable: interpenetrates,
+      refs: [clause('cirsoc-201', ctx.edition,
+        lap === 'contact' ? '25.5.1.2' : '25.5.1.3',
+        lap === 'contact'
+          ? 'empalmes por yuxtaposición en contacto'
+          : 'separación transversal de empalmes sin contacto')],
+      labelKey: interpenetrates
+        ? 'detailing.pairClass.prohibitedOverlap'
+        : 'detailing.pairClass.spliceLap',
+    };
+  }
+
+  // 4. Parallel bars that interpenetrate. No rule makes this acceptable.
   if (interpenetrates) {
     return {
       pairClass: 'prohibitedOverlap', requiredClear: 0, reportable: true, refs: [],
@@ -204,7 +245,7 @@ export function classifyPair(
     };
   }
 
-  // 4. Parallel and clear of each other. Same face, different layers is §25.2.2.
+  // 5. Parallel and clear of each other. Same face, different layers is §25.2.2.
   const la = ctx.layerOf?.(a.id);
   const lb = ctx.layerOf?.(b.id);
   if (sharesMember(a, b) && la !== undefined && lb !== undefined && la !== lb) {
