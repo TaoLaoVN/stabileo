@@ -30,6 +30,18 @@ import {
   shouldProjectModelToXZ,
 } from '../geometry/coordinate-system';
 
+/** Stable per-axis release fingerprint for the two ends of an element — 6 bits
+ *  (I: my,mz,t then J: my,mz,t) so the element-cache signature rebuilds the mesh
+ *  whenever ANY axis is toggled, not just mz (the old mz-only fragment silently
+ *  ignored my/t changes). Pure — exported for the release-signature test. */
+export function elementReleaseKey(
+  ri: { my: boolean; mz: boolean; t: boolean } | undefined,
+  rj: { my: boolean; mz: boolean; t: boolean } | undefined,
+): string {
+  const bit = (b?: boolean) => (b ? '1' : '0');
+  return bit(ri?.my) + bit(ri?.mz) + bit(ri?.t) + bit(rj?.my) + bit(rj?.mz) + bit(rj?.t);
+}
+
 /** Compute shouldProjectModelToXZ with per-pass caching keyed on modelVersion. */
 function projectFlag(): boolean {
   return getCachedProjectModelToXZ(
@@ -188,7 +200,7 @@ export function syncElements(ctx: SceneSyncContext): void {
     ep.upsert(id, posI, posJ);
 
     const signature =
-      `${renderMode}|${elem.type}|${elem.releaseI?.mz === true ? 1 : 0}${elem.releaseJ?.mz === true ? 1 : 0}` +
+      `${renderMode}|${elem.type}|${elementReleaseKey(elem.releaseI, elem.releaseJ)}` +
       `|${posI.x}:${posI.y}:${posI.z}|${posJ.x}:${posJ.y}:${posJ.z}` +
       `|${elem.sectionId}:${sec?.shape ?? ''}:${sec?.a ?? ''}:${sec?.b ?? ''}:${sec?.h ?? ''}:${sec?.tw ?? ''}:${sec?.tf ?? ''}:${sec?.t ?? ''}:${sec?.tl ?? ''}:${sec?.rotation ?? ''}` +
       `|${elem.rollAngle ?? ''}:${elem.localYx ?? ''}:${elem.localYy ?? ''}:${elem.localYz ?? ''}|${leftHand ? 'L' : 'R'}` +
@@ -253,8 +265,8 @@ export function syncElements(ctx: SceneSyncContext): void {
       {
         elementId: id,
         elementType: elem.type,
-        hingeStart: elem.releaseI?.mz === true,
-        hingeEnd: elem.releaseJ?.mz === true,
+        releaseI: elem.releaseI,
+        releaseJ: elem.releaseJ,
         section: sec,
         sectionRotation: sec?.rotation,
         elementRollAngle: elem.rollAngle,
