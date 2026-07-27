@@ -33,6 +33,45 @@ export type RegulationId =
 /** An edition is part of the regulation's identity, never a modifier of it. */
 export type RegulationEdition = '2005' | '2018' | '2024' | '2025';
 
+/**
+ * Whether an edition can be used for production design, and if not, why not.
+ *
+ * ── Why three states and not a boolean ─────────────────────────────
+ *
+ * "Unavailable" collapses two situations that call for different product behaviour and
+ * different words to the user:
+ *
+ *   `UNAVAILABLE_SOURCE` — the app WOULD implement this edition, but the official text is
+ *      not supplied, so the rules cannot be written. Nothing is wrong with the
+ *      architecture; a document is missing. Supplying and converting the text, then adding
+ *      an adapter, is the whole fix. This is CIRSOC 201-2005's situation.
+ *
+ *   `UNSUPPORTED` — the text may well be available; the app has simply not implemented
+ *      this regulation. Eurocode 2 is here.
+ *
+ * The distinction matters because the remedies differ and because a user who owns the 2005
+ * text should be told that supplying it is what unblocks them, rather than being told the
+ * edition is "not supported" and concluding the product will never do it.
+ *
+ * ── The one invariant ──────────────────────────────────────────────
+ *
+ * A non-`AVAILABLE` edition may be NAMED and CITED as unavailable. It may never be
+ * APPLIED. There is deliberately no fallback: an unavailable edition does not quietly
+ * borrow another edition's rules, because a result that cites a rule it did not apply is
+ * worse than no result.
+ */
+export type EditionAvailability =
+  /** Implemented, sourced against the official text, and usable for production design. */
+  | 'AVAILABLE'
+  /** Would be implemented, but the official text is not supplied. */
+  | 'UNAVAILABLE_SOURCE'
+  /** Not implemented by this app. */
+  | 'UNSUPPORTED';
+
+export function isAvailable(a: EditionAvailability): a is 'AVAILABLE' {
+  return a === 'AVAILABLE';
+}
+
 export interface RegulationInfo {
   id: RegulationId;
   edition: RegulationEdition;

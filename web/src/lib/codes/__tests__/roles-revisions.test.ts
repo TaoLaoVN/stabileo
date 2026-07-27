@@ -5,7 +5,8 @@ import {
   DESIGN_ONLY_ROLES, LOAD_AFFECTING_ROLES, REGULATION_ROLES, ROLE_CATALOG,
   bindRole, bindingLabel, defaultRegulations, isLoadAffecting, migrateRegulations,
   optionLabel,
-  optionsForRole, pendingRequiresLoadRegeneration, pendingRoles, regulationStamps,
+  optionsForRole, allOptionsForRole, availabilityOf, optionIsAvailable,
+  pendingRequiresLoadRegeneration, pendingRoles, regulationStamps,
   roleUsable, unsetBinding, validateStack, type ProjectRegulations,
 } from '../roles';
 import {
@@ -29,12 +30,46 @@ describe('regulation catalogue', () => {
     }
   });
 
-  it('names both concrete editions distinctly, with the edition in the label', () => {
+  it('names every catalogued concrete edition distinctly, with the edition in the label', () => {
+    // The label-uniqueness invariant is a property of the WHOLE catalogue, including the
+    // reserved CIRSOC 201-2005 entry: a reserved option that renders identically to a live
+    // one would start colliding the day it is switched on. Asserted over
+    // `allOptionsForRole`, which is what the invariant covers.
     for (const locale of ['en', 'es']) {
-      const labels = optionsForRole('concrete').map((o) => teAt(optionLabel(o), locale));
+      const labels = allOptionsForRole('concrete').map((o) => teAt(optionLabel(o), locale));
       expect(labels, locale).toContain('CIRSOC 201 (2025)');
       expect(labels, locale).toContain('CIRSOC 201 (2005)');
+      expect(new Set(labels).size, locale).toBe(labels.length);
     }
+  });
+
+  it('offers ONLY the available concrete edition for selection', () => {
+    // CIRSOC 201-2005 is reserved, not offered: its official text is not supplied, so its
+    // rules are not implemented and no other edition's rules are substituted for it.
+    // Offering it would mean either a dead control or a mislabelled result.
+    const offered = optionsForRole('concrete').filter((o) => o.regulation === 'cirsoc-201');
+    expect(offered.map((o) => o.edition)).toEqual(['2025']);
+    for (const o of offered) expect(availabilityOf(o)).toBe('AVAILABLE');
+    // Reserved metadata survives, so a future sourced adapter is a catalogue edit.
+    const reserved = allOptionsForRole('concrete')
+      .find((o) => o.regulation === 'cirsoc-201' && o.edition === '2005');
+    expect(reserved).toBeDefined();
+    expect(availabilityOf(reserved!)).toBe('UNAVAILABLE_SOURCE');
+    expect(reserved!.noteKey).toBe('regulations.note.editionTextNotSupplied');
+  });
+
+  it('exposes no unavailable option in ANY role selector', () => {
+    // Generic: the filter is a property of the catalogue layer, not of CIRSOC.
+    for (const role of REGULATION_ROLES) {
+      for (const o of optionsForRole(role)) {
+        expect(optionIsAvailable(o), `${role}/${o.adapterId}`).toBe(true);
+      }
+    }
+  });
+
+  it('refuses to bind an unavailable option rather than binding it silently', () => {
+    expect(() => bindRole('concrete', 'cirsoc-2005'))
+      .toThrow(/UNAVAILABLE_SOURCE|cannot be bound/);
   });
 
   it('offers a seismic role, so CIRSOC 103 is not a hardcoded tab', () => {
@@ -91,11 +126,13 @@ describe('role bindings', () => {
   });
 
   it('copies the name key so a stored project stays readable', () => {
-    const b = bindRole('concrete', 'cirsoc-2005');
+    // Was written against 'cirsoc-2005', which can no longer be bound. The property under
+    // test is the label template, not the edition, so an available option demonstrates it.
+    const b = bindRole('concrete', 'cirsoc');
     expect(b.nameKey).toBe('regulations.name.cirsoc201');
-    expect(teAt(bindingLabel(b), 'en')).toBe('CIRSOC 201 (2005)');
-    expect(teAt(bindingLabel(b), 'es')).toBe('CIRSOC 201 (2005)');
-    expect(b.edition).toBe('2005');
+    expect(teAt(bindingLabel(b), 'en')).toBe('CIRSOC 201 (2025)');
+    expect(teAt(bindingLabel(b), 'es')).toBe('CIRSOC 201 (2025)');
+    expect(b.edition).toBe('2025');
   });
 
   it('marks a new binding pending, not applied', () => {
@@ -193,8 +230,10 @@ describe('pending changes', () => {
   });
 
   it('does not demand load regeneration for a design-only change', () => {
+    // The concrete role is design-only whatever it is bound to. A re-bind of the same
+    // available adapter is still a pending change, which is what this asserts.
     const r = defaultRegulations();
-    r.concrete = bindRole('concrete', 'cirsoc-2005');
+    r.concrete = bindRole('concrete', 'cirsoc');
     expect(pendingRoles(r)).toEqual(['concrete']);
     expect(pendingRequiresLoadRegeneration(r)).toBe(false);
   });
@@ -227,11 +266,35 @@ describe('migration from the CIRSOC-specific v1 shape', () => {
       jurisdiction: { name: 'CABA', basis: 'adopted' },
       concrete: { maxAggregateSizeMm: 19, shotcrete: false },
     });
-    expect(m.stored.roles.concrete.adapterId).toBe('cirsoc-2005');
+    // A v1 project naming concreteEdition '2005' is bound to the edition IN FORCE and told,
+    // because CIRSOC 201-2005 is no longer available for design. No migration workflow is
+    // offered: results stored under 2005 came from rules the app no longer applies, so
+    // re-running the design is the only honest outcome. The load and wind roles are
+    // untouched — 101-2005 and 102-2005 remain available.
+    expect(m.stored.roles.concrete.adapterId).toBe('cirsoc');
+    expect(m.stored.roles.concrete.edition).toBe('2025');
+    expect(m.notices.map((n) => n.key))
+      .toContain('regulations.migration.editionWithdrawn');
+    const withdrawn = m.notices.find(
+      (n) => n.key === 'regulations.migration.editionWithdrawn');
+    expect(withdrawn?.params?.role).toBe('concrete');
+    expect(withdrawn?.params?.edition).toBe('2005');
     expect(m.stored.roles.basis.adapterId).toBe('cirsoc101-2025-basis');
     expect(m.stored.roles.wind.adapterId).toBe('cirsoc102-2005');
     expect(m.stored.roles.concrete.jurisdiction).toBe('CABA');
     expect(m.stored.roles.concrete.adoption).toBe('adopted');
+  });
+
+  it('unsets a stored role bound to an edition that has since been withdrawn', () => {
+    // The role-shaped loader path, distinct from the v1 path above.
+    const m = migrateRegulations({
+      version: 2,
+      roles: { concrete: { adapterId: 'cirsoc-2005', state: 'applied' } },
+    });
+    expect(m.stored.roles.concrete.adapterId).toBeNull();
+    expect(m.stored.roles.concrete.state).toBe('unset');
+    expect(m.notices.map((n) => n.key))
+      .toContain('regulations.migration.editionWithdrawn');
   });
 
   it('rescues the aggregate size for the MATERIAL to adopt, not the regulation', () => {

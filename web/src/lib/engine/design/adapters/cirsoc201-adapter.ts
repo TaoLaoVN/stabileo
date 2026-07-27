@@ -31,6 +31,9 @@ import { UTILIZATION_CONVENTION, type LimitingConstraint, type SectionRecommenda
 import {
   minClearSpacingFor,
 } from '../../../codes/cirsoc201/spacing';
+import {
+  transverseSpacingSupportedForEdition,
+} from '../../../codes/cirsoc201/transverse-spacing';
 import { clause } from '../../../codes/regulation';
 import type { RegulationEdition } from '../../../codes/regulation';
 import {
@@ -198,6 +201,16 @@ function makeAdapter(edition: RegulationEdition): DesignCodeAdapter {
   unsupported(ctx: MemberContext): LimitingConstraint[] {
     const out: LimitingConstraint[] = [];
     if (ctx.elementType === 'wall') out.push('unsupportedCheck');
+    // Transverse reinforcement is required in every beam and column this adapter designs,
+    // and its spacing rule (Table 9.7.6.2.2) is implemented for the 2025 edition ONLY. The
+    // 2005 text is not supplied, so the rule cannot be applied, and the 2025 table is not
+    // substituted — a certificate stamped 2005 whose governing spacing came from the 2025
+    // table cites a rule it did not apply.
+    //
+    // Refused HERE, at the capability gate, so the outcome is UNSUPPORTED. Letting the
+    // search run and come back empty would report SEARCH_EXHAUSTED, which asserts that the
+    // code-permitted envelope was explored and found wanting — a different and false claim.
+    if (!transverseSpacingSupportedForEdition(ctx.codeEdition)) out.push('unsupportedCheck');
     return out;
   },
 

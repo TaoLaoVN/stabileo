@@ -51,12 +51,45 @@ test.describe('@smoke project regulations — code-neutral roles', () => {
     }
   });
 
-  test('R1b — both concrete editions are distinguishable', async ({ pro: page }) => {
+  test('R1b — the concrete selector offers ONLY the available edition', async ({ pro: page }) => {
+    // Was "both concrete editions are distinguishable". CIRSOC 201-2005 is no longer
+    // selectable: its official text is not supplied with the app, so its rules are not
+    // implemented, and the 2025 rules are deliberately NOT applied under its label. The
+    // label-distinguishability invariant it used to guard is now covered by R1 (no duplicate
+    // labels) plus the unit gate over the whole catalogue.
     await openRegulations(page);
     const opts = await page.getByTestId('role-select-concrete').locator('option').allInnerTexts();
     const trimmed = opts.map((s) => s.trim());
     expect(trimmed).toContain('CIRSOC 201 (2025)');
-    expect(trimmed).toContain('CIRSOC 201 (2005)');
+    expect(trimmed).not.toContain('CIRSOC 201 (2005)');
+  });
+
+  test('R1c — the withdrawn edition is EXPLAINED, not silently missing', async ({ pro: page }) => {
+    // A user looking for 2005 must learn why it is gone and what would bring it back,
+    // rather than concluding the option was lost or the product will never support it.
+    await openRegulations(page);
+    const panel = page.getByTestId('unavailable-editions');
+    await expect(panel).toBeVisible();
+    await panel.locator('summary').click();
+    const row = page.getByTestId('unavailable-cirsoc-2005');
+    await expect(row).toBeVisible();
+    await expect(row).toContainText('CIRSOC 201 (2005)');
+    // The reason distinguishes "text not supplied" from "not implemented".
+    await expect(row).toContainText(/official text of this edition is not supplied/i);
+    // And it states the no-substitution rule, which is the whole point.
+    await expect(row).toContainText(/No other edition is substituted/i);
+  });
+
+  test('R1d — 2005 cannot be applied even by driving the select directly', async ({ pro: page }) => {
+    // Defence in depth: the option is absent from the DOM, so selecting it is impossible.
+    await openRegulations(page);
+    const sel = page.getByTestId('role-select-concrete');
+    await expect(sel.locator('option[value="cirsoc-2005"]')).toHaveCount(0);
+    // The applied binding stays on the edition in force.
+    await expect(page.getByTestId('role-state-concrete')).toBeVisible();
+    const advanced = page.getByTestId('role-concrete').locator('details.advanced');
+    await advanced.locator('summary').click();
+    await expect(page.getByTestId('role-concrete')).toContainText('2025');
   });
 
   test('R2 — every role has a selector, including seismic and steel', async ({ pro: page }) => {
@@ -151,8 +184,15 @@ test.describe('@smoke pending load-regulation change', () => {
 
   test('R5d — a design-only change applies in place, with no pending banner', async ({ pro: page }) => {
     // The forces do not move, so there is nothing to preview.
+    //
+    // Used to switch the CONCRETE role to CIRSOC 201-2005, which is no longer selectable.
+    // CIRSOC 201-2025 is now the only AVAILABLE concrete edition, and the other design-only
+    // roles (steel, masonry, timber) all have UNSUPPORTED-maturity options that
+    // `validateStack` refuses by design — so a re-bind of the concrete role is the available
+    // design-only change. It exercises the same path: requestChange -> design-only -> applies
+    // in place, with no load-preview banner.
     await openRegulations(page);
-    await page.getByTestId('role-select-concrete').selectOption('cirsoc-2005');
+    await page.getByTestId('role-select-concrete').selectOption('cirsoc');
     await expect(page.getByTestId('pending-load-change')).toBeHidden();
     await expect(page.getByTestId('role-state-concrete')).toHaveText('Applied');
   });
@@ -287,7 +327,9 @@ test.describe('@slow revision invalidation is precise', () => {
     const before = await page.evaluate(() => window.__stabileo.solveCount());
 
     await openRegulations(page);
-    await page.getByTestId('role-select-concrete').selectOption('cirsoc-2005');
+    // A DESIGN_ONLY role change; see R5d on why this is a concrete re-bind rather than the
+    // withdrawn CIRSOC 201-2005.
+    await page.getByTestId('role-select-concrete').selectOption('cirsoc');
 
     // No solve was triggered: the forces are still the forces.
     expect(await page.evaluate(() => window.__stabileo.solveCount())).toBe(before);

@@ -16,10 +16,20 @@
   import { uiStore } from '../../../lib/store/ui.svelte';
   import {
     REGULATION_ROLES, isLoadAffecting, optionLabel, optionsForRole,
+    allOptionsForRole, availabilityOf, optionIsAvailable,
     type RegulationRole, type RoleBinding,
   } from '../../../lib/codes/roles';
   import { consequenceOf } from '../../../lib/codes/revisions';
   import { maturityLabelKey } from '../../../lib/codes/maturity';
+
+  /**
+   * Catalogued editions that cannot be applied, across every role.
+   *
+   * Derived from the catalogue rather than listed here, so a regulation whose availability
+   * changes needs no edit to this component.
+   */
+  const reservedOptions = $derived(
+    REGULATION_ROLES.flatMap((r) => allOptionsForRole(r)).filter((o) => !optionIsAvailable(o)));
 
   /** Set when a load-affecting change was staged and needs review in Loads. */
   let pendingRole = $state<RegulationRole | null>(null);
@@ -160,6 +170,31 @@
       </li>
     {/each}
   </ul>
+
+  <!--
+    Editions the catalogue knows about but cannot apply.
+    Shown rather than silently omitted: a user looking for CIRSOC 201-2005 needs to learn
+    that the app has not implemented it and WHY, instead of concluding the option was lost.
+    Read-only by construction — this list drives no control.
+  -->
+  {#if reservedOptions.length > 0}
+    <details class="reserved" data-testid="unavailable-editions">
+      <summary>{t('regulations.unavailableEditions')} ({reservedOptions.length})</summary>
+      <ul>
+        {#each reservedOptions as o (o.role + o.adapterId)}
+          <li data-testid={`unavailable-${o.adapterId}`}>
+            <strong>{te(optionLabel(o))}</strong>
+            <span class="badge unavailable">
+              {t(availabilityOf(o) === 'UNAVAILABLE_SOURCE'
+                ? 'regulations.availability.unavailableSource'
+                : 'regulations.availability.unsupported')}
+            </span>
+            {#if o.noteKey}<p class="note">{t(o.noteKey)}</p>{/if}
+          </li>
+        {/each}
+      </ul>
+    </details>
+  {/if}
 
   <!-- Aggregate size is a MIX property. Shown here as a requirement, edited in Materials. -->
   <div class="crossref" data-testid="aggregate-crossref">

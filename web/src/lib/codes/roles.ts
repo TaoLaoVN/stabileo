@@ -29,8 +29,10 @@
  * Pure: no store, no runes.
  */
 
-import type { ClauseRef, RegulationEdition, RegulationId } from './regulation';
-import { findRegulation } from './regulation';
+import type {
+  ClauseRef, EditionAvailability, RegulationEdition, RegulationId,
+} from './regulation';
+import { findRegulation, isAvailable } from './regulation';
 import type { Maturity } from './maturity';
 import { msg, type EngineMessage, type MessageParam } from './message';
 
@@ -84,10 +86,32 @@ export interface RoleOption {
   /** Regulation family, for the compatibility rules. */
   family: 'cirsoc' | 'eurocode' | 'aci-aisc' | 'other';
   maturity: Maturity;
+  /**
+   * Whether this option can be applied to a project at all.
+   *
+   * Separate from `maturity`, which grades how well a thing that IS implemented has been
+   * validated. Availability answers the prior question: is it implemented and sourced?
+   * `UNAVAILABLE_SOURCE` and `UNSUPPORTED` options are retained in the catalogue as
+   * reserved metadata — the architecture, clause map and adapter seam stay in place — but
+   * they are filtered out of normal selectors and refused by `applyRoleBinding`.
+   *
+   * Defaults to `AVAILABLE` when omitted so the catalogue stays terse.
+   */
+  availability?: EditionAvailability;
   /** True when this option needs role-specific settings before it can be applied. */
   requiresConfig: boolean;
   /** i18n key for a one-line explanation of what it does or why it is unavailable. */
   noteKey?: string;
+}
+
+/** Availability of one option, with the catalogue's `AVAILABLE` default applied. */
+export function availabilityOf(option: RoleOption): EditionAvailability {
+  return option.availability ?? 'AVAILABLE';
+}
+
+/** True when this option may be bound to a project. */
+export function optionIsAvailable(option: RoleOption): boolean {
+  return isAvailable(availabilityOf(option));
 }
 
 /**
@@ -171,10 +195,16 @@ export const ROLE_CATALOG: readonly RoleOption[] = Object.freeze([
     maturity: 'VALIDATED', requiresConfig: false,
   },
   {
+    // RESERVED, not selectable. The official CIRSOC 201-2005 text is not supplied with
+    // this app, so its rules cannot be written; §9.7.6.2.2's 2005 counterpart in particular
+    // governs every beam. The 2025 table is NOT applied under this label — see
+    // `codes/cirsoc201/transverse-spacing.ts`. The entry is kept so the adapter seam, the
+    // clause map and the edition-aware plumbing stay exercised and a future sourced 2005
+    // adapter is a catalogue edit rather than a re-architecture.
     adapterId: 'cirsoc-2005', role: 'concrete', regulation: 'cirsoc-201',
     edition: '2005', nameKey: 'regulations.name.cirsoc201', family: 'cirsoc',
-    maturity: 'IMPLEMENTED_PROVISIONAL', requiresConfig: false,
-    noteKey: 'regulations.note.legacyEdition',
+    maturity: 'UNSUPPORTED', availability: 'UNAVAILABLE_SOURCE', requiresConfig: false,
+    noteKey: 'regulations.note.editionTextNotSupplied',
   },
   {
     adapterId: 'eurocode', role: 'concrete', edition: 'EN 1992-1-1',
@@ -216,7 +246,29 @@ export const ROLE_CATALOG: readonly RoleOption[] = Object.freeze([
   },
 ]);
 
+/**
+ * Options a user may actually choose for a role.
+ *
+ * Filtered to `AVAILABLE`. An edition whose official text is not supplied is not offered,
+ * because offering it would mean either refusing at apply time (a dead control) or applying
+ * some other edition's rules under its label (the defect this model exists to prevent).
+ *
+ * Generic by construction: nothing here names a regulation. Making a future CIRSOC 201-2005
+ * selectable is a catalogue edit plus an adapter, with no change to this function or to any
+ * UI that calls it.
+ */
 export function optionsForRole(role: RegulationRole): RoleOption[] {
+  return ROLE_CATALOG.filter((o) => o.role === role && optionIsAvailable(o));
+}
+
+/**
+ * Every catalogued option for a role, available or not.
+ *
+ * For surfaces whose job is to explain the catalogue rather than to drive a choice — the
+ * regulations panel's "why can I not pick this?" list, and the tests that assert the
+ * reserved metadata survived. Never use this to populate a control that applies a binding.
+ */
+export function allOptionsForRole(role: RegulationRole): RoleOption[] {
   return ROLE_CATALOG.filter((o) => o.role === role);
 }
 
@@ -236,7 +288,9 @@ function assertUniqueDisplayNames(): void {
     // options may share a nameKey — that is the CIRSOC 201 case — but never an edition
     // with it. A locale-level test renders the labels in every shipped language and
     // repeats this check on the actual strings.
-    const labels = optionsForRole(role).map((o) => `${o.nameKey}|${o.edition}`);
+    // Checked over the WHOLE catalogue, not just the available slice: a reserved option
+    // that collides with a live one would start colliding the day it is switched on.
+    const labels = allOptionsForRole(role).map((o) => `${o.nameKey}|${o.edition}`);
     const dup = labels.find((n, i) => labels.indexOf(n) !== i);
     if (dup !== undefined) {
       throw new Error(
@@ -328,6 +382,18 @@ export function bindRole(
   const opt = findOption(adapterId);
   if (!opt || opt.role !== role) {
     throw new Error(`Adapter "${adapterId}" is not an option for role "${role}".`);
+  }
+  // An unavailable edition may be named and explained. It may never be BOUND. Throwing
+  // rather than warning is deliberate: every path that reaches here is either a UI control
+  // (which is fed from `optionsForRole` and therefore cannot offer one) or a loader (which
+  // must decide what to do instead). A silent bind would put an inapplicable edition on the
+  // project and let it reach a certificate.
+  if (!optionIsAvailable(opt)) {
+    throw new Error(
+      `Adapter "${adapterId}" is ${availabilityOf(opt)} and cannot be bound to a project. ` +
+      `Its rules are not implemented for this edition and no other edition's rules are ` +
+      `substituted for it.`,
+    );
   }
   return {
     role, adapterId,
@@ -554,6 +620,17 @@ export function migrateRegulations(raw: unknown): RegulationsMigration {
       if (!b || typeof b !== 'object') continue;
       const opt = b.adapterId ? findOption(b.adapterId) : undefined;
       if (!opt) { roles[role] = unsetBinding(role); continue; }
+      // A stored project may name an edition that has since been withdrawn from production
+      // (CIRSOC 201-2005). It is unset rather than carried, and the user is told, because
+      // the alternative is a project that silently cannot be designed with no explanation.
+      if (!optionIsAvailable(opt)) {
+        roles[role] = unsetBinding(role);
+        notices.push({
+          key: 'regulations.migration.editionWithdrawn',
+          params: { role, edition: String(opt.edition) },
+        });
+        continue;
+      }
       roles[role] = {
         ...bindRole(role, opt.adapterId, {
           jurisdiction: typeof b.jurisdiction === 'string' ? b.jurisdiction : '',
@@ -582,8 +659,19 @@ export function migrateRegulations(raw: unknown): RegulationsMigration {
   const loadEd = edition(src.loadEdition);
   const windEd = edition(src.windEdition);
 
+  // The v1 shape could record concreteEdition '2005'. That edition is no longer available
+  // for production design, so the project is bound to the edition in force and TOLD, rather
+  // than bound to something inapplicable or silently left unset. No migration workflow is
+  // offered: stored 2005 results were produced by rules the app no longer applies, so
+  // re-running the design is the only honest outcome.
+  if (concreteEd === '2005') {
+    notices.push({
+      key: 'regulations.migration.editionWithdrawn',
+      params: { role: 'concrete', edition: '2005' },
+    });
+  }
   roles.concrete = {
-    ...bindRole('concrete', concreteEd === '2005' ? 'cirsoc-2005' : 'cirsoc', common),
+    ...bindRole('concrete', 'cirsoc', common),
     state: 'applied', appliedAtRevision: 0,
   };
   roles.basis = {
