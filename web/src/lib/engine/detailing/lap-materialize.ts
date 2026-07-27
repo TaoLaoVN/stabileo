@@ -259,6 +259,32 @@ function endpointsAt(
  * one.
  */
 function byLevel(eps: Endpoint[]): Endpoint[][] {
+  // Declared identity wins. The generator knows which layer it placed each bar in; when
+  // every endpoint carries that, grouping is a lookup and no geometry is inferred at all.
+  // Clustering below is the documented fallback for bars that arrive without one.
+  if (eps.length > 0 && eps.every((e) => e.bar.layerId)) {
+    const byId = new Map<string, Endpoint[]>();
+    for (const e of eps) {
+      const key = e.bar.layerId!;
+      const g = byId.get(key);
+      if (g) g.push(e); else byId.set(key, [e]);
+    }
+    const groups = [...byId.values()];
+    for (const g of groups) g.sort((a, b) => a.across - b.across);
+    // Ordered by elevation so the caller can match one member's layers to the other's.
+    return groups.sort((a, b) => meanLevel(a) - meanLevel(b));
+  }
+  return clusterByLevel(eps);
+}
+
+/**
+ * Geometric fallback: cluster endpoints by elevation.
+ *
+ * LEGACY. Used only for bars with no declared `layerId` — imported geometry, or paths from
+ * a generator that predates the field. Everything the generator produces carries its layer,
+ * and this should be reachable only at the edges of the system.
+ */
+function clusterByLevel(eps: Endpoint[]): Endpoint[][] {
   const sorted = [...eps].sort((a, b) => a.level - b.level || a.across - b.across);
   const clusters: Endpoint[][] = [];
   for (const e of sorted) {

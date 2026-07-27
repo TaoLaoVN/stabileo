@@ -187,6 +187,28 @@ export interface BarPath {
   cuttingLength: number;
   /** Members this bar belongs to. A continuous bar over a support belongs to both. */
   ownerElementIds: number[];
+  /**
+   * Stable physical layer identity, e.g. `e184:bottom:0`.
+   *
+   * ── Why an ID rather than a computed elevation ─────────────────────
+   *
+   * Layer membership was being recovered downstream by clustering bar elevations. That is
+   * inference, and inference has failure modes the truth does not: a fixed 20 mm grid split
+   * a Ø32 and a Ø20 in one mat across a boundary (405 phantom overlaps), and single-linkage
+   * clustering chains 0 / 15 / 30 mm into one layer when §25.2.2 says the outer two are
+   * plainly separate.
+   *
+   * The generator KNOWS which layer it put each bar in. Carrying that knowledge costs one
+   * string and removes the whole class of problem: materialisation, collision, verification,
+   * drawings and the schedule all read the same identity rather than each re-deriving it.
+   *
+   * `face` distinguishes top from bottom because the two are independent problems — they
+   * are referenced from opposite surfaces and cross different steel.
+   *
+   * Optional only for bars that predate this field or arrive from an importer; the
+   * clustering fallback still handles those, and is documented as a fallback.
+   */
+  layerId?: string;
   /** Where the bar came from, for the provenance trail. */
   source: 'generated' | 'manual' | 'coordinated';
   /** True when the user pinned this bar; the coordinator treats it as a hard constraint. */
@@ -240,6 +262,7 @@ export function buildStraightBarWithHooks(opts: {
   edition?: RegulationEdition;
   source?: BarPath['source'];
   locked?: boolean;
+  layerId?: string;
 }): BarPath {
   const edition = opts.edition ?? '2025';
   const segments: BarSegment[] = [];
@@ -286,6 +309,7 @@ export function buildStraightBarWithHooks(opts: {
     endTreatment,
     cuttingLength: developedLength(segments),
     ownerElementIds: opts.ownerElementIds,
+    layerId: opts.layerId,
     source: opts.source ?? 'generated',
     locked: opts.locked ?? false,
     refs,

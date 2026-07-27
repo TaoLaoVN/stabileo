@@ -4468,6 +4468,7 @@ const en: Record<string, string> = {
   'detailing.constructible.cond.allSpacingPlacementRobust': 'all spacing placement-robust',
   'detailing.constructible.cond.noUnsupportedRule': 'no unsupported rule',
   'detailing.constructible.cond.noStaleUpstreamRevision': 'no stale upstream revision',
+  'detailing.line.notCollinear': 'Beam line {line}: members {a} and {b} are not collinear (axis dot {dot})',
   'detailing.layers.separation': 'Crossing bars Ø{a} and Ø{b}: {separation} mm centre to centre (margin {margin} mm)',
   'detailing.layers.assigned': 'Line {line}: layer rank {rank}, steel offset {raise} mm',
   'detailing.layers.exhausted': 'Rank {rank} reached the {maxRanks}-layer limit; this crossing is not separated',

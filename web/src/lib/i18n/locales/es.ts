@@ -4430,6 +4430,7 @@ const es: Record<string, string> = {
   'detailing.constructible.cond.allSpacingPlacementRobust': 'todas las separaciones robustas',
   'detailing.constructible.cond.noUnsupportedRule': 'sin reglas no soportadas',
   'detailing.constructible.cond.noStaleUpstreamRevision': 'sin revisiones aguas arriba desactualizadas',
+  'detailing.line.notCollinear': 'Línea de vigas {line}: los elementos {a} y {b} no son colineales (producto escalar {dot})',
   'detailing.layers.separation': 'Barras cruzadas Ø{a} y Ø{b}: {separation} mm entre ejes (margen {margin} mm)',
   'detailing.layers.assigned': 'Línea {line}: rango de capa {rank}, desplazamiento de armadura {raise} mm',
   'detailing.layers.exhausted': 'El rango {rank} alcanzó el límite de {maxRanks} capas; este cruce no queda separado',

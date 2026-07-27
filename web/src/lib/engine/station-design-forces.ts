@@ -1711,9 +1711,20 @@ export function verifyProvidedReinforcement(
      * Defaults to `DEFAULT_SPACING_RULE` — the edition IN FORCE, not the legacy one.
      */
     spacingRule?: SpacingRule;
+    /**
+     * The member's FINAL physical geometry, when coordination has moved its steel.
+     *
+     * Applied to the layer centroids only. Section dimensions, true cover, transverse fit
+     * and anchorage geometry are the member and do not change because a bar was raised.
+     *
+     * `depthTolerance` is Table 26.6.2.1(a)'s unfavourable band on d, which applies whether
+     * or not anything moved.
+     */
+    finalGeometry?: { bottomRaise?: number; topLower?: number; depthTolerance?: number };
   },
 ): ProvidedRebarResult {
   const spacingRule = options?.spacingRule ?? DEFAULT_SPACING_RULE;
+  const finalGeometry = options?.finalGeometry;
   const emptyResult = (status: ProvidedRebarResult['overallStatus']): ProvidedRebarResult => ({
     elementId, elementType, hasProvided: !!provided, checks: [], overallStatus: status,
     worstUtilization: 0, checkedAxes: [], strengthCheckCount: 0,
@@ -1770,9 +1781,26 @@ export function verifyProvidedReinforcement(
     const topEndLayers = resolveLayers(reg?.topEndLayers, reg?.topEnd ?? provided.top);
 
     // ── Compute d and d' from ACTUAL layer centroids (never an assumed Ø16) ──
-    const bottomCentroid = layerCentroid(bottomLayers, section.cover, section.stirrupDia);
-    const topStartCentroid = layerCentroid(topStartLayers, section.cover, section.stirrupDia);
-    const topEndCentroid = layerCentroid(topEndLayers, section.cover, section.stirrupDia);
+    // ── Final physical geometry ──────────────────────────────────
+    //
+    // Coordination moves steel: a joint-layer rank raises bottom bars and lowers top ones,
+    // and Table 26.6.2.1(a) puts an unfavourable tolerance on the effective depth whether or
+    // not anything moved. Both are applied HERE, to the layer centroids, because that is the
+    // only quantity that actually changes.
+    //
+    // The earlier approach inflated `cover` to get the same arithmetic. It produced the
+    // right `d` and quietly falsified everything else that reads cover — the transverse fit
+    // check, anchorage geometry, and the cover checks themselves. Section b, h and true
+    // cover are the member; only the bar positions moved.
+    const adj = finalGeometry;
+    const bottomShift = (adj?.bottomRaise ?? 0) + (adj?.depthTolerance ?? 0);
+    const topShift = (adj?.topLower ?? 0) + (adj?.depthTolerance ?? 0);
+    const bottomCentroid =
+      layerCentroid(bottomLayers, section.cover, section.stirrupDia) + bottomShift;
+    const topStartCentroid =
+      layerCentroid(topStartLayers, section.cover, section.stirrupDia) + topShift;
+    const topEndCentroid =
+      layerCentroid(topEndLayers, section.cover, section.stirrupDia) + topShift;
 
     const dBottom = section.h - bottomCentroid;
     const dTopStart = section.h - topStartCentroid;

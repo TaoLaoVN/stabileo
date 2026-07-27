@@ -455,6 +455,14 @@ export function runDetailing(input: RunDetailingInput): RunDetailingResult {
   /** Drop per member for the TOP face, m. Sized separately from the bottom. */
   const layerDropOf = new Map<number, number>();
 
+  /**
+   * Conditions the run could not represent, as structured messages.
+   *
+   * Reaches the constructibility gate's `unsupportedRules`, so an unrepresentable condition
+   * withholds the claim instead of being absent from it.
+   */
+  const unsupportedRun: Array<{ key: string; params: Record<string, unknown> }> = [];
+
   /** The project's additional bar-spacing margin, m. Zero unless the project stated one. */
   const spacingMargin = Math.max(0, input.spacingMargin ?? 0);
 
@@ -938,6 +946,15 @@ export function runDetailing(input: RunDetailingInput): RunDetailingResult {
     }
 
     /**
+     * Every member's plan axis, for the line-identity invariant below.
+     */
+    const axisOf = (id: number): { x: number; y: number } | undefined => {
+      const t = perBeam.get(id)?.t;
+      // perBeam.t is the TRANSVERSE axis; the line runs perpendicular to it.
+      return t ? { x: -t.y, y: t.x } : undefined;
+    };
+
+    /**
      * Canonical name for a line: its lowest member id, zero-padded.
      *
      * NOT the union-find root, which is whichever member happened to win the last union
@@ -978,6 +995,39 @@ export function runDetailing(input: RunDetailingInput): RunDetailingResult {
     //
     // The rank is a property of the LINE, decided once for the floor. A bar that changes
     // elevation between joints is not a detail, it is a bar that moves in mid-air.
+    /**
+     * A line id is a claim: these members are one continuous, collinear physical run.
+     *
+     * It is checked rather than trusted. Union-find will happily merge two perpendicular
+     * members if any single relation call mislabels them, and the id would then be used to
+     * decide bar elevations for both — silently, because a wrong grouping looks exactly
+     * like a right one from the outside. Everything downstream of the crossing graph rests
+     * on this claim, so it is verified where it is made.
+     */
+    const lineViolations: Array<{ lineId: string; a: number; b: number; dot: number }> = [];
+    for (const [root, ids] of lineMembers) {
+      if (ids.length < 2) continue;
+      for (let i = 0; i < ids.length; i++) {
+        for (let j = i + 1; j < ids.length; j++) {
+          const da = axisOf(ids[i]);
+          const db = axisOf(ids[j]);
+          if (!da || !db) continue;
+          const dot = Math.abs(da.x * db.x + da.y * db.y);
+          // The same 0.7 the relation test uses. Below it the two are not collinear and
+          // must not be sharing a line.
+          if (dot <= 0.7) {
+            lineViolations.push({ lineId: lineName(ids), a: ids[i], b: ids[j], dot });
+          }
+        }
+      }
+    }
+    for (const v of lineViolations) {
+      unsupportedRun.push({
+        key: 'detailing.line.notCollinear',
+        params: { line: v.lineId, a: v.a, b: v.b, dot: Math.round(v.dot * 100) / 100 },
+      });
+    }
+
     const linesForLayering: LineForLayering[] = [];
     for (const [root, ids] of lineMembers) {
       const dir = perBeam.get(ids[0])?.t;
@@ -1445,7 +1495,7 @@ export function runDetailing(input: RunDetailingInput): RunDetailingResult {
               : { ...base, requiredClear: base.requiredClear + spacingMargin };
           },
         ).conflicts.filter((c) => c.severity !== 'marginal').length,
-      unsupportedRules: result.assembly.unsupported.length,
+      unsupportedRules: result.assembly.unsupported.length + unsupportedRun.length,
       staleAssemblies: 0,
     });
     const gated = evaluateState({

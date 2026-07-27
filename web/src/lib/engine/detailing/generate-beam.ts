@@ -574,6 +574,16 @@ export function generateBeamBars(input: BeamGenerationInput): GeneratedBeam {
 
   /** Place `count` bars of `dia` on a face, returning one offset vector per bar. */
   const barLayers: Record<string, number> = {};
+
+  /**
+   * Stable layer identity for a bar. `e184:bottom:0`.
+   *
+   * The generator knows which layer it placed each bar in, so it says so instead of leaving
+   * every consumer to re-derive it from elevations. Face is part of the identity because
+   * top and bottom are referenced from opposite surfaces and cross different steel.
+   */
+  const layerId = (face: 'bottom' | 'top', layer: number) =>
+    `e${input.elementId}:${face}:${layer}`;
   const placeGroup = (count: number, dia: number, faceUpward: boolean) => {
     const layout = layoutBarRow({
       count, diameterMm: dia, clearWidth,
@@ -650,6 +660,7 @@ export function generateBeamBars(input: BeamGenerationInput): GeneratedBeam {
     barLayers[`e${input.elementId}-bot-cont-${i}`] = o.layer;
     bars.push(buildStraightBarWithHooks({
       id: `e${input.elementId}-bot-cont-${i}`,
+      layerId: layerId('bottom', o.layer),
       diameterMm: input.bottom.diameterMm, role: 'longitudinal',
       start: shift(add(add(input.origin, input.axis, -EMBED), input.up, zBot), o),
       end: shift(add(add(input.origin, input.axis, input.L + EMBED), input.up, zBot), o),
@@ -678,6 +689,7 @@ export function generateBeamBars(input: BeamGenerationInput): GeneratedBeam {
         barLayers[`e${input.elementId}-bot-run-${i}`] = o.layer;
         bars.push(buildStraightBarWithHooks({
           id: `e${input.elementId}-bot-run-${i}`,
+          layerId: layerId('bottom', o.layer),
           diameterMm: input.bottom.diameterMm, role: 'longitudinal',
           start: shift(add(add(input.origin, input.axis, -EMBED), input.up, zBot), o),
           end: shift(add(add(input.origin, input.axis, input.L + EMBED), input.up, zBot), o),
@@ -710,6 +722,7 @@ export function generateBeamBars(input: BeamGenerationInput): GeneratedBeam {
         barLayers[`e${input.elementId}-bot-cut-${i}`] = o.layer;
         bars.push(buildStraightBarWithHooks({
           id: `e${input.elementId}-bot-cut-${i}`,
+          layerId: layerId('bottom', o.layer),
           diameterMm: input.bottom.diameterMm, role: 'longitudinal',
           start: shift(add(add(input.origin, input.axis, from), input.up, zBot), o),
           end: shift(add(add(input.origin, input.axis, to), input.up, zBot), o),
@@ -755,6 +768,7 @@ export function generateBeamBars(input: BeamGenerationInput): GeneratedBeam {
       barLayers[`e${input.elementId}-top${t.side}-${i}`] = o.layer;
       bars.push(buildStraightBarWithHooks({
         id: `e${input.elementId}-top${t.side}-${i}`,
+        layerId: layerId('top', o.layer),
         diameterMm: t.group.diameterMm, role: 'longitudinal',
         start: shift(add(add(input.origin, input.axis, from), input.up, zTopBar), o),
         end: shift(add(add(input.origin, input.axis, to), input.up, zTopBar), o),

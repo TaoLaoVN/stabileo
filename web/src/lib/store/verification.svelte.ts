@@ -134,10 +134,11 @@ function createVerificationStore() {
    * certificate issued against the pre-coordination arrangement describes geometry that no
    * longer exists, so the authoritative check is run again here against the real one.
    *
-   * The depth is reduced by inflating the cover rather than shrinking `h`: cover is exactly
-   * what stands between the face and the bar centre, so `d` drops by precisely `depthLoss`
-   * while the section's own area and the concrete contribution stay what they are. Reducing
-   * `h` would have quietly changed the member as well as its reinforcement.
+   * The depth loss is applied to the LAYER CENTROIDS, which is the only quantity that
+   * actually changed. Inflating the cover produced the same `d` and quietly falsified
+   * everything else that reads cover — the transverse fit check, anchorage geometry, and
+   * the cover checks themselves. The section and its true cover are the member; only the
+   * bars moved within it.
    */
   function reverifyAtFinalDepth(
     elementId: number, depthLoss: number,
@@ -148,11 +149,13 @@ function createVerificationStore() {
     const adapter = getDesignCode(activeCodeId);
     if (!adapter) return 'fail';
     const loss = Math.max(0, depthLoss);
-    const deepened = loss < 1e-9 ? ctx : {
+    const atFinal = loss < 1e-9 ? ctx : {
       ...ctx,
-      material: { ...ctx.material, cover: ctx.material.cover + loss },
+      // Both faces: the caller passes the worse of the two, and applying it to each is the
+      // conservative reading when only one number is available.
+      finalGeometry: { bottomRaise: loss, topLower: loss },
     };
-    const result = adapter.verify(deepened, reinf);
+    const result = adapter.verify(atFinal, reinf);
     if (!result) return 'fail';
     return result.overallStatus === 'fail'
       ? 'fail'

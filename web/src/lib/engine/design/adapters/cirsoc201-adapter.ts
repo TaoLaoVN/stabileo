@@ -168,6 +168,9 @@ function makeAdapter(edition: RegulationEdition): DesignCodeAdapter {
           edition: ctx.codeEdition,
           maxAggregateSizeMm: ctx.material.maxAggregateSize.value,
         },
+        // Present only after coordination has moved this member's steel. It shifts the
+        // layer centroids and nothing else — the section and its true cover are unchanged.
+        finalGeometry: ctx.finalGeometry,
       },
     );
   },
