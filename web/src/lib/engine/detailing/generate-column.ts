@@ -104,13 +104,22 @@ export interface ColumnTransition {
 
 
 /**
- * Vertical gap between one face's hook tier and the next, m.
+ * Clear distance between one face's hook tier and the next, m.
  *
- * On top of a bar diameter, so two tiers clear each other by a whole bar. Four tiers add
- * roughly three bar diameters to the top of the cage, which sits inside the roof slab or
- * beam depth and costs nothing.
+ * NOT a chosen number. Two hook extensions in adjacent tiers run alongside each other, so
+ * they are exactly what §25.2.3 governs: parallel longitudinal bars in a column, needing
+ * max(40 mm, 1,5db, 4/3 dagg) between them.
+ *
+ * It was 5 mm — enough to stop the extensions interpenetrating and nowhere near enough to
+ * satisfy the clause. The collision checker was right to report it: 36 conflicts on the QA
+ * fixture, every one at 5 mm clear against a 40 mm requirement. Separating steel so that it
+ * no longer overlaps is not the same as separating it legally.
  */
-const HOOK_TIER_GAP = 0.005;
+function hookTierGap(diameterMm: number, edition: RegulationEdition, dagg: number): number {
+  return minClearSpacingColumn(edition, {
+    barDiameterMm: diameterMm, maxAggregateSizeMm: dagg,
+  }).minClear;
+}
 
 /**
  * Which face a column bar belongs to, and which way its roof hook turns.
@@ -413,7 +422,10 @@ export function generateColumnStack(input: ColumnStackInput): GeneratedColumnSta
       const face = roofHook ? faceOf(p, halfB, halfH) : null;
       // Each face's hooks get their own elevation, so extensions that run along the same
       // axis never share a plane. See `faceOf` and `HOOK_TIER_GAP`.
-      const tierLift = face ? face.tier * (lift.bars.diameterMm / 1000 + HOOK_TIER_GAP) : 0;
+      const tierLift = face
+        ? face.tier * (lift.bars.diameterMm / 1000
+          + hookTierGap(lift.bars.diameterMm, input.edition, input.maxAggregateSizeMm ?? 19))
+        : 0;
       const start: Point3 = { x: lift.centre.x + p.x, y: lift.centre.y + p.y, z: lift.baseZ };
       const end: Point3 = {
         x: lift.centre.x + p.x, y: lift.centre.y + p.y, z: topZ - tierLift,
