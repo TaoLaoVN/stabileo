@@ -35,6 +35,7 @@
 
 import { minClearSpacingColumn } from '../../codes/cirsoc201/spacing';
 import { clause, type ClauseRef, type RegulationEdition } from '../../codes/regulation';
+import { computeColumnLayout } from '../station-design-forces';
 
 /** A longitudinal bar's plan position, relative to the column centre. */
 export interface ColumnBarSlot {
@@ -202,12 +203,26 @@ export function generateColumnCandidates(
     clause('cirsoc-201', req.edition, req.edition === '2025' ? '10.7.6.3' : '7.10.5.3',
       'restricción lateral de barras longitudinales'),
   ];
-  const required = spacing.minClear + req.placementTolerance;
+  /**
+   * Two different numbers, and conflating them was a defect.
+   *
+   * `codeMinClear` is the HARD constraint: §25.2.3, and nothing may be drawn below it.
+   * `targetClear` adds the placement allowance and is what a new arrangement AIMS for, so
+   * the built cage still complies after the bars drift.
+   *
+   * Using the target as the rejection threshold rejected code-legal arrangements — and
+   * flatly contradicted the certificate. The verifier certifies 28Ø12 in a 500 mm column
+   * at 46.9 mm clear against the 40 mm required; this module was refusing to offer any cage
+   * for it, because 46.9 < 40 + 10. A tolerance may widen what we draw. It may never
+   * narrow what the code allows, and it may never veto what the verifier signed.
+   */
+  const codeMinClear = spacing.minClear;
+  const targetClear = spacing.minClear + req.placementTolerance;
 
   // A pinned cage is the whole domain.
   if (req.locked && req.locked.length > 0) {
     const slots = [...req.locked];
-    return [finish('locked' as ColumnArrangement, slots, d, halfB, halfH, required, refs)]
+    return [finish('locked' as ColumnArrangement, slots, d, halfB, halfH, codeMinClear, refs)]
       .filter((c): c is ColumnLayoutCandidate => c !== null);
   }
 
@@ -216,25 +231,60 @@ export function generateColumnCandidates(
     { dx: halfB, dy: halfH, corner: true }, { dx: -halfB, dy: halfH, corner: true },
   ];
   const extra = req.count - 4;
-
   const out: ColumnLayoutCandidate[] = [];
-  const arrangements: ColumnArrangement[] = extra === 0
-    ? ['cornersOnly']
-    : ['clustered', 'even'];
 
-  for (const arrangement of arrangements) {
+  // ── 'even': the AUTHORITATIVE layout, delegated rather than reimplemented ──
+  //
+  // `computeColumnLayout` is what the verifier uses to place bars and certify the section.
+  // Reimplementing the same distribution here produced a cage that disagreed with the
+  // certificate: this module spread the extras along a whole axis and then alternated them
+  // between opposite faces, so the gap from a corner to the first face bar carried the
+  // pitch for twice as many bars as the face actually holds.
+  //
+  // One primitive. Verification, candidate generation, physical detailing, collision
+  // checking and drawings must read the same coordinates, or they describe different
+  // columns.
+  const authoritative = computeColumnLayout(
+    req.count, req.diameterMm, req.b, req.h, req.cover, req.tieDiaMm, undefined,
+    { edition: req.edition, maxAggregateSizeMm: req.maxAggregateSizeMm } as never,
+  );
+  if (authoritative.bars.length === req.count) {
+    const slots: ColumnBarSlot[] = authoritative.bars.map((bar, i) => ({
+      dx: bar.x - req.b / 2, dy: bar.y - req.h / 2, corner: i < 4,
+    }));
+    const c = finish('even', slots, d, halfB, halfH, codeMinClear, refs);
+    if (c) out.push(c);
+  }
+
+  // ── The alternatives ──
+  const alternatives: ColumnArrangement[] = extra === 0 ? ['cornersOnly'] : ['clustered'];
+  for (const arrangement of alternatives) {
     const slots = [...corners];
     if (extra > 0) {
-      // Split the extras between the two axis pairs, X faces first for determinism.
-      const onX = Math.ceil(extra / 2);
-      const onY = extra - onX;
-      // Bars on the ±Y faces vary in x, and are what a Y-running beam must thread past.
-      const xs = alongFace(onX, halfB, arrangement, d + required);
-      xs.forEach((x, k) => slots.push({ dx: x, dy: k % 2 === 0 ? -halfH : halfH, corner: false }));
-      const ys = alongFace(onY, halfH, arrangement, d + required);
-      ys.forEach((y, k) => slots.push({ dx: k % 2 === 0 ? -halfB : halfB, dy: y, corner: false }));
+      // PER FACE, matching how the authoritative layout apportions them. Splitting per AXIS
+      // and alternating faces is what produced the wrong corner gap.
+      const perFace = Math.floor(extra / 4);
+      const rem = extra - perFace * 4;
+      const counts = [
+        perFace + (rem > 0 ? 1 : 0), perFace + (rem > 1 ? 1 : 0),
+        perFace + (rem > 2 ? 1 : 0), perFace,
+      ];
+      const faces: Array<[number, 'x' | 'y', number]> = [
+        [-halfH, 'x', counts[0]], [halfB, 'y', counts[1]],
+        [halfH, 'x', counts[2]], [-halfB, 'y', counts[3]],
+      ];
+      for (const [fixed, vary, n] of faces) {
+        const half = vary === 'x' ? halfB : halfH;
+        // Clustered packs at the TARGET pitch: a NEW arrangement should be robust to
+        // placement drift, even though an existing one is judged against the code minimum.
+        for (const v of alongFace(n, half, arrangement, d + targetClear)) {
+          slots.push(vary === 'x'
+            ? { dx: v, dy: fixed, corner: false }
+            : { dx: fixed, dy: v, corner: false });
+        }
+      }
     }
-    const c = finish(arrangement, slots, d, halfB, halfH, required, refs);
+    const c = finish(arrangement, slots, d, halfB, halfH, codeMinClear, refs);
     if (c) out.push(c);
   }
 
@@ -247,9 +297,9 @@ export function generateColumnCandidates(
 
 function finish(
   arrangement: ColumnArrangement, slots: ColumnBarSlot[], d: number,
-  halfB: number, halfH: number, required: number, refs: ClauseRef[],
+  halfB: number, halfH: number, codeMinClear: number, refs: ClauseRef[],
 ): ColumnLayoutCandidate | null {
-  // §25.2.3 between every pair, plus the placement allowance.
+  // §25.2.3 between every pair. The CODE minimum, not the placement target: see above.
   let minClear = Infinity;
   for (let i = 0; i < slots.length; i++) {
     for (let j = i + 1; j < slots.length; j++) {
@@ -257,8 +307,8 @@ function finish(
       minClear = Math.min(minClear, gap);
     }
   }
-  if (!Number.isFinite(minClear)) minClear = required;
-  if (minClear < required - 1e-9) return null;
+  if (!Number.isFinite(minClear)) minClear = codeMinClear;
+  if (minClear < codeMinClear - 1e-9) return null;
 
   const barHalf = d / 2;
   const id = `${arrangement}:${slots.map((s) =>

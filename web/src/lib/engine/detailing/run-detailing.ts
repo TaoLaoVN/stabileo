@@ -372,20 +372,42 @@ export function runDetailing(input: RunDetailingInput): RunDetailingResult {
    * second thing that can disagree with the drawing.
    */
   function columnBarsNear(n: DetailingModelNode) {
-    const out: Array<{ diameterMm: number; x: number; y: number }> = [];
+    const found: Array<{ id: string; diameterMm: number; x: number; y: number }> = [];
     for (const mb of memberBarsById.values()) {
       if (input.contexts.get(mb.elementId)?.elementType !== 'column') continue;
       for (const bar of mb.bars) {
         const p = bar.segments[0]?.start;
         if (!p) continue;
         if (Math.hypot(p.x - n.x, p.y - n.y) > 1.0) continue;
+        // The bar must physically span this elevation to obstruct anything here.
         const zs = bar.segments.flatMap((sg) => [sg.start.z, sg.end.z]);
         if (Math.min(...zs) > Z(n) + 0.02 || Math.max(...zs) < Z(n) - 0.02) continue;
-        out.push({ diameterMm: bar.diameterMm, x: p.x, y: p.y });
+        found.push({ id: bar.id, diameterMm: bar.diameterMm, x: p.x, y: p.y });
       }
     }
-    return out;
+
+    // ── Deduplicate by PHYSICAL POSITION, not by owning member ──
+    //
+    // Every node between two lifts is spanned by the lift below (whose bars run up into the
+    // lap) and the lift above. Counting both gives two obstacles where the steel is one
+    // continuous bar passing through the joint, or two bars lapping side by side that
+    // occupy one corridor between them.
+    //
+    // A beam threading the cage cares about occupied SPACE, so bars sharing a plan position
+    // to the millimetre are one obstacle, taking the larger diameter. Where a transition
+    // genuinely moves a bar, the two positions differ and both are kept — which is correct,
+    // because at a transition there really are two bars to miss.
+    const byPosition = new Map<string, { diameterMm: number; x: number; y: number }>();
+    for (const b of found) {
+      const key = `${Math.round(b.x * 1000)}:${Math.round(b.y * 1000)}`;
+      const seen = byPosition.get(key);
+      if (!seen || b.diameterMm > seen.diameterMm) {
+        byPosition.set(key, { diameterMm: b.diameterMm, x: b.x, y: b.y });
+      }
+    }
+    return [...byPosition.values()].sort((a, b) => a.x - b.x || a.y - b.y);
   }
+
 
   /**
    * Cage arrangement chosen per stack, and the resulting bar plan offsets.

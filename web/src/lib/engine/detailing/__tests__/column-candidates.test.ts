@@ -71,8 +71,9 @@ describe('the clustered arrangement is the point of the module', () => {
   });
 
   it('lets a large beam bar thread where the even cage will not', () => {
-    // The flagship case: Ø32 beam steel through a column whose face bars are evenly spread.
-    const c = cages(8, 20, 0.50);
+    // A dense cage: many face bars evenly spread leave narrow channels, while clustering
+    // them at the corners merges those into one wide one.
+    const c = cages(16, 16, 0.50);
     const even = c.find((x) => x.arrangement === 'even')!;
     const clustered = c.find((x) => x.arrangement === 'clustered')!;
     const t = { x: 1, y: 0 };

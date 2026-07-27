@@ -83,14 +83,30 @@ describe('§25.2.3 is enforced on the column cage', () => {
     expect(g.unsupported.join(' ')).not.toMatch(/separación libre mínima/);
   });
 
-  it('a count that genuinely will not fit is inadequate however it is distributed', () => {
-    // 28Ø12 in a 500 square column: even around all four faces the clear distance lands
-    // near 20 mm against 53 mm required. That is a real section inadequacy, and the honest
-    // answer is to report it — not to find a distribution that hides it.
+  it('28Ø12 in a 500 mm column IS legal, and is offered', () => {
+    // This assertion used to demand the opposite, and it was wrong twice over. The
+    // authoritative layout places 28Ø12 at 46.9 mm clear against the 40 mm §25.2.3
+    // requires. It was refused only because the candidate check used minimum-plus-
+    // tolerance as a veto — so the module contradicted the certificate the verifier had
+    // already issued for the same bars.
     const cage = generateColumnCandidates({
       count: 28, diameterMm: 12, b: 0.5, h: 0.5, cover: 0.03, tieDiaMm: 8,
       edition: '2025', maxAggregateSizeMm: 19, placementTolerance: 0.010,
     });
-    expect(cage, '28Ø12 must not be offered as a legal cage in a 500 mm column').toEqual([]);
+    expect(cage.length).toBeGreaterThan(0);
+    const required = minClearSpacingColumn('2025', {
+      barDiameterMm: 12, maxAggregateSizeMm: 19,
+    }).minClear;
+    for (const c of cage) expect(c.minClear).toBeGreaterThanOrEqual(required - 1e-9);
+  });
+
+  it('a count that genuinely will not fit gets no cage at all', () => {
+    // 40Ø25 in a 400 mm column: no distribution of any kind satisfies §25.2.3, and the
+    // honest answer is to offer nothing rather than to draw something unbuildable.
+    const cage = generateColumnCandidates({
+      count: 40, diameterMm: 25, b: 0.4, h: 0.4, cover: 0.03, tieDiaMm: 8,
+      edition: '2025', maxAggregateSizeMm: 19, placementTolerance: 0.010,
+    });
+    expect(cage).toEqual([]);
   });
 });
