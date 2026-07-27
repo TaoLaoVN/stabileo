@@ -265,8 +265,8 @@ function createDetailingStore() {
            * assessment NOT_ESTABLISHED — correct as a default, and unacceptable as the
            * behaviour of the real command.
            */
-          reverify: (elementId, depthLoss) =>
-            verificationStore.reverifyAtFinalDepth(elementId, depthLoss),
+          reverify: (elementId, loss) =>
+            verificationStore.reverifyAtFinalDepth(elementId, loss),
           lockedBars: store.assemblies.flatMap((a) => a.bars.filter((b) => b.locked)),
           bentUp: bentUpPolicy(),
         });

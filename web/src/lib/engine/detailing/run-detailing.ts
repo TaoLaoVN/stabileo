@@ -114,7 +114,10 @@ export interface RunDetailingInput {
    * design layer; when it is absent NOTHING is reverified and the constructibility gate
    * says so rather than assuming a pass.
    */
-  reverify?: (elementId: number, depthLoss: number) => 'ok' | 'warn' | 'fail';
+  reverify?: (
+    elementId: number,
+    depthLoss: { bottomRaise: number; topLower: number; depthTolerance: number },
+  ) => 'ok' | 'warn' | 'fail';
   /** Bars the user pinned; they survive regeneration untouched. */
   lockedBars?: BarPath[];
   /**
@@ -1338,19 +1341,41 @@ export function runDetailing(input: RunDetailingInput): RunDetailingResult {
   //
   // Without a verifier nothing is reverified and `reverifiedMembers` stays at zero. That
   // is the honest reading: the check was not run, so the claim is not available.
-  const reverification = new Map<number, 'ok' | 'warn' | 'fail'>();
+  /**
+   * One explicit record per applicable element. Silence is a failing invariant.
+   *
+   * `noBars` is not the same as `fail`: a member the generator produced no physical steel
+   * for has nothing to reverify, and reporting that as a verification failure would send
+   * an engineer looking at the wrong thing. It is still not a pass.
+   */
+  const reverification = new Map<number, 'ok' | 'warn' | 'fail' | 'noBars' | 'noVerifier'>();
   if (input.reverify) {
     for (const [id, ctx] of input.contexts) {
-      if (!memberBarsById.has(id)) continue;
+      // Every applicable element gets a record, including one with no generated bars.
+      // Skipping those silently is how the gate came to count `elementIds.length` as
+      // applicable while only ever reverifying the subset that had geometry.
+      if (!memberBarsById.has(id)) {
+        reverification.set(id, 'noBars');
+        continue;
+      }
       const nominalD = ctx.section.h - ctx.material.cover - ctx.material.stirrupDia / 1000;
       const tol = prescribedTolerances(nominalD, ctx.material.cover, input.edition);
-      // Both faces cost lever arm; the member is rechecked against the worse of them.
-      const depthLoss = Math.max(layerRaiseOf.get(id) ?? 0, layerDropOf.get(id) ?? 0)
-        + tol.depth;
-      reverification.set(id, input.reverify(id, depthLoss));
+      // Each face carries its OWN movement.
+      //
+      // Passing the worse of the two to both was a conservative simplification, and on this
+      // fixture it was conservative enough to matter: beams 7 and 8 came out at ratio 1,031
+      // — three per cent over — by being charged the top face's drop on the bottom face as
+      // well. The two are tracked separately upstream and there is no reason to merge them.
+      // Table 26.6.2.1(a)'s tolerance applies to both, because it applies to d itself.
+      reverification.set(id, input.reverify(id, {
+        bottomRaise: layerRaiseOf.get(id) ?? 0,
+        topLower: layerDropOf.get(id) ?? 0,
+        depthTolerance: tol.depth,
+      }));
     }
   }
-  const reverifiedOk = [...reverification.values()].filter((v) => v !== 'fail').length;
+  const reverifiedOk = [...reverification.values()]
+    .filter((v) => v === 'ok' || v === 'warn').length;
   const reverifyFailures = [...reverification.entries()]
     .filter(([, v]) => v === 'fail').map(([id]) => id);
 
@@ -1516,7 +1541,7 @@ export function runDetailing(input: RunDetailingInput): RunDetailingResult {
       prohibitedConflicts: prohibited,
       reverifiedMembers: elementIds.filter((e) => {
         const v = reverification.get(e);
-        return v !== undefined && v !== 'fail';
+        return v === 'ok' || v === 'warn';
       }).length,
       // A certificate describes the geometry it was checked against.
       //
@@ -1532,7 +1557,7 @@ export function runDetailing(input: RunDetailingInput): RunDetailingResult {
       // all is a mismatch rather than a silent pass.
       certificateHashMatches: elementIds.filter((e) => {
         const v = reverification.get(e);
-        return v !== undefined && v !== 'fail';
+        return v === 'ok' || v === 'warn';
       }).length,
       spacingNotCodeLegal: result.assembly.conflicts
         .filter((c) => c.pairClass === 'sameLayerSpacing'

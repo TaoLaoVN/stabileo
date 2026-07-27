@@ -141,19 +141,25 @@ function createVerificationStore() {
    * bars moved within it.
    */
   function reverifyAtFinalDepth(
-    elementId: number, depthLoss: number,
+    elementId: number,
+    loss: { bottomRaise: number; topLower: number; depthTolerance: number },
   ): 'ok' | 'warn' | 'fail' {
     const ctx = contexts.get(elementId);
     const reinf = reinforcementProvider?.(elementId);
     if (!ctx || !reinf) return 'fail';
     const adapter = getDesignCode(activeCodeId);
     if (!adapter) return 'fail';
-    const loss = Math.max(0, depthLoss);
-    const atFinal = loss < 1e-9 ? ctx : {
+    const total = Math.max(0, loss.bottomRaise) + Math.max(0, loss.topLower)
+      + Math.max(0, loss.depthTolerance);
+    const atFinal = total < 1e-9 ? ctx : {
       ...ctx,
-      // Both faces: the caller passes the worse of the two, and applying it to each is the
-      // conservative reading when only one number is available.
-      finalGeometry: { bottomRaise: loss, topLower: loss },
+      // Each face carries its own movement; the tolerance applies to both because it
+      // applies to d itself.
+      finalGeometry: {
+        bottomRaise: Math.max(0, loss.bottomRaise),
+        topLower: Math.max(0, loss.topLower),
+        depthTolerance: Math.max(0, loss.depthTolerance),
+      },
     };
     const result = adapter.verify(atFinal, reinf);
     if (!result) return 'fail';
