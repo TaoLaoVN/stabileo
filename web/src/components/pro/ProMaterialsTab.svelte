@@ -20,6 +20,9 @@
   let newRho = $state('');
   let newFy = $state('');
   let aggError = $state<string | null>(null);
+  let marginError = $state<string | null>(null);
+  /** A margin larger than this is a data-entry error, not a conservative project. */
+  const MARGIN_MAX_MM = 50;
 
   const materials = $derived([...modelStore.materials.values()]);
 
@@ -71,6 +74,32 @@
       return;
     }
     modelStore.updateMaterial(id, { maxAggregateSizeMm: v });
+    regulationsStore.noteChange('detailingSpec');
+  }
+
+  /**
+   * Additional bar-spacing margin. A PROJECT decision, above the regulatory minimum.
+   *
+   * Blank and zero both mean no margin. Negative is refused outright: this setting exists
+   * to make detailing more conservative and can never be used to erode the code minimum.
+   * Changing it invalidates coordination, constructibility and documents — but NOT the
+   * loads or the structural analysis, which is why it notes `detailingSpec` and nothing
+   * further.
+   */
+  function setSpacingMargin(id: number, raw: string) {
+    marginError = null;
+    const trimmed = raw.trim();
+    if (trimmed === '') {
+      modelStore.updateMaterial(id, { spacingMarginMm: null });
+      regulationsStore.noteChange('detailingSpec');
+      return;
+    }
+    const v = Number(trimmed.replace(',', '.'));
+    if (!Number.isFinite(v) || v < 0 || v > MARGIN_MAX_MM) {
+      marginError = tp('materials.spacingMarginInvalid', { max: MARGIN_MAX_MM });
+      return;
+    }
+    modelStore.updateMaterial(id, { spacingMarginMm: v });
     regulationsStore.noteChange('detailingSpec');
   }
 
@@ -165,6 +194,7 @@
             <th>{t('field.density')}</th>
             <th>fy</th>
             <th title={t('materials.aggregateHelp')}>{t('materials.aggregateShort')}</th>
+            <th title={t('material.spacingMarginHelp')}>{t('material.spacingMarginShort')}</th>
             <th></th>
           </tr>
         </thead>
@@ -190,14 +220,30 @@
                   onchange={(e) => setAggregate(m.id, e.currentTarget.value)}
                 />
               </td>
+              <td class="col-num">
+                <!-- Additional bar-spacing margin above the regulatory minimum. A project
+                     decision: CIRSOC does not prescribe it, and the default is 0 mm. -->
+                <input
+                  class="agg-input" type="text" inputmode="decimal"
+                  data-testid={`mat-spacing-margin-${m.id}`}
+                  aria-label={t('material.spacingMargin')}
+                  title={t('material.spacingMarginHelp')}
+                  value={m.spacingMarginMm ?? ''}
+                  placeholder="0"
+                  onchange={(e) => setSpacingMargin(m.id, e.currentTarget.value)}
+                />
+              </td>
               <td><button class="del-btn" onclick={() => removeMat(m.id)}>×</button></td>
             </tr>
           {/each}
           {#if materials.length === 0}
-            <tr><td colspan="8" class="no-results">{t('pro.noMaterials')}</td></tr>
+            <tr><td colspan="9" class="no-results">{t('pro.noMaterials')}</td></tr>
           {/if}
         </tbody>
       </table>
+      {#if marginError}
+        <p class="agg-error" data-testid="margin-error">{marginError}</p>
+      {/if}
       {#if aggError}
         <p class="agg-error" role="alert" data-testid="mat-aggregate-error">{aggError}</p>
       {/if}

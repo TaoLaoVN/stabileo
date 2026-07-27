@@ -67,6 +67,23 @@ function resolveAggregate(): number {
   return max > 0 ? max : DAGG_ASSUMED_MM;
 }
 
+/**
+ * The project's additional bar-spacing margin, m.
+ *
+ * The LARGEST stated margin across the concretes in use governs, which is the conservative
+ * reading when a model mixes mixes — the same rule the aggregate size follows. Zero when no
+ * concrete states one, and zero introduces no allowance anywhere: it is not a small
+ * default, it is the absence of one.
+ */
+function resolveSpacingMargin(): number {
+  let max = 0;
+  for (const m of modelStore.model.materials.values()) {
+    const v = (m as { spacingMarginMm?: number | null }).spacingMarginMm;
+    if (typeof v === 'number' && v > max) max = v;
+  }
+  return max / 1000;
+}
+
 /** Highest revision among existing assemblies, so a regeneration increments. */
 function maxRevision(assemblies: readonly DetailingAssembly[]): number {
   let r = 0;
@@ -215,6 +232,17 @@ function createDetailingStore() {
           demandRevision: verificationStore.demandRevision,
           previousRevision: maxRevision(store.assemblies),
           maxAggregateSizeMm: resolveAggregate(),
+          spacingMargin: resolveSpacingMargin(),
+          /**
+           * The production command ALWAYS supplies the authoritative verifier.
+           *
+           * Constructibility requires every member to have been rechecked at its final
+           * effective depth. A run without a verifier leaves that condition unmet and the
+           * assessment NOT_ESTABLISHED — correct as a default, and unacceptable as the
+           * behaviour of the real command.
+           */
+          reverify: (elementId, depthLoss) =>
+            verificationStore.reverifyAtFinalDepth(elementId, depthLoss),
           lockedBars: store.assemblies.flatMap((a) => a.bars.filter((b) => b.locked)),
           bentUp: bentUpPolicy(),
         });

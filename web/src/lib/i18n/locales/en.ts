@@ -4493,6 +4493,8 @@ const en: Record<string, string> = {
   'codes.placement.allowanceAssumed': 'The {allowance} mm transverse placement allowance is a PROJECT ASSUMPTION, not a CIRSOC value. Table 26.6.2.1(a) prescribes tolerances for the effective depth and the cover only; it sets none for the spacing between parallel bars. Set it in the project detailing properties.',
 
   'codes.placement.legalAtCodeMinimum': 'Clear distance {achieved} mm meets the {required} mm the code requires. No additional project margin is set.',
+  'material.spacingMarginShort': 'Margin (mm)',
+  'materials.spacingMarginInvalid': 'Enter a margin between 0 and {max} mm',
   'material.spacingMargin': 'Additional bar-spacing margin',
   'material.spacingMarginHelp': 'Additional project-specified margin above the regulatory minimum. CIRSOC does not prescribe this value.',
 

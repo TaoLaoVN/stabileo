@@ -52,6 +52,8 @@ import {
 } from './coordination-search';
 import { DEFAULT_TOLERANCES } from './collision';
 import { planSplice, transitionExists } from './splice';
+import { classifyPair } from './classify';
+import { detectCollisions } from './collision';
 import { assessConstructibility } from './constructibility';
 import { envelopeIsComplete } from './coordination-search';
 import { materialiseLaps, lapIndex, lapBetween, type PlannedTransition, type LapInterval } from './lap-materialize';
@@ -422,6 +424,18 @@ export function runDetailing(input: RunDetailingInput): RunDetailingResult {
   let layerAllocation: LayerAllocation | undefined;
   /** Vertical raise per member, m, from that allocation. Zero for rank 0. */
   const layerRaiseOf = new Map<number, number>();
+
+  /** The project's additional bar-spacing margin, m. Zero unless the project stated one. */
+  const spacingMargin = Math.max(0, input.spacingMargin ?? 0);
+
+  /** The same classification the authoritative pass uses, for the robustness re-check. */
+  const classifyForRun = (a: BarPath, b: BarPath, surface: number) => classifyPair(a, b, {
+    edition: input.edition,
+    maxAggregateSizeMm: input.maxAggregateSizeMm,
+    memberKindOf: (id) => input.contexts.get(id)?.elementType,
+    layerOf: (barId) => barLayers.get(barId),
+    isLapPair: (x, y) => lapLookup?.(x, y),
+  }, surface);
   /** Layer index per bar, reported by the generators, for the §25.2.2 classification. */
   const barLayers = new Map<string, number>();
 
@@ -1340,7 +1354,29 @@ export function runDetailing(input: RunDetailingInput): RunDetailingResult {
         .filter((c) => c.pairClass === 'sameLayerSpacing'
           || c.pairClass === 'betweenLayerSpacing' || c.pairClass === 'crossMemberSpacing')
         .length,
-      spacingNotPlacementRobust: 0,
+      // Placement robustness: does the cage still comply once every bar is allowed to sit
+      // at the unfavourable end of the project's margin?
+      //
+      // At the default zero margin the question is IDENTICAL to code legality — there is
+      // no allowance to erode — so the answer is the code-legal count and no second pass
+      // is run. A positive margin is a real, separate question and gets a real, separate
+      // measurement: the same authoritative collision check with every requirement raised
+      // by the margin.
+      spacingNotPlacementRobust: spacingMargin <= 0
+        ? 0
+        : detectCollisions(
+          result.assembly.bars,
+          DEFAULT_TOLERANCES,
+          undefined,
+          (a, b, surface) => {
+            const base = classifyForRun(a, b, surface);
+            // Contact classes have no minimum to raise. A lap is meant to touch and a
+            // stirrup is meant to grip; adding a margin to zero would report the detail.
+            return base.requiredClear <= 0
+              ? base
+              : { ...base, requiredClear: base.requiredClear + spacingMargin };
+          },
+        ).conflicts.filter((c) => c.severity !== 'marginal').length,
       unsupportedRules: result.assembly.unsupported.length,
       staleAssemblies: 0,
     });

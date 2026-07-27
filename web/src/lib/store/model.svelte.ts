@@ -48,6 +48,22 @@ export interface Material {
    * assumption on every subsequent open instead of baking 20 mm in permanently.
    */
   maxAggregateSizeMm?: number | null;
+  /**
+   * Additional transverse bar-spacing margin above the regulatory minimum, mm.
+   *
+   * A PROJECT decision, not a code one. CIRSOC's minimum clear spacing IS the construction
+   * requirement and prescribes nothing further between parallel bars, so the default is
+   * zero and the app never implies otherwise. An engineer raises it to get a more
+   * conservative cage.
+   *
+   * Lives beside the aggregate size for the same reason that does: both are properties of
+   * how the concrete gets placed, not of the regulation. `null` and `0` mean the same
+   * thing here — no margin — but `null` records that the project never stated one.
+   *
+   * §26.6.2.1 cover and effective-depth tolerances are mandatory, prescribed, and entirely
+   * separate from this.
+   */
+  spacingMarginMm?: number | null;
   /** Placed by shotcrete, which caps d_agg at 13 mm (§26.4.2.1(a)(13)). */
   shotcrete?: boolean;
 }

@@ -126,7 +126,41 @@ function createVerificationStore() {
     return result;
   }
 
+  /**
+   * Re-verify one member at the effective depth its FINAL geometry actually has.
+   *
+   * Coordination moves steel. A joint-layer raise costs lever arm directly, and Table
+   * 26.6.2.1(a)'s unfavourable tolerance on d applies whether or not anything moved. A
+   * certificate issued against the pre-coordination arrangement describes geometry that no
+   * longer exists, so the authoritative check is run again here against the real one.
+   *
+   * The depth is reduced by inflating the cover rather than shrinking `h`: cover is exactly
+   * what stands between the face and the bar centre, so `d` drops by precisely `depthLoss`
+   * while the section's own area and the concrete contribution stay what they are. Reducing
+   * `h` would have quietly changed the member as well as its reinforcement.
+   */
+  function reverifyAtFinalDepth(
+    elementId: number, depthLoss: number,
+  ): 'ok' | 'warn' | 'fail' {
+    const ctx = contexts.get(elementId);
+    const reinf = reinforcementProvider?.(elementId);
+    if (!ctx || !reinf) return 'fail';
+    const adapter = getDesignCode(activeCodeId);
+    if (!adapter) return 'fail';
+    const loss = Math.max(0, depthLoss);
+    const deepened = loss < 1e-9 ? ctx : {
+      ...ctx,
+      material: { ...ctx.material, cover: ctx.material.cover + loss },
+    };
+    const result = adapter.verify(deepened, reinf);
+    if (!result) return 'fail';
+    return result.overallStatus === 'fail'
+      ? 'fail'
+      : result.overallStatus === 'warn' ? 'warn' : 'ok';
+  }
+
   return {
+    reverifyAtFinalDepth,
     // ── Legacy accessors (backward compat) ──
     get concrete() { return concreteVerifs; },
     get steel() { return steelVerifs; },
