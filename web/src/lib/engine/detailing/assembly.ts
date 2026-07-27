@@ -29,6 +29,7 @@ import type { BarPath } from '../../codes/cirsoc201/bar-geometry';
 import type { ClauseRef, RegulationEdition } from '../../codes/regulation';
 import type { Maturity } from '../../codes/maturity';
 import type { BarConflict } from './collision';
+import type { ConstructibilityAssessment } from './constructibility';
 
 export const DETAILING_SCHEMA_VERSION = 1;
 
@@ -134,6 +135,14 @@ export interface AssemblyProvenance {
 }
 
 export interface DetailingAssembly {
+  /**
+   * The twelve-condition gate as evaluated for this assembly, when it was run.
+   *
+   * Persisted with the assembly because the verdict has to survive a reload: an engineer
+   * reopening a project must see WHY it is not constructible without re-running the whole
+   * coordination to find out.
+   */
+  constructibility?: ConstructibilityAssessment;
   id: string;
   kind: AssemblyKind;
   /**
@@ -265,6 +274,16 @@ export function evaluateState(a: {
   membersVerified: boolean;
   /** True when the coordinator returned a coordinated result. */
   coordinated: boolean;
+  /**
+   * The twelve-condition gate, when it has been run.
+   *
+   * Optional only so that callers dealing with a partially built assembly can still ask
+   * for a state. When it is ABSENT, CONSTRUCTIBLE is not available at all: the ladder's
+   * top rung is a claim that requires evidence, and no evidence means no claim. The old
+   * behaviour — award CONSTRUCTIBLE whenever the conflict list happened to be empty — is
+   * how an assignment result came to be reported as buildable detailing.
+   */
+  constructibility?: ConstructibilityAssessment;
 }): StateEvaluation {
   const blockers: string[] = [];
 
@@ -294,6 +313,18 @@ export function evaluateState(a: {
   if (a.unsupported.length > 0) {
     // Unsupported conditions gate constructibility even when the bars fit: a cage that
     // fits but was never checked for something is not constructible, it is unchecked.
+    return { state: 'COORDINATED', blockers };
+  }
+
+  // The twelve conditions. An empty conflict list is one of them, not all of them —
+  // re-verification at the final effective depth, certificate/geometry hash agreement and
+  // placement robustness are each independently capable of withholding the claim.
+  if (!a.constructibility) {
+    blockers.push('constructibility.notAssessed');
+    return { state: 'COORDINATED', blockers };
+  }
+  if (a.constructibility.verdict !== 'CONSTRUCTIBLE') {
+    blockers.push(...a.constructibility.blocking.map((c) => `constructibility.${c}`));
     return { state: 'COORDINATED', blockers };
   }
 

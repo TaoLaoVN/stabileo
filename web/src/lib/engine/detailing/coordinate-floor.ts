@@ -25,6 +25,7 @@
 import type { Point3 } from '../../codes/cirsoc201/bar-geometry';
 import type { BarPath } from '../../codes/cirsoc201/bar-geometry';
 import { minClearSpacingFor } from '../../codes/cirsoc201/spacing';
+import type { ConstructibilityAssessment } from './constructibility';
 import { worstMaturity, type Maturity } from '../../codes/maturity';
 import type { ClauseRef, RegulationEdition } from '../../codes/regulation';
 import {
@@ -102,6 +103,14 @@ export interface FloorCoordinationInput {
   memberKindOf?: (elementId: number) => 'beam' | 'column' | 'wall' | 'slab' | undefined;
   /** Supplied once laps are materialised; see `ClassificationContext.isLapPair`. */
   isLapPair?: (aId: string, bId: string) => 'contact' | 'nonContact' | undefined;
+  /**
+   * The twelve-condition constructibility gate for this assembly.
+   *
+   * Absent means "not assessed", which caps the assembly at COORDINATED. That is the
+   * correct default: the top rung of the ladder is a claim about buildability and it is
+   * not available to a caller that has not produced the evidence for it.
+   */
+  constructibility?: ConstructibilityAssessment;
   /** Layer index per bar, so bars in different layers get the §25.2.2 rule. */
   layerOf?: (barId: string) => number | undefined;
   /**
@@ -496,6 +505,7 @@ export function coordinateFloor(input: FloorCoordinationInput): FloorCoordinatio
     unsupported,
     membersVerified: input.membersVerified,
     coordinated: input.coordinated,
+    constructibility: input.constructibility,
   });
   trace.push(
     `Estado alcanzado: ${evaluation.state}` +

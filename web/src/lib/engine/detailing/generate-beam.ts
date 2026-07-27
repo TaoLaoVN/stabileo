@@ -77,6 +77,12 @@ export interface BeamGenerationInput {
   edition: RegulationEdition;
   /** Envelope, ordered by x, at least 3 stations. */
   stations: MomentStation[];
+  /**
+   * Vertical offset of this member's longitudinal steel, m, from the joint-layer
+   * allocation. Bottom bars rise by it and top bars drop by it; both REDUCE the effective
+   * depth, which is why a non-zero value obliges re-verification.
+   */
+  layerRaise?: number;
   supportI: SupportKind;
   supportJ: SupportKind;
   /** Nominal shear strength at each station, kN — for the §9.7.3.5 tests. */
@@ -527,8 +533,12 @@ export function generateBeamBars(input: BeamGenerationInput): GeneratedBeam {
   // Bar centroid offsets from the member axis.
   const halfH = input.h / 2;
   const barOffset = input.cover + input.stirrupDia / 1000;
-  const zBot = -(halfH - barOffset - input.bottom.diameterMm / 2000);
-  const zTop = halfH - barOffset - input.topStart.diameterMm / 2000;
+  // Joint-layer rank. A line that crosses another must sit above or below it, or their
+  // bars occupy the same points in space. The raise belongs to the whole line, so it is
+  // applied here once and not nudged at individual joints — see `joint-layers.ts`.
+  const raise = Math.max(0, input.layerRaise ?? 0);
+  const zBot = -(halfH - barOffset - input.bottom.diameterMm / 2000) + raise;
+  const zTop = halfH - barOffset - input.topStart.diameterMm / 2000 - raise;
 
   const spacing = minClearSpacingInLayer(input.edition, {
     barDiameterMm: input.bottom.diameterMm, maxAggregateSizeMm: input.maxAggregateSizeMm,
@@ -696,7 +706,7 @@ export function generateBeamBars(input: BeamGenerationInput): GeneratedBeam {
     refs.push(...cut.refs, c('9.7.3.4', 'longitud embebida de la armadura continua'));
     trace.push(`Armadura superior ${t.side}: corte en x = ${cut.actual.toFixed(3)} m. ${cut.note}`);
 
-    const zTopBar = halfH - barOffset - t.group.diameterMm / 2000;
+    const zTopBar = halfH - barOffset - t.group.diameterMm / 2000 - raise;
     const from = atStart ? -EMBED : Math.min(input.L, cut.actual);
     const to = atStart ? Math.max(0, cut.actual) : input.L + EMBED;
     const topSlots = placeGroup(t.group.count, t.group.diameterMm, true);

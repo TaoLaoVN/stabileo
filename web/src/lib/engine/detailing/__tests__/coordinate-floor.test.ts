@@ -5,6 +5,7 @@ import {
 } from '../coordinate-floor';
 import { straightSegment, type BarPath } from '../../../codes/cirsoc201/bar-geometry';
 import { DEFAULT_TOLERANCES } from '../collision';
+import { assessConstructibility } from '../constructibility';
 import { clause } from '../../../codes/regulation';
 
 function bar(id: string, y: number, opts: Partial<BarPath> = {}): BarPath {
@@ -94,6 +95,17 @@ function input(over: Partial<FloorCoordinationInput> = {}): FloorCoordinationInp
     edition: '2025', verifierId: 'cirsoc201.provided.v2.2025', demandRevision: 5,
     cover: 0.025, tieDia: 8, maxAggregateSizeMm: 20,
     membersVerified: true, coordinated: true,
+    // The twelve-condition gate. Without it the coordinator caps at COORDINATED, which is
+    // the correct default — CONSTRUCTIBLE is a claim about buildability and a caller that
+    // has produced no evidence for it does not get to make it.
+    constructibility: assessConstructibility({
+      completeEnvelope: true, searchTruncated: false,
+      applicableMembers: 2, assignedMembers: 2,
+      selectedTransitions: 0, materialisedTransitions: 0, unmaterialisedTransitions: 0,
+      prohibitedConflicts: 0, reverifiedMembers: 2, certificateHashMatches: 2,
+      spacingNotCodeLegal: 0, spacingNotPlacementRobust: 0,
+      unsupportedRules: 0, staleAssemblies: 0,
+    }),
     ...over,
   };
 }

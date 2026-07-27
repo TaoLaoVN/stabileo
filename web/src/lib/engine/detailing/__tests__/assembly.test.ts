@@ -1,3 +1,4 @@
+import { assessConstructibility } from '../constructibility';
 import { describe, it, expect } from 'vitest';
 import { teAt } from '../../../i18n/engine-text';
 import {
@@ -172,10 +173,31 @@ describe('bar marks', () => {
 // ─── State machine ───────────────────────────────────────────────
 
 describe('earned review state', () => {
+  /**
+   * A fully evidenced assembly.
+   *
+   * `constructibility` is not decoration. The top rung of the ladder used to be awarded
+   * whenever the conflict list happened to be empty, which is how a search result with
+   * 7,246 interpenetrating bars came to be reported as buildable. An empty conflict list
+   * is one of twelve conditions; without the gate the state caps at COORDINATED.
+   */
   const base = {
     bars: [bar('b1')], conflicts: [], unsupported: [] as UnsupportedCondition[],
     membersVerified: true, coordinated: true,
+    constructibility: assessConstructibility({
+      completeEnvelope: true, searchTruncated: false,
+      applicableMembers: 1, assignedMembers: 1,
+      selectedTransitions: 0, materialisedTransitions: 0, unmaterialisedTransitions: 0,
+      prohibitedConflicts: 0, reverifiedMembers: 1, certificateHashMatches: 1,
+      spacingNotCodeLegal: 0, spacingNotPlacementRobust: 0,
+      unsupportedRules: 0, staleAssemblies: 0,
+    }),
   };
+
+  it('an ungated assembly cannot reach CONSTRUCTIBLE however clean it looks', () => {
+    const { constructibility, ...ungated } = base;
+    expect(evaluateState(ungated).state).toBe('COORDINATED');
+  });
 
   it('stays DRAFT while any member fails its own checks', () => {
     expect(evaluateState({ ...base, membersVerified: false }).state).toBe('DRAFT');

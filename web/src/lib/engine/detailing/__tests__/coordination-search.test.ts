@@ -147,7 +147,7 @@ describe('global coordination succeeds where per-joint choice cannot', () => {
       ],
     });
 
-    expect(r.outcome).toBe('CONSTRUCTIBLE');
+    expect(r.outcome).toBe('ASSIGNMENT_FOUND');
     const chosen = r.assignment.get(1)!;
     // The single chosen layout clears BOTH ends. That is the whole point.
     expect(candidateClears(chosen, 16, nearBlocks).ok).toBe(true);
@@ -160,7 +160,7 @@ describe('global coordination succeeds where per-joint choice cannot', () => {
       members: [variable(1, dom(), 16), variable(2, dom(), 16)],
       joints: [joint('J', [1, 2], {}, () => 'collinear')],
     });
-    expect(r.outcome).toBe('CONSTRUCTIBLE');
+    expect(r.outcome).toBe('ASSIGNMENT_FOUND');
     // The objective prefers one continuous bar — one piece, one mark — but a lap is a
     // legal outcome too, and demanding identity is what stranded fifty members.
     expect(r.assignment.size).toBe(2);
@@ -173,7 +173,7 @@ describe('global coordination succeeds where per-joint choice cannot', () => {
       members: [variable(1, dom(), 16), variable(2, dom(), 16)],
       joints: [joint('J', [1, 2], { 1: blocks }, () => 'crossing')],
     });
-    expect(r.outcome).toBe('CONSTRUCTIBLE');
+    expect(r.outcome).toBe('ASSIGNMENT_FOUND');
     // Member 1 still had to clear the column; member 2 was unconstrained by it.
     expect(candidateClears(r.assignment.get(1)!, 16, blocks).ok).toBe(true);
   });
@@ -190,7 +190,7 @@ describe('global coordination succeeds where per-joint choice cannot', () => {
         joint('J2', [2, 3], { 2: blocks, 3: blocks }, () => 'collinear'),
       ],
     });
-    expect(r.outcome).toBe('CONSTRUCTIBLE');
+    expect(r.outcome).toBe('ASSIGNMENT_FOUND');
     expect(r.stats.dpTransitions).toBeGreaterThan(0);
     for (const id of [1, 2, 3]) {
       expect(candidateClears(r.assignment.get(id)!, 16, blocks).ok).toBe(true);
@@ -203,7 +203,7 @@ describe('global coordination succeeds where per-joint choice cannot', () => {
       joints: [joint('J', [1], { 1: [{ at: 0, halfWidth: 0.03 }] })],
     });
     expect(r.stats.domainsRemovedByPropagation).toBeGreaterThan(0);
-    expect(r.outcome).toBe('CONSTRUCTIBLE');
+    expect(r.outcome).toBe('ASSIGNMENT_FOUND');
   });
 
   it('a locked bar forces a different, still-valid solution', () => {
@@ -213,7 +213,7 @@ describe('global coordination succeeds where per-joint choice cannot', () => {
       members: [variable(1, free, 16)],
       joints: [joint('J', [1], { 1: blocks })],
     });
-    expect(unlocked.outcome).toBe('CONSTRUCTIBLE');
+    expect(unlocked.outcome).toBe('ASSIGNMENT_FOUND');
 
     // Pin a bar where the unconstrained answer did NOT put one.
     const other = free.find((c) => c.id !== unlocked.assignment.get(1)!.id)!;
@@ -222,7 +222,7 @@ describe('global coordination succeeds where per-joint choice cannot', () => {
       members: [variable(1, candidates(2, 16, 0.44, [pin]), 16)],
       joints: [joint('J', [1], { 1: blocks })],
     });
-    if (locked.outcome === 'CONSTRUCTIBLE') {
+    if (locked.outcome === 'ASSIGNMENT_FOUND') {
       const c = locked.assignment.get(1)!;
       expect(c.slots.some((s) => Math.abs(s.across - pin) < 1e-6)).toBe(true);
       expect(candidateClears(c, 16, blocks).ok).toBe(true);
@@ -291,7 +291,7 @@ describe('the four outcomes are never conflated', () => {
       members: [variable(1, candidates(2, 20, 0.35), 20)],
       joints: [joint('J', [1], { 1: [{ at: 0, halfWidth: 0.30 }] })],
     });
-    expect(r.outcome).not.toBe('CONSTRUCTIBLE');
+    expect(r.outcome).not.toBe('ASSIGNMENT_FOUND');
     expect(r.assignment.size).toBe(0);
   });
 });

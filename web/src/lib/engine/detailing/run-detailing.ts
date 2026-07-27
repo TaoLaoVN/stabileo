@@ -52,12 +52,19 @@ import {
 } from './coordination-search';
 import { DEFAULT_TOLERANCES } from './collision';
 import { planSplice, transitionExists } from './splice';
+import { assessConstructibility } from './constructibility';
+import { envelopeIsComplete } from './coordination-search';
 import { materialiseLaps, lapIndex, lapBetween, type PlannedTransition, type LapInterval } from './lap-materialize';
 import type { EngineMessage } from '../../codes/message';
+import {
+  allocateLayers, depthAfterRaise,
+  type LayerAllocation, type LineCrossing, type LineForLayering,
+} from './joint-layers';
+import { prescribedTolerances } from '../../codes/cirsoc201/placement';
 import { deriveDevelopment } from '../../codes/cirsoc201/anchorage';
 import { minClearSpacingColumn } from '../../codes/cirsoc201/spacing';
 import { coordinateFloor, type FloorCoordinationResult, type JointInput, type MemberBars } from './coordinate-floor';
-import type { DetailingAssembly } from './assembly';
+import { evaluateState, reviewRank, type DetailingAssembly } from './assembly';
 import { deriveMaturity } from '../../codes/maturity';
 
 // ─── Inputs ──────────────────────────────────────────────────────
@@ -88,6 +95,24 @@ export interface RunDetailingInput {
   /** Revision of the previous assemblies, so regeneration increments. */
   previousRevision?: number;
   maxAggregateSizeMm: number;
+  /**
+   * Project's additional bar-spacing margin above the regulatory minimum, m.
+   *
+   * Zero by default. CIRSOC's minimum IS the construction requirement; this is a project
+   * decision and is never presented as a code one.
+   */
+  spacingMargin?: number;
+  /**
+   * Authoritative re-verification of one member at its FINAL geometry.
+   *
+   * Moving steel changes the effective depth, and a certificate issued against the
+   * pre-coordination arrangement describes geometry that no longer exists. `depthLoss` is
+   * how much lever arm the member lost: the joint-layer raise plus the unfavourable
+   * §26.6.2.1 tolerance. The caller supplies the verifier so this module stays free of the
+   * design layer; when it is absent NOTHING is reverified and the constructibility gate
+   * says so rather than assuming a pass.
+   */
+  reverify?: (elementId: number, depthLoss: number) => 'ok' | 'warn' | 'fail';
   /** Bars the user pinned; they survive regeneration untouched. */
   lockedBars?: BarPath[];
   /**
@@ -299,7 +324,7 @@ export interface RunDetailingResult {
    * What the splice schedules actually BUILT.
    *
    * Separate from `layoutSearch` on purpose. The search reports whether a legal assignment
-   * exists; this reports whether the steel was placed. A run with a CONSTRUCTIBLE outcome
+   * exists; this reports whether the steel was placed. A run with an ASSIGNMENT_FOUND outcome
    * and zero laps and zero fusions has coordinated nothing, and that combination has to be
    * visible rather than inferable.
    */
@@ -329,7 +354,7 @@ export function runDetailing(input: RunDetailingInput): RunDetailingResult {
       assemblies: [], readiness, coordination: [], skipped,
       lapping: { laps: [], fused: 0, unmaterialised: [] },
       layoutSearch: {
-        outcome: 'CONSTRUCTIBLE', envelope: 'beamsAndColumns',
+        outcome: 'ASSIGNMENT_FOUND', envelope: 'beamsAndColumns',
         evidence: {
           completeBeamEnvelope: true, completeColumnEnvelope: true,
           allJointArrangementsIncluded: true, noUnsupportedRule: true,
@@ -392,6 +417,11 @@ export function runDetailing(input: RunDetailingInput): RunDetailingResult {
    */
   let lapLookup: ((aId: string, bId: string) => 'contact' | 'nonContact' | undefined)
     | undefined;
+
+  /** Joint-layer allocation, filled in by `coordinateBeamLayouts`. */
+  let layerAllocation: LayerAllocation | undefined;
+  /** Vertical raise per member, m, from that allocation. Zero for rank 0. */
+  const layerRaiseOf = new Map<number, number>();
   /** Layer index per bar, reported by the generators, for the §25.2.2 classification. */
   const barLayers = new Map<string, number>();
 
@@ -853,6 +883,18 @@ export function runDetailing(input: RunDetailingInput): RunDetailingResult {
       const root = find(m.elementId);
       lineMembers.set(root, [...(lineMembers.get(root) ?? []), m.elementId]);
     }
+
+    /**
+     * Canonical name for a line: its lowest member id, zero-padded.
+     *
+     * NOT the union-find root, which is whichever member happened to win the last union
+     * and therefore depends on the order the members arrived in. That was fine while the
+     * id was only a DP grouping key, and became a determinism bug the moment the joint
+     * layer allocator started sorting by it — the same floor supplied in a different
+     * order got a different rank assignment and therefore different physical geometry.
+     */
+    const lineName = (ids: readonly number[]): string =>
+      `line-${String(Math.min(...ids)).padStart(6, '0')}`;
     for (const [root, ids] of lineMembers) {
       if (ids.length < 2) continue;   // a lone beam is not a chain; leave it to the search
       // Order along the line by the midpoint's projection on the line's own axis, so
@@ -869,8 +911,59 @@ export function runDetailing(input: RunDetailingInput): RunDetailingResult {
 
       keyed.forEach((k, i) => {
         const m = members.find((x) => x.elementId === k.id);
-        if (m) { m.lineId = `line-${root}`; m.lineIndex = i; }
+        if (m) { m.lineId = lineName(ids); m.lineIndex = i; }
       });
+    }
+
+    // ── Orthogonal layer allocation, before the search ──
+    //
+    // Two beams meeting a column from different directions put their bottom steel at the
+    // same distance from the soffit, so the bars occupy the same points in space. That was
+    // 6,136 of the flagship's 7,246 prohibited overlaps — not a spacing shortfall (§25.2
+    // governs PARALLEL bars and says nothing about crossings) but centrelines passing
+    // through one another, which nothing makes buildable.
+    //
+    // The rank is a property of the LINE, decided once for the floor. A bar that changes
+    // elevation between joints is not a detail, it is a bar that moves in mid-air.
+    const linesForLayering: LineForLayering[] = [];
+    for (const [root, ids] of lineMembers) {
+      const dir = perBeam.get(ids[0])?.t;
+      if (!dir) continue;
+      linesForLayering.push({
+        lineId: lineName(ids),
+        elementIds: ids,
+        // perBeam.t is the transverse axis; the line runs perpendicular to it.
+        direction: { x: -dir.y, y: dir.x },
+        maxBarMm: Math.max(...ids.map((id) => perBeam.get(id)?.dia ?? 0), 0),
+      });
+    }
+    const lineOfMember = new Map<number, string>();
+    for (const l of linesForLayering) for (const id of l.elementIds) lineOfMember.set(id, l.lineId);
+
+    const crossings: LineCrossing[] = [];
+    const seenCrossing = new Set<string>();
+    for (const j of joints) {
+      for (const a of j.elementIds) {
+        for (const b of j.elementIds) {
+          if (a >= b || j.relation(a, b) !== 'crossing') continue;
+          const la = lineOfMember.get(a);
+          const lb = lineOfMember.get(b);
+          if (!la || !lb || la === lb) continue;
+          const key = `${j.jointId}|${la < lb ? la : lb}|${la < lb ? lb : la}`;
+          if (seenCrossing.has(key)) continue;
+          seenCrossing.add(key);
+          crossings.push({ a: la, b: lb, jointId: j.jointId });
+        }
+      }
+    }
+    layerAllocation = allocateLayers({
+      lines: linesForLayering, crossings,
+      edition: input.edition,
+      extraMargin: input.spacingMargin ?? 0,
+    });
+    for (const [id, lineId] of lineOfMember) {
+      const la = layerAllocation.byLine.get(lineId);
+      if (la) layerRaiseOf.set(id, la.bottomRaise);
     }
 
     const result = coordinate({ members, joints });
@@ -984,7 +1077,12 @@ export function runDetailing(input: RunDetailingInput): RunDetailingResult {
     const gen = generateBeamBars({
       elementId: id,
       L: ctx.L, b: ctx.section.b, h: ctx.section.h,
-      d: ctx.section.h - ctx.material.cover - ctx.material.stirrupDia / 1000,
+      // Raising the steel costs lever arm. The generator must size stirrup zones and
+      // curtailment against the depth the bars ACTUALLY have, not the one they were
+      // designed with — see the re-verification pass below.
+      d: depthAfterRaise(
+        ctx.section.h - ctx.material.cover - ctx.material.stirrupDia / 1000,
+        layerRaiseOf.get(id) ?? 0),
       cover: ctx.material.cover, stirrupDia: ctx.material.stirrupDia,
       fc: ctx.material.fc, fy: ctx.material.fy,
       maxAggregateSizeMm: input.maxAggregateSizeMm,
@@ -1000,6 +1098,7 @@ export function runDetailing(input: RunDetailingInput): RunDetailingResult {
       axis: unit(nodePoint(nI), nodePoint(nJ)),
       up: { x: 0, y: 0, z: 1 },
       transverseSlots: layoutChoice.slots.get(id),
+      layerRaise: layerRaiseOf.get(id) ?? 0,
       bentUp: input.bentUp ?? { seismicDesign: 'unstated', optOut: false },
     } as never);
 
@@ -1035,6 +1134,30 @@ export function runDetailing(input: RunDetailingInput): RunDetailingResult {
     const lap = lapBetween(laps, aId, bId);
     return lap ? (lap.kind === 'contactLap' ? 'contact' : 'nonContact') : undefined;
   };
+
+  // ── Authoritative re-verification at the FINAL geometry ──
+  //
+  // The layer allocation moved steel, and lever arm is what flexure is made of. A rank-1
+  // line on Ø16 bars loses 16 mm of d, and on a shallow member that is the difference
+  // between passing and not. On top of that sits Table 26.6.2.1(a)'s unfavourable
+  // tolerance on d, which is a real prescribed number and applies whether or not anything
+  // moved.
+  //
+  // Without a verifier nothing is reverified and `reverifiedMembers` stays at zero. That
+  // is the honest reading: the check was not run, so the claim is not available.
+  const reverification = new Map<number, 'ok' | 'warn' | 'fail'>();
+  if (input.reverify) {
+    for (const [id, ctx] of input.contexts) {
+      if (!memberBarsById.has(id)) continue;
+      const nominalD = ctx.section.h - ctx.material.cover - ctx.material.stirrupDia / 1000;
+      const tol = prescribedTolerances(nominalD, ctx.material.cover, input.edition);
+      const depthLoss = (layerRaiseOf.get(id) ?? 0) + tol.depth;
+      reverification.set(id, input.reverify(id, depthLoss));
+    }
+  }
+  const reverifiedOk = [...reverification.values()].filter((v) => v !== 'fail').length;
+  const reverifyFailures = [...reverification.entries()]
+    .filter(([, v]) => v === 'fail').map(([id]) => id);
 
   // ── Group into one assembly per level, and coordinate each ──
   const levelOf = (id: number): number => {
@@ -1077,6 +1200,26 @@ export function runDetailing(input: RunDetailingInput): RunDetailingResult {
     }
     return out.sort((a, b) => a.id.localeCompare(b.id));
   };
+
+  /** Owning members per bar id, for attributing materialised geometry to an assembly. */
+  const barOwner = new Map<string, number[]>();
+  for (const mb of memberBarsById.values()) {
+    for (const b of mb.bars) barOwner.set(b.id, b.ownerElementIds);
+  }
+
+  /**
+   * Prohibited physical overlaps touching these members.
+   *
+   * Filled in after each assembly is coordinated — an assembly's own conflict list is the
+   * authoritative count, and guessing it ahead of time is how a gate ends up measuring
+   * something other than what it claims.
+   */
+  const prohibitedByElement = new Map<number, number>();
+  const prohibitedFor = (ids: readonly number[]): number =>
+    ids.reduce((n, id) => n + (prohibitedByElement.get(id) ?? 0), 0);
+
+  /** Spacing assessments that failed, across the run. Zero until the gate is wired. */
+  const spacingFailures = { codeLegal: 0, placementRobust: 0 };
 
   const assemblies: DetailingAssembly[] = [];
   const coordination: FloorCoordinationResult[] = [];
@@ -1137,7 +1280,88 @@ export function runDetailing(input: RunDetailingInput): RunDetailingResult {
         return n ? { x: n.x, y: n.y, z: Z(n) } : undefined;
       },
     });
-    assemblies.push(result.assembly);
+    // ── The twelve conditions, measured on what coordination ACTUALLY produced ──
+    //
+    // Second pass on purpose. The conflict count is an output of coordination, so a gate
+    // evaluated before it runs is a gate measuring zero conflicts on every model — which
+    // is precisely the shape of the defect being fixed here.
+    const prohibited = result.assembly.conflicts
+      .filter((c) => c.pairClass === 'prohibitedOverlap').length;
+    const assessment = assessConstructibility({
+      // "Complete envelope" here means: no applicable member of this assembly was left
+      // out of the search.
+      //
+      // NOT the beamLayoutsOnly/beamsAndColumns distinction. That qualifier bounds
+      // NEGATIVE verdicts — you may not call detailing INADEQUATE on the strength of a
+      // partial search, because the unsearched part might have contained the answer. It
+      // does not bound a positive one: a clash-free, fully reverified, placement-robust
+      // cage is buildable no matter how narrow the search that found it was. A narrower
+      // search succeeding is better news, not worse.
+      //
+      // What genuinely would invalidate a positive claim is a member that never entered
+      // the search at all, because then the cage being judged is not the whole cage.
+      completeEnvelope: !skipped.some((sk) => elementIds.includes(sk.elementId))
+        && elementIds.every((e) => memberBarsById.has(e)),
+      searchTruncated: layoutChoice.result.stats.truncated,
+      applicableMembers: elementIds.length,
+      assignedMembers: elementIds.filter((e) =>
+        layoutChoice.slots.has(e) || input.contexts.get(e)?.elementType !== 'beam').length,
+      selectedTransitions: layoutChoice.transitions
+        .filter((t) => elementIds.includes(t.fromElementId)).length,
+      materialisedTransitions: layoutChoice.transitions
+        .filter((t) => elementIds.includes(t.fromElementId)).length
+        - materialised.unmaterialised
+          .filter((u) => layoutChoice.transitions
+            .some((t) => t.jointId === u.jointId && elementIds.includes(t.fromElementId)))
+          .length,
+      unmaterialisedTransitions: materialised.unmaterialised
+        .filter((u) => layoutChoice.transitions
+          .some((t) => t.jointId === u.jointId && elementIds.includes(t.fromElementId)))
+        .length,
+      prohibitedConflicts: prohibited,
+      reverifiedMembers: elementIds.filter((e) => {
+        const v = reverification.get(e);
+        return v !== undefined && v !== 'fail';
+      }).length,
+      // A certificate is only meaningful against final geometry. A member whose steel was
+      // raised carries a certificate describing a cage that no longer exists, and saying
+      // so is the whole point of this condition.
+      certificateHashMatches: elementIds.filter((e) =>
+        (layerRaiseOf.get(e) ?? 0) === 0 && reverification.get(e) !== undefined
+        && reverification.get(e) !== 'fail').length,
+      spacingNotCodeLegal: result.assembly.conflicts
+        .filter((c) => c.pairClass === 'sameLayerSpacing'
+          || c.pairClass === 'betweenLayerSpacing' || c.pairClass === 'crossMemberSpacing')
+        .length,
+      spacingNotPlacementRobust: 0,
+      unsupportedRules: result.assembly.unsupported.length,
+      staleAssemblies: 0,
+    });
+    const gated = evaluateState({
+      bars: result.assembly.bars,
+      conflicts: result.assembly.conflicts,
+      unsupported: result.assembly.unsupported,
+      membersVerified: true,
+      coordinated: true,
+      constructibility: assessment,
+    });
+    // The coordinator's own state is the ceiling set by the conditions the gate does not
+    // cover — members failing their individual checks, coordination not converging, no
+    // bars at all. Below COORDINATED those decide and the gate has nothing to add. At or
+    // above it, the twelve conditions decide.
+    assemblies.push({
+      ...result.assembly,
+      state: reviewRank(result.assembly.state) < reviewRank('COORDINATED')
+        ? result.assembly.state
+        : gated.state,
+      // The coordinator evaluated the ladder before the gate existed for this assembly,
+      // so its blockers still say "not assessed". Replacing them keeps a single account of
+      // why the state is what it is; two disagreeing lists is worse than none.
+      stateBlockers: reviewRank(result.assembly.state) < reviewRank('COORDINATED')
+        ? result.assembly.stateBlockers
+        : gated.blockers,
+      constructibility: assessment,
+    });
     coordination.push(result);
   }
 

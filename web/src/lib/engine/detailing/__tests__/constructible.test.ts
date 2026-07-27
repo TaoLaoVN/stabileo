@@ -88,12 +88,27 @@ function detail() {
     nodes: f.nodes as never, elements: f.elements as never,
     edition: '2025', verifierId: 'constructible-gate',
     demandRevision: 1, maxAggregateSizeMm: 19,
+    /**
+     * Authoritative re-verification at the final geometry.
+     *
+     * The fixture's members are deliberately generous, so the depth lost to the joint-layer
+     * raise and the §26.6.2.1 tolerance does not change any verdict — but the check has to
+     * RUN, because `allMembersReverified` is one of the twelve conditions and a fixture that
+     * reaches CONSTRUCTIBLE without it would be proving the gate can be bypassed.
+     */
+    reverify: (elementId, depthLoss) => {
+      const ctx = f.contexts.get(elementId);
+      if (!ctx) return 'fail';
+      const d = ctx.section.h - ctx.material.cover - ctx.material.stirrupDia / 1000;
+      return d - depthLoss > 0.5 * ctx.section.h ? 'ok' : 'warn';
+    },
   });
 }
 
 describe('a feasible frame coordinates to a constructible cage', () => {
   it('resolves EVERY physical conflict, not merely most of them', () => {
     const r = detail();
+    console.log('BLOCK', JSON.stringify(r.assemblies.map((a:any)=>[a.id,a.constructibility?.blocking])));
     const conflicts = r.assemblies.flatMap((a) => a.conflicts);
     // Not "fewer than before". Zero. A cage with an unresolved clash does not get built.
     expect(conflicts.map((c) => `${c.severity} ${c.barA}/${c.barB}`)).toEqual([]);
@@ -131,11 +146,20 @@ describe('a feasible frame coordinates to a constructible cage', () => {
     const a = detail();
     const f = feasibleFrame();
     const reversed = new Map([...f.contexts.entries()].reverse());
+    // Same inputs, reversed order — including the verifier. Omitting it here would make
+    // the two runs differ in what evidence they were given, which is not a determinism
+    // test, it is a comparison of two different questions.
     const b = runDetailing({
       contexts: reversed, outcomes: f.outcomes,
       nodes: f.nodes as never, elements: f.elements as never,
       edition: '2025', verifierId: 'constructible-gate',
       demandRevision: 1, maxAggregateSizeMm: 19,
+      reverify: (elementId, depthLoss) => {
+        const ctx = f.contexts.get(elementId);
+        if (!ctx) return 'fail';
+        const d = ctx.section.h - ctx.material.cover - ctx.material.stirrupDia / 1000;
+        return d - depthLoss > 0.5 * ctx.section.h ? 'ok' : 'warn';
+      },
     });
     const shape = (r: ReturnType<typeof detail>) => r.assemblies.map((x) => ({
       id: x.id, state: x.state, elementIds: x.elementIds,

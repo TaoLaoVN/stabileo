@@ -80,7 +80,7 @@ describe('the chain DP is live', () => {
     expect(r.stats.dpStates, 'the chain DP did not run').toBeGreaterThan(0);
     expect(r.stats.dpTransitions, 'the chain DP evaluated no transitions')
       .toBeGreaterThan(0);
-    expect(r.outcome).toBe('CONSTRUCTIBLE');
+    expect(r.outcome).toBe('ASSIGNMENT_FOUND');
   });
 });
 
@@ -107,7 +107,7 @@ describe('splice transitions are live', () => {
         aL.slots.map((s) => s.across), bL.slots.map((s) => s.across), 16, DEV),
     }];
     const r = coordinate({ members: [a, b], joints });
-    expect(r.outcome).toBe('CONSTRUCTIBLE');
+    expect(r.outcome).toBe('ASSIGNMENT_FOUND');
     expect(r.assignment.size).toBe(2);
   });
 });

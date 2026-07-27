@@ -129,8 +129,21 @@ export const DEFAULT_LIMITS: SearchLimits = { maxNodes: 20_000, maxDomain: 24 };
  * only a COMPLETE envelope can produce.
  */
 export type CoordinationOutcome =
-  /** A zero-conflict, reverified assignment was found. */
-  | 'CONSTRUCTIBLE'
+  /**
+   * The search found a complete, mutually compatible assignment: every applicable member
+   * has a layout, every joint is satisfiable, nothing was truncated.
+   *
+   * This is an ASSIGNMENT result and nothing more. It was called CONSTRUCTIBLE and that was
+   * wrong in a way that mattered: the search reasons about joint threading and collinear
+   * transitions, and knows nothing about whether the resulting steel physically clashes,
+   * whether the members were reverified at their final effective depth, or whether the
+   * spacing survives the project's placement margin. On the flagship this label sat on top
+   * of 7,246 prohibited overlaps.
+   *
+   * Constructibility is a separate, stricter judgement made downstream by
+   * `assessConstructibility`, on the materialised geometry. Never infer one from the other.
+   */
+  | 'ASSIGNMENT_FOUND'
   /**
    * The complete permitted envelope was searched exhaustively and nothing fits. The
    * geometry is the problem; a section or detail change is the answer.
@@ -633,7 +646,7 @@ export function coordinate(input: CoordinationInput): CoordinationResult {
   }
 
   return {
-    outcome: 'CONSTRUCTIBLE', envelope, evidence: evidenceFor([], []),
+    outcome: 'ASSIGNMENT_FOUND', envelope, evidence: evidenceFor([], []),
     assignment, infeasibleJoints: [], emptiedDomains: [], stats,
   };
 }
