@@ -24,6 +24,10 @@ import { evaluateDiagramAt } from './diagrams-3d';
 import {
   minClearBetweenLayers, minClearSpacingColumn, minClearSpacingInLayer,
 } from '../codes/cirsoc201/spacing';
+import {
+  checkTransverseSpacing, transverseSpacingForDemand, transverseSpacingIsSupported,
+  requiredVsForTable, type TransverseSpacingLimits,
+} from '../codes/cirsoc201/transverse-spacing';
 import type { RegulationEdition } from '../codes/regulation';
 import { REBAR_DB, classifyElement } from './codes/argentina/cirsoc201';
 // Axis resolution + the shared utilization convention. Both modules import only
@@ -709,12 +713,31 @@ export interface SpacingRule {
   maxAggregateSizeMm: number;
 }
 
-export const LEGACY_SPACING_RULE: SpacingRule = { edition: '2005', maxAggregateSizeMm: 0 };
+/**
+ * Default spacing rule for callers that do not state one.
+ *
+ * Was `{ edition: '2005', maxAggregateSizeMm: 0 }`, named LEGACY_SPACING_RULE, on the
+ * reasoning that an un-migrated caller should get the old behaviour. That is now wrong twice:
+ *
+ *   1. CIRSOC 201-2005 is no longer an available production edition — its official text is
+ *      not supplied, so its rules are not implemented. Defaulting to it meant defaulting to
+ *      a rule the app cannot source.
+ *   2. It made the DEFAULT the unsourced path, so forgetting to pass `spacingRule` silently
+ *      selected it. A default should be the edition in force.
+ *
+ * `maxAggregateSizeMm: 0` is retained deliberately: zero makes the §25.2.1 aggregate term
+ * `(4/3)·0 = 0`, which never governs, so a caller that does not know the aggregate size gets
+ * the bar-diameter and absolute-floor terms only rather than an invented aggregate.
+ */
+export const DEFAULT_SPACING_RULE: SpacingRule = { edition: '2025', maxAggregateSizeMm: 0 };
+
+/** @deprecated Use `DEFAULT_SPACING_RULE`. Kept so no call site breaks silently. */
+export const LEGACY_SPACING_RULE = DEFAULT_SPACING_RULE;
 
 export function computeFaceLayout(
   layers: RebarLayer[], face: 'top' | 'bottom',
   b: number, h: number, cover: number, stirrupDia: number,
-  rule: SpacingRule = LEGACY_SPACING_RULE,
+  rule: SpacingRule = DEFAULT_SPACING_RULE,
 ): FaceLayout {
   const stirDia_m = stirrupDia / 1000;
   const availW = b - 2 * cover - 2 * stirDia_m;
@@ -775,7 +798,7 @@ export function computeFaceLayout(
 export function computeSectionLayout(
   topLayers: RebarLayer[], bottomLayers: RebarLayer[],
   b: number, h: number, cover: number, stirrupDia: number,
-  rule: SpacingRule = LEGACY_SPACING_RULE,
+  rule: SpacingRule = DEFAULT_SPACING_RULE,
 ): SectionLayout {
   const top = computeFaceLayout(topLayers, 'top', b, h, cover, stirrupDia, rule);
   const bottom = computeFaceLayout(bottomLayers, 'bottom', b, h, cover, stirrupDia, rule);
@@ -929,7 +952,7 @@ export function computeColumnLayout(
   count: number, diameter: number,
   b: number, h: number, cover: number, stirrupDia: number,
   colReinf?: ColumnReinforcement,
-  rule: SpacingRule = LEGACY_SPACING_RULE,
+  rule: SpacingRule = DEFAULT_SPACING_RULE,
 ): ColumnLayout {
   const resolved = resolveColumnReinf(colReinf, { count, diameter });
   if (!resolved) return { bars: [], totalArea: 0, b, h, issues: [], constructible: true };
@@ -1064,7 +1087,7 @@ export interface LayerFitResult {
  */
 export function checkRowFit(
   layers: RebarLayer[], b: number, cover: number, stirrupDia: number,
-  rule: SpacingRule = LEGACY_SPACING_RULE,
+  rule: SpacingRule = DEFAULT_SPACING_RULE,
 ): LayerFitResult {
   const stirDia_m = stirrupDia / 1000;
   const availW = b - 2 * cover - 2 * stirDia_m;
@@ -1138,7 +1161,9 @@ export interface ProvidedRebarCheck {
   stationX?: number;          // station where the demand occurs
   /** Coarse failure class, consumed by the design outcome classifier. */
   limiting?: 'flexure' | 'shear' | 'axialFlexure' | 'biaxial' | 'torsion'
-    | 'barFit' | 'anchorage' | 'minSteel' | 'maxSteel' | 'tieSpacing' | 'congestion' | 'cover';
+    | 'barFit' | 'anchorage' | 'minSteel' | 'maxSteel' | 'tieSpacing' | 'congestion' | 'cover'
+    /** A provision of the regulation this app does not implement — never a silent pass. */
+    | 'unsupportedCheck';
   /** True for a check that could not be evaluated because reinforcement is absent.
    *  Reported as a FAILURE (never skipped) so missing steel cannot hide. */
   missingReinforcement?: boolean;
@@ -1682,13 +1707,13 @@ export function verifyProvidedReinforcement(
     /** Slenderness moment magnifier for columns (>= 1). Default 1 (short column). */
     slenderDeltaNs?: number;
     /**
-     * Edition + aggregate size governing minimum clear spacing. Defaults to the legacy
-     * 2005 rule so callers that have not been migrated keep their current behaviour.
+     * Edition + aggregate size governing minimum clear spacing and Table 9.7.6.2.2.
+     * Defaults to `DEFAULT_SPACING_RULE` — the edition IN FORCE, not the legacy one.
      */
     spacingRule?: SpacingRule;
   },
 ): ProvidedRebarResult {
-  const spacingRule = options?.spacingRule ?? LEGACY_SPACING_RULE;
+  const spacingRule = options?.spacingRule ?? DEFAULT_SPACING_RULE;
   const emptyResult = (status: ProvidedRebarResult['overallStatus']): ProvidedRebarResult => ({
     elementId, elementType, hasProvided: !!provided, checks: [], overallStatus: status,
     worstUtilization: 0, checkedAxes: [], strengthCheckCount: 0,
@@ -1963,8 +1988,6 @@ export function verifyProvidedReinforcement(
         continue;
       }
       if (!worst) continue;
-      // Maximum stirrup spacing per CIRSOC 201 §11.5.4/§11.5.5 shear zone.
-      const sMaxZone = maxStirrupSpacing(worst.Vu, section.b, d, section.fc);
       pushStrength({
         category: ss.label, demandCategory: axes.shear === 'Vy' ? 'Vy' : 'Vz',
         demand: +worst.Vu.toFixed(2), capacity: +worst.phiVn.toFixed(2),
@@ -1974,15 +1997,54 @@ export function verifyProvidedReinforcement(
         comboName: worst.comboName, stationX: worst.stationX,
         limiting: 'shear',
       });
-      if (ss.stir.spacing > sMaxZone + 1e-6) {
+
+      // ── Table 9.7.6.2.2: both columns of the row, along AND across ──
+      //
+      // The across-width column was previously not checked at all. It is the requirement
+      // that forces crossties into wide members and into any member in row 2 whose web is
+      // wider than the row-2 limit — a 300 mm web has 242 mm between its two leg centres
+      // against a 200 mm row-2 limit, so a third leg is required.
+      const tbl = checkTransverseSpacing(
+        spacingRule.edition,
+        {
+          VsRequired: requiredVsForTable(worst.Vu, section.b, d, section.fc),
+          bw: section.b, d, fc: section.fc,
+          cover: section.cover, stirrupDiaMm: ss.stir.diameter,
+        },
+        { spacing: ss.stir.spacing, legs: ss.stir.legs },
+      );
+      if (!transverseSpacingIsSupported(tbl.limits)) {
+        // Prestressing is the only gap the table has, and it is not silently ignored.
         pushStrength({
           category: `${ss.label} s,max`, demandCategory: null,
-          required: +(sMaxZone * 100).toFixed(1), provided: +(ss.stir.spacing * 100).toFixed(1),
-          utilization: ss.stir.spacing / sMaxZone,
+          required: 0, provided: 0, utilization: Number.POSITIVE_INFINITY,
           unit: 'cm', method: 'area', tuplesChecked: 0, regionRange: ss.range,
-          description: `stirrup spacing ${(ss.stir.spacing * 100).toFixed(0)} cm exceeds s,max = ${(sMaxZone * 100).toFixed(0)} cm for this shear zone`,
-          limiting: 'tieSpacing',
+          description: `Table 9.7.6.2.2 not evaluated — ${tbl.limits.unsupported.join(', ')}`,
+          limiting: 'unsupportedCheck',
         });
+      } else {
+        if (!tbl.alongOk) {
+          pushStrength({
+            category: `${ss.label} s,max`, demandCategory: null,
+            required: +(tbl.limits.alongMax * 100).toFixed(1),
+            provided: +(ss.stir.spacing * 100).toFixed(1),
+            utilization: tbl.alongUtilization,
+            unit: 'cm', method: 'area', tuplesChecked: 0, regionRange: ss.range,
+            description: `stirrup spacing ${(ss.stir.spacing * 100).toFixed(1)} cm exceeds s,max along the member = ${(tbl.limits.alongMax * 100).toFixed(1)} cm (Table 9.7.6.2.2 ${tbl.limits.row})`,
+            limiting: 'tieSpacing',
+          });
+        }
+        if (!tbl.acrossOk) {
+          pushStrength({
+            category: `${ss.label} s,max across`, demandCategory: null,
+            required: +(tbl.limits.acrossMax * 100).toFixed(1),
+            provided: +(tbl.acrossProvided * 100).toFixed(1),
+            utilization: tbl.acrossUtilization,
+            unit: 'cm', method: 'area', tuplesChecked: 0, regionRange: ss.range,
+            description: `leg spacing across the width ${(tbl.acrossProvided * 100).toFixed(1)} cm exceeds ${(tbl.limits.acrossMax * 100).toFixed(1)} cm (Table 9.7.6.2.2 ${tbl.limits.row}) — ${ss.stir.legs} legs provided, ${tbl.limits.requiredLegs} required`,
+            limiting: 'tieSpacing',
+          });
+        }
       }
     }
 
@@ -2225,17 +2287,22 @@ export function verifyProvidedReinforcement(
 }
 
 /**
- * Maximum stirrup spacing for the shear zone the member is in (CIRSOC 201).
- *   Vs <= (1/3)√f'c·bw·d  → s <= min(d/2, 60 cm)
- *   Vs >  (1/3)√f'c·bw·d  → s <= min(d/4, 30 cm)
- * Expressed via the demand so it can be evaluated without knowing Vs directly:
- * Vs,req = Vu/φ − Vc.
+ * Table 9.7.6.2.2 evaluated for one member and one shear demand.
+ *
+ * THE way the rest of the engine obtains transverse spacing limits. The former scalar
+ * `maxStirrupSpacing(Vu, b, d, fc): number` is gone: it returned one number, so the
+ * across-width column of the table had nowhere to live, and its `VsReq <= 0` branch
+ * invented a `0,8·d` limit that appears nowhere in the regulation and permitted 300 mm
+ * where the table permits 256 mm. The rule itself lives in
+ * `lib/codes/cirsoc201/transverse-spacing.ts`; this is an argument-order convenience for
+ * the engine's existing call sites.
  */
-export function maxStirrupSpacing(Vu: number, b: number, d: number, fc: number): number {
-  const Vc = (1 / 6) * Math.sqrt(fc) * (b * 1000) * (d * 1000) / 1000;
-  const VsReq = Math.max(0, Vu / 0.75 - Vc);
-  const VsThird = (1 / 3) * Math.sqrt(fc) * (b * 1000) * (d * 1000) / 1000;
-  if (VsReq <= 0) return Math.min(0.8 * d, 0.30);
-  if (VsReq <= VsThird) return Math.min(d / 2, 0.30);
-  return Math.min(d / 4, 0.20);
+export function transverseSpacingFor(
+  Vu: number, b: number, d: number, fc: number,
+  cover: number, stirrupDiaMm: number,
+  edition: RegulationEdition,
+): TransverseSpacingLimits {
+  return transverseSpacingForDemand(edition, {
+    Vu, bw: b, d, fc, cover, stirrupDiaMm,
+  });
 }
