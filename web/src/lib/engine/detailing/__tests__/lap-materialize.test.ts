@@ -476,3 +476,92 @@ describe('layer identity is physical, not diametral', () => {
     }
   });
 });
+
+describe('a layer has a bounded span, not just pairwise proximity', () => {
+  /**
+   * Single linkage is transitive and therefore chains. Elevations 0, 15 and 30 mm all join
+   * one cluster at a 20 mm threshold even though the outer two are 30 mm apart — and
+   * §25.2.2 puts 25 mm between layers, so a graded chain of three is exactly what a real
+   * two-layer mat looks like.
+   */
+  function levelsOf(zs: number[]) {
+    const bars = zs.map((z, i) => bar(`b${i}`, 1, 0, 5, i * 0.05, z));
+    const other = zs.map((z, i) => bar(`c${i}`, 2, 5, 10, i * 0.05, z));
+    return materialiseLaps({
+      barsByMember: new Map([[1, bars], [2, other]]),
+      transitions: [transition(zs.map((_, i) => i * 0.05), zs.map((_, i) => i * 0.05))],
+    });
+  }
+
+  it('the 0 / 15 / 30 mm chain does not become one layer', () => {
+    // If all three merged, the outermost pair would be lapped to each other across a
+    // 30 mm elevation difference — two layers treated as one.
+    const r = levelsOf([0.600, 0.615, 0.630]);
+    // Each bar fuses with its own counterpart and nothing is left unmatched.
+    expect(r.fused.length + r.laps.length).toBe(3);
+  });
+
+  it('mixed diameters within one physical layer still cluster together', () => {
+    const big = buildStraightBarWithHooks({
+      id: 'a', diameterMm: 32, role: 'longitudinal',
+      start: { x: 0, y: 0, z: 0.634 }, end: { x: 5, y: 0, z: 0.634 },
+      axis: X, hookNormal: UP, ownerElementIds: [1],
+    });
+    const small = buildStraightBarWithHooks({
+      id: 'b', diameterMm: 20, role: 'longitudinal',
+      start: { x: 5, y: 0, z: 0.640 }, end: { x: 10, y: 0, z: 0.640 },
+      axis: X, hookNormal: UP, ownerElementIds: [2],
+    });
+    const r = materialiseLaps({
+      barsByMember: new Map([[1, [big]], [2, [small]]]),
+      transitions: [transition([0], [0])],
+    });
+    expect(r.fused.length + r.laps.length).toBe(1);
+  });
+
+  it('two genuinely separate layers are never merged', () => {
+    const r = materialiseLaps({
+      barsByMember: new Map([
+        [1, [bar('a0', 1, 0, 5, 0, 0.600), bar('a1', 1, 0, 5, 0, 0.660)]],
+        [2, [bar('b0', 2, 5, 10, 0, 0.600), bar('b1', 2, 5, 10, 0, 0.660)]],
+      ]),
+      transitions: [transition([0, 0], [0, 0])],
+    });
+    // Two layers, two fusions — not one layer of four bars.
+    expect(r.fused).toHaveLength(2);
+  });
+
+  it('is stable under an arbitrary coordinate offset', () => {
+    // A fixed grid gives different answers depending where the model sits in space. A
+    // span-bounded cluster gives the same answer everywhere.
+    const shape = (dz: number) => {
+      const r = materialiseLaps({
+        barsByMember: new Map([
+          [1, [bar('a0', 1, 0, 5, 0, 0.600 + dz), bar('a1', 1, 0, 5, 0, 0.660 + dz)]],
+          [2, [bar('b0', 2, 5, 10, 0, 0.600 + dz), bar('b1', 2, 5, 10, 0, 0.660 + dz)]],
+        ]),
+        transitions: [transition([0, 0], [0, 0])],
+      });
+      return `${r.fused.length}/${r.laps.length}`;
+    };
+    const base = shape(0);
+    for (const dz of [0.003, 0.007, 0.011, 0.017, 1.234, -2.5]) {
+      expect(shape(dz), `offset ${dz}`).toBe(base);
+    }
+  });
+
+  it('fusion preserves the layer the bars were in', () => {
+    const r = materialiseLaps({
+      barsByMember: new Map([
+        [1, [bar('a-bot', 1, 0, 5, 0, 0.05), bar('a-top', 1, 0, 5, 0, 0.60)]],
+        [2, [bar('b-bot', 2, 5, 10, 0, 0.05), bar('b-top', 2, 5, 10, 0, 0.60)]],
+      ]),
+      transitions: [transition([0, 0], [0, 0])],
+    });
+    expect(r.fused).toHaveLength(2);
+    for (const f of r.fused) {
+      const bottom = f.keptBarId.includes('bot');
+      expect(f.removedBarId.includes('bot')).toBe(bottom);
+    }
+  });
+});

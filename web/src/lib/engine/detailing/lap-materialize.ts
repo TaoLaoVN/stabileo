@@ -61,6 +61,13 @@ const AT_JOINT_M = 0.35;
 /** Two bars within this vertical distance of one another belong to the same layer. */
 const SAME_LEVEL_M = 0.020;
 /**
+ * Greatest total vertical span one layer may have, m.
+ *
+ * Below §25.2.2's 25 mm between layers, so two genuine layers can never merge however
+ * finely the elevations between them are graded.
+ */
+const MAX_LAYER_SPAN_M = 0.024;
+/**
  * How far apart two members' corresponding layers may sit and still be lapped, m.
  *
  * Generous, because the members meeting at a support routinely differ in depth and in bar
@@ -230,10 +237,26 @@ function endpointsAt(
  * not a layer identity. What makes a layer is the face, the elevation the bars actually
  * share, and the region they run through.
  *
- * Single-linkage clustering has no grid and therefore no boundary: bars join a layer when
- * they are within `SAME_LEVEL_M` OF A BAR ALREADY IN IT, which is the physical question.
- * A top mat and a bottom mat are half a metre apart and never merge; a Ø32 and a Ø20 in
- * the same mat are 6 mm apart and always do.
+ * Clustering has no grid and therefore no boundary: bars join a layer when they are within
+ * `SAME_LEVEL_M` of a bar already in it. A top mat and a bottom mat are half a metre apart
+ * and never merge; a Ø32 and a Ø20 in the same mat are 6 mm apart and always do.
+ *
+ * ── And why pairwise proximity alone is not enough either ──────────
+ *
+ * Pure single linkage is transitive, so it chains: elevations 0, 15 and 30 mm all join one
+ * cluster at a 20 mm threshold even though the first and last bars are 30 mm apart and are
+ * plainly two layers. §25.2.2 puts 25 mm between layers, so a chain of three is exactly the
+ * case that arises in a real two-layer mat.
+ *
+ * So the cluster also has a bounded TOTAL SPAN. A bar joins only if it is within
+ * `SAME_LEVEL_M` of the previous bar AND within `MAX_LAYER_SPAN_M` of the cluster's lowest.
+ * Both conditions, because either alone is wrong: proximity alone chains, and span alone
+ * would split a wide single layer of graded diameters.
+ *
+ * This remains a geometric FALLBACK. An explicit layer identity carried from candidate
+ * generation through assignment, materialisation and persistence is the right answer and
+ * is what `barLayers` is for; clustering is what happens when a bar reaches here without
+ * one.
  */
 function byLevel(eps: Endpoint[]): Endpoint[][] {
   const sorted = [...eps].sort((a, b) => a.level - b.level || a.across - b.across);
@@ -241,7 +264,10 @@ function byLevel(eps: Endpoint[]): Endpoint[][] {
   for (const e of sorted) {
     const last = clusters[clusters.length - 1];
     const prev = last?.[last.length - 1];
-    if (prev && e.level - prev.level <= SAME_LEVEL_M) last.push(e);
+    const base = last?.[0];
+    const near = prev !== undefined && e.level - prev.level <= SAME_LEVEL_M;
+    const withinSpan = base !== undefined && e.level - base.level <= MAX_LAYER_SPAN_M;
+    if (near && withinSpan) last.push(e);
     else clusters.push([e]);
   }
   for (const c of clusters) c.sort((a, b) => a.across - b.across);

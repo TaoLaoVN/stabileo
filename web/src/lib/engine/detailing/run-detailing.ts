@@ -330,6 +330,20 @@ export interface RunDetailingResult {
    * and zero laps and zero fusions has coordinated nothing, and that combination has to be
    * visible rather than inferable.
    */
+  /**
+   * The crossing graph and the layer allocation it produced. Present once beams have been
+   * coordinated; the inspection surfaces and the conflict diagnosis both read it.
+   */
+  layering?: {
+    lineOfMember: Map<number, string>;
+    crossings: LineCrossing[];
+    lineMax: Map<string, number>;
+    relations: Array<{ a: number; b: number; jointId: string; relation: string;
+      lineA?: string; lineB?: string }>;
+    byLine: Map<string, { rank: number; bottomRaise: number; topLower: number }>;
+    unresolved: Array<{ jointId: string; a: string; b: string }>;
+    ranks: number;
+  };
   lapping: {
     /** Physical laps built, each with its interval, class and clause provenance. */
     laps: LapInterval[];
@@ -422,8 +436,24 @@ export function runDetailing(input: RunDetailingInput): RunDetailingResult {
 
   /** Joint-layer allocation, filled in by `coordinateBeamLayouts`. */
   let layerAllocation: LayerAllocation | undefined;
+  /**
+   * What the layer allocator saw, kept for diagnosis.
+   *
+   * Two failure modes are indistinguishable from the outcome alone: a crossing the graph
+   * never received, and a crossing it received and could not colour. Reporting the graph
+   * itself is what separates them.
+   */
+  let layerDiagnostics: {
+    lineOfMember: Map<number, string>;
+    crossings: LineCrossing[];
+    lineMax: Map<string, number>;
+    relations: Array<{ a: number; b: number; jointId: string; relation: string;
+      lineA?: string; lineB?: string }>;
+  } | undefined;
   /** Vertical raise per member, m, from that allocation. Zero for rank 0. */
   const layerRaiseOf = new Map<number, number>();
+  /** Drop per member for the TOP face, m. Sized separately from the bottom. */
+  const layerDropOf = new Map<number, number>();
 
   /** The project's additional bar-spacing margin, m. Zero unless the project stated one. */
   const spacingMargin = Math.max(0, input.spacingMargin ?? 0);
@@ -727,7 +757,10 @@ export function runDetailing(input: RunDetailingInput): RunDetailingResult {
   } {
     const placement = DEFAULT_TOLERANCES.placement;
     const members: MemberVariable[] = [];
-    const perBeam = new Map<number, { dia: number; count: number; t: { x: number; y: number } }>();
+    const perBeam = new Map<number, {
+      dia: number; count: number; t: { x: number; y: number };
+      botDia: number; topDia: number;
+    }>();
 
     for (const id of beams) {
       const ctx = input.contexts.get(id);
@@ -782,7 +815,11 @@ export function runDetailing(input: RunDetailingInput): RunDetailingResult {
       });
       if (domain.length === 0) continue;
 
-      perBeam.set(id, { dia, count, t });
+      perBeam.set(id, {
+        dia, count, t,
+        botDia: groups.bottom.diameterMm,
+        topDia: Math.max(groups.topStart.diameterMm, groups.topEnd.diameterMm),
+      });
       members.push({ elementId: id, domain, diameterMm: dia, neighbours: [] });
     }
 
@@ -951,6 +988,8 @@ export function runDetailing(input: RunDetailingInput): RunDetailingResult {
         // perBeam.t is the transverse axis; the line runs perpendicular to it.
         direction: { x: -dir.y, y: dir.x },
         maxBarMm: Math.max(...ids.map((id) => perBeam.get(id)?.dia ?? 0), 0),
+        maxBottomMm: Math.max(...ids.map((id) => perBeam.get(id)?.botDia ?? 0), 0),
+        maxTopMm: Math.max(...ids.map((id) => perBeam.get(id)?.topDia ?? 0), 0),
       });
     }
     const lineOfMember = new Map<number, string>();
@@ -972,6 +1011,29 @@ export function runDetailing(input: RunDetailingInput): RunDetailingResult {
         }
       }
     }
+    layerDiagnostics = {
+      lineOfMember: new Map(lineOfMember),
+      crossings: [...crossings],
+      lineMax: new Map(linesForLayering.map((l) => [l.lineId, l.maxBarMm])),
+      // Every pair the joint graph SAW and how it judged it, so a missing crossing edge
+      // can be told apart from one that was seen and skipped.
+      relations: (() => {
+        const out: Array<{ a: number; b: number; jointId: string; relation: string;
+          lineA?: string; lineB?: string }> = [];
+        for (const j of joints) {
+          for (const a of j.elementIds) {
+            for (const b of j.elementIds) {
+              if (a >= b) continue;
+              out.push({
+                a, b, jointId: j.jointId, relation: j.relation(a, b),
+                lineA: lineOfMember.get(a), lineB: lineOfMember.get(b),
+              });
+            }
+          }
+        }
+        return out;
+      })(),
+    };
     layerAllocation = allocateLayers({
       lines: linesForLayering, crossings,
       edition: input.edition,
@@ -979,7 +1041,10 @@ export function runDetailing(input: RunDetailingInput): RunDetailingResult {
     });
     for (const [id, lineId] of lineOfMember) {
       const la = layerAllocation.byLine.get(lineId);
-      if (la) layerRaiseOf.set(id, la.bottomRaise);
+      if (la) {
+        layerRaiseOf.set(id, la.bottomRaise);
+        layerDropOf.set(id, la.topLower);
+      }
     }
 
     const result = coordinate({ members, joints });
@@ -1120,6 +1185,7 @@ export function runDetailing(input: RunDetailingInput): RunDetailingResult {
       transverseSlots: layoutChoice.slots.get(id),
       transverseLayers: layoutChoice.slotLayers.get(id),
       layerRaise: layerRaiseOf.get(id) ?? 0,
+      layerDrop: layerDropOf.get(id) ?? 0,
       bentUp: input.bentUp ?? { seismicDesign: 'unstated', optOut: false },
     } as never);
 
@@ -1172,7 +1238,9 @@ export function runDetailing(input: RunDetailingInput): RunDetailingResult {
       if (!memberBarsById.has(id)) continue;
       const nominalD = ctx.section.h - ctx.material.cover - ctx.material.stirrupDia / 1000;
       const tol = prescribedTolerances(nominalD, ctx.material.cover, input.edition);
-      const depthLoss = (layerRaiseOf.get(id) ?? 0) + tol.depth;
+      // Both faces cost lever arm; the member is rechecked against the worse of them.
+      const depthLoss = Math.max(layerRaiseOf.get(id) ?? 0, layerDropOf.get(id) ?? 0)
+        + tol.depth;
       reverification.set(id, input.reverify(id, depthLoss));
     }
   }
@@ -1411,6 +1479,12 @@ export function runDetailing(input: RunDetailingInput): RunDetailingResult {
   return {
     assemblies, readiness, coordination, skipped,
     layoutSearch: layoutChoice.result,
+    layering: layerDiagnostics ? {
+      ...layerDiagnostics,
+      byLine: layerAllocation?.byLine ?? new Map(),
+      unresolved: layerAllocation?.unresolved ?? [],
+      ranks: layerAllocation?.ranks ?? 1,
+    } : undefined,
     lapping: {
       laps: materialised.laps,
       fused: materialised.fused.length,

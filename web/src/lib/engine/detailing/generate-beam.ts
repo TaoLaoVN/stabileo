@@ -83,6 +83,14 @@ export interface BeamGenerationInput {
    * depth, which is why a non-zero value obliges re-verification.
    */
   layerRaise?: number;
+  /**
+   * Vertical drop of this member's TOP steel, m. Sized independently of `layerRaise`.
+   *
+   * The two faces are separate problems: top steel crosses the other line's top steel and
+   * bottom crosses bottom. One scalar for both over-raises whichever face did not need it,
+   * and on the flagship that spent lever arm on clashes that could not happen.
+   */
+  layerDrop?: number;
   supportI: SupportKind;
   supportJ: SupportKind;
   /** Nominal shear strength at each station, kN — for the §9.7.3.5 tests. */
@@ -548,8 +556,9 @@ export function generateBeamBars(input: BeamGenerationInput): GeneratedBeam {
   // bars occupy the same points in space. The raise belongs to the whole line, so it is
   // applied here once and not nudged at individual joints — see `joint-layers.ts`.
   const raise = Math.max(0, input.layerRaise ?? 0);
+  const drop = Math.max(0, input.layerDrop ?? input.layerRaise ?? 0);
   const zBot = -(halfH - barOffset - input.bottom.diameterMm / 2000) + raise;
-  const zTop = halfH - barOffset - input.topStart.diameterMm / 2000 - raise;
+  const zTop = halfH - barOffset - input.topStart.diameterMm / 2000 - drop;
 
   const spacing = minClearSpacingInLayer(input.edition, {
     barDiameterMm: input.bottom.diameterMm, maxAggregateSizeMm: input.maxAggregateSizeMm,
@@ -737,7 +746,7 @@ export function generateBeamBars(input: BeamGenerationInput): GeneratedBeam {
     refs.push(...cut.refs, c('9.7.3.4', 'longitud embebida de la armadura continua'));
     trace.push(`Armadura superior ${t.side}: corte en x = ${cut.actual.toFixed(3)} m. ${cut.note}`);
 
-    const zTopBar = halfH - barOffset - t.group.diameterMm / 2000 - raise;
+    const zTopBar = halfH - barOffset - t.group.diameterMm / 2000 - drop;
     const from = atStart ? -EMBED : Math.min(input.L, cut.actual);
     const to = atStart ? Math.max(0, cut.actual) : input.L + EMBED;
     const topSlots = placeGroup(t.group.count, t.group.diameterMm, true);

@@ -53,8 +53,19 @@ export interface LineForLayering {
   elementIds: readonly number[];
   /** Unit plan direction of the line. Sign is irrelevant; the allocator normalises it. */
   direction: { x: number; y: number };
-  /** Largest longitudinal bar diameter on the line, mm. Drives the elevation step. */
+  /** Largest longitudinal bar diameter on the line, mm. */
   maxBarMm: number;
+  /**
+   * Largest BOTTOM bar and largest TOP bar, mm.
+   *
+   * Kept apart because the two faces are independent problems. A line's top steel crosses
+   * the other line's top steel and its bottom steel crosses the other's bottom; sizing one
+   * scalar step from the larger of the two over-raises whichever face did not need it, and
+   * lever arm spent for a clash that cannot happen is lever arm lost. Default to `maxBarMm`
+   * when a caller does not distinguish them.
+   */
+  maxBottomMm?: number;
+  maxTopMm?: number;
 }
 
 /** Two lines that cross, and where. */
@@ -111,6 +122,35 @@ export function crossingSeparation(
       separation: round(separation * 1000, 1),
     }),
   };
+}
+
+/**
+ * How far rank k's steel must move to clear the rank below it, m.
+ *
+ * ── Why this is NOT the clearance ──────────────────────────────────
+ *
+ * The required CLEARANCE between two crossing bars is (dA + dB)/2 — the two radii. The
+ * required STEP is a different number, and using the clearance as the step is what left
+ * 309 pairs interpenetrating after the ranks were correctly assigned.
+ *
+ * Both layers are referenced from the same concrete face, and each bar's centre sits half
+ * its OWN diameter inside it. So a Ø10 bar starts 11 mm nearer the face than a Ø32 bar
+ * before anything moves. Solving for the raise with that head start included:
+ *
+ *     posA = −dA/2                    posB = −dB/2 − raise
+ *     posA − posB ≥ (dA + dB)/2
+ *     raise ≥ (dA + dB)/2 + dA/2 − dB/2  =  dA
+ *
+ * The step is the diameter of the bar it is stepping over, full stop. The dB terms cancel
+ * exactly — a thinner bar in the upper rank needs MORE movement, not less, which is the
+ * opposite of what the mean formula gives. The two agree only when dA = dB, which is why
+ * this survived every equal-diameter test.
+ *
+ * On the flagship: a Ø32 rank-0 bar and a Ø10 rank-1 bar got (32+10)/2 = 22 mm of drop and
+ * needed 32. The measured shortfall was 11 mm, which is exactly dA/2 − dB/2.
+ */
+export function layerStep(belowMaxMm: number, extraMargin = 0): number {
+  return belowMaxMm / 1000 + Math.max(0, extraMargin);
 }
 
 /**
@@ -182,12 +222,21 @@ export function allocateLayers(input: {
   // Elevation. Rank k sits above every rank below it, each by the crossing separation for
   // the largest bar involved — using the largest is what guarantees the clearance holds
   // for every actual pair on the line, not just the average one.
-  const step = (rank: number, line: LineForLayering): number => {
+  const step = (
+    rank: number, line: LineForLayering, face: 'bottom' | 'top',
+  ): number => {
+    const dia = (l: LineForLayering) =>
+      (face === 'bottom' ? l.maxBottomMm : l.maxTopMm) ?? l.maxBarMm;
     let z = 0;
     for (let r = 0; r < rank; r++) {
-      const below = ordered.filter((l) => rankOf.get(l.lineId) === r);
-      const biggest = below.reduce((m, l) => Math.max(m, l.maxBarMm), line.maxBarMm);
-      z += crossingSeparation(biggest, line.maxBarMm, margin).separation;
+      // Only the lines this one actually CROSSES constrain it. A line on the far side of
+      // the floor sharing a rank is irrelevant, and charging its bar diameter would throw
+      // away lever arm for a clash that cannot happen.
+      const below = ordered.filter((l) =>
+        rankOf.get(l.lineId) === r && neighbours.get(line.lineId)!.has(l.lineId));
+      if (below.length === 0) continue;
+      const biggest = below.reduce((m, l) => Math.max(m, dia(l)), 0);
+      z += layerStep(biggest, margin);
     }
     return z;
   };
@@ -195,14 +244,15 @@ export function allocateLayers(input: {
   const byLine = new Map<string, LayerAssignment>();
   for (const line of ordered) {
     const rank = rankOf.get(line.lineId)!;
-    const raise = step(rank, line);
+    const raise = step(rank, line, 'bottom');
+    const drop = step(rank, line, 'top');
     byLine.set(line.lineId, {
       lineId: line.lineId, rank,
       bottomRaise: raise,
-      topLower: raise,
+      topLower: drop,
       refs: crossingSeparation(line.maxBarMm, line.maxBarMm, margin).refs,
       derivation: msg('detailing.layers.assigned', {
-        rank, raise: round(raise * 1000, 1), line: line.lineId,
+        rank, raise: round(Math.max(raise, drop) * 1000, 1), line: line.lineId,
       }),
     });
   }

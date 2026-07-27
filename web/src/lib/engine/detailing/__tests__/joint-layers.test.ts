@@ -10,7 +10,7 @@
 
 import { describe, expect, it } from 'vitest';
 import {
-  allocateLayers, crossingSeparation, depthAfterRaise,
+  allocateLayers, crossingSeparation, depthAfterRaise, layerStep,
   type LineForLayering, type LineCrossing,
 } from '../joint-layers';
 
@@ -175,5 +175,105 @@ describe('liveness — the allocator must be reached with real crossings', () =>
       edition: '2025',
     });
     expect([...a.byLine.values()].filter((v) => v.bottomRaise > 0).length).toBeGreaterThan(0);
+  });
+});
+
+describe('the step is the diameter it steps over, not the mean clearance', () => {
+  /**
+   * The 309 pairs that survived correct rank assignment.
+   *
+   * Required CLEARANCE between crossing bars is (dA + dB)/2 — the two radii. The required
+   * STEP is a different number, because both layers are referenced from the same face and
+   * each bar's centre sits half its OWN diameter inside it. A Ø10 bar starts 11 mm nearer
+   * the face than a Ø32 one before anything moves:
+   *
+   *     posA = −dA/2,  posB = −dB/2 − raise,  posA − posB ≥ (dA + dB)/2
+   *     ⇒ raise ≥ (dA + dB)/2 + dA/2 − dB/2 = dA
+   *
+   * The dB terms cancel exactly. A THINNER bar in the upper rank needs MORE movement, not
+   * less, which is the opposite of what the mean gives. The two agree only when the
+   * diameters are equal — which is why every equal-diameter test passed.
+   */
+  it('steps by the lower layer’s diameter', () => {
+    expect(layerStep(32)).toBeCloseTo(0.032, 9);
+    expect(layerStep(10)).toBeCloseTo(0.010, 9);
+  });
+
+  it('a Ø32 under a Ø10 needs 32 mm, and the mean would have given 22', () => {
+    const step = layerStep(32);
+    const clearance = crossingSeparation(32, 10).separation;
+    expect(step).toBeCloseTo(0.032, 9);
+    expect(clearance).toBeCloseTo(0.021, 9);
+    // The flagship's measured shortfall was exactly this difference.
+    expect(step - clearance).toBeCloseTo(0.011, 9);
+  });
+
+  it('the step really does deliver the required clearance', () => {
+    for (const [dA, dB] of [[32, 10], [10, 32], [16, 16], [25, 12], [8, 40]]) {
+      const posA = -dA / 2000;
+      const posB = -dB / 2000 - layerStep(dA);
+      const centreDistance = posA - posB;
+      expect(centreDistance, `Ø${dA} over Ø${dB}`)
+        .toBeGreaterThanOrEqual(crossingSeparation(dA, dB).separation - 1e-12);
+    }
+  });
+
+  it('agrees with the mean only when the diameters are equal', () => {
+    expect(layerStep(16)).toBeCloseTo(crossingSeparation(16, 16).separation, 9);
+    expect(layerStep(32)).not.toBeCloseTo(crossingSeparation(32, 10).separation, 9);
+  });
+
+  it('the project margin adds to the step', () => {
+    expect(layerStep(20, 0.005)).toBeCloseTo(0.025, 9);
+  });
+});
+
+describe('top and bottom faces are sized independently', () => {
+  it('a line whose top steel is thin does not pay for its thick bottom steel', () => {
+    const a = allocateLayers({
+      lines: [
+        { lineId: 'line-000001', elementIds: [1], direction: { x: 1, y: 0 },
+          maxBarMm: 32, maxBottomMm: 12, maxTopMm: 32 },
+        { lineId: 'line-000002', elementIds: [2], direction: { x: 0, y: 1 },
+          maxBarMm: 12, maxBottomMm: 12, maxTopMm: 10 },
+      ],
+      crossings: [{ a: 'line-000001', b: 'line-000002', jointId: 'n1' }],
+      edition: '2025',
+    });
+    const upper = a.byLine.get('line-000002')!;
+    expect(upper.rank).toBe(1);
+    // Top steps over a Ø32; bottom only over a Ø12. One scalar would have charged 32 to
+    // both and spent 20 mm of lever arm on a clash that cannot happen.
+    expect(upper.topLower).toBeCloseTo(0.032, 9);
+    expect(upper.bottomRaise).toBeCloseTo(0.012, 9);
+  });
+
+  it('falls back to maxBarMm when a caller does not distinguish the faces', () => {
+    const a = allocateLayers({
+      lines: [
+        { lineId: 'line-000001', elementIds: [1], direction: { x: 1, y: 0 }, maxBarMm: 20 },
+        { lineId: 'line-000002', elementIds: [2], direction: { x: 0, y: 1 }, maxBarMm: 20 },
+      ],
+      crossings: [{ a: 'line-000001', b: 'line-000002', jointId: 'n1' }],
+      edition: '2025',
+    });
+    const upper = a.byLine.get('line-000002')!;
+    expect(upper.topLower).toBeCloseTo(0.020, 9);
+    expect(upper.bottomRaise).toBeCloseTo(0.020, 9);
+  });
+
+  it('only lines it actually crosses constrain a line', () => {
+    // Three lines: 1 and 2 cross; 3 shares rank 0 with 1 but is on the far side of the
+    // floor. Line 3's Ø40 bars must not cost line 2 anything.
+    const a = allocateLayers({
+      lines: [
+        { lineId: 'line-000001', elementIds: [1], direction: { x: 1, y: 0 }, maxBarMm: 12 },
+        { lineId: 'line-000002', elementIds: [2], direction: { x: 0, y: 1 }, maxBarMm: 12 },
+        { lineId: 'line-000003', elementIds: [3], direction: { x: 1, y: 0 }, maxBarMm: 40 },
+      ],
+      crossings: [{ a: 'line-000001', b: 'line-000002', jointId: 'n1' }],
+      edition: '2025',
+    });
+    expect(a.byLine.get('line-000002')!.bottomRaise).toBeCloseTo(0.012, 9);
   });
 });
