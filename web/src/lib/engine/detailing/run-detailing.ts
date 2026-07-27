@@ -463,6 +463,52 @@ export function runDetailing(input: RunDetailingInput): RunDetailingResult {
    */
   const unsupportedRun: Array<{ key: string; params: Record<string, unknown> }> = [];
 
+  /**
+   * Does a column's top lift need tension development at the roof?
+   *
+   * §25.4.1.2 forbids anchoring a compression bar with a hook, so this decides whether one
+   * may be used at all.
+   *
+   * Tension arises two ways and both are checked. A combination may put the whole section
+   * in net tension — the demand set names that case explicitly. Or the axial force may be
+   * compressive while the moment is large enough to open tension on one face: the
+   * uncracked-section extreme fibre, σ = N/A − M·c/I, going negative. The second is the
+   * common case in a frame column and is invisible if only the axial category is read.
+   */
+  function topLiftNeedsTension(lifts: readonly ColumnLift[]): boolean {
+    const top = lifts[lifts.length - 1];
+    if (!top) return false;
+    const ctx = input.contexts.get(top.elementId);
+    const demands = (ctx as { demands?: { demands?: Array<{
+      category: string; absValue: number; forces?: { n?: number; my?: number; mz?: number };
+    }> } } | undefined)?.demands?.demands;
+    if (!demands || demands.length === 0) {
+      // No demand data is not evidence of compression. Anchor for tension, which is the
+      // safe direction when the question cannot be answered.
+      return true;
+    }
+    if (demands.some((d) => d.category === 'N_tension' && d.absValue > 1e-6)) return true;
+
+    const b = top.b;
+    const h = top.h;
+    const area = b * h;
+    if (area <= 0) return true;
+    for (const d of demands) {
+      const f = d.forces;
+      if (!f) continue;
+      // Compression is negative in the solver's convention, so N/A is negative for a
+      // compressed column and the moment term has to overcome it.
+      const n = f.n ?? 0;
+      const my = Math.abs(f.my ?? 0);
+      const mz = Math.abs(f.mz ?? 0);
+      const sigma = n / area
+        - mz / (b * h * h / 6)
+        - my / (h * b * b / 6);
+      if (sigma > 1e-6) return true;
+    }
+    return false;
+  }
+
   /** The project's additional bar-spacing margin, m. Zero unless the project stated one. */
   const spacingMargin = Math.max(0, input.spacingMargin ?? 0);
 
@@ -698,7 +744,17 @@ export function runDetailing(input: RunDetailingInput): RunDetailingResult {
       // 120 beams were reported impossible to thread.
       barPositions: conventionalCage.get(stackId)?.slots.map((sl) => ({ x: sl.dx, y: sl.dy })),
       beamDepthAtTop,
-      roofTermination: true,
+      // ── §25.4.1.2: a hook anchors tension, never compression ──
+      //
+      // This was hardcoded `true`, so every roof column bar got a 90° hook whatever it
+      // carried. On a compression-only column the clause does not merely make the hook
+      // unnecessary, it FORBIDS using one for anchorage — and the 12db horizontal
+      // extension it produced ran straight through the beam's top mat at every roof joint.
+      //
+      // The question the clause asks is whether the bar needs TENSION development. Two
+      // ways it can: net axial tension in some combination, or an eccentricity large
+      // enough to open tension on a face. Both are checked; either one calls for a hook.
+      roofTermination: topLiftNeedsTension(lifts),
     });
 
     // ── Attribute each bar to the lift that owns it ──
@@ -1462,12 +1518,22 @@ export function runDetailing(input: RunDetailingInput): RunDetailingResult {
         const v = reverification.get(e);
         return v !== undefined && v !== 'fail';
       }).length,
-      // A certificate is only meaningful against final geometry. A member whose steel was
-      // raised carries a certificate describing a cage that no longer exists, and saying
-      // so is the whole point of this condition.
-      certificateHashMatches: elementIds.filter((e) =>
-        (layerRaiseOf.get(e) ?? 0) === 0 && reverification.get(e) !== undefined
-        && reverification.get(e) !== 'fail').length,
+      // A certificate describes the geometry it was checked against.
+      //
+      // The first version of this refused any member whose steel had moved, on the grounds
+      // that its certificate described a cage that no longer existed. That was right before
+      // re-verification existed and wrong after: `reverify(id, depthLoss)` re-runs the
+      // authoritative verifier at the member's FINAL effective depth — the joint-layer
+      // movement plus Table 26.6.2.1(a)'s unfavourable tolerance — so a member that passes
+      // it has a certificate for the geometry that is actually there.
+      //
+      // What still does not match is a member that was never rechecked, or was rechecked
+      // and failed. Both are counted as mismatches, and a member with no verifier call at
+      // all is a mismatch rather than a silent pass.
+      certificateHashMatches: elementIds.filter((e) => {
+        const v = reverification.get(e);
+        return v !== undefined && v !== 'fail';
+      }).length,
       spacingNotCodeLegal: result.assembly.conflicts
         .filter((c) => c.pairClass === 'sameLayerSpacing'
           || c.pairClass === 'betweenLayerSpacing' || c.pairClass === 'crossMemberSpacing')

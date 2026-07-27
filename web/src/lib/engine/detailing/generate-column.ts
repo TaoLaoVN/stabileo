@@ -68,7 +68,20 @@ export interface ColumnStackInput {
   lapSplice: (diameterMm: number) => number;
   /** Depth of the beams framing in at each level, m, keyed by lift index (the joint above). */
   beamDepthAtTop: Map<number, number>;
-  /** True when the top lift terminates at roof level and needs a hooked termination. */
+  /**
+   * Does the top lift's steel need TENSION development at the roof?
+   *
+   * §25.4.1.2: "Los ganchos y las barras conformadas con cabeza no se deben emplear para
+   * anclar barras en compresión." Not "need not" — SHALL NOT. The commentary explains
+   * why: hooks are not effective in compression and no data supports crediting them.
+   *
+   * So a hook at a roof termination is not a conservative default. On a compression-only
+   * column it is geometry the code refuses to credit, and it was being generated
+   * unconditionally — which is also what put a 12db horizontal extension through the beam's
+   * top mat at every roof joint on the QA fixture.
+   *
+   * When false, the bars terminate straight and are developed under §25.4.9 (ldc).
+   */
   roofTermination: boolean;
   /**
    * Plan offsets for the longitudinal bars, relative to the lift centre.
@@ -411,7 +424,35 @@ export function generateColumnStack(input: ColumnStackInput): GeneratedColumnSta
     const isTop = i === input.lifts.length - 1;
     const lap = input.lapSplice(lift.bars.diameterMm);
     const topZ = isTop ? lift.topZ : lift.topZ + lap;
+    // §25.4.1.2 — a hook may anchor a bar in tension, never one in compression.
     const roofHook = isTop && input.roofTermination ? 90 : undefined;
+
+    // §25.4.9: compression development, ldc = max(0,24·fy/√f'c·db, 0,043·fy·db, 200 mm).
+    // Checked against what the joint above actually offers, so a shortfall is reported
+    // rather than silently swapped for a hook the code will not credit.
+    if (isTop && !input.roofTermination) {
+      const db = lift.bars.diameterMm / 1000;
+      const ldc = Math.max(
+        0.24 * input.fy / Math.sqrt(input.fc) * db,
+        0.043 * input.fy * db,
+        0.200);
+      const available = input.beamDepthAtTop.get(i) ?? 0;
+      refs.push(clause('cirsoc-201', input.edition, '25.4.9.1',
+        'longitud de anclaje en compresión'));
+      refs.push(clause('cirsoc-201', input.edition, '25.4.1.2',
+        'los ganchos no se deben emplear para anclar barras en compresión'));
+      if (available > 0 && available < ldc - 1e-9) {
+        unsupported.push(
+          `Tramo ${i}: la armadura de columna Ø${lift.bars.diameterMm} termina en cubierta ` +
+          `con ${(available * 1000).toFixed(0)} mm de embebido, menos que la longitud de ` +
+          `anclaje en compresión ldc = ${(ldc * 1000).toFixed(0)} mm (25.4.9.1).`);
+      } else {
+        trace.push(
+          `Terminación en cubierta recta: ldc = ${(ldc * 1000).toFixed(0)} mm ` +
+          `(25.4.9.1) contra ${(available * 1000).toFixed(0)} mm disponibles; ` +
+          'el gancho no corresponde en compresión (25.4.1.2).');
+      }
+    }
     if (roofHook) {
       refs.push(...standardHook(lift.bars.diameterMm, 90, 'longitudinal', input.edition).refs);
       trace.push('Terminación en cubierta: las barras longitudinales rematan con gancho a 90°.');
