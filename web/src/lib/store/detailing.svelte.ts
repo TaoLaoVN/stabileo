@@ -28,6 +28,10 @@ import {
 } from '../engine/detailing/run-detailing';
 import { verificationStore } from './verification.svelte';
 import { rebarHash } from '../engine/design/rebar-hash';
+import { getDesignCode } from '../engine/design/code-adapter';
+import {
+  runDesignFeedbackLoop, type DesignFeedbackLoopResult,
+} from '../engine/detailing/design-feedback-loop';
 import {
   buildDocumentModel, supersede,
   type CertificateEntry, type DocumentModel,
@@ -89,6 +93,24 @@ function resolveSpacingMargin(): number {
   return max / 1000;
 }
 
+/**
+ * Members whose reinforcement the engineer pinned.
+ *
+ * Derived from the bars actually locked rather than kept as a second list: a locked bar's
+ * `ownerElementIds` is what says whose steel it is, and any member owning one may not have
+ * its reinforcement replaced by the repair loop.
+ */
+function lockedMemberIds(): ReadonlySet<number> {
+  const out = new Set<number>();
+  for (const a of modelStore.model.detailing?.assemblies ?? []) {
+    for (const b of a.bars) {
+      if (!b.locked) continue;
+      for (const id of b.ownerElementIds ?? []) out.add(id);
+    }
+  }
+  return out;
+}
+
 /** Highest revision among existing assemblies, so a regeneration increments. */
 function maxRevision(assemblies: readonly DetailingAssembly[]): number {
   let r = 0;
@@ -131,6 +153,14 @@ function createDetailingStore() {
   let supersededDocs = $state<DocumentModel[]>([]);
   /** Monotonic per project. Bumped on supersession, never reused. */
   let documentRevision = $state(1);
+  /**
+   * The last design–detailing feedback loop: its outcome, iterations and full trace.
+   *
+   * Kept so the UI and the report can state what the repair actually did — which members
+   * were re-sized, at what geometry, and where a repair was refused because a bar is pinned
+   * or the section is the limit. Null when no adapter could enumerate candidates.
+   */
+  let lastFeedbackLoop = $state<DesignFeedbackLoopResult | null>(null);
 
   const store = $derived<DetailingStore>(modelStore.model.detailing ?? emptyDetailingStore());
   const assemblies = $derived(store.assemblies);
@@ -159,6 +189,38 @@ function createDetailingStore() {
 
   function write(next: DetailingStore): void {
     modelStore.model.detailing = next;
+  }
+
+  /**
+   * Persist reinforcement the feedback loop replaced, and republish the outcomes.
+   *
+   * Both halves are required. Writing the bars without the outcomes would leave the design
+   * table certifying steel the model no longer has; publishing the outcomes without the bars
+   * would draw a cage the reinforcement panel disagrees with. The repaired outcomes carry a
+   * `finalGeometryCertificate`, so what is published is a claim about the geometry that
+   * exists rather than the nominal one it was originally sized against.
+   */
+  function publishRepairedReinforcement(
+    next: ReadonlyMap<number, MemberDesignOutcome>,
+    before: ReadonlyMap<number, MemberDesignOutcome>,
+  ): void {
+    const repaired = [...next.values()].filter((o) => {
+      const prev = before.get(o.elementId)?.accepted;
+      return o.outcome === 'VERIFIED' && o.accepted && prev
+        && rebarHash(o.accepted) !== rebarHash(prev);
+    });
+    if (repaired.length === 0) return;
+    modelStore.reinforcementTransaction((api) => {
+      for (const o of repaired) api.setReinforcement(o.elementId, o.accepted!);
+    });
+    const prev = verificationStore.runSummary;
+    if (prev) {
+      verificationStore.setDesignOutcomes({
+        ...prev,
+        outcomes: new Map([...prev.outcomes, ...repaired.map(
+          (o) => [o.elementId, o] as const)]),
+      });
+    }
   }
 
   function replace(assembly: DetailingAssembly): void {
@@ -218,6 +280,8 @@ function createDetailingStore() {
 
     get generating() { return generating; },
     get lastRun() { return lastRun; },
+    /** The last feedback loop's outcome and trace. Null when no repair pass could run. */
+    get lastFeedbackLoop() { return lastFeedbackLoop; },
 
     /**
      * Are the prerequisites for detailing satisfied, and if not, exactly which?
@@ -246,9 +310,16 @@ function createDetailingStore() {
       generating = true;
       lastError = null;
       try {
-        const result = runDetailing({
+        /**
+         * One full detailing pass for a given reinforcement assignment.
+         *
+         * Factored out because the feedback loop needs to run it more than once: coordination
+         * moves steel, re-verification at the geometry that results can fail, and the repair
+         * has to be coordinated and re-verified in turn.
+         */
+        const detail = (outcomes: ReadonlyMap<number, MemberDesignOutcome>) => runDetailing({
           contexts: verificationStore.contexts,
-          outcomes: designOutcomeMap(),
+          outcomes,
           nodes: modelStore.nodes as never,
           elements: modelStore.elements as never,
           edition: currentConcreteEdition(),
@@ -264,12 +335,42 @@ function createDetailingStore() {
            * effective depth. A run without a verifier leaves that condition unmet and the
            * assessment NOT_ESTABLISHED — correct as a default, and unacceptable as the
            * behaviour of the real command.
+           *
+           * The reinforcement checked is the ASSIGNMENT'S, not the model's: mid-loop they
+           * differ, and checking the model's would re-verify the steel the repair is trying
+           * to replace.
            */
-          reverify: (elementId, loss) =>
-            verificationStore.reverifyAtFinalDepth(elementId, loss),
+          reverify: (elementId, loss) => verificationStore.reverifyAtFinalDepth(
+            elementId, loss, outcomes.get(elementId)?.accepted),
           lockedBars: store.assemblies.flatMap((a) => a.bars.filter((b) => b.locked)),
           bentUp: bentUpPolicy(),
         });
+
+        const adapter = getDesignCode(verificationStore.activeCodeId);
+        const initial = designOutcomeMap();
+        /**
+         * Close the design–detailing loop.
+         *
+         * Without an adapter there is no candidate enumeration to feed back into, so the
+         * single pass is all that is honestly available — and it still re-verifies, it just
+         * cannot repair what it finds.
+         */
+        const loop = adapter
+          ? runDesignFeedbackLoop({
+            adapter,
+            contexts: verificationStore.contexts,
+            outcomes: initial,
+            detail,
+            lockedMembers: lockedMemberIds(),
+          })
+          : null;
+        const result = loop ? loop.result : detail(initial);
+        lastFeedbackLoop = loop;
+        // A repair is not real until the model carries it. Persisting AFTER the loop means a
+        // proposal that failed re-verification never reached the engineer's model at all.
+        if (loop && loop.iterations.some((i) => i.changed.length > 0)) {
+          publishRepairedReinforcement(loop.outcomes, initial);
+        }
         lastRun = result;
         // Regeneration produces new geometry, so any document describing the old geometry
         // stops being current. This is the commonest supersession trigger by far and it

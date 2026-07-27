@@ -355,6 +355,41 @@ export interface RunDetailingResult {
     /** Transitions the search closed but the geometry could not build, with the reason. */
     unmaterialised: Array<{ jointId: string; reason: EngineMessage }>;
   };
+  /**
+   * What the authoritative re-verification actually saw, per applicable member.
+   *
+   * These records were computed and then collapsed into two counters inside the
+   * constructibility assessment. That was enough to fail the gate and not enough to do
+   * anything about it: a design-side repair needs to know WHICH member failed and at
+   * exactly what geometry, and neither survived. They are reported now.
+   *
+   * One entry per applicable member, always — `noVerifier` and `noBars` are recorded
+   * rather than omitted, because a missing entry reads as a pass.
+   */
+  reverification: FinalGeometryRecord[];
+}
+
+/** Status of one member's re-verification at its final geometry. */
+export type ReverificationStatus = 'ok' | 'warn' | 'fail' | 'noBars' | 'noVerifier';
+
+/** The geometry a member's steel actually ended up at, and what the verifier made of it. */
+export interface FinalGeometryRecord {
+  elementId: number;
+  status: ReverificationStatus;
+  /**
+   * Lever arm the member lost, in metres.
+   *
+   * `bottomRaise` / `topLower` are the joint-layer allocation's movement of each face.
+   * `depthTolerance` is Table 26.6.2.1(a)'s unfavourable tolerance on d, which applies
+   * whether or not anything moved.
+   */
+  finalGeometry: { bottomRaise: number; topLower: number; depthTolerance: number };
+  /**
+   * Measured elevation of each distinct bar layer of this member, metres, MODEL DATUM,
+   * descending. Taken from the finished BarPaths rather than recomputed, so it is the
+   * geometry that exists rather than the geometry that was intended.
+   */
+  layerCentroids: number[];
 }
 
 /**
@@ -372,6 +407,7 @@ export function runDetailing(input: RunDetailingInput): RunDetailingResult {
     return {
       assemblies: [], readiness, coordination: [], skipped,
       lapping: { laps: [], fused: 0, unmaterialised: [] },
+      reverification: [],
       layoutSearch: {
         outcome: 'ASSIGNMENT_FOUND', envelope: 'beamsAndColumns',
         evidence: {
@@ -1348,36 +1384,60 @@ export function runDetailing(input: RunDetailingInput): RunDetailingResult {
    * for has nothing to reverify, and reporting that as a verification failure would send
    * an engineer looking at the wrong thing. It is still not a pass.
    */
-  const reverification = new Map<number, 'ok' | 'warn' | 'fail' | 'noBars' | 'noVerifier'>();
-  if (input.reverify) {
-    for (const [id, ctx] of input.contexts) {
-      // Every applicable element gets a record, including one with no generated bars.
-      // Skipping those silently is how the gate came to count `elementIds.length` as
-      // applicable while only ever reverifying the subset that had geometry.
-      if (!memberBarsById.has(id)) {
-        reverification.set(id, 'noBars');
-        continue;
-      }
-      const nominalD = ctx.section.h - ctx.material.cover - ctx.material.stirrupDia / 1000;
-      const tol = prescribedTolerances(nominalD, ctx.material.cover, input.edition);
-      // Each face carries its OWN movement.
-      //
-      // Passing the worse of the two to both was a conservative simplification, and on this
-      // fixture it was conservative enough to matter: beams 7 and 8 came out at ratio 1,031
-      // — three per cent over — by being charged the top face's drop on the bottom face as
-      // well. The two are tracked separately upstream and there is no reason to merge them.
-      // Table 26.6.2.1(a)'s tolerance applies to both, because it applies to d itself.
-      reverification.set(id, input.reverify(id, {
-        bottomRaise: layerRaiseOf.get(id) ?? 0,
-        topLower: layerDropOf.get(id) ?? 0,
-        depthTolerance: tol.depth,
-      }));
-    }
+  const reverification = new Map<number, ReverificationStatus>();
+  /** The geometry each member was judged at, kept so a repair can act on it. */
+  const finalGeometryOf = new Map<number, FinalGeometryRecord['finalGeometry']>();
+  for (const [id, ctx] of input.contexts) {
+    const nominalD = ctx.section.h - ctx.material.cover - ctx.material.stirrupDia / 1000;
+    const tol = prescribedTolerances(nominalD, ctx.material.cover, input.edition);
+    // Each face carries its OWN movement.
+    //
+    // Passing the worse of the two to both was a conservative simplification, and on this
+    // fixture it was conservative enough to matter: beams 7 and 8 came out at ratio 1,031
+    // — three per cent over — by being charged the top face's drop on the bottom face as
+    // well. The two are tracked separately upstream and there is no reason to merge them.
+    // Table 26.6.2.1(a)'s tolerance applies to both, because it applies to d itself.
+    const geom = {
+      bottomRaise: layerRaiseOf.get(id) ?? 0,
+      topLower: layerDropOf.get(id) ?? 0,
+      depthTolerance: tol.depth,
+    };
+    finalGeometryOf.set(id, geom);
+    // Every applicable element gets a record, including one with no generated bars.
+    // Skipping those silently is how the gate came to count `elementIds.length` as
+    // applicable while only ever reverifying the subset that had geometry.
+    if (!memberBarsById.has(id)) { reverification.set(id, 'noBars'); continue; }
+    // The geometry is recorded even without a verifier, because a caller that supplies one
+    // on the NEXT pass still needs to know what this pass produced.
+    reverification.set(id, input.reverify ? input.reverify(id, geom) : 'noVerifier');
   }
-  const reverifiedOk = [...reverification.values()]
-    .filter((v) => v === 'ok' || v === 'warn').length;
-  const reverifyFailures = [...reverification.entries()]
-    .filter(([, v]) => v === 'fail').map(([id]) => id);
+  /**
+   * The reportable record, with the layer elevations MEASURED on the finished bars.
+   *
+   * Reading them off the output rather than off the allocation is deliberate: the whole
+   * point of this pass is that the intended geometry and the built geometry have disagreed
+   * before — `applyJointLayers` flattened two-layer mats while the allocation was correct.
+   */
+  const reverificationRecords: FinalGeometryRecord[] = [...input.contexts.keys()]
+    .sort((a, b) => a - b)
+    .map((id) => {
+      const byLayer = new Map<string, number[]>();
+      for (const bar of memberBarsById.get(id)?.bars ?? []) {
+        if (!bar.layerId) continue;
+        const z = bar.segments[0]?.start.z;
+        if (z === undefined) continue;
+        byLayer.set(bar.layerId, [...(byLayer.get(bar.layerId) ?? []), z]);
+      }
+      return {
+        elementId: id,
+        status: reverification.get(id) ?? 'noVerifier',
+        finalGeometry: finalGeometryOf.get(id)
+          ?? { bottomRaise: 0, topLower: 0, depthTolerance: 0 },
+        layerCentroids: [...byLayer.values()]
+          .map((zs) => zs.reduce((s, z) => s + z, 0) / zs.length)
+          .sort((a, b) => b - a),
+      };
+    });
 
   // ── Group into one assembly per level, and coordinate each ──
   const levelOf = (id: number): number => {
@@ -1619,6 +1679,7 @@ export function runDetailing(input: RunDetailingInput): RunDetailingResult {
 
   return {
     assemblies, readiness, coordination, skipped,
+    reverification: reverificationRecords,
     layoutSearch: layoutChoice.result,
     layering: layerDiagnostics ? {
       ...layerDiagnostics,

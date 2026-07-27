@@ -18,39 +18,58 @@ import { runDesign } from '../../design/candidate-search';
 import { cirsoc201Adapter } from '../../design/adapters/cirsoc201-adapter';
 import { solveFixture } from '../../design/__tests__/helpers';
 import { runDetailing, type RunDetailingResult } from '../run-detailing';
+import { runDesignFeedbackLoop, type DesignFeedbackLoopResult } from '../design-feedback-loop';
+import type { MemberDesignOutcome } from '../../design/outcome';
 
-let cached: RunDetailingResult | null = null;
+let cached: DesignFeedbackLoopResult | null = null;
 
-/** One full production run, shared across the assertions. */
-function run(): RunDetailingResult {
+/**
+ * One full production run, shared across the assertions.
+ *
+ * `runDetailing` alone is not the production path any more. The command closes the
+ * design–detailing loop: coordinate, re-verify at the geometry that results, and where that
+ * fails, re-enumerate candidates knowing the final geometry and coordinate again. Beams 7
+ * and 8 need exactly that, and nothing here seeds it.
+ */
+function loop(): DesignFeedbackLoopResult {
   if (cached) return cached;
   const solved = solveFixture(frame as never);
   const summary = runDesign(cirsoc201Adapter, solved.contexts.values(), { maxRunMs: 180_000 });
-  cached = runDetailing({
+  cached = runDesignFeedbackLoop({
+    adapter: cirsoc201Adapter,
     contexts: solved.contexts,
     outcomes: summary.outcomes,
-    nodes: solved.data.nodes as never,
-    elements: solved.data.elements as never,
-    edition: '2025',
-    maxAggregateSizeMm: 19,
-    verifierId: 'cirsoc201.provided.v2.2025',
-    demandRevision: 1,
-    // The production command always supplies a verifier; a run without one leaves
-    // `allMembersReverified` unmet by design.
-    reverify: (elementId: number, loss: {
-      bottomRaise: number; topLower: number; depthTolerance: number;
-    }) => {
-      const ctx = solved.contexts.get(elementId);
-      const accepted = (summary.outcomes.get(elementId) as { accepted?: unknown })?.accepted;
-      if (!ctx || !accepted) return 'fail';
-      const res = cirsoc201Adapter.verify(
-        { ...ctx, finalGeometry: loss } as never,
-        accepted as never);
-      return res?.overallStatus === 'fail' ? 'fail'
-        : res?.overallStatus === 'warn' ? 'warn' : 'ok';
-    },
-  } as never);
+    detail: (outcomes: ReadonlyMap<number, MemberDesignOutcome>) => runDetailing({
+      contexts: solved.contexts,
+      outcomes,
+      nodes: solved.data.nodes as never,
+      elements: solved.data.elements as never,
+      edition: '2025',
+      maxAggregateSizeMm: 19,
+      verifierId: 'cirsoc201.provided.v2.2025',
+      demandRevision: 1,
+      // The production command always supplies a verifier; a run without one leaves
+      // `allMembersReverified` unmet by design. It checks the ASSIGNMENT'S reinforcement,
+      // because mid-loop that is not yet the model's.
+      reverify: (elementId: number, loss: {
+        bottomRaise: number; topLower: number; depthTolerance: number;
+      }) => {
+        const ctx = solved.contexts.get(elementId);
+        const accepted = outcomes.get(elementId)?.accepted;
+        if (!ctx || !accepted) return 'fail';
+        const res = cirsoc201Adapter.verify(
+          { ...ctx, finalGeometry: loss } as never, accepted as never);
+        return res?.overallStatus === 'fail' ? 'fail'
+          : res?.overallStatus === 'warn' ? 'warn' : 'ok';
+      },
+    } as never),
+  });
   return cached;
+}
+
+/** The detailing result the loop settled on — the one the store persists. */
+function run(): RunDetailingResult {
+  return loop().result;
 }
 
 describe('rc-design-qa-8 reaches CONSTRUCTIBLE through the production path', () => {
@@ -85,36 +104,58 @@ describe('rc-design-qa-8 reaches CONSTRUCTIBLE through the production path', () 
     expect(run().assemblies.flatMap((a) => a.conflicts)).toEqual([]);
   });
 
-  it('ten of the twelve conditions pass, and the two that do not are named', () => {
-    // The honest current state, asserted so it cannot drift unnoticed in either direction.
-    //
-    // Ten pass, including the one that took five cycles: zero prohibited conflicts. The
-    // two that remain are the SAME failure: beams 7 and 8 come out of the authoritative
-    // re-verification at ratio 1,031 — three per cent over — once the joint-layer movement
-    // and Table 26.6.2.1(a)'s tolerance are charged against their effective depth.
-    // `certificatesMatchGeometry` follows from it, because a member that fails
-    // re-verification has no certificate for the geometry that exists.
-    //
-    // That is a real engineering result, not a wiring defect: the design sized these beams
-    // without knowing what coordination would later cost them in lever arm. Deepening the
-    // section to 300×600 was tried and made it WORSE (2 failures became 4), which says the
-    // governing check scales with d — so the fix is a design-side one, not a fixture tweak,
-    // and it is not guessed at here.
+  it('ALL TWELVE conditions pass', () => {
+    // Asserted by name rather than by count, so a condition that stopped being evaluated
+    // could not pass this by disappearing.
+    const expected = [
+      'allMembersAssigned', 'allMembersReverified', 'allSpacingCodeLegal',
+      'allSpacingPlacementRobust', 'allTransitionsMaterialised', 'certificatesMatchGeometry',
+      'completeEnvelope', 'noProhibitedConflicts', 'noStaleUpstreamRevision',
+      'noUnmaterialisedTransitions', 'noUnsupportedRule', 'searchNotTruncated',
+    ];
     for (const a of run().assemblies) {
-      const failing = (a.constructibility?.conditions ?? [])
-        .filter((c) => !c.passed)
-        .map((c) => c.condition)
-        .sort();
-      expect(failing, `${a.id}`).toEqual(['allMembersReverified', 'certificatesMatchGeometry']);
-      expect(a.constructibility?.conditions).toHaveLength(12);
+      const conditions = a.constructibility?.conditions ?? [];
+      expect(conditions.map((c) => c.condition).sort(), `${a.id}`).toEqual(expected);
+      expect(conditions.filter((c) => !c.passed).map((c) => c.condition), `${a.id}`).toEqual([]);
     }
   });
 
-  it('withholds CONSTRUCTIBLE, and says it is unproven rather than defective', () => {
+  it('reaches CONSTRUCTIBLE, and the last two conditions were closed by design feedback', () => {
+    // The two that used to fail — `allMembersReverified` and `certificatesMatchGeometry` —
+    // were the SAME failure: beams 7 and 8 came out of the authoritative re-verification at
+    // ratio 1,031 once the joint-layer movement and Table 26.6.2.1(a)'s tolerance were
+    // charged against their effective depth.
+    //
+    // The governing check is Table 9.7.6.2.2's maximum stirrup spacing, s <= d/2 — NOT
+    // flexure, which passes throughout. The design had placed the stirrups at the nominal
+    // limit (250 mm against 256 mm) because wider spacing is less steel, and coordination
+    // then moved the limit to 242 mm. That is also why deepening the section to 300×600 was
+    // measured making it worse: a deeper member gets a larger s,max and the search spends it,
+    // arriving at the same zero margin one grid step wider.
+    //
+    // The repair is reinforcement-only and design-side: re-enumerate with the final geometry
+    // known, which closes the spacing to 225 mm at utilisation 0,883.
+    const l = loop();
+    expect(l.outcome).toBe('FINAL_GEOMETRY_VERIFIED');
+    expect(l.unrepaired).toEqual([]);
+    expect(l.iterations.flatMap((i) => i.changed)).toEqual([7, 8]);
+    // Reinforcement is downstream of analysis: repairing it can never require a solve.
+    expect(l.stats.structuralSolves).toBe(0);
     for (const a of run().assemblies) {
-      // NOT_ESTABLISHED, not CONFLICTED: the geometry is clean, the proof is incomplete.
-      expect(a.constructibility?.verdict, `${a.id}`).toBe('NOT_ESTABLISHED');
-      expect(a.state, `${a.id}`).toBe('COORDINATED');
+      expect(a.constructibility?.verdict, `${a.id}`).toBe('CONSTRUCTIBLE');
+      expect(a.state, `${a.id}`).toBe('CONSTRUCTIBLE');
+      expect(a.stateBlockers ?? [], `${a.id}`).toEqual([]);
+    }
+  });
+
+  it('every member is re-verified at its own final geometry, and none is skipped', () => {
+    // `noVerifier` and `noBars` are recorded rather than omitted precisely so this can be
+    // asserted: a missing record would read as a pass.
+    const records = run().reverification;
+    expect(records.map((r) => r.elementId)).toEqual([1, 2, 3, 4, 5, 6, 7, 8]);
+    for (const r of records) {
+      expect(['ok', 'warn'], `element ${r.elementId} → ${r.status}`).toContain(r.status);
+      expect(r.finalGeometry.depthTolerance).toBeGreaterThan(0);
     }
   });
 });

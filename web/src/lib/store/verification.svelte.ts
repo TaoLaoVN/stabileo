@@ -143,9 +143,18 @@ function createVerificationStore() {
   function reverifyAtFinalDepth(
     elementId: number,
     loss: { bottomRaise: number; topLower: number; depthTolerance: number },
+    /**
+     * Reinforcement to check, when it is not (yet) the model's.
+     *
+     * The design–detailing feedback loop proposes replacement steel and needs it re-verified
+     * BEFORE anything is persisted — if it were written first, a repair that turned out not
+     * to work would already have overwritten the engineer's model. Absent, the model's own
+     * reinforcement is used, which is what every other caller wants.
+     */
+    reinforcement?: ProvidedReinforcement,
   ): 'ok' | 'warn' | 'fail' {
     const ctx = contexts.get(elementId);
-    const reinf = reinforcementProvider?.(elementId);
+    const reinf = reinforcement ?? reinforcementProvider?.(elementId);
     if (!ctx || !reinf) return 'fail';
     const adapter = getDesignCode(activeCodeId);
     if (!adapter) return 'fail';
