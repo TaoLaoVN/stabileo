@@ -4,6 +4,7 @@
   import { reviewModel, buildArtifact, buildModel, buildModelContext, type ReviewModelResponse, type ReviewFinding, type BuildModelResponse, type ConversationMessage, type SolverDiagnosticMsg } from '../lib/ai/client';
   import { runGlobalSolve } from '../lib/engine/live-calc';
   import type { ModelSnapshot } from '../lib/store/history.svelte';
+  import { compactSnapshotForAi, isValidReleaseShape } from '../lib/ai/build-model';
 
   type AiTab = 'review' | 'explain' | 'query' | 'build';
   let activeTab = $state<AiTab>('build');
@@ -108,6 +109,15 @@
       if (!nodeIds.has(elem.nodeJ)) {
         errors.push(`Element ${id} references non-existent node ${elem.nodeJ}`);
       }
+      // Typed end releases are optional (absent -> NO_RELEASE on apply), but
+      // when present must have the { my, mz, t } boolean shape.
+      const e = elem as unknown as { releaseI?: unknown; releaseJ?: unknown };
+      if (!isValidReleaseShape(e.releaseI)) {
+        errors.push(`Element ${id} has an invalid releaseI shape`);
+      }
+      if (!isValidReleaseShape(e.releaseJ)) {
+        errors.push(`Element ${id} has an invalid releaseJ shape`);
+      }
     }
 
     // Validate support node references
@@ -189,7 +199,7 @@
     try {
       const mode = aiAnalysisMode;
       const ctx = hasModelOnCanvas ? buildModelContext(modelStore) : undefined;
-      const currentSnap = hasModelOnCanvas ? ($state.snapshot(modelStore.snapshot()) as Record<string, unknown>) : undefined;
+      const currentSnap = hasModelOnCanvas ? compactSnapshotForAi($state.snapshot(modelStore.snapshot()) as Record<string, unknown>) : undefined;
       const resp = await buildModel(text, i18n.locale, mode, ctx, currentSnap, conversationHistory.length > 0 ? conversationHistory : undefined, undefined, ac.signal);
 
       // Remove building indicator
@@ -337,7 +347,7 @@
     try {
       const mode = aiAnalysisMode;
       const ctx = hasModelOnCanvas ? buildModelContext(modelStore) : undefined;
-      const currentSnap = hasModelOnCanvas ? ($state.snapshot(modelStore.snapshot()) as Record<string, unknown>) : undefined;
+      const currentSnap = hasModelOnCanvas ? compactSnapshotForAi($state.snapshot(modelStore.snapshot()) as Record<string, unknown>) : undefined;
       const resp = await buildModel(
         'Fix the solver issues in this model',
         i18n.locale,
