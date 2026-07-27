@@ -293,6 +293,37 @@ export function generateColumnStack(input: ColumnStackInput): GeneratedColumnSta
       }
     }
 
+    // §25.2.3: the perimeter has to actually HOLD them.
+    //
+    // This was unchecked, and the flagship contains columns whose certified bar count is
+    // 24Ø12 — which this loop happily drew at 20 mm pitch, an 8 mm clear distance against
+    // the 40 mm the article requires. An illegal cage is bad on its own; it also blocks
+    // every beam framing into that joint, which is how 120 beams came to be reported as
+    // impossible to thread by a search that was being handed geometry no one would build.
+    //
+    // The count and diameter are certified and are NOT changed here. When they will not fit
+    // legally, that is a real inadequacy of the section and is reported as one.
+    let tightest = Infinity;
+    for (let a = 0; a < positions.length; a++) {
+      for (let bIdx = a + 1; bIdx < positions.length; bIdx++) {
+        tightest = Math.min(tightest, Math.hypot(
+          positions[a].x - positions[bIdx].x,
+          positions[a].y - positions[bIdx].y) - lift.bars.diameterMm / 1000);
+      }
+    }
+    if (Number.isFinite(tightest) && tightest < spacing.minClear - 1e-9) {
+      unsupported.push(
+        `Tramo ${i}: ${lift.bars.count}Ø${lift.bars.diameterMm} no entran en el perímetro ` +
+        `de ${(lift.b * 1000).toFixed(0)}×${(lift.h * 1000).toFixed(0)} mm respetando la ` +
+        `separación libre mínima de ${(spacing.minClear * 1000).toFixed(0)} mm ` +
+        `(art. ${input.edition === '2025' ? '25.2.3' : '7.6.3'}): la disposición alcanza ` +
+        `${(tightest * 1000).toFixed(0)} mm. Se requiere agrandar la sección, reducir el ` +
+        'número de barras o usar haces.');
+      trace.push(
+        `Tramo ${i}: separación libre ${(tightest * 1000).toFixed(0)} mm < ` +
+        `${(spacing.minClear * 1000).toFixed(0)} mm requerida.`);
+    }
+
     // Bars run the lift height, plus the lap above unless this is the top lift.
     const isTop = i === input.lifts.length - 1;
     const lap = input.lapSplice(lift.bars.diameterMm);

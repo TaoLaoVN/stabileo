@@ -76,6 +76,25 @@ export interface CandidateRequest {
    * that do not honour it are never generated — rather than being shoved during repair.
    */
   lockedAcross?: readonly number[];
+  /**
+   * Obstacles the member must thread past, in its own transverse coordinate: the UNION of
+   * every joint it touches.
+   *
+   * Supplied so the generator can offer CHANNEL-AWARE arrangements, whose bars are not
+   * uniformly pitched but distributed into the free gaps between obstacles.
+   *
+   * This is the fix the flagship diagnosis demanded. 120 of 248 beams — every one of them
+   * 8Ø12 — were stranded, and each failed at EACH END INDEPENDENTLY, so it was never the
+   * two-ends problem it looked like. With column bars at ±69 mm the free space is three
+   * separate ~98 mm channels: plenty of room in total, but no contiguous uniformly-pitched
+   * row of four bars fits any single one of them. The generator could only draw contiguous
+   * rows, so it could not express the arrangement a detailer would obviously use.
+   *
+   * The union of both ends, not one end at a time: a straight bar occupies the same
+   * transverse position along its whole length, so an arrangement is only real if it
+   * clears every joint the member passes through.
+   */
+  obstacles?: readonly KeepOut[];
 }
 
 /** How many bars of this diameter fit in one layer at this spacing. */
@@ -171,10 +190,6 @@ export function generateLayoutCandidates(req: CandidateRequest): LayoutCandidate
       }
       if (slots.length !== req.count) continue;
 
-      // Cover: every bar inside the clear width.
-      const halfSpan = Math.max(...slots.map((s) => Math.abs(s.across))) + d / 2;
-      if (halfSpan > req.clearWidth / 2 + 1e-9) continue;
-
       // Locked bars restrict the domain: a candidate that does not place a bar where the
       // user pinned one is not offered at all.
       if (req.lockedAcross && req.lockedAcross.length > 0) {
@@ -183,28 +198,40 @@ export function generateLayoutCandidates(req: CandidateRequest): LayoutCandidate
         if (!honours) continue;
       }
 
-      const byLayer = new Map<number, number[]>();
-      for (const s of slots) byLayer.set(s.layer, [...(byLayer.get(s.layer) ?? []), s.across]);
-      let minClearInLayer = Infinity;
-      for (const [, xs] of byLayer) {
-        const sorted = [...xs].sort((a, b) => a - b);
-        for (let i = 1; i < sorted.length; i++) {
-          minClearInLayer = Math.min(minClearInLayer, sorted[i] - sorted[i - 1]);
-        }
+      const c = finalise(slots, d, req, spacing.minClear, layers, refs, '');
+      if (!c || seen.has(c.id)) continue;
+      seen.add(c.id);
+      out.push(c);
+    }
+  }
+
+  // ── Channel-aware arrangements ──
+  //
+  // Added last so the contiguous rows above stay preferred: a uniformly-pitched row is the
+  // simpler drawing and the easier cage to build. But when obstacles split the section into
+  // separate gaps, a contiguous row can be impossible while the section has ample room, and
+  // the only arrangement that works is one distributed across the gaps.
+  if (req.obstacles && req.obstacles.length > 0) {
+    const channels = freeChannelsOf(req.clearWidth / 2, req.obstacles);
+    for (const layers of layerOptions) {
+      const base = Math.ceil(req.count / layers);
+      const positions = placeAcrossChannels(channels, base, d, pitch);
+      if (positions === null) continue;
+
+      const slots: CandidateSlot[] = [];
+      let placed = 0;
+      for (let layer = 0; layer < layers; layer++) {
+        const inThis = Math.min(base, req.count - placed);
+        if (inThis <= 0) break;
+        // Each layer takes the first `inThis` positions, so a partly-filled final layer
+        // sits under the bars above it rather than somewhere new.
+        for (const across of positions.slice(0, inThis)) slots.push({ across, layer });
+        placed += inThis;
       }
-      if (!Number.isFinite(minClearInLayer)) minClearInLayer = req.clearWidth;
-      // Never emit a candidate that breaches the code minimum, tolerance aside.
-      if (minClearInLayer - d < spacing.minClear - 1e-9) continue;
+      if (slots.length !== req.count) continue;
 
-      const id = `L${layers}:${slots.map((s) => `${s.layer}@${Math.round(s.across * 10000)}`).join(',')}`;
-      if (seen.has(id)) continue;
-      seen.add(id);
-
-      out.push({
-        id, slots, layers,
-        maxPerLayer: Math.max(...[...byLayer.values()].map((v) => v.length)),
-        minClearInLayer, halfSpan, refs,
-      });
+      const c = finalise(slots, d, req, spacing.minClear, layers, refs, 'ch');
+      if (c && !seen.has(c.id)) { seen.add(c.id); out.push(c); }
     }
   }
 
@@ -216,6 +243,50 @@ export function generateLayoutCandidates(req: CandidateRequest): LayoutCandidate
     || centrality(a) - centrality(b)
     || a.halfSpan - b.halfSpan
     || a.id.localeCompare(b.id));
+}
+
+
+/**
+ * Validate and measure a slot set, or reject it.
+ *
+ * One place, used by both the contiguous and the channel-aware paths, so an arrangement
+ * cannot reach the domain through a route that skips a check.
+ */
+function finalise(
+  slots: CandidateSlot[], d: number, req: CandidateRequest,
+  codeMinClear: number, layers: number, refs: ClauseRef[], tag: string,
+): LayoutCandidate | null {
+  // Cover: every bar inside the clear width.
+  const halfSpan = Math.max(...slots.map((s) => Math.abs(s.across))) + d / 2;
+  if (halfSpan > req.clearWidth / 2 + 1e-9) return null;
+
+  // Locked bars restrict the domain rather than being moved later.
+  if (req.lockedAcross && req.lockedAcross.length > 0) {
+    const honours = req.lockedAcross.every((lock) =>
+      slots.some((s) => Math.abs(s.across - lock) < 1e-6));
+    if (!honours) return null;
+  }
+
+  const byLayer = new Map<number, number[]>();
+  for (const s of slots) byLayer.set(s.layer, [...(byLayer.get(s.layer) ?? []), s.across]);
+  let minClearInLayer = Infinity;
+  for (const [, xs] of byLayer) {
+    const sorted = [...xs].sort((a, b) => a - b);
+    for (let i = 1; i < sorted.length; i++) {
+      minClearInLayer = Math.min(minClearInLayer, sorted[i] - sorted[i - 1]);
+    }
+  }
+  if (!Number.isFinite(minClearInLayer)) minClearInLayer = req.clearWidth;
+  // Never emit a candidate that breaches the code minimum, tolerance aside.
+  if (minClearInLayer - d < codeMinClear - 1e-9) return null;
+
+  return {
+    id: `${tag}L${layers}:${slots.map((s) =>
+      `${s.layer}@${Math.round(s.across * 10000)}`).join(',')}`,
+    slots, layers,
+    maxPerLayer: Math.max(...[...byLayer.values()].map((v) => v.length)),
+    minClearInLayer, halfSpan, refs,
+  };
 }
 
 /** How far off centre a candidate sits. Zero for a symmetric arrangement. */
@@ -233,6 +304,62 @@ function centrality(c: LayoutCandidate): number {
 export interface KeepOut {
   at: number;
   halfWidth: number;
+}
+
+/** A free gap between obstacles, in the member's transverse coordinate. */
+interface Channel { lo: number; hi: number }
+
+/** The gaps left inside ±half once every keep-out is removed and overlaps merged. */
+function freeChannelsOf(half: number, obstacles: readonly KeepOut[]): Channel[] {
+  const blocked = obstacles
+    .map((o) => ({ lo: o.at - o.halfWidth, hi: o.at + o.halfWidth }))
+    .sort((a, b) => a.lo - b.lo);
+  const merged: Channel[] = [];
+  for (const b of blocked) {
+    const last = merged[merged.length - 1];
+    if (last && b.lo <= last.hi) last.hi = Math.max(last.hi, b.hi);
+    else merged.push({ ...b });
+  }
+  const out: Channel[] = [];
+  let cursor = -half;
+  for (const b of merged) {
+    if (b.lo > cursor) out.push({ lo: cursor, hi: b.lo });
+    cursor = Math.max(cursor, b.hi);
+  }
+  if (cursor < half) out.push({ lo: cursor, hi: half });
+  return out.filter((c) => c.hi > c.lo);
+}
+
+/**
+ * Distribute `count` bars across the free channels, widest first, centred within each.
+ *
+ * Returns null when the channels genuinely cannot hold them at the required pitch — which
+ * is a real inadequacy and must not be papered over by squeezing the pitch.
+ */
+function placeAcrossChannels(
+  channels: readonly Channel[], count: number, d: number, pitch: number,
+): number[] | null {
+  const capacity = (c: Channel) => {
+    const w = c.hi - c.lo;
+    return w < d ? 0 : Math.floor((w - d) / pitch) + 1;
+  };
+  const ordered = [...channels]
+    .map((c, i) => ({ ...c, i }))
+    .sort((a, b) => (b.hi - b.lo) - (a.hi - a.lo) || a.lo - b.lo || a.i - b.i);
+  if (ordered.reduce((n, c) => n + capacity(c), 0) < count) return null;
+
+  const out: number[] = [];
+  let left = count;
+  for (const c of ordered) {
+    if (left === 0) break;
+    const take = Math.min(left, capacity(c));
+    if (take === 0) continue;
+    const mid = (c.lo + c.hi) / 2;
+    const span = pitch * (take - 1);
+    for (let k = 0; k < take; k++) out.push(mid - span / 2 + k * pitch);
+    left -= take;
+  }
+  return out.sort((a, b) => a - b);
 }
 
 /** Does every bar in this candidate clear every keep-out band? */

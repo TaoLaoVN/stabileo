@@ -553,6 +553,15 @@ export function runDetailing(input: RunDetailingInput): RunDetailingResult {
       maxAggregateSizeMm: input.maxAggregateSizeMm,
       edition: input.edition,
       lapSplice: anchor.lapSplice,
+      // The cage from `column-candidates`, which distributes the non-corner bars around
+      // ALL FOUR faces and validates §25.2.3 before returning.
+      //
+      // The generator's own fallback crams every extra bar onto the two ±y faces. For the
+      // flagship's 24Ø12 and 28Ø12 columns that is 20-plus bars on two faces at roughly
+      // 8 mm clear, against the 40 mm the article requires — an illegal cage, drawn without
+      // complaint, which then blocked every beam framing into that joint. It is the reason
+      // 120 beams were reported impossible to thread.
+      barPositions: conventionalCage.get(stackId)?.slots.map((sl) => ({ x: sl.dx, y: sl.dy })),
       beamDepthAtTop,
       roofTermination: true,
     });
@@ -650,11 +659,25 @@ export function runDetailing(input: RunDetailingInput): RunDetailingResult {
         })
         .filter((x): x is number => x !== null);
 
+      // The UNION of both ends' cages. A straight bar holds one transverse position along
+      // its whole length, so the arrangement has to clear every joint it passes through —
+      // and the generator needs to see them all to offer a channel-aware alternative.
+      const endObstacles: KeepOut[] = [];
+      for (const n of [nI, nJ]) {
+        for (const c of columnBarsNear(n)) {
+          endObstacles.push({
+            at: (c.x - n.x) * t.x + (c.y - n.y) * t.y,
+            halfWidth: c.diameterMm / 2000 + placement,
+          });
+        }
+      }
+
       const domain = generateLayoutCandidates({
         count, diameterMm: dia, clearWidth, edition: input.edition,
         maxAggregateSizeMm: input.maxAggregateSizeMm, memberKind: 'beam',
         placementTolerance: placement,
         lockedAcross: lockedAcross.length > 0 ? lockedAcross : undefined,
+        obstacles: endObstacles.length > 0 ? endObstacles : undefined,
       });
       if (domain.length === 0) continue;
 
