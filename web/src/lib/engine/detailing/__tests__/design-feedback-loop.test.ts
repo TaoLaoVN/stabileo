@@ -83,39 +83,86 @@ function loop(): DesignFeedbackLoopResult {
   return cachedLoop;
 }
 
-describe('beams 7 and 8: the failure, the repair and the arithmetic behind both', () => {
+/**
+ * ── REBASELINED when Table 9.7.6.2.2 was implemented in full ──────
+ *
+ * This block used to be titled "beams 7 and 8" and asserted that exactly two members
+ * failed at their final geometry. Four do. The extra two are not a regression; they are the
+ * defect the old rule hid.
+ *
+ * `maxStirrupSpacing` had a branch `if (VsReq <= 0) return min(0,8·d, 300 mm)`. Table
+ * 9.7.6.2.2 is indexed on "V_s **requerido**", so a required V_s of zero is row 1 and the
+ * limit is the lesser of d/2 and 400 mm — never `0,8·d`. In the SPAN region of members 5, 6,
+ * 7 and 8 the required V_s is zero, so all four span regions were being checked against an
+ * invented 300 mm limit instead of the table's d/2. At the final geometry d/2 is 248 mm
+ * (members 5 and 6) or 242 mm (7 and 8), and 250 mm was provided.
+ *
+ * So the previous baseline certified a 250 mm span spacing that the regulation forbids, on
+ * four members. That is the false pass F6 predicted, now measured on the production path.
+ *
+ * The two pairs differ in HOW MUCH depth they lose, which is why they fail by different
+ * amounts and repair to different utilizations:
+ *   5, 6 — no joint-layer movement, only Table 26.6.2.1(a)'s 15 mm → d = 497, d/2 = 248,5
+ *   7, 8 — 12 mm bottom raise + 10 mm top drop + 15 mm            → d = 485, d/2 = 242,5
+ */
+const REPAIRED = [5, 6, 7, 8];
+/** The two pairs, and the geometry each actually lost. */
+const PAIRS = {
+  noLayerMovement: { ids: [5, 6], hash: 'b0.0/t0.0/d15.0', sMaxCm: 24.8, util: 1.008 },
+  layerMoved: { ids: [7, 8], hash: 'b12.0/t10.0/d15.0', sMaxCm: 24.3, util: 1.031 },
+} as const;
+const pairOf = (id: number) =>
+  PAIRS.noLayerMovement.ids.includes(id as never) ? PAIRS.noLayerMovement : PAIRS.layerMoved;
+
+describe('the four beams: the failure, the repair and the arithmetic behind both', () => {
   it('the governing check is Table 9.7.6.2.2 maximum stirrup spacing, not flexure', () => {
     // This corrects a recorded diagnosis. The 1,031 was read as a lever-arm/flexure result
     // and it is not: every flexural check passes at the final geometry. What fails is the
     // MAXIMUM STIRRUP SPACING limit, which is proportional to d and therefore moves when
     // coordination takes depth away.
     const it1 = loop().iterations[0];
-    expect(it1.failed).toEqual([7, 8]);
+    expect(it1.failed).toEqual(REPAIRED);
     for (const fb of it1.feedback) {
+      const pair = pairOf(fb.elementId);
       const fails = fb.failedChecks.filter((c) => c.status === 'fail');
-      expect(fails.map((c) => c.category)).toEqual(['Shear Support (Vz) s,max']);
-      expect(fails[0].limiting).toBe('tieSpacing');
-      // s,max = d/2 per Table 9.7.6.2.2 (Vs required <= 0,33·√f'c·bw·d).
-      //   nominal d 512 mm → 256 mm, provided 250 mm — legal, 2,4 % of margin
-      //   final   d 485 mm → 242 mm, provided 250 mm — 3,1 % over
-      expect(fails[0].required).toBeCloseTo(24.3, 1);   // cm
-      expect(fails[0].provided).toBeCloseTo(25.0, 1);   // cm
-      expect(fb.finalUtilization).toBeCloseTo(1.031, 3);
+      // 7 and 8 lose enough depth to fail at BOTH ends and in the span; 5 and 6 only in the
+      // span, because their support region was already detailed at 225 mm.
+      expect(fails.length).toBeGreaterThan(0);
+      expect(fails.map((c) => c.category)).toContain('Shear Span (Vz) s,max');
+      for (const c of fails) {
+        expect(c.limiting).toBe('tieSpacing');
+        expect(c.required).toBeCloseTo(pair.sMaxCm, 1);   // cm
+        expect(c.provided).toBeCloseTo(25.0, 1);          // cm
+      }
+      expect(fb.finalUtilization).toBeCloseTo(pair.util, 3);
     }
   });
 
-  it('charges exactly the depth the geometry actually lost', () => {
-    // 12 mm of joint-layer raise on the bottom face + 15 mm from Table 26.6.2.1(a).
-    // 512 − 27 = 485; 485/2 = 242,5; 250/242,5 = 1,031. The whole failure is that number.
+  it('charges exactly the depth each member actually lost, and no more', () => {
+    // The two pairs are deliberately NOT collapsed. 5 and 6 lose only Table 26.6.2.1(a)'s
+    // 15 mm construction tolerance — no joint-layer movement at all — and asserting a 12 mm
+    // raise on them would be asserting a coordination that did not happen.
     for (const fb of loop().iterations[0].feedback) {
-      expect(fb.finalGeometry.bottomRaise).toBeCloseTo(0.012, 6);
-      expect(fb.finalGeometry.topLower).toBeCloseTo(0.010, 6);
+      const moved = PAIRS.layerMoved.ids.includes(fb.elementId as never);
+      expect(fb.finalGeometry.bottomRaise).toBeCloseTo(moved ? 0.012 : 0, 6);
+      expect(fb.finalGeometry.topLower).toBeCloseTo(moved ? 0.010 : 0, 6);
+      // The tolerance applies whether or not anything moved.
       expect(fb.finalGeometry.depthTolerance).toBeCloseTo(0.015, 6);
       // Measured on the finished bars, not recomputed from the allocation.
       expect(fb.finalGeometry.layerCentroids.length).toBeGreaterThan(0);
       expect([...fb.finalGeometry.layerCentroids])
         .toEqual([...fb.finalGeometry.layerCentroids].sort((a, b) => b - a));
     }
+  });
+
+  it('the arithmetic behind each failure, from the table', () => {
+    // d/2 is row 1 of Table 9.7.6.2.2, whose 400 mm cap does not govern at this depth.
+    // 5, 6: 512 − 15      = 497 → 248,5 mm; 250/248,5 = 1,006 → reported 1,008
+    // 7, 8: 512 − 12 − 15 = 485 → 242,5 mm; 250/242,5 = 1,031
+    expect(250 / 248.5).toBeCloseTo(1.006, 3);
+    expect(250 / 242.5).toBeCloseTo(1.031, 3);
+    // The old rule permitted 300 mm in all four span regions. Both real limits are below it.
+    for (const cm of [24.8, 24.3]) expect(cm * 10).toBeLessThan(300);
   });
 
   it('reports no reinforcement deficit, because the governing check is not an area', () => {
@@ -126,7 +173,7 @@ describe('beams 7 and 8: the failure, the repair and the arithmetic behind both'
     }
   });
 
-  it('repairs both by closing the stirrup spacing one grid step, and nothing else', () => {
+  it('repairs all four by closing the stirrup spacing one grid step, and nothing else', () => {
     // 250 → 225 mm. The longitudinal steel is untouched: the failure was never flexural, so
     // adding bars would have been the wrong repair even though it would have "helped" the
     // utilisation number.
@@ -134,8 +181,15 @@ describe('beams 7 and 8: the failure, the repair and the arithmetic behind both'
     for (const r of loop().iterations[0].repairs) {
       expect(r.kind).toBe('FINAL_GEOMETRY_VERIFIED');
       const prev = before.get(r.elementId)!.accepted!;
+      // Every region ends up at 225 mm, and the SPAN region is the one that had to move on
+      // all four members. On 5 and 6 the support was already there.
+      expect(r.accepted!.regions!.stirrupsSpan!.spacing).toBeCloseTo(0.225, 6);
       expect(r.accepted!.regions!.stirrupsSupport!.spacing).toBeCloseTo(0.225, 6);
-      expect(prev.regions!.stirrupsSupport!.spacing).toBeCloseTo(0.250, 6);
+      expect(prev.regions!.stirrupsSpan!.spacing).toBeCloseTo(0.250, 6);
+      // The leg count is unchanged: a 300 mm web in row 1 has 242 mm between its two leg
+      // centres against a 400 mm across-width limit, so no crosstie is required.
+      expect(r.accepted!.regions!.stirrupsSpan!.legs).toBe(2);
+      expect(r.accepted!.regions!.stirrupsSupport!.legs).toBe(2);
       // Same longitudinal arrangement, region for region.
       expect(r.accepted!.regions!.bottomSpanLayers)
         .toEqual(prev.regions!.bottomSpanLayers);
@@ -144,22 +198,37 @@ describe('beams 7 and 8: the failure, the repair and the arithmetic behind both'
     }
   });
 
-  it('lands inside the approved design margin without an extra reinforcement step', () => {
-    // Policy O5: prefer <= 0,95 when it costs no additional step. 0,883 clears it, and code
-    // compliance (<= 1,00) remains the hard boundary that actually gates the outcome.
+  it('clears code compliance on all four, and the design target on two of them', () => {
+    // Policy O5: prefer <= 0,95 when it costs no additional step. Code compliance (<= 1,00)
+    // is the hard boundary that gates the outcome; 0,95 is a preference.
+    //
+    // 7 and 8 land at 0,883, inside the target. 5 and 6 land at 0,993 — legal, but in the
+    // warn band. That number is NOT produced by this correction: it is member 5's SHEAR
+    // CAPACITY at its support, which was already detailed at 225 mm before the repair and is
+    // 0,993 whatever the maximum-spacing rule says. Getting it under 0,95 would cost an extra
+    // reinforcement step for a preference, and the loop does not spend steel on preferences.
+    // Recorded rather than smoothed over.
     for (const r of loop().iterations[0].repairs) {
-      expect(r.certificate!.worstUtilization).toBeCloseTo(0.883, 3);
+      const expected = PAIRS.layerMoved.ids.includes(r.elementId as never) ? 0.883 : 0.993;
+      expect(r.certificate!.worstUtilization).toBeCloseTo(expected, 3);
+      expect(r.certificate!.worstUtilization).toBeLessThanOrEqual(1.0);
+    }
+    for (const id of PAIRS.layerMoved.ids) {
+      const r = loop().iterations[0].repairs.find((x) => x.elementId === id)!;
       expect(r.certificate!.worstUtilization).toBeLessThanOrEqual(0.95);
     }
   });
 
-  it('re-coordinates the owning assembly and names the adjacent members', () => {
+  it('re-coordinates the owning assembly, and has no adjacent member left to name', () => {
     const it1 = loop().iterations[0];
-    expect(it1.changed).toEqual([7, 8]);
+    expect(it1.changed).toEqual(REPAIRED);
     expect(it1.affectedAssemblies).toEqual(['level-3.20']);
-    // 7 and 8 run north-south; 5 and 6 cross them at the same joints. Their bars have to be
-    // re-judged against the repaired cage, and the record says so rather than implying it.
-    expect(it1.adjacentMembers).toEqual([5, 6]);
+    // 7 and 8 run north-south; 5 and 6 cross them at the same joints. The list names members
+    // that must be RE-JUDGED against a repaired neighbour but were not themselves repaired.
+    // All four are now repaired in the same iteration, so the list is empty — not because the
+    // mechanism went dead, which the assertion below distinguishes.
+    expect(it1.adjacentMembers).toEqual([]);
+    expect(it1.changed).toEqual(expect.arrayContaining([5, 6]));
   });
 
   it('converges in one iteration and two coordination passes', () => {
@@ -207,18 +276,20 @@ describe('the loop is reinforcement-only', () => {
 describe('accounting is complete and honest', () => {
   it('reports candidates, verifier calls, memo hits and truncation', () => {
     const s = loop().stats;
-    // Two members, two candidates each: the arrangement that failed (to drive the
-    // generator's escalation) and the one that replaced it.
-    expect(s.candidatesConsidered).toBe(4);
+    // Four members now, not two. 5/6 are one identical pair and 7/8 another, at DIFFERENT
+    // final geometries, so the work is two real repairs plus two memo answers.
+    expect(s.candidatesConsidered).toBe(12);
     expect(s.truncated).toBe(false);
     expect(s.repeatedStates).toBe(0);
     expect(s.nonMonotonicSkipped).toBe(0);
-    // Memoisation is real, not decorative: 7 and 8 are identical members at identical
-    // geometry, so the second one's whole repair is answered from the memo.
-    expect(s.memoHits).toBeGreaterThanOrEqual(4);
-    expect(s.verifierCalls).toBe(2);
+    // Memoisation is real, not decorative: within each pair the members are identical at an
+    // identical geometry, so the second one's whole repair is answered from the memo.
+    expect(s.memoHits).toBeGreaterThanOrEqual(8);
+    expect(s.verifierCalls).toBe(7);
+    // 5 escalates through four arrangements before one clears; 6 is answered from the memo;
+    // 7 clears on its first; 8 from the memo. The zeros are the point.
     const perMember = loop().iterations[0].repairs.map((r) => r.stats.verifierCalls);
-    expect(perMember).toEqual([1, 0]);
+    expect(perMember).toEqual([4, 0, 1, 0]);
   });
 
   it('never pays twice for the same reinforcement at the same geometry', () => {
@@ -233,17 +304,23 @@ describe('accounting is complete and honest', () => {
 });
 
 describe('certificates describe the geometry that exists', () => {
-  it('every repaired certificate names its final geometry', () => {
+  it('every repaired certificate names its OWN final geometry', () => {
+    // Two distinct hashes across the four members. A single expected hash would have been a
+    // test that passes because both pairs happen to be certified, not because either is
+    // certified at the geometry it actually has.
+    const seen = new Set<string>();
     for (const r of loop().iterations[0].repairs) {
-      expect(r.certificate!.finalGeometryHash).toBe('b12.0/t10.0/d15.0');
+      expect(r.certificate!.finalGeometryHash).toBe(pairOf(r.elementId).hash);
       expect(r.certificate!.rebarHash).toBe(rebarHash(r.accepted!));
+      seen.add(r.certificate!.finalGeometryHash);
     }
+    expect([...seen].sort()).toEqual(['b0.0/t0.0/d15.0', 'b12.0/t10.0/d15.0']);
   });
 
   it('the published outcome carries the final-geometry certificate alongside the nominal one', () => {
-    for (const id of [7, 8]) {
+    for (const id of REPAIRED) {
       const o = loop().outcomes.get(id)!;
-      expect(o.finalGeometryCertificate?.finalGeometryHash).toBe('b12.0/t10.0/d15.0');
+      expect(o.finalGeometryCertificate?.finalGeometryHash).toBe(pairOf(id).hash);
       // The hash in the outcome is the steel actually assigned — not the arrangement the
       // nominal run certified, which is the substitution the twelve-condition gate exists
       // to catch.
@@ -309,15 +386,24 @@ describe('locked reinforcement is a hard constraint', () => {
       expect(rebarHash(l.outcomes.get(id)!.accepted!))
         .toBe(rebarHash(h.outcomes.get(id)!.accepted!));
     }
+    // 5 and 6 are NOT locked, so they are still repaired: one engineer's pin does not stop
+    // the rest of the floor from being corrected.
+    expect(l.iterations[0].changed).toEqual([5, 6]);
     for (const a of l.result.assemblies) {
       expect(a.constructibility?.verdict).toBe('NOT_ESTABLISHED');
     }
-    // One extra pass only: with nothing changed there is nothing to re-coordinate.
-    expect(l.stats.detailingRuns).toBe(1);
-    expect(l.stats.iterations).toBe(1);
+    // Two passes and two iterations: iteration 1 repairs 5 and 6 and refuses 7 and 8, which
+    // means the assembly must be re-coordinated; iteration 2 re-verifies at that NEW geometry,
+    // finds the pinned members still failing, changes nothing and terminates. The second
+    // iteration is not wasted work — without it the refusal would be a verdict about a
+    // geometry that no longer exists.
+    expect(l.stats.detailingRuns).toBe(2);
+    expect(l.stats.iterations).toBe(2);
+    expect(l.iterations[1].changed).toEqual([]);
+    expect(l.iterations[1].failed).toEqual([7, 8]);
   });
 
-  it('locking only member 7 still repairs member 8', () => {
+  it('locking only member 7 still repairs 5, 6 and 8', () => {
     // Partial locking must not be all-or-nothing: the engineer pinned one bar, not the floor.
     const h = harness();
     const l = runDesignFeedbackLoop({
@@ -327,7 +413,7 @@ describe('locked reinforcement is a hard constraint', () => {
       detail: h.detail,
       lockedMembers: new Set([7]),
     });
-    expect(l.iterations[0].changed).toEqual([8]);
+    expect(l.iterations[0].changed).toEqual([5, 6, 8]);
     expect(l.unrepaired.map((u) => u.elementId)).toEqual([7]);
     expect(l.outcome).toBe('LOCKED_REINFORCEMENT_PREVENTS_REPAIR');
   });
@@ -346,7 +432,7 @@ describe('bounds and termination', () => {
     expect(l.outcome).toBe('FEEDBACK_LOOP_TRUNCATED');
     expect(l.stats.truncated).toBe(true);
     expect(l.stats.detailingRuns).toBe(1);
-    expect(l.unrepaired.map((u) => u.elementId)).toEqual([7, 8]);
+    expect(l.unrepaired.map((u) => u.elementId)).toEqual(REPAIRED);
     for (const a of l.result.assemblies) {
       expect(a.constructibility?.verdict).toBe('NOT_ESTABLISHED');
     }

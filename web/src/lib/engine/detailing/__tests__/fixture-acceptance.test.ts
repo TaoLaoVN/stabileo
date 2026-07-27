@@ -122,9 +122,9 @@ describe('rc-design-qa-8 reaches CONSTRUCTIBLE through the production path', () 
 
   it('reaches CONSTRUCTIBLE, and the last two conditions were closed by design feedback', () => {
     // The two that used to fail — `allMembersReverified` and `certificatesMatchGeometry` —
-    // were the SAME failure: beams 7 and 8 came out of the authoritative re-verification at
-    // ratio 1,031 once the joint-layer movement and Table 26.6.2.1(a)'s tolerance were
-    // charged against their effective depth.
+    // were the SAME failure: the beams came out of the authoritative re-verification above
+    // ratio 1,00 once the joint-layer movement and Table 26.6.2.1(a)'s tolerance were charged
+    // against their effective depth.
     //
     // The governing check is Table 9.7.6.2.2's maximum stirrup spacing, s <= d/2 — NOT
     // flexure, which passes throughout. The design had placed the stirrups at the nominal
@@ -134,11 +134,17 @@ describe('rc-design-qa-8 reaches CONSTRUCTIBLE through the production path', () 
     // arriving at the same zero margin one grid step wider.
     //
     // The repair is reinforcement-only and design-side: re-enumerate with the final geometry
-    // known, which closes the spacing to 225 mm at utilisation 0,883.
+    // known, which closes the spacing to 225 mm.
+    //
+    // REBASELINED: all FOUR beams are repaired, not two. Members 5 and 6 fail in their SPAN
+    // region, which the removed `if (VsReq <= 0) return min(0,8·d, 300 mm)` branch had been
+    // checking against an invented 300 mm limit. A required V_s of zero is row 1 of Table
+    // 9.7.6.2.2 and its limit is d/2 = 248 mm, so the previous baseline had certified a
+    // 250 mm span spacing the regulation forbids. Correcting the rule surfaced it.
     const l = loop();
     expect(l.outcome).toBe('FINAL_GEOMETRY_VERIFIED');
     expect(l.unrepaired).toEqual([]);
-    expect(l.iterations.flatMap((i) => i.changed)).toEqual([7, 8]);
+    expect(l.iterations.flatMap((i) => i.changed)).toEqual([5, 6, 7, 8]);
     // Reinforcement is downstream of analysis: repairing it can never require a solve.
     expect(l.stats.structuralSolves).toBe(0);
     for (const a of run().assemblies) {

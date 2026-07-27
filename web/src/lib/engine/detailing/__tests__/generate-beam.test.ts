@@ -183,7 +183,12 @@ describe('§9.7.3 cut-off computation', () => {
 describe('stirrup zone merging', () => {
   const z = (from: number, to: number, spacing: number,
     reason: StirrupZone['reason'] = 'shear'): StirrupZone =>
-    ({ from, to, spacing, diameterMm: 8, legs: 2, reason, refs: [] });
+    ({
+      from, to, spacing, diameterMm: 8, legs: 2, reason, refs: [],
+      // Table 9.7.6.2.2 fields the zone now carries. Row 1's across-width limit for a
+      // 300 mm web is 400 mm against 242 mm between two leg centres, so 2 legs are legal.
+      acrossMax: 0.400, row: 'row1',
+    });
 
   it('lets the tighter spacing win over an overlap', () => {
     // Two overlapping zones with different spacings would be an undrawable instruction.

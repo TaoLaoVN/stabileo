@@ -60,8 +60,6 @@ const T2531 = clause('cirsoc-201', '2025', 'Tabla 25.3.1',
   'geometría del gancho normal para el anclaje de barras conformadas en tracción');
 const T2532 = clause('cirsoc-201', '2025', 'Tabla 25.3.2',
   'diámetro mínimo interior de doblado y geometría del gancho para estribos');
-const T2531_05 = clause('cirsoc-201', '2005', '7.1', 'ganchos normales');
-const T2532_05 = clause('cirsoc-201', '2005', '7.2', 'diámetros mínimos de doblado');
 
 /**
  * Minimum mandrel (inside bend) diameter, in metres.
@@ -71,20 +69,21 @@ const T2532_05 = clause('cirsoc-201', '2005', '7.2', 'diámetros mínimos de dob
  * big for its section; using the stirrup value for a main bar is a code violation.
  */
 export function minMandrelDiameter(
-  diameterMm: number, role: BarRole, edition: RegulationEdition = '2025',
+  diameterMm: number, role: BarRole,
 ): { value: number; refs: ClauseRef[] } {
   const db = diameterMm / 1000;
   if (role === 'transverse') {
-    // Table 25.3.2 — stirrups, ties and hoops.
+    // Table 25.3.2, verified against the rendered page: Ø10–16 → 4·d_be, Ø20–25 → 6·d_be.
     const factor = diameterMm <= 16 ? 4 : 6;
-    return { value: factor * db, refs: [edition === '2025' ? T2532 : T2532_05] };
+    return { value: factor * db, refs: [T2532] };
   }
-  // Table 25.3.1 — longitudinal bars in tension.
+  // Table 25.3.1, verified against the rendered page: Ø10–25 → 6·d_b, Ø32 → 8·d_b,
+  // Ø40 and larger → 10·d_b.
   let factor: number;
   if (diameterMm <= 25) factor = 6;
   else if (diameterMm <= 32) factor = 8;
   else factor = 10;
-  return { value: factor * db, refs: [edition === '2025' ? T2531 : T2531_05] };
+  return { value: factor * db, refs: [T2531] };
 }
 
 /** Centreline bend radius from the inside mandrel diameter. */
@@ -95,10 +94,9 @@ export function centrelineRadius(mandrelDiameter: number, diameterMm: number): n
 /** Standard hook geometry per Tables 25.3.1 / 25.3.2. */
 export function standardHook(
   diameterMm: number, angle: HookAngle, role: BarRole,
-  edition: RegulationEdition = '2025',
 ): HookGeometry {
   const db = diameterMm / 1000;
-  const mandrel = minMandrelDiameter(diameterMm, role, edition);
+  const mandrel = minMandrelDiameter(diameterMm, role);
 
   let extension: number;
   if (role === 'transverse') {
@@ -115,7 +113,7 @@ export function standardHook(
 
   const refs = [...mandrel.refs];
   if (role === 'longitudinal' && angle === 135) {
-    refs.push(clause('cirsoc-201', edition, 'Tabla 25.3.1', undefined,
+    refs.push(clause('cirsoc-201', '2025', 'Tabla 25.3.1', undefined,
       'La Tabla 25.3.1 no tabula el gancho a 135° para anclaje longitudinal. Se adopta ' +
       'la prolongación del gancho a 180°, que es la más exigente de las tabuladas.'));
   }
@@ -259,12 +257,18 @@ export function buildStraightBarWithHooks(opts: {
   startHook?: HookAngle;
   endHook?: HookAngle;
   ownerElementIds: number[];
+  /**
+   * Retained so callers keep declaring the edition their bar belongs to, and so a future
+   * sourced edition can dispatch here. It is NOT used to choose hook or mandrel geometry:
+   * Tables 25.3.1 and 25.3.2 are 2025 identifiers and are the only bend rules implemented,
+   * so passing '2005' used to produce refs reading "CIRSOC 201 2005 Tabla 25.3.1" — a 2025
+   * table stamped with an edition that does not contain it.
+   */
   edition?: RegulationEdition;
   source?: BarPath['source'];
   locked?: boolean;
   layerId?: string;
 }): BarPath {
-  const edition = opts.edition ?? '2025';
   const segments: BarSegment[] = [];
   const refs: ClauseRef[] = [];
 
@@ -276,7 +280,7 @@ export function buildStraightBarWithHooks(opts: {
 
   // Leading hook, turning from the bar axis toward hookNormal.
   if (opts.startHook) {
-    const hook = standardHook(opts.diameterMm, opts.startHook, opts.role, edition);
+    const hook = standardHook(opts.diameterMm, opts.startHook, opts.role);
     startTreatment = { kind: 'hook', hook };
     refs.push(...hook.refs);
     // Free end of the extension, then the arc back to the tangent point at `start`.
@@ -291,7 +295,7 @@ export function buildStraightBarWithHooks(opts: {
   segments.push(straightSegment(opts.start, opts.end));
 
   if (opts.endHook) {
-    const hook = standardHook(opts.diameterMm, opts.endHook, opts.role, edition);
+    const hook = standardHook(opts.diameterMm, opts.endHook, opts.role);
     endTreatment = { kind: 'hook', hook };
     refs.push(...hook.refs);
     const tangentOffset = hook.centrelineRadius;

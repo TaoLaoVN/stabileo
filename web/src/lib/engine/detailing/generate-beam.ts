@@ -44,8 +44,9 @@ import {
   type BarPath, type HookAngle, type Point3,
 } from '../../codes/cirsoc201/bar-geometry';
 import { minClearBetweenLayers, minClearSpacingInLayer } from '../../codes/cirsoc201/spacing';
+import { transverseSpacingForDemand } from '../../codes/cirsoc201/transverse-spacing';
 import { DEFAULT_TOLERANCES } from './collision';
-import { clause, type ClauseRef, type RegulationEdition } from '../../codes/regulation';
+import { clause, formatClause, type ClauseRef, type RegulationEdition } from '../../codes/regulation';
 
 // ─── Inputs ──────────────────────────────────────────────────────
 
@@ -359,6 +360,16 @@ export interface StirrupZone {
   /** Reason this zone exists — 'shear', 'cutoff' (§9.7.3.5(c)) or 'minimum'. */
   reason: 'shear' | 'cutoff' | 'minimum';
   refs: ClauseRef[];
+  /**
+   * Table 9.7.6.2.2 across-width limit for this zone, m.
+   *
+   * Carried on the zone, not recomputed downstream: the cage generator, the collision
+   * checker, the schedule and the drawing all have to place the legs at the same
+   * coordinates, and `legs` alone does not say what limit produced it.
+   */
+  acrossMax: number;
+  /** Which row of Table 9.7.6.2.2 this zone's demand selected. */
+  row: 'row1' | 'row2';
 }
 
 /**
@@ -662,7 +673,7 @@ export function generateBeamBars(input: BeamGenerationInput): GeneratedBeam {
   if (anchorHook) {
     trace.push('El elemento integra el sistema resistente a fuerzas laterales: la armadura ' +
       'inferior se ancla para desarrollar fy en la cara del apoyo (9.7.3.8.2).');
-    refs.push(...standardHook(input.bottom.diameterMm, 90, 'longitudinal', input.edition).refs);
+    refs.push(...standardHook(input.bottom.diameterMm, 90, 'longitudinal').refs);
   }
 
   const botSlots = placeGroup(input.bottom.count, input.bottom.diameterMm, false);
@@ -792,32 +803,62 @@ export function generateBeamBars(input: BeamGenerationInput): GeneratedBeam {
   }
 
   // ── Stirrup zones ──
-  const raw: StirrupZone[] = [];
-  // §9.6.3 minimum shear reinforcement over the whole span, at d/2.
-  raw.push({
-    from: 0, to: input.L, diameterMm: input.stirrupDia, spacing: Math.min(0.30, input.d / 2),
-    legs: 2, reason: 'minimum',
-    refs: [c('9.6.3', 'armadura mínima de corte'), c('9.7.6.2.2', 'separación máxima de estribos')],
-  });
-  // Support zones: tighter spacing over 2h at each end, where shear peaks.
-  const supportZone = Math.min(2 * input.h, input.L / 2);
-  for (const [from, to] of [[0, supportZone], [input.L - supportZone, input.L]] as const) {
-    raw.push({
-      from, to, diameterMm: input.stirrupDia, spacing: Math.min(0.20, input.d / 4),
-      legs: 2, reason: 'shear',
-      refs: [c('9.7.6.2.2', 'separación máxima de estribos')],
+  //
+  // Every zone's spacing AND leg count now comes from Table 9.7.6.2.2 evaluated at that
+  // zone's OWN peak shear, through the one shared evaluator. Previously the span zone was a
+  // literal `min(300 mm, d/2)` and the support zones a literal `min(200 mm, d/4)`: the
+  // regulation's row-1 and row-2 values pasted in, with no demand deciding which row a zone
+  // is actually in, the wrong row-1 cap, and a hardcoded 2 legs that ignored the
+  // across-width column entirely. A 300 mm web in row 2 needs three legs.
+  //
+  // The effective depth used is reduced by any coordination raise or drop, because a limit
+  // computed on the nominal depth would be looser than the member the drawing shows.
+  const dTable = Math.max(0.05, input.d - Math.max(raise, drop));
+  const peakShearIn = (from: number, to: number): number => {
+    let peak = 0;
+    for (const st of input.stations) {
+      if (st.x < from - 1e-9 || st.x > to + 1e-9) continue;
+      peak = Math.max(peak, Math.abs(st.v));
+    }
+    return peak;
+  };
+  const zoneFor = (
+    from: number, to: number, reason: StirrupZone['reason'], refs: ClauseRef[],
+  ): StirrupZone => {
+    const table = transverseSpacingForDemand(input.edition, {
+      Vu: peakShearIn(from, to), bw: input.b, d: dTable, fc: input.fc,
+      cover: input.cover, stirrupDiaMm: input.stirrupDia,
     });
+    // The table's only gap is prestressing, and a member the table could not be applied to
+    // is reported rather than detailed as if it had been checked.
+    if (table.unsupported.length > 0) {
+      unsupported.push(...table.clauses.map((r) => formatClause(r)));
+    }
+    return {
+      from, to, diameterMm: input.stirrupDia,
+      spacing: table.alongMax, legs: table.requiredLegs, reason, refs,
+      acrossMax: table.acrossMax, row: table.row,
+    };
+  };
+
+  const raw: StirrupZone[] = [];
+  const supportZone = Math.min(2 * input.h, input.L / 2);
+  // §9.6.3 minimum shear reinforcement over the whole span, at the span's own demand.
+  raw.push(zoneFor(0, input.L, 'minimum',
+    [c('9.6.3', 'armadura mínima de corte'), c('9.7.6.2.2', 'separación máxima de ramas')]));
+  // Support zones over 2h at each end, where shear peaks and the row often changes.
+  for (const [from, to] of [[0, supportZone], [input.L - supportZone, input.L]] as const) {
+    raw.push(zoneFor(from, to, 'shear', [c('9.7.6.2.2', 'separación máxima de ramas')]));
   }
-  // §9.7.3.5(c) zones from any cut-off that needed them.
+  // §9.7.3.5(c) zones from any cut-off that needed them. §9.7.3.5(c)'s own `d/(8·βb)` limit
+  // is ADDITIONAL to Table 9.7.6.2.2, not a replacement for it: whichever is tighter governs
+  // the spacing, and the table still decides the leg count.
   for (const cut of cutoffs) {
     if (!cut.extraStirrups) continue;
-    raw.push({
-      from: Math.max(0, cut.actual - cut.extraStirrups.length),
-      to: Math.min(input.L, cut.actual + cut.extraStirrups.length),
-      diameterMm: input.stirrupDia,
-      spacing: cut.extraStirrups.maxSpacing,
-      legs: 2, reason: 'cutoff', refs: cut.refs,
-    });
+    const from = Math.max(0, cut.actual - cut.extraStirrups.length);
+    const to = Math.min(input.L, cut.actual + cut.extraStirrups.length);
+    const zone = zoneFor(from, to, 'cutoff', cut.refs);
+    raw.push({ ...zone, spacing: Math.min(zone.spacing, cut.extraStirrups.maxSpacing) });
   }
   const stirrupZones = mergeStirrupZones(raw, input.L);
   trace.push(`${stirrupZones.length} zona(s) de estribos tras fusionar solapes ` +

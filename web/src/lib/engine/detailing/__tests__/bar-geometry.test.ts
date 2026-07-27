@@ -66,9 +66,28 @@ describe('§25.3 Table 25.3.2 — stirrup mandrels and hooks', () => {
     expect(standardHook(20, 90, 'transverse').extension).toBeCloseTo(12 * 0.020, 9);
   });
 
-  it('cites the 2005 clauses under the 2005 edition', () => {
-    expect(standardHook(20, 90, 'transverse', '2005').refs[0].edition).toBe('2005');
-    expect(standardHook(20, 90, 'transverse', '2025').refs[0].edition).toBe('2025');
+  it('cites 2025 tables ONLY, because they are the only bend rules implemented', () => {
+    // This test asserted the opposite. `standardHook(…, '2005')` used to relabel Tables
+    // 25.3.1/25.3.2 as CIRSOC 201-2005 §7.1/§7.2 while returning the SAME numbers — the 2025
+    // rule under a 2005 label, with a clause identifier the 2005 edition does not contain.
+    // The 2005 text is not supplied, so its bend rules cannot be implemented; the edition
+    // parameter is gone from these functions rather than silently ignored.
+    for (const role of ['transverse', 'longitudinal'] as const) {
+      for (const angle of [90, 135, 180] as const) {
+        for (const dia of [8, 16, 20, 25, 32]) {
+          for (const ref of standardHook(dia, angle, role).refs) {
+            expect(ref.edition, `${role} ${angle} Ø${dia}`).toBe('2025');
+            expect(ref.regulation).toBe('cirsoc-201');
+          }
+        }
+      }
+    }
+  });
+
+  it('takes no edition argument at all, so a 2005 stamp is unrepresentable', () => {
+    // A compile-time guarantee expressed as a runtime one: the arity is the gate.
+    expect(standardHook.length).toBe(3);
+    expect(minMandrelDiameter.length).toBe(2);
   });
 });
 
@@ -353,5 +372,42 @@ describe('cover checking', () => {
     // The hook rises 90°+extension in +z; the section only reaches z = 0.30.
     const breaches = checkCover([outward], [prism]);
     expect(breaches.length).toBeGreaterThan(0);
+  });
+});
+
+// ─── Provenance of the bend rules ────────────────────────────────
+
+describe('bend-rule provenance — 2025 only, and never mislabelled', () => {
+  it('cites 2025 for every bar size and hook angle, longitudinal and transverse', () => {
+    // Tables 25.3.1 and 25.3.2 are the only bend rules implemented. This module used to take
+    // an `edition` argument and relabel them as CIRSOC 201-2005 §7.1/§7.2 while returning
+    // identical numbers, and one `clause()` call stamped the 2025 TABLE IDENTIFIER with
+    // whatever edition was passed — so a 2005 project cited "CIRSOC 201 2005 Tabla 25.3.1",
+    // naming a table that edition does not contain. The 2005 text is not supplied, so its
+    // bend rules cannot be implemented.
+    //
+    // The companion gate over the SPACING rules lives on the regulations branch, which owns
+    // them; this one owns the bend rules.
+    for (const role of ['transverse', 'longitudinal'] as const) {
+      for (const angle of [90, 135, 180] as const) {
+        for (const dia of [6, 8, 10, 12, 16, 20, 25, 32, 40]) {
+          const refs = standardHook(dia, angle, role).refs;
+          expect(refs.length, `${role} ${angle} Ø${dia}`).toBeGreaterThan(0);
+          for (const r of refs) {
+            expect(r.regulation).toBe('cirsoc-201');
+            expect(r.edition, `${role} ${angle} Ø${dia}`).toBe('2025');
+            // Chapter 25 is a 2025 structure. A chapter-7 identifier here would be the
+            // cross-edition mislabelling itself.
+            expect(r.clause).toMatch(/^(Tabla )?25\./);
+          }
+        }
+      }
+    }
+  });
+
+  it('takes no edition argument, so a 2005 stamp is unrepresentable', () => {
+    // The defect was a PARAMETER. Removing it removes the class, not just the instance.
+    expect(standardHook.length).toBe(3);
+    expect(minMandrelDiameter.length).toBe(2);
   });
 });
