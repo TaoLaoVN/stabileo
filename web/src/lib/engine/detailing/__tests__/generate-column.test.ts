@@ -69,24 +69,140 @@ describe('transitions between lifts', () => {
     expect(t[0].note).toMatch(/Dentro del límite de 1 en 6/);
   });
 
-  it('flags an offset steeper than the §10.7.4 limit of 1 in 6', () => {
-    // 200 mm shift over 600 mm -> 1 in 3.
+  it('a 200 mm offset is governed by §10.7.4.2, not by the slope limit', () => {
+    // CORRECTED. This asserted that a 200 mm shift is reported as "EXCEDE el límite de 1 en
+    // 6" — reading §10.7.4.1's slope rule as the trigger for dowels. It is not. At 75 mm or
+    // more of FACE offset, §10.7.4.2 forbids bending outright and the slope never comes into
+    // it. The old expectation stated the conflation as a requirement.
     const t = detectTransitions(stack([
       lift({ centre: { x: 0, y: 0 } }, 0),
       lift({ centre: { x: 0.20, y: 0 } }, 1),
     ]));
     expect(t[0].offsetSlope).toBeGreaterThan(MAX_OFFSET_SLOPE);
-    expect(t[0].offsetExceedsLimit).toBe(true);
-    expect(t[0].note).toMatch(/EXCEDE el límite de 1 en 6/);
-    expect(t[0].refs.some((r) => r.clause === '10.7.4')).toBe(true);
+    expect(t[0].requiresSeparateDowels).toBe(true);
+    expect(t[0].faces!.max).toBeCloseTo(0.20, 9);
+    expect(t[0].note).toMatch(/artículo 10\.7\.4\.2/);
+    expect(t[0].refs.some((r) => r.clause === '10.7.4.2')).toBe(true);
   });
 
-  it('surfaces an over-steep offset as unsupported rather than bending it anyway', () => {
+  it('§10.7.4.1 alone governs when the slope is too steep but the offset is under 75 mm', () => {
+    // 50 mm over a 200 mm joint depth is 1 in 4. Too steep to bend, and NOT far enough to
+    // earn dowels — the one case where neither clause offers a way out. It must be reported,
+    // not drawn.
+    const g = generateColumnStack(stack([
+      lift({ centre: { x: 0, y: 0 } }, 0),
+      lift({ centre: { x: 0.05, y: 0 } }, 1),
+    ], { beamDepthAtTop: new Map([[0, 0.20], [1, 0.20]]) }));
+    const t = detectTransitions(stack([
+      lift({ centre: { x: 0, y: 0 } }, 0),
+      lift({ centre: { x: 0.05, y: 0 } }, 1),
+    ], { beamDepthAtTop: new Map([[0, 0.20], [1, 0.20]]) }));
+    expect(t[0].offsetExceedsLimit).toBe(true);
+    expect(t[0].requiresSeparateDowels).toBe(false);
+    expect(g.unsupported.join(' ')).toMatch(/10\.7\.4\.1/);
+    expect(g.unsupported.join(' ')).toMatch(/no alcanza los 75 mm/);
+    // And no dowel was invented for a case the clause does not authorise one for.
+    expect(g.bars.some((b) => b.id.includes('-D'))).toBe(false);
+  });
+});
+
+describe('§10.7.4.2 — separate dowels at an offset face', () => {
+  /** Concentric size change: the axis does not move and all four faces do. */
+  const concentric = (bLo: number, bHi: number) => stack([
+    lift({ b: bLo, h: bLo }, 0), lift({ b: bHi, h: bHi }, 1),
+  ]);
+
+  it('measures the FACE offset, which a centre-only test misses entirely', () => {
+    // 400 → 250 concentric. Centre shift ZERO; every face offset exactly 75 mm. The old
+    // centre-shift test reported no offset at all for this, and it is precisely the
+    // threshold case.
+    const t = detectTransitions(concentric(0.40, 0.25));
+    expect(t[0].kinds).toContain('offset');
+    expect(t[0].faces!.max).toBeCloseTo(0.075, 9);
+    expect(t[0].faces!.beyondLimit).toEqual(['xMinus', 'xPlus', 'yMinus', 'yPlus']);
+    expect(t[0].requiresSeparateDowels).toBe(true);
+  });
+
+  it('stays under the threshold at 74 mm, and crosses it at 75', () => {
+    // A hard threshold, asserted on both sides of itself.
+    expect(detectTransitions(concentric(0.40, 0.252))[0].requiresSeparateDowels).toBe(false);
+    expect(detectTransitions(concentric(0.40, 0.250))[0].requiresSeparateDowels).toBe(true);
+  });
+
+  it('emits real dowels, owned by BOTH lifts, spanning a lap each side', () => {
+    const s = concentric(0.40, 0.25);
+    const g = generateColumnStack(s);
+    const dowels = g.bars.filter((b) => b.id.includes('-D'));
+    expect(dowels.length).toBeGreaterThan(0);
+    const lap = s.lapSplice(0.25 === 0 ? 20 : 20);   // Ø20 upper bars
+    for (const d of dowels) {
+      const zs = d.segments.flatMap((sg) => [sg.start.z, sg.end.z]);
+      // One lap below the transition and one above: it splices to both lifts.
+      expect(Math.min(...zs)).toBeCloseTo(3 - lap, 6);
+      expect(Math.max(...zs)).toBeCloseTo(3 + lap, 6);
+      // A dowel IS the splice between the two lifts. Filing it under one would leave the
+      // other's assembly missing steel that physically crosses it.
+      expect(d.ownerElementIds.sort()).toEqual([100, 101]);
+      expect(d.source).toBe('coordinated');
+      // Straight, per the clause: no inclined portion anywhere.
+      expect(d.startTreatment.kind).toBe('straight');
+      expect(d.endTreatment.kind).toBe('straight');
+      expect(d.diameterMm).toBe(20);
+    }
+  });
+
+  it('places every dowel exactly where an upper-lift bar is', () => {
+    // The defect class this guards: three subsystems distributing column bars three
+    // different ways. A dowel at a position no bar occupies is the same failure.
+    const s = concentric(0.40, 0.25);
+    const g = generateColumnStack(s);
+    const upperKeys = new Set(g.bars
+      .filter((b) => b.id.includes('-L1-'))
+      .map((b) => `${b.segments[0].start.x.toFixed(6)}:${b.segments[0].start.y.toFixed(6)}`));
+    expect(upperKeys.size).toBeGreaterThan(0);
+    for (const d of g.bars.filter((b) => b.id.includes('-D'))) {
+      const key = `${d.segments[0].start.x.toFixed(6)}:${d.segments[0].start.y.toFixed(6)}`;
+      expect(upperKeys, d.id).toContain(key);
+    }
+  });
+
+  it('gives a corner bar on two offset faces exactly one dowel', () => {
+    const g = generateColumnStack(concentric(0.40, 0.25));
+    const ids = g.bars.filter((b) => b.id.includes('-D')).map((b) => b.id);
+    expect(new Set(ids).size).toBe(ids.length);
+  });
+
+  it('reports the §25.5.1.3 non-contact limit rather than drawing an uncredited lap', () => {
+    // 200 mm face offset with a Ø20 lap of 1000 mm: min(lst/5, 150) = 150 mm. The dowel is
+    // still emitted — the steel is needed — and the shortfall is stated, because silently
+    // drawing a lap the code will not credit is the worse of the two failures.
     const g = generateColumnStack(stack([
       lift({ centre: { x: 0, y: 0 } }, 0),
       lift({ centre: { x: 0.20, y: 0 } }, 1),
     ]));
-    expect(g.unsupported.join(' ')).toMatch(/barras de espera separadas/);
+    expect(g.bars.some((b) => b.id.includes('-D'))).toBe(true);
+    expect(g.unsupported.join(' ')).toMatch(/25\.5\.1\.3/);
+    expect(g.unsupported.join(' ')).toMatch(/200 mm/);
+  });
+
+  it('says nothing about §25.5.1.3 when the offset is within the limit', () => {
+    // 75 mm offset, Ø20 lap 1000 mm → limit 150 mm. Legal non-contact lap, no complaint.
+    const g = generateColumnStack(concentric(0.40, 0.25));
+    expect(g.bars.some((b) => b.id.includes('-D'))).toBe(true);
+    expect(g.unsupported.join(' ')).not.toMatch(/25\.5\.1\.3/);
+  });
+
+  it('cites both clauses and traces the dowels it placed', () => {
+    const g = generateColumnStack(concentric(0.40, 0.25));
+    expect(g.refs.some((r) => r.clause === '10.7.4.2')).toBe(true);
+    expect(g.refs.some((r) => r.clause === '25.5.1.3')).toBe(true);
+    expect(g.trace.join(' ')).toMatch(/dovela\(s\)/);
+  });
+
+  it('emits no dowel where no face is offset', () => {
+    const g = generateColumnStack(stack(three));
+    expect(g.bars.some((b) => b.id.includes('-D'))).toBe(false);
+    expect(g.unsupported.join(' ')).not.toMatch(/10\.7\.4/);
   });
 });
 

@@ -213,14 +213,26 @@ describe('what §10.7.4 does require, when a transition really is offset', () =>
     expect(t[0].offsetSlope!).toBeLessThan(1 / 6);
   });
 
-  it('§10.7.4.2 — a 75 mm face offset must NOT be bent', () => {
+  it('§10.7.4.2 — a 75 mm face offset must NOT be bent, and gets dowels', () => {
     // The rule is about the FACE offset, and it is a hard prohibition, not a slope check:
     // at 75 mm or more the bars are not bent at all and separate lap-spliced dowels are
     // placed instead. A gentle slope does not buy an exemption from it.
     const t = detectTransitions(twoLift(0.075) as never);
     expect(t[0].kinds).toContain('offset');
-    // Recorded as a known gap: the generator flags the offset but does not yet emit the
-    // separate dowels §10.7.4.2 requires. It must not silently bend them either.
+    // A 1-in-40 slope — comfortably legal under §10.7.4.1 — and still forbidden. That is the
+    // whole point of the clause being separate from the slope limit.
     expect(t[0].offsetSlope!).toBeLessThan(1 / 6);
+    expect(t[0].requiresSeparateDowels).toBe(true);
+
+    // The gap this test used to record is closed: the dowels are emitted.
+    const g = generateColumnStack(twoLift(0.075) as never);
+    const dowels = g.bars.filter((b) => b.id.includes('-D'));
+    expect(dowels.length).toBeGreaterThan(0);
+    for (const d of dowels) {
+      // Straight — the clause forbids the inclined portion, so there must not be one.
+      expect(d.segments).toHaveLength(1);
+      expect(d.segments[0].start.x).toBeCloseTo(d.segments[0].end.x, 9);
+      expect(d.segments[0].start.y).toBeCloseTo(d.segments[0].end.y, 9);
+    }
   });
 });

@@ -36,6 +36,7 @@ import {
 } from '../../codes/cirsoc201/bar-geometry';
 import { minClearSpacingColumn } from '../../codes/cirsoc201/spacing';
 import { clause, type ClauseRef, type RegulationEdition } from '../../codes/regulation';
+import { MAX_NONCONTACT_PITCH_MM } from './splice';
 
 // ─── Column stacks ───────────────────────────────────────────────
 
@@ -107,8 +108,17 @@ export interface ColumnTransition {
   kinds: TransitionKind[];
   /** Offset slope, run over rise, when `kinds` includes 'offset'. */
   offsetSlope?: number;
-  /** True when the offset slope exceeds the §10.7.4 limit of 1 in 6. */
+  /** True when the offset slope exceeds the §10.7.4.1 limit of 1 in 6. */
   offsetExceedsLimit?: boolean;
+  /** Per-face movement between the two lifts — what §10.7.4.2 actually measures. */
+  faces?: FaceOffsets;
+  /**
+   * True when §10.7.4.2 forbids bending: a face is offset 75 mm or more.
+   *
+   * Independent of `offsetExceedsLimit`. The slope limit governs a bar that MAY be bent;
+   * this says it may not be bent at all, and separate lap-spliced dowels go in instead.
+   */
+  requiresSeparateDowels?: boolean;
   /** Bars that cannot continue and must be spliced or terminated. */
   discontinued: number;
   note: string;
@@ -180,8 +190,61 @@ function faceOf(
   return { tier: best, inward: inward[best] };
 }
 
-/** §10.7.4 — the maximum slope of an offset bent bar, expressed as run/rise. */
+/** §10.7.4.1 — the maximum slope of an offset bent bar, expressed as run/rise. */
 export const MAX_OFFSET_SLOPE = 1 / 6;
+
+/**
+ * §10.7.4.2 — the face offset at or above which a bar MAY NOT be bent.
+ *
+ * "Cuando la cara de la columna está desalineada 75 mm o más, las barras longitudinales no
+ * se deben doblar. Se deben colocar dovelas separadas empalmadas por yuxtaposición con las
+ * barras longitudinales adyacentes a las caras desalineadas de la columna."
+ *
+ * A prohibition, not a slope check. A gentle slope buys no exemption from it.
+ */
+export const FACE_OFFSET_NO_BEND = 0.075;
+
+export interface FaceOffsets {
+  /** Per-face offset between the two lifts, m. Always non-negative. */
+  xMinus: number;
+  xPlus: number;
+  yMinus: number;
+  yPlus: number;
+  max: number;
+  /** Names of the faces at or above the §10.7.4.2 threshold. */
+  beyondLimit: Array<'xMinus' | 'xPlus' | 'yMinus' | 'yPlus'>;
+}
+
+/**
+ * How far each column face moves between two lifts.
+ *
+ * This is what §10.7.4.2 measures, and it is NOT the centre shift the code used to test.
+ * Two independent ways a face moves, and only their combination is the offset:
+ *
+ *   - the axis translates            → every face moves the same way
+ *   - the section changes size       → opposite faces move TOWARD each other
+ *
+ * A 400 mm column becoming a concentric 250 mm one has a zero centre shift and offsets all
+ * four faces by 75 mm — exactly the threshold. Testing the centre alone reported no offset
+ * at all for it.
+ */
+export function faceOffsets(
+  lo: { centre: { x: number; y: number }; b: number; h: number },
+  hi: { centre: { x: number; y: number }; b: number; h: number },
+): FaceOffsets {
+  const per = {
+    xMinus: Math.abs((hi.centre.x - hi.b / 2) - (lo.centre.x - lo.b / 2)),
+    xPlus: Math.abs((hi.centre.x + hi.b / 2) - (lo.centre.x + lo.b / 2)),
+    yMinus: Math.abs((hi.centre.y - hi.h / 2) - (lo.centre.y - lo.h / 2)),
+    yPlus: Math.abs((hi.centre.y + hi.h / 2) - (lo.centre.y + lo.h / 2)),
+  };
+  const names = ['xMinus', 'xPlus', 'yMinus', 'yPlus'] as const;
+  return {
+    ...per,
+    max: Math.max(per.xMinus, per.xPlus, per.yMinus, per.yPlus),
+    beyondLimit: names.filter((n) => per[n] >= FACE_OFFSET_NO_BEND - 1e-9),
+  };
+}
 
 /** Detect what changes between consecutive lifts. */
 export function detectTransitions(input: ColumnStackInput): ColumnTransition[] {
@@ -211,24 +274,42 @@ export function detectTransitions(input: ColumnStackInput): ColumnTransition[] {
     const dx = hi.centre.x - lo.centre.x;
     const dy = hi.centre.y - lo.centre.y;
     const shift = Math.hypot(dx, dy);
+    const faces = faceOffsets(lo, hi);
     let offsetSlope: number | undefined;
     let offsetExceedsLimit: boolean | undefined;
+    let requiresSeparateDowels: boolean | undefined;
 
-    if (shift > 1e-9) {
+    // A face that moves is an offset, whether the axis moved or the section shrank around
+    // it. Testing `shift` alone missed every concentric size change.
+    if (shift > 1e-9 || faces.max > 1e-9) {
       kinds.push('offset');
       // The bend is made within the joint depth; with no beam the lift height is used.
       const rise = input.beamDepthAtTop.get(i) ?? (lo.topZ - lo.baseZ);
-      offsetSlope = rise > 0 ? shift / rise : Infinity;
+      // The run the bar has to make is its OWN transverse travel. For a translation that is
+      // the centre shift; for a size change the bar moves with its face.
+      const run = Math.max(shift, faces.max);
+      offsetSlope = rise > 0 ? run / rise : Infinity;
       offsetExceedsLimit = offsetSlope > MAX_OFFSET_SLOPE + 1e-9;
-      refs.push(c('10.7.4', 'barras longitudinales dobladas por cambio de sección'));
+      requiresSeparateDowels = faces.beyondLimit.length > 0;
+      refs.push(c('10.7.4.1', 'pendiente de la parte inclinada'));
       notes.push(
-        `El eje se desplaza ${(shift * 1000).toFixed(0)} mm sobre una altura de ` +
-        `${(rise * 1000).toFixed(0)} mm: pendiente 1 en ${(1 / (offsetSlope || 1e-9)).toFixed(1)}.` +
-        (offsetExceedsLimit
-          ? ' EXCEDE el límite de 1 en 6 del artículo 10.7.4: las barras no pueden ' +
-            'acodarse y deben empalmarse con barras de espera separadas.'
-          : ' Dentro del límite de 1 en 6; se acodan las barras y se colocan estribos a ' +
-            'menos de 150 mm del doblado.'));
+        `Las caras se desalinean hasta ${(faces.max * 1000).toFixed(0)} mm sobre una altura ` +
+        `de ${(rise * 1000).toFixed(0)} mm: pendiente 1 en ` +
+        `${(1 / (offsetSlope || 1e-9)).toFixed(1)}.`);
+      if (requiresSeparateDowels) {
+        // §10.7.4.2 governs and the slope question does not arise: the bar is not bent.
+        refs.push(c('10.7.4.2', 'dovelas separadas en caras desalineadas'));
+        notes.push(
+          `La desalineación alcanza o supera los 75 mm del artículo 10.7.4.2 en ` +
+          `${faces.beyondLimit.length} cara(s): las barras NO se doblan y se colocan ` +
+          'dovelas separadas empalmadas por yuxtaposición con las barras adyacentes.');
+      } else {
+        notes.push(offsetExceedsLimit
+          ? 'EXCEDE el límite de 1 en 6 del artículo 10.7.4.1 y la desalineación no llega a ' +
+            'los 75 mm que habilitan dovelas separadas: no puede acodarse dentro del nudo.'
+          : 'Dentro del límite de 1 en 6; se acodan las barras y se colocan estribos a ' +
+            'menos de 150 mm del doblado.');
+      }
     }
 
     if (kinds.length === 0) {
@@ -242,6 +323,7 @@ export function detectTransitions(input: ColumnStackInput): ColumnTransition[] {
     out.push({
       liftIndex: i, z: lo.topZ, kinds,
       offsetSlope, offsetExceedsLimit,
+      faces, requiresSeparateDowels,
       discontinued: Math.max(0, lo.bars.count - hi.bars.count),
       note: notes.join(' '),
       refs: [...refs, c('10.7.5', 'empalmes de la armadura longitudinal')],
@@ -310,6 +392,158 @@ export function tieSpacing(
   };
 }
 
+/**
+ * Plan positions of one lift's longitudinal bars, relative to the lift centre.
+ *
+ * Extracted so the dowel emission below and the bar emission cannot diverge. This codebase
+ * has already paid for three subsystems distributing column bars three different ways — a
+ * dowel drawn at a position no bar occupies would be exactly the same class of defect.
+ */
+export function liftBarPositions(
+  lift: ColumnLift,
+  chosenPositions?: ReadonlyArray<{ x: number; y: number }>,
+): { positions: Array<{ x: number; y: number }>; halfB: number; halfH: number; repeated: boolean } {
+  const inset = lift.cover + lift.tieDia / 1000 + lift.bars.diameterMm / 2000;
+  const halfB = lift.b / 2 - inset;
+  const halfH = lift.h / 2 - inset;
+
+  // The coordinated arrangement is taken only if it is actually usable: the right NUMBER of
+  // bars, and no two of them in the same place.
+  //
+  // Both guards earned their place. The override used to map the whole array rather than the
+  // first `count`, so a longer list silently added bars the design never called for; and it
+  // never checked for repeats, so a list carrying a position twice put two bars on one point
+  // — which reads downstream as a bar interpenetrating itself, not as the missing bar it is.
+  const chosen = chosenPositions?.slice(0, lift.bars.count) ?? null;
+  const distinct = chosen !== null
+    && chosen.length === lift.bars.count
+    && new Set(chosen.map((p) => `${Math.round(p.x * 1e5)}:${Math.round(p.y * 1e5)}`)).size
+      === chosen.length;
+  if (chosen && distinct) {
+    return { positions: chosen.map((p) => ({ x: p.x, y: p.y })), halfB, halfH, repeated: false };
+  }
+
+  const positions: Array<{ x: number; y: number }> = [
+    { x: -halfB, y: -halfH }, { x: halfB, y: -halfH },
+    { x: halfB, y: halfH }, { x: -halfB, y: halfH },
+  ];
+  const extra = Math.max(0, lift.bars.count - 4);
+  for (let k = 0; k < extra; k++) {
+    const t = (k + 1) / (extra + 1);
+    positions.push(k % 2 === 0
+      ? { x: -halfB + 2 * halfB * t, y: -halfH }
+      : { x: -halfB + 2 * halfB * t, y: halfH });
+  }
+  return {
+    positions, halfB, halfH,
+    repeated: chosen !== null && chosen.length === lift.bars.count && !distinct,
+  };
+}
+
+/**
+ * The separate lap-spliced dowels §10.7.4.2 requires at an offset face.
+ *
+ * Geometry, and why it is this and not a bent bar: the lower lift's bar cannot reach the
+ * upper lift's position without an inclined portion, and at 75 mm or more the clause forbids
+ * that portion outright. So a distinct bar is cast through the transition at the UPPER lift's
+ * position, long enough to lap with the upper bars above it and with the lower bars below it.
+ * That is what a detailer places and what the clause describes.
+ *
+ * The lap with the LOWER bars is a NON-CONTACT lap — the two are a face offset apart — so
+ * §25.5.1.3's transverse limit of min(lst/5, 150 mm) applies and is CHECKED. Beyond it the
+ * dowel is still emitted (the steel is needed) and the shortfall is reported, because
+ * silently drawing a lap the code does not credit is the worse of the two failures.
+ */
+function emitDowels(
+  input: ColumnStackInput,
+  t: ColumnTransition,
+  refs: ClauseRef[],
+  unsupported: string[],
+  trace: string[],
+): BarPath[] {
+  const lo = input.lifts[t.liftIndex];
+  const hi = input.lifts[t.liftIndex + 1];
+  if (!lo || !hi || !t.faces) return [];
+
+  const out: BarPath[] = [];
+  const lap = input.lapSplice(hi.bars.diameterMm);
+  const upper = liftBarPositions(hi, input.barPositions);
+  // §25.5.1.3 — the transverse pitch a non-contact lap may have.
+  const maxPitch = Math.min(lap / 5, MAX_NONCONTACT_PITCH_MM / 1000);
+
+  // Only the bars ON an offset face get a dowel, and each such bar gets exactly one even if
+  // it sits on two offset faces (a corner).
+  const seen = new Set<number>();
+  for (const face of t.faces.beyondLimit) {
+    for (let k = 0; k < Math.min(upper.positions.length, hi.bars.count); k++) {
+      if (seen.has(k)) continue;
+      const p = upper.positions[k];
+      if (!adjacentToFace(p, face, upper.halfB, upper.halfH, hi.bars.diameterMm)) continue;
+      seen.add(k);
+      out.push(buildStraightBarWithHooks({
+        id: `${input.stackId}-D${t.liftIndex}-${k}`,
+        diameterMm: hi.bars.diameterMm,
+        role: 'longitudinal',
+        // Straight through the transition: one lap below it and one lap above.
+        start: { x: hi.centre.x + p.x, y: hi.centre.y + p.y, z: t.z - lap },
+        end: { x: hi.centre.x + p.x, y: hi.centre.y + p.y, z: t.z + lap },
+        axis: { x: 0, y: 0, z: 1 },
+        hookNormal: { x: 1, y: 0, z: 0 },
+        // A dowel is owned by BOTH lifts: it is the splice between them, and filing it under
+        // one would leave the other's assembly missing steel that physically crosses it.
+        ownerElementIds: [lo.elementId, hi.elementId],
+        edition: input.edition,
+        source: 'coordinated',
+      }));
+    }
+  }
+
+  refs.push(clause('cirsoc-201', input.edition, '25.5.1.3',
+    'empalmes por yuxtaposición sin contacto'));
+  trace.push(
+    `Nivel +${t.z.toFixed(2)} m: ${out.length} dovela(s) Ø${hi.bars.diameterMm} de ` +
+    `${(2 * lap * 1000).toFixed(0)} mm en ${t.faces.beyondLimit.length} cara(s) desalineada(s) ` +
+    `(art. 10.7.4.2).`);
+
+  if (out.length === 0) {
+    // The clause asks for dowels at the offset faces and no bar sits on one. Reported rather
+    // than passed over: a transition needing dowels and receiving none is not a clean result.
+    unsupported.push(
+      `La transición en +${t.z.toFixed(2)} m requiere dovelas separadas (art. 10.7.4.2) pero ` +
+      'ninguna barra del tramo superior queda adyacente a una cara desalineada.');
+  }
+  if (t.faces.max > maxPitch + 1e-9) {
+    unsupported.push(
+      `Las dovelas en +${t.z.toFixed(2)} m quedan a ${(t.faces.max * 1000).toFixed(0)} mm de ` +
+      `las barras del tramo inferior, por encima del límite de ` +
+      `${(maxPitch * 1000).toFixed(0)} mm que el artículo 25.5.1.3 fija para un empalme por ` +
+      'yuxtaposición sin contacto. El empalme debe resolverse con barras adicionales o un ' +
+      'empalme mecánico.');
+  }
+  return out;
+}
+
+/**
+ * Is a bar adjacent to a given face of its lift?
+ *
+ * §10.7.4.2 places dowels at "las barras longitudinales adyacentes a las caras desalineadas",
+ * so only the bars ON an offset face get one. A bar is adjacent when it sits within its own
+ * diameter of that face's bar line.
+ */
+function adjacentToFace(
+  p: { x: number; y: number }, face: keyof FaceOffsets, halfB: number, halfH: number,
+  diameterMm: number,
+): boolean {
+  const tol = Math.max(diameterMm / 1000, 1e-6);
+  switch (face) {
+    case 'xMinus': return Math.abs(p.x + halfB) <= tol;
+    case 'xPlus': return Math.abs(p.x - halfB) <= tol;
+    case 'yMinus': return Math.abs(p.y + halfH) <= tol;
+    case 'yPlus': return Math.abs(p.y - halfH) <= tol;
+    default: return false;
+  }
+}
+
 export interface GeneratedColumnStack {
   bars: BarPath[];
   transitions: ColumnTransition[];
@@ -327,6 +561,8 @@ export function generateColumnStack(input: ColumnStackInput): GeneratedColumnSta
   const bars: BarPath[] = [];
   const refs: ClauseRef[] = [];
   const ties: GeneratedColumnStack['ties'] = [];
+  /** §10.7.4.2 dowels, appended after the lift bars so ids stay grouped and stable. */
+  const dowels: BarPath[] = [];
 
   const transitions = detectTransitions(input);
   const splices = planSplices(input);
@@ -334,10 +570,28 @@ export function generateColumnStack(input: ColumnStackInput): GeneratedColumnSta
   for (const t of transitions) {
     trace.push(`Nivel +${t.z.toFixed(2)} m: ${t.note}`);
     refs.push(...t.refs);
+
+    // ── §10.7.4.2: the bars are not bent, separate dowels go in ──
+    //
+    // These ARE emitted now. The previous behaviour reported "requires separate dowels,
+    // which are not generated automatically" and drew nothing, which left the stack with an
+    // unsupported condition and no steel at the offset — a drawing that is both incomplete
+    // and clean-looking.
+    if (t.requiresSeparateDowels && t.faces) {
+      dowels.push(...emitDowels(input, t, refs, unsupported, trace));
+      continue;
+    }
+
+    // Bending IS permitted by §10.7.4.2 (the offset is under 75 mm) and yet the slope will
+    // not fit in the joint. Neither clause authorises a way out of that: §10.7.4.1 forbids
+    // the slope and §10.7.4.2 does not reach this case, so it is reported rather than drawn.
     if (t.offsetExceedsLimit) {
       unsupported.push(
-        `El acodamiento en +${t.z.toFixed(2)} m excede la pendiente 1 en 6 del artículo ` +
-        '10.7.4. Requiere barras de espera separadas, que no se generan automáticamente.');
+        `El acodamiento en +${t.z.toFixed(2)} m tiene pendiente 1 en ` +
+        `${(1 / (t.offsetSlope || 1e-9)).toFixed(1)}, que excede el límite de 1 en 6 del ` +
+        `artículo 10.7.4.1, y la desalineación de ${((t.faces?.max ?? 0) * 1000).toFixed(0)} mm ` +
+        'no alcanza los 75 mm que habilitan las dovelas separadas del artículo 10.7.4.2. ' +
+        'Debe aumentarse la altura disponible para el doblado o revisarse la transición.');
     }
   }
 
@@ -348,45 +602,14 @@ export function generateColumnStack(input: ColumnStackInput): GeneratedColumnSta
     });
     refs.push(...spacing.refs);
 
-    const inset = lift.cover + lift.tieDia / 1000 + lift.bars.diameterMm / 2000;
-    const halfB = lift.b / 2 - inset;
-    const halfH = lift.h / 2 - inset;
-
     // Perimeter positions, corners first then faces, deterministic — unless the
     // coordination search chose an arrangement, in which case that is the cage.
-    let positions: Array<{ x: number; y: number }>;
-    // The coordinated arrangement is taken only if it is actually usable: the right
-    // NUMBER of bars, and no two of them in the same place.
-    //
-    // Both guards earned their place. The override used to map the whole array rather
-    // than the first `count`, so a longer list silently added bars the design never
-    // called for; and it never checked for repeats, so a list carrying a position twice
-    // put two bars on one point — which reads downstream as a bar interpenetrating
-    // itself, not as the missing bar it actually is.
-    const chosen = input.barPositions?.slice(0, lift.bars.count) ?? null;
-    const chosenDistinct = chosen !== null
-      && chosen.length === lift.bars.count
-      && new Set(chosen.map((p) => `${Math.round(p.x * 1e5)}:${Math.round(p.y * 1e5)}`)).size
-        === chosen.length;
-    if (chosen && chosenDistinct) {
-      positions = chosen.map((p) => ({ x: p.x, y: p.y }));
-    } else {
-      if (chosen && chosen.length === lift.bars.count) {
-        unsupported.push(
-          `La disposición coordinada de ${lift.bars.count}Ø${lift.bars.diameterMm} ` +
-          `repite posiciones; se usa la disposición perimetral generada.`);
-      }
-      positions = [
-        { x: -halfB, y: -halfH }, { x: halfB, y: -halfH },
-        { x: halfB, y: halfH }, { x: -halfB, y: halfH },
-      ];
-      const extra = Math.max(0, lift.bars.count - 4);
-      for (let k = 0; k < extra; k++) {
-        const t = (k + 1) / (extra + 1);
-        positions.push(k % 2 === 0
-          ? { x: -halfB + 2 * halfB * t, y: -halfH }
-          : { x: -halfB + 2 * halfB * t, y: halfH });
-      }
+    const layout = liftBarPositions(lift, input.barPositions);
+    const { positions, halfB, halfH } = layout;
+    if (layout.repeated) {
+      unsupported.push(
+        `La disposición coordinada de ${lift.bars.count}Ø${lift.bars.diameterMm} ` +
+        `repite posiciones; se usa la disposición perimetral generada.`);
     }
 
     // §25.2.3: the perimeter has to actually HOLD them.
@@ -494,7 +717,10 @@ export function generateColumnStack(input: ColumnStackInput): GeneratedColumnSta
       `${(ts.spacing * 1000).toFixed(0)} mm (gobierna ${ts.governedBy}).`);
   }
 
-  return { bars, transitions, splices, ties, trace, refs, unsupported };
+  return {
+    bars: [...bars, ...dowels],
+    transitions, splices, ties, trace, refs, unsupported,
+  };
 }
 
 // ─── Joint coordination ──────────────────────────────────────────
