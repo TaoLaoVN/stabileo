@@ -104,15 +104,77 @@ export const DEFAULT_LIMITS: SearchLimits = { maxNodes: 20_000, maxDomain: 24 };
 
 // ─── Outcome ─────────────────────────────────────────────────────
 
+/**
+ * What the search concluded.
+ *
+ * These are load-bearing distinctions, not shades of failure. An engineer responds to each
+ * one differently, and a UI, a report or a certificate that treats two of them alike is
+ * lying about what was proved.
+ *
+ * The trap this taxonomy exists to close: an earlier version reported
+ * DETAILING_INADEQUATE — "no legal arrangement exists" — after searching beam layouts only,
+ * with the column cages held fixed. That claim was not earned, and a qualifier field
+ * carrying the caveat is too easy to ignore. Inadequacy is now a top-level outcome that
+ * only a COMPLETE envelope can produce.
+ */
 export type CoordinationOutcome =
-  /** A zero-conflict assignment was found. */
-  | 'COORDINATED'
-  /** Every permitted candidate was evaluated and none fits. Geometry, not effort. */
+  /** A zero-conflict, reverified assignment was found. */
+  | 'CONSTRUCTIBLE'
+  /**
+   * The complete permitted envelope was searched exhaustively and nothing fits. The
+   * geometry is the problem; a section or detail change is the answer.
+   */
   | 'DETAILING_INADEQUATE'
-  /** The bounded search ended without proving anything. NOT the same as inadequate. */
+  /**
+   * Only part of the envelope was searched — beams varied but columns fixed, say — and
+   * nothing in that part fits. Says nothing about whether the full envelope contains a
+   * solution, and must NEVER be presented as inadequacy.
+   */
+  | 'PARTIAL_ENVELOPE_EXHAUSTED'
+  /** A bound stopped the search. Nothing was proved either way. */
   | 'SEARCH_EXHAUSTED'
-  /** A rule or geometry this search cannot represent. */
-  | 'UNSUPPORTED';
+  /** A required rule or geometry cannot be represented at all. */
+  | 'UNSUPPORTED'
+  /** A persisted or manual arrangement carries unresolved prohibited conflicts. */
+  | 'CONFLICTED';
+
+/**
+ * Everything that must hold before an exhausted search may be called INADEQUATE.
+ *
+ * Kept as data, and reported, so the claim can be audited rather than trusted.
+ */
+export interface InadequacyEvidence {
+  completeBeamEnvelope: boolean;
+  completeColumnEnvelope: boolean;
+  allJointArrangementsIncluded: boolean;
+  noUnsupportedRule: boolean;
+  exhaustive: boolean;
+  /** At least one, or the verdict is not actionable and is downgraded. */
+  limitingConstraints: string[];
+  recommendations: string[];
+}
+
+/**
+ * Decide the honest label for a search that found nothing.
+ *
+ * Every condition must hold. Any gap downgrades the verdict to
+ * PARTIAL_ENVELOPE_EXHAUSTED, which is the weaker and truthful statement.
+ */
+export function classifyExhaustion(
+  ev: InadequacyEvidence, truncated: boolean,
+): CoordinationOutcome {
+  if (truncated || !ev.exhaustive) return 'SEARCH_EXHAUSTED';
+  if (!ev.noUnsupportedRule) return 'UNSUPPORTED';
+  const complete = ev.completeBeamEnvelope
+    && ev.completeColumnEnvelope
+    && ev.allJointArrangementsIncluded;
+  if (!complete) return 'PARTIAL_ENVELOPE_EXHAUSTED';
+  // An inadequacy verdict with nothing to act on is not a verdict.
+  if (ev.limitingConstraints.length === 0 || ev.recommendations.length === 0) {
+    return 'PARTIAL_ENVELOPE_EXHAUSTED';
+  }
+  return 'DETAILING_INADEQUATE';
+}
 
 export interface SearchStats {
   candidatesGenerated: number;
@@ -141,10 +203,17 @@ export type CandidateEnvelope =
   /** Beam and column layouts both variable. */
   | 'beamsAndColumns';
 
+/** True only for an envelope that permits an inadequacy verdict. */
+export function envelopeIsComplete(e: CandidateEnvelope): boolean {
+  return e === 'beamsAndColumns';
+}
+
 export interface CoordinationResult {
   outcome: CoordinationOutcome;
   /** What the search was permitted to vary. Bounds what its verdict may claim. */
   envelope: CandidateEnvelope;
+  /** The audit trail behind an exhaustion verdict. */
+  evidence: InadequacyEvidence;
   /** Chosen layout per member. Empty unless COORDINATED. */
   assignment: Map<number, LayoutCandidate>;
   /** Joints with no compatible combination, when the outcome is DETAILING_INADEQUATE. */
@@ -407,6 +476,8 @@ export interface CoordinationInput {
   limits?: SearchLimits;
   /** Defaults to the honest, narrower claim. */
   envelope?: CandidateEnvelope;
+  /** Set when some required rule could not be represented at all. */
+  unsupportedRules?: readonly string[];
 }
 
 /**
@@ -422,6 +493,20 @@ export interface CoordinationInput {
 export function coordinate(input: CoordinationInput): CoordinationResult {
   const limits = input.limits ?? DEFAULT_LIMITS;
   const envelope = input.envelope ?? 'beamLayoutsOnly';
+  const unsupportedRules = input.unsupportedRules ?? [];
+
+  /** Build the evidence for whatever exhaustion verdict we end up giving. */
+  const evidenceFor = (
+    limiting: string[], recommendations: string[],
+  ): InadequacyEvidence => ({
+    completeBeamEnvelope: true,
+    completeColumnEnvelope: envelopeIsComplete(envelope),
+    allJointArrangementsIncluded: envelopeIsComplete(envelope),
+    noUnsupportedRule: unsupportedRules.length === 0,
+    exhaustive: !stats.truncated,
+    limitingConstraints: limiting,
+    recommendations,
+  });
   const stats: SearchStats = {
     candidatesGenerated: 0, domainsRemovedByPropagation: 0,
     dpStates: 0, dpTransitions: 0, branchNodes: 0,
@@ -437,7 +522,9 @@ export function coordinate(input: CoordinationInput): CoordinationResult {
   const emptyFromStart = members.filter((m) => m.domain.length === 0);
   if (emptyFromStart.length > 0) {
     return {
-      outcome: 'UNSUPPORTED', envelope, assignment: new Map(), infeasibleJoints: [],
+      outcome: 'UNSUPPORTED', envelope,
+      evidence: evidenceFor(['coordination.limiting.noRepresentableLayout'], []),
+      assignment: new Map(), infeasibleJoints: [],
       emptiedDomains: emptyFromStart.map((m) => ({ elementId: m.elementId, jointId: '' })),
       stats,
     };
@@ -459,7 +546,17 @@ export function coordinate(input: CoordinationInput): CoordinationResult {
     // A domain emptied against a joint's own obstacles: no arrangement of this member fits
     // this column, whatever its neighbours do. That is geometry, and it is exhaustive.
     return {
-      outcome: 'DETAILING_INADEQUATE', envelope, assignment: new Map(),
+      outcome: classifyExhaustion(
+        evidenceFor(
+          ['coordination.limiting.noLayoutClearsJoint'],
+          ['coordination.advice.widenSectionOrReduceBarSize'],
+        ), stats.truncated),
+      envelope,
+      evidence: evidenceFor(
+        ['coordination.limiting.noLayoutClearsJoint'],
+        ['coordination.advice.widenSectionOrReduceBarSize'],
+      ),
+      assignment: new Map(),
       infeasibleJoints: infeasibleReport(ctx, emptied),
       emptiedDomains: emptied, stats,
     };
@@ -479,7 +576,17 @@ export function coordinate(input: CoordinationInput): CoordinationResult {
     const solved = solveChain(ctx, chain, cost);
     if (solved === null) {
       return {
-        outcome: 'DETAILING_INADEQUATE', envelope, assignment: new Map(),
+        outcome: classifyExhaustion(
+          evidenceFor(
+            ['coordination.limiting.noContinuousLineArrangement'],
+            ['coordination.advice.alignBarSizesAlongLine'],
+          ), stats.truncated),
+        envelope,
+        evidence: evidenceFor(
+          ['coordination.limiting.noContinuousLineArrangement'],
+          ['coordination.advice.alignBarSizesAlongLine'],
+        ),
+        assignment: new Map(),
         infeasibleJoints: infeasibleReport(ctx, chain.map((m) => ({
           elementId: m.elementId, jointId: m.lineId ?? '',
         }))),
@@ -497,16 +604,25 @@ export function coordinate(input: CoordinationInput): CoordinationResult {
   const assignment = backtrack(ctx, rest, fixed);
   if (assignment === null) {
     return {
-      outcome: stats.truncated ? 'SEARCH_EXHAUSTED' : 'DETAILING_INADEQUATE',
-      envelope, assignment: new Map(),
+      outcome: classifyExhaustion(
+        evidenceFor(
+          ['coordination.limiting.noGlobalAssignment'],
+          ['coordination.advice.widenSectionOrReduceBarSize'],
+        ), stats.truncated),
+      envelope,
+      evidence: evidenceFor(
+        ['coordination.limiting.noGlobalAssignment'],
+        ['coordination.advice.widenSectionOrReduceBarSize'],
+      ),
+      assignment: new Map(),
       infeasibleJoints: stats.truncated ? [] : infeasibleReport(ctx, []),
       emptiedDomains: [], stats,
     };
   }
 
   return {
-    outcome: 'COORDINATED', envelope, assignment,
-    infeasibleJoints: [], emptiedDomains: [], stats,
+    outcome: 'CONSTRUCTIBLE', envelope, evidence: evidenceFor([], []),
+    assignment, infeasibleJoints: [], emptiedDomains: [], stats,
   };
 }
 

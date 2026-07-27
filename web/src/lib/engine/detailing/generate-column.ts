@@ -70,6 +70,19 @@ export interface ColumnStackInput {
   beamDepthAtTop: Map<number, number>;
   /** True when the top lift terminates at roof level and needs a hooked termination. */
   roofTermination: boolean;
+  /**
+   * Plan offsets for the longitudinal bars, relative to the lift centre.
+   *
+   * Supplied by the coordination search, which chooses the cage ARRANGEMENT — where the
+   * non-corner face bars sit — as one of its variables. Evenly spreading them, which is
+   * what this function does on its own, leaves narrow channels between column bars and can
+   * make a large beam bar impossible to thread; clustering them toward the corners at the
+   * §25.2.3 minimum opens a wide central channel and is equally legal.
+   *
+   * Absent, the even distribution below is used, which keeps every existing caller and
+   * every golden test unchanged.
+   */
+  barPositions?: ReadonlyArray<{ x: number; y: number }>;
 }
 
 export type TransitionKind = 'none' | 'countChange' | 'diameterChange' | 'offset' | 'sectionChange';
@@ -261,17 +274,23 @@ export function generateColumnStack(input: ColumnStackInput): GeneratedColumnSta
     const halfB = lift.b / 2 - inset;
     const halfH = lift.h / 2 - inset;
 
-    // Perimeter positions, corners first then faces, deterministic.
-    const positions: Array<{ x: number; y: number }> = [
-      { x: -halfB, y: -halfH }, { x: halfB, y: -halfH },
-      { x: halfB, y: halfH }, { x: -halfB, y: halfH },
-    ];
-    const extra = Math.max(0, lift.bars.count - 4);
-    for (let k = 0; k < extra; k++) {
-      const t = (k + 1) / (extra + 1);
-      positions.push(k % 2 === 0
-        ? { x: -halfB + 2 * halfB * t, y: -halfH }
-        : { x: -halfB + 2 * halfB * t, y: halfH });
+    // Perimeter positions, corners first then faces, deterministic — unless the
+    // coordination search chose an arrangement, in which case that is the cage.
+    let positions: Array<{ x: number; y: number }>;
+    if (input.barPositions && input.barPositions.length >= lift.bars.count) {
+      positions = input.barPositions.map((p) => ({ x: p.x, y: p.y }));
+    } else {
+      positions = [
+        { x: -halfB, y: -halfH }, { x: halfB, y: -halfH },
+        { x: halfB, y: halfH }, { x: -halfB, y: halfH },
+      ];
+      const extra = Math.max(0, lift.bars.count - 4);
+      for (let k = 0; k < extra; k++) {
+        const t = (k + 1) / (extra + 1);
+        positions.push(k % 2 === 0
+          ? { x: -halfB + 2 * halfB * t, y: -halfH }
+          : { x: -halfB + 2 * halfB * t, y: halfH });
+      }
     }
 
     // Bars run the lift height, plus the lap above unless this is the top lift.

@@ -147,7 +147,7 @@ describe('global coordination succeeds where per-joint choice cannot', () => {
       ],
     });
 
-    expect(r.outcome).toBe('COORDINATED');
+    expect(r.outcome).toBe('CONSTRUCTIBLE');
     const chosen = r.assignment.get(1)!;
     // The single chosen layout clears BOTH ends. That is the whole point.
     expect(candidateClears(chosen, 16, nearBlocks).ok).toBe(true);
@@ -162,7 +162,7 @@ describe('global coordination succeeds where per-joint choice cannot', () => {
       members: [variable(1, dom(), 16), variable(2, dom(), 16)],
       joints: [joint('J', [1, 2], {}, () => 'collinear')],
     });
-    expect(r.outcome).toBe('COORDINATED');
+    expect(r.outcome).toBe('CONSTRUCTIBLE');
     expect(r.assignment.get(1)!.id).toBe(r.assignment.get(2)!.id);
   });
 
@@ -173,7 +173,7 @@ describe('global coordination succeeds where per-joint choice cannot', () => {
       members: [variable(1, dom(), 16), variable(2, dom(), 16)],
       joints: [joint('J', [1, 2], { 1: blocks }, () => 'crossing')],
     });
-    expect(r.outcome).toBe('COORDINATED');
+    expect(r.outcome).toBe('CONSTRUCTIBLE');
     // Member 1 still had to clear the column; member 2 was unconstrained by it.
     expect(candidateClears(r.assignment.get(1)!, 16, blocks).ok).toBe(true);
   });
@@ -190,7 +190,7 @@ describe('global coordination succeeds where per-joint choice cannot', () => {
         joint('J2', [2, 3], { 2: blocks, 3: blocks }, () => 'collinear'),
       ],
     });
-    expect(r.outcome).toBe('COORDINATED');
+    expect(r.outcome).toBe('CONSTRUCTIBLE');
     expect(r.stats.dpTransitions).toBeGreaterThan(0);
     for (const id of [1, 2, 3]) {
       expect(candidateClears(r.assignment.get(id)!, 16, blocks).ok).toBe(true);
@@ -203,7 +203,7 @@ describe('global coordination succeeds where per-joint choice cannot', () => {
       joints: [joint('J', [1], { 1: [{ at: 0, halfWidth: 0.03 }] })],
     });
     expect(r.stats.domainsRemovedByPropagation).toBeGreaterThan(0);
-    expect(r.outcome).toBe('COORDINATED');
+    expect(r.outcome).toBe('CONSTRUCTIBLE');
   });
 
   it('a locked bar forces a different, still-valid solution', () => {
@@ -213,7 +213,7 @@ describe('global coordination succeeds where per-joint choice cannot', () => {
       members: [variable(1, free, 16)],
       joints: [joint('J', [1], { 1: blocks })],
     });
-    expect(unlocked.outcome).toBe('COORDINATED');
+    expect(unlocked.outcome).toBe('CONSTRUCTIBLE');
 
     // Pin a bar where the unconstrained answer did NOT put one.
     const other = free.find((c) => c.id !== unlocked.assignment.get(1)!.id)!;
@@ -222,14 +222,14 @@ describe('global coordination succeeds where per-joint choice cannot', () => {
       members: [variable(1, candidates(2, 16, 0.44, [pin]), 16)],
       joints: [joint('J', [1], { 1: blocks })],
     });
-    if (locked.outcome === 'COORDINATED') {
+    if (locked.outcome === 'CONSTRUCTIBLE') {
       const c = locked.assignment.get(1)!;
       expect(c.slots.some((s) => Math.abs(s.across - pin) < 1e-6)).toBe(true);
       expect(candidateClears(c, 16, blocks).ok).toBe(true);
     } else {
-      // Honouring the pin may genuinely leave nothing legal — which must be reported as
-      // inadequate geometry, never by quietly moving the pinned bar.
-      expect(locked.outcome).toBe('DETAILING_INADEQUATE');
+      // Honouring the pin may genuinely leave nothing legal — reported as exhaustion of
+      // what was searched, never by quietly moving the pinned bar.
+      expect(locked.outcome).toBe('PARTIAL_ENVELOPE_EXHAUSTED');
     }
   });
 });
@@ -243,7 +243,8 @@ describe('the four outcomes are never conflated', () => {
       members: [variable(1, candidates(3, 20, 0.40), 20)],
       joints: [joint('J', [1], { 1: [{ at: 0, halfWidth: 0.25 }] })],
     });
-    expect(r.outcome).toBe('DETAILING_INADEQUATE');
+    // Beams only were searched, so the honest verdict is the weaker one.
+    expect(r.outcome).toBe('PARTIAL_ENVELOPE_EXHAUSTED');
     expect(r.stats.truncated).toBe(false);
     expect(r.emptiedDomains.map((e) => e.jointId)).toContain('J');
     expect(r.infeasibleJoints.length).toBeGreaterThan(0);
@@ -257,8 +258,9 @@ describe('the four outcomes are never conflated', () => {
       members: [variable(1, candidates(3, 20, 0.40), 20)],
       joints: [joint('J', [1], { 1: [{ at: 0, halfWidth: 0.25 }] })],
     });
-    expect(r.outcome).toBe('DETAILING_INADEQUATE');
+    expect(r.outcome).toBe('PARTIAL_ENVELOPE_EXHAUSTED');
     expect(r.envelope).toBe('beamLayoutsOnly');
+    expect(r.evidence.completeColumnEnvelope).toBe(false);
   });
 
   it('UNSUPPORTED when a member has no representable layout at all', () => {
@@ -289,7 +291,7 @@ describe('the four outcomes are never conflated', () => {
       members: [variable(1, candidates(2, 20, 0.35), 20)],
       joints: [joint('J', [1], { 1: [{ at: 0, halfWidth: 0.30 }] })],
     });
-    expect(r.outcome).not.toBe('COORDINATED');
+    expect(r.outcome).not.toBe('CONSTRUCTIBLE');
     expect(r.assignment.size).toBe(0);
   });
 });

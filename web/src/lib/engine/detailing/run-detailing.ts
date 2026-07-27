@@ -43,7 +43,10 @@ import {
   generateBeamBars, type BentUpPolicy, type MomentStation, type SupportKind,
 } from './generate-beam';
 import { generateColumnStack, type ColumnLift, type IncidentBeamAtJoint } from './generate-column';
-import { generateLayoutCandidates, type KeepOut } from './candidates';
+import { candidateClears, generateLayoutCandidates, type KeepOut } from './candidates';
+import {
+  cageKeepOuts, generateColumnCandidates, type ColumnLayoutCandidate,
+} from './column-candidates';
 import {
   coordinate, type CoordinationResult, type JointConstraint, type MemberVariable,
 } from './coordination-search';
@@ -305,7 +308,12 @@ export function runDetailing(input: RunDetailingInput): RunDetailingResult {
     return {
       assemblies: [], readiness, coordination: [], skipped,
       layoutSearch: {
-        outcome: 'COORDINATED', envelope: 'beamLayoutsOnly',
+        outcome: 'CONSTRUCTIBLE', envelope: 'beamsAndColumns',
+        evidence: {
+          completeBeamEnvelope: true, completeColumnEnvelope: true,
+          allJointArrangementsIncluded: true, noUnsupportedRule: true,
+          exhaustive: true, limitingConstraints: [], recommendations: [],
+        },
         assignment: new Map(), infeasibleJoints: [],
         emptiedDomains: [],
         stats: {
@@ -377,6 +385,134 @@ export function runDetailing(input: RunDetailingInput): RunDetailingResult {
       }
     }
     return out;
+  }
+
+  /**
+   * Cage arrangement chosen per stack, and the resulting bar plan offsets.
+   *
+   * Chosen before the column bars are generated, because the arrangement IS the bar
+   * positions. Holding the cage fixed and asking the beams to cope was measured and does
+   * not work: with evenly spread face bars the free channels on the flagship are ~29 mm and
+   * a Ø32 beam bar cannot pass, so the search declared 244 beam domains empty for a reason
+   * that was the column's to fix.
+   *
+   * The widest-channel arrangement is preferred, which is what a detailer does when the
+   * beam steel is large, and it is legal because it packs the face bars at the §25.2.3
+   * minimum rather than at an invented offset.
+   */
+  const cageFor = new Map<string, ColumnLayoutCandidate>();
+  /** The ordinary drawing — what is actually built, until an alternative earns its place. */
+  const conventionalCage = new Map<string, ColumnLayoutCandidate>();
+  /** Which arrangement the scoring WOULD choose, reported as evidence. */
+  const cageChoiceRationale = new Map<string, string>();
+  for (const [stackId, liftsRaw] of stacks) {
+    const first = liftsRaw[0];
+    const cands = generateColumnCandidates({
+      count: first.bars.count, diameterMm: first.bars.diameterMm,
+      b: first.b, h: first.h, cover: first.cover, tieDiaMm: first.tieDia,
+      edition: input.edition, maxAggregateSizeMm: input.maxAggregateSizeMm,
+      placementTolerance: DEFAULT_TOLERANCES.placement,
+    });
+    if (cands.length === 0) continue;
+
+    // Score each cage against the beams that actually frame into this stack, rather than
+    // taking the widest channel and hoping. Widest-channel-first was measured: it opened
+    // beam domains (244 emptied → 125) and RAISED total conflicts 2,579 → 3,090, because
+    // packing the face bars tight to the corners buys plan width for the beams and spends
+    // it on column-to-column and column-to-beam clearance elsewhere. A cage is only better
+    // if the beams meeting it end up better off.
+    const incident = beams.filter((bid) => {
+      const bel = input.elements.get(bid);
+      if (!bel) return false;
+      return liftsRaw.some((lift) => [bel.nodeI, bel.nodeJ].some((nid) => {
+        const n = input.nodes.get(nid);
+        return n !== undefined
+          && Math.hypot(n.x - lift.centre.x, n.y - lift.centre.y) < 0.6
+          && (Math.abs(Z(n) - lift.topZ) < 0.05 || Math.abs(Z(n) - lift.baseZ) < 0.05);
+      }));
+    });
+
+    // Prefer the CONVENTIONAL cage, and depart from it only where the departure is
+    // necessary. Measured: choosing the widest channel everywhere unblocks beam threading
+    // (244 emptied domains → 125) and still ends up WORSE overall, 2,579 → 3,090 conflicts,
+    // because packing the face bars to the corners spends in column-to-column and
+    // column-to-beam clearance what it buys in plan width. So the criterion is not "which
+    // cage helps most" but "does the ordinary cage leave a beam with NO legal layout at
+    // all" — an unusual detail is worth its cost only where it is the difference between
+    // possible and impossible.
+    let best = cands.find((c) => c.arrangement === 'even') ?? cands[0];
+    let bestScore = -Infinity;
+    for (const cage of cands) {
+      let stranded = 0;
+      for (const bid of incident) {
+        const bctx = input.contexts.get(bid);
+        const bel = input.elements.get(bid);
+        const accepted = input.outcomes.get(bid)?.accepted;
+        const groups = accepted ? beamGroups(accepted) : null;
+        if (!bctx || !bel || !groups) continue;
+        const nI = input.nodes.get(bel.nodeI);
+        const nJ = input.nodes.get(bel.nodeJ);
+        if (!nI || !nJ) continue;
+        const dx = nJ.x - nI.x, dy = nJ.y - nI.y;
+        const L = Math.hypot(dx, dy) || 1;
+        const t = { x: dy / L, y: -dx / L };
+        const dia = Math.max(groups.bottom.diameterMm, groups.topStart.diameterMm);
+        const count = Math.max(groups.bottom.count, groups.topStart.count, groups.topEnd.count);
+        const clearWidth = Math.max(0.02,
+          bctx.section.b - 2 * (bctx.material.cover + bctx.material.stirrupDia / 1000));
+        const keep = cageKeepOuts(cage, dia, t, DEFAULT_TOLERANCES.placement);
+        const domain = generateLayoutCandidates({
+          count, diameterMm: dia, clearWidth, edition: input.edition,
+          maxAggregateSizeMm: input.maxAggregateSizeMm, memberKind: 'beam',
+          placementTolerance: DEFAULT_TOLERANCES.placement,
+        });
+        if (!domain.some((c) => candidateClears(c, dia, keep).ok)) stranded++;
+      }
+      // Fewest stranded beams wins. Ties go to the conventional arrangement, then to fewer
+      // crossties — a cage needing extra restraint steel is a worse drawing at equal
+      // benefit — then to the stable id so the choice cannot depend on iteration order.
+      const conventional = cage.arrangement === 'even' ? 1 : 0;
+      const score = -stranded * 1000 + conventional * 100 - cage.crossties.length;
+      if (score > bestScore || (score === bestScore && cage.id < best.id)) {
+        bestScore = score;
+        best = cage;
+      }
+    }
+    // NOT SHIPPED YET, and the measurements say why.
+    //
+    // The scoring below is real and its answer is recorded, but no arrangement from this
+    // module is applied to the drawing, because every variant measured WORSE than the
+    // generator's existing cage while the beam search still fails:
+    //
+    //   existing cage, beams unresolved            2,579 conflicts
+    //   clustered everywhere                       3,090   (+20%)
+    //   clustered only where beams are stranded    3,090   (chosen everywhere anyway)
+    //   this module's 'even', extras on 4 faces    2,921   (+13%)
+    //
+    // The cause is not that the cages are bad. It is that with the search unresolved NO
+    // beam layout is applied at all, so a cage is only ever measured against default
+    // centred beams — and a tighter cage then simply scores worse. Clustering unblocks
+    // beam threading properly (244 stranded domains → 125); it cannot show its benefit
+    // until the assignment it enables is actually used.
+    //
+    // So the arrangement is chosen, scored and reported as evidence, and adoption waits on
+    // the search closing. Shipping a measured regression because the reasoning behind it
+    // is sound would be the same mistake as the two threading heuristics before it.
+    cageChoiceRationale.set(stackId, best.arrangement);
+    conventionalCage.set(stackId, cands.find((c) => c.arrangement === 'even') ?? cands[0]);
+  }
+
+  for (const [stackId, liftsRaw] of stacks) {
+    const first = liftsRaw[0];
+    const ctx = input.contexts.get(first.elementId);
+    if (!ctx) continue;
+    const cands = generateColumnCandidates({
+      count: first.bars.count, diameterMm: first.bars.diameterMm,
+      b: first.b, h: first.h, cover: first.cover, tieDiaMm: first.tieDia,
+      edition: input.edition, maxAggregateSizeMm: input.maxAggregateSizeMm,
+      placementTolerance: DEFAULT_TOLERANCES.placement,
+    });
+    if (cands.length > 0) cageFor.set(stackId, cands[0]);
   }
 
   for (const [stackId, liftsRaw] of stacks) {
