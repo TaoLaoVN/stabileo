@@ -754,6 +754,62 @@ export function runDetailing(input: RunDetailingInput): RunDetailingResult {
       });
     }
 
+    // ── Identify beam LINES so the exact chain DP can run ──
+    //
+    // The DP was dead code: `dpStates` read 0 on every flagship run because no member
+    // ever carried a lineId, so every collinear constraint fell through to propagation and
+    // backtracking. Propagation can only remove a candidate that has no compatible partner;
+    // it cannot search for the combination that works. Fifty of the fifty-nine remaining
+    // stranded members survive their own joints and are removed by a NEIGHBOUR — which is
+    // precisely the case a chain DP solves exactly and arc consistency cannot.
+    //
+    // A line is a maximal run of beams that meet end to end on the same plan axis. Members
+    // are unioned across shared nodes when their axes agree, then ordered along the line.
+    const parent = new Map<number, number>();
+    const find = (x: number): number => {
+      const p = parent.get(x);
+      if (p === undefined || p === x) return x;
+      const r = find(p);
+      parent.set(x, r);
+      return r;
+    };
+    const union = (a: number, b: number) => { parent.set(find(a), find(b)); };
+    for (const m of members) parent.set(m.elementId, m.elementId);
+
+    for (const j of joints) {
+      for (const a of j.elementIds) {
+        for (const b of j.elementIds) {
+          if (a >= b) continue;
+          if (j.relation(a, b) === 'collinear') union(a, b);
+        }
+      }
+    }
+
+    const lineMembers = new Map<number, number[]>();
+    for (const m of members) {
+      const root = find(m.elementId);
+      lineMembers.set(root, [...(lineMembers.get(root) ?? []), m.elementId]);
+    }
+    for (const [root, ids] of lineMembers) {
+      if (ids.length < 2) continue;   // a lone beam is not a chain; leave it to the search
+      // Order along the line by the midpoint's projection on the line's own axis, so
+      // consecutive DP states really are adjacent members.
+      const dir = perBeam.get(ids[0])!.t;
+      const along = { x: -dir.y, y: dir.x };
+      const keyed = ids.map((id) => {
+        const el = input.elements.get(id)!;
+        const a = input.nodes.get(el.nodeI)!;
+        const b = input.nodes.get(el.nodeJ)!;
+        const mx = (a.x + b.x) / 2, my = (a.y + b.y) / 2;
+        return { id, s: mx * along.x + my * along.y };
+      }).sort((p, q) => p.s - q.s || p.id - q.id);
+
+      keyed.forEach((k, i) => {
+        const m = members.find((x) => x.elementId === k.id);
+        if (m) { m.lineId = `line-${root}`; m.lineIndex = i; }
+      });
+    }
+
     const result = coordinate({ members, joints });
     const slots = new Map<number, number[]>();
     for (const [id, layout] of result.assignment) {
