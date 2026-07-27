@@ -257,17 +257,40 @@ export function repairConflicts(
       // unresolved. Pushing along the true separation direction is both the physically
       // correct nudge and the one a detailer would make.
       const dir = separationDirection(movable, other, c.at);
-      for (const seg of movable.segments) {
-        seg.start = {
-          x: seg.start.x + dir.x * shift,
-          y: seg.start.y + dir.y * shift,
-          z: seg.start.z + dir.z * shift,
-        };
-        seg.end = {
-          x: seg.end.x + dir.x * shift,
-          y: seg.end.y + dir.y * shift,
-          z: seg.end.z + dir.z * shift,
-        };
+
+      // ── The rigid-mat invariant ──────────────────────────────────
+      //
+      // A bar is not a free particle. Bars sharing a `layerId` are one physical layer,
+      // placed at a legal §25.2.1 pitch by the candidate and separated from the layer above
+      // by the §25.2.2 clear distance. Nudging ONE of them out of its layer breaks both
+      // rules to fix a third, and the geometry it leaves behind is not a detail anyone can
+      // build.
+      //
+      // That is what happened on the QA fixture: `applyJointLayers` delivered the mat
+      // correctly with 35 mm between layers, and the ladder then lifted three layer-1 bars
+      // 11 mm on their own, leaving 24 mm where §25.2.2 wants 25.
+      //
+      // So the unit of movement is the LAYER, not the bar. Every bar sharing the movable
+      // bar's layer receives the identical translation, and their relative vectors survive
+      // by construction. A bar with no layer identity still moves alone — there is nothing
+      // to keep rigid.
+      const group = movable.layerId
+        ? working.filter((x) => x.layerId === movable.layerId && !x.locked)
+        : [movable];
+      for (const member of group) {
+        const target = byId.get(member.id) ?? member;
+        for (const seg of target.segments) {
+          seg.start = {
+            x: seg.start.x + dir.x * shift,
+            y: seg.start.y + dir.y * shift,
+            z: seg.start.z + dir.z * shift,
+          };
+          seg.end = {
+            x: seg.end.x + dir.x * shift,
+            y: seg.end.y + dir.y * shift,
+            z: seg.end.z + dir.z * shift,
+          };
+        }
       }
     }
     working = [...byId.values()].map((b) => ({ ...b, segments: b.segments.map((sg) => ({ ...sg })) }));
