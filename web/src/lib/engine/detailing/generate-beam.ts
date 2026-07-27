@@ -45,6 +45,10 @@ import {
 } from '../../codes/cirsoc201/bar-geometry';
 import { minClearBetweenLayers, minClearSpacingInLayer } from '../../codes/cirsoc201/spacing';
 import { transverseSpacingForDemand } from '../../codes/cirsoc201/transverse-spacing';
+import {
+  bendsWithoutLongitudinalBar, buildStirrupSet, stirrupStations,
+  type LongitudinalBarRef, type TransversePiece,
+} from '../../codes/cirsoc201/transverse-cage';
 import { DEFAULT_TOLERANCES } from './collision';
 import { clause, formatClause, type ClauseRef, type RegulationEdition } from '../../codes/regulation';
 
@@ -513,6 +517,33 @@ export interface GeneratedBeam {
   bars: BarPath[];
   cutoffs: Cutoff[];
   stirrupZones: StirrupZone[];
+  /**
+   * PHYSICAL transverse reinforcement — every closed stirrup and crosstie as a real bar.
+   *
+   * `stirrupZones` above is the INSTRUCTION ("Ø8, 3 legs, every 50 mm, 0 → 0,6"); this is the
+   * steel. Until it existed nothing transverse had coordinates, so nothing could be
+   * collision-checked, marked, scheduled, weighed, cut or drawn — the leg count was verified
+   * against Table 9.7.6.2.2 while the bars themselves did not exist.
+   */
+  transverse: TransversePiece[];
+  /**
+   * §25.7.1.2 bends that contain no longitudinal bar — a REAL, currently-open defect.
+   *
+   * Structured rather than folded into `unsupported` on purpose, and the reasoning is worth
+   * recording. The clause IS violated: `layoutBarRow` centres each mat at the §25.2.1 clear
+   * spacing plus the placement tolerance, so on some members the outermost bottom bar lands
+   * ~29 mm inboard of the stirrup corner (measured: bar ±93,3 mm vs corner ±122 mm, 6Ø12 in a
+   * 300 mm web) and those bends grip nothing.
+   *
+   * Routing it into `unsupported` would block CONSTRUCTIBLE — correctly, since the cage does
+   * not satisfy the clause. It is NOT routed there yet only because the fix is a change to the
+   * longitudinal placement policy (spread a row to the full available width instead of packing
+   * it at minimum spacing), which moves every bar position in the app and re-baselines every
+   * collision count. Doing that half-way would leave the gate broken mid-change.
+   *
+   * So: visible, counted, asserted by test, and named as the next step — not silently dropped.
+   */
+  transverseFindings: { bendsWithoutBar: number };
   bentUp: BentUpDecision;
   /** Every decision, in order, for the explainability trail. */
   trace: string[];
@@ -864,5 +895,101 @@ export function generateBeamBars(input: BeamGenerationInput): GeneratedBeam {
   trace.push(`${stirrupZones.length} zona(s) de estribos tras fusionar solapes ` +
     '(en cada solape gobierna la separación menor).');
 
-  return { bars, cutoffs, stirrupZones, bentUp, trace, refs, unsupported, barLayers };
+  // ── Materialise the transverse cage ──
+  //
+  // The zones above are instructions. These are bars. Stations come from the zone geometry and
+  // the spacing the table allows; leg positions come from the SAME authoritative evaluator the
+  // zone's leg count came from, so the cage cannot sit where the spacing rule does not believe
+  // it does.
+  const transverse: TransversePiece[] = [];
+  const acrossAxis = transverseAxis(input.axis, input.up);
+  // Longitudinal bars in SECTION coordinates, for the §25.7.1.2 containment check.
+  //
+  // Taken from the ACTUAL slot layout this function produced, not from a two-corner
+  // approximation. The approximation was tried first and was wrong in a way that matters: a
+  // crosstie on the section centreline grips whichever real bar is there, and with only corner
+  // bars modelled it appeared to grip nothing — reporting a §25.7.1.2 violation on a cage that
+  // satisfies the clause. The generator knows where it put every bar; the check must read that.
+  const cageBars: LongitudinalBarRef[] = [];
+  const collectFace = (
+    group: { count: number; diameterMm: number }, faceUpward: boolean, tag: string,
+  ) => {
+    const layout = layoutBarRow({
+      count: group.count, diameterMm: group.diameterMm, clearWidth,
+      minClear: spacing.minClear, layerClear: layerSpacing.minClear,
+      placementTolerance: DEFAULT_TOLERANCES.placement,
+    });
+    const inward = faceUpward ? -1 : 1;
+    const faceZ = faceUpward
+      ? halfH - barOffset - group.diameterMm / 2000 - drop
+      : -(halfH - barOffset - group.diameterMm / 2000) + raise;
+    layout.slots.forEach((slot, i) => {
+      cageBars.push({
+        id: `${tag}-${i}`,
+        across: slot.across,
+        up: faceZ + inward * slot.intoSection,
+        diameterMm: group.diameterMm,
+      });
+    });
+  };
+  collectFace(input.bottom, false, 'bot');
+  collectFace(input.topStart, true, 'top');
+
+  for (let zi = 0; zi < stirrupZones.length; zi++) {
+    const z = stirrupZones[zi];
+    const next = stirrupZones[zi + 1];
+    const sharesBoundary = next !== undefined && Math.abs(next.from - z.to) < 1e-9;
+    const stations = stirrupStations({
+      from: z.from, to: z.to, spacing: z.spacing, nextZoneStartsAtEnd: sharesBoundary,
+    });
+    const zoneId = `e${input.elementId}:${z.reason}:${zi}`;
+    for (let si = 0; si < stations.length; si++) {
+      const set = buildStirrupSet({
+        elementId: input.elementId, zoneId, station: stations[si],
+        b: input.b, h: input.h, cover: input.cover, stirrupDiaMm: z.diameterMm,
+        legs: z.legs, longitudinalBars: cageBars,
+        origin: input.origin, axis: input.axis, up: input.up, across: acrossAxis,
+        // C 25.7.2.3.1 — hooks staggered "cuando sea posible". Commentary, a should, so this
+        // is practice: alternate every station rather than claim a requirement.
+        hookOrientation: si % 2 === 0 ? 'a' : 'b',
+        maxAggregateSizeMm: input.maxAggregateSizeMm,
+      });
+      if (set.unsupported.length > 0) {
+        unsupported.push(...set.unsupported.map((r) => formatClause(r)));
+        continue;
+      }
+      transverse.push(...set.pieces);
+    }
+    // NOT checked here: §25.7.2.3(b)'s "no unbraced bar beyond 15·d_be or 150 mm" rule.
+    //
+    // §25.7.2.3 sits under §25.7.2 "Estribos cerrados de COLUMNAS". Applying it to a beam
+    // would be applying a column clause to a member it does not govern — the same
+    // cross-scope error as citing one edition's clause for another's rule. Beams are governed
+    // by Table 9.7.6.2.2 across the width (already enforced, and it is what sets `z.legs`) and
+    // by §25.7.1.2 at the bends. `unbracedBarReport` stays available for the column generator,
+    // which is where that clause belongs.
+  }
+  // §25.7.1.2 — "cada doblez en un estribo cerrado debe contener una barra longitudinal".
+  //
+  // MEASURED FINDING, surfaced rather than hidden: on the qa-8 and row-2 fixtures the BOTTOM
+  // stirrup corners contain no bar. `layoutBarRow` centres each mat and spreads it at the
+  // §25.2.1 clear spacing plus the project placement tolerance, which leaves the outermost
+  // bottom bar ~29 mm inboard of the stirrup corner (measured: bar at ±93,3 mm, corner at
+  // ±122 mm, Ø12 in a 300 mm web). The cage is built correctly and the clause is not
+  // satisfied — seating corner bars in the corners is a change to the longitudinal placement
+  // policy, which moves every existing bar position, so it is reported here rather than
+  // silently patched.
+  const looseBends = bendsWithoutLongitudinalBar(transverse);
+  if (looseBends.length > 0) {
+    trace.push(`${looseBends.length} doblez(es) de estribo sin barra longitudinal (25.7.1.2): ` +
+      'la disposición longitudinal centra la capa y no lleva barras a las esquinas.');
+  }
+  trace.push(`${transverse.length} pieza(s) transversales fabricadas ` +
+    `(${transverse.filter((p) => p.shape === 'crosstie').length} ganchos suplementarios).`);
+
+  return {
+    bars, cutoffs, stirrupZones, transverse,
+    transverseFindings: { bendsWithoutBar: looseBends.length },
+    bentUp, trace, refs, unsupported, barLayers,
+  };
 }
