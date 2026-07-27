@@ -309,7 +309,19 @@ export interface KeepOut {
 /** A free gap between obstacles, in the member's transverse coordinate. */
 interface Channel { lo: number; hi: number }
 
-/** The gaps left inside ±half once every keep-out is removed and overlaps merged. */
+/**
+ * The gaps left INSIDE ±half once every keep-out is removed and overlaps merged.
+ *
+ * Every channel is clipped to the section. Without the clip, an obstacle beyond the section
+ * — a column corner bar sitting outside the beam's width, which is the ordinary case —
+ * leaves a "gap" running from the last obstacle inside the section all the way out to that
+ * far one. Bars then get placed in concrete that is not there, and `finalise` throws the
+ * whole candidate away on a cover violation it never needed to have.
+ *
+ * Measured on the flagship: a 350 mm beam with a 142 mm half-width was offered a channel
+ * reaching to 175 mm, and NOT ONE channel-aware candidate survived. The entire arrangement
+ * class was silently absent from every domain — which is why adding it changed nothing.
+ */
 function freeChannelsOf(half: number, obstacles: readonly KeepOut[]): Channel[] {
   const blocked = obstacles
     .map((o) => ({ lo: o.at - o.halfWidth, hi: o.at + o.halfWidth }))
@@ -327,7 +339,9 @@ function freeChannelsOf(half: number, obstacles: readonly KeepOut[]): Channel[] 
     cursor = Math.max(cursor, b.hi);
   }
   if (cursor < half) out.push({ lo: cursor, hi: half });
-  return out.filter((c) => c.hi > c.lo);
+  return out
+    .map((c) => ({ lo: Math.max(c.lo, -half), hi: Math.min(c.hi, half) }))
+    .filter((c) => c.hi > c.lo);
 }
 
 /**
