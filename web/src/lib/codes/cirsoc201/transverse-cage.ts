@@ -37,19 +37,29 @@
  *            verified cell-by-cell against the rendered PDF in `bar-geometry.ts`; this module
  *            calls `standardHook(d, angle, 'transverse')` and invents nothing.
  *
- * §25.7.2.3(a) "Cada barra longitudinal de esquina y barra alterna debe tener arriostramiento
- *            lateral aportado por la esquina de un estribo cerrado con un ángulo interior no
- *            mayor de 135º." — corner and alternate bars need lateral bracing from a corner
- *            of ≤ 135°. This is why the crosstie hook is 135° and not 90°.
+ * §25.3.5    THE crosstie ("gancho suplementario") clause, and the one that governs a beam's
+ *            internal legs. It lives in §25.3 "Ganchos normales y ganchos suplementarios",
+ *            NOT in the column-tie section, so it applies to beams:
+ *              (a) continuous between its ends;
+ *              (b) a 135° hook at ONE end;
+ *              (c) a standard hook with a minimum 90° bend at the OTHER end;
+ *              (d) the hooks must embrace the PERIPHERAL longitudinal bars;
+ *              (e) the 90° hooks of two successive crossties embracing the same longitudinal
+ *                  bars must have their ends ALTERNATED, unless INPRES-CIRSOC 103-II or
+ *                  §25.7.1.6.1 is satisfied.
+ *            §22.5.8.5.5 confirms a crosstie counts as shear reinforcement: "Para cada
+ *            estribo... o gancho suplementario, Av debe tomarse como el área efectiva de las
+ *            ramas... dentro de la separación s."
  *
- * §25.7.2.3(b) "Ninguna barra que no esté arriostrada lateralmente puede estar separada más
- *            de 15·d_be o 150 mm libres de una barra arriostrada." — `unbracedBarReport`
- *            evaluates this against the real leg positions.
+ *            (e) is a "deben" — NORMATIVE. An earlier revision of this module implemented
+ *            alternation from C 25.7.2.3.1's "deberían... cuando sea posible" and therefore
+ *            labelled it *practice*. That was wrong twice: it cited a COLUMN clause for a beam
+ *            piece, and it downgraded a requirement to a preference.
  *
- * C 25.7.2.3.1 Stirrup hooks "deberían... estar escalonados cuando sea posible" — staggered
- *            **where possible**. This is COMMENTARY and a *should*, so alternating hook
- *            orientation is applied as good practice and labelled as practice, never as a
- *            requirement. A reviewer must be able to tell the difference.
+ * §25.7.2.3  NOT USED for beams. It sits under "§25.7.2 Estribos cerrados de COLUMNAS".
+ *            `unbracedBarReport` implements its (b) sub-clause and is retained for the column
+ *            generator only; a source gate asserts no column-only clause reaches a beam's
+ *            transverse bars.
  *
  * Table 9.7.6.2.2 (via `./transverse-spacing`) remains the sole authority on the row, the
  * along-member limit, the across-width limit, the required leg count and the leg
@@ -90,14 +100,27 @@ export type TransverseShape = 'closedStirrup' | 'crosstie';
 export const HOOK_ANCHORAGE_MAX_DIA_MM = 16;
 
 /**
- * Hook angle used for stirrup and crosstie anchorage.
+ * Closing-hook angle for a CLOSED STIRRUP.
  *
- * 135° is the angle §25.7.2.3(a) requires for the bracing corner ("ángulo interior no mayor
- * de 135º") and the angle C 25.7.2.3 explicitly permits against the main bars. It is
- * tabulated for transverse bars in Table 25.3.2, so its mandrel and extension are read from
- * the table rather than chosen.
+ * §25.7.1.3(a) requires "un gancho normal alrededor de la armadura longitudinal" for
+ * d_b ≤ 16 mm and does not fix the angle; Table 25.3.2 tabulates 90°, 135° and 180° for
+ * transverse bars. 135° is chosen among the tabulated options and its mandrel and extension
+ * are read from the table rather than invented.
  */
-export const TRANSVERSE_HOOK_ANGLE: HookAngle = 135;
+export const STIRRUP_HOOK_ANGLE: HookAngle = 135;
+
+/**
+ * Crosstie hook angles — §25.3.5(b) and (c), not a choice.
+ *
+ * (b) 135° at one end. (c) a standard hook with a minimum 90° bend at the other. A crosstie
+ * with 135° at BOTH ends, which this module produced first, satisfies neither (c) as written
+ * nor (e)'s alternation, whose whole subject is the 90° end.
+ */
+export const CROSSTIE_HOOK_ANGLE_135: HookAngle = 135;
+export const CROSSTIE_HOOK_ANGLE_90: HookAngle = 90;
+
+/** @deprecated Split into the stirrup and crosstie constants above. */
+export const TRANSVERSE_HOOK_ANGLE: HookAngle = STIRRUP_HOOK_ANGLE;
 
 export interface TransversePiece {
   /** The fabricated bar. `role` is always `'transverse'`. */
@@ -207,8 +230,13 @@ const REF_BEND_CONTAINS = () => clause('cirsoc-201', '2025', '25.7.1.2',
   'cada doblez debe contener una barra longitudinal');
 const REF_HOOK_TABLE = () => clause('cirsoc-201', '2025', 'Tabla 25.3.2',
   'diámetro mínimo de doblado y geometría del gancho para estribos');
-const REF_BRACING = () => clause('cirsoc-201', '2025', '25.7.2.3',
-  'arriostramiento lateral por esquina de estribo con ángulo interior no mayor de 135°');
+const REF_CROSSTIE = () => clause('cirsoc-201', '2025', '25.3.5',
+  'ganchos suplementarios: 135° en un extremo, gancho normal de 90° mínimo en el otro, ' +
+  'abrazando las barras longitudinales periféricas');
+const REF_CROSSTIE_ALTERNATE = () => clause('cirsoc-201', '2025', '25.3.5(e)',
+  'los ganchos de 90° de ganchos suplementarios sucesivos deben quedar alternados');
+const REF_AV = () => clause('cirsoc-201', '2025', '22.5.8.5.5',
+  'Av incluye las ramas de los ganchos suplementarios dentro de la separación s');
 
 /**
  * The nearest longitudinal bar a bend encloses, or null when it encloses none.
@@ -255,7 +283,7 @@ export function buildClosedStirrup(input: StirrupSetInput): TransversePiece {
   const { halfAcross, halfUp } = stirrupCentrelineHalfExtents(input.b, input.h, input.cover, ds);
   const mandrel = minMandrelDiameter(ds, 'transverse');
   const r = centrelineRadius(mandrel.value, ds);
-  const hook = standardHook(ds, TRANSVERSE_HOOK_ANGLE, 'transverse');
+  const hook = standardHook(ds, STIRRUP_HOOK_ANGLE, 'transverse');
 
   // Corners of the centreline rectangle, in section coordinates.
   // Ordered so the loop runs bottom → right → top → left when `hookOrientation` is 'a', and
@@ -326,13 +354,16 @@ export function buildClosedStirrup(input: StirrupSetInput): TransversePiece {
 }
 
 /**
- * One crosstie as a real bar path: a straight leg across the section depth, hooked at both
- * ends around a longitudinal bar.
+ * One crosstie ("gancho suplementario") as a real bar path — §25.3.5.
  *
- * §25.7.2.3(a) is why both hooks are 135°: the bracing corner may not exceed that interior
- * angle. The two hooks turn in OPPOSITE directions along the member axis so the tie engages
- * bars on both faces, and the pair swaps with `hookOrientation` so consecutive ties stagger
- * (C 25.7.2.3.1 — practice).
+ * A straight leg across the section depth with, per (b) and (c), a **135° hook at one end and a
+ * 90° hook at the other**. Both hooks embrace the peripheral longitudinal bars, per (d).
+ *
+ * `hookOrientation` swaps which end carries the 90° hook. That is §25.3.5(e) and it is
+ * NORMATIVE — "deben quedar con los extremos alternados" for successive crossties embracing the
+ * same longitudinal bars. An earlier revision used 135° at BOTH ends and justified alternation
+ * from C 25.7.2.3.1's "cuando sea posible", which was wrong twice over: it cited a COLUMN clause
+ * for a beam piece, and it downgraded a requirement to a preference.
  */
 export function buildCrosstie(
   input: StirrupSetInput, acrossOffset: number, index: number,
@@ -341,26 +372,35 @@ export function buildCrosstie(
   const { halfUp } = stirrupCentrelineHalfExtents(input.b, input.h, input.cover, ds);
   const mandrel = minMandrelDiameter(ds, 'transverse');
   const r = centrelineRadius(mandrel.value, ds);
-  const hook = standardHook(ds, TRANSVERSE_HOOK_ANGLE, 'transverse');
+  const hook135 = standardHook(ds, CROSSTIE_HOOK_ANGLE_135, 'transverse');
+  const hook90 = standardHook(ds, CROSSTIE_HOOK_ANGLE_90, 'transverse');
+
+  // §25.3.5(e): which END carries the 90° hook alternates between successive ties.
+  const ninetyAtTop = input.hookOrientation === 'b';
+  const bottomHook = ninetyAtTop ? hook135 : hook90;
+  const topHook = ninetyAtTop ? hook90 : hook135;
 
   const bottom = sectionPoint(input, acrossOffset, -halfUp);
   const top = sectionPoint(input, acrossOffset, halfUp);
 
-  // The hooks turn along the member axis, alternating end to end so the tie grips both faces.
-  const turn = input.hookOrientation === 'a' ? 1 : -1;
+  // Hooks turn along the member axis, opposite ways at the two ends, so the tie grips a
+  // peripheral bar on each face (§25.3.5(d)).
   const segments: BarSegment[] = [];
-  const bottomHookTip = add(add(bottom, input.axis, turn * hook.extension), input.up, r);
-  segments.push(straightSegment(bottomHookTip, bottom));
+  const bottomTip = add(add(bottom, input.axis, bottomHook.extension), input.up, r);
+  segments.push(straightSegment(bottomTip, bottom));
   segments.push(straightSegment(bottom, top));
-  const topHookTip = add(add(top, input.axis, -turn * hook.extension), input.up, -r);
-  segments.push(straightSegment(top, topHookTip));
+  const topTip = add(add(top, input.axis, -topHook.extension), input.up, -r);
+  segments.push(straightSegment(top, topTip));
 
   const containment = [
     { at: bottom, longitudinalBarId: barAtCorner(input.longitudinalBars, acrossOffset, -halfUp, r, ds) },
     { at: top, longitudinalBarId: barAtCorner(input.longitudinalBars, acrossOffset, halfUp, r, ds) },
   ];
 
-  const refs = [REF_BRACING(), REF_ANCHOR(), REF_HOOK_TABLE(), ...mandrel.refs, ...hook.refs];
+  const refs = [
+    REF_CROSSTIE(), REF_CROSSTIE_ALTERNATE(), REF_AV(), REF_HOOK_TABLE(),
+    ...mandrel.refs, ...hook135.refs, ...hook90.refs,
+  ];
 
   return {
     path: {
@@ -368,8 +408,8 @@ export function buildCrosstie(
       diameterMm: ds,
       role: 'transverse',
       segments,
-      startTreatment: { kind: 'hook', hook },
-      endTreatment: { kind: 'hook', hook },
+      startTreatment: { kind: 'hook', hook: bottomHook },
+      endTreatment: { kind: 'hook', hook: topHook },
       cuttingLength: developedLength(segments),
       ownerElementIds: [input.elementId],
       layerId: `${input.zoneId}:crosstie${index}`,

@@ -535,13 +535,10 @@ export interface GeneratedBeam {
    * ~29 mm inboard of the stirrup corner (measured: bar ±93,3 mm vs corner ±122 mm, 6Ø12 in a
    * 300 mm web) and those bends grip nothing.
    *
-   * Routing it into `unsupported` would block CONSTRUCTIBLE — correctly, since the cage does
-   * not satisfy the clause. It is NOT routed there yet only because the fix is a change to the
-   * longitudinal placement policy (spread a row to the full available width instead of packing
-   * it at minimum spacing), which moves every bar position in the app and re-baselines every
-   * collision count. Doing that half-way would leave the gate broken mid-change.
-   *
-   * So: visible, counted, asserted by test, and named as the next step — not silently dropped.
+   * ALSO routed into `unsupported`, so it BLOCKS constructibility. It was non-blocking for one
+   * commit and that was the wrong trade — a known code violation may not stay non-blocking to
+   * preserve an old fixture result. The count is kept here as well because "how many bends"
+   * is what a reviewer needs to size the fix, and a boolean in `unsupported` does not say.
    */
   transverseFindings: { bendsWithoutBar: number };
   bentUp: BentUpDecision;
@@ -981,6 +978,17 @@ export function generateBeamBars(input: BeamGenerationInput): GeneratedBeam {
   // silently patched.
   const looseBends = bendsWithoutLongitudinalBar(transverse);
   if (looseBends.length > 0) {
+    // A HARD blocker. §25.7.1.2 is a "debe": every bend of a closed stirrup must contain a
+    // longitudinal bar. A cage whose corners grip nothing does not satisfy the clause, so the
+    // member may not be reported constructible.
+    //
+    // This was carried as a non-blocking finding for exactly one commit, to avoid breaking the
+    // twelve-condition gate mid-change. That was the wrong trade: a known code violation may
+    // not stay non-blocking to preserve an old fixture result. It blocks now, and qa-8 and the
+    // row-2 fixture are NOT_ESTABLISHED until the longitudinal layout seats corner bars in the
+    // stirrup corners.
+    unsupported.push(formatClause(clause('cirsoc-201', '2025', '25.7.1.2',
+      'cada doblez del estribo debe contener una barra longitudinal')));
     trace.push(`${looseBends.length} doblez(es) de estribo sin barra longitudinal (25.7.1.2): ` +
       'la disposición longitudinal centra la capa y no lleva barras a las esquinas.');
   }

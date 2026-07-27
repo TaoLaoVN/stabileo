@@ -114,14 +114,43 @@ describe('a feasible frame coordinates to a constructible cage', () => {
     expect(conflicts.map((c) => `${c.severity} ${c.barA}/${c.barB}`)).toEqual([]);
   });
 
-  it('reaches CONSTRUCTIBLE, the state that unlocks review and documents', () => {
+  it('does NOT reach CONSTRUCTIBLE while §25.7.1.2 is violated', () => {
+    // REBASELINED, and deliberately in the unfavourable direction.
+    //
+    // Physical stirrups and crossties are now fabricated, and with them §25.7.1.2 is actually
+    // checked: "cada doblez en un estribo cerrado debe contener una barra longitudinal". It is
+    // VIOLATED here. `layoutBarRow` centres each mat at the §25.2.1 clear spacing plus the
+    // placement tolerance, so on some members the outermost bottom bar lands ~29 mm inboard of
+    // the stirrup corner (measured: bar ±93,3 mm vs corner ±122 mm, 6Ø12 in a 300 mm web) and
+    // those bends grip nothing.
+    //
+    // This test asserted CONSTRUCTIBLE before the cage existed, when nothing transverse had
+    // coordinates and the clause could not be evaluated at all. Keeping that assertion now
+    // would mean holding a known code violation non-blocking to preserve an old fixture
+    // result. The clause blocks, the fixture is NOT_ESTABLISHED, and it stays that way until
+    // the longitudinal layout seats corner bars in the stirrup corners.
     const r = detail();
     expect(r.assemblies.length).toBeGreaterThan(0);
     for (const a of r.assemblies) {
-      expect(a.state, `${a.id} blockers: ${(a.stateBlockers ?? []).join(' ')}`)
-        .toBe('CONSTRUCTIBLE');
-      expect(a.stateBlockers ?? []).toEqual([]);
+      // MEASURED: the state machine stops the floor at COORDINATED — designed, detailed and
+      // coordinated, but not certified constructible. That is the honest label for "the steel
+      // exists and does not satisfy a clause".
+      expect(a.state, `${a.id}`).not.toBe('CONSTRUCTIBLE');
+      expect(a.state, `${a.id}`).toBe('COORDINATED');
+      expect(a.constructibility?.verdict, `${a.id}`).not.toBe('CONSTRUCTIBLE');
     }
+  });
+
+  it('the ONLY thing standing between this cage and CONSTRUCTIBLE is §25.7.1.2', () => {
+    // Everything else the twelve conditions require still passes: zero prohibited conflicts,
+    // every member designed and detailed, certificates matching. Asserted so the rebaseline
+    // above cannot quietly hide a second regression.
+    // `unsupported` entries are structured: `{ key: 'generation', message, scope, refs }`.
+    // The clause lives in `message`, so that is what gets inspected.
+    const r = detail();
+    const texts = r.assemblies.flatMap((a) => a.unsupported.map((u) => String(u.message)));
+    expect(texts.length).toBeGreaterThan(0);
+    for (const t of texts) expect(t, `unexpected blocker: ${t}`).toContain('25.7.1.2');
   });
 
   it('gets there with real bars and marks, not by producing nothing', () => {
@@ -135,9 +164,13 @@ describe('a feasible frame coordinates to a constructible cage', () => {
     expect(new Set(r.assemblies.flatMap((a) => a.elementIds)).size).toBe(3);
   });
 
-  it('reports no unsupported condition on a cage that genuinely fits', () => {
+  it('reports exactly one unsupported condition — the §25.7.1.2 corner seating', () => {
+    // Was "reports no unsupported condition on a cage that genuinely fits". The cage fits; it
+    // is the RESTRAINT that fails, which only became visible once the stirrups were fabricated.
     const r = detail();
-    expect(r.assemblies.flatMap((a) => a.unsupported.map((u) => u.key))).toEqual([]);
+    const texts = r.assemblies.flatMap((a) => a.unsupported.map((u) => String(u.message)));
+    expect(texts.length).toBeGreaterThan(0);
+    for (const t of texts) expect(t).toContain('25.7.1.2');
   });
 
   it('is byte-identical when the members are supplied in a different order', () => {

@@ -17,7 +17,8 @@ import {
   buildClosedStirrup, buildCrosstie, buildStirrupSet, stirrupStations,
   stirrupCentrelineHalfExtents, hookAnchorageIsSupported, unbracedBarReport,
   bendsWithoutLongitudinalBar, legsProvided, setSatisfiesLimits,
-  TRANSVERSE_HOOK_ANGLE, HOOK_ANCHORAGE_MAX_DIA_MM,
+  STIRRUP_HOOK_ANGLE, CROSSTIE_HOOK_ANGLE_135, CROSSTIE_HOOK_ANGLE_90,
+  HOOK_ANCHORAGE_MAX_DIA_MM,
   type LongitudinalBarRef, type StirrupSetInput,
 } from '../transverse-cage';
 import {
@@ -139,9 +140,10 @@ describe('§25.7.1.2 — every bend must contain a longitudinal bar', () => {
   it('cites the clause on every piece', () => {
     for (const p of buildStirrupSet(input({ legs: 3 })).pieces) {
       const ids = p.refs.map((r) => r.clause);
-      expect(ids.some((c) => c === '25.7.1.2' || c === '25.7.2.3')).toBe(true);
-      expect(ids).toContain('25.7.1.3');
+      expect(ids.some((c) => c === '25.7.1.2' || c === '25.3.5')).toBe(true);
       for (const r of p.refs) expect(r.edition).toBe('2025');
+      // SOURCE GATE: no column-only clause may appear on a beam transverse piece.
+      expect(ids.some((c) => c.startsWith('25.7.2')), `${p.shape}: ${ids.join(',')}`).toBe(false);
     }
   });
 });
@@ -149,11 +151,35 @@ describe('§25.7.1.2 — every bend must contain a longitudinal bar', () => {
 // ─── Hooks and mandrels come from the table, not from here ───────
 
 describe('hooks and mandrels are read from Table 25.3.2', () => {
-  it('uses the 135° angle §25.7.2.3(a) requires for the bracing corner', () => {
-    expect(TRANSVERSE_HOOK_ANGLE).toBe(135);
+  it('closes a stirrup with a tabulated standard hook (§25.7.1.3(a) + Table 25.3.2)', () => {
+    expect(STIRRUP_HOOK_ANGLE).toBe(135);
   });
 
-  it('the hook geometry is exactly what standardHook returns — nothing local', () => {
+  it('gives a crosstie 135° at one end and 90° at the other — §25.3.5(b),(c)', () => {
+    // NOT 135° at both ends, which is what this module produced first. (c) requires a standard
+    // hook with a minimum 90° bend at the other end, and (e)'s alternation is about that end.
+    expect(CROSSTIE_HOOK_ANGLE_135).toBe(135);
+    expect(CROSSTIE_HOOK_ANGLE_90).toBe(90);
+    const a = buildCrosstie(input({ legs: 3, hookOrientation: 'a' }), 0, 1);
+    const b = buildCrosstie(input({ legs: 3, hookOrientation: 'b' }), 0, 1);
+    const angles = (t: typeof a) => [t.path.startTreatment, t.path.endTreatment]
+      .map((x) => (x.kind === 'hook' ? x.hook.angle : 0));
+    expect(angles(a).slice().sort((x, y) => x - y)).toEqual([90, 135]);
+    expect(angles(b).slice().sort((x, y) => x - y)).toEqual([90, 135]);
+    // §25.3.5(e): the 90° end ALTERNATES between successive ties.
+    expect(angles(a)).not.toEqual(angles(b));
+  });
+
+  it('cites §25.3.5 for a crosstie, and never the column clause §25.7.2.3', () => {
+    const tie = buildCrosstie(input({ legs: 3 }), 0, 1);
+    const ids = tie.refs.map((r) => r.clause);
+    expect(ids).toContain('25.3.5');
+    expect(ids).toContain('25.3.5(e)');
+    expect(ids).toContain('22.5.8.5.5');
+    expect(ids.some((c) => c.startsWith('25.7.2'))).toBe(false);
+  });
+
+  it('the stirrup hook geometry is exactly what standardHook returns — nothing local', () => {
     const expected = standardHook(DS, 135, 'transverse');
     const p = buildClosedStirrup(input());
     expect(p.path.startTreatment).toEqual({ kind: 'hook', hook: expected });
@@ -187,7 +213,7 @@ describe('hooks and mandrels are read from Table 25.3.2', () => {
 
 // ─── Hook staggering is PRACTICE, not a requirement ──────────────
 
-describe('hook staggering (C 25.7.2.3.1 — commentary, a "should")', () => {
+describe('§25.3.5(e) alternation — NORMATIVE, not practice', () => {
   it('alternating orientation produces mirrored geometry', () => {
     const a = buildClosedStirrup(input({ hookOrientation: 'a' }));
     const b = buildClosedStirrup(input({ hookOrientation: 'b' }));
@@ -199,7 +225,7 @@ describe('hook staggering (C 25.7.2.3.1 — commentary, a "should")', () => {
   });
 
   it('crosstie hooks turn opposite ways at its two ends', () => {
-    // §25.7.2.3(a) bracing requires the tie to engage bars on both faces.
+    // §25.3.5(d): the hooks must embrace the peripheral bars, one on each face.
     const tie = buildCrosstie(input({ legs: 3 }), 0, 1);
     const first = tie.path.segments[0];
     const last = tie.path.segments[tie.path.segments.length - 1];

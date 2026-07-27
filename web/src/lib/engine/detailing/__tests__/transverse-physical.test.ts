@@ -195,12 +195,39 @@ describe('row-2 fixture — crossties are FABRICATED, not counted', () => {
     }
   });
 
-  it('the crosstie hook is 135°, per §25.7.2.3(a)', () => {
-    for (const [, g] of out) {
+  it('crosstie hooks are 135° at one end and 90° at the other — §25.3.5(b),(c)', () => {
+    // Not 135° at both ends, and not justified by the column clause §25.7.2.3(a).
+    for (const [id, g] of out) {
       for (const t of g.transverse.filter((p) => p.shape === 'crosstie')) {
-        const st = t.path.startTreatment;
-        expect(st.kind).toBe('hook');
-        if (st.kind === 'hook') expect(st.hook.angle).toBe(135);
+        const angles = [t.path.startTreatment, t.path.endTreatment]
+          .map((x) => (x.kind === 'hook' ? x.hook.angle : 0))
+          .sort((a, b) => a - b);
+        expect(angles, `element ${id} ${t.path.id}`).toEqual([90, 135]);
+      }
+    }
+  });
+
+  it('§25.3.5(e): the 90° end alternates between successive crossties', () => {
+    // NORMATIVE — "deben quedar con los extremos alternados".
+    const g = [...out.values()][0];
+    const ties = g.transverse.filter((p) => p.shape === 'crosstie')
+      .sort((a, b) => a.station - b.station);
+    expect(ties.length).toBeGreaterThan(2);
+    const ninetyAtStart = ties.map((t) =>
+      t.path.startTreatment.kind === 'hook' && t.path.startTreatment.hook.angle === 90);
+    // Consecutive ties must not put the 90° end on the same side.
+    let alternations = 0;
+    for (let i = 1; i < ninetyAtStart.length; i++) {
+      if (ninetyAtStart[i] !== ninetyAtStart[i - 1]) alternations++;
+    }
+    expect(alternations).toBeGreaterThan(0);
+  });
+
+  it('SOURCE GATE: no column-only clause on a beam transverse bar', () => {
+    for (const [id, g] of out) {
+      for (const p of g.transverse) {
+        const bad = p.path.refs.filter((r) => r.clause.startsWith('25.7.2'));
+        expect(bad.map((r) => r.clause), `element ${id} ${p.shape}`).toEqual([]);
       }
     }
   });
