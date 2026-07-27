@@ -4450,5 +4450,13 @@ const en: Record<string, string> = {
   'detailing.splice.contact': 'Class {spliceClass} contact lap of {lap} mm (§25.5.1.2), {groups} staggered group(s), at most {fraction} % of bars spliced at any one section.',
   'detailing.splice.nonContact': 'Class {spliceClass} non-contact lap of {lap} mm with a {offset} mm transverse offset (§25.5.1.3), {groups} staggered group(s), at most {fraction} % spliced at one section.',
 
+  'codes.placement.prescribed': 'CIRSOC Table 26.6.2.1(a) for d = {d} mm (band {band} mm): tolerance on d ±{depthTol} mm, cover −{coverTol} mm ({governedBy}).',
+  'codes.placement.governedFlat': 'governed by the flat limit',
+  'codes.placement.governedProportional': 'governed by one third of the specified cover',
+  'codes.placement.notLegal': 'Clear distance {achieved} mm is below the {required} mm the code requires.',
+  'codes.placement.legalAndRobust': 'Clear distance {achieved} mm meets the {required} mm required, and still meets it at {worst} mm after the {allowance} mm placement allowance.',
+  'codes.placement.legalNotRobust': 'Clear distance {achieved} mm meets the {required} mm the code requires, but falls to {worst} mm after the {allowance} mm placement allowance — code-legal, not placement-robust.',
+  'codes.placement.allowanceAssumed': 'The {allowance} mm transverse placement allowance is a PROJECT ASSUMPTION, not a CIRSOC value. Table 26.6.2.1(a) prescribes tolerances for the effective depth and the cover only; it sets none for the spacing between parallel bars. Set it in the project detailing properties.',
+
 };
 export default en;

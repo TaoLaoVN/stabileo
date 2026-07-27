@@ -4412,5 +4412,13 @@ const es: Record<string, string> = {
   'detailing.splice.contact': 'Empalme en contacto Clase {spliceClass} de {lap} mm (art. 25.5.1.2), {groups} grupo(s) escalonado(s), como máximo {fraction} % de las barras empalmadas en una misma sección.',
   'detailing.splice.nonContact': 'Empalme sin contacto Clase {spliceClass} de {lap} mm con desfase transversal de {offset} mm (art. 25.5.1.3), {groups} grupo(s) escalonado(s), como máximo {fraction} % empalmado en una sección.',
 
+  'codes.placement.prescribed': 'Tabla 26.6.2.1(a) del CIRSOC para d = {d} mm (banda {band} mm): tolerancia en d ±{depthTol} mm, recubrimiento −{coverTol} mm ({governedBy}).',
+  'codes.placement.governedFlat': 'gobierna el límite fijo',
+  'codes.placement.governedProportional': 'gobierna un tercio del recubrimiento especificado',
+  'codes.placement.notLegal': 'La separación libre de {achieved} mm está por debajo de los {required} mm que exige el reglamento.',
+  'codes.placement.legalAndRobust': 'La separación libre de {achieved} mm cumple los {required} mm requeridos, y sigue cumpliéndolos con {worst} mm después de la tolerancia de colocación de {allowance} mm.',
+  'codes.placement.legalNotRobust': 'La separación libre de {achieved} mm cumple los {required} mm que exige el reglamento, pero baja a {worst} mm con la tolerancia de colocación de {allowance} mm: es reglamentaria, no robusta a la colocación.',
+  'codes.placement.allowanceAssumed': 'La tolerancia transversal de colocación de {allowance} mm es una HIPÓTESIS DEL PROYECTO, no un valor del CIRSOC. La Tabla 26.6.2.1(a) fija tolerancias solo para la altura efectiva y el recubrimiento; no fija ninguna para la separación entre barras paralelas. Definila en las propiedades de detallado del proyecto.',
+
 };
 export default es;
