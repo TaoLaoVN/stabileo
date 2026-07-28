@@ -20,6 +20,8 @@
  */
 
 import { modelStore } from './model.svelte';
+import { msg, type EngineMessage } from '../codes/message';
+import type { DesignCodeId } from '../engine/design/code-adapter';
 import {
   REGULATIONS_SCHEMA_VERSION, bindRole, defaultRegulations, findOption, isLoadAffecting,
   pendingRequiresLoadRegeneration, pendingRoles, regulationStamps, roleUsable,
@@ -81,6 +83,56 @@ function createRegulationsStore() {
     get reviewRequested() { return reviewRequested; },
 
     binding(role: RegulationRole): RoleBinding { return roles[role]; },
+
+    /**
+     * THE design code for reinforced concrete — the one authoritative answer.
+     *
+     * ── Why this exists ────────────────────────────────────────────────
+     *
+     * The concrete design code was being chosen in three places at once. A dropdown beside
+     * the Design commands wrote `verificationStore.activeCodeId`, which reached the code
+     * check, the candidate search and detailing. Project Regulations bound a `concrete`
+     * role, which reached only detailing's EDITION. And a legacy v1 field,
+     * `codeSettings.concreteEdition`, silently rewrote the adapter inside `design-run`.
+     *
+     * They could disagree, and the disagreement was not cosmetic: detailing could take its
+     * edition from one source and its adapter from another, so a member could be verified
+     * against one edition's clauses and detailed under the other's. The dropdown also
+     * offered CIRSOC 201-2005, which the role catalogue correctly marks
+     * `UNAVAILABLE_SOURCE` because the official 2005 text is not supplied with this app.
+     *
+     * Everything that needs a concrete design code now asks here. `null` means the project
+     * has not bound a usable one, and the caller must GATE rather than pick a default —
+     * silently falling back to CIRSOC is how a project gets verified against rules it never
+     * chose.
+     */
+    concreteDesignCode(): DesignCodeId | null {
+      const b = roles.concrete;
+      if (!b.adapterId) return null;
+      if (!roleUsable(roles, 'concrete')) return null;
+      return b.adapterId as DesignCodeId;
+    },
+
+    /**
+     * Why `concreteDesignCode()` is null, as a structured message for the UI.
+     *
+     * Returns null when nothing is wrong, so a caller can render the reason only when there
+     * is one.
+     */
+    concreteDesignProblem(): EngineMessage | null {
+      const b = roles.concrete;
+      if (!b.adapterId) return msg('regulations.problem.concreteUnbound');
+      const opt = findOption(b.adapterId);
+      if (!opt || opt.maturity === 'UNSUPPORTED') {
+        return msg('regulations.problem.concreteUnsupported', {
+          adapter: b.adapterId, edition: b.edition ?? '',
+        });
+      }
+      if (!roleUsable(roles, 'concrete')) {
+        return msg('regulations.problem.concreteIncomplete', { adapter: b.adapterId });
+      }
+      return null;
+    },
     /** Bound, supported AND configured — ready to produce results. */
     usable(role: RegulationRole): boolean { return roleUsable(roles, role); },
     /**

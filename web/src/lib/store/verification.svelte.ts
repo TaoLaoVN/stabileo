@@ -27,6 +27,7 @@ import type { MemberDesignResult, DesignCheckSummary } from '../engine/design-ch
 import type { ProvidedReinforcement } from './model.svelte';
 import type { ProvidedRebarResult } from '../engine/station-design-forces';
 import type { MemberContext } from '../engine/design/member-context';
+import { regulationsStore } from './regulations.svelte';
 import type { DesignRunSummary, MemberDesignOutcome } from '../engine/design/outcome';
 import { utilizationStatus } from '../engine/design/outcome';
 import { rebarHash } from '../engine/design/rebar-hash';
@@ -74,7 +75,6 @@ function createVerificationStore() {
 
   // ── Design outcomes (VERIFIED / SECTION_INADEQUATE / …) ──
   let runSummary = $state<DesignRunSummary | null>(null);
-  let activeCodeId = $state<DesignCodeId>('cirsoc');
 
   // ── Provided-verification memo cache (NOT reactive: keyed, rebuilt on demand) ──
   const providedCache = new Map<number, { key: string; result: ProvidedRebarResult }>();
@@ -111,10 +111,15 @@ function createVerificationStore() {
     if (!ctx) return null;
     const reinf = reinforcementProvider?.(elementId);
     if (!reinf) return null;
-    const key = `${rebarHash(reinf)}|${demandRevision}|${activeCodeId}`;
+    // The concrete design code comes from Project Regulations, and it is part of the cache
+    // key: a project that rebinds the role must not read back a result verified under the
+    // previous one.
+    const codeId = regulationsStore.concreteDesignCode();
+    if (!codeId) return null;
+    const key = `${rebarHash(reinf)}|${demandRevision}|${codeId}`;
     const hit = providedCache.get(elementId);
     if (hit && hit.key === key) return hit.result;
-    const adapter = getDesignCode(activeCodeId);
+    const adapter = getDesignCode(codeId);
     if (!adapter) return null;
     const result = adapter.verify(ctx, reinf);
     providedCache.set(elementId, { key, result });
@@ -147,12 +152,14 @@ function createVerificationStore() {
     },
     get hasDemandData() { return contexts.size > 0; },
 
-    get activeCodeId() { return activeCodeId; },
-    setActiveCode(id: DesignCodeId) {
-      if (id === activeCodeId) return;
-      activeCodeId = id;
-      dropCache();
-    },
+    /**
+     * The design code in force, resolved from the project's `concrete` role binding.
+     *
+     * Read-only on purpose. This store used to OWN the selection, writable from a dropdown
+     * beside the Design commands, which made it a second regulation surface that could
+     * disagree with Project Regulations. There is one selector now, and it is not here.
+     */
+    get concreteCodeId() { return regulationsStore.concreteDesignCode(); },
 
     /** Wired in store/index.ts so this store never imports modelStore. */
     _setReinforcementProvider(fn: (elementId: number) => ProvidedReinforcement | undefined) {

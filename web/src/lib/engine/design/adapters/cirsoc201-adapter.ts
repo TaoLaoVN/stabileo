@@ -67,7 +67,9 @@ const CAPABILITIES: CodeCapabilities = {
 function makeAdapter(edition: RegulationEdition): DesignCodeAdapter {
  return {
   id: edition === '2025' ? 'cirsoc' : 'cirsoc-2005',
-  name: 'CIRSOC 201',
+  // Edition-qualified. Both editions are separate adapters with separate clause maps, and
+  // naming them both "CIRSOC 201" is what put the same label in a picker twice.
+  name: `CIRSOC 201-${edition}`,
   version: edition,
   utilizationConvention: UTILIZATION_CONVENTION,
   capabilities: CAPABILITIES,

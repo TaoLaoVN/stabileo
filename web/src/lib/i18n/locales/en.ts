@@ -4219,6 +4219,11 @@ const en: Record<string, string> = {
   // ─── Engine messages: structured output from the pure load/wind/regulation engines ───
   'regulations.name.cirsoc101': 'CIRSOC 101 ({edition})',
   'regulations.name.cirsoc102': 'CIRSOC 102 ({edition})',
+  'design.code.role': 'Concrete code:',
+  'design.code.openRegulations': 'Open Project Regulations',
+  'regulations.problem.concreteUnbound': 'No concrete design code is bound for this project.',
+  'regulations.problem.concreteUnsupported': 'The bound concrete code ({adapter} {edition}) is not supported for design.',
+  'regulations.problem.concreteIncomplete': 'The concrete code ({adapter}) is bound but its configuration is incomplete.',
   'regulations.name.cirsoc201': 'CIRSOC 201 ({edition})',
   'regulations.name.cirsoc301': 'CIRSOC 301 ({edition})',
   'regulations.name.inpres103': 'INPRES-CIRSOC 103 ({edition})',

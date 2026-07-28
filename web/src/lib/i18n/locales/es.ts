@@ -4181,6 +4181,11 @@ const es: Record<string, string> = {
   // ─── Engine messages: structured output from the pure load/wind/regulation engines ───
   'regulations.name.cirsoc101': 'CIRSOC 101 ({edition})',
   'regulations.name.cirsoc102': 'CIRSOC 102 ({edition})',
+  'design.code.role': 'Reglamento de hormigón:',
+  'design.code.openRegulations': 'Abrir Reglamentos del proyecto',
+  'regulations.problem.concreteUnbound': 'El proyecto no tiene un reglamento de hormigón asignado.',
+  'regulations.problem.concreteUnsupported': 'El reglamento de hormigón asignado ({adapter} {edition}) no está soportado para diseño.',
+  'regulations.problem.concreteIncomplete': 'El reglamento de hormigón ({adapter}) está asignado pero su configuración está incompleta.',
   'regulations.name.cirsoc201': 'CIRSOC 201 ({edition})',
   'regulations.name.cirsoc301': 'CIRSOC 301 ({edition})',
   'regulations.name.inpres103': 'INPRES-CIRSOC 103 ({edition})',
