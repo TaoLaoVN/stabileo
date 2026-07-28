@@ -53,6 +53,10 @@ import {
 import type { WallGeometry } from './floor-transverse';
 import type { FootingAssemblyEntry } from './run-footing-design';
 import type { DetailingAssembly } from './assembly';
+import {
+  RESIDUAL_TOL, checkSlabJointPunching, slabJointPosition,
+  type AdjoiningShell, type SlabColumnJoint, type SlabPunchingResult,
+} from './slab-punching';
 
 // ─── What this adapter reads ─────────────────────────────────────
 
@@ -124,7 +128,7 @@ export interface RunFloorDesignInput {
   revisions: Omit<FamilyRevisionVector, 'entity'>;
   regulationIds: readonly string[];
   /**
-   * Columns framing into slab nodes, keyed by node id.
+   * Slab–column joints, keyed by node id, with the per-combination column forces at each.
    *
    * ── Why punching needs this ─────────────────────────────────────
    *
@@ -133,13 +137,24 @@ export interface RunFloorDesignInput {
    * would be a false limitation — it would make an ordinary beam-supported floor
    * permanently uncertifiable for a condition that does not arise in it.
    *
-   * A panel that DOES support a column has a real punching check, and it is not implemented:
-   * the demand must come from the change in column axial force across the slab joint, and
-   * this adapter is not given per-combination column end forces. So punching is reported as
-   * unverified for exactly those panels and is absent from the rest. Applicability is
-   * measured, not assumed in either direction.
+   * A panel that DOES support a column has a real punching check, and it is now RUN. The
+   * demand is the step in column axial force across the joint per combination, which is why
+   * this map carries forces and not only geometry: applicability alone is what it used to
+   * carry, and a collector that stops at applicability produces a permanently unverified
+   * check. `slab-punching.ts` owns the free body; this adapter owns the geometry around it.
+   *
+   * Absent — a caller with no solver results — every column-supported panel reports its
+   * punching as unverified for want of forces, which is the honest outcome and not a claim.
    */
-  slabColumns?: ReadonlyMap<number, { elementId: number; b: number; h: number }>;
+  slabColumns?: ReadonlyMap<number, SlabColumnJoint>;
+  /**
+   * True when the solved results on hand do not correspond to the model's own combinations.
+   *
+   * Passed in rather than inferred: the adapter sees stresses and forces, not the revision
+   * graph. A punching check read from results that describe a different structure is a check
+   * of a building that does not exist, so the joints report it as unverified.
+   */
+  analysisStale?: boolean;
 }
 
 export type ShellFamily = 'slab' | 'wall' | 'inclined' | 'degenerate';
@@ -222,6 +237,23 @@ export function planExtent(pts: readonly FloorNode[]): {
   return { x0, y0, lx, ly, axisAligned };
 }
 
+/**
+ * The average top-mat bar diameter, mm — the depth a punching crack forms at.
+ *
+ * Averaged over the two mat directions because they sit at different depths and the critical
+ * perimeter is a single surface; the resulting effective depth is recorded as an assumption on
+ * every punching result. Read from the layers the DESIGN chose rather than from a nominal
+ * figure, so the perimeter depth and the placed steel cannot disagree. With no top mat the
+ * bottom mat is used, and with no layers at all the caller's zero produces the
+ * missing-geometry outcome rather than a fabricated depth.
+ */
+export function averageTopBarDiameter(design: SlabDesignResult): number {
+  const top = design.layers.filter((l) => l.face === 'top');
+  const use = top.length > 0 ? top : design.layers;
+  if (use.length === 0) return 0;
+  return use.reduce((s, l) => s + l.diameterMm, 0) / use.length;
+}
+
 /** How many of a shell's edges are shared with another shell or held by a support. */
 export function supportedSideCount(
   shell: FloorShell, others: readonly FloorShell[],
@@ -274,6 +306,36 @@ export function runFloorDesign(input: RunFloorDesignInput): RunFloorDesignResult
 
   /** Levels are grouped to the millimetre so floating-point noise cannot split a floor. */
   const levelKey = (z: number) => Math.round(z * 1000) / 1000;
+
+  /**
+   * Every slab shell in the model, in plan, indexed by level — a PRE-pass.
+   *
+   * The punching position at a joint is a property of the whole floor, so it cannot be
+   * answered from inside the loop that is still designing that floor one panel at a time.
+   * This index is built first and read by `adjoiningSlabs`.
+   *
+   * Shells that will later be reported unsupported for their own reasons are INCLUDED here on
+   * purpose: a panel too skewed to design is still slab material standing at the joint, and
+   * omitting it would truncate a critical perimeter that is not truncated in the building.
+   */
+  const slabPlanByLevel = new Map<number, AdjoiningShell[]>();
+  for (const shell of input.shells) {
+    const pts = ptsOf(shell);
+    if (!pts) continue;
+    const cls = classifyShell(shell.id, pts);
+    if (cls.family !== 'slab') continue;
+    const key = levelKey(cls.level);
+    const list = slabPlanByLevel.get(key) ?? [];
+    list.push({ elementId: shell.id, nodeIds: shell.nodes, points: pts });
+    slabPlanByLevel.set(key, list);
+  }
+
+  /** The slab shells at one level that meet a given node. */
+  const adjoiningSlabs = (nodeId: number, level: number): AdjoiningShell[] =>
+    (slabPlanByLevel.get(levelKey(level)) ?? [])
+      .filter((s) => s.nodeIds.includes(nodeId))
+      // Deterministic: the sector merge walks the caller's order.
+      .sort((a, b) => a.elementId - b.elementId);
 
   for (const shell of input.shells) {
     const pts = ptsOf(shell);
@@ -348,22 +410,39 @@ export function runFloorDesign(input: RunFloorDesignInput): RunFloorDesignResult
         thickness: shell.thickness, cover: input.cover,
         elementIds: [shell.id],
       };
+      /**
+       * Punching, at every joint this panel supports — run, not deferred.
+       *
+       * The position is measured from the slab that meets each joint at THIS LEVEL, not from
+       * the panel alone: the column sits at a node of this panel, so relative to one shell it
+       * is always a corner, while relative to the floor it is usually interior. Classifying
+       * from the panel would call every joint in a meshed flat plate a corner column and
+       * apply α_s = 20 where 40 belongs.
+       */
+      const punchingResults = [...shell.nodes]
+        .map((nodeId) => input.slabColumns?.get(nodeId))
+        .filter((j): j is SlabColumnJoint => j !== undefined)
+        // Node order, so the record is deterministic under any Map iteration order.
+        .sort((a, b) => a.nodeId - b.nodeId)
+        .map((joint) => checkSlabJointPunching({
+          panelId: `P${shell.id}`,
+          joint,
+          position: slabJointPosition(joint.nodeId, adjoiningSlabs(joint.nodeId, cls.level)),
+          thickness: shell.thickness,
+          cover: input.cover,
+          topBarDiameterMm: averageTopBarDiameter(design),
+          fc: input.fc,
+          qu,
+          staleAnalysis: input.analysisStale === true,
+        }));
+
       const entry: SlabEntry = {
         geometry: panelGeometry,
         design,
         record: slabRecord({
           shell, geometry: panelGeometry, design, stress, qu,
           supportedSides: Math.max(1, supportedSideCount(shell, input.shells)),
-          // Measured from this panel's OWN nodes, in node order so the record is
-          // deterministic under any Map iteration order.
-          columnNodes: [...shell.nodes]
-            .map((nodeId) => {
-              const c = input.slabColumns?.get(nodeId);
-              return c ? { nodeId, elementId: c.elementId, b: c.b, h: c.h } : null;
-            })
-            .filter((c): c is { nodeId: number; elementId: number; b: number; h: number } =>
-              c !== null)
-            .sort((a, b) => a.nodeId - b.nodeId),
+          punching: punchingResults,
           input,
         }),
       };
@@ -562,6 +641,54 @@ function shellRecordCommon(args: {
   };
 }
 
+// ─── Rolling several joints up into one family check ─────────────
+
+/**
+ * The worst punching outcome across a panel's joints.
+ *
+ * FAIL outranks UNSUPPORTED outranks OK. A measured exceedance is a stronger statement than
+ * an unmeasured joint, and both outrank a pass: a panel with one failing joint has a failing
+ * punching check whatever its other joints did. Averaging or first-wins would certify a panel
+ * nobody verified.
+ */
+export function worstPunchingStatus(
+  results: readonly SlabPunchingResult[],
+): 'OK' | 'FAIL' | 'UNSUPPORTED' {
+  if (results.some((p) => p.status === 'FAIL')) return 'FAIL';
+  if (results.some((p) => p.status === 'UNSUPPORTED')) return 'UNSUPPORTED';
+  return 'OK';
+}
+
+/**
+ * The largest utilisation across the joints that produced one, or null when none did.
+ *
+ * Null rather than 0: a zero would read as a joint that was checked and found unloaded, which
+ * is a measurement, and an unverified joint made none.
+ */
+export function maxPunchingUtilization(
+  results: readonly SlabPunchingResult[],
+): number | null {
+  const measured = results.filter((p) => p.status !== 'UNSUPPORTED');
+  if (measured.length === 0) return null;
+  return measured.reduce((m, p) => Math.max(m, p.utilization), 0);
+}
+
+/**
+ * The combination governing the panel's punching — the one at the joint with the largest
+ * utilisation, since that is the joint the family check reports.
+ */
+export function governingPunchingCombination(
+  results: readonly SlabPunchingResult[],
+): string | null {
+  const measured = results.filter((p) => p.status !== 'UNSUPPORTED');
+  if (measured.length === 0) return null;
+  const worst = measured.reduce((m, p) => (
+    p.utilization > m.utilization
+      || (p.utilization === m.utilization && p.nodeId < m.nodeId) ? p : m),
+  measured[0]);
+  return worst.governingCombination;
+}
+
 /**
  * The slab panel's design evidence.
  *
@@ -577,8 +704,11 @@ function slabRecord(args: {
   stress: FloorShellStress;
   qu: number;
   supportedSides: number;
-  /** Columns framing into this panel's own nodes. Empty means punching does not apply. */
-  columnNodes: Array<{ nodeId: number; elementId: number; b: number; h: number }>;
+  /**
+   * Punching at every joint this panel supports, already checked. Empty means the panel
+   * supports no column and punching does not apply to it — a measurement, not a silence.
+   */
+  punching: readonly SlabPunchingResult[];
   input: RunFloorDesignInput;
 }): FamilyRecordDraft<SlabDesignRecord> {
   const { design, stress, geometry } = args;
@@ -637,44 +767,63 @@ function slabRecord(args: {
      * Punching, present ONLY when this panel supports a column.
      *
      * Two-way shear is a property of a joint. Emitting the check unconditionally would make
-     * every beam-supported floor permanently uncertifiable for a condition that does not
-     * arise in it; omitting it unconditionally would let a flat plate on columns certify with
-     * its governing check unexamined. So applicability is measured from the columns at this
-     * panel's own nodes, and where it applies the check is UNSUPPORTED — the demand needs the
-     * change in column axial force across the joint, and this adapter is not given
-     * per-combination column end forces.
+     * every beam-supported floor permanently uncertifiable for a condition that does not arise
+     * in it; omitting it unconditionally would let a flat plate on columns certify with its
+     * governing check unexamined. So applicability is measured from the columns at this
+     * panel's own nodes — and where it applies the check is now RUN.
+     *
+     * ── One row for many joints, and how it is resolved ───────────────
+     *
+     * A panel can support several columns with different outcomes. The family check is the
+     * WORST of them, because a panel with one failing joint has a failing punching check
+     * whatever its other joints did, and because a certificate that averaged them would
+     * certify a panel nobody verified. FAIL outranks UNSUPPORTED outranks OK: a measured
+     * exceedance is a stronger statement than an unmeasured joint, and both outrank a pass.
+     * The per-joint detail is in the record, which is where a reader goes for which joint.
      */
-    ...(args.columnNodes.length > 0
+    ...(args.punching.length > 0
       ? [{
-        key: 'punching', status: 'UNSUPPORTED', utilization: null,
-        governingCombination: null, refs: [],
-        unsupported: [msg('detailing.floorRun.slabPunchingNoCaller', {
-          panel: geometry.panelId,
-          columns: args.columnNodes.map((c) => c.elementId).join(', '),
-        })],
+        key: 'punching',
+        status: worstPunchingStatus(args.punching),
+        // The largest utilisation across the joints that produced one. Null when none did,
+        // rather than 0 — a zero would read as a joint checked and found unloaded.
+        utilization: maxPunchingUtilization(args.punching),
+        governingCombination: governingPunchingCombination(args.punching),
+        refs: args.punching.flatMap((p) => p.refs),
+        unsupported: args.punching.flatMap((p) => p.unsupported),
       } satisfies FamilyCheckOutcome]
       : []),
   ];
   /**
-   * The per-column punching entries, one per column this panel supports.
+   * The per-joint punching evidence, one entry per column this panel supports.
    *
-   * Every force field is zero and the status is UNSUPPORTED — the entry records WHICH joint
-   * is unverified and why, not a result. A zero here is not a claim that the demand is zero:
-   * `status` is what a consumer reads, and `unsupported` says what is missing.
+   * Copied from `checkSlabJointPunching`; nothing is recomputed here. A joint the collector
+   * could not verify keeps zeroed forces with an UNSUPPORTED status and a named reason — the
+   * same contract as before, except that it is now the exception rather than every joint.
    */
-  const punching: SlabDesignRecord['punching'] = args.columnNodes.map((c) => ({
-    columnElementId: c.elementId,
-    nodeId: c.nodeId,
-    status: 'UNSUPPORTED' as const,
-    position: null,
-    truncatedSides: 0,
-    Vu: 0, phiVc: 0, utilization: 0,
-    axialAbove: 0, axialBelow: 0,
-    equilibriumResidual: null,
-    governingCombination: null,
-    unsupported: [msg('detailing.floorRun.slabPunchingNoCaller', {
-      panel: geometry.panelId, columns: String(c.elementId),
-    })],
+  const punching: SlabDesignRecord['punching'] = args.punching.map((p) => ({
+    columnElementId: p.columnElementId,
+    nodeId: p.nodeId,
+    status: p.status,
+    position: p.position,
+    truncatedSides: p.truncatedSides,
+    Vu: p.Vu, phiVc: p.phiVc, utilization: p.utilization,
+    axialAbove: p.axialAbove, axialBelow: p.axialBelow,
+    equilibriumResidual: p.equilibriumResidual,
+    governingCombination: p.governingCombination,
+    unsupported: p.unsupported,
+    elementBelow: p.elementBelow,
+    elementAbove: p.elementAbove,
+    coverageDeg: p.coverageDeg,
+    openBearingDeg: p.openBearingDeg,
+    perimeter: p.perimeter,
+    contributions: p.contributions.map((c) => ({ ...c })),
+    residualDenominator: p.contributions.find(
+      (c) => c.combinationName === p.governingCombination)?.residualDenominator,
+    residualThreshold: RESIDUAL_TOL,
+    maturity: p.maturity,
+    assumptions: p.assumptions,
+    refs: p.refs,
   }));
   const results = { reinforcement, oneWayShear, punching };
   return {
@@ -686,9 +835,17 @@ function slabRecord(args: {
       demandSnapshot: demands,
       results,
       checks,
-      assumptions: design.maturity.assumptions,
-      unsupported,
-      refs: design.refs,
+      // The punching assumptions and refusals join the panel's own. The effective depth the
+      // perimeter was cut at is an assumption of THIS PANEL's design, and a joint the
+      // collector refused is a limitation of this panel — leaving either inside the punching
+      // sub-object would keep it out of the report's assumptions block and off the drawing
+      // notes, which is where a reader looks for it.
+      assumptions: [
+        ...design.maturity.assumptions,
+        ...args.punching.flatMap((p) => p.assumptions),
+      ],
+      unsupported: [...unsupported, ...args.punching.flatMap((p) => p.unsupported)],
+      refs: [...design.refs, ...args.punching.flatMap((p) => p.refs)],
       maturity: design.maturity.maturity,
       input: args.input,
       thickness: geometry.thickness,

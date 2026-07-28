@@ -38,6 +38,25 @@ export interface RenderOptions {
 
 const DEFAULTS = { stockLength: 12, steelDensity: 7850 };
 
+/**
+ * A punching column position, in the reader's language.
+ *
+ * The three values are a TypeScript union, not user text, and both the footing section and the
+ * slab section printed the union member raw — so a Spanish report said "edge". Translated in
+ * one place, because two places is how one document comes to name the same joint two ways.
+ */
+function positionLabel(
+  position: 'interior' | 'edge' | 'corner' | null,
+  L: (es: string, en: string) => string,
+): string {
+  switch (position) {
+    case 'interior': return L('interior', 'interior');
+    case 'edge': return L('de borde', 'edge');
+    case 'corner': return L('de esquina', 'corner');
+    default: return '—';
+  }
+}
+
 /** The readiness banner every output carries. Not decoration — it is the claim. */
 export function readinessBanner(doc: DocumentModel, locale: string): string {
   const es = locale.startsWith('es');
@@ -404,7 +423,7 @@ function footingDetail(
       `${n(r.punching.Vu, 1)} / ${n(r.punching.phiVc, 1)} kN `
       + `(${n(r.punching.utilization, 2)})`));
     out.push(kv(L('Perímetro crítico', 'Critical perimeter'),
-      `${esc(r.punching.position ?? '—')} — `
+      `${esc(positionLabel(r.punching.position, L))} — `
       + `${r.punching.truncatedSides} ${L('cara(s) truncada(s)', 'truncated side(s)')}`));
     // The equilibrium residual: N_u − (V_u + q_u·A_enclosed) must be zero, and printing it
     // is how a reader confirms the free body the record describes is the one that was solved.
@@ -512,15 +531,83 @@ function slabDetail(
   } else {
     out.push('<table><thead><tr>'
       + `<th>${L('Columna', 'Column')}</th><th>${L('Nudo', 'Node')}</th>`
-      + `<th>${L('Estado', 'Status')}</th><th>Vu</th><th>φVc</th>`
-      + `<th>${L('Perímetro', 'Perimeter')}</th></tr></thead><tbody>`);
+      + `<th>${L('Estado', 'Status')}</th>`
+      + `<th>${L('Posición', 'Position')}</th><th>bo</th>`
+      + `<th>N inf.</th><th>N sup.</th><th>Vu</th><th>φVc</th>`
+      + `<th>${L('Rel.', 'Util.')}</th>`
+      + `<th>${L('Combinación', 'Combination')}</th>`
+      + `<th>${L('Residuo', 'Residual')}</th></tr></thead><tbody>`);
     for (const p of r.punching) {
+      // An unverified joint prints an em dash for every quantity nobody measured. A 0 here
+      // would read as a demand somebody computed and found to be nothing.
+      const un = p.status === 'UNSUPPORTED';
+      const axial = (v: number, present: boolean) => (un || !present ? '—' : n(v, 1));
       out.push(`<tr><td>#${p.columnElementId}</td><td>#${p.nodeId}</td>`
         + `<td class="${p.status === 'OK' ? 'ok' : 'bad'}">${esc(p.status)}</td>`
-        + `<td>${n(p.Vu, 1)}</td><td>${n(p.phiVc, 1)}</td>`
-        + `<td>${esc(p.position ?? '—')}</td></tr>`);
+        + `<td>${esc(positionLabel(p.position, L))}`
+        + (p.coverageDeg !== undefined ? ` (${n(p.coverageDeg, 0)}°)` : '')
+        + '</td>'
+        + `<td>${p.perimeter ? `${n(p.perimeter.bo, 3)} m` : '—'}</td>`
+        + `<td>${axial(p.axialBelow, p.elementBelow !== null)}</td>`
+        + `<td>${axial(p.axialAbove, p.elementAbove !== null)}</td>`
+        + `<td>${un ? '—' : n(p.Vu, 1)}</td><td>${un ? '—' : n(p.phiVc, 1)}</td>`
+        + `<td>${un ? '—' : n(p.utilization, 2)}</td>`
+        + `<td>${esc(p.governingCombination ?? '—')}</td>`
+        + `<td>${p.equilibriumResidual === null ? '—' : n(p.equilibriumResidual, 3)}</td>`
+        + '</tr>');
     }
     out.push('</tbody></table>');
+    out.push(`<p class="note">${L(
+      'N en kN, compresión positiva, leídos en el extremo de columna que llega al nudo. '
+      + 'Vu es la parte del salto axial que cruza el perímetro crítico: '
+      + 'ΔN − (carga entregada directamente por vigas y nudo) − qu·A encerrada. '
+      + 'El residuo es el cierre de ese cuerpo libre; un nudo que no puede establecerlo se '
+      + 'informa como NO verificado y no como aprobado.',
+      'N in kN, compression positive, read at the column end that meets the joint. Vu is the '
+      + 'part of the axial step that crosses the critical perimeter: ΔN − (load delivered '
+      + 'directly by beams and at the joint) − qu·A enclosed. The residual is the closure of '
+      + 'that free body; a joint that cannot establish it is reported as NOT verified rather '
+      + 'than as passing.')}</p>`);
+
+    // ── Every combination considered, per joint ──────────────────────
+    //
+    // The governing choice is a decision the design turns on, so the combinations that LOST
+    // are printed too. A reader who cannot see them cannot check the one that won.
+    const withContributions = r.punching.filter((p) => (p.contributions?.length ?? 0) > 0);
+    if (withContributions.length > 0) {
+      out.push(`<h4>${L('Punzonado — combinaciones consideradas',
+        'Punching — combinations considered')}</h4>`);
+      out.push('<table><thead><tr>'
+        + `<th>${L('Nudo', 'Node')}</th><th>${L('Combinación', 'Combination')}</th>`
+        + `<th>N inf.</th><th>N sup.</th><th>ΔN</th>`
+        + `<th>${L('Directa', 'Direct')}</th><th>qu·A</th>`
+        + `<th>${L('M no bal.', 'Unbal. M')}</th>`
+        + `<th>Vu</th><th>${L('Rel.', 'Util.')}</th>`
+        + `<th>${L('Residuo', 'Residual')}</th></tr></thead><tbody>`);
+      for (const p of withContributions) {
+        for (const c of p.contributions ?? []) {
+          const governs = c.combinationName === p.governingCombination;
+          out.push(`<tr${governs ? ' class="ok"' : ''}><td>#${p.nodeId}</td>`
+            + `<td>${esc(c.combinationName)}${governs ? ' ★' : ''}</td>`
+            + `<td>${c.axialBelow === null ? '—' : n(c.axialBelow, 1)}</td>`
+            + `<td>${c.axialAbove === null ? '—' : n(c.axialAbove, 1)}</td>`
+            + `<td>${n(c.axialStep, 1)}</td>`
+            + `<td>${n(c.directlyDelivered, 1)}</td>`
+            + `<td>${n(c.loadInsidePerimeter, 1)}</td>`
+            + `<td>${n(c.unbalancedMoment, 1)}</td>`
+            + `<td>${n(c.Vu, 1)}</td><td>${n(c.utilization, 2)}</td>`
+            + `<td>${n(c.equilibriumResidual, 3)}</td></tr>`);
+        }
+      }
+      out.push('</tbody></table>');
+      out.push(`<p class="note">${L(
+        '★ marca la combinación gobernante. Fuerzas en kN, momentos en kN·m. '
+        + 'Una fila con N inf. o N sup. en guion tiene esa cara del cuerpo libre abierta '
+        + '(borde de piso), no una fuerza faltante.',
+        '★ marks the governing combination. Forces in kN, moments in kN·m. A row with an em '
+        + 'dash for N below or N above has that face of the free body open (a storey '
+        + 'boundary), not a missing force.')}</p>`);
+    }
   }
   return out;
 }
@@ -947,6 +1034,44 @@ export function renderSchedule(
             r.punching?.equilibriumResidual ?? '',
             r.dowels ? `${r.dowels.count} Ø${r.dowels.diameterMm}` : '',
             r.starterTies ? `${r.starterTies.pieces} Ø${r.starterTies.diameterMm}` : '',
+          ]);
+        }
+      }
+
+      // ── Slab–column punching, joint by joint ─────────────────────────
+      //
+      // Its own block rather than a column on the family row, because a panel can support
+      // several columns and a single row could only report one of them — or, worse, average
+      // them into a figure that belongs to no joint.
+      const slabJoints = a.families.flatMap((r) =>
+        r.family === 'slab' ? r.punching.map((p) => ({ ownerId: r.ownerId, p })) : []);
+      if (slabJoints.length > 0) {
+        aoa.push([]);
+        aoa.push([L('PUNZONADO LOSA-COLUMNA', 'SLAB-COLUMN PUNCHING')]);
+        aoa.push([L('Paño', 'Panel'), L('Nudo', 'Node'), L('Columna', 'Column'),
+          L('Col. inferior', 'Col. below'), L('Col. superior', 'Col. above'),
+          L('Estado', 'Status'), L('Posición', 'Position'), L('Ángulo losa (°)', 'Slab angle (°)'),
+          L('Lados truncados', 'Truncated sides'), 'bo (m)', 'd (m)',
+          L('A encerrada (m²)', 'A enclosed (m²)'),
+          L('N inf. (kN)', 'N below (kN)'), L('N sup. (kN)', 'N above (kN)'),
+          L('Vu (kN)', 'Vu (kN)'), L('φVc (kN)', 'φVc (kN)'), L('Utilización', 'Utilisation'),
+          L('Combinación', 'Combination'), L('Residuo equil. (kN)', 'Equil. residual (kN)')]);
+        for (const { ownerId, p } of slabJoints) {
+          // Blank, never zero, for every quantity an unverified joint did not produce — the
+          // same rule the allowable bearing pressure follows one block up.
+          const un = p.status === 'UNSUPPORTED';
+          aoa.push([
+            ownerId, p.nodeId, p.columnElementId,
+            p.elementBelow ?? '', p.elementAbove ?? '',
+            p.status, p.position ?? '',
+            p.coverageDeg ?? '', p.truncatedSides,
+            p.perimeter?.bo ?? '', p.perimeter?.d ?? '', p.perimeter?.enclosedArea ?? '',
+            un || p.elementBelow === null ? '' : p.axialBelow,
+            un || p.elementAbove === null ? '' : p.axialAbove,
+            un ? '' : p.Vu, un ? '' : p.phiVc,
+            un ? '' : Math.round(p.utilization * 1000) / 1000,
+            p.governingCombination ?? '',
+            p.equilibriumResidual ?? '',
           ]);
         }
       }

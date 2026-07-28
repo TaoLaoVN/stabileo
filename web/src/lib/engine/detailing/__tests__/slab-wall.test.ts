@@ -246,8 +246,12 @@ describe('slab panel design', () => {
   it('is IMPLEMENTED_PROVISIONAL with a stated promotion path', () => {
     const m = designSlabPanel(panel()).maturity;
     expect(m.maturity).toBe('IMPLEMENTED_PROVISIONAL');
-    expect(m.promotionPath).toMatch(/ejemplo resuelto/);
-    expect(m.assumptions.join(' ')).toMatch(/0,9 d/);
+    // KEYS, not prose. These two assertions used to match Spanish sentences, and they passed
+    // because the engine really did hold sentences in fields typed `EngineMessage` — so the
+    // record's assumption had no `key` and every report containing a slab threw on it. The
+    // assertion is now the one a pure engine can satisfy: a key the locales both define.
+    expect(m.promotionPath?.key).toBe('slab.maturity.promotionPath');
+    expect(m.assumptions.map((a) => a.key)).toContain('slab.maturity.leverArm');
   });
 
   it('cites only the declared edition', () => {
@@ -406,7 +410,9 @@ describe('wall design', () => {
   it('is IMPLEMENTED_PROVISIONAL with a stated promotion path', () => {
     const m = designWall(wall()).maturity;
     expect(m.maturity).toBe('IMPLEMENTED_PROVISIONAL');
-    expect(m.promotionPath).toMatch(/diagrama de interacción/);
+    expect(m.promotionPath?.key).toBe('wall.maturity.promotionPath');
+    expect(m.assumptions.map((a) => a.key))
+      .toContain('wall.maturity.simplifiedInteraction');
   });
 
   it('is deterministic', () => {

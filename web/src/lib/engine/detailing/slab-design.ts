@@ -41,6 +41,7 @@
 
 import { clause, type ClauseRef, type RegulationEdition } from '../../codes/regulation';
 import { deriveMaturity, type MaturityRecord } from '../../codes/maturity';
+import { msg } from '../../codes/message';
 import { minClearSpacingInLayer } from '../../codes/cirsoc201/spacing';
 import { PHI_SHEAR, sizeEffectFactor, sqrtFcCapped } from './punching-shear';
 
@@ -428,12 +429,17 @@ export function designSlabPanel(input: SlabPanelInput): SlabDesignResult {
       { kind: 'property', id: 'woodArmer-symmetry', source: 'Simetría, escalado y reversión de signo' },
       { kind: 'crossCheck', id: 'shear-freebody', source: 'Integración de carga contra 22.5' },
     ],
-    promotionPath:
-      'Contrastar contra un ejemplo resuelto de losa en dos direcciones del reglamento o ' +
-      'de bibliografía reconocida, con momentos de Wood-Armer y armadura resultante.',
-    assumptions: [
-      'Brazo elástico interno adoptado como 0,9 d, habitual en losas de armadura reducida.',
-    ],
+    /**
+     * KEYS, not sentences.
+     *
+     * These two were plain Spanish strings in a field typed `EngineMessage`, and the type
+     * error sat inside the typecheck baseline where nothing read it. The consequence was not
+     * cosmetic: the report renders an assumption as `translate(m.key, m.params)`, so `m.key`
+     * was `undefined` and `esc()` threw — every report for a project containing a designed
+     * slab crashed. Found when the punching collector made that path reachable.
+     */
+    promotionPath: msg('slab.maturity.promotionPath'),
+    assumptions: [msg('slab.maturity.leverArm')],
   });
 
   return {

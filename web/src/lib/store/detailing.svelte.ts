@@ -43,6 +43,11 @@ import {
   type FloorDesignReadiness, type FloorShell, type FloorShellStress,
   type RunFloorDesignResult,
 } from '../engine/detailing/run-floor-design';
+import type { SlabColumnJoint, SlabJointForce } from '../engine/detailing/slab-punching';
+import type { ElementForces3D } from '../engine/types-3d';
+// The app's own member classifier, shared with `member-context.ts`. Punching applicability
+// must not depend on the design run having populated `verificationStore.contexts`.
+import { classifyElement } from '../engine/codes/argentina/cirsoc201';
 import { DEFAULT_COVER, DEFAULT_REBAR_FY } from '../engine/design/member-context';
 import {
   runFootingDesign,
@@ -303,35 +308,276 @@ function collectFootingColumns(): Map<number, FootingColumn> {
 }
 
 /**
- * Every column in the model, keyed by the node it frames into.
+ * Every slab–column joint in the model, with the per-combination forces at it.
  *
- * ── What this answers, and what it does not ─────────────────────
+ * ── What used to be missing ─────────────────────────────────────
  *
- * Whether a slab panel supports a column, which is what decides if punching APPLIES to it.
- * A beam-supported floor gets an empty map and no punching claim; a flat plate on columns
- * gets one entry per joint and each is reported as unverified until its demand is derived.
+ * This collector used to stop at APPLICABILITY: whether a column stands at a slab node, which
+ * decides whether punching applies, and nothing more. So every column-supported panel reported
+ * its governing check as unverified for want of forces the solver had already produced. This is
+ * the rest of it.
  *
- * It does NOT carry forces. The punching demand is the change in column axial force across
- * the slab joint, per combination, and that needs the element end forces rather than the
- * geometry — so this collector deliberately stops at applicability.
+ * ── Which end of which column ───────────────────────────────────
  *
- * Both ends of the column are registered: a column below the slab meets it at its top node
- * and a column above meets it at its bottom node, and a joint is a joint either way.
+ * A column below the joint meets it at its TOP node; a column above meets it at its BOTTOM
+ * node. Which node is `nodeI` and which is `nodeJ` is a modelling accident, so the two are told
+ * apart by ELEVATION — the column's higher-z node — and the axial force is read from the end
+ * that is actually at the joint. Reading the far end instead would report the force at the
+ * other floor, and with self-weight in the model those differ by the column's own weight.
+ *
+ * Compression is positive here and `ElementForces3D` reports axial with tension positive, so
+ * every reading is negated once, at the point it is read.
+ *
+ * ── The third force ─────────────────────────────────────────────
+ *
+ * Beams framing into the joint deliver load to the column WITHOUT crossing the slab's critical
+ * perimeter, and so does any load applied at the joint node. Both are collected, because the
+ * punching demand is the part of the axial step that does cross the perimeter, and calling the
+ * whole step "punching" would fail an ordinary beam-and-slab floor on a mechanism that is not
+ * carrying it. `slab-punching.ts` states the free body they enter.
  */
-function collectSlabColumns(): Map<number, { elementId: number; b: number; h: number }> {
-  const out = new Map<number, { elementId: number; b: number; h: number }>();
+function collectSlabColumns(): Map<number, SlabColumnJoint> {
+  const zOf = (nodeId: number) => modelStore.model.nodes.get(nodeId)?.z ?? 0;
+
+  /** Columns at each node, tagged by whether the node is that column's top or bottom end. */
+  type Leg = {
+    elementId: number; b: number; h: number;
+    /** True when the joint node is the column's TOP — so the column is BELOW the joint. */
+    below: boolean;
+    /** The end of the element that sits at the joint. */
+    end: 'start' | 'end';
+  };
+  const legs = new Map<number, Leg[]>();
+  /** Non-column frame members at each node, for the directly-delivered shear. */
+  const others = new Map<number, Array<{ elementId: number; end: 'start' | 'end' }>>();
+
   for (const el of modelStore.model.elements.values()) {
-    const ctx = verificationStore.contexts.get(el.id);
-    if (ctx?.elementType !== 'column') continue;
-    const sec = modelStore.model.sections.get(el.sectionId);
-    if (!sec?.b || !sec?.h) continue;
+    const ni = modelStore.model.nodes.get(el.nodeI);
+    const nj = modelStore.model.nodes.get(el.nodeJ);
+    if (!ni || !nj) continue;
+    const sec0 = modelStore.model.sections.get(el.sectionId);
+    /**
+     * Classified by the app's OWN member classifier, not by `verificationStore.contexts`.
+     *
+     * `contexts` is populated by the design run, so reading the element type from it made
+     * punching applicability depend on the user having pressed Compute Demands first — and a
+     * user who designs a floor without it got an empty joint map and therefore no punching
+     * claim at all. That is a false negative, which is worse than a stated limitation: the
+     * panel looks like one that has no column rather than one whose columns were not found.
+     *
+     * `classifyElement` is the same pure function `member-context.ts` classifies with, so this
+     * is one implementation read from two places rather than two implementations.
+     */
+    const kind = classifyElement(
+      ni.x, ni.y, ni.z ?? 0, nj.x, nj.y, nj.z ?? 0,
+      sec0?.b || undefined, sec0?.h || undefined);
+    const zi = zOf(el.nodeI);
+    const zj = zOf(el.nodeJ);
+    if (kind === 'column') {
+      // A column with no rectangular section is REGISTERED with zero plan dimensions, not
+      // skipped. Skipping it would make the joint look like one that has no column, and the
+      // engine's own missing-geometry refusal — which names the dimensions it did not get — is
+      // the honest outcome instead.
+      const topNode = zi > zj ? el.nodeI : el.nodeJ;
+      for (const nodeId of [el.nodeI, el.nodeJ]) {
+        const list = legs.get(nodeId) ?? [];
+        list.push({
+          elementId: el.id, b: sec0?.b ?? 0, h: sec0?.h ?? 0,
+          below: nodeId === topNode,
+          end: nodeId === el.nodeI ? 'start' : 'end',
+        });
+        legs.set(nodeId, list);
+      }
+      continue;
+    }
     for (const nodeId of [el.nodeI, el.nodeJ]) {
-      // First column wins, deterministically: elements are iterated in insertion order and
-      // the answer this map gives is "is there a column here", not "which one".
-      if (!out.has(nodeId)) out.set(nodeId, { elementId: el.id, b: sec.b, h: sec.h });
+      const list = others.get(nodeId) ?? [];
+      list.push({ elementId: el.id, end: nodeId === el.nodeI ? 'start' : 'end' });
+      others.set(nodeId, list);
     }
   }
+  if (legs.size === 0) return new Map();
+
+  const comboNameOf = new Map(modelStore.model.combinations.map((c) => [c.id, c.name]));
+
+  /**
+   * The combination result sets to read, as (id, name, results) triples.
+   *
+   * With no combinations solved the single active result set is offered as ONE combination
+   * named for what it is — the same treatment `collectFootingReactions` gives a reaction, and
+   * for the same reason: silently calling it a factored envelope would be a claim about
+   * factors nobody applied.
+   */
+  const sets: Array<{ id: number; name: string; forces: ReadonlyMap<number, ElementForces3D> }> =
+    [];
+  const indexForces = (list: readonly ElementForces3D[]) =>
+    new Map(list.map((f) => [f.elementId, f]));
+  if (resultsStore.perCombo3D.size > 0) {
+    for (const [comboId, res] of resultsStore.perCombo3D) {
+      sets.push({
+        id: comboId,
+        name: comboNameOf.get(comboId) ?? `Combinación ${comboId}`,
+        forces: indexForces(res.elementForces ?? []),
+      });
+    }
+  } else if (resultsStore.results3D) {
+    sets.push({
+      id: 0,
+      name: t('detailing.footingRun.activeResultSet'),
+      forces: indexForces(resultsStore.results3D.elementForces ?? []),
+    });
+  }
+  sets.sort((a, b) => a.id - b.id);
+
+  /** Axial force at the joint end of a column leg, COMPRESSION POSITIVE, kN. */
+  const axialAt = (leg: Leg, forces: ReadonlyMap<number, ElementForces3D>): number | null => {
+    const f = forces.get(leg.elementId);
+    if (!f) return null;
+    const n = leg.end === 'start' ? f.nStart : f.nEnd;
+    return typeof n === 'number' && Number.isFinite(n) ? -n : null;
+  };
+
+  /**
+   * Vertical load delivered into the joint by everything that is not one of the two columns
+   * and not the slab, kN, downward positive.
+   *
+   * A beam's end shears are in LOCAL axes and a beam can be rolled, so the global-Z component
+   * is taken from the element's own local axes rather than from `vy` alone. Where the local
+   * frame cannot be resolved the member is skipped and the omission is conservative in the
+   * direction that matters: less is deducted, so V_u is larger.
+   */
+  const directlyDelivered = (
+    nodeId: number, forces: ReadonlyMap<number, ElementForces3D>,
+  ): number => {
+    let sum = 0;
+    for (const o of others.get(nodeId) ?? []) {
+      const f = forces.get(o.elementId);
+      const el = modelStore.model.elements.get(o.elementId);
+      if (!f || !el) continue;
+      const ni = modelStore.model.nodes.get(el.nodeI);
+      const nj = modelStore.model.nodes.get(el.nodeJ);
+      if (!ni || !nj) continue;
+      // Local x along the member; the global-Z components of the three local axes are what
+      // project a local end force onto the vertical.
+      const dx = nj.x - ni.x;
+      const dy = nj.y - ni.y;
+      const dz = (nj.z ?? 0) - (ni.z ?? 0);
+      const L = Math.hypot(dx, dy, dz);
+      if (!(L > 0)) continue;
+      const exz = dz / L;
+      // Local y and z: the app's default frame puts local z in the vertical plane containing
+      // the member, so its global-Z component is the horizontal run over the length. A member
+      // that is exactly vertical is not a beam and cannot be one of `others` and a column at
+      // once, so the degenerate case does not arise here.
+      const horiz = Math.hypot(dx, dy);
+      const ezz = horiz / L;
+      const [n, vy, vz] = o.end === 'start'
+        ? [f.nStart, f.vyStart, f.vzStart]
+        : [f.nEnd, f.vyEnd, f.vzEnd];
+      // Force the ELEMENT exerts on the NODE, in local axes, per the app's end-force
+      // convention: (−n, vy, vz) at the I end and (n, −vy, −vz) at the J end.
+      const [ln, lvy, lvz] = o.end === 'start' ? [-n, vy, vz] : [n, -vy, -vz];
+      // Local y is horizontal for the default frame, so it contributes nothing vertical.
+      void lvy;
+      const globalZ = ln * exz + lvz * ezz;
+      // Downward positive: a member pushing the node down delivers load into the column.
+      sum += -globalZ;
+    }
+    // A load applied at the joint node itself also arrives inside the perimeter. Downward is
+    // negative global Z, so it is negated to become a downward-positive delivery.
+    for (const load of modelStore.model.loads) {
+      if (load.type !== 'nodal') continue;
+      const d = load.data as { nodeId: number; fz?: number };
+      if (d.nodeId !== nodeId) continue;
+      sum += -(d.fz ?? 0);
+    }
+    return sum;
+  };
+
+  /** Step in the column end moments across the joint, kN·m, about global x and y. */
+  const momentStep = (
+    legsHere: readonly Leg[], forces: ReadonlyMap<number, ElementForces3D>,
+  ): { x: number; y: number } => {
+    let mx = 0;
+    let my = 0;
+    for (const leg of legsHere) {
+      const f = forces.get(leg.elementId);
+      if (!f) continue;
+      const [m1, m2] = leg.end === 'start' ? [f.myStart, f.mzStart] : [f.myEnd, f.mzEnd];
+      // A column's local y and z lie in the horizontal plane, so its two bending moments ARE
+      // the two horizontal moments the joint transfers. The column below and the column above
+      // enter with opposite signs, which is what makes this a step rather than a sum.
+      const s = leg.below ? 1 : -1;
+      mx += s * (typeof m1 === 'number' ? m1 : 0);
+      my += s * (typeof m2 === 'number' ? m2 : 0);
+    }
+    return { x: mx, y: my };
+  };
+
+  const out = new Map<number, SlabColumnJoint>();
+  for (const [nodeId, legsHere] of legs) {
+    // Deterministic under any element iteration order.
+    const ordered = [...legsHere].sort((a, b) => a.elementId - b.elementId);
+    const below = ordered.find((l) => l.below) ?? null;
+    const above = ordered.find((l) => !l.below) ?? null;
+    // The perimeter is the surface the slab punches against, which is the SUPPORTING column's
+    // face. A joint with only a column above uses that one, because it is the only face there
+    // is.
+    const perimeterLeg = below ?? above;
+    if (!perimeterLeg) continue;
+
+    const forces: SlabJointForce[] = [];
+    for (const set of sets) {
+      const ab = below ? axialAt(below, set.forces) : null;
+      const aa = above ? axialAt(above, set.forces) : null;
+      // A combination with no force for either column carries no free body, so it is omitted
+      // rather than entered as a pair of zeros that would read as a measured null step.
+      if (ab === null && aa === null) continue;
+      const m = momentStep(ordered, set.forces);
+      forces.push({
+        combinationId: set.id,
+        combinationName: set.name,
+        axialBelow: ab,
+        axialAbove: aa,
+        directlyDelivered: directlyDelivered(nodeId, set.forces),
+        unbalancedMomentX: m.x,
+        unbalancedMomentY: m.y,
+      });
+    }
+
+    out.set(nodeId, {
+      nodeId,
+      columnElementId: perimeterLeg.elementId,
+      b: perimeterLeg.b,
+      h: perimeterLeg.h,
+      elementBelow: below?.elementId ?? null,
+      elementAbove: above?.elementId ?? null,
+      forces,
+    });
+  }
   return out;
+}
+
+/**
+ * Do the solved results on hand describe the model's own combinations?
+ *
+ * A real measurement rather than a flag. Per-combination results are keyed by combination id,
+ * so a combination the model defines with no result, or a result for a combination the model no
+ * longer defines, means the two have diverged — and reading per-combination column forces from
+ * that set would attribute one combination's forces to another. This is the condition under
+ * which a punching check would be a check of a different building.
+ *
+ * With no per-combination results at all there is nothing to be stale: the single active result
+ * set is offered as itself, and the collector says so.
+ */
+function analysisStaleForFloor(): boolean {
+  const solved = resultsStore.perCombo3D;
+  if (solved.size === 0) return false;
+  const defined = new Set(modelStore.model.combinations.map((c) => c.id));
+  if (defined.size === 0) return true;
+  for (const id of defined) if (!solved.has(id)) return true;
+  for (const id of solved.keys()) if (!defined.has(id)) return true;
+  return false;
 }
 
 /**
@@ -788,10 +1034,13 @@ function createDetailingStore() {
             regulation: regulationsStore.revisions.regulationConfig,
           },
           regulationIds: [CONCRETE_REGULATION_ID],
-          // Which panels support a column, so punching applies to those joints and to no
-          // others. Absent it, every beam-supported floor would carry a punching claim it
-          // has no joint for.
+          // The slab–column joints and the per-combination forces at them, so punching applies
+          // to those joints and to no others AND is actually checked at them. Absent it, every
+          // beam-supported floor would carry a punching claim it has no joint for.
           slabColumns: collectSlabColumns(),
+          // Measured, not assumed: whether the result sets on hand and the model's own
+          // combinations still agree.
+          analysisStale: analysisStaleForFloor(),
           // Shell design does not go through the frame verifier, so its members have not
           // been rechecked at a final effective depth. Claiming otherwise would satisfy
           // two constructibility conditions that nothing measured.

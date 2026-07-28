@@ -428,6 +428,55 @@ export interface SlabDesignRecord extends FamilyRecordCommon {
     equilibriumResidual: number | null;
     governingCombination: string | null;
     unsupported: EngineMessage[];
+    /**
+     * ── Everything below is OPTIONAL, and that is a statement about history ──────
+     *
+     * A record persisted before the slab–column collector existed carries the fields above
+     * and nothing more, because that is all anybody measured: its punching entries were
+     * UNSUPPORTED with a named reason. Making these fields required would either invalidate
+     * those records or force the migration to synthesise evidence for a check that was never
+     * run — and a fabricated free body is exactly what this record type exists to make
+     * impossible. So they are absent on an old record and present on a new one, and a
+     * consumer that finds them absent prints an em dash rather than a zero.
+     */
+    /** Source column elements below and above the joint. Null where the free body is open. */
+    elementBelow?: number | null;
+    elementAbove?: number | null;
+    /** Total interior angle of slab meeting the joint, degrees — how the position was measured. */
+    coverageDeg?: number;
+    /** Bearing of the free edge the perimeter is truncated at, degrees CCW from +x. */
+    openBearingDeg?: number | null;
+    /** The critical perimeter the check was run on. */
+    perimeter?: {
+      bo: number;
+      beta: number;
+      d: number;
+      enclosedArea: number;
+      halfX: number;
+      halfY: number;
+    } | null;
+    /** Every combination CONSIDERED, so the governing choice is auditable. */
+    contributions?: Array<{
+      combinationId: number;
+      combinationName: string;
+      axialBelow: number | null;
+      axialAbove: number | null;
+      axialStep: number;
+      directlyDelivered: number;
+      loadInsidePerimeter: number;
+      unbalancedMoment: number;
+      Vu: number;
+      utilization: number;
+      status: CheckStatus;
+      equilibriumResidual: number;
+      residualDenominator: number;
+    }>;
+    /** What the residual was measured against, kN, and the relative threshold it had to meet. */
+    residualDenominator?: number;
+    residualThreshold?: number;
+    maturity?: Maturity;
+    assumptions?: EngineMessage[];
+    refs?: ClauseRef[];
   }>;
 }
 

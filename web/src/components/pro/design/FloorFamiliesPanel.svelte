@@ -42,6 +42,33 @@
     (footingRun?.outcomes ?? []).filter((o) => o.check !== null).length,
   );
 
+  /**
+   * The punching joints of each panel, keyed by panel id.
+   *
+   * Read from the PERSISTED design records rather than from `lastFloorRun`, because punching is
+   * evidence and it lives on the record: `SlabDesignResult` carries flexure and one-way shear
+   * only. Reading it from the records is also the stronger source — it is what a reopened
+   * project will show, so the panel and the document cannot disagree about a joint.
+   */
+  const punchingByPanel = $derived.by(() => {
+    const out = new Map<string, Array<{
+      nodeId: number; columnElementId: number; status: string;
+      position: string | null; utilization: number; Vu: number;
+      governingCombination: string | null;
+    }>>();
+    for (const a of detailingStore.assemblies) {
+      for (const r of a.families ?? []) {
+        if (r.family !== 'slab') continue;
+        out.set(r.ownerId, r.punching.map((p) => ({
+          nodeId: p.nodeId, columnElementId: p.columnElementId, status: p.status,
+          position: p.position, utilization: p.utilization, Vu: p.Vu,
+          governingCombination: p.governingCombination,
+        })));
+      }
+    }
+    return out;
+  });
+
   /** Every assumption the last footing run recorded, de-duplicated for display. */
   const footingAssumptions = $derived(
     [...new Map(
@@ -119,11 +146,14 @@
             <th>{t('detailing.floorRun.behaviour')}</th>
             <th>{t('detailing.floorRun.layers')}</th>
             <th>{t('detailing.floorRun.shearUtil')}</th>
+            <th>{t('detailing.floorRun.punchingUtil')}</th>
             <th>{t('detailing.floorRun.unsupported')}</th>
           </tr>
         </thead>
         <tbody>
           {#each slabs as s (s.panelId)}
+            {@const joints = punchingByPanel.get(s.panelId) ?? []}
+            {@const measured = joints.filter((j) => j.status !== 'UNSUPPORTED')}
             <tr>
               <td>{s.panelId}</td>
               <td>{t(`detailing.floorRun.behaviour.${s.behaviour}`)}</td>
@@ -131,11 +161,80 @@
               <td class="num" class:over={s.shear.utilization > 1}>
                 {Number.isFinite(s.shear.utilization) ? s.shear.utilization.toFixed(2) : '∞'}
               </td>
+              <!--
+                Three distinct states, never collapsed into one:
+                  no joint      — the panel supports no column, so punching does not apply
+                  not verified  — it applies and could not be checked
+                  a number      — the worst joint's utilisation, with the joint count beside it
+
+                A dash for the second case would read as the first, and that is the confusion
+                that let a flat plate look like a beam-supported floor.
+              -->
+              <td class="num" data-testid="slab-punching-{s.panelId}">
+                {#if joints.length === 0}
+                  <span class="muted">{t('detailing.floorRun.punchingNotApplicable')}</span>
+                {:else if measured.length === 0}
+                  <span class="over">{t('detailing.floorRun.punchingNotVerified')}</span>
+                {:else}
+                  {@const worst = Math.max(...measured.map((j) => j.utilization))}
+                  <span class:over={worst > 1}>{worst.toFixed(2)}</span>
+                  <span class="muted">
+                    {tp('detailing.floorRun.punchingJoints', {
+                      verified: measured.length, total: joints.length,
+                    })}
+                  </span>
+                {/if}
+              </td>
               <td class="num">{s.unsupported.length || '—'}</td>
             </tr>
           {/each}
         </tbody>
       </table>
+
+      <!--
+        The joint-by-joint detail, so the number in the table above can be traced to a node.
+        A utilisation with no joint behind it is a figure a reviewer cannot check.
+      -->
+      {#each slabs as s (s.panelId)}
+        {@const joints = punchingByPanel.get(s.panelId) ?? []}
+        {#if joints.length > 0}
+          <table data-testid="slab-punching-joints-{s.panelId}" class="joints">
+            <caption>{tp('detailing.floorRun.punchingFor', { panel: s.panelId })}</caption>
+            <thead>
+              <tr>
+                <th>{t('detailing.floorRun.node')}</th>
+                <th>{t('detailing.floorRun.column')}</th>
+                <th>{t('detailing.floorRun.position')}</th>
+                <th>Vu</th>
+                <th>{t('detailing.floorRun.shearUtil')}</th>
+                <th>{t('detailing.floorRun.combination')}</th>
+              </tr>
+            </thead>
+            <tbody>
+              {#each joints as j (j.nodeId)}
+                {@const un = j.status === 'UNSUPPORTED'}
+                <tr>
+                  <td>#{j.nodeId}</td>
+                  <td>#{j.columnElementId}</td>
+                  <td>
+                    {#if un}
+                      <span class="over">{t('detailing.floorRun.punchingNotVerified')}</span>
+                    {:else}
+                      {t(`detailing.floorRun.punchingPosition.${j.position}`)}
+                    {/if}
+                  </td>
+                  <!-- An em dash, never a zero: a joint nobody checked measured no demand. -->
+                  <td class="num">{un ? '—' : j.Vu.toFixed(1)}</td>
+                  <td class="num" class:over={!un && j.utilization > 1}>
+                    {un ? '—' : j.utilization.toFixed(2)}
+                  </td>
+                  <td>{j.governingCombination ?? '—'}</td>
+                </tr>
+              {/each}
+            </tbody>
+          </table>
+        {/if}
+      {/each}
     {/if}
   {:else if family === 'walls'}
     {@const walls = floorRun?.walls ?? []}

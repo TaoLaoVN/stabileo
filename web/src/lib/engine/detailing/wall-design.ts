@@ -32,6 +32,7 @@
 
 import { clause, type ClauseRef, type RegulationEdition } from '../../codes/regulation';
 import { deriveMaturity, type MaturityRecord } from '../../codes/maturity';
+import { msg } from '../../codes/message';
 import { sqrtFcCapped } from './punching-shear';
 
 /** §21.2 — φ for shear and for compression-controlled sections. */
@@ -379,13 +380,10 @@ export function designWall(input: WallDesignInput): WallDesignResult {
       { kind: 'handFixture', id: 'hand/wall-minimums', source: 'Cálculo manual desde 11.6.1 y 11.7.2' },
       { kind: 'property', id: 'shear-ceiling', source: 'Monotonía y techo de 11.5.4.6' },
     ],
-    promotionPath:
-      'Contrastar la interacción carga axial-flexión contra un diagrama de interacción ' +
-      'completo o un ejemplo resuelto de tabique.',
-    assumptions: [
-      'La resistencia a flexión usa la expresión simplificada de armadura distribuida en ' +
-      'sección rectangular, que aproxima la superficie de interacción real.',
-    ],
+    // Keys, for the same reason as the slab: an `EngineMessage` field holding a sentence
+    // produces a record whose assumption has no key, and the report throws on it.
+    promotionPath: msg('wall.maturity.promotionPath'),
+    assumptions: [msg('wall.maturity.simplifiedInteraction')],
   });
 
   return {

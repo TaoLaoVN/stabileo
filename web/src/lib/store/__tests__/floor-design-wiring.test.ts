@@ -15,7 +15,7 @@ import { describe, it, expect, beforeEach } from 'vitest';
 import { modelStore } from '../model.svelte';
 import { detailingStore } from '../detailing.svelte';
 import { resultsStore } from '../results.svelte';
-import type { QuadStress } from '../../engine/types-3d';
+import type { ElementForces3D, QuadStress } from '../../engine/types-3d';
 
 /**
  * The assemblies as PERSISTED on the model.
@@ -35,6 +35,45 @@ function publishStresses(quadStresses: QuadStress[]) {
   });
 }
 
+/** A column end-force record, axial with TENSION positive as `ElementForces3D` reports it. */
+function columnForces(elementId: number, axialTension: number): ElementForces3D {
+  return {
+    elementId, length: 3,
+    nStart: axialTension, nEnd: axialTension,
+    vyStart: 0, vyEnd: 0, vzStart: 0, vzEnd: 0,
+    mxStart: 0, mxEnd: 0, myStart: 0, myEnd: 0, mzStart: 0, mzEnd: 0,
+    releaseMyStart: false, releaseMyEnd: false,
+    releaseMzStart: false, releaseMzEnd: false,
+    releaseTStart: false, releaseTEnd: false,
+  } as ElementForces3D;
+}
+
+/**
+ * Publish per-combination results carrying real column axial forces.
+ *
+ * Through `setCombinationResults3D`, the setter the solve path uses — not a test hook. This is
+ * what the punching collector reads: the axial force at the column end that sits at the slab
+ * joint, per combination.
+ */
+function publishCombinations(
+  quadStresses: QuadStress[], columns: readonly number[], axialTension: number,
+) {
+  const res = (scale: number) => ({
+    displacements: [], reactions: [], quadStresses,
+    elementForces: columns.map((c) => columnForces(c, axialTension * scale)),
+  }) as never;
+  // One result per combination the MODEL defines. Publishing an arbitrary pair would leave the
+  // solved set and the model's own combinations disagreeing, which is exactly the divergence
+  // `analysisStaleForFloor` measures — and the run would then refuse to read the forces.
+  const combos = modelStore.model.combinations;
+  const perCombo = new Map(combos.map((c, i) => [c.id, res(1 - i * 0.1)]));
+  resultsStore.setCombinationResults3D(
+    new Map(modelStore.model.loadCases.map((c) => [c.id, res(1)])),
+    perCombo,
+    {} as never,
+  );
+}
+
 /** A 5 × 5 m slab quad at +3,00 carrying a surface load, on four columns. */
 function buildSlabModel() {
   modelStore.clear();
@@ -47,7 +86,32 @@ function buildSlabModel() {
     modelStore.addNode(5, 5, 3), modelStore.addNode(0, 5, 3),
   ];
   for (const n of base) modelStore.addSupport(n, 'fixed3d');
-  for (let i = 0; i < 4; i++) modelStore.addElement(base[i], top[i], 'frame');
+  const columns: number[] = [];
+  for (let i = 0; i < 4; i++) columns.push(modelStore.addElement(base[i], top[i], 'frame'));
+  // A real 400 × 400 section, so the punching perimeter has a column face to stand off from.
+  const sectionId = modelStore.addSection({
+    name: '40×40', a: 0.16, iz: 0.00213, b: 0.4, h: 0.4,
+  });
+  for (const c of columns) modelStore.updateElementSection(c, sectionId);
+  const material = [...modelStore.model.materials.keys()][0];
+  const quad = modelStore.addQuad([top[0], top[1], top[2], top[3]], material, 0.20);
+  return { quad, top, columns };
+}
+
+/**
+ * The same panel with NO columns: a slab bearing directly on its supported corners.
+ *
+ * A separate fixture, because `buildSlabModel` is a flat plate on four columns and calling it
+ * "beam-supported" is what let a punching assertion pass for the wrong reason. Two-way shear
+ * applies to THIS panel at no joint, and that has to be tested on a panel where it is true.
+ */
+function buildBeamSupportedSlabModel() {
+  modelStore.clear();
+  const top = [
+    modelStore.addNode(0, 0, 3), modelStore.addNode(5, 0, 3),
+    modelStore.addNode(5, 5, 3), modelStore.addNode(0, 5, 3),
+  ];
+  for (const n of top) modelStore.addSupport(n, 'fixed3d');
   const material = [...modelStore.model.materials.keys()][0];
   const quad = modelStore.addQuad([top[0], top[1], top[2], top[3]], material, 0.20);
   return { quad, top };
@@ -176,11 +240,15 @@ describe('detailingStore.generateFloors — the production command', () => {
    * assertions check.
    */
   it('reaches readiness on its own family certificate, not on frame verification', () => {
-    const { quad } = buildSlabModel();
-    modelStore.addSurfaceLoad3D(quad, 12);
-    publishStresses([
-      { elementId: quad, sigmaXx: 0, sigmaYy: 0, tauXy: 0, mx: 40, my: 30, mxy: 8, vonMises: 0 },
-    ]);
+    // The full per-combination results are published, not only the shell stresses: this panel
+    // supports four columns, so its punching is a real check and a certificate issued without
+    // running it would be a certificate for a design nobody completed.
+    const { quad, columns } = buildSlabModel();
+    modelStore.addSurfaceLoad3D(quad, 12, 1);
+    publishCombinations(
+      [{ elementId: quad, sigmaXx: 0, sigmaYy: 0, tauXy: 0, mx: 40, my: 30, mxy: 8, vonMises: 0 }],
+      columns, -220,
+    );
     const r = detailingStore.generateFloors();
     const a = r!.assemblies[0];
 
@@ -228,10 +296,15 @@ describe('detailingStore.generateFloors — the production command', () => {
   });
 
   it('does not claim punching on a panel that supports no column', () => {
-    // Two-way shear is a property of a joint. A beam-supported panel has none, and reporting
-    // one as unverified there would make an ordinary floor permanently uncertifiable for a
-    // condition that does not arise in it.
-    const { quad } = buildSlabModel();
+    // Two-way shear is a property of a joint. A panel bearing on its own supports has none,
+    // and reporting one as unverified there would make an ordinary floor permanently
+    // uncertifiable for a condition that does not arise in it.
+    //
+    // This used to run on `buildSlabModel`, which is a flat plate on FOUR COLUMNS. It passed
+    // because the collector identified columns from `verificationStore.contexts`, which no
+    // design run had populated — so the assertion held for a panel where it is false. The
+    // fixture is now a panel that genuinely supports nothing.
+    const { quad } = buildBeamSupportedSlabModel();
     modelStore.addSurfaceLoad3D(quad, 12);
     publishStresses([
       { elementId: quad, sigmaXx: 0, sigmaYy: 0, tauXy: 0, mx: 40, my: 30, mxy: 8, vonMises: 0 },
@@ -241,6 +314,103 @@ describe('detailingStore.generateFloors — the production command', () => {
     if (slab.family !== 'slab') throw new Error('narrowing');
     expect(slab.punching).toEqual([]);
     expect(slab.checks.some((c) => c.key === 'punching')).toBe(false);
+  });
+
+  /**
+   * PRODUCTION-CALLER LIVENESS for slab–column punching.
+   *
+   * The whole point of the collector: a flat plate on columns, solved, run through
+   * `generateFloors()`, and the punching check comes out VERIFIED with the forces the solver
+   * produced. Nothing is seeded and no engine is called directly — if the wiring from
+   * `collectSlabColumns` through `runFloorDesign` to the persisted record breaks anywhere, the
+   * status here falls back to UNSUPPORTED and this test fails.
+   */
+  it('CHECKS slab-column punching from the solved column forces', () => {
+    const { quad, columns } = buildSlabModel();
+    modelStore.addSurfaceLoad3D(quad, 12, 1);
+    // 220 kN of compression in each column, reported with tension positive.
+    publishCombinations(
+      [{ elementId: quad, sigmaXx: 0, sigmaYy: 0, tauXy: 0, mx: 40, my: 30, mxy: 8, vonMises: 0 }],
+      columns, -220,
+    );
+    const a = detailingStore.generateFloors()!.assemblies[0];
+    const slab = a.families!.find((f) => f.family === 'slab')!;
+    if (slab.family !== 'slab') throw new Error('narrowing');
+
+    // One joint per column the panel supports.
+    expect(slab.punching).toHaveLength(4);
+    for (const p of slab.punching) {
+      expect(p.status, `joint ${p.nodeId}`).not.toBe('UNSUPPORTED');
+      // The demand is the column's own axial force, compression positive, less what stands
+      // inside the perimeter — not zero, and not the tension-positive figure.
+      expect(p.axialBelow).toBeCloseTo(220, 6);
+      expect(p.Vu).toBeGreaterThan(0);
+      expect(p.Vu).toBeLessThan(220);
+      expect(p.phiVc).toBeGreaterThan(0);
+      // A single panel on four corner columns: every joint IS a corner.
+      expect(p.position).toBe('corner');
+      expect(p.coverageDeg).toBeCloseTo(90, 3);
+      expect(p.truncatedSides).toBe(2);
+      // The column above is genuinely absent at a roof joint; the column below is the source.
+      expect(p.elementAbove).toBeNull();
+      expect(p.elementBelow).toBe(p.columnElementId);
+      // The free body closed.
+      expect(Math.abs(p.equilibriumResidual!)).toBeLessThan(1e-6);
+      // Real perimeter geometry, for the drawing and the report.
+      expect(p.perimeter!.bo).toBeGreaterThan(0);
+      expect(p.perimeter!.enclosedArea).toBeGreaterThan(0);
+      // Every combination the project defines was considered, and one of them governs.
+      expect(p.contributions!.length).toBe(modelStore.model.combinations.length);
+      expect(p.governingCombination).toBeTruthy();
+    }
+
+    // And the family check row carries it, so the certificate is decided on a measured check.
+    const check = slab.checks.find((c) => c.key === 'punching');
+    expect(check).toBeTruthy();
+    expect(check!.status).not.toBe('UNSUPPORTED');
+    expect(check!.utilization).toBeGreaterThan(0);
+    expect(check!.governingCombination).toBeTruthy();
+  });
+
+  it('refuses punching when the solved set and the model combinations disagree', () => {
+    const { quad, columns } = buildSlabModel();
+    modelStore.addSurfaceLoad3D(quad, 12, 1);
+    const res = () => ({
+      displacements: [], reactions: [],
+      quadStresses: [
+        { elementId: quad, sigmaXx: 0, sigmaYy: 0, tauXy: 0, mx: 40, my: 30, mxy: 8, vonMises: 0 },
+      ],
+      elementForces: columns.map((c) => columnForces(c, -220)),
+    }) as never;
+    // A per-combination set keyed by an id the model does not define: reading forces from it
+    // would attribute one combination's forces to another.
+    resultsStore.setCombinationResults3D(new Map(), new Map([[9999, res()]]), {} as never);
+
+    const a = detailingStore.generateFloors()!.assemblies[0];
+    const slab = a.families!.find((f) => f.family === 'slab')!;
+    if (slab.family !== 'slab') throw new Error('narrowing');
+    expect(slab.punching.length).toBeGreaterThan(0);
+    for (const p of slab.punching) {
+      expect(p.status).toBe('UNSUPPORTED');
+      expect(p.unsupported.map((m) => m.key))
+        .toContain('detailing.slabPunching.staleAnalysis');
+    }
+  });
+
+  it('does not certify a flat plate whose punching could not be checked', () => {
+    // The gate that matters. A panel supporting columns, with no element forces published, has
+    // its governing check unverified — and a certificate that said CERTIFIED there would be
+    // the exact false pass the certificate model exists to prevent.
+    const { quad } = buildSlabModel();
+    modelStore.addSurfaceLoad3D(quad, 12);
+    publishStresses([
+      { elementId: quad, sigmaXx: 0, sigmaYy: 0, tauXy: 0, mx: 40, my: 30, mxy: 8, vonMises: 0 },
+    ]);
+    const a = detailingStore.generateFloors()!.assemblies[0];
+    const slab = a.families!.find((f) => f.family === 'slab')!;
+    if (slab.family !== 'slab') throw new Error('narrowing');
+    expect(slab.punching.every((p) => p.status === 'UNSUPPORTED')).toBe(true);
+    expect(slab.certificate.status).toBe('UNSUPPORTED');
   });
 
   it('stamps the record with three distinct upstream revisions', () => {
