@@ -1212,8 +1212,189 @@ fn bench_modal_3d_sparse_mass(c: &mut Criterion) {
     group.bench_function("matvec_sparse_mass", |b| {
         b.iter(|| std::hint::black_box(m_csc.sym_mat_vec(std::hint::black_box(&x))));
     });
-
     group.finish();
+}
+
+// ─── Multi-case load-case factorization reuse (3D frame, sparse path) ─────
+
+fn make_multi_case_input_3d(base: &SolverInput3D, n_cases: usize) -> dedaliano_engine::solver::load_cases::MultiCaseInput3D {
+    use dedaliano_engine::solver::load_cases::*;
+    let load_cases: Vec<LoadCase3D> = (0..n_cases)
+        .map(|k| {
+            let scale = 1.0 + k as f64 * 0.25;
+            let loads: Vec<SolverLoad3D> = base
+                .loads
+                .iter()
+                .map(|l| match l {
+                    SolverLoad3D::Nodal(nl) => SolverLoad3D::Nodal(SolverNodalLoad3D {
+                        node_id: nl.node_id,
+                        fx: nl.fx * scale,
+                        fy: nl.fy * scale,
+                        fz: nl.fz * scale,
+                        mx: nl.mx,
+                        my: nl.my,
+                        mz: nl.mz,
+                        bw: nl.bw,
+                    }),
+                    other => other.clone(),
+                })
+                .collect();
+            LoadCase3D { name: format!("Case{}", k + 1), loads }
+        })
+        .collect();
+    let factors: HashMap<String, f64> = load_cases
+        .iter()
+        .map(|lc| (lc.name.clone(), 1.0))
+        .collect();
+    MultiCaseInput3D {
+        solver: SolverInput3D { loads: vec![], ..base.clone() },
+        load_cases,
+        combinations: vec![CombinationDef { name: "All".to_string(), factors }],
+    }
+}
+
+fn bench_multi_case(c: &mut Criterion) {
+    let mut group = c.benchmark_group("multi_case");
+    let base = make_frame_3d(10, 3);
+
+    for n_cases in [1usize, 4, 16] {
+        let input = make_multi_case_input_3d(&base, n_cases);
+
+        // Baseline: N independent full solves (old multi-case behavior)
+        group.bench_with_input(BenchmarkId::new("naive_full_solves", n_cases), &input, |b, input| {
+            b.iter(|| {
+                for lc in &input.load_cases {
+                    let case_input = SolverInput3D {
+                        nodes: input.solver.nodes.clone(),
+                        materials: input.solver.materials.clone(),
+                        sections: input.solver.sections.clone(),
+                        elements: input.solver.elements.clone(),
+                        supports: input.solver.supports.clone(),
+                        loads: lc.loads.clone(),
+                        left_hand: input.solver.left_hand,
+                        plates: input.solver.plates.clone(),
+                        quads: input.solver.quads.clone(),
+                        quad9s: input.solver.quad9s.clone(),
+                        solid_shells: input.solver.solid_shells.clone(),
+                        curved_shells: input.solver.curved_shells.clone(),
+                        curved_beams: input.solver.curved_beams.clone(),
+                        constraints: vec![],
+                        connectors: HashMap::new(),
+                    };
+                    criterion::black_box(linear::solve_3d(&case_input).unwrap());
+                }
+            });
+        });
+
+        // New: prepared multi-case (assemble + factorize once, rebuild only f per case)
+        group.bench_with_input(BenchmarkId::new("prepared_multi_case", n_cases), &input, |b, input| {
+            b.iter(|| {
+                criterion::black_box(
+                    dedaliano_engine::solver::load_cases::solve_multi_case_3d(input).unwrap(),
+                );
+            });
+        });
+    }
+    group.finish();
+}
+
+// ─── Moving loads / influence line factorization reuse ─────
+
+fn bench_moving_influence_reuse(c: &mut Criterion) {
+    use dedaliano_engine::postprocess::influence::{
+        compute_influence_line, influence_unit_loads_2d, InfluenceLineInput,
+    };
+    use dedaliano_engine::solver::moving_loads::{build_load_path, moving_loads_at_position_2d};
+
+    let mut group = c.benchmark_group("moving_influence_reuse");
+    group.sample_size(20);
+
+    let train = LoadTrain {
+        name: "HL93".to_string(),
+        axles: vec![
+            Axle { offset: 0.0, weight: 35.0 },
+            Axle { offset: 4.3, weight: 145.0 },
+            Axle { offset: 8.6, weight: 145.0 },
+        ],
+    };
+    let step = 0.25;
+
+    // Moving loads 2D: n=16 → dense path (nf=48), n=64 → sparse path (nf=192)
+    for n in [16usize, 64] {
+        let solver = make_ss_beam(n);
+        let path = build_load_path(&solver, None).unwrap();
+        let total_length: f64 = path.iter().map(|s| s.length).sum();
+        let max_offset: f64 = train.axles.iter().map(|a| a.offset).fold(0.0, f64::max);
+
+        // Legacy: clone + full solve per position
+        group.bench_with_input(BenchmarkId::new("moving_2d_legacy", n), &solver, |b, solver| {
+            b.iter(|| {
+                let mut pos = -max_offset;
+                while pos <= total_length + 1e-10 {
+                    let loads = moving_loads_at_position_2d(solver, &train, &path, pos, total_length);
+                    let mut mi = solver.clone();
+                    mi.loads = loads;
+                    criterion::black_box(linear::solve_2d(&mi).unwrap());
+                    pos += step;
+                }
+            });
+        });
+
+        // Prepared: production path (prepare once + solve_loads per position)
+        let input = MovingLoadInput {
+            solver,
+            train: train.clone(),
+            step: Some(step),
+            path_element_ids: None,
+        };
+        group.bench_with_input(BenchmarkId::new("moving_2d_prepared", n), &input, |b, input| {
+            b.iter(|| moving_loads::solve_moving_loads_2d(input).unwrap());
+        });
+    }
+
+    // Influence line 2D: unit load at 11 points on each of n elements
+    let n_pts = 10usize;
+    for n in [16usize, 64] {
+        let solver = make_ss_beam(n);
+        let node_pos: HashMap<usize, (f64, f64)> =
+            solver.nodes.values().map(|nd| (nd.id, (nd.x, nd.z))).collect();
+
+        // Legacy: full solve per sampled point
+        group.bench_with_input(BenchmarkId::new("influence_2d_legacy", n), &solver, |b, solver| {
+            b.iter(|| {
+                let base = SolverInput { loads: vec![], ..solver.clone() };
+                for elem in solver.elements.values() {
+                    let (nix, niy) = node_pos[&elem.node_i];
+                    let (njx, njy) = node_pos[&elem.node_j];
+                    let dx = njx - nix;
+                    let dy = njy - niy;
+                    let l = (dx * dx + dy * dy).sqrt();
+                    let cos_theta = dx / l;
+                    let sin_theta = dy / l;
+                    for k in 0..=n_pts {
+                        let t = k as f64 / n_pts as f64;
+                        let loads = influence_unit_loads_2d(elem, t * l, t, cos_theta, sin_theta);
+                        let mut trial = base.clone();
+                        trial.loads = loads;
+                        criterion::black_box(linear::solve_2d(&trial).unwrap());
+                    }
+                }
+            });
+        });
+
+        // Prepared: production path
+        let input = InfluenceLineInput {
+            solver,
+            quantity: "M".to_string(),
+            target_node_id: None,
+            target_element_id: Some(1),
+            target_position: 0.5,
+            n_points_per_element: n_pts,
+        };
+        group.bench_with_input(BenchmarkId::new("influence_2d_prepared", n), &input, |b, input| {
+            b.iter(|| compute_influence_line(input).unwrap());
+        });
+    }
 }
 
 criterion_group!(
@@ -1231,6 +1412,8 @@ criterion_group!(
     bench_linear_frame_3d,
     bench_modal_3d,
     bench_pdelta_3d,
+    bench_multi_case,
+    bench_moving_influence_reuse,
     bench_moving_loads,
     bench_cable,
     bench_constraints,
