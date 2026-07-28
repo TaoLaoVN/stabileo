@@ -346,7 +346,11 @@ function createDetailingStore() {
           bentUp: bentUpPolicy(),
         });
 
-        const adapter = getDesignCode(verificationStore.activeCodeId);
+        // Detailing used to take its EDITION from Project Regulations and its ADAPTER from
+        // the toolbar dropdown, so a member could be verified against one edition's clauses
+        // and detailed under the other's. One source now.
+        const concreteCode = regulationsStore.concreteDesignCode();
+        const adapter = concreteCode ? getDesignCode(concreteCode) : undefined;
         const initial = designOutcomeMap();
         /**
          * Close the design–detailing loop.

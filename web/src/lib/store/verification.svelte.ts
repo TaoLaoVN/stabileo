@@ -156,7 +156,9 @@ function createVerificationStore() {
     const ctx = contexts.get(elementId);
     const reinf = reinforcement ?? reinforcementProvider?.(elementId);
     if (!ctx || !reinf) return 'fail';
-    const adapter = getDesignCode(activeCodeId);
+    // Same source as every other design decision: the project's `concrete` role.
+    const codeId = regulationsStore.concreteDesignCode();
+    const adapter = codeId ? getDesignCode(codeId) : undefined;
     if (!adapter) return 'fail';
     const total = Math.max(0, loss.bottomRaise) + Math.max(0, loss.topLower)
       + Math.max(0, loss.depthTolerance);
