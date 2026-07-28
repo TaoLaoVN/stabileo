@@ -381,9 +381,16 @@ describe('bar bending schedule', () => {
     const flat = aoa.map((r) => r.join('|')).join('\n');
     expect(flat).toContain('CIRSOC 201 2025');
     expect(flat).toContain('CÁLCULO PROVISORIO');
-    expect(flat).toContain('Marca|Ø (mm)|Forma|Cant.');
+    // Headings come from the dictionary now, and the row carries what the item IS and where
+    // it belongs before it carries numbers. They were Spanish literals with an unused
+    // `locale` parameter two lines above them, so an English export produced a Spanish book.
+    expect(flat).toContain('Marca|Tipo|Elementos|Zona|Ø (mm)|Forma|Cant.');
     expect(flat).toContain('TOTAL');
     expect(flat).toContain('Resumen por diámetro');
+    const en = scheduleToAoa(buildSchedule(marks), title, 'en')
+      .map((r) => r.join('|')).join('\n');
+    expect(en).toContain('Mark|Type|Members|Zone');
+    expect(en).toContain('Summary by diameter');
   });
 
   it('marks the schedule SUPERSEDED too, not just the drawing', () => {

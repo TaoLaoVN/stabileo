@@ -104,15 +104,16 @@ describe('rc-design-qa-8 reaches CONSTRUCTIBLE through the production path', () 
     expect(run().assemblies.flatMap((a) => a.conflicts)).toEqual([]);
   });
 
-  it('ALL TWELVE conditions pass', () => {
+  it('ALL THIRTEEN conditions pass', () => {
     // Asserted by name rather than by count, so a condition that stopped being evaluated
     // could not pass this by disappearing.
     const expected = [
       'allMembersAssigned', 'allMembersReverified', 'allSpacingCodeLegal',
       'allSpacingPlacementRobust', 'allTransitionsMaterialised', 'certificatesMatchGeometry',
+      'allRequiredTransversePathsMaterialised',
       'completeEnvelope', 'noProhibitedConflicts', 'noStaleUpstreamRevision',
       'noUnmaterialisedTransitions', 'noUnsupportedRule', 'searchNotTruncated',
-    ];
+    ].sort();
     for (const a of run().assemblies) {
       const conditions = a.constructibility?.conditions ?? [];
       expect(conditions.map((c) => c.condition).sort(), `${a.id}`).toEqual(expected);
@@ -193,6 +194,10 @@ describe('the layer invariants hold in the finished geometry', () => {
     for (const a of run().assemblies) {
       const byLayer = new Map<string, number[]>();
       for (const b of a.bars) {
+        // Longitudinal only. A layer is a mat at one elevation; the cage shares this bar list
+        // and a stirrup spans the whole depth by design, so including it would compare a
+        // flexural invariant against a piece it was never about.
+        if (b.role !== 'longitudinal') continue;
         if (!b.layerId) continue;
         const z = b.segments[0]?.start.z ?? 0;
         byLayer.set(b.layerId, [...(byLayer.get(b.layerId) ?? []), z]);
@@ -218,6 +223,7 @@ describe('the layer invariants hold in the finished geometry', () => {
     for (const a of run().assemblies) {
       const byLayer = new Map<string, number[]>();
       for (const b of a.bars) {
+        if (b.role !== 'longitudinal') continue;
         if (!b.layerId) continue;
         byLayer.set(b.layerId,
           [...(byLayer.get(b.layerId) ?? []), b.segments[0]?.start.z ?? 0]);
@@ -238,7 +244,13 @@ describe('the layer invariants hold in the finished geometry', () => {
       .map((b) => b.layerId).filter(Boolean) as string[]);
     const tops = [...ids].filter((x) => x.includes(':top'));
     expect(tops.length).toBeGreaterThan(0);
-    for (const id of tops) expect(id).toMatch(/:top[IJ]:\d+$/);
+    // Three top regions, not two. `topI` and `topJ` are the hogging mats at the two ends;
+    // `topRun` is the pair that runs the whole member so every stirrup's top bends contain a
+    // bar (§25.7.1.2). It has to be its OWN layer for exactly the reason this test exists —
+    // the repair ladder moves a layer as a rigid body, and a continuous bar dragged by a
+    // support mat's nudge would move at the far end too.
+    for (const id of tops) expect(id).toMatch(/:(top[IJ]|topRun):\d+$/);
+    expect(tops.some((x) => x.includes(':topRun:'))).toBe(true);
   });
 });
 

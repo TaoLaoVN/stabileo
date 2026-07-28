@@ -1,4 +1,5 @@
 import { describe, it, expect } from 'vitest';
+import { seatedLongitudinalHalfExtents } from '../../../codes/cirsoc201/transverse-cage';
 import {
   MAX_OFFSET_SLOPE, allocateBeamLayers, classifyJoint, coordinateJoint, detectTransitions,
   generateColumnStack, planSplices, tieSpacing,
@@ -277,10 +278,22 @@ describe('column stack generation', () => {
 
   it('places four corner bars plus face bars, inside the cover', () => {
     const g = generateColumnStack(stack([lift({ bars: { count: 8, diameterMm: 20 } })]));
-    const inset = 0.025 + 0.008 + 0.010;
+    // The widest bar is a FACE bar, against a straight leg at `(d_tie + d_b)/2` from its
+    // centreline. The corner bars sit further in — the bend cuts the corner off, so a bar
+    // cannot be pushed to the straight-leg distance there, and the expression this test used
+    // to hardcode (`cover + d_tie + d_b/2`) put every corner bar inside the arc.
+    const seat = seatedLongitudinalHalfExtents(0.40, 0.40, 0.025, 8, 20);
     const xs = g.bars.map((b) => b.segments[0].start.x);
-    expect(Math.max(...xs)).toBeCloseTo(0.20 - inset, 9);
-    expect(Math.min(...xs)).toBeCloseTo(-(0.20 - inset), 9);
+    // The outermost bars are the CORNERS, seated in the bend.
+    expect(Math.max(...xs)).toBeCloseTo(seat.corner.halfAcross, 9);
+    expect(Math.min(...xs)).toBeCloseTo(-seat.corner.halfAcross, 9);
+    // Which is strictly inboard of where a bar against a straight leg would sit: the bend
+    // cuts the corner off, and the expression this test used to hardcode
+    // (`cover + d_tie + d_b/2`) put every corner bar inside the arc.
+    expect(seat.corner.halfAcross).toBeLessThan(seat.face.halfAcross);
+    // Every bar is inside the cage centreline, cover respected.
+    const cage = 0.20 - 0.025 - 0.008 / 2000 * 1000;
+    expect(Math.max(...xs)).toBeLessThan(cage);
   });
 
   it('hooks the top-lift bars at a roof termination', () => {

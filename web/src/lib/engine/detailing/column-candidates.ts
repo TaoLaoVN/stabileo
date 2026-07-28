@@ -34,6 +34,7 @@
  */
 
 import { minClearSpacingColumn } from '../../codes/cirsoc201/spacing';
+import { seatedLongitudinalHalfExtents } from '../../codes/cirsoc201/transverse-cage';
 import { clause, type ClauseRef, type RegulationEdition } from '../../codes/regulation';
 import { computeColumnLayout } from '../station-design-forces';
 
@@ -189,10 +190,20 @@ export function generateColumnCandidates(
   req: ColumnCandidateRequest,
 ): ColumnLayoutCandidate[] {
   const d = req.diameterMm / 1000;
-  const tie = req.tieDiaMm / 1000;
-  const inset = req.cover + tie + d / 2;
-  const halfB = req.b / 2 - inset;
-  const halfH = req.h / 2 - inset;
+  // Where the bars sit is decided ONCE, by `seatedLongitudinalHalfExtents`.
+  //
+  // This module computed `cover + d_tie + d_b/2` in place — the third subsystem to derive the
+  // same rectangle, and the second to get it wrong. That is the contact distance from a
+  // STRAIGHT leg; at a corner the bend cuts the corner off and a bar pushed that far in sits
+  // inside the arc. Measured on `rc-design-qa-8`: every column corner bar interpenetrated the
+  // tie above it. `liftBarPositions` had the identical expression, and the beam generator had
+  // a third spelling of it, which is why the derivation now lives in one place.
+  const seat = seatedLongitudinalHalfExtents(
+    req.b, req.h, req.cover, req.tieDiaMm, req.diameterMm);
+  // Corner bars govern the perimeter these candidates are built on; the face bars an
+  // arrangement puts between them are placed against the straight leg, below.
+  const halfB = seat.corner.halfAcross;
+  const halfH = seat.corner.halfUp;
   if (halfB <= 0 || halfH <= 0 || req.count < 4) return [];
 
   const spacing = minClearSpacingColumn(req.edition, {

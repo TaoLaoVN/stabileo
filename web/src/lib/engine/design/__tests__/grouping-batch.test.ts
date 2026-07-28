@@ -126,11 +126,13 @@ describe('attribute and connectivity grouping', () => {
 });
 
 describe('orientation diagnostic', () => {
+  // Sweeps every corrected fixture through the full design path. It is seconds of real work,
+  // not a hang, and the 5 s default was cutting it off once collision sampling got finer.
   it('finds nothing on the corrected fixtures', () => {
     expect(solvedQa.orientationSuspect.size).toBe(0);
     const solvedFrame = solveFixture(frame);
     expect(solvedFrame.orientationSuspect.size).toBe(0);
-  });
+  }, 120_000);
 
   it('catches gravity authored in the horizontal local component', () => {
     // Re-introduce the original defect: put the Y-beams' load back into qY.

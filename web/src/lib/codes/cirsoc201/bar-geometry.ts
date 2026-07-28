@@ -161,6 +161,28 @@ export interface BarSegment {
   radius?: number;
   /** Arc only: swept angle, degrees, positive. */
   sweepDeg?: number;
+  /**
+   * Arc only: the centre the arc turns about.
+   *
+   * ── Why the centre has to be stored ────────────────────────────────
+   *
+   * `start`, `end`, `radius` and `sweepDeg` do not determine an arc in three dimensions.
+   * Two centres satisfy them in any given plane, and the plane itself is free. Without the
+   * centre the only thing a consumer can reconstruct is the CHORD — which is exactly what
+   * `samplePath` was doing, for every bend in the model, while its own comment claimed the
+   * subdivision count kept the deviation under `maxChord`. It did not: linear interpolation
+   * between two endpoints never leaves the chord however finely you subdivide it, so the
+   * deviation was the full sagitta every time.
+   *
+   * For a 90° corner of a Ø8 stirrup (r = 20 mm) that is 5,9 mm of steel in the wrong place;
+   * for a 135° hook it is 12,3 mm. Both are larger than the bars being checked against, so
+   * every conflict measured at a bend was measured against geometry that is not there.
+   *
+   * Optional because a caller that genuinely does not know the centre is better off saying
+   * so than inventing one — `samplePath` falls back to the chord and the approximation is at
+   * least visible rather than claimed to be exact.
+   */
+  centre?: Point3;
   /** Length along the centreline, m. */
   length: number;
 }
@@ -207,6 +229,42 @@ export interface BarPath {
    * clustering fallback still handles those, and is documented as a fallback.
    */
   layerId?: string;
+  /**
+   * Which longitudinal bars this piece's closed perimeter ENCLOSES.
+   *
+   * ── Why the relationship is declared rather than inferred ──────────
+   *
+   * "A stirrup may touch the bars it confines" is true, and for one commit the collision
+   * classifier implemented it as `role === 'transverse' && sharesMember(a, b)`. That is not
+   * the clause. It exempted every transverse-to-longitudinal pair in the member from every
+   * check, so a stirrup driven straight THROUGH a longitudinal bar — surfaces
+   * interpenetrating, physically unbuildable — was reported as required containment and
+   * hidden from the conflict list.
+   *
+   * The generator KNOWS which bars each piece was built around. Recording that turns the
+   * exemption from a role test into a checkable claim: containment is allowed only between
+   * bars that are actually in the relationship, and even then only when the geometry is
+   * valid. Interpenetration is never excused by a declared relationship.
+   *
+   * Enclosure and restraint are DIFFERENT claims and are recorded separately. A closed
+   * stirrup encloses every bar inside its perimeter; it restrains only the ones its bends
+   * grip. §25.7.1.2 is about the second, and conflating them would let a cage claim
+   * compliance because a bar happened to be somewhere inside it.
+   */
+  enclosesBarIds?: string[];
+  /**
+   * Which longitudinal bars a bend of this piece physically grips — §25.7.1.2 for a closed
+   * stirrup's corners, §25.3.5(d) for a crosstie's two hooks.
+   */
+  restrainsBarIds?: string[];
+  /** Which longitudinal bars this piece's hook EXTENSIONS touch along their length. */
+  hookContactsBarIds?: string[];
+  /** The cage this piece belongs to — one per member. Absent on longitudinal steel. */
+  cageId?: string;
+  /** The stirrup zone this piece belongs to, e.g. `e162:support:0`. */
+  zoneId?: string;
+  /** Distance along the owning member's axis, m, from its i end. */
+  station?: number;
   /** Where the bar came from, for the provenance trail. */
   source: 'generated' | 'manual' | 'coordinated';
   /** True when the user pinned this bar; the coordinator treats it as a hard constraint. */
@@ -223,10 +281,10 @@ export function straightSegment(start: Point3, end: Point3): BarSegment {
 }
 
 export function arcSegment(
-  start: Point3, end: Point3, radius: number, sweepDeg: number,
+  start: Point3, end: Point3, radius: number, sweepDeg: number, centre?: Point3,
 ): BarSegment {
   return {
-    kind: 'arc', start, end, radius, sweepDeg,
+    kind: 'arc', start, end, radius, sweepDeg, centre,
     length: radius * (Math.abs(sweepDeg) * Math.PI) / 180,
   };
 }
@@ -289,7 +347,10 @@ export function buildStraightBarWithHooks(opts: {
       opts.axis, -tangentOffset);
     const extEnd = add(extStart, opts.hookNormal, -hook.extension);
     segments.push(straightSegment(extStart, extEnd));
-    segments.push(arcSegment(extEnd, opts.start, hook.centrelineRadius, opts.startHook));
+    // Centre of the bend: perpendicular to the bar axis at `start`, one radius along the
+    // hook normal. Both `extEnd` and `start` are exactly that far from it.
+    segments.push(arcSegment(extEnd, opts.start, hook.centrelineRadius, opts.startHook,
+      add(opts.start, opts.hookNormal, tangentOffset)));
   }
 
   segments.push(straightSegment(opts.start, opts.end));
@@ -300,7 +361,8 @@ export function buildStraightBarWithHooks(opts: {
     refs.push(...hook.refs);
     const tangentOffset = hook.centrelineRadius;
     const arcEnd = add(add(opts.end, opts.axis, tangentOffset), opts.hookNormal, tangentOffset);
-    segments.push(arcSegment(opts.end, arcEnd, hook.centrelineRadius, opts.endHook));
+    segments.push(arcSegment(opts.end, arcEnd, hook.centrelineRadius, opts.endHook,
+      add(opts.end, opts.hookNormal, tangentOffset)));
     segments.push(straightSegment(arcEnd, add(arcEnd, opts.hookNormal, hook.extension)));
   }
 
@@ -339,10 +401,58 @@ export function samplePath(path: BarPath, maxChord = 0.005): Point3[] {
     // Chord error e = r(1 - cos(θ/2)); solve for the number of subdivisions.
     const n = Math.max(2, Math.ceil(sweep / Math.max(1, (180 / Math.PI) * 2 * Math.acos(
       Math.max(-1, Math.min(1, 1 - maxChord / Math.max(r, 1e-9)))))));
+
+    // ── Sample the ARC, when the segment says where its centre is ──
+    //
+    // The previous implementation interpolated linearly between the two endpoints and
+    // asserted that `n` kept the deviation under `maxChord`. It does not: every point of a
+    // linear interpolation lies ON the chord, so the deviation is the sagitta regardless of
+    // `n`. Every bend in the model was being collision-checked as a straight line cutting
+    // its own corner — 5,9 mm inboard for a Ø8 stirrup's 90° corner, 12,3 mm for its 135°
+    // hook, both larger than the bars the check compares them against.
+    const c = seg.centre;
+    const v0 = c && { x: seg.start.x - c.x, y: seg.start.y - c.y, z: seg.start.z - c.z };
+    const v1 = c && { x: seg.end.x - c.x, y: seg.end.y - c.y, z: seg.end.z - c.z };
+    const cross = v0 && v1 && {
+      x: v0.y * v1.z - v0.z * v1.y,
+      y: v0.z * v1.x - v0.x * v1.z,
+      z: v0.x * v1.y - v0.y * v1.x,
+    };
+    const crossLen = cross ? Math.hypot(cross.x, cross.y, cross.z) : 0;
+    if (c && v0 && v1 && crossLen > 1e-12) {
+      const axis = { x: cross!.x / crossLen, y: cross!.y / crossLen, z: cross!.z / crossLen };
+      const dot = v0.x * v1.x + v0.y * v1.y + v0.z * v1.z;
+      // The angle between the two radii is always the SHORT way round. A sweep past 180°
+      // means the arc takes the long way, which is the same rotation about the opposite
+      // axis — a reflex bend is rare in rebar but a 180° hook sits right at the boundary.
+      let theta = Math.atan2(crossLen, dot);
+      let n3 = axis;
+      if (sweep > 180 + 1e-9) {
+        theta = 2 * Math.PI - theta;
+        n3 = { x: -axis.x, y: -axis.y, z: -axis.z };
+      }
+      for (let i = 1; i <= n; i++) {
+        const a = theta * (i / n);
+        const cosA = Math.cos(a);
+        const sinA = Math.sin(a);
+        // Rodrigues: v cosθ + (n × v) sinθ + n (n·v)(1 − cosθ).
+        const nd = n3.x * v0.x + n3.y * v0.y + n3.z * v0.z;
+        const nx = n3.y * v0.z - n3.z * v0.y;
+        const ny = n3.z * v0.x - n3.x * v0.z;
+        const nz = n3.x * v0.y - n3.y * v0.x;
+        out.push({
+          x: c.x + v0.x * cosA + nx * sinA + n3.x * nd * (1 - cosA),
+          y: c.y + v0.y * cosA + ny * sinA + n3.y * nd * (1 - cosA),
+          z: c.z + v0.z * cosA + nz * sinA + n3.z * nd * (1 - cosA),
+        });
+      }
+      continue;
+    }
+
+    // No centre recorded: the chord is all this segment determines. Approximate, and do not
+    // pretend otherwise.
     for (let i = 1; i <= n; i++) {
       const t = i / n;
-      // Linear interpolation between the arc endpoints is not the arc, but the
-      // subdivision count above is chosen so the deviation stays under maxChord.
       out.push({
         x: seg.start.x + (seg.end.x - seg.start.x) * t,
         y: seg.start.y + (seg.end.y - seg.start.y) * t,

@@ -188,6 +188,7 @@ describe('earned review state', () => {
       completeEnvelope: true, searchTruncated: false,
       applicableMembers: 1, assignedMembers: 1,
       selectedTransitions: 0, materialisedTransitions: 0, unmaterialisedTransitions: 0,
+      requiredTransversePieces: 0, materialisedTransversePieces: 0,
       prohibitedConflicts: 0, reverifiedMembers: 1, certificateHashMatches: 1,
       spacingNotCodeLegal: 0, spacingNotPlacementRobust: 0,
       unsupportedRules: 0, staleAssemblies: 0,

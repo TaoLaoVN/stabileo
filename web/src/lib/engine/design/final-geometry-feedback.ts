@@ -6,7 +6,7 @@
  * Design sizes a member against its NOMINAL geometry. Coordination then moves the steel —
  * a joint-layer rank costs lever arm — and Table 26.6.2.1(a) charges an unfavourable
  * tolerance on `d` whether anything moved or not. Re-verification at that final geometry
- * is authoritative, and until now a failure there was terminal: the twelve-condition gate
+ * is authoritative, and until now a failure there was terminal: the thirteen-condition gate
  * reported `allMembersReverified` short and there was nothing the run could do about it.
  *
  * On `rc-design-qa-8` that was beams 7 and 8 at ratio 1,031. The governing check is NOT
@@ -270,7 +270,7 @@ export interface RepairOptions {
    *
    * Shared across iterations by the loop. The geometry is part of the key because a verdict
    * at nominal geometry says nothing about the same steel at the final one — reusing one
-   * for the other is the specific dishonesty the twelve-condition gate exists to catch.
+   * for the other is the specific dishonesty the thirteen-condition gate exists to catch.
    */
   memo?: Map<string, ProvidedRebarResult>;
 }

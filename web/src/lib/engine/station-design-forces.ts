@@ -17,6 +17,7 @@
  */
 
 import type { ElementForces3D } from './types-3d';
+import { seatedLongitudinalHalfExtents } from '../codes/cirsoc201/transverse-cage';
 import type { AnalysisResults3D } from './types-3d';
 import type { ProvidedReinforcement, RebarGroup, RebarLayer, StirrupDef, BeamRegions, BeamContinuity, LongBarGroup, ColumnReinforcement } from '../store/model.svelte';
 import type { Node, Element, Section, Support } from '../store/model.svelte';
@@ -957,18 +958,31 @@ export function computeColumnLayout(
   const resolved = resolveColumnReinf(colReinf, { count, diameter });
   if (!resolved) return { bars: [], totalArea: 0, b, h, issues: [], constructible: true };
 
-  const stirDia_m = stirrupDia / 1000;
-  const envelope = cover + stirDia_m;
   const bars: BarInstance[] = [];
 
-  const cornerR = resolved.cornerDia / 2000;
   const faceR = resolved.faceDia / 2000;
+  /** Inner face of the transverse steel — what the cover check measures against. */
+  const envelope = cover + stirrupDia / 1000;
+
+  // ── Where the bars sit, from the one shared derivation ──
+  //
+  // This used to be `cover + d_stirrup + d_b/2` for every bar, corner and face alike. That is
+  // the contact distance from a STRAIGHT leg and it is right for an intermediate face bar. It
+  // is wrong at a corner: the bend cuts the corner off, so a bar pushed that far in lands
+  // INSIDE the arc. Measured on `rc-design-qa-8`, every column corner bar interpenetrated the
+  // joint tie above it, and three other modules had each re-derived the same wrong expression.
+  //
+  // Corner and face bars are therefore not collinear, by a bit over 2 mm on a Ø8 tie. That is
+  // the cage, not an approximation of it.
+  const seatCorner = seatedLongitudinalHalfExtents(
+    b, h, cover, stirrupDia, resolved.cornerDia);
+  const seatFace = seatedLongitudinalHalfExtents(b, h, cover, stirrupDia, resolved.faceDia);
 
   // Corner positions
-  const xMin = envelope + cornerR;
-  const xMax = b - envelope - cornerR;
-  const yMin = envelope + cornerR;
-  const yMax = h - envelope - cornerR;
+  const xMin = b / 2 - seatCorner.corner.halfAcross;
+  const xMax = b / 2 + seatCorner.corner.halfAcross;
+  const yMin = h / 2 - seatCorner.corner.halfUp;
+  const yMax = h / 2 + seatCorner.corner.halfUp;
 
   let idx = 0;
   // 4 corner bars
@@ -978,10 +992,10 @@ export function computeColumnLayout(
   }
 
   // Face bars (adjusted for possibly different diameter)
-  const fxMin = envelope + faceR;
-  const fxMax = b - envelope - faceR;
-  const fyMin = envelope + faceR;
-  const fyMax = h - envelope - faceR;
+  const fxMin = b / 2 - seatFace.face.halfAcross;
+  const fxMax = b / 2 + seatFace.face.halfAcross;
+  const fyMin = h / 2 - seatFace.face.halfUp;
+  const fyMax = h / 2 + seatFace.face.halfUp;
 
   function placeFaceBars(n: number, x1: number, y1: number, x2: number, y2: number) {
     for (let i = 0; i < n; i++) {

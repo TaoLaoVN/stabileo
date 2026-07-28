@@ -57,6 +57,29 @@ export const DEFAULT_TOLERANCES: CollisionTolerances = {
   marginalBand: 0.005,
 };
 
+/**
+ * Chord tolerance for the collision sampler, m.
+ *
+ * ── Why it is not `samplePath`'s 5 mm default ──────────────────────
+ *
+ * The narrow phase tests straight segments between consecutive samples, so an arc is only
+ * ever as accurate as the polyline standing in for it, and every chord cuts INSIDE the true
+ * curve. At the 5 mm default a 135° stirrup hook on a Ø8 bar (r = 20 mm) is sampled as TWO
+ * chords of 67,5°, each dipping `r(1 − cos 33,75°) = 3,37 mm` inside the bend.
+ *
+ * That error lands directly in the clearance. Measured on `rc-design-qa-8`: a column corner
+ * bar seated in a joint tie's bend — designed contact, true clearance +0,08 mm under dense
+ * resampling — was reported as interpenetrating by 3,17 mm, eight times over. The steel was
+ * right and the ruler was wrong.
+ *
+ * The default was harmless while `samplePath` interpolated arcs linearly, because the whole
+ * arc was already replaced by its chord and no tolerance could have helped. Once arcs became
+ * real geometry the sampling tolerance became a real measurement error, so it is set here to
+ * half a millimetre: below any fabrication tolerance, and a quarter of `CONTACT_ALLOWANCE`,
+ * so it can never manufacture a contact or a clash on its own.
+ */
+export const COLLISION_CHORD_TOLERANCE = 0.0005;
+
 export type ConflictSeverity = 'overlap' | 'clearance' | 'marginal';
 
 export interface BarConflict {
@@ -166,6 +189,16 @@ function densify(points: readonly Point3[], maxGap: number): Point3[] {
 
 // ─── Narrow phase ────────────────────────────────────────────────
 
+/** Unit direction of the sampled segment starting at `i`, or undefined if degenerate. */
+function tangent(points: readonly Point3[], i: number): Point3 | undefined {
+  const p = points[i];
+  const q = points[i + 1];
+  if (!p || !q) return undefined;
+  const d = { x: q.x - p.x, y: q.y - p.y, z: q.z - p.z };
+  const L = Math.hypot(d.x, d.y, d.z);
+  return L < 1e-12 ? undefined : { x: d.x / L, y: d.y / L, z: d.z / L };
+}
+
 /** Squared distance between two segments, plus the midpoint of the closest approach. */
 function segmentDistance(
   p1: Point3, q1: Point3, p2: Point3, q2: Point3,
@@ -244,9 +277,20 @@ export function detectCollisions(
    */
   classifyFor?: (
     a: BarPath, b: BarPath, surfaceClearance: number,
+    /**
+     * Unit tangents of the two bars AT the closest approach.
+     *
+     * Whether two bars "run alongside each other" is a local question, and for anything but a
+     * straight bar the whole-path chord does not answer it. A closed stirrup's first and last
+     * points are its two hook tips, a few centimetres apart at one corner, so its end-to-end
+     * direction is a 45° diagonal that describes no part of the bar. Measured: that made every
+     * stirrup read as parallel to the column bars it crosses at a joint, and eight crossings
+     * were held to §25.2.3's 40 mm column spacing instead of being recognised as crossings.
+     */
+    tangentA?: Point3, tangentB?: Point3,
   ) => PairClassification,
 ): CollisionResult {
-  const raw = bars.map((path) => samplePath(path));
+  const raw = bars.map((path) => samplePath(path, COLLISION_CHORD_TOLERANCE));
   const maxRadius = bars.reduce((m, b) => Math.max(m, b.diameterMm / 2000), 0);
 
   // Cell size: comfortably larger than the biggest interaction distance, so the 27-cell
@@ -283,7 +327,9 @@ export function detectCollisions(
 
     for (const j of candidates) {
       const b = sampled[j];
-      let worst: { clearance: number; at: Point3; surface: number } | null = null;
+      let worst: {
+        clearance: number; at: Point3; surface: number; m: number; n: number;
+      } | null = null;
 
       for (let m = 0; m + 1 < a.points.length; m++) {
         for (let n = 0; n + 1 < b.points.length; n++) {
@@ -296,7 +342,7 @@ export function detectCollisions(
           const surface = distance - a.radius - b.radius;
           const clearance = surface - tolerances.placement;
           if (worst === null || clearance < worst.clearance) {
-            worst = { clearance, at, surface };
+            worst = { clearance, at, surface, m, n };
           }
         }
       }
@@ -304,7 +350,8 @@ export function detectCollisions(
 
       // Classify BEFORE judging. The class decides the rule and whether a shortfall is a
       // defect at all; a tie around its own longitudinals is not a clash.
-      const cls = classifyFor?.(a.path, b.path, worst.surface);
+      const cls = classifyFor?.(a.path, b.path, worst.surface,
+        tangent(a.points, worst.m), tangent(b.points, worst.n));
       if (cls && !cls.reportable) continue;
       const required = cls
         ? cls.requiredClear

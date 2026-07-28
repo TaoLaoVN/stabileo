@@ -59,6 +59,39 @@ export interface LayoutCandidate {
   /** Half-width actually occupied, m. Narrower arrangements thread more easily. */
   halfSpan: number;
   refs: ClauseRef[];
+  /**
+   * Which stirrup bend each required seat is filled by — the §25.7.1.2 proof, carried.
+   *
+   * ── Why a witness and not a count ──────────────────────────────────
+   *
+   * "Entre los extremos anclados, cada doblez en la parte continua de los estribos en U,
+   * sencillos o múltiples, y cada doblez en un estribo cerrado, debe contener una barra
+   * longitudinal o cordón." The bends between the anchored ends are §25.7.1.2; the anchored
+   * ends themselves are §25.7.1.3(a), "un gancho normal alrededor de la armadura
+   * longitudinal". Either way every bend of a closed stirrup needs a bar in it.
+   *
+   * That is a statement about SPECIFIC bends and SPECIFIC bars, and it does not follow from
+   * how many bars a layout has. Measured on the qa-8 fixture: the generator's own spread
+   * layout satisfied all four bends, the coordination search then supplied an asymmetric
+   * threading arrangement with the same bar count, and every stirrup came out restraining
+   * two corners of four. A count cannot see that; a witness can.
+   *
+   * Empty when the caller did not state where the seats are — the candidate then makes no
+   * claim, rather than an unchecked one.
+   */
+  bendWitnesses: BendWitness[];
+}
+
+/** One bend of the closed stirrup, and the bar seated in it. */
+export interface BendWitness {
+  /** Which seat: the two ends of the outermost row, on each face the cage encloses. */
+  seat: 'acrossMin' | 'acrossMax';
+  /** Where the seat is, m from the section centreline. */
+  seatAcross: number;
+  /** The slot filling it, or null when nothing does — which invalidates the candidate. */
+  filledBy: { across: number; layer: number } | null;
+  /** How far the bar centre sits from the seat, m. */
+  offset: number;
 }
 
 export interface CandidateRequest {
@@ -100,6 +133,28 @@ export interface CandidateRequest {
    * clears every joint the member passes through.
    */
   obstacles?: readonly KeepOut[];
+  /**
+   * Where the outermost row's bars must sit for the stirrup bends to contain them, m from
+   * the section centreline — §25.7.1.2 and §25.7.1.3(a).
+   *
+   * Supplied by the caller from `seatedLongitudinalHalfExtents`, which is the one authority
+   * on cage geometry. This module does NOT re-derive it: four subsystems deriving the same
+   * rectangle independently is the defect that produced the seating errors this constraint
+   * now guards, and a fifth would be no better.
+   *
+   * Absent, no seat is required and `bendWitnesses` stays empty — the pre-existing behaviour
+   * for callers that have no cage.
+   */
+  cornerSeatAcross?: number;
+  /**
+   * How far a bar centre may sit from the seat and still be contained by the bend, m.
+   *
+   * A physical tolerance, not a slack knob: a bend of centreline radius `r` reaches a bar
+   * whose centre lies within roughly `r + d_b/2` of the seat, and `barAtCorner` in
+   * `transverse-cage` applies the same reasoning at the geometry layer. The caller states it
+   * so the two cannot drift.
+   */
+  cornerSeatTolerance?: number;
 }
 
 /** How many bars of this diameter fit in one layer at this spacing. */
@@ -210,6 +265,56 @@ export function generateLayoutCandidates(req: CandidateRequest): LayoutCandidate
     }
   }
 
+  // ── Seated arrangements: the outer bars pinned to the stirrup bends ──
+  //
+  // Generated FIRST, because they are the ones §25.7.1.2 allows, and the contiguous rows
+  // above only survive `finalise` when a shift happens to land a bar on each seat.
+  //
+  // Layer 0 spans seat to seat with its remaining bars evenly divided between them, which is
+  // the arrangement the beam generator already draws when nothing overrides it — spreading
+  // only ever widens clear spacing, so §25.2.1 is satisfied more comfortably than by a packed
+  // row. Upper layers take a CENTRED SUBSET of layer 0's positions, per §25.2.2's requirement
+  // that upper-layer bars sit directly above lower ones.
+  //
+  // Both mirrorings are offered where they differ, so the search keeps a genuine choice: a
+  // seated arrangement is not one layout, it is a family, and collapsing it to a single
+  // representative is what leaves a joint with an empty domain.
+  if (req.cornerSeatAcross !== undefined && req.cornerSeatAcross > 0) {
+    const seat = req.cornerSeatAcross;
+    for (const layers of layerOptions) {
+      const inFirst = Math.min(Math.ceil(req.count / layers), req.count);
+      if (inFirst < 2) continue;
+      const seatPitch = (2 * seat) / (inFirst - 1);
+      // The seats are fixed by the cage, so a row that cannot hold this many bars between
+      // them at the code minimum is simply not available at this layer count.
+      if (seatPitch - d < spacing.minClear - 1e-9) continue;
+      const base = Array.from({ length: inFirst }, (_, k) => -seat + k * seatPitch);
+
+      // Which of layer 0's positions the upper layers reuse. Centred, and offered in both
+      // orientations when the subset is not symmetric.
+      const remaining = req.count - inFirst;
+      const perUpper = layers > 1 ? Math.ceil(remaining / (layers - 1)) : 0;
+      for (const bias of [0, 1]) {
+        const slots: CandidateSlot[] = base.map((across) => ({ across, layer: 0 }));
+        let placed = inFirst;
+        for (let layer = 1; layer < layers && placed < req.count; layer++) {
+          const take = Math.min(perUpper, req.count - placed);
+          if (take <= 0) break;
+          const start = Math.floor((inFirst - take) / 2) + (bias && (inFirst - take) % 2 ? 1 : 0);
+          for (let k = 0; k < take; k++) {
+            slots.push({ across: base[start + k], layer });
+          }
+          placed += take;
+        }
+        if (slots.length !== req.count) continue;
+        const c = finalise(slots, d, req, spacing.minClear, layers, refs, 'seat');
+        if (!c || seen.has(c.id)) continue;
+        seen.add(c.id);
+        out.push(c);
+      }
+    }
+  }
+
   // ── Channel-aware arrangements ──
   //
   // Added last so the contiguous rows above stay preferred: a uniformly-pitched row is the
@@ -257,6 +362,42 @@ export function generateLayoutCandidates(req: CandidateRequest): LayoutCandidate
  * One place, used by both the contiguous and the channel-aware paths, so an arrangement
  * cannot reach the domain through a route that skips a check.
  */
+/**
+ * Which slot fills each required bend seat.
+ *
+ * Only the OUTERMOST row is asked: a closed stirrup's bends are at the four corners of its
+ * perimeter, and the bars that can occupy them are the extremes of the row nearest each face.
+ * An inner-layer bar cannot stand in for a corner — it is at a different depth, and the bend
+ * is not there.
+ */
+function witnessSeats(
+  slots: readonly CandidateSlot[], req: CandidateRequest,
+): BendWitness[] {
+  const seat = req.cornerSeatAcross;
+  if (seat === undefined) return [];
+  const tol = req.cornerSeatTolerance ?? 0;
+  // Layer 0 is the row against the face the cage bends around.
+  const outer = slots.filter((s) => s.layer === 0);
+  const find = (target: number) => {
+    let best: { slot: CandidateSlot; offset: number } | null = null;
+    for (const s of outer) {
+      const offset = Math.abs(s.across - target);
+      if (offset > tol + 1e-12) continue;
+      if (best === null || offset < best.offset) best = { slot: s, offset };
+    }
+    return best;
+  };
+  return ([['acrossMin', -seat], ['acrossMax', seat]] as const).map(([name, target]) => {
+    const hit = find(target);
+    return {
+      seat: name,
+      seatAcross: target,
+      filledBy: hit ? { across: hit.slot.across, layer: hit.slot.layer } : null,
+      offset: hit ? hit.offset : Number.POSITIVE_INFINITY,
+    };
+  });
+}
+
 function finalise(
   slots: CandidateSlot[], d: number, req: CandidateRequest,
   codeMinClear: number, layers: number, refs: ClauseRef[], tag: string,
@@ -285,7 +426,16 @@ function finalise(
   // Never emit a candidate that breaches the code minimum, tolerance aside.
   if (minClearInLayer - d < codeMinClear - 1e-9) return null;
 
+  // ── §25.7.1.2 / §25.7.1.3(a): every bend must contain a bar ──
+  //
+  // Checked HERE, at the one place every generation path funnels through, so a family added
+  // later cannot bypass it. A candidate that leaves a bend empty is not offered to the search
+  // at all — it is not a layout to be repaired afterward, it is a layout the code forbids.
+  const bendWitnesses = witnessSeats(slots, req);
+  if (bendWitnesses.some((w) => w.filledBy === null)) return null;
+
   return {
+    bendWitnesses,
     id: `${tag}L${layers}:${slots.map((s) =>
       `${s.layer}@${Math.round(s.across * 10000)}`).join(',')}`,
     slots, layers,

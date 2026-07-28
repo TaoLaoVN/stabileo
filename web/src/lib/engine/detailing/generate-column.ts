@@ -35,6 +35,7 @@ import {
   buildStraightBarWithHooks, standardHook, type BarPath, type Point3,
 } from '../../codes/cirsoc201/bar-geometry';
 import { minClearSpacingColumn } from '../../codes/cirsoc201/spacing';
+import { seatedLongitudinalHalfExtents } from '../../codes/cirsoc201/transverse-cage';
 import { clause, type ClauseRef, type RegulationEdition } from '../../codes/regulation';
 import { MAX_NONCONTACT_PITCH_MM } from './splice';
 
@@ -403,9 +404,18 @@ export function liftBarPositions(
   lift: ColumnLift,
   chosenPositions?: ReadonlyArray<{ x: number; y: number }>,
 ): { positions: Array<{ x: number; y: number }>; halfB: number; halfH: number; repeated: boolean } {
-  const inset = lift.cover + lift.tieDia / 1000 + lift.bars.diameterMm / 2000;
-  const halfB = lift.b / 2 - inset;
-  const halfH = lift.h / 2 - inset;
+  // Where the bars sit is decided ONCE, by `seatedLongitudinalHalfExtents`, and read here.
+  //
+  // This used to be `cover + d_s + d_b/2` computed in place — the contact distance from a
+  // STRAIGHT leg. At a corner the bend cuts the corner off and a bar pushed that far in lands
+  // inside the arc: measured on `rc-design-qa-8`, every corner bar of every column
+  // interpenetrated the joint tie above it by 3,3 mm. The beam generator was corrected for the
+  // same defect; this one was not, which is exactly the divergence one shared derivation
+  // exists to prevent.
+  const seat = seatedLongitudinalHalfExtents(
+    lift.b, lift.h, lift.cover, lift.tieDia, lift.bars.diameterMm);
+  const halfB = seat.corner.halfAcross;
+  const halfH = seat.corner.halfUp;
 
   // The coordinated arrangement is taken only if it is actually usable: the right NUMBER of
   // bars, and no two of them in the same place.
@@ -423,6 +433,11 @@ export function liftBarPositions(
     return { positions: chosen.map((p) => ({ x: p.x, y: p.y })), halfB, halfH, repeated: false };
   }
 
+  // Corners seat in the bend; the intermediate face bars lie against a straight leg and sit
+  // marginally further out. Two rectangles, from the one derivation, because a bar cannot be
+  // pushed into a corner as far as it can be pushed against a flat.
+  const faceB = seat.face.halfAcross;
+  const faceH = seat.face.halfUp;
   const positions: Array<{ x: number; y: number }> = [
     { x: -halfB, y: -halfH }, { x: halfB, y: -halfH },
     { x: halfB, y: halfH }, { x: -halfB, y: halfH },
@@ -431,8 +446,8 @@ export function liftBarPositions(
   for (let k = 0; k < extra; k++) {
     const t = (k + 1) / (extra + 1);
     positions.push(k % 2 === 0
-      ? { x: -halfB + 2 * halfB * t, y: -halfH }
-      : { x: -halfB + 2 * halfB * t, y: halfH });
+      ? { x: -faceB + 2 * faceB * t, y: -faceH }
+      : { x: -faceB + 2 * faceB * t, y: faceH });
   }
   return {
     positions, halfB, halfH,

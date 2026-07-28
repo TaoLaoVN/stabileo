@@ -31,6 +31,7 @@ import { samplePath } from '../../codes/cirsoc201/bar-geometry';
 import { PROVISIONAL_DRAWING_NOTE, type Maturity } from '../../codes/maturity';
 import type { EngineMessage } from '../../codes/message';
 import { teAt } from '../../i18n/engine-text';
+import { tAt } from '../../i18n/store.svelte';
 import { formatClause, type ClauseRef } from '../../codes/regulation';
 import type { BarConflict } from './collision';
 import type { BarMark, DetailingAssembly, UnsupportedCondition } from './assembly';
@@ -487,6 +488,16 @@ export function barArcs(bar: BarPath, proj: Projection, layer = LAYERS.bar): Dra
 
 export interface ScheduleRow {
   mark: string;
+  /**
+   * What the item is, and where it belongs — carried from the mark, not re-derived.
+   *
+   * Optional because a caller outside coordinated detailing can legitimately hand-build a row
+   * from a bill that has no assembly behind it. The exporter renders a blank rather than
+   * throwing: a missing column is a thinner workbook, a thrown exporter is no workbook.
+   */
+  role?: BarPath['role'];
+  ownerElementIds?: number[];
+  zoneIds?: string[];
   diameterMm: number;
   shape: string;
   quantity: number;
@@ -530,6 +541,7 @@ export function buildSchedule(
     }
     rows.push({
       mark: m.mark, diameterMm: m.diameterMm, shape: m.shape, quantity: m.quantity,
+      role: m.role, ownerElementIds: m.ownerElementIds, zoneIds: m.zoneIds,
       cuttingLengthM: m.cuttingLength,
       totalLengthM: m.cuttingLength * m.quantity,
       massKg: m.massKg,
@@ -572,25 +584,33 @@ export function scheduleToAoa(s: ScheduleTable, title: TitleBlock, locale = 'es'
   if (title.superseded) out.push(['*** SUPERSEDED ***']);
   if (title.provisionalNote) out.push([teAt(title.provisionalNote, locale)]);
   out.push([]);
-  out.push(['Marca', 'Ø (mm)', 'Forma', 'Cant.', 'Largo corte (m)', 'Largo total (m)',
-    'Peso (kg)', 'Barras 12 m', 'Recorte (m)']);
+  // Every heading through the dictionary. They were Spanish string literals with a `locale`
+  // parameter sitting unused two lines above them, so an English export produced a Spanish
+  // workbook — and the i18n purity gate cannot see a literal inside an exporter.
+  const h = (k: string) => tAt(`detailing.schedule.${k}`, locale);
+  out.push([h('mark'), h('role'), h('owner'), h('zone'), h('diameter'), h('shape'),
+    h('quantity'), h('cuttingLength'), h('totalLength'), h('mass'), h('stockBars'),
+    h('offcut')]);
   for (const r of s.rows) {
-    out.push([r.mark, r.diameterMm, r.shape, r.quantity,
+    out.push([r.mark, r.role ? tAt(`detailing.schedule.role.${r.role}`, locale) : '',
+      (r.ownerElementIds ?? []).join(', '), (r.zoneIds ?? []).join(', '),
+      r.diameterMm, r.shape, r.quantity,
       +r.cuttingLengthM.toFixed(3), +r.totalLengthM.toFixed(2),
       +r.massKg.toFixed(1), r.stockBars, +r.offcutM.toFixed(2)]);
   }
   out.push([]);
-  out.push(['TOTAL', '', '', s.totals.quantity, '', +s.totals.totalLengthM.toFixed(2),
-    +s.totals.massKg.toFixed(1), s.totals.stockBars, +s.totals.wasteM.toFixed(2)]);
+  out.push([h('total'), '', '', '', '', '', s.totals.quantity, '',
+    +s.totals.totalLengthM.toFixed(2), +s.totals.massKg.toFixed(1),
+    s.totals.stockBars, +s.totals.wasteM.toFixed(2)]);
   out.push([]);
-  out.push(['Resumen por diámetro']);
-  out.push(['Ø (mm)', 'Cant.', 'Peso (kg)', 'Barras 12 m']);
+  out.push([h('byDiameter')]);
+  out.push([h('diameter'), h('quantity'), h('mass'), h('stockBars')]);
   for (const d of s.byDiameter) {
     out.push([d.diameterMm, d.quantity, +d.massKg.toFixed(1), d.stockBars]);
   }
   if (s.notes.length > 0) {
     out.push([]);
-    out.push(['Observaciones']);
+    out.push([h('notes')]);
     for (const n of s.notes) out.push([n]);
   }
   return out;

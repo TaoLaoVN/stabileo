@@ -16,13 +16,13 @@
  * concrete against it.
  *
  * So the search now says `ASSIGNMENT_FOUND`, and constructibility is decided HERE, on the
- * materialised geometry, against twelve conditions that must ALL hold.
+ * materialised geometry, against thirteen conditions that must ALL hold.
  *
  * ── Why it is data, not a boolean ──────────────────────────────────
  *
  * Every condition is reported with its own evidence, whether it passed or failed. A gate
  * that returns false and nothing else is a gate nobody can argue with, and the engineer
- * has to be able to see which of the twelve is blocking and by how much. A single failing
+ * has to be able to see which of the thirteen is blocking and by how much. A single failing
  * condition is enough to withhold the claim — and it must be NAMED, not summarised.
  *
  * Pure: no store, no runes, no i18n.
@@ -30,13 +30,21 @@
 
 import { msg, round, type EngineMessage } from '../../codes/message';
 
-/** The twelve conditions, in the order they are evaluated and reported. */
+/**
+ * The thirteen conditions, in the order they are evaluated and reported.
+ *
+ * The thirteenth — `allRequiredTransversePathsMaterialised` — was added when the transverse
+ * cage became physical. Without it the gate had no way to tell a floor whose stirrups exist
+ * from one whose stirrups are still an instruction, and CONSTRUCTIBLE was reachable with no
+ * shear steel in the model at all.
+ */
 export const CONSTRUCTIBILITY_CONDITIONS = [
   'completeEnvelope',
   'searchNotTruncated',
   'allMembersAssigned',
   'allTransitionsMaterialised',
   'noUnmaterialisedTransitions',
+  'allRequiredTransversePathsMaterialised',
   'noProhibitedConflicts',
   'allMembersReverified',
   'certificatesMatchGeometry',
@@ -77,6 +85,23 @@ export interface ConstructibilityFacts {
   materialisedTransitions: number;
   /** Transitions the search selected that the geometry could not build. */
   unmaterialisedTransitions: number;
+  /**
+   * Transverse pieces the stirrup ZONES require, and how many exist as real `BarPath`s.
+   *
+   * ── Counts, not a boolean ──────────────────────────────────────────
+   *
+   * A boolean says the cage is incomplete; two counts say by how much, and "3 of 412
+   * missing" and "0 of 412 present" send an engineer to completely different places.
+   *
+   * ── Derived from the ZONES, deliberately ───────────────────────────
+   *
+   * `requiredTransversePieces` comes from the zone geometry and the table's spacing, NOT
+   * from the pieces that were built. A requirement read off the output is satisfied by a
+   * generator that emits nothing, which is exactly the failure this condition exists to
+   * catch.
+   */
+  requiredTransversePieces: number;
+  materialisedTransversePieces: number;
   /** Physical bar-surface interpenetrations that remain unresolved. */
   prohibitedConflicts: number;
   /** Members whose final geometry was passed back through the authoritative verifier. */
@@ -118,7 +143,7 @@ function cond(
 /**
  * Decide whether this detailing may be called constructible.
  *
- * All twelve or none. There is no partial credit and no "mostly": an engineer reading
+ * All thirteen or none. There is no partial credit and no "mostly": an engineer reading
  * CONSTRUCTIBLE is entitled to assume every one of these was checked.
  *
  * The distinction between the two failure verdicts is about what the engineer does next.
@@ -149,6 +174,12 @@ export function assessConstructibility(f: ConstructibilityFacts): Constructibili
     cond('noUnmaterialisedTransitions', f.unmaterialisedTransitions === 0,
       f.unmaterialisedTransitions,
       msg('detailing.constructible.unmaterialised', { n: f.unmaterialisedTransitions })),
+    cond('allRequiredTransversePathsMaterialised',
+      f.materialisedTransversePieces >= f.requiredTransversePieces,
+      Math.max(0, f.requiredTransversePieces - f.materialisedTransversePieces),
+      msg('detailing.constructible.transverseMaterialised', {
+        built: f.materialisedTransversePieces, required: f.requiredTransversePieces,
+      })),
     cond('noProhibitedConflicts', f.prohibitedConflicts === 0, f.prohibitedConflicts,
       msg('detailing.constructible.prohibited', { n: f.prohibitedConflicts })),
     cond('allMembersReverified', f.reverifiedMembers >= f.applicableMembers,

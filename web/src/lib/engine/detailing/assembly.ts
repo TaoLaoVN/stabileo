@@ -91,6 +91,21 @@ export interface BarMark {
   massKg: number;
   /** Bar path ids sharing this mark. */
   barIds: string[];
+  /**
+   * What the marked item IS, and where it belongs — the columns a bender and a site engineer
+   * read before the numbers.
+   *
+   * A mark groups identical fabricated items, so `role` is single-valued by construction: a
+   * stirrup and a longitudinal bar never share a shape code. `ownerElementIds` and `zoneIds`
+   * are unions, because one mark legitimately covers the same piece repeated across members
+   * and zones — which is the whole point of a mark.
+   *
+   * Carried on the mark rather than re-derived in each exporter. A schedule that looks up its
+   * own owners is a second reader of the same fact and the two drift.
+   */
+  role: BarPath['role'];
+  ownerElementIds: number[];
+  zoneIds: string[];
 }
 
 /** A junction between two members in the assembly, or between assemblies. */
@@ -143,7 +158,7 @@ export interface AssemblyProvenance {
 
 export interface DetailingAssembly {
   /**
-   * The twelve-condition gate as evaluated for this assembly, when it was run.
+   * The thirteen-condition gate as evaluated for this assembly, when it was run.
    *
    * Persisted with the assembly because the verdict has to survive a reload: an engineer
    * reopening a project must see WHY it is not constructible without re-running the whole
@@ -254,6 +269,10 @@ export function assignMarks(bars: readonly BarPath[], prefix = 'B'): BarMark[] {
       shape,
       massKg: area * cuttingLength * 7850 * list.length,
       barIds: list.map((b) => b.id).sort(),
+      role: list[0].role,
+      ownerElementIds: [...new Set(list.flatMap((b) => b.ownerElementIds))]
+        .sort((x, y) => x - y),
+      zoneIds: [...new Set(list.map((b) => b.zoneId).filter((z): z is string => !!z))].sort(),
     };
   });
 }
@@ -282,7 +301,7 @@ export function evaluateState(a: {
   /** True when the coordinator returned a coordinated result. */
   coordinated: boolean;
   /**
-   * The twelve-condition gate, when it has been run.
+   * The thirteen-condition gate, when it has been run.
    *
    * Optional only so that callers dealing with a partially built assembly can still ask
    * for a state. When it is ABSENT, CONSTRUCTIBLE is not available at all: the ladder's
@@ -323,7 +342,7 @@ export function evaluateState(a: {
     return { state: 'COORDINATED', blockers };
   }
 
-  // The twelve conditions. An empty conflict list is one of them, not all of them —
+  // The thirteen conditions. An empty conflict list is one of them, not all of them —
   // re-verification at the final effective depth, certificate/geometry hash agreement and
   // placement robustness are each independently capable of withholding the claim.
   if (!a.constructibility) {

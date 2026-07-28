@@ -192,12 +192,20 @@ describe('hooks and mandrels are read from Table 25.3.2', () => {
     expect(expected.extension).toBeCloseTo(0.075, 9);
   });
 
-  it('corner arcs use the table mandrel, converted to a centreline radius', () => {
+  it('every bend uses the table mandrel, converted to a centreline radius', () => {
     const mandrel = minMandrelDiameter(DS, 'transverse').value;   // 0,032
     const r = (mandrel + DS / 1000) / 2;                          // 0,020
     const arcs = buildClosedStirrup(input()).path.segments.filter((s) => s.kind === 'arc');
-    expect(arcs).toHaveLength(4);
+    // FIVE bends, not four. A closed stirrup is one bar with two ends: three 90° corners
+    // plus a 135° hook at each end, both at the closing corner. The count was four while
+    // only one hook was drawn as geometry and the other was declared and missing.
+    expect(arcs).toHaveLength(5);
+    expect(arcs.filter((a) => a.sweepDeg === 90)).toHaveLength(3);
+    expect(arcs.filter((a) => a.sweepDeg === 135)).toHaveLength(2);
     for (const a of arcs) expect(a.radius).toBeCloseTo(r, 9);
+    // Every bend records the centre it turns about, or the collision detector measures it
+    // as a chord cutting its own corner.
+    for (const a of arcs) expect(a.centre).toBeDefined();
   });
 
   it('§25.7.1.3(a) covers every stirrup diameter this app generates', () => {
@@ -227,12 +235,23 @@ describe('§25.3.5(e) alternation — NORMATIVE, not practice', () => {
     expect(a.path.segments[0].start).not.toEqual(b.path.segments[0].start);
   });
 
-  it('crosstie hooks turn opposite ways at its two ends', () => {
-    // §25.3.5(d): the hooks must embrace the peripheral bars, one on each face.
-    const tie = buildCrosstie(input({ legs: 3 }), 0, 1);
-    const first = tie.path.segments[0];
-    const last = tie.path.segments[tie.path.segments.length - 1];
-    expect(first.start.x).not.toBeCloseTo(last.end.x, 6);
+  it('crosstie hooks differ at its two ends, and swap with the orientation', () => {
+    // §25.3.5(b)/(c): 135° at one end, a standard hook of at least 90° at the other. (e) makes
+    // WHICH end carries the 90° alternate between successive ties.
+    //
+    // This used to be asserted as the two tips differing along the member AXIS, which was a
+    // consequence of the old geometry rather than the clause — the hooks extended along the
+    // axis, out of the section plane, and a tail parallel to a bar embraces nothing. They now
+    // curl about the bar in the section plane, so both tips share a station and the clause has
+    // to be asserted directly.
+    const a = buildCrosstie(input({ legs: 3, hookOrientation: 'a' }), 0, 1);
+    const b = buildCrosstie(input({ legs: 3, hookOrientation: 'b' }), 0, 1);
+    const angles = (t: typeof a) => [
+      t.path.startTreatment.kind === 'hook' ? t.path.startTreatment.hook.angle : null,
+      t.path.endTreatment.kind === 'hook' ? t.path.endTreatment.hook.angle : null,
+    ];
+    expect(angles(a)).toEqual([90, 135]);
+    expect(angles(b)).toEqual([135, 90]);
   });
 });
 
@@ -277,16 +296,24 @@ describe('§25.7.2.3(b) — no unbraced bar beyond 15·d_be or 150 mm clear', ()
 // ─── Station sequence ────────────────────────────────────────────
 
 describe('station sequence', () => {
-  it('runs from the zone boundary at the allowed spacing', () => {
+  it('runs from the zone boundary, at the allowed spacing when it divides the span', () => {
     // No invented "s/2 from the face" offset: §25.7.1.1 prescribes none.
     expect(stirrupStations({ from: 0, to: 0.6, spacing: 0.15, nextZoneStartsAtEnd: false }))
       .toEqual([0, 0.15, 0.3, 0.45, 0.6]);
   });
 
-  it('covers the zone end when the spacing does not divide the span', () => {
+  it('distributes evenly, at or under the maximum, when the spacing does not divide', () => {
+    // Table 9.7.6.2.2 states a MAXIMUM. `ceil(0,5/0,2) = 3` intervals of 166,7 mm respects it
+    // and lands on both zone ends.
+    //
+    // The previous rule ran at exactly 200 mm and then tacked a station on AT the end, which
+    // left the last two stirrups a REMAINDER apart — whatever the zone length happened to
+    // leave over. On the qa-8 fixture that was two Ø8 stirrups 31 mm apart, four times: two
+    // bars where the design asked for one, at a spacing nothing chose.
     const s = stirrupStations({ from: 0, to: 0.5, spacing: 0.2, nextZoneStartsAtEnd: false });
-    expect(s).toEqual([0, 0.2, 0.4, 0.5]);
+    expect(s).toEqual([0, 0.166667, 0.333333, 0.5]);
     expect(s[s.length - 1]).toBeCloseTo(0.5, 9);
+    for (let i = 1; i < s.length; i++) expect(s[i] - s[i - 1]).toBeLessThanOrEqual(0.2 + 1e-9);
   });
 
   it('does NOT duplicate the bar at a shared zone boundary', () => {

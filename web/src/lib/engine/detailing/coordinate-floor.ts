@@ -53,6 +53,15 @@ export interface MemberBars {
   refs: ClauseRef[];
   /** Generator trace. */
   trace: string[];
+  /**
+   * Transverse pieces the member's stirrup ZONES require, derived from the zones and the
+   * table's spacing rather than counted off the pieces.
+   *
+   * Carried on the member rather than recomputed at the gate so the requirement is stated
+   * once, by the layer that owns it, and the gate compares two independently-produced
+   * numbers instead of comparing an output with itself.
+   */
+  requiredTransversePieces?: number;
 }
 
 export interface JointInput {
@@ -111,7 +120,7 @@ export interface FloorCoordinationInput {
   /** Supplied once laps are materialised; see `ClassificationContext.isLapPair`. */
   isLapPair?: (aId: string, bId: string) => 'contact' | 'nonContact' | undefined;
   /**
-   * The twelve-condition constructibility gate for this assembly.
+   * The thirteen-condition constructibility gate for this assembly.
    *
    * Absent means "not assessed", which caps the assembly at COORDINATED. That is the
    * correct default: the top rung of the ladder is a claim about buildability and it is
@@ -209,7 +218,8 @@ export function repairConflicts(
   bars: readonly BarPath[],
   requiredClearFor: (a: BarPath, b: BarPath) => number,
   tolerances: CollisionTolerances = DEFAULT_TOLERANCES,
-  classifyFor?: (a: BarPath, b: BarPath, surfaceClearance: number) => PairClassification,
+  classifyFor?: (a: BarPath, b: BarPath, surfaceClearance: number,
+    tangentA?: Point3, tangentB?: Point3) => PairClassification,
 ): RepairResult {
   const attempts: RepairAttempt[] = [];
   const trace: string[] = [];
@@ -244,6 +254,24 @@ export function repairConflicts(
       const b = byId.get(c.barB);
       if (!a || !b) continue;
       if (a.locked && b.locked) continue;
+      // ── A CAGE PIECE IS NOT NUDGEABLE ──
+      //
+      // The ladder translates a bar to separate it from another. That is a sound move for two
+      // parallel longitudinal bars and a meaningless one for a closed stirrup or tie: the
+      // piece is a loop drawn AROUND a set of bars, so sliding it 3 mm off one of them slides
+      // it 3 mm INTO the one opposite. Measured on `rc-design-qa-8` — the ladder moved each
+      // joint tie off the corner bar it was clashing with, and the tie's far side and its
+      // hook tail then interpenetrated the diagonally opposite bar instead. Eight conflicts
+      // that were not there before the repair ran.
+      //
+      // A cage that does not fit is a GENERATOR defect: the bar seating, the bend radius or
+      // the closing corner is wrong, and each of those has a clause behind it. Nudging the
+      // symptom hides which. So transverse pieces hold still and the conflict is reported.
+      // Either side being a cage piece disqualifies the pair, not just both. Moving the
+      // LONGITUDINAL bar instead is no better: the cage was built around that bar's position,
+      // so shifting the bar off the tie pushes it into the bend on the other side. Measured —
+      // holding only the tie still simply moved the same eight conflicts onto the column bars.
+      if (a.role === 'transverse' || b.role === 'transverse') continue;
       // Move whichever is not locked; if neither is, move the second for determinism.
       const movable = a.locked ? b : b.locked ? a : b;
       const other = movable === b ? a : b;
@@ -525,8 +553,9 @@ export function coordinateFloor(input: FloorCoordinationInput): FloorCoordinatio
     layerOf: input.layerOf,
     isLapPair: input.isLapPair,
   };
-  const classifyFor = (a: BarPath, b: BarPath, surfaceClearance: number) =>
-    classifyPair(a, b, classificationContext, surfaceClearance);
+  const classifyFor = (a: BarPath, b: BarPath, surfaceClearance: number,
+    tangentA?: Point3, tangentB?: Point3) =>
+    classifyPair(a, b, classificationContext, surfaceClearance, tangentA, tangentB);
 
   const repair = repairConflicts(
     layered.bars, requiredClearFor, input.tolerances, classifyFor);

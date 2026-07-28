@@ -145,7 +145,7 @@ export interface MemberDesignOutcome {
    * Present only after the design–detailing feedback loop has repaired this member. It
    * carries `finalGeometryHash` so the geometry it describes is stated rather than assumed:
    * a certificate from nominal geometry and one from final geometry are different claims,
-   * and the twelve-condition gate is not allowed to mistake the first for the second.
+   * and the thirteen-condition gate is not allowed to mistake the first for the second.
    */
   finalGeometryCertificate?: DesignCertificate & { finalGeometryHash: string };
   /**

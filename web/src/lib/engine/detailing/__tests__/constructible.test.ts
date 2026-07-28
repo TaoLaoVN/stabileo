@@ -108,36 +108,57 @@ function detail() {
 describe('a feasible frame coordinates to a constructible cage', () => {
   it('resolves EVERY physical conflict, not merely most of them', () => {
     const r = detail();
-    console.log('BLOCK', JSON.stringify(r.assemblies.map((a:any)=>[a.id,a.constructibility?.blocking])));
     const conflicts = r.assemblies.flatMap((a) => a.conflicts);
     // Not "fewer than before". Zero. A cage with an unresolved clash does not get built.
     expect(conflicts.map((c) => `${c.severity} ${c.barA}/${c.barB}`)).toEqual([]);
   });
 
-  it('reaches CONSTRUCTIBLE, the state that unlocks review and documents', () => {
-    // Back to CONSTRUCTIBLE, and for a real reason rather than by relaxing the gate.
-    //
-    // The intermediate commit made §25.7.1.2 blocking and this fixture correctly failed: its
-    // bottom mats were centred and the stirrup corners gripped nothing. `layoutBarRow` now
-    // SPREADS layer 0 to the full available width, so the outer bar seats against the leg and
-    // every bend contains a bar by construction. Upper layers stack directly above lower ones
-    // per §25.2.2 rather than spreading independently.
+  /**
+   * ── Why this fixture no longer reaches CONSTRUCTIBLE, and why that is right ──
+   *
+   * The frame's cage FITS: zero conflicts of any class, asserted above, with joint ties and
+   * every bend of every closed stirrup containing a bar. What it cannot do is host the third
+   * stirrup leg Table 9.7.6.2.2 requires across a 500 mm web.
+   *
+   * The arithmetic, measured rather than assumed. The cage's legs stand at ±216 mm, so the
+   * across-width gap is 432 mm against the table's limit for this zone; an interior leg is
+   * therefore mandatory. §25.3.5(d) requires that leg's hooks to "abrazar las barras
+   * longitudinales periféricas", so it may only stand on a line carrying a bar at BOTH faces.
+   * With the certified 3Ø16 per face those lines are ±201,66 mm and the centreline — and the
+   * centreline's top bar is hogging steel that curtails into the supports, so at mid-span it
+   * is not there. The remaining lines are outside the window the table allows.
+   *
+   * So no legal arrangement exists for the reinforcement this fixture certifies. That is an
+   * inadequacy of the steel, not of the geometry, and the honest product answer is to say so
+   * and let the design-feedback enumeration widen the envelope. Adding a bar here to recover
+   * a green assertion would be inventing steel no certificate covers.
+   *
+   * The fixture was written when §25.7.1.2 was checked against a layout that modelled top
+   * bars along the whole member, which is why its steel looked sufficient.
+   */
+  it('reports the leg it cannot place, instead of claiming CONSTRUCTIBLE', () => {
     const r = detail();
     expect(r.assemblies.length).toBeGreaterThan(0);
     for (const a of r.assemblies) {
-      expect(a.state, `${a.id} blockers: ${(a.stateBlockers ?? []).join(' ')}`)
-        .toBe('CONSTRUCTIBLE');
-      expect(a.stateBlockers ?? []).toEqual([]);
+      expect(a.constructibility?.verdict, `${a.id}`).not.toBe('CONSTRUCTIBLE');
+      // NOT_ESTABLISHED, not CONFLICTED: the geometry is sound and the steel is short. The
+      // two verdicts send an engineer to completely different places.
+      expect(a.constructibility?.verdict, `${a.id}`).toBe('NOT_ESTABLISHED');
+      expect(a.constructibility?.blocking, `${a.id}`).toEqual(['noUnsupportedRule']);
     }
   });
 
-  it('and it got there with §25.7.1.2 actually enforced, not waived', () => {
-    // The distinction that matters: the clause is a hard blocker, and this cage passes it.
+  it('names §25.3.5(d) as the reason, and nothing else', () => {
+    // The clause is a hard blocker and it is doing its job. Every other condition passes,
+    // which is what distinguishes "this steel cannot restrain the cage" from "the cage is
+    // broken" — and the message is a structured clause reference, not prose.
     const r = detail();
-    for (const a of r.assemblies) {
-      expect(a.unsupported.map((u) => String(u.message))).toEqual([]);
-      expect(a.constructibility?.verdict, `${a.id}`).toBe('CONSTRUCTIBLE');
-    }
+    const messages = new Set(
+      r.assemblies.flatMap((a) => a.unsupported.map((u) => String(u.message))));
+    // §25.3.5(d), not the more general §25.7.1.2. The bends that are empty are a CROSSTIE's
+    // hooks, and the clause that governs them names the remedy — a peripheral bar on the leg
+    // line — where the general one would only say a bend is bare.
+    expect([...messages]).toEqual(['CIRSOC 201 2025 §25.3.5(d)']);
   });
 
   it('gets there with real bars and marks, not by producing nothing', () => {
@@ -151,9 +172,15 @@ describe('a feasible frame coordinates to a constructible cage', () => {
     expect(new Set(r.assemblies.flatMap((a) => a.elementIds)).size).toBe(3);
   });
 
-  it('reports no unsupported condition on a cage that genuinely fits AND restrains', () => {
+  it('every condition except the missing leg passes', () => {
+    // The cage FITS. Separating "does not fit" from "cannot be restrained by this steel" is
+    // the whole point of reporting conditions individually rather than as a verdict.
     const r = detail();
-    expect(r.assemblies.flatMap((a) => a.unsupported.map((u) => String(u.message)))).toEqual([]);
+    for (const a of r.assemblies) {
+      const failed = (a.constructibility?.conditions ?? [])
+        .filter((c) => !c.passed).map((c) => c.condition);
+      expect(failed, `${a.id}`).toEqual(['noUnsupportedRule']);
+    }
   });
 
   it('is byte-identical when the members are supplied in a different order', () => {

@@ -6,9 +6,9 @@
  * real, and "assignment found" and "can be built" were the same word.
  *
  * The first group reproduces that exact state and proves it cannot produce the claim. The
- * rest prove the same for each of the other eleven conditions INDIVIDUALLY, because a gate
+ * rest prove the same for each of the other twelve conditions INDIVIDUALLY, because a gate
  * that only ever gets tested in its all-passing and all-failing configurations is a gate
- * where eleven of the twelve conditions could be silently unreachable.
+ * where twelve of the thirteen conditions could be silently unreachable.
  */
 
 import { describe, expect, it } from 'vitest';
@@ -30,6 +30,8 @@ const PERFECT: ConstructibilityFacts = {
   selectedTransitions: 622,
   materialisedTransitions: 622,
   unmaterialisedTransitions: 0,
+  requiredTransversePieces: 4820,
+  materialisedTransversePieces: 4820,
   prohibitedConflicts: 0,
   reverifiedMembers: 248,
   certificateHashMatches: 248,
@@ -51,6 +53,11 @@ const FLAGSHIP: ConstructibilityFacts = {
   selectedTransitions: 622,
   materialisedTransitions: 622,  // and the laps were genuinely built
   unmaterialisedTransitions: 0,
+  // The cage did not exist on that date, so the design layer required none of it. Zero
+  // against zero is the honest record of the measurement; inventing a requirement the run
+  // never computed would put a number in a historical row that nobody measured.
+  requiredTransversePieces: 0,
+  materialisedTransversePieces: 0,
   prohibitedConflicts: 7246,     // ← and the steel still interpenetrates
   reverifiedMembers: 0,          // ← nothing was reverified after the geometry moved
   certificateHashMatches: 0,     // ← so no certificate describes the model
@@ -101,12 +108,12 @@ describe('the flagship state that was mislabelled', () => {
   });
 });
 
-describe('all twelve conditions, one at a time', () => {
+describe('all thirteen conditions, one at a time', () => {
   it('the perfect case passes, or the rest of this file proves nothing', () => {
     const a = assessConstructibility(PERFECT);
     expect(a.verdict).toBe('CONSTRUCTIBLE');
     expect(a.blocking).toEqual([]);
-    expect(a.conditions).toHaveLength(12);
+    expect(a.conditions).toHaveLength(13);
   });
 
   const spoil: Record<string, Partial<ConstructibilityFacts>> = {
@@ -115,6 +122,7 @@ describe('all twelve conditions, one at a time', () => {
     allMembersAssigned: { assignedMembers: 247 },
     allTransitionsMaterialised: { materialisedTransitions: 621 },
     noUnmaterialisedTransitions: { unmaterialisedTransitions: 1 },
+    allRequiredTransversePathsMaterialised: { materialisedTransversePieces: 4819 },
     noProhibitedConflicts: { prohibitedConflicts: 1 },
     allMembersReverified: { reverifiedMembers: 247 },
     certificatesMatchGeometry: { certificateHashMatches: 247 },
@@ -178,7 +186,7 @@ describe('the assembly ladder cannot be climbed without the gate', () => {
     expect(e.blockers).toContain('constructibility.notAssessed');
   });
 
-  it('reaches CONSTRUCTIBLE only when all twelve pass', () => {
+  it('reaches CONSTRUCTIBLE only when all thirteen pass', () => {
     const e = evaluateState({
       bars, conflicts: clean, unsupported: [],
       membersVerified: true, coordinated: true,

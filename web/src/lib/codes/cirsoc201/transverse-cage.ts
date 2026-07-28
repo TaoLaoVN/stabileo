@@ -163,6 +163,8 @@ export interface LongitudinalBarRef {
 
 export interface StirrupSetInput {
   elementId: number;
+  /** The member's cage. Every piece of one member's transverse steel shares it. */
+  cageId?: string;
   zoneId: string;
   /** Station along the member axis, m. */
   station: number;
@@ -183,6 +185,19 @@ export interface StirrupSetInput {
   across: Point3;
   /** Alternates the hook corner between consecutive stations (C 25.7.2.3.1, practice). */
   hookOrientation: 'a' | 'b';
+  /**
+   * Shift of this PIECE along the member axis, m, within its set.
+   *
+   * The pieces of one set are not coplanar. A closed stirrup and the crossties threaded
+   * through it are separate bars standing side by side against the formwork, one diameter
+   * apart — they cannot all occupy one section plane, and modelling them that way makes every
+   * crossing between them read as an interpenetration. Measured on the joint cage: 24
+   * crosstie-to-stirrup and 12 crosstie-to-crosstie overlaps, all at zero station difference,
+   * all of them the model rather than the steel.
+   *
+   * The set builders assign it; nothing else should.
+   */
+  axialNudge?: number;
   /** Maximum nominal coarse-aggregate size, mm — §25.7.2.1(a) clear-spacing term. */
   maxAggregateSizeMm: number;
   /**
@@ -198,12 +213,20 @@ function add(p: Point3, v: Point3, k: number): Point3 {
   return { x: p.x + v.x * k, y: p.y + v.y * k, z: p.z + v.z * k };
 }
 
-/** Section point → global, using the member frame the longitudinal generator uses. */
+/**
+ * Section point → global, using the member frame the longitudinal generator uses.
+ *
+ * `axialOffset` shifts the point along the member axis. It is zero for everything on the
+ * stirrup's own section plane, and non-zero only for the two closing hook tails, which
+ * physically pass each other rather than occupying one line.
+ */
 function sectionPoint(
-  input: Pick<StirrupSetInput, 'origin' | 'axis' | 'up' | 'across' | 'station'>,
-  acrossOffset: number, upOffset: number,
+  input: Pick<StirrupSetInput,
+    'origin' | 'axis' | 'up' | 'across' | 'station' | 'axialNudge'>,
+  acrossOffset: number, upOffset: number, axialOffset = 0,
 ): Point3 {
-  const atStation = add(input.origin, input.axis, input.station);
+  const atStation = add(
+    input.origin, input.axis, input.station + (input.axialNudge ?? 0) + axialOffset);
   return add(add(atStation, input.across, acrossOffset), input.up, upOffset);
 }
 
@@ -220,6 +243,104 @@ export function stirrupCentrelineHalfExtents(
 ): { halfAcross: number; halfUp: number } {
   const inset = cover + stirrupDiaMm / 2000;
   return { halfAcross: Math.max(0, b / 2 - inset), halfUp: Math.max(0, h / 2 - inset) };
+}
+
+/**
+ * How far a longitudinal bar SEATED IN A CORNER BEND sits from each leg centreline, m.
+ *
+ * ── The identity this replaces, and why it was wrong ───────────────
+ *
+ * The longitudinal generator seated its outer bars at `(d_s + d_b)/2` from each leg
+ * centreline — bar surface against leg surface, contact, asserted to twelve decimal places.
+ * That identity is exactly right for a bar lying against a STRAIGHT leg, and it is wrong for
+ * a bar at a BEND, because the bend cuts the corner off.
+ *
+ * Measured: a Ø8 stirrup bends at a 32 mm mandrel, so the corner arc has a centreline radius
+ * of 20 mm and its centre sits 20 mm in from each leg. A Ø10 bar pushed to `(8+10)/2 = 9 mm`
+ * from both legs lands 15,56 mm from that centre — 4,44 mm inside a 20 mm arc. Its surface
+ * interpenetrates the stirrup by 4,56 mm. It is not a tight detail; the bar cannot be there,
+ * and on `rc-design-qa-8` that single identity produced 78 prohibited conflicts.
+ *
+ * A bar can be pushed into the corner only until it meets the bend. Its centre then lies
+ * `free = r − (d_s + d_b)/2` from the bend centre, along the diagonal toward the corner, so
+ * it sits `r − free/√2` from each leg centreline. For Ø8/Ø10 that is 12,22 mm; the bar is
+ * held by the BEND, per §25.7.1.2, and clears each straight leg by about 3 mm.
+ *
+ * When the bar is too big for the bend to hold (`free ≤ 0`) it seats at the bend centre. The
+ * result is never allowed below `(d_s + d_b)/2`, which is the straight-leg contact distance
+ * and remains a hard floor whatever the bend geometry says.
+ */
+export function seatedCornerInset(stirrupDiaMm: number, barDiaMm: number): number {
+  const r = centrelineRadius(minMandrelDiameter(stirrupDiaMm, 'transverse').value, stirrupDiaMm);
+  const contact = (stirrupDiaMm + barDiaMm) / 2000;
+  const free = Math.max(0, r - contact);
+  return Math.max(contact, r - free * Math.SQRT1_2);
+}
+
+/**
+ * THE rectangle a member's outermost longitudinal bars sit on — the one authoritative answer.
+ *
+ * ── Why this exists as one function ────────────────────────────────
+ *
+ * Three subsystems were deciding where a longitudinal bar sits relative to its cage, and they
+ * disagreed. `generate-beam` derived a clear width from `b − 2·(cover + d_s)`; `liftBarPositions`
+ * in `generate-column` used `cover + d_s + d_b/2` directly; the cage itself used
+ * `stirrupCentrelineHalfExtents`. Two of the three put the corner bars INSIDE the corner bend,
+ * because `(d_s + d_b)/2` is the contact distance from a STRAIGHT leg and the bend cuts the
+ * corner off. The beam generator was corrected; the column generator was not, and its corner
+ * bars interpenetrated the joint ties by 3,3 mm apiece.
+ *
+ * So the derivation lives here, once, and every consumer reads it:
+ *
+ *   cage      the stirrup/tie CENTRELINE rectangle — `cover` is to the OUTSIDE of the
+ *             transverse steel, so the centreline sits `cover + d_s/2` in from each face.
+ *   inset     how far a bar seated in a CORNER BEND sits from each leg centreline, which is
+ *             `seatedCornerInset` and is NOT `(d_s + d_b)/2`.
+ *   half*     the rectangle the outermost bars sit on: the cage centreline, brought in by the
+ *             seated inset on all four sides.
+ *
+ * ── Corner and face bars are NOT collinear, and that is not an approximation ─
+ *
+ * A bar against a straight leg touches it: `(d_s + d_b)/2` from the leg centreline. A bar at a
+ * corner cannot get that close, because the bend is in the way — it seats in the bend, further
+ * in by `cornerInset − faceInset` (2,3 mm for a Ø8 tie on Ø16 bars). So a column's corner bars
+ * sit slightly inboard of the intermediate bars on the same face. That is what a real cage
+ * does; drawing them collinear is the convention, not the geometry, and a collision check run
+ * against the convention reports overlaps that are not there and misses ones that are.
+ *
+ * A BEAM's row is different: its bars share one elevation, so the corner bar governs and the
+ * whole row follows it. The cost is a fraction of a millimetre of lever arm, which the
+ * re-verification pass measures rather than assumes.
+ */
+export function seatedLongitudinalHalfExtents(
+  b: number, h: number, cover: number, tieDiaMm: number, barDiaMm: number,
+): {
+  /** The transverse steel's own centreline rectangle. */
+  cage: { halfAcross: number; halfUp: number };
+  /** Bars seated in a CORNER BEND — the four corners of a column, a row's outermost bars. */
+  corner: { halfAcross: number; halfUp: number };
+  /** Bars against a STRAIGHT LEG — a column's intermediate face bars. */
+  face: { halfAcross: number; halfUp: number };
+  cornerInset: number;
+  faceInset: number;
+} {
+  const cage = stirrupCentrelineHalfExtents(b, h, cover, tieDiaMm);
+  const cornerInset = seatedCornerInset(tieDiaMm, barDiaMm);
+  // Against a straight leg the two surfaces simply touch: half of each diameter.
+  const faceInset = (tieDiaMm + barDiaMm) / 2000;
+  return {
+    cage,
+    corner: {
+      halfAcross: Math.max(0, cage.halfAcross - cornerInset),
+      halfUp: Math.max(0, cage.halfUp - cornerInset),
+    },
+    face: {
+      halfAcross: Math.max(0, cage.halfAcross - faceInset),
+      halfUp: Math.max(0, cage.halfUp - faceInset),
+    },
+    cornerInset,
+    faceInset,
+  };
 }
 
 /**
@@ -281,11 +402,72 @@ function barAtCorner(
 }
 
 /**
+ * Which bars a closed perimeter ENCLOSES — inside the centreline rectangle.
+ *
+ * Enclosure is a weaker claim than restraint and is recorded separately for that reason. A
+ * bar sitting anywhere inside the stirrup is enclosed by it; only a bar seated in a bend is
+ * restrained by it. §25.7.1.2 asks for the second, and a check that accepted the first would
+ * pass a cage whose corners grip nothing simply because bars exist somewhere within it.
+ *
+ * The bar's own radius is allowed to overhang the centreline: a corner bar legitimately sits
+ * with its centre inside and its surface against the inside face of the leg.
+ */
+function barsInsidePerimeter(
+  bars: readonly LongitudinalBarRef[],
+  halfAcross: number, halfUp: number,
+): string[] {
+  return bars
+    .filter((b) => Math.abs(b.across) <= halfAcross + 1e-9
+      && Math.abs(b.up) <= halfUp + 1e-9)
+    .map((b) => b.id);
+}
+
+/**
  * One closed rectangular stirrup as a real bar path.
  *
- * Built as four straight runs joined by four corner arcs, closing with a standard hook. The
- * hook corner alternates with `hookOrientation` so consecutive stirrups stagger their hooks
- * (C 25.7.2.3.1 — practice, not a requirement).
+ * ── The shape, and the two defects it replaces ─────────────────────
+ *
+ * A closed stirrup is ONE bar with TWO ends. It runs the perimeter and both ends terminate at
+ * the same corner, each with a 135° hook turned into the core, the two tails passing each
+ * other one diameter apart along the member axis. That is what is built here.
+ *
+ * The previous version had four 90° corner arcs and then this, as its whole closing hook:
+ *
+ *     const hookTip = sectionPoint(input, ha − sign(ha)·hook.extension, hu + hook.extension);
+ *     segments.push(straightSegment(sectionPoint(input, ha, hu), hookTip));
+ *
+ * Three defects in two lines. The extension is added to the across coordinate AND to the up
+ * coordinate, so Table 25.3.2's 75 mm extension is drawn as a **106 mm** diagonal — longer by
+ * √2. There is no bend at all, so the piece's cutting length is short by the arc and long by
+ * the overshoot. And it starts at the rectangle corner, which is not where the perimeter loop
+ * ends, so the path had a gap in it.
+ *
+ * Measured consequence on `rc-design-qa-8`: that 106 mm diagonal is driven straight through
+ * the second-layer bottom bars, which sit 81 mm diagonally in from the corner — 73 prohibited
+ * conflicts, contact at 78 % along the line. With the bend modelled and the extension at its
+ * tabulated length the free end stops 18 mm short of those bars.
+ *
+ * The second end was never drawn either, though `startTreatment` declared it.
+ *
+ * ── Which corner closes, and why it is chosen rather than fixed ────
+ *
+ * `hookOrientation` used to DECIDE the closing corner: 'a' put it bottom-left, 'b' bottom-
+ * right, alternating station by station so consecutive closures stagger. That staggering is
+ * C 25.7.2.3.1, a commentary "deberían ... cuando sea posible" — a preference.
+ *
+ * A 135° tail is 75 mm of steel driven diagonally into the core, and whether it lands in a
+ * bar or in clear web depends entirely on which corner it starts from. Measured on
+ * `rc-design-qa-8`: with the corner fixed by the alternation, **88 of 166** stirrups — the
+ * half that closed on the congested side — drove a tail through the bottom mat, 130
+ * prohibited conflicts. The other half were clear. The bars are not symmetric, so neither
+ * corner is right for every station.
+ *
+ * No clause fixes the corner. §25.7.1.3(a) asks for a standard hook around a longitudinal
+ * bar and every corner has one; §25.7.1.2 is satisfied at every corner too. So the corner is
+ * CHOSEN: all four are evaluated against the bars actually present at this station, and the
+ * one whose two tails clear them best wins. `hookOrientation` survives as the tie-break, so
+ * closures still stagger wherever staggering costs nothing — which is exactly the standing a
+ * commentary preference should have against a constructability requirement.
  */
 export function buildClosedStirrup(input: StirrupSetInput): TransversePiece {
   const ds = input.stirrupDiaMm;
@@ -294,37 +476,154 @@ export function buildClosedStirrup(input: StirrupSetInput): TransversePiece {
   const r = centrelineRadius(mandrel.value, ds);
   const hook = standardHook(ds, STIRRUP_HOOK_ANGLE, 'transverse');
 
-  // Corners of the centreline rectangle, in section coordinates.
-  // Ordered so the loop runs bottom → right → top → left when `hookOrientation` is 'a', and
-  // is mirrored across the section centreline when it is 'b'.
-  const s = input.hookOrientation === 'a' ? 1 : -1;
-  const corners: Array<[number, number]> = [
-    [-halfAcross * s, -halfUp],
-    [halfAcross * s, -halfUp],
-    [halfAcross * s, halfUp],
-    [-halfAcross * s, halfUp],
-  ];
+  const SQ = Math.SQRT1_2;
+  /**
+   * Half a diameter each side of the section plane, for the two closing tails.
+   *
+   * The two ends of one bar cannot occupy one line. On site they pass, and the closure is one
+   * diameter thick; modelling them coincident would report the stirrup as interpenetrating
+   * itself, which is a modelling artefact and not a defect anyone can fix on site.
+   */
+  const gap = ds / 2000;
 
-  const segments: BarSegment[] = [];
-  // Each side is shortened by the arc radius at both ends; the arcs then round the corners.
-  for (let i = 0; i < corners.length; i++) {
-    const [a0, u0] = corners[i];
-    const [a1, u1] = corners[(i + 1) % corners.length];
-    const along = { a: Math.sign(a1 - a0), u: Math.sign(u1 - u0) };
-    const startTrim = sectionPoint(input, a0 + along.a * r, u0 + along.u * r);
-    const endTrim = sectionPoint(input, a1 - along.a * r, u1 - along.u * r);
-    segments.push(straightSegment(startTrim, endTrim));
-    // Corner arc into the next side.
-    const [a2, u2] = corners[(i + 2) % corners.length];
-    const next = { a: Math.sign(a2 - a1), u: Math.sign(u2 - u1) };
-    const arcEnd = sectionPoint(input, a1 + next.a * r, u1 + next.u * r);
-    segments.push(arcSegment(endTrim, arcEnd, r, 90));
+  /**
+   * The closing corner, as a mirror pair: `s` flips left/right, `v` flips bottom/top.
+   *
+   * Everything downstream is written in terms of these two, so the four candidate corners are
+   * the four sign combinations and no case is special.
+   */
+  interface Closure { s: 1 | -1; v: 1 | -1 }
+
+  /** Section geometry of one candidate closure. */
+  const layout = (k: Closure) => {
+    const { s, v } = k;
+    const corners: Array<[number, number]> = [
+      [-halfAcross * s, -halfUp * v],
+      [halfAcross * s, -halfUp * v],
+      [halfAcross * s, halfUp * v],
+      [-halfAcross * s, halfUp * v],
+    ];
+    const dir = corners.map((c, i): [number, number] => {
+      const n = corners[(i + 1) % 4];
+      return [Math.sign(n[0] - c[0]), Math.sign(n[1] - c[1])];
+    });
+    // Both hooks turn about this one point: they are the same physical bend around the same
+    // corner longitudinal bar, `r` in from each of the two faces that meet there.
+    const bendCentre: [number, number] = [s * (r - halfAcross), v * (r - halfUp)];
+    const intoCore: [number, number] = [s * SQ, v * SQ];
+    const bendStart: [number, number] = [
+      bendCentre[0] - r * s * SQ, bendCentre[1] + r * v * SQ,
+    ];
+    const tipStart: [number, number] = [
+      bendStart[0] + hook.extension * intoCore[0], bendStart[1] + hook.extension * intoCore[1],
+    ];
+    const exitEnd: [number, number] = [
+      bendCentre[0] + r * s * SQ, bendCentre[1] - r * v * SQ,
+    ];
+    const tipEnd: [number, number] = [
+      exitEnd[0] + hook.extension * intoCore[0], exitEnd[1] + hook.extension * intoCore[1],
+    ];
+    const onSide0: [number, number] = [
+      corners[0][0] + dir[0][0] * r, corners[0][1] + dir[0][1] * r,
+    ];
+    const bendEnd: [number, number] = [
+      corners[0][0] - dir[3][0] * r, corners[0][1] - dir[3][1] * r,
+    ];
+    return { corners, dir, bendCentre, intoCore, bendStart, tipStart, exitEnd, tipEnd, onSide0, bendEnd };
+  };
+
+  /**
+   * Worst surface clearance between this closure's two tails and the longitudinal bars, m.
+   *
+   * Negative means a tail is driven through a bar. Both the 135° arc and the straight
+   * extension are sampled, and the axial `gap` is carried into the distance — a tail that
+   * passes a bar half a diameter out of plane is further away than the section view suggests,
+   * and pretending otherwise would reject corners that are in fact fine.
+   */
+  const tailClearance = (k: Closure): number => {
+    const g = layout(k);
+    const pts: Array<[number, number]> = [];
+    const sample = (from: [number, number], to: [number, number], n: number) => {
+      for (let i = 0; i <= n; i++) {
+        const t = i / n;
+        pts.push([from[0] + (to[0] - from[0]) * t, from[1] + (to[1] - from[1]) * t]);
+      }
+    };
+    // The arcs, on the true circle rather than the chord.
+    for (const [from, to] of [[g.bendStart, g.onSide0], [g.bendEnd, g.exitEnd]] as const) {
+      const a0 = Math.atan2(from[1] - g.bendCentre[1], from[0] - g.bendCentre[0]);
+      const a1 = Math.atan2(to[1] - g.bendCentre[1], to[0] - g.bendCentre[0]);
+      let d = a1 - a0;
+      while (d > Math.PI) d -= 2 * Math.PI;
+      while (d < -Math.PI) d += 2 * Math.PI;
+      for (let i = 0; i <= 12; i++) {
+        const a = a0 + d * (i / 12);
+        pts.push([g.bendCentre[0] + r * Math.cos(a), g.bendCentre[1] + r * Math.sin(a)]);
+      }
+    }
+    sample(g.bendStart, g.tipStart, 12);
+    sample(g.exitEnd, g.tipEnd, 12);
+
+    let worst = Number.POSITIVE_INFINITY;
+    for (const bar of input.longitudinalBars) {
+      for (const [a, u] of pts) {
+        const inPlane = Math.hypot(bar.across - a, bar.up - u);
+        const d3 = Math.hypot(inPlane, gap);
+        worst = Math.min(worst, d3 - ds / 2000 - bar.diameterMm / 2000);
+      }
+    }
+    return worst;
+  };
+
+  // Preference order: the requested orientation first, so a station whose corners are all
+  // equally clear still staggers against its neighbour.
+  const preferred: 1 | -1 = input.hookOrientation === 'a' ? 1 : -1;
+  const candidates: Closure[] = [
+    { s: preferred, v: 1 }, { s: -preferred as 1 | -1, v: 1 },
+    { s: preferred, v: -1 }, { s: -preferred as 1 | -1, v: -1 },
+  ];
+  let closure = candidates[0];
+  let bestClear = tailClearance(candidates[0]);
+  for (const k of candidates.slice(1)) {
+    if (bestClear >= 0) break;          // the preferred corner already works; stagger wins.
+    const c = tailClearance(k);
+    if (c > bestClear) { closure = k; bestClear = c; }
   }
 
-  // Closing hook: a standard 135° stirrup hook turning into the section at the last corner.
-  const [ha, hu] = corners[0];
-  const hookTip = sectionPoint(input, ha - Math.sign(ha || 1) * hook.extension, hu + hook.extension);
-  segments.push(straightSegment(sectionPoint(input, ha, hu), hookTip));
+  const geom = layout(closure);
+  const { corners, dir, bendCentre, bendStart, tipStart, exitEnd, tipEnd, onSide0, bendEnd } = geom;
+
+  const segments: BarSegment[] = [];
+  const P = (a: number, u: number, ax = 0) => sectionPoint(input, a, u, ax);
+
+  // ── Leading end: free tip → 135° bend → onto the first side ──
+  segments.push(straightSegment(P(tipStart[0], tipStart[1], -gap), P(bendStart[0], bendStart[1], -gap)));
+  segments.push(arcSegment(P(bendStart[0], bendStart[1], -gap), P(onSide0[0], onSide0[1]),
+    r, STIRRUP_HOOK_ANGLE, P(bendCentre[0], bendCentre[1], -gap / 2)));
+
+  // ── Perimeter: three 90° corners, then the last side back to the closing corner ──
+  let at: [number, number] = onSide0;
+  for (let i = 0; i < 3; i++) {
+    const next = corners[i + 1];
+    const endTrim: [number, number] = [next[0] - dir[i][0] * r, next[1] - dir[i][1] * r];
+    segments.push(straightSegment(P(at[0], at[1]), P(endTrim[0], endTrim[1])));
+    const arcEnd: [number, number] = [next[0] + dir[i + 1][0] * r, next[1] + dir[i + 1][1] * r];
+    // The corner's bend centre: back off the incoming direction by r, then in along the
+    // outgoing one by r. Both tangent points are exactly r from it.
+    const cc: [number, number] = [
+      next[0] - dir[i][0] * r + dir[i + 1][0] * r, next[1] - dir[i][1] * r + dir[i + 1][1] * r,
+    ];
+    segments.push(arcSegment(P(endTrim[0], endTrim[1]), P(arcEnd[0], arcEnd[1]), r, 90,
+      P(cc[0], cc[1])));
+    at = arcEnd;
+  }
+  // The last side runs into the tangent point of the closing bend, not into the corner.
+  segments.push(straightSegment(P(at[0], at[1]), P(bendEnd[0], bendEnd[1])));
+
+  // ── Trailing end: 135° bend → free tip, one diameter clear of the leading one ──
+  segments.push(arcSegment(P(bendEnd[0], bendEnd[1]), P(exitEnd[0], exitEnd[1], gap),
+    r, STIRRUP_HOOK_ANGLE, P(bendCentre[0], bendCentre[1], gap / 2)));
+  segments.push(straightSegment(P(exitEnd[0], exitEnd[1], gap), P(tipEnd[0], tipEnd[1], gap)));
 
   const containment = corners.map(([a, u]) => ({
     at: sectionPoint(input, a, u),
@@ -334,6 +633,14 @@ export function buildClosedStirrup(input: StirrupSetInput): TransversePiece {
   const refs = [
     REF_BEND_CONTAINS(), REF_ANCHOR(), REF_HOOK_TABLE(), ...mandrel.refs, ...hook.refs,
   ];
+
+  // The relationships this piece is IN, recorded as bar ids so the collision classifier can
+  // check the claim instead of inferring one from the pair's roles.
+  const restrains = [...new Set(
+    containment.map((c) => c.longitudinalBarId).filter((id): id is string => id !== null))];
+  // §25.7.1.3(a): the closing hook is "un gancho normal alrededor de la armadura
+  // longitudinal" — it wraps the bar at the corner it closes on, which is `corners[0]`.
+  const hookBar = containment[0]?.longitudinalBarId ?? null;
 
   return {
     path: {
@@ -346,6 +653,12 @@ export function buildClosedStirrup(input: StirrupSetInput): TransversePiece {
       cuttingLength: developedLength(segments),
       ownerElementIds: [input.elementId],
       layerId: `${input.zoneId}:stirrup`,
+      enclosesBarIds: barsInsidePerimeter(input.longitudinalBars, halfAcross, halfUp),
+      restrainsBarIds: restrains,
+      hookContactsBarIds: hookBar === null ? [] : [hookBar],
+      cageId: input.cageId,
+      zoneId: input.zoneId,
+      station: input.station,
       source: 'generated',
       locked: false,
       refs,
@@ -389,27 +702,109 @@ export function buildCrosstie(
   const bottomHook = ninetyAtTop ? hook135 : hook90;
   const topHook = ninetyAtTop ? hook90 : hook135;
 
-  const bottom = sectionPoint(input, acrossOffset, -halfUp);
-  const top = sectionPoint(input, acrossOffset, halfUp);
+  // ── The bars this tie embraces, and the bends that embrace them ──
+  //
+  // §25.3.5(d): a crosstie's hooks "deben abrazar las barras longitudinales periféricas". To
+  // wrap a bar whose axis runs along the member, a bend has to curl in the plane PERPENDICULAR
+  // to it — the section plane — about the bar's own centre. Two consequences the previous
+  // geometry got wrong, both of them by a full bar:
+  //
+  //   * the straight shaft ran from `−halfUp` to `+halfUp`, i.e. all the way to the cage
+  //     CENTRELINE at each face, which drives it straight THROUGH the peripheral bars it is
+  //     supposed to hold. Measured: −12 mm, exactly `(d_s + d_b)/2`, the shaft centreline
+  //     passing through the bar centre.
+  //   * the hooks extended along the member AXIS, out of the section plane, which wraps
+  //     nothing: a tail parallel to a bar does not embrace it.
+  //
+  // A shaft tangent to a bend of centreline radius `r` about the bar therefore sits `r` to
+  // one side of the bar line. That lateral offset is the geometry, not an approximation of
+  // it; it is why a crosstie in a photograph never looks collinear with the bars it grips.
+  const nearestOn = (wantTop: boolean): LongitudinalBarRef | null => {
+    let best: LongitudinalBarRef | null = null;
+    for (const bar of input.longitudinalBars) {
+      if (wantTop ? bar.up <= 0 : bar.up > 0) continue;
+      if (Math.abs(bar.across - acrossOffset) > 0.006) continue;
+      if (best === null || Math.abs(bar.up) > Math.abs(best.up)) best = bar;
+    }
+    return best;
+  };
+  const barBot = nearestOn(false);
+  const barTop = nearestOn(true);
+  // Absent a bar to grip, the end goes to the cage centreline and `cornerContainment` reports
+  // the bend as holding nothing — which is the §25.7.1.2 defect, stated rather than hidden.
+  const uBot = barBot ? barBot.up : -halfUp;
+  const uTop = barTop ? barTop.up : halfUp;
+  // Which side the shaft passes on. Toward the section centre keeps it clear of the perimeter
+  // leg on the near face; at the centreline the choice is free and is fixed for determinism.
+  const side = acrossOffset > 1e-9 ? -1 : 1;
+  const aLeg = acrossOffset + side * r;
 
-  // Hooks turn along the member axis, opposite ways at the two ends, so the tie grips a
-  // peripheral bar on each face (§25.3.5(d)).
   const segments: BarSegment[] = [];
-  const bottomTip = add(add(bottom, input.axis, bottomHook.extension), input.up, r);
-  segments.push(straightSegment(bottomTip, bottom));
-  segments.push(straightSegment(bottom, top));
-  const topTip = add(add(top, input.axis, -topHook.extension), input.up, -r);
-  segments.push(straightSegment(top, topTip));
+  const SQ = Math.SQRT1_2;
+  /** Tail direction after a bend of `angle` at the bar, leaving a shaft travelling `dir`. */
+  const tail = (angle: HookAngle, dirUp: number): [number, number] =>
+    angle === 90
+      ? [-side * 1, 0]
+      : [-side * SQ, -dirUp * SQ];
+
+  // Bottom end: shaft arrives travelling up; the bend curls about the bottom bar.
+  const bendBot: [number, number] = [acrossOffset, uBot];
+  const tanBot: [number, number] = [aLeg, uBot];
+  const eBot = tail(bottomHook.angle, 1);
+  const exitBot: [number, number] = [
+    bendBot[0] + r * -eBot[1] * side, bendBot[1] + r * eBot[0] * side,
+  ];
+  const tipBot: [number, number] = [
+    exitBot[0] + bottomHook.extension * eBot[0], exitBot[1] + bottomHook.extension * eBot[1],
+  ];
+  segments.push(straightSegment(
+    sectionPoint(input, tipBot[0], tipBot[1]), sectionPoint(input, exitBot[0], exitBot[1])));
+  segments.push(arcSegment(
+    sectionPoint(input, exitBot[0], exitBot[1]), sectionPoint(input, tanBot[0], tanBot[1]),
+    r, bottomHook.angle, sectionPoint(input, bendBot[0], bendBot[1])));
+
+  // The shaft, between the two bends.
+  const tanTop: [number, number] = [aLeg, uTop];
+  segments.push(straightSegment(
+    sectionPoint(input, tanBot[0], tanBot[1]), sectionPoint(input, tanTop[0], tanTop[1])));
+
+  // Top end.
+  const bendTop: [number, number] = [acrossOffset, uTop];
+  const eTop = tail(topHook.angle, -1);
+  const exitTop: [number, number] = [
+    bendTop[0] + r * eTop[1] * side, bendTop[1] - r * eTop[0] * side,
+  ];
+  const tipTop: [number, number] = [
+    exitTop[0] + topHook.extension * eTop[0], exitTop[1] + topHook.extension * eTop[1],
+  ];
+  segments.push(arcSegment(
+    sectionPoint(input, tanTop[0], tanTop[1]), sectionPoint(input, exitTop[0], exitTop[1]),
+    r, topHook.angle, sectionPoint(input, bendTop[0], bendTop[1])));
+  segments.push(straightSegment(
+    sectionPoint(input, exitTop[0], exitTop[1]), sectionPoint(input, tipTop[0], tipTop[1])));
 
   const containment = [
-    { at: bottom, longitudinalBarId: barAtCorner(input.longitudinalBars, acrossOffset, -halfUp, r, ds) },
-    { at: top, longitudinalBarId: barAtCorner(input.longitudinalBars, acrossOffset, halfUp, r, ds) },
+    {
+      at: sectionPoint(input, bendBot[0], bendBot[1]),
+      longitudinalBarId: barBot ? barBot.id : null,
+    },
+    {
+      at: sectionPoint(input, bendTop[0], bendTop[1]),
+      longitudinalBarId: barTop ? barTop.id : null,
+    },
   ];
 
   const refs = [
     REF_CROSSTIE(), REF_CROSSTIE_ALTERNATE(), REF_AV(), REF_HOOK_TABLE(),
     ...mandrel.refs, ...hook135.refs, ...hook90.refs,
   ];
+
+  // A crosstie is an open piece: it has no perimeter, so it ENCLOSES nothing. What it does
+  // is grip the two peripheral bars its hooks embrace (§25.3.5(d)). Recording an empty
+  // enclosure rather than omitting the field is deliberate — "this piece encloses nothing"
+  // is the claim, and a classifier that reads `undefined` as "unknown" would have to guess.
+  const restrains = [...new Set(
+    containment.map((c) => c.longitudinalBarId).filter((id): id is string => id !== null))];
 
   return {
     path: {
@@ -422,6 +817,12 @@ export function buildCrosstie(
       cuttingLength: developedLength(segments),
       ownerElementIds: [input.elementId],
       layerId: `${input.zoneId}:crosstie${index}`,
+      enclosesBarIds: [],
+      restrainsBarIds: restrains,
+      hookContactsBarIds: restrains,
+      cageId: input.cageId,
+      zoneId: input.zoneId,
+      station: input.station,
       source: 'generated',
       locked: false,
       refs,
@@ -546,11 +947,129 @@ export function buildStirrupSet(input: StirrupSetInput): StirrupSetResult {
   const interior = chosen.offsets;
 
   const offsets = [-halfAcross, ...interior, halfAcross];
-  const pieces: TransversePiece[] = [buildClosedStirrup(input)];
+  // The set STRADDLES its station rather than starting at it. Centring keeps the group's
+  // centroid on the design station — so the spacing the table asked for is the spacing
+  // between set centres — and halves how far the outermost piece reaches, which is what
+  // decides whether a set at the end of a zone still fits inside it.
+  const nudge = setNudge(1 + interior.length, input.stirrupDiaMm);
+  const pieces: TransversePiece[] = [buildClosedStirrup({ ...input, axialNudge: nudge(0) })];
   for (let i = 0; i < interior.length; i++) {
-    pieces.push(buildCrosstie(input, interior[i], i + 1));
+    pieces.push(buildCrosstie(
+      { ...input, axialNudge: nudge(i + 1) }, interior[i], i + 1));
   }
   return { pieces, legOffsets: offsets, unsupported };
+}
+
+/**
+ * Axial offsets for the `n` pieces of one set, centred on the design station.
+ *
+ * Adjacent pieces sit one bar diameter apart — touching, which is how they stand against the
+ * formwork — and the group's centroid stays on the station the spacing table chose, so the
+ * table's spacing remains the spacing between sets. `setSpread` is what a caller must reserve
+ * at each end of a zone for the set to fit inside it.
+ */
+export function setNudge(n: number, diaMm: number): (i: number) => number {
+  const step = diaMm / 1000;
+  return (i: number) => (i - (n - 1) / 2) * step;
+}
+
+/** Full axial thickness of a set of `n` pieces, m. */
+export function setSpread(n: number, diaMm: number): number {
+  return Math.max(0, n - 1) * diaMm / 1000;
+}
+
+/**
+ * A COLUMN tie set at one station — the perimeter tie plus the crossties §25.7.2.3 demands.
+ *
+ * ── The clause, and why a perimeter tie alone is not it ────────────
+ *
+ * §25.7.2.3(a) Every corner bar and every alternate longitudinal bar must have lateral
+ *              support from the CORNER of a tie, with an included angle not greater than
+ *              135°. A bar merely lying against a straight leg is not laterally supported:
+ *              the leg can bow outward, which is the whole reason the sub-clause names the
+ *              corner.
+ * §25.7.2.3(b) No bar without that support may be more than the LESSER of 15·d_be and 150 mm
+ *              CLEAR from a bar that has it.
+ *
+ * A single closed perimeter tie supports only the four corner bars. Measured on a 400 mm
+ * square column with 8Ø16 and Ø8 ties: the mid-face bars sit 140,7 mm clear of the nearest
+ * corner bar against a 120 mm limit, so (b) is violated and crossties are not optional.
+ *
+ * ── Both directions, from the bars that are there ──────────────────
+ *
+ * A crosstie spans between two OPPOSITE faces, so it can only exist on a line that carries a
+ * bar at each end (§25.3.5(d) — its hooks must embrace peripheral bars). The lines are read
+ * off the cage: an interior across-offset holding a bar near both the top and the bottom face
+ * earns a tie spanning the depth, and an interior up-offset holding a bar near both sides
+ * earns one spanning the width. For the 8-bar cage above that is exactly one of each, which
+ * is the detail every drawing of that column shows.
+ *
+ * The perpendicular crosstie reuses `buildCrosstie` through a SWAPPED frame rather than a
+ * second implementation: `b`↔`h` and `across`↔`up` describe the same piece turned ninety
+ * degrees, and two spellings of one bend are two things to get wrong.
+ */
+export function buildColumnTieSet(input: StirrupSetInput): StirrupSetResult {
+  const unsupported: ClauseRef[] = [];
+  if (!hookAnchorageIsSupported(input.stirrupDiaMm)) {
+    unsupported.push(clause('cirsoc-201', '2025', '25.7.1.3(b)',
+      'anclaje de estribos Ø20-25 con fyt > 220 MPa requiere longitud empotrada adicional'));
+    return { pieces: [], legOffsets: [], unsupported };
+  }
+
+  const { halfAcross, halfUp } = stirrupCentrelineHalfExtents(
+    input.b, input.h, input.cover, input.stirrupDiaMm);
+
+  /** Interior offsets on `axisOf` that carry a bar near each of the two opposite faces. */
+  const interiorLines = (
+    axisOf: (bar: LongitudinalBarRef) => number,
+    spanOf: (bar: LongitudinalBarRef) => number,
+    halfOnAxis: number, halfOnSpan: number,
+  ): number[] => {
+    const reach = seatedCornerInset(input.stirrupDiaMm, 0) + input.stirrupDiaMm / 1000;
+    const near = (v: number, half: number) => Math.abs(Math.abs(v) - half) <= half - 1e-9
+      ? Math.abs(v) >= half - reach - 0.02 : false;
+    const out = new Set<number>();
+    for (const bar of input.longitudinalBars) {
+      const a = +axisOf(bar).toFixed(6);
+      if (Math.abs(a) >= halfOnAxis - reach - 1e-9) continue;   // that is a face bar, not a line
+      const hasHigh = input.longitudinalBars.some(
+        (o) => Math.abs(axisOf(o) - a) <= 0.006 && spanOf(o) > 0 && near(spanOf(o), halfOnSpan));
+      const hasLow = input.longitudinalBars.some(
+        (o) => Math.abs(axisOf(o) - a) <= 0.006 && spanOf(o) <= 0 && near(spanOf(o), halfOnSpan));
+      if (hasHigh && hasLow) out.add(a);
+    }
+    return [...out].sort((x, y) => x - y);
+  };
+
+  const acrossLines = interiorLines((b) => b.across, (b) => b.up, halfAcross, halfUp);
+  const upLines = interiorLines((b) => b.up, (b) => b.across, halfUp, halfAcross);
+  const nudge = setNudge(1 + acrossLines.length + upLines.length, input.stirrupDiaMm);
+
+  const pieces: TransversePiece[] = [
+    buildClosedStirrup({ ...input, axialNudge: nudge(0) }),
+  ];
+  // Crossties spanning the DEPTH, at interior across-offsets.
+  acrossLines.forEach((offset, i) => pieces.push(buildCrosstie(
+    { ...input, axialNudge: nudge(i + 1) }, offset, i + 1)));
+
+  // Crossties spanning the WIDTH, at interior up-offsets — the same piece, frame swapped.
+  const swapped: StirrupSetInput = {
+    ...input,
+    b: input.h, h: input.b,
+    across: input.up, up: input.across,
+    longitudinalBars: input.longitudinalBars.map((bar) => ({
+      ...bar, across: bar.up, up: bar.across,
+    })),
+  };
+  upLines.forEach((offset, i) => pieces.push(buildCrosstie(
+    { ...swapped, axialNudge: nudge(acrossLines.length + i + 1) },
+    offset, acrossLines.length + i + 1)));
+
+  return {
+    pieces,
+    legOffsets: [-halfAcross, ...acrossLines, halfAcross],
+    unsupported,
+  };
 }
 
 // ─── Station sequence ────────────────────────────────────────────
@@ -577,24 +1096,53 @@ export interface StationSequenceInput {
 export function stirrupStations(input: StationSequenceInput): number[] {
   const { from, to, spacing } = input;
   if (!(spacing > 0) || !(to > from)) return [];
-  const out: number[] = [];
   const span = to - from;
-  const n = Math.floor(span / spacing + 1e-9);
+
+  // ── Distributed evenly, at or under the table's maximum ────────────
+  //
+  // The previous rule ran stations at exactly `spacing` from the zone start and then, if the
+  // last one fell short of the zone end, tacked one more on AT the end. That leaves the last
+  // two stirrups a remainder apart, and a remainder is whatever the zone length happens to
+  // leave over — measured on `rc-design-qa-8`, two Ø8 stirrups **31 mm** apart, four times.
+  // Buildable at 19,9 mm clear, and no detailer would draw it: it is two bars where the
+  // design asked for one, at a spacing nothing chose.
+  //
+  // Table 9.7.6.2.2 states a MAXIMUM. `n = ceil(span / s_max)` intervals of `span / n` is the
+  // loosest arrangement that respects it while landing exactly on both zone ends, so it
+  // satisfies the clause everywhere, covers the zone by construction, and invents no number —
+  // `span / n ≤ s_max` follows from the definition of the ceiling. It is also what is
+  // actually built, which is not the reason but is worth saying.
+  const n = Math.max(1, Math.ceil(span / spacing - 1e-9));
+  const pitch = span / n;
+
+  const out: number[] = [];
   for (let k = 0; k <= n; k++) {
-    const x = from + k * spacing;
-    if (x > to + 1e-9) break;
-    // Skip the closing boundary when the next zone owns it.
-    if (input.nextZoneStartsAtEnd && Math.abs(x - to) < 1e-9) continue;
-    out.push(+x.toFixed(6));
-  }
-  // The zone must be covered to its end: if the last station falls short by more than a
-  // rounding error, the end is stirruped too, because leaving the tail bare would be an
-  // uncovered length rather than a wider spacing.
-  const last = out[out.length - 1];
-  if (!input.nextZoneStartsAtEnd && (last === undefined || to - last > 1e-6)) {
-    out.push(+to.toFixed(6));
+    // Skip the closing boundary when the next zone owns it: a shared boundary must not
+    // produce two bars at one point, which is a fabrication error and not a tight detail.
+    if (input.nextZoneStartsAtEnd && k === n) continue;
+    out.push(+(from + k * pitch).toFixed(6));
   }
   return out;
+}
+
+/**
+ * How many stations a zone REQUIRES, derived from the zone rather than from the pieces.
+ *
+ * ── Why not just count what was generated ──────────────────────────
+ *
+ * Because a generator that emits nothing would then satisfy the requirement trivially. The
+ * whole point of the materialisation gate is to catch the gap between what the design layer
+ * asked for and what the geometry layer built, and a requirement read off the output cannot
+ * see that gap by construction.
+ *
+ * Shares `stirrupStations`' arithmetic so the two cannot drift: the count IS the length of
+ * the sequence, and this function exists to name that fact at the call sites that need the
+ * number without the coordinates.
+ */
+export function stirrupStationCount(
+  from: number, to: number, spacing: number, nextZoneStartsAtEnd = false,
+): number {
+  return stirrupStations({ from, to, spacing, nextZoneStartsAtEnd }).length;
 }
 
 // ─── §25.7.2.3(b) unbraced-bar check ────────────────────────────
@@ -618,18 +1166,41 @@ export interface UnbracedBarReport {
  */
 export function unbracedBarReport(
   bars: readonly LongitudinalBarRef[],
-  legOffsets: readonly number[],
+  /**
+   * The fabricated pieces, when they exist — the authoritative answer to which bars have
+   * lateral support. A bare list of leg offsets is still accepted for the one-dimensional
+   * case a single beam row presents.
+   */
+  cage: readonly TransversePiece[] | readonly number[],
   stirrupDiaMm: number,
   tolerance = 0.002,
 ): UnbracedBarReport {
   const limit = Math.min(15 * stirrupDiaMm / 1000, 0.150);
-  // A leg braces a bar when the two are in contact. That is a PHYSICAL condition, so the
-  // reach is derived from the two radii — the leg centreline sits d_s/2 from its inner face
-  // and the bar centre d_b/2 from its own surface — plus a small fabrication tolerance.
-  // A bare 5 mm tolerance was used here first and mis-reported an ordinary 300 mm cage as
-  // unbraced, because a corner bar's centre is legitimately (d_s + d_b)/2 inside the leg.
-  const isBraced = (bar: LongitudinalBarRef) =>
-    legOffsets.some((o) => Math.abs(o - bar.across)
+
+  // ── What "laterally supported" means, per §25.7.2.3(a) ─────────────
+  //
+  // A bar has lateral support when it sits in the CORNER of a tie — a bend with an included
+  // angle not greater than 135°. Lying against a straight leg is not support: a straight leg
+  // can bow outward, which is precisely why the sub-clause names the corner.
+  //
+  // So when the fabricated pieces are available the bends are read directly: every bar a
+  // bend embraces is supported, and every bar it does not is not. `cornerContainment` already
+  // records exactly that, for a closed tie's four corners and for a crosstie's two hooks.
+  //
+  // The older form compared a bar's ACROSS offset against a list of leg positions. That is a
+  // one-dimensional test, adequate for a beam's single row and wrong for a column's perimeter
+  // cage, where it credited a mid-face bar lying on a straight leg with support the clause
+  // does not grant it — and, once corner bars were seated in their bends 2,3 mm further in,
+  // stopped recognising the corner bars it was actually right about.
+  const isPieces = cage.length > 0 && typeof cage[0] === 'object';
+  const supportedIds = isPieces
+    ? new Set((cage as readonly TransversePiece[]).flatMap((p) => p.cornerContainment
+      .map((c) => c.longitudinalBarId)
+      .filter((id): id is string => id !== null)))
+    : null;
+  const isBraced = (bar: LongitudinalBarRef) => supportedIds !== null
+    ? supportedIds.has(bar.id)
+    : (cage as readonly number[]).some((o) => Math.abs(o - bar.across)
       <= (stirrupDiaMm + bar.diameterMm) / 2000 + tolerance);
 
   const braced = bars.filter(isBraced);

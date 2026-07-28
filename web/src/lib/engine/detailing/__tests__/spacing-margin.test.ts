@@ -109,6 +109,9 @@ describe('placementRobust gates CONSTRUCTIBLE', () => {
     completeEnvelope: true, searchTruncated: false,
     applicableMembers: 4, assignedMembers: 4,
     selectedTransitions: 2, materialisedTransitions: 2, unmaterialisedTransitions: 0,
+    // No stirrup zones in this fixture, so the design layer requires no cage. 0 of 0 is
+    // the truthful reading, not a waiver.
+    requiredTransversePieces: 0, materialisedTransversePieces: 0,
     prohibitedConflicts: 0, reverifiedMembers: 4, certificateHashMatches: 4,
     spacingNotCodeLegal: 0, spacingNotPlacementRobust: 0,
     unsupportedRules: 0, staleAssemblies: 0,

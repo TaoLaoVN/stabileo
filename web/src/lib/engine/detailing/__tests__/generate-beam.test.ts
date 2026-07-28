@@ -296,10 +296,23 @@ describe('beam bar generation', () => {
     expect(g.unsupported.join(' ')).not.toMatch(/corte teórico/);
   });
 
-  it('generates top bars at both supports', () => {
+  it('generates top bars at both supports, two of them running through', () => {
     const g = generateBeamBars(input());
-    expect(g.bars.filter((b) => b.id.includes('topI'))).toHaveLength(4);
-    expect(g.bars.filter((b) => b.id.includes('topJ'))).toHaveLength(4);
+    // §25.7.1.2: each of a closed stirrup's two top bends "debe contener una barra
+    // longitudinal", so two top bars run the whole member instead of every one of them
+    // curtailing into a support. They occupy two of each support's positions and count
+    // toward its hogging steel, so the per-support totals are unchanged — what changed is
+    // that two of the bars no longer stop.
+    const run = g.bars.filter((b) => b.id.includes('topRun'));
+    expect(run).toHaveLength(2);
+    expect(g.bars.filter((b) => b.id.includes('topI')).length + run.length).toBe(4);
+    expect(g.bars.filter((b) => b.id.includes('topJ')).length + run.length).toBe(4);
+    // They are continuous: present at mid-span, where the curtailed bars are not.
+    for (const bar of run) {
+      const xs = bar.segments.flatMap((sg) => [sg.start.x, sg.end.x]);
+      expect(Math.min(...xs)).toBeLessThanOrEqual(0);
+      expect(Math.max(...xs)).toBeGreaterThanOrEqual(6);
+    }
   });
 
   it('places bottom bars below the axis and top bars above it', () => {

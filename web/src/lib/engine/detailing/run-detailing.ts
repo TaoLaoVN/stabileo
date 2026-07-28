@@ -34,15 +34,19 @@
  * Pure: no store, no runes. The store command supplies the data and consumes the result.
  */
 
-import type { RegulationEdition } from '../../codes/regulation';
+import { clause, formatClause, type RegulationEdition } from '../../codes/regulation';
 import { anchorageFunctions } from '../../codes/cirsoc201/anchorage';
-import type { BarPath, Point3 } from '../../codes/cirsoc201/bar-geometry';
+import {
+  centrelineRadius, minMandrelDiameter, type BarPath, type Point3,
+} from '../../codes/cirsoc201/bar-geometry';
 import type { MemberContext } from '../design/member-context';
 import type { MemberDesignOutcome } from '../design/outcome';
 import {
   generateBeamBars, type BentUpPolicy, type MomentStation, type SupportKind,
 } from './generate-beam';
-import { generateColumnStack, type ColumnLift, type IncidentBeamAtJoint } from './generate-column';
+import {
+  generateColumnStack, tieSpacing, type ColumnLift, type IncidentBeamAtJoint,
+} from './generate-column';
 import { candidateClears, generateLayoutCandidates, type KeepOut } from './candidates';
 import {
   cageKeepOuts, generateColumnCandidates, type ColumnLayoutCandidate,
@@ -65,6 +69,10 @@ import {
 import { prescribedTolerances } from '../../codes/cirsoc201/placement';
 import { deriveDevelopment } from '../../codes/cirsoc201/anchorage';
 import { minClearSpacingColumn } from '../../codes/cirsoc201/spacing';
+import {
+  buildColumnTieSet, seatedLongitudinalHalfExtents, stirrupStationCount, stirrupStations,
+  unbracedBarReport,
+} from '../../codes/cirsoc201/transverse-cage';
 import { coordinateFloor, type FloorCoordinationResult, type JointInput, type MemberBars } from './coordinate-floor';
 import { evaluateState, reviewRank, type DetailingAssembly } from './assembly';
 import { deriveMaturity } from '../../codes/maturity';
@@ -552,13 +560,15 @@ export function runDetailing(input: RunDetailingInput): RunDetailingResult {
   const spacingMargin = Math.max(0, input.spacingMargin ?? 0);
 
   /** The same classification the authoritative pass uses, for the robustness re-check. */
-  const classifyForRun = (a: BarPath, b: BarPath, surface: number) => classifyPair(a, b, {
+  const classifyForRun = (
+    a: BarPath, b: BarPath, surface: number, ta?: Point3, tb?: Point3,
+  ) => classifyPair(a, b, {
     edition: input.edition,
     maxAggregateSizeMm: input.maxAggregateSizeMm,
     memberKindOf: (id) => input.contexts.get(id)?.elementType,
     layerOf: (barId) => barLayers.get(barId),
     isLapPair: (x, y) => lapLookup?.(x, y),
-  }, surface);
+  }, surface, ta, tb);
   /** Layer index per bar, reported by the generators, for the §25.2.2 classification. */
   const barLayers = new Map<string, number>();
 
@@ -620,6 +630,28 @@ export function runDetailing(input: RunDetailingInput): RunDetailingResult {
    * beam steel is large, and it is legal because it packs the face bars at the §25.2.3
    * minimum rather than at an invented offset.
    */
+
+  /**
+   * The §25.7.1.2 seat a beam's outermost bars must occupy, and how close is close enough.
+   *
+   * Read from `seatedLongitudinalHalfExtents` — the one authority on where a bar sits against
+   * its cage — rather than derived again here. The tolerance mirrors `barAtCorner`'s reach in
+   * `transverse-cage`: a bend of centreline radius `r` contains a bar whose centre lies within
+   * about `r + d_b/2` of the seat, so the two layers agree on what "contained" means.
+   */
+  const beamSeat = (ctx: {
+    section: { b: number; h: number }; material: { cover: number; stirrupDia: number };
+  }, barDiaMm: number) => {
+    const seat = seatedLongitudinalHalfExtents(
+      ctx.section.b, ctx.section.h, ctx.material.cover, ctx.material.stirrupDia, barDiaMm);
+    const r = centrelineRadius(
+      minMandrelDiameter(ctx.material.stirrupDia, 'transverse').value, ctx.material.stirrupDia);
+    return {
+      cornerSeatAcross: seat.corner.halfAcross,
+      cornerSeatTolerance: r + barDiaMm / 2000,
+    };
+  };
+
   const cageFor = new Map<string, ColumnLayoutCandidate>();
   /** The ordinary drawing — what is actually built, until an alternative earns its place. */
   const conventionalCage = new Map<string, ColumnLayoutCandidate>();
@@ -685,6 +717,7 @@ export function runDetailing(input: RunDetailingInput): RunDetailingResult {
           count, diameterMm: dia, clearWidth, edition: input.edition,
           maxAggregateSizeMm: input.maxAggregateSizeMm, memberKind: 'beam',
           placementTolerance: DEFAULT_TOLERANCES.placement,
+          ...beamSeat(bctx, dia),
         });
         if (!domain.some((c) => candidateClears(c, dia, keep).ok)) stranded++;
       }
@@ -915,6 +948,7 @@ export function runDetailing(input: RunDetailingInput): RunDetailingResult {
         placementTolerance: placement,
         lockedAcross: lockedAcross.length > 0 ? lockedAcross : undefined,
         obstacles: endObstacles.length > 0 ? endObstacles : undefined,
+        ...beamSeat(ctx, dia),
       });
       if (domain.length === 0) continue;
 
@@ -1282,6 +1316,39 @@ export function runDetailing(input: RunDetailingInput): RunDetailingResult {
 
   const layoutChoice = coordinateBeamLayouts();
 
+  /**
+   * Distance from a node to the face of the column supporting it, m.
+   *
+   * A beam's `L` is node to node and a node is the column CENTRELINE, so a cage generated
+   * over `[0, L]` runs through the joint. This is what the beam generator subtracts to stop
+   * its stirrups at the support face.
+   *
+   * ── The plan orientation of a column is not modelled ───────────────
+   *
+   * A column section carries `b` and `h`, and nothing says which of them lies along which
+   * global axis, so the extent along a given beam's axis is somewhere between the two. The
+   * SMALLER half-dimension is used, and that choice is deliberate rather than arbitrary: the
+   * two errors are not symmetric. Overstating the face leaves beam length with no shear
+   * reinforcement, which is a strength deficiency; understating it leaves a stirrup slightly
+   * inside the joint, which is a clash the conflict list will report by name. A safety
+   * shortfall that nothing measures is worse than a clash that something does.
+   *
+   * `coordinate-floor` faces the same gap and answers it the same way, with a circumscribed
+   * radius rather than an assumed axis. Neither is a substitute for modelling the
+   * orientation; both are honest about not having it.
+   */
+  const supportFaceOffset = (nodeId: number): number => {
+    let half = 0;
+    for (const cid of columns) {
+      const cEl = input.elements.get(cid);
+      if (!cEl || (cEl.nodeI !== nodeId && cEl.nodeJ !== nodeId)) continue;
+      const cCtx = input.contexts.get(cid);
+      if (!cCtx) continue;
+      half = Math.max(half, Math.min(cCtx.section.b, cCtx.section.h) / 2);
+    }
+    return half;
+  };
+
   // ── Beams ──
   for (const id of beams) {
     const ctx = input.contexts.get(id)!;
@@ -1327,6 +1394,8 @@ export function runDetailing(input: RunDetailingInput): RunDetailingResult {
       origin: nodePoint(nI),
       axis: unit(nodePoint(nI), nodePoint(nJ)),
       up: { x: 0, y: 0, z: 1 },
+      supportFaceI: supportFaceOffset(el.nodeI),
+      supportFaceJ: supportFaceOffset(el.nodeJ),
       transverseSlots: layoutChoice.slots.get(id),
       transverseLayers: layoutChoice.slotLayers.get(id),
       layerRaise: layerRaiseOf.get(id) ?? 0,
@@ -1335,9 +1404,40 @@ export function runDetailing(input: RunDetailingInput): RunDetailingResult {
     } as never);
 
     for (const [barId, layer] of Object.entries(gen.barLayers)) barLayers.set(barId, layer);
+
+    // ── The transverse cage joins the assembly ──
+    //
+    // Until this line the stirrups and crossties were fabricated and then dropped: real
+    // `BarPath`s with hooks, mandrels and cutting lengths that nothing downstream could see.
+    // No collision geometry, no mark, no schedule row, no mass, nothing in any export. The
+    // cage existed in `gen.transverse` and the assembly's bar list did not contain it.
+    //
+    // Appending it is what makes every downstream consumer read one bar list. It also
+    // exposes the cage to the collision detector for the first time, which is the point:
+    // steel that nothing checks is steel nobody can trust.
+    const transversePaths = gen.transverse.map((p) => p.path);
+
+    // What the ZONES require, computed from the zones — not from `gen.transverse.length`.
+    //
+    // Reading the requirement off the output would make the gate self-satisfying: a
+    // generator that emitted nothing would require nothing and pass. This mirrors the
+    // generator's own zone walk (one closed stirrup plus `legs − 2` crossties at every
+    // station the spacing produces) from the design-layer instruction, so the two numbers
+    // are produced independently and a disagreement is visible.
+    let requiredTransversePieces = 0;
+    for (let zi = 0; zi < gen.stirrupZones.length; zi++) {
+      const z = gen.stirrupZones[zi];
+      const next = gen.stirrupZones[zi + 1];
+      const stations = stirrupStationCount(
+        z.from, z.to, z.spacing,
+        next !== undefined && Math.abs(next.from - z.to) < 1e-9);
+      requiredTransversePieces += stations * (1 + Math.max(0, Math.floor(z.legs) - 2));
+    }
+
     memberBarsById.set(id, {
       elementId: id,
-      bars: gen.bars,
+      bars: [...gen.bars, ...transversePaths],
+      requiredTransversePieces,
       unsupported: gen.unsupported,
       maturity: deriveMaturity({
         implemented: true, refs: [...gen.refs, ...anchor.refs], benchmarks: [],
@@ -1423,6 +1523,11 @@ export function runDetailing(input: RunDetailingInput): RunDetailingResult {
     .map((id) => {
       const byLayer = new Map<string, number[]>();
       for (const bar of memberBarsById.get(id)?.bars ?? []) {
+        // Longitudinal only. A layer centroid is a statement about flexural lever arm, and
+        // the cage now shares this bar list — a stirrup carries a `layerId` of its own
+        // (`e5:support:0:stirrup`) and averaging it in would put the reported centroid
+        // somewhere between the top and bottom mats, on every member.
+        if (bar.role !== 'longitudinal') continue;
         if (!bar.layerId) continue;
         const z = bar.segments[0]?.start.z;
         if (z === undefined) continue;
@@ -1480,6 +1585,234 @@ export function runDetailing(input: RunDetailingInput): RunDetailingResult {
     }
     return out.sort((a, b) => a.id.localeCompare(b.id));
   };
+
+  // ── §15.4 — the joint gets its own transverse reinforcement ──
+  //
+  // Beam stirrups stop at the support face, which is where a beam's shear reinforcement
+  // belongs. That leaves the joint volume, and the joint is not reinforced by either beam:
+  // what confines it is the COLUMN's tie cage, continued through, perpendicular to the column
+  // axis. §15.4.2 says so, and refers the geometry to §25.7.2.
+  //
+  // This was never modelled. Before the support-face clamp the joint merely CONTAINED steel —
+  // the two beams' stirrups, lying in the beams' own section planes, at right angles to the
+  // ties the clause asks for, and clashing with each other. Something in the right place is
+  // not the right thing, and the gap only became visible once the wrong thing was removed.
+  //
+  // Fabricated here rather than in `generate-column` because the joint is a property of the
+  // NODE, not of either member: its depth is set by the deepest beam framing into it, and no
+  // single member knows that.
+  for (const cid of columns) {
+    const cEl = input.elements.get(cid);
+    const cCtx = input.contexts.get(cid);
+    const cMb = memberBarsById.get(cid);
+    if (!cEl || !cCtx || !cMb) continue;
+    const nI = input.nodes.get(cEl.nodeI);
+    const nJ = input.nodes.get(cEl.nodeJ);
+    if (!nI || !nJ) continue;
+    const top = Z(nI) >= Z(nJ) ? nI : nJ;
+
+    // Joint depth is the deepest beam framing in: the joint is as deep as the members that
+    // form it, and a tie above the shallowest beam's soffit is still inside the joint.
+    let depth = 0;
+    for (const bid of beams) {
+      const bEl = input.elements.get(bid);
+      if (!bEl || (bEl.nodeI !== top.id && bEl.nodeJ !== top.id)) continue;
+      depth = Math.max(depth, input.contexts.get(bid)?.section.h ?? 0);
+    }
+    if (depth <= 0) continue;   // a column with no beam at its top has no joint.
+
+    const cAccepted = input.outcomes.get(cid)?.accepted;
+    const longDia = (cAccepted ? columnBars(cAccepted)?.diameterMm : undefined)
+      ?? cCtx.material.stirrupDia;
+    const ts = tieSpacing(longDia, cCtx.material.stirrupDia,
+      Math.min(cCtx.section.b, cCtx.section.h), input.edition);
+
+    // The column bars this cage has to enclose, in the TIE's section frame. The tie lies in
+    // the horizontal plane, so `up` is taken as global x and `across` as global y — the same
+    // arbitrary-but-stated choice the support-face offset had to make, for the same reason:
+    // a column section carries `b` and `h` and nothing says which lies along which axis.
+    // The bars the tie can grip, WITH the elevation each one actually reaches.
+    //
+    // A tie is a horizontal loop at one elevation, and a column bar is only there to be held
+    // if it extends that far. At a ROOF termination the hook-tier lift shortens some bars by
+    // up to a few diameters plus their clearance gaps, so the uppermost ties in a joint band
+    // can sit above a bar that stops below them. Judging containment at the node's elevation
+    // credits every tie with a bar that only some of them reach.
+    const columnBarExtent = new Map<string, { lo: number; hi: number }>();
+    for (const mb of memberBarsById.values()) {
+      for (const bar of mb.bars) {
+        if (bar.role !== 'longitudinal') continue;
+        const zs = bar.segments.flatMap((sg) => [sg.start.z, sg.end.z]);
+        columnBarExtent.set(bar.id, { lo: Math.min(...zs), hi: Math.max(...zs) });
+      }
+    }
+    const plan = columnBarsAtLevel(Z(top), { x: top.x, y: top.y });
+    const cageBarsAt = (z: number) => plan
+      .filter((p) => {
+        const e = columnBarExtent.get(p.id);
+        return e === undefined || (e.lo <= z + 0.002 && e.hi >= z - 0.002);
+      })
+      .map((p) => ({ id: p.id, across: p.dy, up: p.dx, diameterMm: p.diameterMm }));
+    const cageBars = cageBarsAt(Z(top));
+
+    // ── The band a joint tie can actually occupy ──
+    //
+    // A joint tie is a closed rectangle in a HORIZONTAL plane, and a beam's longitudinal steel
+    // is horizontal too. They are coplanar, not crossing: a tie placed at the elevation of a
+    // beam's top mat does not pass over those bars, it passes THROUGH them. Measured before
+    // this clamp: three prohibited overlaps and eleven near-misses, every one a tie at a beam
+    // bar's own elevation.
+    //
+    // So the ties go where they physically go on site — the clear band between the incident
+    // beams' bottom steel and their top steel. That is not a simplification of the clause; it
+    // is the only place in the joint a horizontal tie fits.
+    const incidentBeams = beams.filter((bid) => {
+      const bEl = input.elements.get(bid);
+      return !!bEl && (bEl.nodeI === top.id || bEl.nodeJ === top.id);
+    });
+    const tieR = cCtx.material.stirrupDia / 2000;
+    let bandLo = Z(top) - depth / 2;
+    let bandHi = Z(top) + depth / 2;
+    /**
+     * Squeeze the band away from one obstructing elevation.
+     *
+     * The reservation is the two radii PLUS the code's minimum clear spacing, not bare
+     * contact. A tie resting against the bar above it satisfies no clause and leaves nowhere
+     * for concrete to pass: measured, a tie placed at contact with a roof-hook tail came out
+     * 7 mm clear against the 40 mm §25.2.3 asks of steel running alongside in a column.
+     */
+    const jointClear = minClearSpacingColumn(input.edition, {
+      barDiameterMm: longDia, maxAggregateSizeMm: input.maxAggregateSizeMm,
+    });
+    const keepClearOf = (zc: number, diameterMm: number, from: 'mat' | 'roofHook') => {
+      const keepOut = diameterMm / 2000 + tieR + jointClear.minClear;
+      // A roof hook is a TOP-of-joint termination whatever elevation tier it landed on, so it
+      // always brings the ceiling down. Sorting it by whether it happens to sit above or below
+      // the node splits the band in two and leaves neither half usable — measured, both joints
+      // of the feasible frame reported no room at all when the tier-0 tail, sitting exactly at
+      // the node, was read as a floor for the tails beneath it.
+      if (from === 'roofHook' || zc >= Z(top)) bandHi = Math.min(bandHi, zc - keepOut);
+      else bandLo = Math.max(bandLo, zc + keepOut);
+    };
+    for (const bid of incidentBeams) {
+      for (const bar of memberBarsById.get(bid)?.bars ?? []) {
+        if (bar.role !== 'longitudinal') continue;
+        const zs = bar.segments.flatMap((sg) => [sg.start.z, sg.end.z]);
+        keepClearOf((Math.min(...zs) + Math.max(...zs)) / 2, bar.diameterMm, 'mat');
+      }
+    }
+    // ── And of the COLUMN's own steel where it turns horizontal ──
+    //
+    // A column bar is vertical and a horizontal tie crosses it, which is fine. Its roof hook
+    // is not: at a roof termination the bar bends inward at the top and its tail lies FLAT
+    // inside the joint, in the same plane a tie wants. `generate-column` staggers those tails
+    // across elevation tiers so they do not collide with each other, which spreads them
+    // through the joint band rather than concentrating them.
+    //
+    // Measured on the feasible-frame fixture: a tier's tail crossed the tie leg at −9,5 mm.
+    // The tail is anchorage the clause requires and the tie is reinforcement §15.4.2 requires,
+    // so neither yields — the band does.
+    for (const bar of memberBarsById.get(cid)?.bars ?? []) {
+      if (bar.role !== 'longitudinal') continue;
+      for (const sg of bar.segments) {
+        // Horizontal within the joint: a run whose ends share an elevation but not a position.
+        if (Math.abs(sg.end.z - sg.start.z) > 1e-6) continue;
+        if (Math.hypot(sg.end.x - sg.start.x, sg.end.y - sg.start.y) < 1e-9) continue;
+        if (sg.start.z < Z(top) - depth / 2 || sg.start.z > Z(top) + depth / 2) continue;
+        keepClearOf(sg.start.z, bar.diameterMm, 'roofHook');
+      }
+    }
+    // ── A tie cannot hold steel that stops below it ──
+    //
+    // The joint band is bounded by the beam mats and the roof hooks, and by one more thing:
+    // the column's own bars. A tie placed above where they end encloses nothing, and
+    // §25.7.1.2 reports every one of its four bends as empty — measured on qa-8, where the
+    // uppermost tie of each joint sat past the shortest bar's termination.
+    for (const p of plan) {
+      const e = columnBarExtent.get(p.id);
+      if (e === undefined) continue;
+      bandHi = Math.min(bandHi, e.hi);
+    }
+
+    const band = bandHi - bandLo;
+    if (!(band > 0)) {
+      cMb.unsupported.push(formatClause(clause('cirsoc-201', input.edition, '15.4.2',
+        'el nudo no deja luz libre entre la armadura inferior y superior de las vigas ' +
+        'para alojar estribos horizontales; la armadura transversal del nudo no se genera')));
+      continue;
+    }
+
+    const zoneId = `joint-${top.id}:ties`;
+    const from = bandLo;
+    const stations = stirrupStations({
+      from: 0, to: band, spacing: ts.spacing, nextZoneStartsAtEnd: false,
+    });
+    // The beam steel passing through the joint is CONFINED by these ties, and the tie belongs
+    // to the joint rather than to the column alone. Both facts have to be recorded or the
+    // classifier sees an unrelated pair and reaches for §25.2.3's column bar spacing.
+    const throughBars = incidentBeams.flatMap((bid) =>
+      (memberBarsById.get(bid)?.bars ?? []).filter((b) => b.role === 'longitudinal'));
+    const jointOwners = [...new Set([cid, ...incidentBeams])].sort((x, y) => x - y);
+    let built = 0;
+    for (let si = 0; si < stations.length; si++) {
+      const set = buildColumnTieSet({
+        elementId: cid,
+        cageId: `joint-${top.id}:cage`,
+        zoneId,
+        station: stations[si],
+        b: cCtx.section.b, h: cCtx.section.h,
+        cover: cCtx.material.cover, stirrupDiaMm: cCtx.material.stirrupDia,
+        // `legs` is not what decides a COLUMN cage. `buildColumnTieSet` reads the bars that
+        // are there and adds a crosstie on every interior line that carries one at each end,
+        // in both directions, which is what §25.7.2.3(a) needs and what a perimeter tie alone
+        // cannot give: measured, the mid-face bars of an 8-bar cage sit 140,7 mm clear of the
+        // nearest supported bar against the 120 mm (b) allows.
+        legs: 2,
+        longitudinalBars: cageBarsAt(from + stations[si]),
+        origin: { x: top.x, y: top.y, z: from },
+        axis: { x: 0, y: 0, z: 1 },
+        up: { x: 1, y: 0, z: 0 },
+        across: { x: 0, y: 1, z: 0 },
+        hookOrientation: si % 2 === 0 ? 'a' : 'b',
+        maxAggregateSizeMm: input.maxAggregateSizeMm,
+      });
+      if (set.unsupported.length > 0) {
+        cMb.unsupported.push(...set.unsupported.map((r) => formatClause(r)));
+        continue;
+      }
+      for (const piece of set.pieces) {
+        // The joint belongs to every member that forms it. A tie owned by the column alone
+        // would be "unrelated" to the beam steel it confines, and the classifier would judge
+        // the pair by clear spacing instead of recognising the containment.
+        piece.path.ownerElementIds = jointOwners;
+        piece.path.enclosesBarIds = [
+          ...(piece.path.enclosesBarIds ?? []), ...throughBars.map((b) => b.id),
+        ];
+      }
+      cMb.bars.push(...set.pieces.map((p) => p.path));
+      built += set.pieces.length;
+
+      // §25.7.2.3(b): no unbraced bar further than the lesser of 15·d_be and 150 mm clear
+      // from a braced one. This IS a column clause and this IS a column tie, so it applies
+      // here — unlike on a beam, where citing it would be a scope error.
+      if (si === 0) {
+        const unbraced = unbracedBarReport(
+          cageBars, set.pieces, cCtx.material.stirrupDia);
+        if (!unbraced.ok) {
+          cMb.unsupported.push(formatClause(clause('cirsoc-201', input.edition, '25.7.2.3(b)',
+            `${unbraced.offenders.length} barra(s) del nudo sin arriostrar dentro de ` +
+            `${(unbraced.limit * 1000).toFixed(0)} mm; el nudo requiere ganchos ` +
+            'suplementarios que no se generan')));
+        }
+      }
+    }
+    cMb.requiredTransversePieces = (cMb.requiredTransversePieces ?? 0) + stations.length;
+    cMb.trace.push(
+      `Nudo ${top.id}: ${built} estribo(s) Ø${cCtx.material.stirrupDia} en la luz libre de ` +
+      `${(band * 1000).toFixed(0)} mm entre la armadura inferior y superior de las vigas ` +
+      `(canto de nudo ${(depth * 1000).toFixed(0)} mm); separación máxima ` +
+      `${(ts.spacing * 1000).toFixed(0)} mm por ${ts.governedBy} (15.4.2, 25.7.2).`);
+  }
 
   /** Owning members per bar id, for attributing materialised geometry to an assembly. */
   const barOwner = new Map<string, number[]>();
@@ -1560,7 +1893,7 @@ export function runDetailing(input: RunDetailingInput): RunDetailingResult {
         return n ? { x: n.x, y: n.y, z: Z(n) } : undefined;
       },
     });
-    // ── The twelve conditions, measured on what coordination ACTUALLY produced ──
+    // ── The thirteen conditions, measured on what coordination ACTUALLY produced ──
     //
     // Second pass on purpose. The conflict count is an output of coordination, so a gate
     // evaluated before it runs is a gate measuring zero conflicts on every model — which
@@ -1598,6 +1931,18 @@ export function runDetailing(input: RunDetailingInput): RunDetailingResult {
         .filter((u) => layoutChoice.transitions
           .some((t) => t.jointId === u.jointId && elementIds.includes(t.fromElementId)))
         .length,
+      // Required from the ZONES (stated by each member), built from the assembly's own bar
+      // list. Two independently-produced numbers; a gap between them is the cage the design
+      // layer asked for and the geometry layer did not deliver.
+      //
+      // Counted on `result.assembly.bars` rather than on `gen.transverse` on purpose: the
+      // assembly's bar list is what every downstream consumer reads, so it is the only list
+      // whose contents can honestly be called materialised. A piece the coordinator dropped
+      // is missing however many the generator fabricated.
+      requiredTransversePieces: members
+        .reduce((n, m) => n + (m.requiredTransversePieces ?? 0), 0),
+      materialisedTransversePieces: result.assembly.bars
+        .filter((bar) => bar.role === 'transverse').length,
       prohibitedConflicts: prohibited,
       reverifiedMembers: elementIds.filter((e) => {
         const v = reverification.get(e);
@@ -1637,8 +1982,8 @@ export function runDetailing(input: RunDetailingInput): RunDetailingResult {
           result.assembly.bars,
           DEFAULT_TOLERANCES,
           undefined,
-          (a, b, surface) => {
-            const base = classifyForRun(a, b, surface);
+          (a, b, surface, ta, tb) => {
+            const base = classifyForRun(a, b, surface, ta, tb);
             // Contact classes have no minimum to raise. A lap is meant to touch and a
             // stirrup is meant to grip; adding a margin to zero would report the detail.
             return base.requiredClear <= 0
@@ -1660,7 +2005,7 @@ export function runDetailing(input: RunDetailingInput): RunDetailingResult {
     // The coordinator's own state is the ceiling set by the conditions the gate does not
     // cover — members failing their individual checks, coordination not converging, no
     // bars at all. Below COORDINATED those decide and the gate has nothing to add. At or
-    // above it, the twelve conditions decide.
+    // above it, the thirteen conditions decide.
     assemblies.push({
       ...result.assembly,
       state: reviewRank(result.assembly.state) < reviewRank('COORDINATED')

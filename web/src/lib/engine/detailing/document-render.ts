@@ -289,10 +289,18 @@ export function renderDrawings(doc: DocumentModel, opts: RenderOptions): Drawing
       sheetNumber: `R${doc.revision.number}-${n}`,
       title: `${opts.projectName} — ${readinessBanner(doc, opts.locale)}`,
     } as never);
+    // The SECTION carries its arcs too.
+    //
+    // It was emitting an empty arc list, which is where the cage is most legible: a stirrup
+    // read in elevation is a line, and read in section it is the closed loop with the bends
+    // and hook tails an engineer checks. Measuring those off a chord-only DXF reads the
+    // corner short by the sagitta, which is the same class of error the collision sampler
+    // had — the drawing and the check must not disagree about where the steel bends.
+    const sectionArcs = a.bars.flatMap((b) => barArcs(b, projection));
     sheets.push({
       name: `${a.id}-section`,
       sheet: section,
-      dxf: sheetToDxf(section, [], opts.locale),
+      dxf: sheetToDxf(section, sectionArcs, opts.locale),
       svg: sheetToSvg(section, 800, opts.locale),
     });
   }

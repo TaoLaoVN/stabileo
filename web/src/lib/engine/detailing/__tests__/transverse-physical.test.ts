@@ -246,7 +246,10 @@ describe('row-2 fixture — crossties are FABRICATED, not counted', () => {
       expect(loose.length, `element ${id}`).toBeGreaterThan(0);
       const looseIds = new Set(loose.map((b) => b.pieceId));
       for (const pid of looseIds) expect(pid).toContain('crosstie');
-      expect(g.unsupported.some((u) => u.includes('25.7.1.2')), `element ${id}`).toBe(true);
+      // Reported under §25.3.5(d): every loose bend here belongs to a crosstie, and that
+      // clause states both the requirement and the remedy — the hooks must embrace peripheral
+      // bars, so the missing thing is a bar line, not a different cage.
+      expect(g.unsupported.some((u) => u.includes('25.3.5(d)')), `element ${id}`).toBe(true);
     }
   });
 

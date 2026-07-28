@@ -41,12 +41,13 @@
 
 import {
   buildStraightBarWithHooks, minMandrelDiameter, standardHook,
-  type BarPath, type HookAngle, type Point3,
+  type BarPath, type BarSegment, type HookAngle, type Point3,
 } from '../../codes/cirsoc201/bar-geometry';
 import { minClearBetweenLayers, minClearSpacingInLayer } from '../../codes/cirsoc201/spacing';
 import { transverseSpacingForDemand } from '../../codes/cirsoc201/transverse-spacing';
 import {
-  bendsWithoutLongitudinalBar, buildStirrupSet, stirrupStations,
+  bendsWithoutLongitudinalBar, buildStirrupSet, seatedLongitudinalHalfExtents,
+  stirrupCentrelineHalfExtents, stirrupStations,
   type LongitudinalBarRef, type TransversePiece,
 } from '../../codes/cirsoc201/transverse-cage';
 import { DEFAULT_TOLERANCES } from './collision';
@@ -135,6 +136,19 @@ export interface BeamGenerationInput {
    * came from: not a clash between two bars, but one bar drawn twice.
    */
   transverseLayers?: readonly number[];
+  /**
+   * Distance from the i / j NODE to the support face, m.
+   *
+   * A node is the column centreline, so the member's clear span is `L − supportFaceI −
+   * supportFaceJ`. Stirrups are generated over the clear span only: a beam's shear
+   * reinforcement belongs to the beam, and the joint volume is reinforced by the joint's own
+   * transverse steel, which this generator does not produce.
+   *
+   * Absent, both default to zero and the cage runs node to node — the previous behaviour,
+   * kept so a caller with no column geometry gets a full cage rather than none.
+   */
+  supportFaceI?: number;
+  supportFaceJ?: number;
   /** Bent-up bar policy — see `BentUpPolicy`. */
   bentUp: BentUpPolicy;
 }
@@ -449,11 +463,21 @@ export interface BarSlot {
  * bend of a closed stirrup to CONTAIN a longitudinal bar. A centred mat satisfies the spacing
  * clause and violates the restraint clause.
  *
- * So layer 0 is SPREAD to the full available width instead. The outermost bar centre lands at
- * `(clearWidth − d_b)/2`, and since `clearWidth = b − 2·(cover + d_s)` while the leg centreline
- * sits at `b/2 − cover − d_s/2`, the two differ by exactly `(d_s + d_b)/2` — the bar seated
- * against the leg. The bend contains it by construction rather than by luck. Spreading only
- * ever INCREASES clear spacing, so §25.2.1 stays satisfied and more comfortably.
+ * So layer 0 is SPREAD to the full available width instead, and the outermost bar centre lands
+ * at `(clearWidth − d_b)/2`. The bend contains it by construction rather than by luck, and
+ * spreading only ever INCREASES clear spacing, so §25.2.1 stays satisfied and more comfortably.
+ *
+ * ── How far out "full width" is, corrected ─────────────────────────
+ *
+ * The caller used to pass `clearWidth = b − 2·(cover + d_s)`, which puts the outer bar exactly
+ * `(d_s + d_b)/2` from the leg centreline: bar surface against leg surface. That is right for a
+ * bar against a STRAIGHT leg and wrong at a CORNER, where the bend cuts the corner off and the
+ * bar cannot be pushed that far. Measured on the qa-8 fixture, it drove every corner bar 4,56 mm
+ * INTO the stirrup — 78 prohibited conflicts, one per corner bar per stirrup.
+ *
+ * The caller now passes a width derived from `seatedCornerInset`, so the outer bar seats in the
+ * bend that holds it. This function is unchanged: it still spreads to whatever width it is
+ * given. The authority on where the cage is belongs with the cage.
  *
  * Upper layers are NOT spread independently. §25.2.2 requires "las barras de las capas
  * superiores directamente sobre las de las capas inferiores", so an upper layer takes a centred
@@ -607,15 +631,35 @@ export function generateBeamBars(input: BeamGenerationInput): GeneratedBeam {
   const peakNegJ = Math.max(input.stations[input.stations.length - 1]?.mNeg ?? 0, 0);
 
   // Bar centroid offsets from the member axis.
-  const halfH = input.h / 2;
-  const barOffset = input.cover + input.stirrupDia / 1000;
+  /**
+   * The stirrup CENTRELINE rectangle — where the cage actually is.
+   *
+   * Everything longitudinal is now positioned against this rather than against a
+   * `cover + d_s` offset, because the bars are placed relative to the legs and bends they sit
+   * in, and the cage is the authority on where those are. `stirrupCentrelineHalfExtents` is
+   * the same function the cage builder uses, so the two cannot disagree.
+   */
+  const cage = stirrupCentrelineHalfExtents(input.b, input.h, input.cover, input.stirrupDia);
+  /**
+   * Where a bar of this diameter seats, from `seatedLongitudinalHalfExtents` — the one
+   * derivation the column generator and the joint ties read too.
+   *
+   * Not `(d_s + d_b)/2`. That is the straight-leg contact distance and it puts the bar
+   * INSIDE the corner bend — measured at −4,56 mm surface clearance on the qa-8 fixture, 78
+   * prohibited conflicts, one per corner bar.
+   */
+  const seatFor = (dbMm: number) =>
+    seatedLongitudinalHalfExtents(input.b, input.h, input.cover, input.stirrupDia, dbMm);
+  const inset = (dbMm: number) => seatFor(dbMm).cornerInset;
+  /** Width to hand `layoutBarRow` so its OUTER bars land seated in the two bends. */
+  const clearWidthFor = (dbMm: number) =>
+    Math.max(0.02, 2 * seatFor(dbMm).corner.halfAcross + dbMm / 1000);
   // Joint-layer rank. A line that crosses another must sit above or below it, or their
   // bars occupy the same points in space. The raise belongs to the whole line, so it is
   // applied here once and not nudged at individual joints — see `joint-layers.ts`.
   const raise = Math.max(0, input.layerRaise ?? 0);
   const drop = Math.max(0, input.layerDrop ?? input.layerRaise ?? 0);
-  const zBot = -(halfH - barOffset - input.bottom.diameterMm / 2000) + raise;
-  const zTop = halfH - barOffset - input.topStart.diameterMm / 2000 - drop;
+  const zBot = -(cage.halfUp - inset(input.bottom.diameterMm)) + raise;
 
   const spacing = minClearSpacingInLayer(input.edition, {
     barDiameterMm: input.bottom.diameterMm, maxAggregateSizeMm: input.maxAggregateSizeMm,
@@ -627,7 +671,6 @@ export function generateBeamBars(input: BeamGenerationInput): GeneratedBeam {
   // Bars spread across the section between the stirrup legs, and stack inward in layers
   // when the row is full. Without this every bar in a group lands on the same point.
   const across = transverseAxis(input.axis, input.up);
-  const clearWidth = Math.max(0.02, input.b - 2 * barOffset);
 
   /** Place `count` bars of `dia` on a face, returning one offset vector per bar. */
   const barLayers: Record<string, number> = {};
@@ -653,6 +696,7 @@ export function generateBeamBars(input: BeamGenerationInput): GeneratedBeam {
   const layerId = (face: string, layer: number) =>
     `e${input.elementId}:${face}:${layer}`;
   const placeGroup = (count: number, dia: number, faceUpward: boolean) => {
+    const clearWidth = clearWidthFor(dia);
     const layout = layoutBarRow({
       count, diameterMm: dia, clearWidth,
       minClear: spacing.minClear, layerClear: layerSpacing.minClear,
@@ -696,6 +740,7 @@ export function generateBeamBars(input: BeamGenerationInput): GeneratedBeam {
     }
     return slots.map((slot) => ({
       layer: slot.layer,
+      across: slot.across,
       x: across.x * slot.across + input.up.x * slot.intoSection * inward,
       y: across.y * slot.across + input.up.y * slot.intoSection * inward,
       z: across.z * slot.across + input.up.z * slot.intoSection * inward,
@@ -722,7 +767,21 @@ export function generateBeamBars(input: BeamGenerationInput): GeneratedBeam {
     refs.push(...standardHook(input.bottom.diameterMm, 90, 'longitudinal').refs);
   }
 
-  const botSlots = placeGroup(input.bottom.count, input.bottom.diameterMm, false);
+  const botSlotsRaw = placeGroup(input.bottom.count, input.bottom.diameterMm, false);
+  /**
+   * Which bottom bars continue, and which are curtailed — ordered OUTERMOST FIRST.
+   *
+   * §9.7.3.8 fixes how MANY continue into the support; it does not say which, and the choice
+   * was previously "the first `continuing` slots", which is the leftmost ones. That leaves the
+   * right-hand bottom bend of every mid-span stirrup gripping nothing once the curtailed bars
+   * stop — a §25.7.1.2 defect produced by an arbitrary tie-break.
+   *
+   * Ordering by distance from the section centreline costs nothing, satisfies the same
+   * fraction of §9.7.3.8, and puts a bar in both bottom bends along the whole member. Layer
+   * order is preserved ahead of it: a layer-1 bar cannot stand in for a layer-0 corner.
+   */
+  const botSlots = [...botSlotsRaw].sort((p, q) =>
+    p.layer - q.layer || Math.abs(q.across) - Math.abs(p.across) || p.across - q.across);
   for (let i = 0; i < continuing; i++) {
     const o = botSlots[i] ?? { layer: 0, x: 0, y: 0, z: 0 };
     barLayers[`e${input.elementId}-bot-cont-${i}`] = o.layer;
@@ -807,6 +866,66 @@ export function generateBeamBars(input: BeamGenerationInput): GeneratedBeam {
     { side: 'J', group: input.topEnd, peak: peakNegJ },
   ];
 
+  // ── §25.7.1.2 forces two top bars to run the whole member ──
+  //
+  // A closed stirrup has two top bends and each of them "debe contener una barra longitudinal".
+  // Curtailing ALL the hogging steel into the supports leaves the span's stirrups with nothing
+  // to grip up there — measured on every fixture with closed stirrups, and reported as a
+  // §25.7.1.2 defect rather than drawn, because the check reads the bars that exist at each
+  // station.
+  //
+  // The answer is not a new bar. It is a CURTAILMENT decision, and the same one §9.7.3.8 makes
+  // on the bottom face for the same kind of reason: two bars run through. The generator already
+  // reaches for it when no theoretical cut-off exists ("the bar is run through, which is the
+  // conservative and constructible answer"); §25.7.1.2 makes it obligatory rather than a
+  // fallback. No diameter is invented — the pair takes the larger of the two supports' bar
+  // sizes, so neither support loses area to it — and no count is invented: two bends, two bars.
+  const CONTINUOUS_TOP = 2;
+  const hangerOffsets: Array<{ layer: number; x: number; y: number; z: number }> = [];
+  const hangerDia = Math.max(input.topStart.diameterMm, input.topEnd.diameterMm);
+  const hangerCount = Math.min(
+    CONTINUOUS_TOP, Math.max(input.topStart.count, input.topEnd.count, CONTINUOUS_TOP));
+  if (hangerCount > 0) {
+    const zHanger = cage.halfUp - inset(hangerDia) - drop;
+    // The two OUTER positions of the top row — which is where the stirrup's two top bends are.
+    //
+    // Selected by position from the support group's own layout, not by index and not from a
+    // separate two-bar row. Two earlier attempts each failed for the same underlying reason:
+    // taking slots 0 and 1 takes the two LEFTMOST, and laying out a two-bar row of its own
+    // picks up the coordination search's `transverseSlots` override — which is sized for the
+    // full group — and again returns its first two entries. Both left one top bend gripping
+    // nothing, which §25.7.1.2 reports just as loudly as gripping nothing on both.
+    const topCount = Math.max(input.topStart.count, input.topEnd.count, hangerCount);
+    const ref = placeGroup(topCount, hangerDia, true);
+    const outerFirst = ref
+      .filter((o) => o.layer === 0)
+      .sort((p, q) => Math.abs(q.across) - Math.abs(p.across) || p.across - q.across);
+    // One from each side where the row has two sides, so both bends are covered rather than
+    // the two widest happening to sit together.
+    const slots = [
+      outerFirst.find((o) => o.across <= 0),
+      outerFirst.find((o) => o.across > 0),
+    ].filter((o): o is NonNullable<typeof o> => o !== undefined);
+    for (let i = 0; i < Math.min(hangerCount, slots.length); i++) {
+      const o = slots[i] ?? { layer: 0, across: 0, x: 0, y: 0, z: 0 };
+      hangerOffsets.push(o);
+      barLayers[`e${input.elementId}-topRun-${i}`] = o.layer;
+      bars.push(buildStraightBarWithHooks({
+        id: `e${input.elementId}-topRun-${i}`,
+        layerId: layerId('topRun', o.layer),
+        diameterMm: hangerDia, role: 'longitudinal',
+        start: shift(add(add(input.origin, input.axis, -EMBED), input.up, zHanger), o),
+        end: shift(add(add(input.origin, input.axis, input.L + EMBED), input.up, zHanger), o),
+        axis: input.axis, hookNormal: { x: -input.up.x, y: -input.up.y, z: -input.up.z },
+        ownerElementIds: [input.elementId], edition: input.edition,
+      }));
+    }
+    refs.push(c('25.7.1.2', 'cada doblez del estribo debe contener una barra longitudinal'));
+    trace.push(
+      `${hangerCount}Ø${hangerDia} superiores corridas de apoyo a apoyo: cada doblez superior ` +
+      'del estribo cerrado debe contener una barra longitudinal (25.7.1.2).');
+  }
+
   for (const t of tops) {
     if (t.group.count <= 0) continue;
     const atStart = t.side === 'I';
@@ -827,12 +946,21 @@ export function generateBeamBars(input: BeamGenerationInput): GeneratedBeam {
     refs.push(...cut.refs, c('9.7.3.4', 'longitud embebida de la armadura continua'));
     trace.push(`Armadura superior ${t.side}: corte en x = ${cut.actual.toFixed(3)} m. ${cut.note}`);
 
-    const zTopBar = halfH - barOffset - t.group.diameterMm / 2000 - drop;
+    const zTopBar = cage.halfUp - inset(t.group.diameterMm) - drop;
     const from = atStart ? -EMBED : Math.min(input.L, cut.actual);
     const to = atStart ? Math.max(0, cut.actual) : input.L + EMBED;
     const topSlots = placeGroup(t.group.count, t.group.diameterMm, true);
+    // The continuous pair already occupies two of this group's positions and counts toward
+    // this support's hogging steel. Matched by POSITION rather than by index: which index the
+    // outer bars carry depends on the group's count and layer split, and emitting a bar on a
+    // point another bar already holds reads downstream as a bar interpenetrating itself
+    // rather than as the duplicate it is.
+    const takenByHanger = (o: { layer: number; x: number; y: number; z: number }) =>
+      hangerOffsets.some((hg) => hg.layer === o.layer
+        && Math.hypot(hg.x - o.x, hg.y - o.y, hg.z - o.z) < 1e-6);
     for (let i = 0; i < t.group.count; i++) {
       const o = topSlots[i] ?? { layer: 0, x: 0, y: 0, z: 0 };
+      if (takenByHanger(o)) continue;
       barLayers[`e${input.elementId}-top${t.side}-${i}`] = o.layer;
       bars.push(buildStraightBarWithHooks({
         id: `e${input.elementId}-top${t.side}-${i}`,
@@ -887,22 +1015,54 @@ export function generateBeamBars(input: BeamGenerationInput): GeneratedBeam {
     };
   };
 
+  // ── Stirrups run between the SUPPORT FACES, not between the nodes ──
+  //
+  // `input.L` is node to node, and a node is the column CENTRELINE. Generating stirrups from
+  // 0 to L therefore puts a full set of them inside the joint volume, where they meet the
+  // orthogonal beam's cage: measured on `rc-design-qa-8`, two beams framing into one column
+  // each placed a stirrup at the joint centre, and the four joints carried 18 prohibited
+  // conflicts between them — ten stirrup-to-stirrup and eight against the other beam's steel.
+  //
+  // §25.7.1.1 makes stirrups the MEMBER's shear reinforcement, and the member is the clear
+  // span. What reinforces the joint is the joint's own transverse steel, which is a separate
+  // provision and one this branch does not generate — declared below rather than approximated
+  // by letting the beam's cage run through.
+  const faceI = Math.max(0, Math.min(input.supportFaceI ?? 0, input.L / 2));
+  const faceJ = Math.min(input.L, input.L - Math.max(0, input.supportFaceJ ?? 0));
+  const clear = Math.max(0, faceJ - faceI);
+
   const raw: StirrupZone[] = [];
-  const supportZone = Math.min(2 * input.h, input.L / 2);
-  // §9.6.3 minimum shear reinforcement over the whole span, at the span's own demand.
-  raw.push(zoneFor(0, input.L, 'minimum',
+  const supportZone = Math.min(2 * input.h, clear / 2);
+  // §9.6.3 minimum shear reinforcement over the whole clear span, at the span's own demand.
+  raw.push(zoneFor(faceI, faceJ, 'minimum',
     [c('9.6.3', 'armadura mínima de corte'), c('9.7.6.2.2', 'separación máxima de ramas')]));
-  // Support zones over 2h at each end, where shear peaks and the row often changes.
-  for (const [from, to] of [[0, supportZone], [input.L - supportZone, input.L]] as const) {
+  // Support zones over 2h inboard of each face, where shear peaks and the row often changes.
+  for (const [from, to] of [
+    [faceI, faceI + supportZone], [faceJ - supportZone, faceJ],
+  ] as const) {
     raw.push(zoneFor(from, to, 'shear', [c('9.7.6.2.2', 'separación máxima de ramas')]));
+  }
+  if (faceI > 0 || faceJ < input.L) {
+    // NOT declared unsupported here. Where the beam's stirrups stop is the beam's business;
+    // whether the joint beyond that face is reinforced is the JOINT's, and this generator
+    // cannot see it. It was declared here for one commit, before the joint ties existed, and
+    // the effect was that every framed beam reported the same gap whether or not the joint
+    // had since been filled — an unsupported condition that no longer described anything.
+    // `run-detailing` owns the joint and declares §15.4.2 when the joint genuinely has no
+    // room for its ties.
+    trace.push(
+      `Estribos entre caras de apoyo: x = ${faceI.toFixed(3)} a ${faceJ.toFixed(3)} m ` +
+      `(luz libre ${clear.toFixed(3)} m de ${input.L.toFixed(3)} m entre ejes). ` +
+      'El nudo no lleva armadura transversal generada.');
   }
   // §9.7.3.5(c) zones from any cut-off that needed them. §9.7.3.5(c)'s own `d/(8·βb)` limit
   // is ADDITIONAL to Table 9.7.6.2.2, not a replacement for it: whichever is tighter governs
   // the spacing, and the table still decides the leg count.
   for (const cut of cutoffs) {
     if (!cut.extraStirrups) continue;
-    const from = Math.max(0, cut.actual - cut.extraStirrups.length);
-    const to = Math.min(input.L, cut.actual + cut.extraStirrups.length);
+    const from = Math.max(faceI, cut.actual - cut.extraStirrups.length);
+    const to = Math.min(faceJ, cut.actual + cut.extraStirrups.length);
+    if (!(to > from)) continue;
     const zone = zoneFor(from, to, 'cutoff', cut.refs);
     raw.push({ ...zone, spacing: Math.min(zone.spacing, cut.extraStirrups.maxSpacing) });
   }
@@ -920,35 +1080,67 @@ export function generateBeamBars(input: BeamGenerationInput): GeneratedBeam {
   const acrossAxis = transverseAxis(input.axis, input.up);
   // Longitudinal bars in SECTION coordinates, for the §25.7.1.2 containment check.
   //
-  // Taken from the ACTUAL slot layout this function produced, not from a two-corner
-  // approximation. The approximation was tried first and was wrong in a way that matters: a
-  // crosstie on the section centreline grips whichever real bar is there, and with only corner
-  // bars modelled it appeared to grip nothing — reporting a §25.7.1.2 violation on a cage that
-  // satisfies the clause. The generator knows where it put every bar; the check must read that.
-  const cageBars: LongitudinalBarRef[] = [];
-  const collectFace = (
-    group: { count: number; diameterMm: number }, faceUpward: boolean, tag: string,
-  ) => {
-    const layout = layoutBarRow({
-      count: group.count, diameterMm: group.diameterMm, clearWidth,
-      minClear: spacing.minClear, layerClear: layerSpacing.minClear,
-      placementTolerance: DEFAULT_TOLERANCES.placement,
+  // ── Read off the finished bars, not recomputed ─────────────────────
+  //
+  // Two earlier versions got this wrong in the same way, one worse than the other. The first
+  // modelled only the two corner bars, so a crosstie on the section centreline appeared to grip
+  // nothing and reported a §25.7.1.2 violation on a cage that satisfies the clause. The second
+  // re-ran `layoutBarRow` to recover the positions — better, but still a SECOND computation of
+  // something the function had already decided, and it silently disagreed with the truth in two
+  // cases that matter: a coordinated member whose slots came from `transverseSlots` (the
+  // threading positions win over the generated layout, and the recomputation never saw them),
+  // and the top face, where `topI` and `topJ` are different bars metres apart and the
+  // recomputation modelled one set spanning the whole member.
+  //
+  // So the cage reads the bars that exist. `bars` is complete by this point, every position is
+  // the one the drawing will show, and the ids are the REAL BarPath ids — which is what makes
+  // the containment result usable as a declared relationship rather than a private note.
+  //
+  // The AXIAL EXTENT comes with it. A curtailed bottom bar does not exist at the support, and
+  // a topJ bar does not exist at the i end; a station-blind check credits a bend with gripping
+  // a bar that is not there.
+  const dot = (a: Point3, b: Point3): number => a.x * b.x + a.y * b.y + a.z * b.z;
+  interface StationedBarRef extends LongitudinalBarRef { from: number; to: number }
+  const cageBars: StationedBarRef[] = [];
+  for (const bar of bars) {
+    if (bar.role !== 'longitudinal') continue;
+    // The MAIN RUN, not segment 0: a bar with a leading hook starts at the hook tip, which is
+    // offset from the bar's own line by the hook extension and would place it in the wrong
+    // section position entirely.
+    let run: BarSegment | null = null;
+    for (const sg of bar.segments) {
+      if (sg.kind !== 'straight') continue;
+      if (run === null || sg.length > run.length) run = sg;
+    }
+    if (run === null) continue;
+    const mid = {
+      x: (run.start.x + run.end.x) / 2,
+      y: (run.start.y + run.end.y) / 2,
+      z: (run.start.z + run.end.z) / 2,
+    };
+    const rel = {
+      x: mid.x - input.origin.x, y: mid.y - input.origin.y, z: mid.z - input.origin.z,
+    };
+    const relStart = {
+      x: run.start.x - input.origin.x, y: run.start.y - input.origin.y,
+      z: run.start.z - input.origin.z,
+    };
+    const relEnd = {
+      x: run.end.x - input.origin.x, y: run.end.y - input.origin.y,
+      z: run.end.z - input.origin.z,
+    };
+    const tA = dot(relStart, input.axis);
+    const tB = dot(relEnd, input.axis);
+    cageBars.push({
+      id: bar.id,
+      across: dot(rel, acrossAxis),
+      up: dot(rel, input.up),
+      diameterMm: bar.diameterMm,
+      from: Math.min(tA, tB),
+      to: Math.max(tA, tB),
     });
-    const inward = faceUpward ? -1 : 1;
-    const faceZ = faceUpward
-      ? halfH - barOffset - group.diameterMm / 2000 - drop
-      : -(halfH - barOffset - group.diameterMm / 2000) + raise;
-    layout.slots.forEach((slot, i) => {
-      cageBars.push({
-        id: `${tag}-${i}`,
-        across: slot.across,
-        up: faceZ + inward * slot.intoSection,
-        diameterMm: group.diameterMm,
-      });
-    });
-  };
-  collectFace(input.bottom, false, 'bot');
-  collectFace(input.topStart, true, 'top');
+  }
+  const cageId = `e${input.elementId}:cage`;
 
   for (let zi = 0; zi < stirrupZones.length; zi++) {
     const z = stirrupZones[zi];
@@ -959,10 +1151,16 @@ export function generateBeamBars(input: BeamGenerationInput): GeneratedBeam {
     });
     const zoneId = `e${input.elementId}:${z.reason}:${zi}`;
     for (let si = 0; si < stations.length; si++) {
+      const station = stations[si];
+      // Only the bars that EXIST at this station. A bend cannot grip a curtailed bar past its
+      // cut-off, and the tolerance is the same fabrication tolerance the containment check
+      // uses — a bar ending exactly at the station is still there to be gripped.
+      const barsHere = cageBars.filter(
+        (cb) => cb.from <= station + 0.002 && cb.to >= station - 0.002);
       const set = buildStirrupSet({
-        elementId: input.elementId, zoneId, station: stations[si],
+        elementId: input.elementId, cageId, zoneId, station,
         b: input.b, h: input.h, cover: input.cover, stirrupDiaMm: z.diameterMm,
-        legs: z.legs, longitudinalBars: cageBars,
+        legs: z.legs, longitudinalBars: barsHere,
         origin: input.origin, axis: input.axis, up: input.up, across: acrossAxis,
         // C 25.7.2.3.1 — hooks staggered "cuando sea posible". Commentary, a should, so this
         // is practice: alternate every station rather than claim a requirement.
@@ -999,19 +1197,42 @@ export function generateBeamBars(input: BeamGenerationInput): GeneratedBeam {
   // silently patched.
   const looseBends = bendsWithoutLongitudinalBar(transverse);
   if (looseBends.length > 0) {
-    // A HARD blocker. §25.7.1.2 is a "debe": every bend of a closed stirrup must contain a
-    // longitudinal bar. A cage whose corners grip nothing does not satisfy the clause, so the
-    // member may not be reported constructible.
+    // ── A HARD blocker, and what would be needed to lift it ──
     //
-    // This was carried as a non-blocking finding for exactly one commit, to avoid breaking the
-    // twelve-condition gate mid-change. That was the wrong trade: a known code violation may
-    // not stay non-blocking to preserve an old fixture result. It blocks now, and qa-8 and the
-    // row-2 fixture are NOT_ESTABLISHED until the longitudinal layout seats corner bars in the
-    // stirrup corners.
-    unsupported.push(formatClause(clause('cirsoc-201', '2025', '25.7.1.2',
-      'cada doblez del estribo debe contener una barra longitudinal')));
-    trace.push(`${looseBends.length} doblez(es) de estribo sin barra longitudinal (25.7.1.2): ` +
-      'la disposición longitudinal centra la capa y no lleva barras a las esquinas.');
+    // §25.7.1.2 is a "debe": between the anchored ends, every bend of a closed stirrup must
+    // contain a longitudinal bar; §25.7.1.3(a) says the same of the anchored ends themselves,
+    // and §25.3.5(d) of a crosstie's two hooks. A cage whose bends grip nothing does not
+    // satisfy the clause, so the member may not be reported constructible.
+    //
+    // When it fires, it is almost never the CAGE that is wrong. The bends are where the code
+    // puts them; what is missing is a longitudinal bar on the line they close on. Two causes,
+    // and the report distinguishes them because the remedies are different:
+    //
+    //   · a closed stirrup's corner has no bar — the arrangement does not reach the seat;
+    //   · a crosstie's end has no bar — Table 9.7.6.2.2 demands more legs across the width
+    //     than the strength-certified arrangement supplies bar LINES for, and §25.3.5(d)
+    //     confines the leg to a line carrying steel at both faces.
+    //
+    // The second cannot be closed by this generator. Supplying the missing bar means adding
+    // longitudinal steel purely to restrain the cage, and while §25.7.1.2 and §25.3.5(d) make
+    // such a bar REQUIRED once the cage is, the regulation states no general size for it —
+    // §9.7.5.2's `max(0,042·s, 10 mm)` is written for TORSION longitudinal steel. Adding area
+    // also moves ρ, which the minimum and maximum reinforcement provisions bound. So the bar
+    // is not invented here: it is a DESIGN decision, it belongs to the candidate enumeration
+    // where it can be re-verified, and until then the member is reported honestly.
+    const looseCrossties = looseBends.filter((b) => b.pieceId.includes('crosstie')).length;
+    unsupported.push(formatClause(clause('cirsoc-201', '2025',
+      looseCrossties > 0 ? '25.3.5(d)' : '25.7.1.2',
+      looseCrossties > 0
+        ? 'los ganchos del gancho suplementario deben abrazar barras longitudinales '
+          + 'periféricas: la disposición certificada no ofrece una línea de barras en la '
+          + 'posición que exige la Tabla 9.7.6.2.2; se requiere una barra longitudinal '
+          + 'adicional de armado, que es una decisión de diseño y no se genera aquí'
+        : 'cada doblez del estribo debe contener una barra longitudinal')));
+    trace.push(
+      `${looseBends.length} doblez(es) sin barra longitudinal ` +
+      `(${looseCrossties} de ganchos suplementarios, ` +
+      `${looseBends.length - looseCrossties} de estribos cerrados).`);
   }
   trace.push(`${transverse.length} pieza(s) transversales fabricadas ` +
     `(${transverse.filter((p) => p.shape === 'crosstie').length} ganchos suplementarios).`);
