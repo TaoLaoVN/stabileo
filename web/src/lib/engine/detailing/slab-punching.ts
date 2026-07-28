@@ -111,6 +111,8 @@ export interface SlabJointForce {
 /** A joint where a slab panel supports a column, with everything measured at it. */
 export interface SlabColumnJoint {
   nodeId: number;
+  /** Plan position of the joint, m — the control perimeter is centred on it. */
+  at: { x: number; y: number };
   /**
    * The column whose section sets the critical perimeter.
    *
@@ -343,6 +345,8 @@ export interface SlabPunchingContribution {
 
 export interface SlabPunchingResult {
   nodeId: number;
+  /** Plan position of the joint, m — carried through so the drawing can place the perimeter. */
+  at: { x: number; y: number };
   columnElementId: number;
   elementBelow: number | null;
   elementAbove: number | null;
@@ -409,6 +413,7 @@ function unsupportedResult(
   const { joint, position } = input;
   return {
     nodeId: joint.nodeId,
+    at: { ...joint.at },
     columnElementId: joint.columnElementId,
     elementBelow: joint.elementBelow,
     elementAbove: joint.elementAbove,
@@ -617,6 +622,7 @@ export function checkSlabJointPunching(input: SlabPunchingInput): SlabPunchingRe
 
   return {
     nodeId: joint.nodeId,
+    at: { ...joint.at },
     columnElementId: joint.columnElementId,
     elementBelow: joint.elementBelow,
     elementAbove: joint.elementAbove,

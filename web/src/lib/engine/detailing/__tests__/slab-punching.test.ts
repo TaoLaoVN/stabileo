@@ -63,7 +63,7 @@ function force(over: Partial<SlabJointForce> = {}): SlabJointForce {
 
 function joint(over: Partial<SlabColumnJoint> = {}): SlabColumnJoint {
   return {
-    nodeId: 5, columnElementId: 101,
+    nodeId: 5, at: { x: GRID[5].x, y: GRID[5].y }, columnElementId: 101,
     b: COL.b, h: COL.h,
     elementBelow: 101, elementAbove: 102,
     forces: [force()],

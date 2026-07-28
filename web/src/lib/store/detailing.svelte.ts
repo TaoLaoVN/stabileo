@@ -545,8 +545,10 @@ function collectSlabColumns(): Map<number, SlabColumnJoint> {
       });
     }
 
+    const node = modelStore.model.nodes.get(nodeId);
     out.set(nodeId, {
       nodeId,
+      at: { x: node?.x ?? 0, y: node?.y ?? 0 },
       columnElementId: perimeterLeg.elementId,
       b: perimeterLeg.b,
       h: perimeterLeg.h,

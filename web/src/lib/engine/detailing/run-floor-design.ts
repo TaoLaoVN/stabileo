@@ -814,6 +814,7 @@ function slabRecord(args: {
     unsupported: p.unsupported,
     elementBelow: p.elementBelow,
     elementAbove: p.elementAbove,
+    at: { ...p.at },
     coverageDeg: p.coverageDeg,
     openBearingDeg: p.openBearingDeg,
     perimeter: p.perimeter,

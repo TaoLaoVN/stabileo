@@ -24,6 +24,7 @@ import { buildTitleBlock, buildSchedule, scheduleToAoa, sheetToDxf, sheetToSvg,
 import type { DocumentAssembly, DocumentModel, OpenConflict } from './document-model';
 import type { FloorFamilyDesignRecord } from './family-record';
 import { drawFooting } from './family-drawings';
+import { drawSlab, drawWall } from './slab-wall-drawings';
 import type { BarPath } from '../../codes/cirsoc201/bar-geometry';
 
 /** Everything the renderers need that is not in the model: locale and presentation. */
@@ -747,6 +748,72 @@ export function renderDrawings(doc: DocumentModel, opts: RenderOptions): Drawing
             : { right: { x: 0, y: 1, z: 0 }, up: { x: 0, y: 0, z: 1 }, origin: { x: 0, y: 0, z: 0 } };
         sheets.push({
           name: `${a.id}-${rec.geometry.name}-${kind}`,
+          sheet,
+          dxf: sheetToDxf(sheet, own.flatMap((b) => barArcs(b, proj)), opts.locale),
+          svg: sheetToSvg(sheet, 900, opts.locale),
+        });
+      }
+    }
+
+    // ── Per-slab plan and per-wall elevation + section ───────────────
+    //
+    // Same treatment, and for the same reason the footing got its own sheets: the generic
+    // elevation frames a floor assembly by its longest bar, which in a coordinated floor may
+    // be a wall vertical or a footing dowel, so the plan a slab needs and the elevation a wall
+    // needs did not exist. A reader holding the footing's three sheets could reasonably assume
+    // every family had them.
+    //
+    // The projections are chosen HERE per sheet kind, so the bar arcs come from the matching
+    // projection rather than from the elevation's. A wall's is its own in-plane direction: a
+    // wall running along y projected onto global x would collapse to zero width.
+    for (const rec of a.families) {
+      if (rec.family === 'slab') {
+        const own = a.bars.filter((b) => rec.barIds.includes(b.id));
+        n += 1;
+        for (const { kind, sheet } of drawSlab({
+          record: rec,
+          assembly: a.source,
+          bars: own,
+          clauses: doc.refs,
+          sheetNumber: `R${doc.revision.number}-${n}`,
+          title: `${opts.projectName} — ${rec.geometry.panelId} — ${readinessBanner(doc, opts.locale)}`,
+        })) {
+          const proj: Projection = {
+            right: { x: 1, y: 0, z: 0 }, up: { x: 0, y: 1, z: 0 },
+            origin: { x: 0, y: 0, z: 0 },
+          };
+          sheets.push({
+            name: `${a.id}-${rec.geometry.panelId}-${kind}`,
+            sheet,
+            dxf: sheetToDxf(sheet, own.flatMap((b) => barArcs(b, proj)), opts.locale),
+            svg: sheetToSvg(sheet, 900, opts.locale),
+          });
+        }
+        continue;
+      }
+      if (rec.family !== 'wall') continue;
+      const own = a.bars.filter((b) => rec.barIds.includes(b.id));
+      n += 1;
+      const g = rec.geometry;
+      const dx = g.end.x - g.start.x;
+      const dy = g.end.y - g.start.y;
+      const len = Math.hypot(dx, dy) || 1;
+      const along = { x: dx / len, y: dy / len, z: 0 };
+      // The wall's own normal in plan — the axis its horizontal section is drawn against.
+      const across = { x: -dy / len, y: dx / len, z: 0 };
+      for (const { kind, sheet } of drawWall({
+        record: rec,
+        assembly: a.source,
+        bars: own,
+        clauses: doc.refs,
+        sheetNumber: `R${doc.revision.number}-${n}`,
+        title: `${opts.projectName} — ${g.wallId} — ${readinessBanner(doc, opts.locale)}`,
+      })) {
+        const proj: Projection = kind === 'elevation'
+          ? { right: along, up: { x: 0, y: 0, z: 1 }, origin: { ...g.start } }
+          : { right: along, up: across, origin: { ...g.start } };
+        sheets.push({
+          name: `${a.id}-${g.wallId}-${kind}`,
           sheet,
           dxf: sheetToDxf(sheet, own.flatMap((b) => barArcs(b, proj)), opts.locale),
           svg: sheetToSvg(sheet, 900, opts.locale),

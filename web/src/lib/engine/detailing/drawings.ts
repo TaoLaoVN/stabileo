@@ -133,6 +133,16 @@ export const LAYERS = {
   mark: 'RC-MARK',
   conflict: 'RC-CONFLICT',
   title: 'RC-TITLE',
+  /**
+   * The punching control perimeter, on its own layer.
+   *
+   * Not `dim` and not `outline`: it is neither a dimension nor concrete. A reviewer checking
+   * two-way shear isolates it, and a fabricator building the cage turns it off — putting it on
+   * a shared layer denies both.
+   */
+  punching: 'RC-PUNCHING',
+  /** A slab or wall opening. Its own layer for the same reason. */
+  opening: 'RC-OPENING',
 } as const;
 
 function extentsOf(polylines: DrawnPolyline[], circles: DrawnCircle[]): Sheet['extents'] {

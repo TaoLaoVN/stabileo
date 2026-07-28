@@ -442,6 +442,13 @@ export interface SlabDesignRecord extends FamilyRecordCommon {
     /** Source column elements below and above the joint. Null where the free body is open. */
     elementBelow?: number | null;
     elementAbove?: number | null;
+    /**
+     * Plan position of the joint, m — where the control perimeter is drawn.
+     *
+     * A perimeter length with no location cannot be drawn, and a drawing that placed the
+     * perimeter by guessing would put the right length in the wrong place.
+     */
+    at?: { x: number; y: number };
     /** Total interior angle of slab meeting the joint, degrees — how the position was measured. */
     coverageDeg?: number;
     /** Bearing of the free edge the perimeter is truncated at, degrees CCW from +x. */
