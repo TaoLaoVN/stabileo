@@ -4463,6 +4463,19 @@ const en: Record<string, string> = {
     'Shear reinforcement cannot be ruled out: the footing check is {status}.',
   'detailing.transverse.starterTiesRequired':
     'Starter cage ties over the {lap} m lap at {spacing} m centres (§10.7.6.1.1, §10.7.6.1.2).',
+
+  // The floor-design production adapter — every reason a shell was not designed.
+  'detailing.floorRun.missingNodes': 'Shell {element}: one or more nodes are missing from the model.',
+  'detailing.floorRun.inclinedShell': 'Shell {element} is inclined {tilt}° from horizontal: neither the slab nor the wall chapter applies, so it was not designed.',
+  'detailing.floorRun.degenerateShell': 'Shell {element} has no resolvable plane and was not designed.',
+  'detailing.floorRun.noSolverResult': 'Shell {element} has no solver result, so it carries no demand to design for.',
+  'detailing.floorRun.nonRectangularPanel': 'Panel {element} is not an axis-aligned rectangle; the slab bar layout is only defined for one.',
+  'detailing.floorRun.noAreaLoad': 'Panel {element} carries no surface load, so its one-way shear has no demand to integrate.',
+  'detailing.floorRun.wallGeometryNotResolved': 'Wall {element}: its length and height could not be resolved from its nodes.',
+  'detailing.floorRun.wallMomentFromMembraneOnly': 'Wall {element}: in-plane demands were taken from the membrane stresses, so the in-plane moment is reported as zero rather than derived.',
+  'detailing.floorRun.perElementPanel': 'Each shell element is designed as its own panel: the moment used is that element\u2019s own, not a strip envelope across the mesh.',
+  'detailing.floorRun.noShells': 'The model has no shell elements, so there is no slab or wall to design.',
+  'detailing.floorRun.notSolved': 'No shell results are available. Solve the model first.',
   'detailing.constructible.prohibited': '{n} prohibited physical overlaps',
   'detailing.constructible.reverified': '{done} of {total} members reverified at final geometry',
   'detailing.constructible.hashes': '{matching} of {total} certificates match the built geometry',

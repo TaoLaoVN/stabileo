@@ -4425,6 +4425,19 @@ const es: Record<string, string> = {
     'No se puede descartar armadura de corte: la verificación de la base es {status}.',
   'detailing.transverse.starterTiesRequired':
     'Estribos de la jaula de arranque sobre el empalme de {lap} m cada {spacing} m (§10.7.6.1.1, §10.7.6.1.2).',
+
+  // El adaptador de producción de piso: cada motivo por el que no se diseñó un elemento.
+  'detailing.floorRun.missingNodes': 'Cáscara {element}: faltan uno o más nodos en el modelo.',
+  'detailing.floorRun.inclinedShell': 'La cáscara {element} está inclinada {tilt}° respecto de la horizontal: no le corresponde ni el capítulo de losas ni el de tabiques, por lo que no se diseñó.',
+  'detailing.floorRun.degenerateShell': 'La cáscara {element} no tiene un plano resoluble y no se diseñó.',
+  'detailing.floorRun.noSolverResult': 'La cáscara {element} no tiene resultados del solver, por lo que no hay solicitación que diseñar.',
+  'detailing.floorRun.nonRectangularPanel': 'El paño {element} no es un rectángulo alineado con los ejes; el despiece de losas solo está definido para uno.',
+  'detailing.floorRun.noAreaLoad': 'El paño {element} no tiene carga de superficie, por lo que su corte en una dirección no tiene demanda que integrar.',
+  'detailing.floorRun.wallGeometryNotResolved': 'Tabique {element}: no se pudieron resolver su longitud y su altura a partir de sus nodos.',
+  'detailing.floorRun.wallMomentFromMembraneOnly': 'Tabique {element}: las solicitaciones en el plano se tomaron de las tensiones de membrana, por lo que el momento en el plano se informa como cero en lugar de derivarse.',
+  'detailing.floorRun.perElementPanel': 'Cada elemento de cáscara se diseña como su propio paño: el momento utilizado es el del propio elemento, no una envolvente de franja sobre la malla.',
+  'detailing.floorRun.noShells': 'El modelo no tiene elementos de cáscara, por lo que no hay losa ni tabique que diseñar.',
+  'detailing.floorRun.notSolved': 'No hay resultados de cáscaras disponibles. Primero resolvé el modelo.',
   'detailing.constructible.prohibited': '{n} superposiciones físicas prohibidas',
   'detailing.constructible.reverified': '{done} de {total} elementos reverificados con la geometría final',
   'detailing.constructible.hashes': '{matching} de {total} certificados coinciden con la geometría construida',
