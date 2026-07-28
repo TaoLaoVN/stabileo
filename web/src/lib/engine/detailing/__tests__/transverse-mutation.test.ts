@@ -142,8 +142,9 @@ describe('a declared relationship never excuses interpenetration', () => {
 
   it('and the detector reports it end to end, not just the classifier', () => {
     const [t, b] = pair({ enclosesBarIds: ['bar'], restrainsBarIds: ['bar'] });
-    const res = detectCollisions([t, b], undefined, undefined,
-      (x, y, surface, ta, tb) => classifyPair(x, y, ctx, surface, ta, tb));
+    const res = detectCollisions([t, b], {
+      classifyFor: (x, y, surface, ta, tb) => classifyPair(x, y, ctx, surface, ta, tb),
+    });
     expect(res.conflicts.map((c) => c.pairClass)).toEqual(['prohibitedOverlap']);
   });
 });

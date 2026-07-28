@@ -27,18 +27,23 @@
 import {
   buildStraightBarWithHooks, type BarPath, type Point3,
 } from '../../codes/cirsoc201/bar-geometry';
+import { seatedLongitudinalHalfExtents } from '../../codes/cirsoc201/transverse-cage';
 import { clause, type ClauseRef, type RegulationEdition } from '../../codes/regulation';
 import { worstMaturity, type Maturity } from '../../codes/maturity';
 import { dedupeMessages, type EngineMessage } from '../../codes/message';
 import { assessConstructibility } from './constructibility';
 import { assignMarks, evaluateState, type DetailingAssembly, type UnsupportedCondition } from './assembly';
-import {
-  DEFAULT_TOLERANCES, detectCollisions, type BarConflict, type CollisionTolerances,
-} from './collision';
-import { minClearSpacingInLayer } from '../../codes/cirsoc201/spacing';
+import { detectCollisions, type BarConflict, type CollisionTolerances } from './collision';
+import { classifyPair } from './classify';
 import type { SlabBarLayer, SlabDesignResult } from './slab-design';
 import type { WallDesignResult } from './wall-design';
 import type { FootingCheck } from './foundation-check';
+import {
+  dowelTransverseRequirement, footingTransverseRequirement, generateStarterTies,
+  generateWallBars, slabTransverseRequirement, summariseRequirements,
+  wallTransverseRequirement,
+  type StarterCageInput, type TransverseRequirement, type WallGeometry,
+} from './floor-transverse';
 
 // ─── Slab bars ───────────────────────────────────────────────────
 
@@ -136,7 +141,14 @@ export interface DowelInput {
  * footing's bottom mat — which it usually does, because a footing is rarely deep enough
  * for a straight `l_d`.
  */
-export function generateDowels(input: DowelInput): { bars: BarPath[]; refs: ClauseRef[]; notes: string[] } {
+export function generateDowels(input: DowelInput): {
+  bars: BarPath[]; refs: ClauseRef[]; notes: string[];
+  /**
+   * Where the dowels sit in the column's section frame, so the starter cage restrains the
+   * bars that actually exist rather than a second guess at the same layout.
+   */
+  positions: Array<{ x: number; y: number }>;
+} {
   const bars: BarPath[] = [];
   const notes: string[] = [];
   const refs = [
@@ -153,24 +165,36 @@ export function generateDowels(input: DowelInput): { bars: BarPath[]; refs: Clau
       'de espera rematan con gancho a 90° apoyado sobre la parrilla inferior.');
   }
 
-  const inset = input.cover + input.tieDia / 1000 + input.bars.diameterMm / 2000;
-  const halfB = input.columnB / 2 - inset;
-  const halfH = input.columnH / 2 - inset;
+  // Seating comes from the ONE authoritative derivation, not a fourth local copy of it.
+  //
+  // This function used to compute `cover + d_s + d_b/2` for all four corners. That is the
+  // contact distance from a STRAIGHT leg, and a corner bar cannot reach it because the
+  // bend is in the way — it seats in the bend, further in. `generate-column` had the same
+  // bug and its corner bars interpenetrated the joint ties by 3,3 mm apiece; here it was
+  // 2,7 mm against the starter ties, and it only became visible once those ties existed.
+  const seated = seatedLongitudinalHalfExtents(
+    input.columnB, input.columnH, input.cover, input.tieDia, input.bars.diameterMm);
   const positions = [
-    { x: -halfB, y: -halfH }, { x: halfB, y: -halfH },
-    { x: halfB, y: halfH }, { x: -halfB, y: halfH },
+    { x: -seated.corner.halfAcross, y: -seated.corner.halfUp },
+    { x: seated.corner.halfAcross, y: -seated.corner.halfUp },
+    { x: seated.corner.halfAcross, y: seated.corner.halfUp },
+    { x: -seated.corner.halfAcross, y: seated.corner.halfUp },
   ];
+  // Intermediate bars lie against a straight leg, so they use the FACE inset and are not
+  // collinear with the corners. That is what a real cage does.
   const extra = Math.max(0, input.bars.count - 4);
+  const halfB = seated.face.halfAcross;
   for (let k = 0; k < extra; k++) {
     const t = (k + 1) / (extra + 1);
     positions.push(k % 2 === 0
-      ? { x: -halfB + 2 * halfB * t, y: -halfH }
-      : { x: -halfB + 2 * halfB * t, y: halfH });
+      ? { x: -halfB + 2 * halfB * t, y: -seated.face.halfUp }
+      : { x: -halfB + 2 * halfB * t, y: seated.face.halfUp });
   }
 
   const embedded = Math.min(input.ldFooting, available);
-  for (let k = 0; k < Math.min(positions.length, input.bars.count); k++) {
-    const p = positions[k];
+  const placed = positions.slice(0, Math.min(positions.length, input.bars.count));
+  for (let k = 0; k < placed.length; k++) {
+    const p = placed[k];
     bars.push(buildStraightBarWithHooks({
       id: `${input.id}-dowel-${k}`,
       diameterMm: input.bars.diameterMm, role: 'longitudinal',
@@ -190,33 +214,7 @@ export function generateDowels(input: DowelInput): { bars: BarPath[]; refs: Clau
     }));
   }
 
-  return { bars, refs, notes };
-}
-
-/** Dominant direction of a bar, from its longest straight segment. */
-function dominantAxis(bar: BarPath): Point3 | null {
-  let best: Point3 | null = null;
-  let bestLen = 0;
-  for (const seg of bar.segments) {
-    if (seg.kind !== 'straight' || seg.length <= bestLen) continue;
-    const dx = seg.end.x - seg.start.x;
-    const dy = seg.end.y - seg.start.y;
-    const dz = seg.end.z - seg.start.z;
-    const n = Math.hypot(dx, dy, dz);
-    if (n < 1e-9) continue;
-    best = { x: dx / n, y: dy / n, z: dz / n };
-    bestLen = seg.length;
-  }
-  return best;
-}
-
-/** True when two bars run essentially along the same line, in either sense. */
-function isParallel(a: BarPath, b: BarPath, toleranceDeg = 15): boolean {
-  const u = dominantAxis(a);
-  const v = dominantAxis(b);
-  if (!u || !v) return true;   // unknown direction: apply the stricter rule
-  const dot = Math.abs(u.x * v.x + u.y * v.y + u.z * v.z);
-  return dot >= Math.cos((toleranceDeg * Math.PI) / 180);
+  return { bars, refs, notes, positions: placed };
 }
 
 // ─── Floor assembly ──────────────────────────────────────────────
@@ -231,7 +229,15 @@ export interface FloorAssemblyInput {
   maxAggregateSizeMm: number;
   tolerances?: CollisionTolerances;
   slabs: Array<{ geometry: SlabPanelGeometry; design: SlabDesignResult }>;
-  walls: Array<{ wallId: string; design: WallDesignResult; elementIds: number[] }>;
+  /**
+   * `geometry` and `barDiameterMm` are what turn a designed wall into a drawn one. Without
+   * them the wall contributes ratios and a maturity and no steel, which is how walls came
+   * to appear in no mark, no schedule and no collision check.
+   */
+  walls: Array<{
+    wallId: string; design: WallDesignResult; elementIds: number[];
+    geometry?: WallGeometry; barDiameterMm?: number;
+  }>;
   footings: Array<{ id: string; check: FootingCheck; elementIds: number[]; dowels?: DowelInput }>;
   /** Beam top-bar depths at each support, so slab bars can be placed above them. */
   beamTopDepths?: Map<string, number>;
@@ -259,6 +265,20 @@ export function buildFloorAssembly(input: FloorAssemblyInput): FloorAssemblyResu
   // so they could be translated at the i18n boundary; this collector was still typed as
   // prose, which typechecked only because nothing downstream read the elements.
   const assumptions: EngineMessage[] = [];
+  // What the clauses require of this floor's transverse steel, family by family. Most
+  // entries are legitimately EMPTY; the gate is told the reason either way.
+  const requirements: TransverseRequirement[] = [];
+  // Counted from the PATHS that exist, never from the requirement — the two must be able
+  // to disagree or the condition proves nothing.
+  let materialisedTransverse = 0;
+
+  // Which spacing rule governs each element's bars. Starter dowels are column bars —
+  // §25.2.3 is what governs them — so a footing's elements are declared as columns rather
+  // than left undefined, which would silently fall back to the beam rule.
+  const memberKinds = new Map<number, 'beam' | 'column' | 'wall' | 'slab'>();
+  for (const s of input.slabs) for (const id of s.geometry.elementIds) memberKinds.set(id, 'slab');
+  for (const w of input.walls) for (const id of w.elementIds) memberKinds.set(id, 'wall');
+  for (const f of input.footings) for (const id of f.elementIds) memberKinds.set(id, 'column');
 
   for (const s of input.slabs) {
     const panelBars = generateSlabBars(s.geometry, s.design.layers, input.edition);
@@ -274,6 +294,8 @@ export function buildFloorAssembly(input: FloorAssemblyInput): FloorAssemblyResu
         refs: s.design.refs,
       });
     }
+    requirements.push(slabTransverseRequirement(
+      s.geometry.panelId, s.geometry.elementIds, s.design, input.edition));
   }
 
   for (const w of input.walls) {
@@ -282,11 +304,29 @@ export function buildFloorAssembly(input: FloorAssemblyInput): FloorAssemblyResu
     trace.push(
       `Tabique ${w.wallId}: verticales c/${(w.design.verticalSpacing * 1000).toFixed(0)} mm, ` +
       `horizontales c/${(w.design.horizontalSpacing * 1000).toFixed(0)} mm.`);
+    if (w.geometry && w.barDiameterMm) {
+      const wallBars = generateWallBars(
+        w.geometry, w.design, w.barDiameterMm, input.edition);
+      bars.push(...wallBars);
+      trace.push(`Tabique ${w.wallId}: ${wallBars.length} barra(s) físicas.`);
+    } else {
+      // Said out loud rather than silently skipped: a wall with no geometry is a wall with
+      // no drawing, and the previous version made that invisible.
+      unsupported.push({
+        key: 'wall', scope: { elementIds: w.elementIds },
+        message:
+          `El tabique ${w.wallId} no tiene geometría asociada, por lo que no se generó ` +
+          'armadura física. Sus verificaciones son válidas; su despiece no existe.',
+        refs: w.design.refs,
+      });
+    }
     for (const u of w.design.unsupported) {
       unsupported.push({
         key: 'wall', scope: { elementIds: w.elementIds }, message: u, refs: w.design.refs,
       });
     }
+    requirements.push(wallTransverseRequirement(
+      w.wallId, w.elementIds, w.design, input.edition));
   }
 
   for (const f of input.footings) {
@@ -297,54 +337,101 @@ export function buildFloorAssembly(input: FloorAssemblyInput): FloorAssemblyResu
         key: 'foundation', scope: { elementIds: f.elementIds }, message: u, refs: f.check.refs,
       });
     }
+    requirements.push(footingTransverseRequirement(
+      f.id, f.elementIds, f.check, input.edition));
+
     if (f.dowels) {
       const d = generateDowels(f.dowels);
       bars.push(...d.bars);
       trace.push(...d.notes);
       trace.push(`Fundación ${f.id}: ${d.bars.length} barra(s) de espera.`);
+
+      // §10.7.6.1.1 — the starter bars are a column cage and must be tied. Without this
+      // every footing drew a bundle of unrestrained verticals.
+      const cage: StarterCageInput = {
+        id: f.dowels.id, centre: f.dowels.centre, footingTopZ: f.dowels.footingTopZ,
+        lapAbove: f.dowels.lapAbove,
+        columnB: f.dowels.columnB, columnH: f.dowels.columnH,
+        cover: f.dowels.cover, tieDia: f.dowels.tieDia, bars: f.dowels.bars,
+        maxAggregateSizeMm: input.maxAggregateSizeMm,
+        elementIds: f.elementIds, edition: input.edition,
+      };
+      requirements.push(dowelTransverseRequirement(cage));
+
+      const ties = generateStarterTies(cage, d.positions);
+      bars.push(...ties.bars);
+      materialisedTransverse += ties.pieces.length;
+      trace.push(
+        `Fundación ${f.id}: ${ties.pieces.length} estribo(s) de arranque sobre el empalme.`);
+      for (const ref of ties.refs) {
+        unsupported.push({
+          key: 'foundation', scope: { elementIds: f.elementIds },
+          message:
+            `No se pudo materializar la armadura transversal de arranque: ${ref.note}.`,
+          refs: [ref],
+        });
+      }
     }
   }
 
-  // Whole-floor collision check, using the same engine that checks two beam bars.
+  // ── Whole-floor collision check, through the AUTHORITATIVE classifier ────────
   //
-  // With one exception that is physical rather than numerical: two bars running in
-  // DIFFERENT directions cross each other, and in a slab mat they are meant to be in
-  // contact — that is what the tie wire is for. Clear spacing is a rule about bars
-  // running parallel, where the concrete has to flow between them along their length.
-  // Applying it to a crossing pair reports every intersection of an orthogonal mat as
-  // an overlap, which on a 5 m panel is about eleven thousand false conflicts.
+  // This pass used to express its own physics with a pair of callbacks: `requiredClearFor`
+  // returned zero for a non-parallel pair, and `placementFor` withheld the placement
+  // allowance from bars that are tied. Both statements are true, and both are already made
+  // — better — by `classifyPair`, which PR17 built precisely so that a slab bar and a beam
+  // bar are judged by one set of rules.
   //
-  // Bars that cross must still not INTERPENETRATE, and they do not: the generator stacks
-  // the second direction a full diameter inside the first, so they touch rather than
-  // occupy the same space.
-  const requiredClearFor = (a: BarPath, b: BarPath) => {
-    if (!isParallel(a, b)) return 0;
-    return minClearSpacingInLayer(input.edition, {
-      barDiameterMm: Math.max(a.diameterMm, b.diameterMm),
-      maxAggregateSizeMm: input.maxAggregateSizeMm,
-    }).minClear;
-  };
+  // Keeping a second, simpler copy cost real accuracy. Without the classifier every pair
+  // came back with `pairClass: undefined`, so:
+  //
+  //   · a tie touching the bars it is DECLARED to enclose was reported as an overlap, since
+  //     nothing here knew what `enclosesBarIds` means — that is `requiredContainment`;
+  //   · `CONTACT_ALLOWANCE`'s 2 mm moat around true contact did not apply, so an arc
+  //     sampled to a 0,5 mm chord read as a 0,27 mm interpenetration of a bar seated
+  //     tangent to it;
+  //   · and the conflicts that DID appear could not be counted by class, because they had
+  //     none — the `sameLayerSpacing` tally below was reading a field nobody set.
+  //
+  // Interpenetration is still checked first and unconditionally, so nothing is waved past:
+  // a slab bar driven through a wall bar is `prohibitedOverlap` here exactly as in a beam.
+  const classifyFor = (
+    a: BarPath, b: BarPath, surface: number, ta?: Point3, tb?: Point3,
+  ) => classifyPair(a, b, {
+    edition: input.edition,
+    maxAggregateSizeMm: input.maxAggregateSizeMm,
+    memberKindOf: (id) => memberKinds.get(id),
+  }, surface, ta, tb);
 
-  // Crossing bars are tied together, so there is no independent placement error between
-  // them to allow for. Charging one would turn every tie point into an interpenetration.
-  const placementFor = (a: BarPath, b: BarPath) =>
-    isParallel(a, b) ? (input.tolerances?.placement ?? DEFAULT_TOLERANCES.placement) : 0;
-
-  // `classifyFor` is left undefined here on purpose: this floor pass already expresses the
-  // same physics through `requiredClearFor` (zero clear distance for a crossing) and
-  // `placementFor` (no placement error between bars that are tied). Passing `placementFor`
-  // positionally into the classifier slot — which is what happened when the classifier was
-  // added ahead of it — makes every pair return a number where a classification is
-  // expected, and the whole check silently inverts.
-  const collision = detectCollisions(
-    bars, input.tolerances, requiredClearFor, undefined, placementFor);
+  const collision = detectCollisions(bars, {
+    tolerances: input.tolerances, classifyFor,
+  });
   const conflicts: BarConflict[] = collision.conflicts;
   trace.push(
     `Verificación de interferencias sobre ${bars.length} barra(s): ` +
     `${conflicts.length} conflicto(s), ${collision.barPairsTested} par(es) evaluado(s).`);
 
   const marks = assignMarks(bars, 'F');
-  // The twelve-condition gate, measured on what this floor actually produced.
+
+  // ── The thirteenth condition, answered rather than skipped ──────────
+  //
+  // This object previously omitted `requiredTransversePieces` and
+  // `materialisedTransversePieces` entirely, so the gate compared `undefined >= undefined`
+  // — always false — and no floor could ever be CONSTRUCTIBLE, whatever its steel. It is a
+  // type error, and `vite build` does not typecheck, so nothing caught it.
+  //
+  // Both numbers now come from `floor-transverse.ts`: the requirement from the ZONES and
+  // the clauses, the materialisation from the paths that exist. Most families legitimately
+  // require nothing — a slab whose concrete carries its shear, a footing sized for its
+  // punching, a wall under §11.7.4.1's 0,01 — and those are recorded as EMPTY requirement
+  // sets carrying their reason, never as a satisfied one.
+  const totals = summariseRequirements(requirements, materialisedTransverse);
+  trace.push(
+    `Armadura transversal: ${totals.materialisedPieces} materializada(s) de ` +
+    `${totals.requiredPieces} requerida(s); ${totals.empty.length} familia(s) sin ` +
+    'requerimiento aplicable.');
+
+  // The thirteen-condition gate, measured on what this floor actually produced.
   //
   // A slab/wall/footing assembly has no beam-line search and no splice transitions, so
   // those conditions are vacuously satisfied — but the conflict count, the unsupported
@@ -352,6 +439,8 @@ export function buildFloorAssembly(input: FloorAssemblyInput): FloorAssemblyResu
   // withheld on any of them exactly as it is for a beam floor.
   const prohibited = conflicts.filter((c) => c.pairClass === 'prohibitedOverlap').length;
   const constructibility = assessConstructibility({
+    requiredTransversePieces: totals.requiredPieces,
+    materialisedTransversePieces: totals.materialisedPieces,
     completeEnvelope: true,
     searchTruncated: false,
     applicableMembers: 1,

@@ -4446,6 +4446,23 @@ const en: Record<string, string> = {
   'detailing.constructible.materialised': '{built} of {selected} transitions built',
   'detailing.constructible.unmaterialised': '{n} transitions could not be built',
   'detailing.constructible.transverseMaterialised': '{built} of {required} transverse pieces built',
+
+  // Floor-level transverse requirements. An empty requirement set is a real answer and
+  // says which clause and which measurement made it empty.
+  'detailing.transverse.slabNoneRequired':
+    'No shear reinforcement required: v_u = {vu} kN/m against φv_c = {phiVc} kN/m (§7.6.3.1).',
+  'detailing.transverse.slabShearReinforcementNeeded':
+    'Shear reinforcement is required — v_u = {vu} kN/m exceeds φv_c = {phiVc} kN/m — and sizing it for slabs is not implemented.',
+  'detailing.transverse.wallNoTiesRequired':
+    'No ties required: the vertical ratio ρ_l = {rho} stays under the 0,01 of §11.7.4.1.',
+  'detailing.transverse.wallTiesNeeded':
+    'Ties per §10.7.6 are required: the vertical ratio ρ_l = {rho} exceeds the 0,01 of §11.7.4.1.',
+  'detailing.transverse.footingNoneRequired':
+    'No shear reinforcement required: one-way {oneWay} and punching {punching} are carried by the concrete (§13.2.6).',
+  'detailing.transverse.footingShearNotEstablished':
+    'Shear reinforcement cannot be ruled out: the footing check is {status}.',
+  'detailing.transverse.starterTiesRequired':
+    'Starter cage ties over the {lap} m lap at {spacing} m centres (§10.7.6.1.1, §10.7.6.1.2).',
   'detailing.constructible.prohibited': '{n} prohibited physical overlaps',
   'detailing.constructible.reverified': '{done} of {total} members reverified at final geometry',
   'detailing.constructible.hashes': '{matching} of {total} certificates match the built geometry',

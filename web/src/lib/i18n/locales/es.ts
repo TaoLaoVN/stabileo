@@ -4408,6 +4408,23 @@ const es: Record<string, string> = {
   'detailing.constructible.materialised': '{built} de {selected} transiciones materializadas',
   'detailing.constructible.unmaterialised': '{n} transiciones no se pudieron materializar',
   'detailing.constructible.transverseMaterialised': '{built} de {required} piezas transversales materializadas',
+
+  // Requerimientos transversales a nivel de piso. Un conjunto vacío es una respuesta real
+  // e indica qué cláusula y qué medición lo dejaron vacío.
+  'detailing.transverse.slabNoneRequired':
+    'No se requiere armadura de corte: v_u = {vu} kN/m contra φv_c = {phiVc} kN/m (§7.6.3.1).',
+  'detailing.transverse.slabShearReinforcementNeeded':
+    'Se requiere armadura de corte —v_u = {vu} kN/m supera φv_c = {phiVc} kN/m— y su dimensionamiento en losas no está implementado.',
+  'detailing.transverse.wallNoTiesRequired':
+    'No se requieren estribos: la cuantía vertical ρ_l = {rho} se mantiene por debajo del 0,01 del §11.7.4.1.',
+  'detailing.transverse.wallTiesNeeded':
+    'Se requieren estribos según §10.7.6: la cuantía vertical ρ_l = {rho} supera el 0,01 del §11.7.4.1.',
+  'detailing.transverse.footingNoneRequired':
+    'No se requiere armadura de corte: el corte en una dirección {oneWay} y el punzonado {punching} los toma el hormigón (§13.2.6).',
+  'detailing.transverse.footingShearNotEstablished':
+    'No se puede descartar armadura de corte: la verificación de la base es {status}.',
+  'detailing.transverse.starterTiesRequired':
+    'Estribos de la jaula de arranque sobre el empalme de {lap} m cada {spacing} m (§10.7.6.1.1, §10.7.6.1.2).',
   'detailing.constructible.prohibited': '{n} superposiciones físicas prohibidas',
   'detailing.constructible.reverified': '{done} de {total} elementos reverificados con la geometría final',
   'detailing.constructible.hashes': '{matching} de {total} certificados coinciden con la geometría construida',

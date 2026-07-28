@@ -50,11 +50,13 @@ function shapeOf(
   bars: readonly BarPath[], withClassifier: boolean,
   placementFor?: (a: BarPath, b: BarPath) => number,
 ) {
-  const args = [
-    bars, DEFAULT_TOLERANCES, undefined, withClassifier ? classify : undefined, placementFor,
-  ] as const;
-  const fast = detectCollisions(...args);
-  const slow = detectCollisions(...args, { prune: false });
+  const opts = {
+    tolerances: DEFAULT_TOLERANCES,
+    classifyFor: withClassifier ? classify : undefined,
+    placementFor,
+  };
+  const fast = detectCollisions(bars, opts);
+  const slow = detectCollisions(bars, { ...opts, prune: false });
   const norm = (r: typeof fast) => r.conflicts.map((c) => ({
     barA: c.barA, barB: c.barB, severity: c.severity, pairClass: c.pairClass,
     classLabelKey: c.classLabelKey, clearance: c.clearance, required: c.required,
@@ -207,8 +209,8 @@ describe('optimised and exhaustive agree on synthetic geometry', () => {
     expectEquivalent(field, 'random field');
     // Input order must not change the answer, for either path.
     const reversed = [...field].reverse();
-    const a = detectCollisions(field, DEFAULT_TOLERANCES, undefined, classify);
-    const b = detectCollisions(reversed, DEFAULT_TOLERANCES, undefined, classify);
+    const a = detectCollisions(field, { tolerances: DEFAULT_TOLERANCES, classifyFor: classify });
+    const b = detectCollisions(reversed, { tolerances: DEFAULT_TOLERANCES, classifyFor: classify });
     expect(b.conflicts).toEqual(a.conflicts);
   });
 });

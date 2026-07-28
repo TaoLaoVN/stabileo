@@ -353,10 +353,25 @@ export interface CollisionResult {
  * `max(40 mm, 1.5 d_b, 4/3 d_agg)` while a stirrup passing a main bar needs only
  * physical clearance. Defaults to the flat `tolerances.requiredClear`.
  */
-export function detectCollisions(
-  bars: readonly BarPath[],
-  tolerances: CollisionTolerances = DEFAULT_TOLERANCES,
-  requiredClearFor?: (a: BarPath, b: BarPath) => number,
+/**
+ * Everything `detectCollisions` can be told, by NAME.
+ *
+ * ── Why an options object and not positional parameters ────────────
+ *
+ * Because the positional form produced a real defect twice. `classifyFor` was inserted
+ * ahead of `placementFor` in a later change, and `floor-design.ts` went on calling the
+ * function with four arguments — so `placementFor` landed in the classifier's slot, every
+ * pair returned a number where a `PairClassification` was expected, and the whole
+ * whole-floor check silently inverted. Nothing failed loudly; the callback signatures are
+ * close enough that TypeScript accepted the swap at the call site.
+ *
+ * Two callbacks of similar shape, in adjacent slots, where the wrong one still typechecks,
+ * is a defect class rather than a defect. Naming the fields removes it: there is no
+ * position to get wrong, and adding a fifth option can never re-order the other four.
+ */
+export interface DetectCollisionsOptions {
+  tolerances?: CollisionTolerances;
+  requiredClearFor?: (a: BarPath, b: BarPath) => number;
   /**
    * Classifies a pair given whether their surfaces interpenetrate. When supplied it
    * REPLACES `requiredClearFor` and can also declare a pair not reportable at all —
@@ -375,7 +390,7 @@ export function detectCollisions(
      * were held to §25.2.3's 40 mm column spacing instead of being recognised as crossings.
      */
     tangentA?: Point3, tangentB?: Point3,
-  ) => PairClassification,
+  ) => PairClassification;
   /**
    * Per-pair placement tolerance override.
    *
@@ -385,7 +400,7 @@ export function detectCollisions(
    * placement error to allow for between them. Charging one turns every tie point into a
    * 10 mm interpenetration.
    */
-  placementFor?: (a: BarPath, b: BarPath) => number,
+  placementFor?: (a: BarPath, b: BarPath) => number;
   /**
    * Escape hatch for the equivalence gate, NOT a production knob.
    *
@@ -394,8 +409,15 @@ export function detectCollisions(
    * `collision-equivalence.test.ts` runs both over the same inputs and requires identical
    * output, so the optimisation can never drift from the geometry it is supposed to preserve.
    */
-  options?: { prune?: boolean },
+  prune?: boolean;
+}
+
+export function detectCollisions(
+  bars: readonly BarPath[],
+  opts: DetectCollisionsOptions = {},
 ): CollisionResult {
+  const tolerances = opts.tolerances ?? DEFAULT_TOLERANCES;
+  const { requiredClearFor, classifyFor, placementFor } = opts;
   const raw = bars.map((path) => samplePath(path, COLLISION_CHORD_TOLERANCE));
   const maxRadius = bars.reduce((m, b) => Math.max(m, b.diameterMm / 2000), 0);
 
@@ -426,7 +448,7 @@ export function detectCollisions(
     for (const p of sampled[i].hashPoints) hash.insert(i, p);
   }
 
-  const prune = options?.prune !== false;
+  const prune = opts.prune !== false;
   /** Everything except the two radii, which vary per pair. */
   const maxClear = maxReportableClear(bars, tolerances);
 

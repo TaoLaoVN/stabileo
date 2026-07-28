@@ -5,6 +5,7 @@ import {
 } from '../floor-design';
 import { designSlabPanel } from '../slab-design';
 import { designWall } from '../wall-design';
+import type { WallGeometry } from '../floor-transverse';
 import { checkFooting } from '../foundation-check';
 
 const geometry: SlabPanelGeometry = {
@@ -17,6 +18,16 @@ const slabDesign = () => designSlabPanel({
   fc: 25, fy: 420, maxAggregateSizeMm: 20, edition: '2025',
   moments: { mx: 40, my: 30, mxy: 8 }, qu: 12,
 });
+
+/**
+ * The wall's physical placement. A wall without geometry can be checked but not drawn, so
+ * the floor now reports that as an unsupported condition rather than silently omitting the
+ * steel — which is what it used to do.
+ */
+const wallGeometry: WallGeometry = {
+  wallId: 'W1', start: { x: 0, y: 6, z: 0 }, end: { x: 4, y: 6, z: 0 },
+  height: 3, thickness: 0.20, cover: 0.025, elementIds: [60],
+};
 
 const wallDesign = () => designWall({
   wallId: 'W1', length: 4, height: 3, thickness: 0.20, cover: 0.025,
@@ -157,7 +168,10 @@ function floor(over: Partial<FloorAssemblyInput> = {}): FloorAssemblyInput {
     verifierId: 'cirsoc201.provided.v2.2025', demandRevision: 5,
     maxAggregateSizeMm: 20,
     slabs: [{ geometry, design: slabDesign() }],
-    walls: [{ wallId: 'W1', design: wallDesign(), elementIds: [60] }],
+    walls: [{
+      wallId: 'W1', design: wallDesign(), elementIds: [60],
+      geometry: wallGeometry, barDiameterMm: 12,
+    }],
     footings: [{ id: 'F1', check: footing(), elementIds: [1], dowels: dowels() }],
     membersVerified: true,
     ...over,
@@ -185,7 +199,7 @@ describe('whole-floor assembly', () => {
   it('carries each family\'s unsupported conditions with its own scope', () => {
     const r = buildFloorAssembly(floor({
       walls: [{
-        wallId: 'W1',
+        wallId: 'W1', geometry: wallGeometry, barDiameterMm: 12,
         design: designWall({
           wallId: 'W1', length: 4, height: 3, thickness: 0.20, cover: 0.025,
           fc: 25, fy: 420, barDiameterMm: 12, edition: '2025',
@@ -249,7 +263,7 @@ describe('whole-floor assembly', () => {
   it('blocks CONSTRUCTIBLE while an unsupported condition remains', () => {
     const r = buildFloorAssembly(floor({
       walls: [{
-        wallId: 'W1',
+        wallId: 'W1', geometry: wallGeometry, barDiameterMm: 12,
         design: designWall({
           wallId: 'W1', length: 4, height: 3, thickness: 0.20, cover: 0.025,
           fc: 25, fy: 420, barDiameterMm: 12, edition: '2025',

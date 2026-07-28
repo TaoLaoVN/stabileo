@@ -1978,11 +1978,9 @@ export function runDetailing(input: RunDetailingInput): RunDetailingResult {
       // by the margin.
       spacingNotPlacementRobust: spacingMargin <= 0
         ? 0
-        : detectCollisions(
-          result.assembly.bars,
-          DEFAULT_TOLERANCES,
-          undefined,
-          (a, b, surface, ta, tb) => {
+        : detectCollisions(result.assembly.bars, {
+          tolerances: DEFAULT_TOLERANCES,
+          classifyFor: (a, b, surface, ta, tb) => {
             const base = classifyForRun(a, b, surface, ta, tb);
             // Contact classes have no minimum to raise. A lap is meant to touch and a
             // stirrup is meant to grip; adding a margin to zero would report the detail.
@@ -1990,7 +1988,7 @@ export function runDetailing(input: RunDetailingInput): RunDetailingResult {
               ? base
               : { ...base, requiredClear: base.requiredClear + spacingMargin };
           },
-        ).conflicts.filter((c) => c.severity !== 'marginal').length,
+        }).conflicts.filter((c) => c.severity !== 'marginal').length,
       unsupportedRules: result.assembly.unsupported.length + unsupportedRun.length,
       staleAssemblies: 0,
     });
