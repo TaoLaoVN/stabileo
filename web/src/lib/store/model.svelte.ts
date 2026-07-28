@@ -1613,6 +1613,22 @@ function createModelStore() {
     },
 
     // ─── Footing CRUD ───────────────────────────────────────
+    //
+    // Every mutation below uses `_pushUndoSilent`, NOT `_pushUndo`. That is the same
+    // primitive a reinforcement edit uses, and for the same reason: it records an undo
+    // entry WITHOUT bumping `modelVersion` or firing `_onMutation`, so the stored analysis
+    // results survive.
+    //
+    // This is a correctness requirement, not an optimisation. A footing is not part of the
+    // analytical model — it CARRIES a support reaction, it does not change the stiffness
+    // that produced one. Routing these through `_pushUndo` cleared the solve on every edit,
+    // so by the time the design command ran there was no reaction left to design for, and
+    // every footing reported "no reaction" no matter how carefully it had been dimensioned.
+    // Found by the Playwright journey, which is the only place the ordering shows up.
+    //
+    // What footing and geotechnical edits DO invalidate — foundation design, detailing,
+    // coordination, certificates and documents — is handled downstream by the per-footing
+    // `revision` and by the detailing store's own invalidation, not by discarding the solve.
     // Map reassignment on every mutation per web/CLAUDE.md "Reactivity with Maps".
     //
     // Every mutation bumps the footing's own `revision`. That is what lets invalidation be
@@ -1628,7 +1644,7 @@ function createModelStore() {
      * at a plausible 1,50 m × 1,50 m that would pass a bearing check nobody performed.
      */
     addFooting(nodeId: number, name?: string): number {
-      if (!_undoBatching) _pushUndo?.();
+      if (!_undoBatching) _pushUndoSilent?.();
       const id = nextId.footing++;
       const f = newFooting(id, nodeId, name ?? `Z${id}`, {
         cover: DEFAULT_COVER,
@@ -1644,7 +1660,7 @@ function createModelStore() {
     },
 
     updateFooting(id: number, data: Partial<Omit<Footing, 'id' | 'revision'>>): void {
-      if (!_undoBatching) _pushUndo?.();
+      if (!_undoBatching) _pushUndoSilent?.();
       const cur = model.footings.get(id);
       if (!cur) return;
       const m = new Map(model.footings);
@@ -1653,14 +1669,14 @@ function createModelStore() {
     },
 
     removeFooting(id: number): void {
-      if (!_undoBatching) _pushUndo?.();
+      if (!_undoBatching) _pushUndoSilent?.();
       const m = new Map(model.footings);
       m.delete(id);
       model.footings = m;
     },
 
     clearFootings(): void {
-      if (!_undoBatching) _pushUndo?.();
+      if (!_undoBatching) _pushUndoSilent?.();
       model.footings = new Map();
     },
 
@@ -1682,7 +1698,7 @@ function createModelStore() {
      * put an invented value behind a name the engineer chose — which reads as theirs.
      */
     addSoilProfile(name?: string): number {
-      if (!_undoBatching) _pushUndo?.();
+      if (!_undoBatching) _pushUndoSilent?.();
       const id = nextId.soilProfile++;
       const geo = model.geotechnical ?? emptyGeotechnical();
       const profile = newSoilProfile(id, name ?? `Suelo ${id}`);
@@ -1697,7 +1713,7 @@ function createModelStore() {
     },
 
     updateSoilProfile(id: number, data: Partial<Omit<SoilProfile, 'id'>>): void {
-      if (!_undoBatching) _pushUndo?.();
+      if (!_undoBatching) _pushUndoSilent?.();
       const geo = model.geotechnical;
       if (!geo) return;
       model.geotechnical = {
@@ -1715,7 +1731,7 @@ function createModelStore() {
      * chose for it.
      */
     removeSoilProfile(id: number): void {
-      if (!_undoBatching) _pushUndo?.();
+      if (!_undoBatching) _pushUndoSilent?.();
       const geo = model.geotechnical;
       if (!geo) return;
       const profiles = geo.profiles.filter((p) => p.id !== id);
@@ -1737,7 +1753,7 @@ function createModelStore() {
     },
 
     setDefaultSoilProfile(id: number | null): void {
-      if (!_undoBatching) _pushUndo?.();
+      if (!_undoBatching) _pushUndoSilent?.();
       const geo = model.geotechnical ?? emptyGeotechnical();
       model.geotechnical = { ...geo, defaultProfileId: id };
     },

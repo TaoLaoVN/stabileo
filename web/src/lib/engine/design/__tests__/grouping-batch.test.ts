@@ -257,8 +257,12 @@ describe('batch edit — preview, compatibility, validation', () => {
   });
 
   it('reports preview truncation instead of silently dropping rows', () => {
-    const many = [...solveFixture(frame).contexts.keys()];
+    // ONE solve, reused. This solved the same fixture twice and threw the first result
+    // away, which made the test cost ~5,3 s under full-suite load against the default 5 s
+    // timeout — green in isolation at 1,6 s and intermittently red in a full run. Same
+    // assertions, half the work; no timeout was raised to hide it.
     const solvedFrame = solveFixture(frame);
+    const many = [...solvedFrame.contexts.keys()];
     const plan = planBatchEdit(cirsoc201Adapter, many, solvedFrame.contexts, () => undefined,
       { bottomSpan: { count: 4, diameter: 20 } });
     expect(plan.previewTotal).toBe(many.length);

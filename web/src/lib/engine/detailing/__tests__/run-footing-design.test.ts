@@ -3,6 +3,7 @@ import {
   punchingPosition, runFootingDesign,
   type FootingColumn, type NodeReactions, type RunFootingDesignInput,
 } from '../run-footing-design';
+import { floorDesignReadiness } from '../run-floor-design';
 import { newFooting, type Footing } from '../../../model/footing';
 import {
   emptyGeotechnical, newSoilProfile,
@@ -258,5 +259,34 @@ describe('punching position on a footing', () => {
     const p = punchingPosition(footing({ B: 0.5, L: 0.5 }), { b: 0.4, h: 0.4 }, 0.43);
     expect(p.position).toBeNull();
     expect(p.pattern).toBe('doesNotFit');
+  });
+});
+
+describe('readiness accounts for footings, not only shells', () => {
+  it('is ready for a project with footings and no shells', () => {
+    // A bare frame on pad footings is an ordinary thing to design. Counting shells only
+    // disabled the command for it entirely.
+    const r = floorDesignReadiness({ shells: [], stresses: [], footings: [{ id: 1 }] });
+    expect(r.ready).toBe(true);
+    expect(r.reasons).toHaveLength(0);
+  });
+
+  it('is ready for footings even before a solve, because the gate is per footing', () => {
+    // The unsolved case produces "no reaction" against each footing — specific and readable,
+    // where a globally disabled button explains nothing.
+    expect(floorDesignReadiness({ shells: [], stresses: [], footings: [{ id: 1 }] }).ready)
+      .toBe(true);
+  });
+
+  it('still refuses a project with neither shells nor footings', () => {
+    const r = floorDesignReadiness({ shells: [], stresses: [], footings: [] });
+    expect(r.ready).toBe(false);
+    expect(r.reasons.map((m) => m.key)).toContain('detailing.floorRun.noShells');
+  });
+
+  it('still reports an unsolved shell model as not solved', () => {
+    const r = floorDesignReadiness({ shells: [{ id: 1 }], stresses: [], footings: [] });
+    expect(r.ready).toBe(false);
+    expect(r.reasons.map((m) => m.key)).toContain('detailing.floorRun.notSolved');
   });
 });

@@ -664,7 +664,11 @@ function createDetailingStore() {
      * Can the floor workflow run, and if not, exactly why? Cheap; designs nothing.
      */
     get floorReadiness(): FloorDesignReadiness {
-      return floorDesignReadiness({ shells: collectShells(), stresses: collectStresses() });
+      return floorDesignReadiness({
+        shells: collectShells(),
+        stresses: collectStresses(),
+        footings: [...modelStore.model.footings.values()],
+      });
     },
 
     /**

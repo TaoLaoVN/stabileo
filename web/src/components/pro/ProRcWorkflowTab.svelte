@@ -16,9 +16,20 @@
   import ProDesignTab from './ProDesignTab.svelte';
   import ProjectRegulationsPanel from './design/ProjectRegulationsPanel.svelte';
   import DetailingWorkflow from './design/DetailingWorkflow.svelte';
+  import FloorFamiliesPanel from './design/FloorFamiliesPanel.svelte';
   import { detailingStore } from '../../lib/store/detailing.svelte';
+  import { modelStore } from '../../lib/store/model.svelte';
   import { t } from '../../lib/i18n/store.svelte';
   import { regulationsStore } from '../../lib/store/regulations.svelte';
+
+  const footingCount = $derived(modelStore.model.footings.size);
+  /**
+   * Footings the last run could not verify, surfaced on the closed summary.
+   *
+   * A footing that silently failed to be checked is the failure mode this whole entity
+   * exists to prevent, so the count is visible without opening the panel.
+   */
+  const notVerifiedCount = $derived(detailingStore.footingsNotVerified.length);
 
   /**
    * The header badge reflects anything the reviewer has to see without opening the panel:
@@ -50,6 +61,24 @@
     </summary>
     <DetailingWorkflow />
   </details>
+  <!--
+    Slabs, walls and foundations. A sibling disclosure rather than a nested one, because they
+    are element FAMILIES of the same workflow — the beams and columns above and these share
+    one regulation, one detailing store and one document. It sits below detailing because
+    `generateFloors()` adds to the assemblies that panel lists.
+  -->
+  <details class="floors-disclosure" data-testid="floor-families-disclosure">
+    <summary>
+      {t('detailing.floorRun.title')}
+      {#if footingCount > 0}
+        <span class="count" data-testid="floor-footing-count">{footingCount}</span>
+      {/if}
+      {#if notVerifiedCount > 0}
+        <span class="attention" data-testid="floor-not-verified-count">{notVerifiedCount}</span>
+      {/if}
+    </summary>
+    <FloorFamiliesPanel />
+  </details>
   <ProDesignTab />
 </div>
 
@@ -57,9 +86,11 @@
   .rc-workflow { display: flex; flex-direction: column; height: 100%; overflow: hidden; }
   .rc-workflow > :global(*:last-child) { flex: 1; overflow: hidden; }
   .code-settings-disclosure,
-  .detailing-disclosure { flex: 0 0 auto; border-bottom: 1px solid rgba(128, 128, 128, 0.3); }
+  .detailing-disclosure,
+  .floors-disclosure { flex: 0 0 auto; border-bottom: 1px solid rgba(128, 128, 128, 0.3); }
   .code-settings-disclosure[open] { max-height: 55vh; overflow: auto; }
   .detailing-disclosure[open] { max-height: 70vh; overflow: auto; }
+  .floors-disclosure[open] { max-height: 70vh; overflow: auto; }
   .count { font-size: 0.72rem; font-weight: 600; padding: 0.1rem 0.4rem; border-radius: 3px; background: rgba(128,128,128,0.3); }
   summary {
     cursor: pointer;

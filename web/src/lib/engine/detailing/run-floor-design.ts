@@ -437,11 +437,25 @@ export interface FloorDesignReadiness {
 export function floorDesignReadiness(input: {
   shells: readonly { id: number }[];
   stresses: readonly { elementId: number }[];
+  /**
+   * Modelled footings.
+   *
+   * Readiness originally counted shells only, which disabled the command for a project that
+   * has footings and no shells — a bare frame on pad footings, which is an ordinary thing to
+   * design. Footings do not need a shell, and they carry their OWN per-footing gate: an
+   * unsolved model produces "no reaction" against each footing, which is a specific and
+   * readable answer, where a globally disabled button is not.
+   */
+  footings?: readonly { id: number }[];
 }): FloorDesignReadiness {
   const reasons: EngineMessage[] = [];
   const withResults = input.stresses.length;
-  if (input.shells.length === 0) reasons.push(msg('detailing.floorRun.noShells'));
-  else if (withResults === 0) reasons.push(msg('detailing.floorRun.notSolved'));
+  const hasFootings = (input.footings?.length ?? 0) > 0;
+  if (input.shells.length === 0 && !hasFootings) {
+    reasons.push(msg('detailing.floorRun.noShells'));
+  } else if (input.shells.length > 0 && withResults === 0 && !hasFootings) {
+    reasons.push(msg('detailing.floorRun.notSolved'));
+  }
   return {
     ready: reasons.length === 0,
     shellCount: input.shells.length,

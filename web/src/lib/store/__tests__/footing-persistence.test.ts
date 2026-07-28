@@ -1,6 +1,7 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import { modelStore } from '../model.svelte';
 import { compressSnapshot, decompressSnapshot } from '../../utils/url-sharing';
+import { historyStore } from '../history.svelte';
 
 /**
  * A footing is a modelled entity, so it has to behave like one: survive every persistence
@@ -179,5 +180,77 @@ describe('footings and geotechnical data on the model', () => {
     const { nodeId, footingId } = nodeWithFooting();
     expect(modelStore.footingsOnNode(nodeId).map((f) => f.id)).toEqual([footingId]);
     expect(modelStore.footingsOnNode(nodeId + 999)).toEqual([]);
+  });
+});
+
+/**
+ * A footing is not part of the analytical model.
+ *
+ * It CARRIES a support reaction; it does not change the stiffness that produced one. So
+ * editing one must not discard the solve — and routing footing CRUD through the ordinary
+ * `_pushUndo` did exactly that, which made every footing report "no reaction" at design
+ * time no matter how carefully it had been dimensioned.
+ *
+ * These tests pin the analysis-neutrality by watching `modelVersion`, which is what the
+ * app's reactive effect uses to clear stale results.
+ */
+describe('footing and geotechnical edits are analysis-neutral', () => {
+  beforeEach(() => {
+    modelStore.clear();
+  });
+
+  const versionAcross = (fn: () => void): { before: number; after: number } => {
+    const before = modelStore.modelVersion;
+    fn();
+    return { before, after: modelStore.modelVersion };
+  };
+
+  it('adding a footing does not bump modelVersion', () => {
+    const nodeId = modelStore.addNode(0, 0, 0);
+    const v = versionAcross(() => { modelStore.addFooting(nodeId, 'Z1'); });
+    expect(v.after).toBe(v.before);
+  });
+
+  it('editing a footing does not bump modelVersion', () => {
+    const nodeId = modelStore.addNode(0, 0, 0);
+    const id = modelStore.addFooting(nodeId, 'Z1');
+    const v = versionAcross(() => { modelStore.updateFooting(id, { B: 2, L: 2 }); });
+    expect(v.after).toBe(v.before);
+  });
+
+  it('editing the ground does not bump modelVersion', () => {
+    const p = modelStore.addSoilProfile('S1');
+    const v = versionAcross(() => {
+      modelStore.updateSoilProfile(p, {
+        bearing: { kind: 'allowablePressure', allowableBearingKPa: 250 },
+      });
+    });
+    expect(v.after).toBe(v.before);
+  });
+
+  it('deleting a footing does not bump modelVersion', () => {
+    const nodeId = modelStore.addNode(0, 0, 0);
+    const id = modelStore.addFooting(nodeId, 'Z1');
+    const v = versionAcross(() => { modelStore.removeFooting(id); });
+    expect(v.after).toBe(v.before);
+  });
+
+  it('but a real structural change still does', () => {
+    // The control: if this did not move, the test above would be vacuous.
+    const v = versionAcross(() => { modelStore.addNode(1, 1, 1); });
+    expect(v.after).toBeGreaterThan(v.before);
+  });
+
+  it('is still UNDOABLE — silent means analysis-neutral, not unrecorded', () => {
+    // Asserted by actually undoing rather than by counting entries: the history stack is
+    // capped at 50, so a count comparison is vacuous once the cap is reached.
+    const nodeId = modelStore.addNode(0, 0, 0);
+    const id = modelStore.addFooting(nodeId, 'Z1');
+    modelStore.updateFooting(id, { B: 2.5 });
+    expect(modelStore.model.footings.get(id)!.B).toBe(2.5);
+
+    historyStore.undo();
+
+    expect(modelStore.model.footings.get(id)!.B).toBe(0);
   });
 });
