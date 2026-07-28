@@ -43,6 +43,12 @@ Educational tool with step-by-step solver visualization for civil/structural eng
 - `npm run test` — Run all tests (`npx vitest run`)
 - `npm run test:watch` — Watch mode
 - `npm run wasm` — Build Rust/WASM engine (optional, not required)
+- `npm run typecheck` — Explicit `tsc` gate. `npm run build` is `vite build` and does **not**
+  typecheck, so a type defect can otherwise reach a commit unseen. The project carries a large
+  set of pre-existing errors (mostly test fixtures building partial literals on purpose), so
+  the gate compares against `scripts/typecheck-baseline.json` and fails only on **new** errors.
+- `npm run typecheck:baseline` — Re-record that baseline. Review the diff before committing;
+  the count should only ever go down.
 
 ## Architecture
 
