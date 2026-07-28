@@ -4573,5 +4573,36 @@ const en: Record<string, string> = {
   'material.spacingMargin': 'Additional bar-spacing margin',
   'material.spacingMarginHelp': 'Additional project-specified margin above the regulatory minimum. CIRSOC does not prescribe this value.',
 
+
+  // ─── Foundations: the footing entity ───────────────────────────
+  'footing.issue.unnamed': 'Footing {id} has no label.',
+  'footing.issue.planDimension': 'Footing {footing}: plan dimension {axis} is {value} m. Dimension the footing before checking it.',
+  'footing.issue.thicknessNotPositive': 'Footing {footing}: thickness is {value} m.',
+  'footing.issue.coverNegative': 'Footing {footing}: cover is {value} m.',
+  'footing.issue.coverExceedsThickness': 'Footing {footing}: {cover} m of cover on both faces leaves no depth in a {thickness} m slab. The effective depth would be zero or negative.',
+  'footing.issue.rotationNotFinite': 'Footing {footing}: plan rotation is not a number.',
+  'footing.issue.pedestalPlan': 'Footing {footing}: the pedestal has no plan dimensions.',
+  'footing.issue.pedestalHeight': 'Footing {footing}: pedestal height is {value} m.',
+  'footing.issue.pedestalLargerThanFooting': 'Footing {footing}: the pedestal is wider than the footing it stands on.',
+  'footing.issue.eccentricityOutside': 'Footing {footing}: an eccentricity of {value} m along {axis} puts the column outside the base.',
+  'footing.issue.kindUnsupported': 'Footing {footing} is modelled as {kind}, which is not implemented. It is not checked as an isolated footing, because that would give a wrong answer with the appearance of a right one.',
+  'footing.migration.droppedNoNode': 'Footing {id} was discarded: it referenced no node, so it had no reaction and no position.',
+
+  // ─── Foundations: project ground conditions ────────────────────
+  'geotechnical.issue.unnamed': 'Soil profile {id} has no name.',
+  'geotechnical.issue.bearingUnstated': '{profile}: no allowable bearing pressure is stated. No regulation supplies one — it comes from a geotechnical study — so a footing on this profile cannot be checked for bearing.',
+  'geotechnical.issue.bearingNotPositive': '{profile}: the allowable bearing pressure is {value} kPa.',
+  'geotechnical.issue.unitWeightNotPositive': '{profile}: the soil unit weight is {value} kN/m³.',
+  'geotechnical.issue.subgradeNotPositive': '{profile}: the subgrade modulus is {value} kN/m³.',
+  'geotechnical.issue.groundwaterNegative': '{profile}: the groundwater depth is {value} m.',
+  'geotechnical.issue.assumedWithoutBasis': '{profile}: the values are assumed and no basis is recorded. State what the assumption rests on — an unrecorded assumption is the one that reaches site.',
+  'geotechnical.issue.valueWithoutProvenance': '{profile}: a bearing pressure is stated but its source is not. Record whether it comes from a study or is assumed.',
+  'geotechnical.assumption.assumed': '{profile}: geotechnical values ASSUMED, not taken from a study. Basis: {basis}.',
+  'geotechnical.assumption.noBasis': 'not recorded',
+  'geotechnical.assumption.fromReport': '{profile}: allowable bearing pressure {value} kPa, from {reference}.',
+  'geotechnical.assumption.unnamedReport': 'an unnamed geotechnical study',
+  'geotechnical.assumption.groundwaterRecordedOnly': '{profile}: groundwater recorded at {depth} m. It is recorded only — no buoyancy or effective-stress check consumes it yet.',
+  'geotechnical.migration.bearingDropped': '{profile}: the stored allowable bearing pressure was not a usable number and was cleared. State it again before checking any footing on this profile.',
+
 };
 export default en;

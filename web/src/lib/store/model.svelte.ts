@@ -6,6 +6,12 @@ import {
 } from '../engine/detailing/assembly';
 import { migrateRegulations, type StoredRegulations } from '../codes/roles';
 import type { RevisionVector } from '../codes/revisions';
+import { migrateFootings, newFooting, type Footing } from '../model/footing';
+import { DEFAULT_COVER } from '../engine/design/member-context';
+import {
+  emptyGeotechnical, migrateGeotechnical, newSoilProfile,
+  type ProjectGeotechnical, type SoilProfile,
+} from '../model/geotechnical';
 // Model store - manages the structural model
 import type { KinematicResult } from '../engine/kinematic-2d';
 import type { SolverInput, FullEnvelope, AnalysisResults } from '../engine/types';
@@ -513,6 +519,23 @@ export interface StructureModel {
    *  entries inside the existing structural-control workflow (not a separate
    *  top-level "Connectors" object family). */
   connectors: Map<number, ConnectorElement>;
+  /**
+   * Isolated spread footings.
+   *
+   * A modelled entity rather than a run-time dialog value, because a foundation that
+   * cannot be reopened, re-checked, revised and drawn is not a deliverable. See
+   * `model/footing.ts` for why inferring one under every support was refused.
+   */
+  footings: Map<number, Footing>;
+  /**
+   * Project ground conditions, referenced by footings rather than copied into them.
+   *
+   * A bearing pressure is a property of a stratum shared by many footings; burying it in
+   * each one is how two footings end up verified against different soils by accident.
+   * Absent on models saved before foundations existed — `migrateGeotechnical` turns that
+   * into an EMPTY set, never a seeded stratum.
+   */
+  geotechnical?: ProjectGeotechnical;
   /** Where the model came from (e.g. CAD-derived draft) and review status.
    *  Absent for hand-built models. */
   provenance?: ModelProvenance;
@@ -613,6 +636,9 @@ function createModelStore() {
     quads: new Map(),
     constraints: [],
     connectors: new Map(),
+    footings: new Map(),
+    // A new project has no strata, not one invented stratum. See migrateGeotechnical.
+    geotechnical: emptyGeotechnical(),
     localAxisConvention: 'zUpStrongAxis',
     codeSettings: defaultCodeSettings(),
     detailing: emptyDetailingStore(),
@@ -762,6 +788,8 @@ function createModelStore() {
     plate: 1,
     quad: 1,
     connector: 1,
+    footing: 1,
+    soilProfile: 1,
   });
 
 
@@ -937,6 +965,8 @@ function createModelStore() {
     get quads() { return model.quads; },
     get constraints() { return model.constraints; },
     get connectors() { return model.connectors; },
+    get footings() { return model.footings; },
+    get geotechnical() { return model.geotechnical; },
     get kinematicResult() { return lastKinematicResult; },
 
     snapshot(): ModelSnapshot {
@@ -997,6 +1027,21 @@ function createModelStore() {
           ? (JSON.parse(JSON.stringify(snap.regulations)) as StoredRegulations)
           : undefined,
         revisions: snap.revisions ? { ...snap.revisions } : undefined,
+        // Cloned one level deeper than the other Map families because `pedestal` is a
+        // nested object: a shallow `{ ...v }` would share it between the snapshot and the
+        // live model, so editing a pedestal would silently rewrite the undo entry.
+        footings: Array.from(snap.footings.entries()).map(
+          ([k, v]): [number, Footing] => [
+            k,
+            { ...v, ...(v.pedestal ? { pedestal: { ...v.pedestal } } : {}) },
+          ],
+        ),
+        // Emitted even when absent, like `codeSettings` and `detailing` above: a container
+        // the UI binds to and mutates is far easier to reason about when it always exists,
+        // and emitting the empty form keeps `restore(snapshot())` a no-op.
+        geotechnical: snap.geotechnical
+          ? (JSON.parse(JSON.stringify(snap.geotechnical)) as ProjectGeotechnical)
+          : emptyGeotechnical(),
       };
       if (snap.provenance) {
         result.provenance = {
@@ -1134,6 +1179,16 @@ function createModelStore() {
       // actually carries, so zeroing it on open would make every stored certificate look
       // freshly current.
       model.revisions = s.revisions ? { ...s.revisions } : undefined;
+      // Footings and the ground they bear on. `migrateFootings` drops a footing whose
+      // stored node reference is not a number rather than repairing it — a footing
+      // attached to nothing has no reaction, and inventing a node moves someone's
+      // foundation. An absent geotechnical set becomes EMPTY, never a seeded stratum.
+      model.footings = migrateFootings(s.footings, { cover: DEFAULT_COVER }).footings;
+      model.geotechnical = migrateGeotechnical(s.geotechnical).geotechnical;
+      nextId.footing = s.nextId.footing
+        ?? (Math.max(0, ...model.footings.keys()) + 1);
+      nextId.soilProfile = s.nextId.soilProfile
+        ?? (Math.max(0, ...(model.geotechnical?.profiles ?? []).map((p) => p.id)) + 1);
     },
 
     /** Explicit user action: clear the CAD-draft "unreviewed" tag. */
@@ -1364,6 +1419,17 @@ function createModelStore() {
         }
       }
       if (connectorsChanged) model.connectors = new Map(model.connectors);
+      // A footing exists to carry ONE node's reaction. Delete the node and the footing has
+      // no load, no punching perimeter and no position — it is not a footing any more, and
+      // keeping it would leave a dimensioned foundation in the schedule and on the plan
+      // under a column that is gone.
+      let footingsChanged = false;
+      for (const [fid, f] of model.footings) {
+        if (f.nodeId !== id) continue;
+        model.footings.delete(fid);
+        footingsChanged = true;
+      }
+      if (footingsChanged) model.footings = new Map(model.footings);
       const pruneConstraints = (arr: Constraint3D[]) => arr
         .map((c): Constraint3D | null => {
           if (c.type === 'diaphragm') {
@@ -1395,6 +1461,20 @@ function createModelStore() {
           || l.type === 'distributed3d' || l.type === 'pointOnElement3d') &&
           (l.data as any).elementId === id)
       );
+      // A footing SURVIVES the loss of its column: its node, its dimensions and its soil
+      // are all still there, and its bearing and thickness are still checkable. What it
+      // loses is the punching perimeter and the dowel geometry, so the reference is cleared
+      // and the footing reports those as unsupported rather than holding a dangling id that
+      // would later resolve to whatever element reuses the number.
+      let columnCleared = false;
+      const fm = new Map(model.footings);
+      for (const [fid, f] of fm) {
+        if (f.columnElementId !== id) continue;
+        const { columnElementId: _dropped, ...rest } = f;
+        fm.set(fid, { ...rest, revision: f.revision + 1 });
+        columnCleared = true;
+      }
+      if (columnCleared) model.footings = fm;
     },
 
     /**
@@ -1530,6 +1610,136 @@ function createModelStore() {
     clearConnectors(): void {
       if (!_undoBatching) _pushUndo?.();
       model.connectors = new Map();
+    },
+
+    // ─── Footing CRUD ───────────────────────────────────────
+    // Map reassignment on every mutation per web/CLAUDE.md "Reactivity with Maps".
+    //
+    // Every mutation bumps the footing's own `revision`. That is what lets invalidation be
+    // TARGETED: editing Z7's thickness must retire Z7's design and leave Z1..Z6 alone, and
+    // a single project-wide counter cannot express that.
+
+    /**
+     * Create a footing on a node.
+     *
+     * Its plan dimensions start at ZERO and its soil is whatever the project has set as
+     * default — possibly none. Both are deliberate: a new footing is INVALID until
+     * dimensioned and founded, and says so through `validateFooting`, rather than arriving
+     * at a plausible 1,50 m × 1,50 m that would pass a bearing check nobody performed.
+     */
+    addFooting(nodeId: number, name?: string): number {
+      if (!_undoBatching) _pushUndo?.();
+      const id = nextId.footing++;
+      const f = newFooting(id, nodeId, name ?? `Z${id}`, {
+        cover: DEFAULT_COVER,
+        // The underside sits at the supported node unless the engineer moves it. The node
+        // is where the column lands, so this is the only non-arbitrary starting point.
+        foundingElevation: model.nodes.get(nodeId)?.z ?? 0,
+        soilProfileId: model.geotechnical?.defaultProfileId ?? null,
+      });
+      const m = new Map(model.footings);
+      m.set(id, f);
+      model.footings = m;
+      return id;
+    },
+
+    updateFooting(id: number, data: Partial<Omit<Footing, 'id' | 'revision'>>): void {
+      if (!_undoBatching) _pushUndo?.();
+      const cur = model.footings.get(id);
+      if (!cur) return;
+      const m = new Map(model.footings);
+      m.set(id, { ...cur, ...data, id, revision: cur.revision + 1 });
+      model.footings = m;
+    },
+
+    removeFooting(id: number): void {
+      if (!_undoBatching) _pushUndo?.();
+      const m = new Map(model.footings);
+      m.delete(id);
+      model.footings = m;
+    },
+
+    clearFootings(): void {
+      if (!_undoBatching) _pushUndo?.();
+      model.footings = new Map();
+    },
+
+    /** Footings founded on a given node — how the design pass finds its reaction. */
+    footingsOnNode(nodeId: number): Footing[] {
+      return [...model.footings.values()].filter((f) => f.nodeId === nodeId);
+    },
+
+    // ─── Geotechnical CRUD ──────────────────────────────────
+    //
+    // The ground is a PROJECT entity, not a footing field, so it is edited here and
+    // referenced by id. The Design tab may summarise it and link to this editor; it must
+    // not hold a second copy.
+
+    /**
+     * Add a stratum, with its resistance UNSTATED.
+     *
+     * Naming a stratum is not the same as knowing its capacity, and seeding a number would
+     * put an invented value behind a name the engineer chose — which reads as theirs.
+     */
+    addSoilProfile(name?: string): number {
+      if (!_undoBatching) _pushUndo?.();
+      const id = nextId.soilProfile++;
+      const geo = model.geotechnical ?? emptyGeotechnical();
+      const profile = newSoilProfile(id, name ?? `Suelo ${id}`);
+      model.geotechnical = {
+        ...geo,
+        profiles: [...geo.profiles, profile],
+        // The first stratum entered becomes the default, so the next footing created has
+        // somewhere to bear without a second decision.
+        defaultProfileId: geo.defaultProfileId ?? id,
+      };
+      return id;
+    },
+
+    updateSoilProfile(id: number, data: Partial<Omit<SoilProfile, 'id'>>): void {
+      if (!_undoBatching) _pushUndo?.();
+      const geo = model.geotechnical;
+      if (!geo) return;
+      model.geotechnical = {
+        ...geo,
+        profiles: geo.profiles.map((p) => (p.id === id ? { ...p, ...data, id } : p)),
+      };
+    },
+
+    /**
+     * Delete a stratum.
+     *
+     * Footings founded on it are NOT deleted and are NOT silently re-pointed at another
+     * stratum: their `soilProfileId` becomes null, which makes them fail the bearing gate
+     * visibly. Re-pointing them would move a foundation onto ground the engineer never
+     * chose for it.
+     */
+    removeSoilProfile(id: number): void {
+      if (!_undoBatching) _pushUndo?.();
+      const geo = model.geotechnical;
+      if (!geo) return;
+      const profiles = geo.profiles.filter((p) => p.id !== id);
+      model.geotechnical = {
+        ...geo,
+        profiles,
+        defaultProfileId: geo.defaultProfileId === id
+          ? (profiles[0]?.id ?? null)
+          : geo.defaultProfileId,
+      };
+      let orphaned = false;
+      const m = new Map(model.footings);
+      for (const [fid, f] of m) {
+        if (f.soilProfileId !== id) continue;
+        m.set(fid, { ...f, soilProfileId: null, revision: f.revision + 1 });
+        orphaned = true;
+      }
+      if (orphaned) model.footings = m;
+    },
+
+    setDefaultSoilProfile(id: number | null): void {
+      if (!_undoBatching) _pushUndo?.();
+      const geo = model.geotechnical ?? emptyGeotechnical();
+      model.geotechnical = { ...geo, defaultProfileId: id };
     },
 
     removeLoad(loadId: number): void {
@@ -1678,6 +1888,10 @@ function createModelStore() {
       model.quads = new Map();
       model.constraints = [];
       model.connectors = new Map();
+      model.footings = new Map();
+      // A new project has no strata. Carrying the previous project's soil over would be
+      // founding this building on someone else's borehole.
+      model.geotechnical = emptyGeotechnical();
       // A new model is a new project: it adopts the edition in force, not whatever the
       // previously open project happened to be designed to.
       model.codeSettings = defaultCodeSettings();
@@ -1708,6 +1922,8 @@ function createModelStore() {
       nextId.plate = 1;
       nextId.quad = 1;
       nextId.connector = 1;
+      nextId.footing = 1;
+      nextId.soilProfile = 1;
       model.provenance = undefined;
       lastKinematicResult = null;
       uiStore.useNative3DPresentation();

@@ -7,6 +7,8 @@ import { modelStore } from './model.svelte';
 import type { Release } from './model.svelte';
 import type { Element3DMetadata } from '../model/element-3d-metadata';
 import type { ModelProvenance } from '../model/provenance';
+import type { Footing } from '../model/footing';
+import type { ProjectGeotechnical } from '../model/geotechnical';
 
 export interface ModelSnapshot {
   name?: string;
@@ -38,7 +40,11 @@ export interface ModelSnapshot {
   constraints?: Array<{ type: string; [key: string]: unknown }>;
   /** Joint/spring/bearing primitives. Each entry is [id, ConnectorElement-shaped object]. */
   connectors?: Array<[number, { id: number; nodeI: number; nodeJ: number; kAxial?: number; kShear?: number; kMoment?: number; kShearZ?: number; kBendY?: number; kBendZ?: number }]>;
-  nextId: { node: number; material: number; section: number; element: number; support: number; load: number; loadCase?: number; combination?: number; plate?: number; quad?: number; connector?: number };
+  /** Isolated spread footings. Each entry is [id, Footing]. Absent before foundations. */
+  footings?: Array<[number, Footing]>;
+  /** Project ground conditions, referenced by footings rather than copied into them. */
+  geotechnical?: ProjectGeotechnical;
+  nextId: { node: number; material: number; section: number; element: number; support: number; load: number; loadCase?: number; combination?: number; plate?: number; quad?: number; connector?: number; footing?: number; soilProfile?: number };
   /** Jurisdiction, adopted regulation editions and concrete data. Absent on
    *  models saved before this existed — see migrateCodeSettings. */
   codeSettings?: ProjectCodeSettings;

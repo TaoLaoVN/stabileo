@@ -4535,5 +4535,36 @@ const es: Record<string, string> = {
   'material.spacingMargin': 'Margen adicional entre barras',
   'material.spacingMarginHelp': 'Margen adicional definido por el proyecto por encima del mínimo reglamentario. CIRSOC no prescribe este valor.',
 
+
+  // ─── Fundaciones: la entidad zapata ───────────────────────────
+  'footing.issue.unnamed': 'La zapata {id} no tiene rótulo.',
+  'footing.issue.planDimension': 'Zapata {footing}: la dimensión en planta {axis} es {value} m. Dimensionar la zapata antes de verificarla.',
+  'footing.issue.thicknessNotPositive': 'Zapata {footing}: el espesor es {value} m.',
+  'footing.issue.coverNegative': 'Zapata {footing}: el recubrimiento es {value} m.',
+  'footing.issue.coverExceedsThickness': 'Zapata {footing}: {cover} m de recubrimiento en ambas caras no deja altura útil en una losa de {thickness} m. La altura útil sería nula o negativa.',
+  'footing.issue.rotationNotFinite': 'Zapata {footing}: la rotación en planta no es un número.',
+  'footing.issue.pedestalPlan': 'Zapata {footing}: el pedestal no tiene dimensiones en planta.',
+  'footing.issue.pedestalHeight': 'Zapata {footing}: la altura del pedestal es {value} m.',
+  'footing.issue.pedestalLargerThanFooting': 'Zapata {footing}: el pedestal es más ancho que la zapata sobre la que apoya.',
+  'footing.issue.eccentricityOutside': 'Zapata {footing}: una excentricidad de {value} m según {axis} deja la columna fuera de la base.',
+  'footing.issue.kindUnsupported': 'La zapata {footing} está modelada como {kind}, que no está implementado. No se verifica como zapata aislada, porque eso daría un resultado incorrecto con apariencia de correcto.',
+  'footing.migration.droppedNoNode': 'Se descartó la zapata {id}: no referenciaba ningún nudo, por lo que no tenía reacción ni posición.',
+
+  // ─── Fundaciones: datos geotécnicos del proyecto ───────────────
+  'geotechnical.issue.unnamed': 'El perfil de suelo {id} no tiene nombre.',
+  'geotechnical.issue.bearingUnstated': '{profile}: no hay tensión admisible declarada. Ningún reglamento la provee —surge de un estudio de suelos—, por lo que una zapata sobre este perfil no puede verificarse a capacidad portante.',
+  'geotechnical.issue.bearingNotPositive': '{profile}: la tensión admisible es {value} kPa.',
+  'geotechnical.issue.unitWeightNotPositive': '{profile}: el peso unitario del suelo es {value} kN/m³.',
+  'geotechnical.issue.subgradeNotPositive': '{profile}: el módulo de balasto es {value} kN/m³.',
+  'geotechnical.issue.groundwaterNegative': '{profile}: la profundidad de la napa es {value} m.',
+  'geotechnical.issue.assumedWithoutBasis': '{profile}: los valores son supuestos y no se registró en qué se basan. Declarar el fundamento: una hipótesis sin registrar es la que llega a la obra.',
+  'geotechnical.issue.valueWithoutProvenance': '{profile}: se declara una tensión admisible pero no su origen. Registrar si proviene de un estudio o es supuesta.',
+  'geotechnical.assumption.assumed': '{profile}: valores geotécnicos SUPUESTOS, no tomados de un estudio. Fundamento: {basis}.',
+  'geotechnical.assumption.noBasis': 'sin registrar',
+  'geotechnical.assumption.fromReport': '{profile}: tensión admisible {value} kPa, según {reference}.',
+  'geotechnical.assumption.unnamedReport': 'un estudio de suelos sin identificar',
+  'geotechnical.assumption.groundwaterRecordedOnly': '{profile}: napa registrada a {depth} m. Sólo queda registrada: todavía ninguna verificación de flotación o de tensiones efectivas la consume.',
+  'geotechnical.migration.bearingDropped': '{profile}: la tensión admisible almacenada no era un número utilizable y se borró. Declararla de nuevo antes de verificar cualquier zapata sobre este perfil.',
+
 };
 export default es;
