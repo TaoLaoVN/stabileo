@@ -83,11 +83,32 @@
 </div>
 
 <style>
-  .rc-workflow { display: flex; flex-direction: column; height: 100%; overflow: hidden; }
-  .rc-workflow > :global(*:last-child) { flex: 1; overflow: hidden; }
+  /*
+   * The column SCROLLS. It used to be `overflow: hidden`, and that was a real defect.
+   *
+   * Each open disclosure may claim up to 55vh or 70vh, so two of them open exceed the
+   * viewport — and with the overflow hidden and no scroll path, everything past 100% became
+   * unreachable. Not merely ugly: an ENABLED command could sit outside the viewport, where a
+   * real pointer event lands on nothing at all. Measured with three disclosures open at a
+   * 1280×720 viewport, the Generate detailing button reported a box at y = 874 and
+   * `document.elementFromPoint` at its centre returned null, while a programmatic
+   * `.click()` — which bypasses hit-testing — still worked. A user in that state clicks and
+   * the app does nothing, with no error and no explanation.
+   *
+   * `min-height: 0` is what lets a flex child actually shrink so its own `overflow: auto`
+   * engages instead of the child forcing the column taller.
+   */
+  .rc-workflow {
+    display: flex;
+    flex-direction: column;
+    height: 100%;
+    overflow-y: auto;
+    overflow-x: hidden;
+  }
+  .rc-workflow > :global(*:last-child) { flex: 1 1 auto; min-height: 18rem; overflow: hidden; }
   .code-settings-disclosure,
   .detailing-disclosure,
-  .floors-disclosure { flex: 0 0 auto; border-bottom: 1px solid rgba(128, 128, 128, 0.3); }
+  .floors-disclosure { flex: 0 0 auto; min-height: 0; border-bottom: 1px solid rgba(128, 128, 128, 0.3); }
   .code-settings-disclosure[open] { max-height: 55vh; overflow: auto; }
   .detailing-disclosure[open] { max-height: 70vh; overflow: auto; }
   .floors-disclosure[open] { max-height: 70vh; overflow: auto; }
