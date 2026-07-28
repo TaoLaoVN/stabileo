@@ -330,3 +330,106 @@ fn parity_modal_2d_frequencies() {
         );
     }
 }
+
+// ==================== Connectors + truss/cable parity ====================
+
+/// Warren-style truss cantilever (2×16 nodes, nf = 93) with truss, cable and
+/// connector elements — exercises the connector and truss/cable triplet paths
+/// (`assemble_stiffness_sparse_2d` vs the dense reference).
+fn make_truss_connector_model() -> SolverInput {
+    let levels = 18usize;
+    let (w, h) = (4.0, 3.0);
+
+    let mut nodes = HashMap::new();
+    for lvl in 0..levels {
+        nodes.insert(format!("L{}", lvl), SolverNode { id: lvl * 2 + 1, x: 0.0, z: lvl as f64 * h });
+        nodes.insert(format!("R{}", lvl), SolverNode { id: lvl * 2 + 2, x: w, z: lvl as f64 * h });
+    }
+
+    let mut materials = HashMap::new();
+    materials.insert("1".to_string(), SolverMaterial { id: 1, e: 200e6, nu: 0.3 });
+    let mut sections = HashMap::new();
+    sections.insert("1".to_string(), SolverSection { id: 1, a: 0.01, iz: 1.0e-6, as_y: None });
+
+    let mut elements = HashMap::new();
+    let mut eid = 1;
+    for lvl in 0..levels {
+        // horizontal tie at each level (truss)
+        let ty = if lvl % 2 == 0 { "truss" } else { "cable" }; // exercise both spellings
+        elements.insert(eid.to_string(), SolverElement {
+            id: eid, elem_type: ty.to_string(),
+            node_i: lvl * 2 + 1, node_j: lvl * 2 + 2,
+            material_id: 1, section_id: 1, hinge_start: false, hinge_end: false,
+        });
+        eid += 1;
+        if lvl + 1 < levels {
+            // verticals both chords (truss)
+            elements.insert(eid.to_string(), SolverElement {
+                id: eid, elem_type: "truss".to_string(),
+                node_i: lvl * 2 + 1, node_j: (lvl + 1) * 2 + 1,
+                material_id: 1, section_id: 1, hinge_start: false, hinge_end: false,
+            });
+            eid += 1;
+            elements.insert(eid.to_string(), SolverElement {
+                id: eid, elem_type: "truss".to_string(),
+                node_i: lvl * 2 + 2, node_j: (lvl + 1) * 2 + 2,
+                material_id: 1, section_id: 1, hinge_start: false, hinge_end: false,
+            });
+            eid += 1;
+            // alternating diagonal (cable one way, truss the other)
+            let (ni, nj, ty) = if lvl % 2 == 0 {
+                (lvl * 2 + 1, (lvl + 1) * 2 + 2, "cable")
+            } else {
+                (lvl * 2 + 2, (lvl + 1) * 2 + 1, "truss")
+            };
+            elements.insert(eid.to_string(), SolverElement {
+                id: eid, elem_type: ty.to_string(),
+                node_i: ni, node_j: nj,
+                material_id: 1, section_id: 1, hinge_start: false, hinge_end: false,
+            });
+            eid += 1;
+        }
+    }
+
+    let mut supports = HashMap::new();
+    supports.insert("1".to_string(), sup_2d(1, 1, "pinned"));
+    supports.insert("2".to_string(), sup_2d(2, 2, "rollerX"));
+
+    // Semi-rigid connector across the chords at mid height.
+    let mut connectors = HashMap::new();
+    connectors.insert("1".to_string(), ConnectorElement {
+        id: 1, node_i: 17, node_j: 18,
+        k_axial: 5.0e4, k_shear: 2.0e4, k_moment: 1.0e3,
+        k_shear_z: 0.0, k_bend_y: 0.0, k_bend_z: 0.0,
+    });
+
+    let top_left = (levels - 1) * 2 + 1;
+    let loads = vec![
+        SolverLoad::Nodal(SolverNodalLoad { node_id: top_left, fx: 30.0, fz: -50.0, my: 0.0 }),
+        SolverLoad::Nodal(SolverNodalLoad { node_id: top_left + 1, fx: 10.0, fz: -50.0, my: 0.0 }),
+    ];
+
+    SolverInput {
+        nodes, materials, sections, elements, supports, loads,
+        constraints: vec![], connectors,
+    }
+}
+
+#[test]
+fn parity_sparse_2d_truss_connectors() {
+    let input = make_truss_connector_model();
+    let dof_num = DofNumbering::build_2d(&input);
+    assert!(dof_num.n_free >= 64, "need nf >= 64, got {}", dof_num.n_free);
+
+    let legacy = prepare_static_2d_dense_reference(&input)
+        .expect("dense reference prepare failed")
+        .solve_loads(&input.loads)
+        .expect("dense reference solve failed");
+    let sparse = solve_2d(&input).expect("sparse solve failed");
+    assert_eq!(
+        sparse.solver_run_meta.as_ref().map(|m| m.solver_path.as_str()),
+        Some("sparse_cholesky"),
+        "expected the sparse path"
+    );
+    assert_results_close(&sparse, &legacy, "truss_conn");
+}

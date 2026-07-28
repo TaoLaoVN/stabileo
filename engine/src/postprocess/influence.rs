@@ -55,8 +55,11 @@ fn default_n_points() -> usize { 20 }
 /// rebuilt unit-load vector.
 ///
 /// Follow-up: a Müller-Breslau / adjoint formulation would need only one
-/// triangular solve per target quantity (nodal load at the target DOF) with
-/// ordinates read from K⁻¹-columns instead of one solve per sampled point.
+/// triangular solve per target quantity with ordinates read from K⁻¹-columns
+/// instead of one solve per sampled point. Note that for section-force
+/// quantities ("V", "M") the imposed unit effect is a self-equilibrating
+/// discontinuity set, not a nodal load, and the fixed-end contribution when
+/// the moving load sits on the target element needs separate treatment.
 pub fn compute_influence_line(input: &InfluenceLineInput) -> Result<InfluenceLineResult, String> {
     if input.solver.nodes.len() < 2 {
         return Err("Need at least 2 nodes".into());

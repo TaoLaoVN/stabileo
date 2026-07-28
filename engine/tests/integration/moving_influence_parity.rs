@@ -450,3 +450,90 @@ fn parity_influence_line_3d() {
         assert!(any_nonzero, "influence line unexpectedly all zero for {}", quantity);
     }
 }
+
+// ==================== Constraints → legacy fallback ====================
+
+/// A moving-loads model WITH constraints must use the legacy per-position
+/// full-solve path — the prepared path ignores constraints entirely, so
+/// silently using it would solve the model WITHOUT its constraints. Pin:
+/// (a) production equals the legacy reference bit-for-bit, and (b) the
+/// constrained result genuinely differs from the unconstrained model.
+#[test]
+fn moving_loads_with_constraints_uses_legacy_fallback() {
+    let mut nodes = HashMap::new();
+    nodes.insert("1".to_string(), SolverNode { id: 1, x: 0.0, z: 0.0 });
+    nodes.insert("2".to_string(), SolverNode { id: 2, x: 4.0, z: 0.0 });
+    nodes.insert("3".to_string(), SolverNode { id: 3, x: 8.0, z: 0.0 });
+    nodes.insert("4".to_string(), SolverNode { id: 4, x: 4.0, z: 3.0 }); // wall node
+
+    let mut materials = HashMap::new();
+    materials.insert("1".to_string(), SolverMaterial { id: 1, e: 200e6, nu: 0.3 });
+    let mut sections = HashMap::new();
+    sections.insert("1".to_string(), SolverSection { id: 1, a: 0.05, iz: 1.0e-4, as_y: None });
+
+    let mut elements = HashMap::new();
+    for (id, ni, nj) in [(1, 1, 2), (2, 2, 3)] {
+        elements.insert(id.to_string(), SolverElement {
+            id, elem_type: "frame".to_string(),
+            node_i: ni, node_j: nj,
+            material_id: 1, section_id: 1,
+            hinge_start: false, hinge_end: false,
+        });
+    }
+
+    let mut supports = HashMap::new();
+    supports.insert("1".to_string(), sup_2d(1, 1, "pinned"));
+    supports.insert("2".to_string(), sup_2d(2, 3, "rollerX"));
+    supports.insert("3".to_string(), sup_2d(3, 4, "fixed"));
+
+    let train = LoadTrain {
+        name: "T1".to_string(),
+        axles: vec![Axle { offset: 0.0, weight: 10.0 }],
+    };
+    let input = MovingLoadInput {
+        solver: SolverInput {
+            nodes, materials, sections, elements, supports,
+            loads: vec![],
+            constraints: vec![Constraint::RigidLink(RigidLinkConstraint {
+                master_node: 4, slave_node: 2, dofs: vec![],
+            })],
+            connectors: HashMap::new(),
+        },
+        train,
+        path_element_ids: Some(vec![1, 2]),
+        step: Some(1.0),
+    };
+
+    // (a) production == legacy reference, exactly.
+    let prod = solve_moving_loads_2d(&input).expect("constrained moving loads failed");
+    let reference = legacy_moving_2d(&input);
+    assert_eq!(prod.num_positions, reference.num_positions, "num_positions");
+    for (eid, env) in &prod.elements {
+        let r = &reference.elements[eid];
+        let c = format!("elem {}", eid);
+        assert_f64_eq(env.m_max_pos, r.m_max_pos, &format!("{} m_max_pos", c));
+        assert_f64_eq(env.m_max_neg, r.m_max_neg, &format!("{} m_max_neg", c));
+        assert_f64_eq(env.v_max_pos, r.v_max_pos, &format!("{} v_max_pos", c));
+        assert_f64_eq(env.v_max_neg, r.v_max_neg, &format!("{} v_max_neg", c));
+        assert_f64_eq(env.n_max_pos, r.n_max_pos, &format!("{} n_max_pos", c));
+        assert_f64_eq(env.n_max_neg, r.n_max_neg, &format!("{} n_max_neg", c));
+    }
+
+    // (b) the constraint was honored: the unconstrained model gives a
+    // materially different envelope (midspan is not locked there).
+    let mut uncon = MovingLoadInput { solver: SolverInput { constraints: vec![], ..input.solver.clone() }, ..input.clone() };
+    uncon.solver.constraints = vec![];
+    let uncon_prod = solve_moving_loads_2d(&uncon).expect("unconstrained moving loads failed");
+    let mut max_diff = 0.0f64;
+    for (eid, env) in &prod.elements {
+        let u = &uncon_prod.elements[eid];
+        max_diff = max_diff
+            .max((env.m_max_pos - u.m_max_pos).abs())
+            .max((env.m_max_neg - u.m_max_neg).abs());
+    }
+    assert!(
+        max_diff > 1.0,
+        "constrained and unconstrained envelopes should differ materially (max_diff = {})",
+        max_diff
+    );
+}

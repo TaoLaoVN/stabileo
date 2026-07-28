@@ -349,11 +349,16 @@ pub fn solve_moving_loads_3d(input: &MovingLoadInput3D) -> Result<MovingLoadEnve
     };
     let prepared = prep_input.as_ref().and_then(|pi| prepare_static_3d(pi).ok());
 
+    // Lookup maps for local-axis projection — built once for all positions.
+    let maps = MovingLoadMaps3d::new(solver_input);
+
     while pos <= end_pos + 1e-10 {
         num_positions += 1;
 
         // Build loads for this position
-        let loads = moving_loads_at_position_3d(solver_input, train, gravity, &path, pos, total_length);
+        let loads = moving_loads_at_position_3d_with_maps(
+            solver_input, train, gravity, &path, pos, total_length, &maps,
+        );
 
         // Solve with these loads
         let results = match &prepared {
@@ -395,9 +400,28 @@ pub fn solve_moving_loads_3d(input: &MovingLoadInput3D) -> Result<MovingLoadEnve
     })
 }
 
+/// Pre-built node/element lookup maps for `moving_loads_at_position_3d_with_maps`
+/// (build once per analysis, reuse across all positions).
+pub struct MovingLoadMaps3d<'a> {
+    pub node_by_id: HashMap<usize, &'a SolverNode3D>,
+    pub elem_by_id: HashMap<usize, &'a SolverElement3D>,
+}
+
+impl<'a> MovingLoadMaps3d<'a> {
+    pub fn new(input: &'a SolverInput3D) -> Self {
+        Self {
+            node_by_id: input.nodes.values().map(|n| (n.id, n)).collect(),
+            elem_by_id: input.elements.values().map(|e| (e.id, e)).collect(),
+        }
+    }
+}
+
 /// Build the load set for one train position in 3D: permanent loads plus the
 /// axle weights projected onto each path element's local axes as
 /// point-on-element loads.
+///
+/// Hot loops should prefer `moving_loads_at_position_3d_with_maps` (lookup
+/// maps built once) — this wrapper rebuilds them per call for convenience.
 pub fn moving_loads_at_position_3d(
     solver_input: &SolverInput3D,
     train: &LoadTrain,
@@ -406,11 +430,25 @@ pub fn moving_loads_at_position_3d(
     pos: f64,
     total_length: f64,
 ) -> Vec<SolverLoad3D> {
-    let mut loads = base_loads_3d(solver_input);
+    let maps = MovingLoadMaps3d::new(solver_input);
+    moving_loads_at_position_3d_with_maps(solver_input, train, gravity, path, pos, total_length, &maps)
+}
 
-    // Lookup maps for local-axis projection
-    let node_by_id: HashMap<usize, &SolverNode3D> = solver_input.nodes.values().map(|n| (n.id, n)).collect();
-    let elem_by_id: HashMap<usize, &SolverElement3D> = solver_input.elements.values().map(|e| (e.id, e)).collect();
+/// Same as `moving_loads_at_position_3d` but takes pre-built lookup maps, so
+/// callers iterating over many positions build them once (was O(P·(N+E))
+/// redundant hashing per analysis).
+pub fn moving_loads_at_position_3d_with_maps(
+    solver_input: &SolverInput3D,
+    train: &LoadTrain,
+    gravity: &str,
+    path: &[PathSegment3D],
+    pos: f64,
+    total_length: f64,
+    maps: &MovingLoadMaps3d,
+) -> Vec<SolverLoad3D> {
+    let node_by_id = &maps.node_by_id;
+    let elem_by_id = &maps.elem_by_id;
+    let mut loads = base_loads_3d(solver_input);
 
     for axle in &train.axles {
         let axle_pos = pos + axle.offset;
