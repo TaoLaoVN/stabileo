@@ -107,6 +107,65 @@ export interface BarConflict {
   classLabelKey?: string;
 }
 
+const ZERO: Point3 = { x: 0, y: 0, z: 0 };
+
+/** An axis-aligned box, in model coordinates. */
+interface Box {
+  minX: number; minY: number; minZ: number;
+  maxX: number; maxY: number; maxZ: number;
+}
+
+/**
+ * SQUARED gap between two boxes. Zero when they touch or overlap.
+ *
+ * Squared on purpose: this runs once per candidate segment pair — millions of times on the
+ * flagship — and the caller only ever compares it against a threshold, so the square root is
+ * pure cost. Measured, `Math.hypot` here ate most of what the rejection saved.
+ */
+function boxGapSq(a: Box, b: Box): number {
+  const dx = Math.max(0, a.minX - b.maxX, b.minX - a.maxX);
+  const dy = Math.max(0, a.minY - b.maxY, b.minY - a.maxY);
+  const dz = Math.max(0, a.minZ - b.maxZ, b.minZ - a.maxZ);
+  return dx * dx + dy * dy + dz * dz;
+}
+
+function boxOf(p: Point3, q: Point3): Box {
+  return {
+    minX: Math.min(p.x, q.x), maxX: Math.max(p.x, q.x),
+    minY: Math.min(p.y, q.y), maxY: Math.max(p.y, q.y),
+    minZ: Math.min(p.z, q.z), maxZ: Math.max(p.z, q.z),
+  };
+}
+
+function boxUnion(boxes: readonly Box[]): Box {
+  const out: Box = {
+    minX: Infinity, minY: Infinity, minZ: Infinity,
+    maxX: -Infinity, maxY: -Infinity, maxZ: -Infinity,
+  };
+  for (const b of boxes) {
+    if (b.minX < out.minX) out.minX = b.minX;
+    if (b.minY < out.minY) out.minY = b.minY;
+    if (b.minZ < out.minZ) out.minZ = b.minZ;
+    if (b.maxX > out.maxX) out.maxX = b.maxX;
+    if (b.maxY > out.maxY) out.maxY = b.maxY;
+    if (b.maxZ > out.maxZ) out.maxZ = b.maxZ;
+  }
+  return out;
+}
+
+/**
+ * The largest clear distance any classification rule can demand, m.
+ *
+ * §25.2.3 is the strictest of them: `max(40 mm, 1,5·d_b, 4/3·d_agg)`. The aggregate term is
+ * bounded here by 50 mm nominal, which is above any coarse aggregate the regulation
+ * contemplates, so the result is an upper bound for every pair in the run rather than an
+ * estimate. Used ONLY to decide what cannot possibly be reported — never as a requirement.
+ */
+function maxReportableClear(bars: readonly BarPath[], t: CollisionTolerances): number {
+  const dMax = bars.reduce((m, b) => Math.max(m, b.diameterMm), 0) / 1000;
+  return Math.max(0.040, 1.5 * dMax, (4 / 3) * 0.050, t.requiredClear);
+}
+
 interface SampledBar {
   path: BarPath;
   /** Chord-accurate samples. The narrow phase is exact on these segments. */
@@ -118,17 +177,39 @@ interface SampledBar {
    */
   hashPoints: Point3[];
   radius: number;
+  /** Box around each sampled segment, and around the whole bar. Built once, read many. */
+  segBoxes: Box[];
+  box: Box;
 }
 
 // ─── Broad phase ─────────────────────────────────────────────────
 
 class SpatialHash {
-  private readonly cells = new Map<string, number[]>();
+  private readonly cells = new Map<number, number[]>();
 
   constructor(private readonly cell: number) {}
 
-  private key(x: number, y: number, z: number): string {
-    return `${Math.floor(x / this.cell)},${Math.floor(y / this.cell)},${Math.floor(z / this.cell)}`;
+  /**
+   * Cell key as a NUMBER, not a string.
+   *
+   * The key used to be `${cx},${cy},${cz}`. Every insert built one and every neighbourhood
+   * lookup built twenty-seven more, which on the flagship is a million inserts and thirty
+   * million string constructions per sweep — more than the geometry itself cost.
+   *
+   * This is the standard spatial hash mix. It can collide, and a collision is SAFE here: two
+   * distant cells sharing a bucket only offer extra candidates, which the bounding-box
+   * rejection and then the exact segment test discard. It can never hide a pair, which is the
+   * only direction that would matter.
+   */
+  private key(x: number, y: number, z: number): number {
+    const cx = Math.floor(x / this.cell);
+    const cy = Math.floor(y / this.cell);
+    const cz = Math.floor(z / this.cell);
+    return (Math.imul(cx, 73856093) ^ Math.imul(cy, 19349663) ^ Math.imul(cz, 83492791)) | 0;
+  }
+
+  private cellKey(cx: number, cy: number, cz: number): number {
+    return (Math.imul(cx, 73856093) ^ Math.imul(cy, 19349663) ^ Math.imul(cz, 83492791)) | 0;
   }
 
   insert(index: number, p: Point3): void {
@@ -141,21 +222,27 @@ class SpatialHash {
     }
   }
 
-  /** Candidate indices in the 27 cells around a point. */
-  near(p: Point3): Set<number> {
-    const out = new Set<number>();
+  /**
+   * Add the candidates in the 27 cells around `p` to `out`, keeping only indices above
+   * `above` so each pair is produced once.
+   *
+   * Fills a caller-owned set rather than returning a new one. It is called once per sampled
+   * hash point — on the flagship that is over a million times — and allocating a Set per call
+   * only to merge it into another Set was the single largest cost in the collision sweep.
+   */
+  collectNear(p: Point3, above: number, out: Set<number>): void {
     const cx = Math.floor(p.x / this.cell);
     const cy = Math.floor(p.y / this.cell);
     const cz = Math.floor(p.z / this.cell);
     for (let dx = -1; dx <= 1; dx++) {
       for (let dy = -1; dy <= 1; dy++) {
         for (let dz = -1; dz <= 1; dz++) {
-          const bucket = this.cells.get(`${cx + dx},${cy + dy},${cz + dz}`);
-          if (bucket) for (const i of bucket) out.add(i);
+          const bucket = this.cells.get(this.cellKey(cx + dx, cy + dy, cz + dz));
+          if (!bucket) continue;
+          for (const i of bucket) if (i > above) out.add(i);
         }
       }
     }
-    return out;
   }
 }
 
@@ -289,6 +376,15 @@ export function detectCollisions(
      */
     tangentA?: Point3, tangentB?: Point3,
   ) => PairClassification,
+  /**
+   * Escape hatch for the equivalence gate, NOT a production knob.
+   *
+   * `prune: false` disables the bounding-box rejection and tests every segment pair
+   * exhaustively, which is what this function did before the rejection existed.
+   * `collision-equivalence.test.ts` runs both over the same inputs and requires identical
+   * output, so the optimisation can never drift from the geometry it is supposed to preserve.
+   */
+  options?: { prune?: boolean },
 ): CollisionResult {
   const raw = bars.map((path) => samplePath(path, COLLISION_CHORD_TOLERANCE));
   const maxRadius = bars.reduce((m, b) => Math.max(m, b.diameterMm / 2000), 0);
@@ -297,21 +393,32 @@ export function detectCollisions(
   // neighbourhood is guaranteed to contain every candidate.
   const cell = Math.max(0.05, 2 * maxRadius + tolerances.requiredClear + tolerances.placement + 0.02);
 
-  const sampled: SampledBar[] = bars.map((path, i) => ({
+  const sampled: SampledBar[] = bars.map((path, i) => {
+    const pts = raw[i];
+    const segBoxes: Box[] = [];
+    for (let k = 0; k + 1 < pts.length; k++) segBoxes.push(boxOf(pts[k], pts[k + 1]));
+    return {
     path,
-    points: raw[i],
+    points: pts,
     // Densified so no two consecutive points are further apart than one cell. Without
     // this the hash indexes only the endpoints of a segment, and a 2 m straight bar is
     // invisible to the broad phase everywhere between them — another bar could pass
     // clean through its middle and never be tested.
-    hashPoints: densify(raw[i], cell),
+    hashPoints: densify(pts, cell),
     radius: path.diameterMm / 2000,
-  }));
+    segBoxes,
+    box: segBoxes.length > 0 ? boxUnion(segBoxes) : boxOf(pts[0] ?? ZERO, pts[0] ?? ZERO),
+    };
+  });
 
   const hash = new SpatialHash(cell);
   for (let i = 0; i < sampled.length; i++) {
     for (const p of sampled[i].hashPoints) hash.insert(i, p);
   }
+
+  const prune = options?.prune !== false;
+  /** Everything except the two radii, which vary per pair. */
+  const pairCutoff = maxReportableClear(bars, tolerances) + tolerances.placement;
 
   const conflicts = new Map<string, BarConflict>();
   let narrowPhaseTests = 0;
@@ -320,19 +427,40 @@ export function detectCollisions(
   for (let i = 0; i < sampled.length; i++) {
     const a = sampled[i];
     const candidates = new Set<number>();
-    for (const p of a.hashPoints) {
-      for (const j of hash.near(p)) if (j > i) candidates.add(j);
-    }
+    for (const p of a.hashPoints) hash.collectNear(p, i, candidates);
     barPairsTested += candidates.size;
 
     for (const j of candidates) {
       const b = sampled[j];
+
+      // ── Reject what cannot be reported, before measuring it ──
+      //
+      // A conflict is only ever raised when `clearance < required`, i.e. when the centreline
+      // distance is under `required + placement + rA + rB`. `maxReportableClear` is an upper
+      // bound on `required` for every pair in the run, so two boxes further apart than this
+      // cannot produce one — whatever the exact distance turns out to be.
+      //
+      // That matters because the narrow phase was O(nA × nB) over every sampled segment of
+      // both bars with no early exit. Two six-metre bars that touch at one point still had
+      // every one of their segment pairs measured: 7,6 million segment tests for 151 000 bar
+      // pairs on the flagship, about fifty per pair. Skipping provably-irrelevant pairs
+      // changes no result — it removes work whose answer was already known.
+      const cutoff = pairCutoff + a.radius + b.radius;
+      const cutoffSq = cutoff * cutoff;
+      if (prune && boxGapSq(a.box, b.box) > cutoffSq) continue;
+
       let worst: {
         clearance: number; at: Point3; surface: number; m: number; n: number;
       } | null = null;
 
       for (let m = 0; m + 1 < a.points.length; m++) {
+        const ab = a.segBoxes[m];
+        // One segment of `a` against the whole of `b` first. A stirrup has tens of segments
+        // and most of them are nowhere near the other bar, so this removes the inner loop
+        // entirely rather than paying for it once per segment of `b`.
+        if (prune && boxGapSq(ab, b.box) > cutoffSq) continue;
         for (let n = 0; n + 1 < b.points.length; n++) {
+          if (prune && boxGapSq(ab, b.segBoxes[n]) > cutoffSq) continue;
           narrowPhaseTests++;
           const { distance, at } = segmentDistance(
             a.points[m], a.points[m + 1], b.points[n], b.points[n + 1]);
