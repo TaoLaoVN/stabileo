@@ -44,6 +44,7 @@ import {
   buildFloorAssembly, type FloorAssemblyResult, type SlabPanelGeometry,
 } from './floor-design';
 import type { WallGeometry } from './floor-transverse';
+import type { FootingAssemblyEntry } from './run-footing-design';
 import type { DetailingAssembly } from './assembly';
 
 // ─── What this adapter reads ─────────────────────────────────────
@@ -93,6 +94,14 @@ export interface RunFloorDesignInput {
   membersVerified: boolean;
   /** Assembly label, e.g. the level name. */
   label?: string;
+  /**
+   * Footings already checked by `runFootingDesign`, grouped by founding level.
+   *
+   * Passed in rather than designed here because a footing's demand is a support REACTION,
+   * not a shell stress — a different input, a different level attribution and a different
+   * gate. Grouping by level is what lets a footing join the assembly its column belongs to.
+   */
+  footingsByLevel?: ReadonlyMap<number, readonly FootingAssemblyEntry[]>;
 }
 
 export type ShellFamily = 'slab' | 'wall' | 'inclined' | 'degenerate';
@@ -380,8 +389,12 @@ export function runFloorDesign(input: RunFloorDesignInput): RunFloorDesignResult
   }
 
   // One assembly per level, in ascending elevation so the output is deterministic.
-  const levels = [...new Set([...slabsByLevel.keys(), ...wallsByLevel.keys()])]
-    .sort((a, b) => a - b);
+  // Footing levels join the set: a footing at a level with no shell still needs an assembly,
+  // or its bars would be checked, marked and then dropped before coordination.
+  const footingsByLevel = input.footingsByLevel ?? new Map();
+  const levels = [...new Set([
+    ...slabsByLevel.keys(), ...wallsByLevel.keys(), ...footingsByLevel.keys(),
+  ])].sort((a, b) => a - b);
   const assemblies: DetailingAssembly[] = [];
   for (const level of levels) {
     const built: FloorAssemblyResult = buildFloorAssembly({
@@ -394,7 +407,7 @@ export function runFloorDesign(input: RunFloorDesignInput): RunFloorDesignResult
       maxAggregateSizeMm: input.maxAggregateSizeMm,
       slabs: slabsByLevel.get(level) ?? [],
       walls: wallsByLevel.get(level) ?? [],
-      footings: [],
+      footings: [...(footingsByLevel.get(level) ?? [])],
       membersVerified: input.membersVerified,
     });
     assemblies.push(built.assembly);

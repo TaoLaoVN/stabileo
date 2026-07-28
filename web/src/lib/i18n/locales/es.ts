@@ -4566,5 +4566,28 @@ const es: Record<string, string> = {
   'geotechnical.assumption.groundwaterRecordedOnly': '{profile}: napa registrada a {depth} m. Sólo queda registrada: todavía ninguna verificación de flotación o de tensiones efectivas la consume.',
   'geotechnical.migration.bearingDropped': '{profile}: la tensión admisible almacenada no era un número utilizable y se borró. Declararla de nuevo antes de verificar cualquier zapata sobre este perfil.',
 
+
+  // ─── Fundaciones: la corrida de diseño ─────────────────────────
+  'footing.run.kindNotImplemented': 'La zapata {footing} está modelada como {kind}, que no está implementado. No se verificó como zapata aislada, porque eso daría un resultado incorrecto con apariencia de correcto.',
+  'footing.run.nodeMissing': 'Zapata {footing}: el nudo {node} no está en el modelo.',
+  'footing.run.noSoilProfile': 'La zapata {footing} no apoya sobre ningún perfil de suelo, por lo que no hay tensión admisible contra la cual verificarla.',
+  'footing.run.bearingUnstated': 'Zapata {footing}: el perfil {profile} no declara tensión admisible. Surge de un estudio de suelos, no de un reglamento, por lo que no puede suponerse nada.',
+  'footing.run.noReaction': 'Zapata {footing}: el nudo {node} no tiene reacción, por lo que la zapata no recibe carga para dimensionar.',
+  'footing.run.noServiceCases': 'Zapata {footing}: la capacidad portante es una verificación en servicio y este proyecto no tiene resultados por caso para sumar con factores unitarios. NO se aproximó dividiendo la reacción mayorada por un factor de carga supuesto.',
+  'footing.run.noGravityCase': 'Zapata {footing}: ningún caso de carga gravitatoria (D, L, Lr, S, R) llega a este nudo, por lo que no pudo armarse una reacción de servicio.',
+  'footing.run.serviceLateralExcluded': 'Zapata {footing}: la verificación de capacidad portante en servicio cubre sólo gravedad. Se excluyeron los casos {cases} porque sus factores de combinación en servicio no están modelados en este proyecto, por lo que la capacidad portante bajo ellos NO está verificada.',
+  'footing.run.rotationNotResolved': 'La zapata {footing} está rotada {rotation}° en planta. Los momentos de reacción se informan en ejes globales y no se proyectan sobre los ejes rotados de la zapata, por lo que la excentricidad no puede asignarse correctamente.',
+  'footing.run.noColumn': 'La zapata {footing} no tiene columna identificada, por lo que no pueden derivarse el perímetro de punzonado ni los pelos de anclaje. La capacidad portante y el corte en una dirección no la necesitan, pero una zapata con punzonado sin verificar no es una zapata verificada.',
+  'footing.run.noColumnBars': 'Zapata {footing}: la columna no tiene barras longitudinales resueltas, por lo que no se generaron pelos ni estribos de arranque.',
+  'footing.run.noEffectiveDepth': 'Zapata {footing}: el recubrimiento y el diámetro de barra no dejan altura útil.',
+  'footing.run.columnDoesNotFit': 'Zapata {footing}: más de dos caras del perímetro crítico caen fuera de la zapata. La columna no entra en esta base.',
+  'footing.assumption.serviceFromGravityCases': 'Zapata {footing}: reacción de servicio para capacidad portante sumada con factores unitarios sobre {cases}. Este proyecto no modela ninguna combinación de carga en servicio, por lo que la suma es una hipótesis y no una combinación declarada por el reglamento.',
+  'footing.assumption.averageMatDepth': 'Zapata {footing}: altura útil tomada como {d} m, la altura PROMEDIO de la malla para una parrilla en dos direcciones de Ø{bar} mm. Las dos direcciones se ubican en realidad a alturas distintas.',
+  'footing.assumption.truncatedPerimeter': 'Zapata {footing}: {sides} cara(s) del perímetro crítico llegan al borde de la zapata, por lo que el punzonado se verificó como caso {position}.',
+
+  'detailing.footingRun.activeResultSet': 'Conjunto de resultados activo (ninguna combinación resuelta)',
+
+  'footing.run.perimeterOppositeFaces': 'Zapata {footing}: dos caras OPUESTAS del perímetro crítico llegan al borde de la zapata. El art. 22.6.5.3 tabula α_s sólo para los casos interior, de borde y de esquina, y éste no es ninguno de ellos: aplicar el α_s de esquina a un perímetro de otra forma sería usar el coeficiente equivocado, por lo que no se verifica el punzonado.',
+
 };
 export default es;

@@ -4604,5 +4604,28 @@ const en: Record<string, string> = {
   'geotechnical.assumption.groundwaterRecordedOnly': '{profile}: groundwater recorded at {depth} m. It is recorded only — no buoyancy or effective-stress check consumes it yet.',
   'geotechnical.migration.bearingDropped': '{profile}: the stored allowable bearing pressure was not a usable number and was cleared. State it again before checking any footing on this profile.',
 
+
+  // ─── Foundations: the design run ───────────────────────────────
+  'footing.run.kindNotImplemented': 'Footing {footing} is modelled as {kind}, which is not implemented. It was not checked as an isolated footing, because that would give a wrong answer with the appearance of a right one.',
+  'footing.run.nodeMissing': 'Footing {footing}: node {node} is not in the model.',
+  'footing.run.noSoilProfile': 'Footing {footing} is not founded on any soil profile, so there is no allowable bearing pressure to check it against.',
+  'footing.run.bearingUnstated': 'Footing {footing}: profile {profile} states no allowable bearing pressure. It comes from a geotechnical study, not from a regulation, so nothing can be assumed for it.',
+  'footing.run.noReaction': 'Footing {footing}: node {node} has no reaction, so the footing carries no load to design for.',
+  'footing.run.noServiceCases': 'Footing {footing}: bearing is a service-level check and this project has no per-case results to sum at unit factors. It was NOT approximated by dividing the factored reaction by an assumed load factor.',
+  'footing.run.noGravityCase': 'Footing {footing}: no gravity load case (D, L, Lr, S, R) reaches this node, so no service reaction could be assembled.',
+  'footing.run.serviceLateralExcluded': 'Footing {footing}: the service bearing check covers gravity only. Cases {cases} were excluded because their service combination factors are not modelled by this project, so bearing under them is NOT verified.',
+  'footing.run.rotationNotResolved': 'Footing {footing} is rotated {rotation}° in plan. The reaction moments are reported on global axes and are not resolved onto rotated footing axes, so the eccentricity cannot be assigned correctly.',
+  'footing.run.noColumn': 'Footing {footing} has no column identified, so the punching perimeter and the dowels cannot be derived. Bearing and one-way shear do not need one, but a footing whose punching is unchecked is not a verified footing.',
+  'footing.run.noColumnBars': 'Footing {footing}: the column has no longitudinal bars resolved, so no dowels or starter ties were generated.',
+  'footing.run.noEffectiveDepth': 'Footing {footing}: cover and bar diameter leave no effective depth.',
+  'footing.run.columnDoesNotFit': 'Footing {footing}: more than two faces of the critical perimeter fall outside the footing. The column does not fit on this base.',
+  'footing.assumption.serviceFromGravityCases': 'Footing {footing}: service reaction for bearing summed at unit factors over {cases}. This project models no service load combination, so the sum is an assumption and not a code-stated combination.',
+  'footing.assumption.averageMatDepth': 'Footing {footing}: effective depth taken as {d} m, the AVERAGE mat depth for a Ø{bar} mm two-way mat. The two directions actually sit at different depths.',
+  'footing.assumption.truncatedPerimeter': 'Footing {footing}: {sides} face(s) of the critical perimeter reach the footing edge, so punching was checked as a {position} case.',
+
+  'detailing.footingRun.activeResultSet': 'Active result set (no combination solved)',
+
+  'footing.run.perimeterOppositeFaces': 'Footing {footing}: two OPPOSITE faces of the critical perimeter reach the footing edge. §22.6.5.3 tabulates α_s for interior, edge and corner cases only, and this is none of them — applying a corner α_s to a perimeter of a different shape would be the wrong coefficient, so punching is not checked.',
+
 };
 export default en;

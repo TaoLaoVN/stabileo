@@ -44,6 +44,17 @@ import {
   type RunFloorDesignResult,
 } from '../engine/detailing/run-floor-design';
 import { DEFAULT_COVER, DEFAULT_REBAR_FY } from '../engine/design/member-context';
+import {
+  runFootingDesign,
+  type CaseReaction, type CombinationReaction, type FootingColumn,
+  type NodeReactions, type RunFootingDesignResult,
+} from '../engine/detailing/run-footing-design';
+import type { ProvidedReinforcement } from './model.svelte';
+import type { EngineMessage } from '../codes/message';
+// A store is a locale boundary — `model.svelte.ts` translates here too. The combination
+// name is a plain string because a user-given combination name is not translatable; only
+// the synthetic "active result set" stand-in needs a locale.
+import { t } from '../i18n';
 import type { RegulationEdition } from '../codes/regulation';
 import type { MemberDesignOutcome } from '../engine/design/outcome';
 import type { BentUpPolicy } from '../engine/detailing/generate-beam';
@@ -109,6 +120,16 @@ function resolveSpacingMargin(): number {
  */
 const DEFAULT_WALL_BAR_DIA_MM = 12;
 
+/**
+ * Bottom-mat bar diameter for a footing, mm.
+ *
+ * Same posture as the wall curtain above: a starting size that sets the effective depth,
+ * which the check then reports on — not a designed result. Ø16 is the ordinary bottom mat for
+ * a pad footing. The assumption is stated per footing
+ * (`footing.assumption.averageMatDepth`), so a reader can see what `d` came from.
+ */
+const DEFAULT_FOOTING_BAR_DIA_MM = 16;
+
 /** Every shell in the model — quads and plates alike are shells and both are designed. */
 function collectShells(): FloorShell[] {
   const out: FloorShell[] = [];
@@ -133,6 +154,142 @@ function collectStresses(): FloorShellStress[] {
       mx: s.mx, my: s.my, mxy: s.mxy,
     }))
     .sort((a, b) => a.elementId - b.elementId);
+}
+
+/**
+ * Support reactions per footing node — per combination, and per case for the service sum.
+ *
+ * A footing's demand is a REACTION, not a shell stress, so this is a different collector
+ * from `collectStresses` with a different result source: `perCombo3D` for the strength
+ * combinations and `perCase3D` for the unit-factor service sum.
+ *
+ * Only nodes that actually carry a footing are collected. Building the map for every
+ * support would walk every combination's whole reaction list for nodes nobody asked about.
+ */
+function collectFootingReactions(): Map<number, NodeReactions> {
+  const out = new Map<number, NodeReactions>();
+  const wanted = new Set([...modelStore.model.footings.values()].map((f) => f.nodeId));
+  if (wanted.size === 0) return out;
+
+  const caseTypeOf = new Map(modelStore.model.loadCases.map((c) => [c.id, c.type ?? 'D']));
+  const comboNameOf = new Map(modelStore.model.combinations.map((c) => [c.id, c.name]));
+
+  const factored = new Map<number, CombinationReaction[]>();
+  for (const [comboId, res] of resultsStore.perCombo3D) {
+    for (const r of res.reactions ?? []) {
+      if (!wanted.has(r.nodeId)) continue;
+      const list = factored.get(r.nodeId) ?? [];
+      list.push({
+        combinationId: comboId,
+        combinationName: comboNameOf.get(comboId) ?? `Combinación ${comboId}`,
+        fz: r.fz, mx: r.mx, my: r.my,
+      });
+      factored.set(r.nodeId, list);
+    }
+  }
+
+  const cases = new Map<number, CaseReaction[]>();
+  for (const [caseId, res] of resultsStore.perCase3D) {
+    for (const r of res.reactions ?? []) {
+      if (!wanted.has(r.nodeId)) continue;
+      const list = cases.get(r.nodeId) ?? [];
+      list.push({
+        caseId,
+        caseType: caseTypeOf.get(caseId) ?? 'D',
+        fz: r.fz, mx: r.mx, my: r.my,
+      });
+      cases.set(r.nodeId, list);
+    }
+  }
+
+  // With no combinations solved, the single active result set is the only reaction there is.
+  // It is offered as ONE combination named for what it is, rather than silently treated as a
+  // factored envelope it may not be.
+  if (factored.size === 0) {
+    for (const r of resultsStore.results3D?.reactions ?? []) {
+      if (!wanted.has(r.nodeId)) continue;
+      factored.set(r.nodeId, [{
+        combinationId: 0,
+        combinationName: t('detailing.footingRun.activeResultSet'),
+        fz: r.fz, mx: r.mx, my: r.my,
+      }]);
+    }
+  }
+
+  for (const nodeId of wanted) {
+    const f = factored.get(nodeId);
+    if (!f || f.length === 0) continue;
+    // Sorted so the governing pick and the reported name cannot depend on Map order.
+    const sorted = [...f].sort((a, b) => a.combinationId - b.combinationId);
+    const c = cases.get(nodeId);
+    out.set(nodeId, {
+      factored: sorted,
+      ...(c && c.length > 0
+        ? { cases: [...c].sort((a, b) => a.caseId - b.caseId) }
+        : {}),
+    });
+  }
+  return out;
+}
+
+/**
+ * The starter set a column's accepted reinforcement calls for.
+ *
+ * A column may be stored in either of two shapes: the structured `column` form (corner and
+ * face bars per edge) or the legacy grouped `longitudinal`. Both are read, because a project
+ * verified before the structured form existed still has columns to found.
+ *
+ * A single representative diameter is returned with the total count, because `DowelInput`
+ * takes one `{ count, diameterMm }` pair. When corner and face diameters differ the LARGER
+ * is used: it sets the longer development length, and a starter shorter than the bar it laps
+ * with is the failure that matters.
+ */
+function columnBarSet(
+  accepted: ProvidedReinforcement | undefined,
+): { count: number; diameterMm: number } | undefined {
+  const c = accepted?.column;
+  if (c) {
+    const count = 4 + c.nBottom + c.nTop + c.nLeft + c.nRight;
+    const diameterMm = Math.max(c.cornerDia, c.faceDia);
+    return count > 0 && diameterMm > 0 ? { count, diameterMm } : undefined;
+  }
+  const l = accepted?.longitudinal;
+  if (l && l.count > 0 && l.diameter > 0) {
+    return { count: l.count, diameterMm: l.diameter };
+  }
+  return undefined;
+}
+
+/**
+ * Column geometry for each footing that names one.
+ *
+ * The section's `b`/`h` give the punching perimeter; the reinforcement the verifier already
+ * chose for that column gives the dowels, so the starters match the bars they lap with
+ * rather than a nominal set invented here.
+ */
+function collectFootingColumns(): Map<number, FootingColumn> {
+  const out = new Map<number, FootingColumn>();
+  for (const f of modelStore.model.footings.values()) {
+    if (f.columnElementId === undefined || out.has(f.columnElementId)) continue;
+    const el = modelStore.model.elements.get(f.columnElementId);
+    if (!el) continue;
+    const sec = modelStore.model.sections.get(el.sectionId);
+    if (!sec?.b || !sec?.h) continue;
+    // The starters must lap with the bars the verifier ACCEPTED for that column, so they are
+    // read from the design outcome rather than invented here. `accepted` is present only for
+    // a VERIFIED outcome, which is the right gate: starters lapping into steel that was
+    // never accepted would be detailing a column that does not exist yet.
+    const accepted = verificationStore.outcomeFor(f.columnElementId)?.accepted;
+    const bars = columnBarSet(accepted);
+    const tie = accepted?.stirrups?.diameter;
+    out.set(f.columnElementId, {
+      elementId: f.columnElementId,
+      b: sec.b, h: sec.h,
+      ...(bars ? { bars } : {}),
+      ...(tie ? { tieDiaMm: tie } : {}),
+    });
+  }
+  return out;
 }
 
 /**
@@ -254,6 +411,7 @@ function createDetailingStore() {
    */
   let lastRun = $state<RunDetailingResult | null>(null);
   let lastFloorRun = $state<RunFloorDesignResult | null>(null);
+  let lastFootingRun = $state<RunFootingDesignResult | null>(null);
   let currentDocument = $state<DocumentModel | null>(null);
   let supersededDocs = $state<DocumentModel[]>([]);
   /** Monotonic per project. Bumped on supersession, never reused. */
@@ -525,6 +683,21 @@ function createDetailingStore() {
       lastError = null;
       try {
         const props = resolveConcreteProperties();
+        // Footings are checked FIRST, so their entries can join the level assemblies the
+        // shell pass builds. Their demand is a support reaction and their level is their
+        // founding elevation, so neither comes from the shell loop.
+        const footingRun = runFootingDesign({
+          footings: [...modelStore.model.footings.values()],
+          geotechnical: modelStore.model.geotechnical,
+          nodes: modelStore.model.nodes as never,
+          columns: collectFootingColumns(),
+          reactions: collectFootingReactions(),
+          fc: props.fc,
+          fy: props.fy,
+          edition: currentConcreteEdition(),
+          barDiameterMm: DEFAULT_FOOTING_BAR_DIA_MM,
+        });
+        lastFootingRun = footingRun;
         const result = runFloorDesign({
           nodes: modelStore.model.nodes as never,
           shells: collectShells(),
@@ -540,6 +713,7 @@ function createDetailingStore() {
           demandRevision: verificationStore.demandRevision,
           previousRevision: maxRevision(store.assemblies),
           seismicRequired: regulationsStore.binding('seismic').adapterId !== null,
+          footingsByLevel: footingRun.entriesByLevel,
           // Shell design does not go through the frame verifier, so its members have not
           // been rechecked at a final effective depth. Claiming otherwise would satisfy
           // two constructibility conditions that nothing measured.
@@ -578,6 +752,22 @@ function createDetailingStore() {
 
     /** The last floor run, for the panel that reports what it could not design. */
     get lastFloorRun(): RunFloorDesignResult | null { return lastFloorRun; },
+
+    /**
+     * The last footing run, for the panel that reports what could not be checked and why.
+     *
+     * Separate from `lastFloorRun` because the two answer different questions: a shell is
+     * unsupported for reasons about its geometry and its stresses, a footing for reasons
+     * about its soil, its reaction and its column.
+     */
+    get lastFootingRun(): RunFootingDesignResult | null { return lastFootingRun; },
+
+    /** Footings that could not be checked, with the reason — the gate, as data for the UI. */
+    get footingsNotVerified(): Array<{ name: string; reasons: EngineMessage[] }> {
+      return (lastFootingRun?.outcomes ?? [])
+        .filter((o) => o.check === null)
+        .map((o) => ({ name: o.name, reasons: o.unsupported }));
+    },
 
     /** Replace the whole set — used after a regeneration run. */
     setAssemblies(next: DetailingAssembly[]): void {
