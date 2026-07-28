@@ -37,6 +37,13 @@ import {
   type CertificateEntry, type DocumentModel,
 } from '../engine/detailing/document-model';
 import { regulationsStore } from './regulations.svelte';
+import { resultsStore } from './results.svelte';
+import {
+  floorDesignReadiness, runFloorDesign,
+  type FloorDesignReadiness, type FloorShell, type FloorShellStress,
+  type RunFloorDesignResult,
+} from '../engine/detailing/run-floor-design';
+import { DEFAULT_COVER, DEFAULT_REBAR_FY } from '../engine/design/member-context';
 import type { RegulationEdition } from '../codes/regulation';
 import type { MemberDesignOutcome } from '../engine/design/outcome';
 import type { BentUpPolicy } from '../engine/detailing/generate-beam';
@@ -91,6 +98,103 @@ function resolveSpacingMargin(): number {
     if (typeof v === 'number' && v > max) max = v;
   }
   return max / 1000;
+}
+
+/**
+ * Distributed wall bar diameter, mm.
+ *
+ * §11.6.1's relaxed ratios are available only to Ø16 and smaller, and Ø12 is what a
+ * distributed curtain is normally drawn with. It is a starting size the design then checks,
+ * not a result: `designWall` reports the ratios and spacings that follow from it.
+ */
+const DEFAULT_WALL_BAR_DIA_MM = 12;
+
+/** Every shell in the model — quads and plates alike are shells and both are designed. */
+function collectShells(): FloorShell[] {
+  const out: FloorShell[] = [];
+  for (const q of modelStore.model.quads.values()) {
+    out.push({ id: q.id, nodes: q.nodes, materialId: q.materialId, thickness: q.thickness });
+  }
+  for (const p of modelStore.model.plates.values()) {
+    out.push({ id: p.id, nodes: p.nodes, materialId: p.materialId, thickness: p.thickness });
+  }
+  // Sorted so the run is deterministic regardless of Map insertion order.
+  return out.sort((a, b) => a.id - b.id);
+}
+
+/** Shell stresses from the active result set, quads and plates in one list. */
+function collectStresses(): FloorShellStress[] {
+  const r = resultsStore.results3D;
+  if (!r) return [];
+  return [...(r.quadStresses ?? []), ...(r.plateStresses ?? [])]
+    .map((s) => ({
+      elementId: s.elementId,
+      sigmaXx: s.sigmaXx, sigmaYy: s.sigmaYy, tauXy: s.tauXy,
+      mx: s.mx, my: s.my, mxy: s.mxy,
+    }))
+    .sort((a, b) => a.elementId - b.elementId);
+}
+
+/**
+ * Factored area load per shell, kPa, enveloped over the project's combinations.
+ *
+ * The `surface3d` loads carry a case id, and a combination states a factor per case, so
+ * the factored load is `max over combinations of Σ factor·q` — a real envelope built from
+ * the project's own combinations rather than a nominal figure.
+ *
+ * With no combinations defined the unfactored sum is used, and `designSlabPanel` receives
+ * a demand that is honestly service-level. That is visible: the shear memo prints the `qu`
+ * it was given.
+ */
+function factoredAreaLoads(): Map<number, number> {
+  const byCase = new Map<number, Map<number, number>>();
+  for (const load of modelStore.model.loads) {
+    if (load.type !== 'surface3d') continue;
+    const { quadId, q, caseId } = load.data;
+    const key = caseId ?? 0;
+    const per = byCase.get(quadId) ?? new Map<number, number>();
+    per.set(key, (per.get(key) ?? 0) + q);
+    byCase.set(quadId, per);
+  }
+
+  const combos = modelStore.model.combinations;
+  const out = new Map<number, number>();
+  for (const [quadId, per] of byCase) {
+    if (combos.length === 0) {
+      out.set(quadId, [...per.values()].reduce((s, v) => s + v, 0));
+      continue;
+    }
+    let worst = 0;
+    for (const combo of combos) {
+      let total = 0;
+      for (const { caseId, factor } of combo.factors) total += factor * (per.get(caseId) ?? 0);
+      if (total > worst) worst = total;
+    }
+    out.set(quadId, worst);
+  }
+  return out;
+}
+
+/**
+ * Concrete and steel properties for the shell families.
+ *
+ * Resolved exactly the way `member-context.ts` resolves them for frames, so the two paths
+ * cannot disagree about the same project: f'c is the concrete `Material.fy` field — the
+ * app's established convention for a concrete material — and the reinforcement fy and the
+ * cover are the shared defaults. The MINIMUM f'c across the concretes in use governs,
+ * which is the conservative reading when a model mixes mixes.
+ */
+function resolveConcreteProperties(): { fc: number; fy: number; cover: number } {
+  let fc = Infinity;
+  for (const m of modelStore.model.materials.values()) {
+    const v = (m as { fy?: number }).fy;
+    if (typeof v === 'number' && v > 0) fc = Math.min(fc, v);
+  }
+  return {
+    fc: Number.isFinite(fc) ? fc : 0,
+    fy: DEFAULT_REBAR_FY,
+    cover: DEFAULT_COVER,
+  };
 }
 
 /**
@@ -149,6 +253,7 @@ function createDetailingStore() {
    * at the end. Persisted with the model, not with the browser: it is a project decision.
    */
   let lastRun = $state<RunDetailingResult | null>(null);
+  let lastFloorRun = $state<RunFloorDesignResult | null>(null);
   let currentDocument = $state<DocumentModel | null>(null);
   let supersededDocs = $state<DocumentModel[]>([]);
   /** Monotonic per project. Bumped on supersession, never reused. */
@@ -396,6 +501,83 @@ function createDetailingStore() {
         generating = false;
       }
     },
+
+    /**
+     * Can the floor workflow run, and if not, exactly why? Cheap; designs nothing.
+     */
+    get floorReadiness(): FloorDesignReadiness {
+      return floorDesignReadiness({ shells: collectShells(), stresses: collectStresses() });
+    },
+
+    /**
+     * THE production entry point for slabs and walls.
+     *
+     * The counterpart of `generate()` for the families PR18 added. Before this existed,
+     * `designSlabPanel`, `designWall` and `buildFloorAssembly` had no caller outside their
+     * unit tests, so no user action could reach any of them.
+     *
+     * Floor assemblies are `DetailingAssembly` values, so everything already built on top
+     * of that type — selection, conflict navigation, the review gate, the document, the
+     * DXF and the XLSX — receives them without a parallel pipeline.
+     */
+    generateFloors(opts: { verifierId?: string } = {}): RunFloorDesignResult | null {
+      generating = true;
+      lastError = null;
+      try {
+        const props = resolveConcreteProperties();
+        const result = runFloorDesign({
+          nodes: modelStore.model.nodes as never,
+          shells: collectShells(),
+          stresses: collectStresses(),
+          factoredAreaLoad: factoredAreaLoads(),
+          fc: props.fc,
+          fy: props.fy,
+          cover: props.cover,
+          maxAggregateSizeMm: resolveAggregate(),
+          wallBarDiameterMm: DEFAULT_WALL_BAR_DIA_MM,
+          edition: currentConcreteEdition(),
+          verifierId: opts.verifierId ?? '',
+          demandRevision: verificationStore.demandRevision,
+          previousRevision: maxRevision(store.assemblies),
+          seismicRequired: regulationsStore.binding('seismic').adapterId !== null,
+          // Shell design does not go through the frame verifier, so its members have not
+          // been rechecked at a final effective depth. Claiming otherwise would satisfy
+          // two constructibility conditions that nothing measured.
+          membersVerified: false,
+        });
+        lastFloorRun = result;
+        // New geometry retires the document describing the old geometry, exactly as a
+        // beam regeneration does.
+        retireDocument();
+        // Floor assemblies are ADDED to the beam/column ones rather than replacing them:
+        // a floor has both, and a user who details beams and then slabs must not lose the
+        // beams. Re-running replaces only the floor assemblies it owns.
+        //
+        // Read from the PERSISTED store, not from the `store` derived. A `$derived` does
+        // not recompute inside the synchronous call that wrote it, so merging against it
+        // would drop whatever the previous write in the same tick had added — and here the
+        // thing dropped would be the user's beam assemblies.
+        const current = modelStore.model.detailing ?? emptyDetailingStore();
+        const kept = current.assemblies.filter((a) => !a.id.startsWith('FLOOR-'));
+        const merged = [...kept, ...result.assemblies];
+        write({ ...current, assemblies: merged });
+        if (!merged.some((a) => a.id === selectedId)) {
+          selectedId = merged[0]?.id ?? null;
+        }
+        // Downstream of reinforcement, like beam detailing: loads, analysis and design are
+        // preserved, detailing and the document are invalidated, no solve is required.
+        regulationsStore.noteChange('reinforcementEdit');
+        return result;
+      } catch (e) {
+        lastError = String(e instanceof Error ? e.message : e);
+        return null;
+      } finally {
+        generating = false;
+      }
+    },
+
+    /** The last floor run, for the panel that reports what it could not design. */
+    get lastFloorRun(): RunFloorDesignResult | null { return lastFloorRun; },
 
     /** Replace the whole set — used after a regeneration run. */
     setAssemblies(next: DetailingAssembly[]): void {
