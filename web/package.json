@@ -8,8 +8,8 @@
     "build": "vite build",
     "preview": "vite preview",
     "wasm": "cd ../engine && wasm-pack build --target web --out-dir ../web/src/lib/wasm --no-opt",
-    "test": "vitest run",
-    "test:watch": "vitest",
+    "test": "node scripts/test-all.mjs",
+    "test:watch": "vitest --project unit",
     "test:e2e": "playwright test",
     "test:e2e:ui": "playwright test --ui",
     "test:e2e:smoke": "playwright test --grep @smoke",
@@ -17,7 +17,9 @@
     "test:e2e:install": "playwright install --with-deps chromium",
     "test:e2e:update-snapshots": "playwright test --update-snapshots",
     "typecheck": "node scripts/typecheck.mjs",
-    "typecheck:baseline": "node scripts/typecheck.mjs --write"
+    "typecheck:baseline": "node scripts/typecheck.mjs --write",
+    "test:unit": "vitest run --project unit",
+    "test:build": "vitest run --project build"
   },
   "devDependencies": {
     "@playwright/test": "1.60.0",
