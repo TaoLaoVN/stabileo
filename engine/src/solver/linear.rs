@@ -1914,6 +1914,62 @@ pub(crate) fn validate_input_3d(input: &SolverInput3D) -> Result<(), String> {
         }
     }
 
+    // 3b. Referential integrity — shell elements (plate/quad/quad9/solid-shell/curved-shell)
+    // → node, material. Node-list lengths are fixed-size arrays ([usize; N]) so those are
+    // guaranteed by the type system; only existence of the referenced ids needs checking.
+    // Assembly and mass indexing dereference these ids directly (e.g. node_by_id[&plate.nodes[0]]),
+    // so a dangling reference here would otherwise panic deep inside modal/TH/harmonic 3D.
+    for p in input.plates.values() {
+        for &nid in &p.nodes {
+            if !node_ids.contains(&nid) {
+                return Err(format!("Plate {}: node {} does not exist", p.id, nid));
+            }
+        }
+        if !mat_ids.contains(&p.material_id) {
+            return Err(format!("Plate {}: material {} does not exist", p.id, p.material_id));
+        }
+    }
+    for q in input.quads.values() {
+        for &nid in &q.nodes {
+            if !node_ids.contains(&nid) {
+                return Err(format!("Quad {}: node {} does not exist", q.id, nid));
+            }
+        }
+        if !mat_ids.contains(&q.material_id) {
+            return Err(format!("Quad {}: material {} does not exist", q.id, q.material_id));
+        }
+    }
+    for q9 in input.quad9s.values() {
+        for &nid in &q9.nodes {
+            if !node_ids.contains(&nid) {
+                return Err(format!("Quad9 {}: node {} does not exist", q9.id, nid));
+            }
+        }
+        if !mat_ids.contains(&q9.material_id) {
+            return Err(format!("Quad9 {}: material {} does not exist", q9.id, q9.material_id));
+        }
+    }
+    for ss in input.solid_shells.values() {
+        for &nid in &ss.nodes {
+            if !node_ids.contains(&nid) {
+                return Err(format!("Solid shell {}: node {} does not exist", ss.id, nid));
+            }
+        }
+        if !mat_ids.contains(&ss.material_id) {
+            return Err(format!("Solid shell {}: material {} does not exist", ss.id, ss.material_id));
+        }
+    }
+    for cs in input.curved_shells.values() {
+        for &nid in &cs.nodes {
+            if !node_ids.contains(&nid) {
+                return Err(format!("Curved shell {}: node {} does not exist", cs.id, nid));
+            }
+        }
+        if !mat_ids.contains(&cs.material_id) {
+            return Err(format!("Curved shell {}: material {} does not exist", cs.id, cs.material_id));
+        }
+    }
+
     // 4. Material properties
     for mat in input.materials.values() {
         if mat.e <= 0.0 {

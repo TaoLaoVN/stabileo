@@ -299,3 +299,43 @@ fn linear_3d_rejects_nan_section() {
     input.sections.get_mut("1").unwrap().iy = f64::INFINITY;
     expect_clean_err("linear 3D Inf Iy", || linear::solve_3d(&input));
 }
+
+// ---------- shell referential integrity (PR #69 review) ----------
+
+/// A minimal 3D model with a single quad element whose 4th node id (999)
+/// does not exist in the model. Before the fix, node/material references
+/// inside plate/quad/quad9/solid-shell/curved-shell elements were never
+/// checked by `validate_input_3d` (only beam elements were), so assembly and
+/// mass indexing (which dereference `node_by_id[&quad.nodes[i]]` directly)
+/// would panic instead of returning a clean Err.
+fn tiny_3d_input_with_dangling_quad() -> SolverInput3D {
+    let mut input = make_3d_input(
+        vec![(1, 0.0, 0.0, 0.0), (2, 1.0, 0.0, 0.0), (3, 1.0, 1.0, 0.0)],
+        vec![(1, 200_000.0, 0.3)],
+        vec![],
+        vec![],
+        vec![],
+        vec![],
+    );
+    input.quads.insert("1".to_string(), SolverQuadElement {
+        id: 1,
+        nodes: [1, 2, 3, 999], // 999 does not exist
+        material_id: 1,
+        thickness: 0.1,
+    });
+    input
+}
+
+#[test]
+fn modal_3d_rejects_dangling_shell_node() {
+    let input = tiny_3d_input_with_dangling_quad();
+    expect_clean_err("modal 3D dangling shell node", || {
+        modal::solve_modal_3d(&input, &densities_1(), 3)
+    });
+}
+
+#[test]
+fn linear_3d_rejects_dangling_shell_node() {
+    let input = tiny_3d_input_with_dangling_quad();
+    expect_clean_err("linear 3D dangling shell node", || linear::solve_3d(&input));
+}
