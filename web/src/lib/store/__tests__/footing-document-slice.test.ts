@@ -34,7 +34,9 @@ import { modelStore } from '../model.svelte';
 import { detailingStore } from '../detailing.svelte';
 import { resultsStore } from '../results.svelte';
 import { verificationStore } from '../verification.svelte';
-import { renderReportHtml, renderSchedule } from '../../engine/detailing/document-render';
+import {
+  renderDrawings, renderReportHtml, renderSchedule,
+} from '../../engine/detailing/document-render';
 import type { MemberDesignOutcome } from '../../engine/design/outcome';
 import type { DocumentModel } from '../../engine/detailing/document-model';
 import en from '../../i18n/locales/en';
@@ -442,5 +444,115 @@ describe('supersession: editing a footing retires the document it justified', ()
     expect(rec.geometry.thickness).toBeCloseTo(0.5, 9);
     // The model now holds a different footing, so the document must not read as issued.
     expect(doc.readiness).toBe('REVIEW_DRAFT');
+  });
+});
+
+describe('the footing slice reaches its drawings', () => {
+  beforeEach(() => {
+    modelStore.clear();
+    detailingStore.clear();
+    verificationStore.clear();
+  });
+
+  it('produces a plan and TWO orthogonal sections per footing', () => {
+    buildFootingModel();
+    const doc = designAndDocument();
+    const set = renderDrawings(doc, { locale: 'es', projectName: 'Obra' });
+    const names = set.sheets.map((s) => s.name);
+    expect(names).toContain('FLOOR--1.200-Z1-plan');
+    expect(names).toContain('FLOOR--1.200-Z1-sectionB');
+    expect(names).toContain('FLOOR--1.200-Z1-sectionL');
+  });
+
+  it('draws the plan from the footing outline, not from the bounding box of the steel', () => {
+    // The generic elevation frames an assembly by its longest bar. In a pad footing that is a
+    // dowel, so the sheet came out looking down the column with the outline round the dowel
+    // cage. The plan must be B × L.
+    buildFootingModel();
+    const doc = designAndDocument();
+    const plan = renderDrawings(doc, { locale: 'es', projectName: 'Obra' })
+      .sheets.find((s) => s.name.endsWith('-plan'))!.sheet;
+    expect(plan.kind).toBe('floorPlan');
+    const w = plan.extents.max.x - plan.extents.min.x;
+    const h = plan.extents.max.y - plan.extents.min.y;
+    // 2,0 m base plus the 0,3 m margin each side. A sheet framed on the 0,4 m dowel cage
+    // would be far smaller than this.
+    expect(w).toBeGreaterThan(2.0);
+    expect(h).toBeGreaterThan(2.0);
+    // Both plan dimensions are annotated, in millimetres.
+    const labels = plan.dimensions.map((d) => d.label);
+    expect(labels).toContain('B = 2000');
+    expect(labels).toContain('L = 2000');
+  });
+
+  it('sections carry the thickness, the cover and the founding level', () => {
+    buildFootingModel();
+    const doc = designAndDocument();
+    const sheets = renderDrawings(doc, { locale: 'es', projectName: 'Obra' }).sheets;
+    for (const kind of ['sectionB', 'sectionL']) {
+      const s = sheets.find((x) => x.name.endsWith(kind))!.sheet;
+      expect(s.kind, kind).toBe('section');
+      const labels = s.dimensions.map((d) => d.label);
+      expect(labels, kind).toContain('h = 500');
+      expect(labels.some((l) => l.startsWith('rec. ')), kind).toBe(true);
+      // Real elevations, not a local zero: the founding level reads as −1,20 m.
+      expect(s.texts.some((t) => t.text === 'NF -1.20 m'), kind).toBe(true);
+      // The two sections annotate DIFFERENT axes.
+      expect(labels.some((l) => l.startsWith(kind === 'sectionB' ? 'B = ' : 'L = ')), kind)
+        .toBe(true);
+    }
+  });
+
+  it('draws the bars that exist, and labels each mark once', () => {
+    buildFootingModel();
+    const doc = designAndDocument();
+    const plan = renderDrawings(doc, { locale: 'es', projectName: 'Obra' })
+      .sheets.find((s) => s.name.endsWith('-plan'))!.sheet;
+    // Dowels are vertical, so in plan they are circles in true position — eight of them.
+    expect(plan.circles.length).toBeGreaterThanOrEqual(8);
+    // One label per mark, not per bar: a mat of thirty bars carries one mark.
+    const marks = plan.texts.filter((t) => t.layer === 'RC-MARK').map((t) => t.text);
+    expect(new Set(marks).size).toBe(marks.length);
+    expect(marks.length).toBeGreaterThan(0);
+    const floor = (modelStore.model.detailing?.assemblies ?? [])
+      .find((a) => a.id.startsWith('FLOOR-'))!;
+    for (const m of marks) {
+      expect(floor.marks.some((x) => x.mark === m), m).toBe(true);
+    }
+  });
+
+  it('preview and DXF are two renderings of ONE drawing model', () => {
+    buildFootingModel();
+    const doc = designAndDocument();
+    const plan = renderDrawings(doc, { locale: 'es', projectName: 'Obra' })
+      .sheets.find((s) => s.name.endsWith('-plan'))!;
+    // Both exist, both non-trivial, and both were produced from the same `Sheet` — which is
+    // the property that stops a preview and a DXF disagreeing about the same footing.
+    expect(plan.dxf).toContain('SECTION');
+    expect(plan.dxf).toContain('RC-OUTLINE');
+    expect(plan.svg).toContain('<svg');
+    // The whole set concatenates into one DXF, so the footing sheets are exported with the
+    // rest of the floor rather than beside it.
+    const set = renderDrawings(doc, { locale: 'es', projectName: 'Obra' });
+    expect(set.dxf).toContain('RC-OUTLINE');
+    expect(set.dxf.length).toBeGreaterThan(plan.dxf.length);
+  });
+
+  it('every sheet carries the readiness banner and the unverified conditions', () => {
+    // A limitation that lives only in the report is a limitation the person holding the
+    // drawing does not know about.
+    const { profileId } = buildFootingModel();
+    modelStore.updateSoilProfile(profileId, { bearing: { kind: 'unstated' } });
+    const doc = designAndDocument();
+    const sheets = renderDrawings(doc, { locale: 'en', projectName: 'Site' }).sheets
+      .filter((s) => s.name.includes('-Z1-'));
+    expect(sheets.length).toBe(3);
+    for (const s of sheets) {
+      expect(s.sheet.title.title, s.name).toMatch(/REVIEW DRAFT|NOT FOR CONSTRUCTION/);
+      // The note block carries the record's own keys, so the renderer can translate them.
+      expect(s.sheet.notes.some((nn) => nn.startsWith('certificate:')), s.name).toBe(true);
+      expect(s.sheet.notes.some((nn) => nn === 'ground.allowable:notStated'), s.name).toBe(true);
+      expect(s.sheet.notes.some((nn) => nn.startsWith('footing.run.')), s.name).toBe(true);
+    }
   });
 });

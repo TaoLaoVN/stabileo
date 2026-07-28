@@ -23,6 +23,8 @@ import { buildTitleBlock, buildSchedule, scheduleToAoa, sheetToDxf, sheetToSvg,
   drawElevation, drawSection, barArcs, type Sheet, type Projection } from './drawings';
 import type { DocumentAssembly, DocumentModel, OpenConflict } from './document-model';
 import type { FloorFamilyDesignRecord } from './family-record';
+import { drawFooting } from './family-drawings';
+import type { BarPath } from '../../codes/cirsoc201/bar-geometry';
 
 /** Everything the renderers need that is not in the model: locale and presentation. */
 export interface RenderOptions {
@@ -610,7 +612,74 @@ export function renderDrawings(doc: DocumentModel, opts: RenderOptions): Drawing
   let n = 0;
 
   for (const a of doc.assemblies) {
-    if (a.bars.length === 0) continue;
+    /**
+     * An assembly with no steel still gets drawn IF it carries design records.
+     *
+     * The guard used to be `bars.length === 0 → skip`, which is right for an undetailed beam
+     * line — there is nothing to draw. It was wrong for a footing whose soil states no
+     * capacity: that footing has real dimensions, a real founding level and a real reason it
+     * could not be verified, and it produced no bars, so it produced no sheet. The one
+     * foundation an engineer most needs a drawing of was the only one without one.
+     */
+    if (a.bars.length === 0 && a.families.length === 0) continue;
+
+    if (a.bars.length > 0) {
+      sheets.push(...elevationAndSection(doc, a, opts, () => (n += 1)));
+    }
+
+    // ── Per-footing plan and sections ────────────────────────────────
+    //
+    // The generic elevation frames an assembly by its longest bar. For a beam line that IS the
+    // beam; for a pad footing the longest bar is a dowel, so the sheet came out looking down
+    // the column with the base outline drawn round the dowel cage — and the plan an engineer
+    // actually needs, B × L with the mat across it, did not exist.
+    //
+    // Same `Sheet` type, same `sheetToDxf` and `sheetToSvg`, so the preview and the DXF are
+    // two renderings of ONE drawing model rather than two drawings of one footing.
+    for (const rec of a.families) {
+      if (rec.family !== 'footing') continue;
+      const own = a.bars.filter((b) => rec.barIds.includes(b.id));
+      n += 1;
+      for (const { kind, sheet } of drawFooting({
+        record: rec,
+        assembly: a.source,
+        // This record's own steel. Passing the floor's would draw a neighbouring footing's
+        // dowels inside this one's outline.
+        bars: own,
+        centre: footingCentre(rec, own),
+        clauses: doc.refs,
+        sheetNumber: `R${doc.revision.number}-${n}`,
+        title: `${opts.projectName} — ${rec.geometry.name} — ${readinessBanner(doc, opts.locale)}`,
+      })) {
+        // Plan and section each project onto axes this module chose, so the arcs come from the
+        // matching projection rather than from the elevation's.
+        const proj: Projection = kind === 'plan'
+          ? { right: { x: 1, y: 0, z: 0 }, up: { x: 0, y: 1, z: 0 }, origin: { x: 0, y: 0, z: 0 } }
+          : kind === 'sectionB'
+            ? { right: { x: 1, y: 0, z: 0 }, up: { x: 0, y: 0, z: 1 }, origin: { x: 0, y: 0, z: 0 } }
+            : { right: { x: 0, y: 1, z: 0 }, up: { x: 0, y: 0, z: 1 }, origin: { x: 0, y: 0, z: 0 } };
+        sheets.push({
+          name: `${a.id}-${rec.geometry.name}-${kind}`,
+          sheet,
+          dxf: sheetToDxf(sheet, own.flatMap((b) => barArcs(b, proj)), opts.locale),
+          svg: sheetToSvg(sheet, 900, opts.locale),
+        });
+      }
+    }
+  }
+
+  return { sheets, dxf: sheets.map((s) => s.dxf).join('\n') };
+}
+
+/** The generic elevation and section for an assembly that has steel. */
+function elevationAndSection(
+  doc: DocumentModel, a: DocumentAssembly, opts: RenderOptions, nextN: () => number,
+): DrawingSet['sheets'] {
+  const sheets: DrawingSet['sheets'] = [];
+  {
+    // Sheet numbers come from the CALLER's running counter, so an elevation, a section and a
+    // footing plan in the same document never share a number.
+    let n = nextN() - 1;
 
     // Plan axis of this assembly, from its own steel: the direction its longest bar runs.
     const longest = a.bars.reduce((m, b) => (b.cuttingLength > m.cuttingLength ? b : m), a.bars[0]);
@@ -692,9 +761,36 @@ export function renderDrawings(doc: DocumentModel, opts: RenderOptions): Drawing
       dxf: sheetToDxf(section, sectionArcs, opts.locale),
       svg: sheetToSvg(section, 800, opts.locale),
     });
-  }
 
-  return { sheets, dxf: sheets.map((s) => s.dxf).join('\n') };
+  }
+  return sheets;
+}
+
+/**
+ * Where the footing sits in plan.
+ *
+ * The record snapshots the footing's DIMENSIONS but not the supported node's coordinates —
+ * the node is model data, and a record that copied it would hold a second copy of a value the
+ * model owns. So the centre is recovered from the dowels, which are generated at the column
+ * centre by construction.
+ *
+ * With no dowels there is nothing to recover it from, and the origin is used. That is honest
+ * rather than convenient: a footing with no dowels has no column bars, which the record
+ * already reports as an unsupported condition, and a plan drawn at the origin is visibly
+ * wrong rather than subtly displaced.
+ */
+function footingCentre(
+  rec: Extract<FloorFamilyDesignRecord, { family: 'footing' }>,
+  bars: readonly BarPath[],
+): { x: number; y: number } {
+  const dowelIds = new Set(rec.dowels?.barIds ?? []);
+  const dowels = bars.filter((b) => dowelIds.has(b.id));
+  if (dowels.length === 0) return { x: 0, y: 0 };
+  const pts = dowels.map((b) => b.segments[0].start);
+  return {
+    x: pts.reduce((s, p) => s + p.x, 0) / pts.length,
+    y: pts.reduce((s, p) => s + p.y, 0) / pts.length,
+  };
 }
 
 function conflictNote(c: OpenConflict, locale: string): string {
