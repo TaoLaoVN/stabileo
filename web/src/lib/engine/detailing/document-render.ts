@@ -21,8 +21,8 @@
 
 import { buildTitleBlock, buildSchedule, scheduleToAoa, sheetToDxf, sheetToSvg,
   drawElevation, drawSection, barArcs, type Sheet, type Projection } from './drawings';
-import type { DocumentModel, OpenConflict } from './document-model';
-import type { BarMark } from './assembly';
+import type { DocumentAssembly, DocumentModel, OpenConflict } from './document-model';
+import type { FloorFamilyDesignRecord } from './family-record';
 
 /** Everything the renderers need that is not in the model: locale and presentation. */
 export interface RenderOptions {
@@ -160,6 +160,8 @@ export function renderReportHtml(
       }
       rows.push('</ul>');
     }
+
+    rows.push(...familySections(a, L, translate));
   }
 
   // ── Unresolved conflicts. On a draft this is the point of the document. ──
@@ -199,6 +201,393 @@ export function renderReportHtml(
     + '.bad{color:#b00}.ok{color:#2a7}ul{margin:4px 0 10px 18px}'
     + '@media print{body{margin:0}}'
     + `</style></head><body>${rows.join('')}</body></html>`;
+}
+
+// ─── Floor-family sections ───
+
+/** Number → fixed string, or an em dash when the value is genuinely absent. */
+function n(v: number | null | undefined, digits = 1): string {
+  return v === null || v === undefined || !Number.isFinite(v)
+    ? '—' : v.toFixed(digits);
+}
+
+/**
+ * The slab, wall and footing sections of the report.
+ *
+ * ── Projection, never recalculation ────────────────────────────────
+ *
+ * Every value here is read off a persisted `FloorFamilyDesignRecord`. Not one is recomputed.
+ * That is the rule the DocumentModel exists to enforce: a bearing pressure recomputed at
+ * report time is a second answer to a question already answered, and the two diverge the
+ * first time a clause or a rounding changes — silently, and in a document an engineer signs.
+ *
+ * ── Absence is printed, not skipped ────────────────────────────────
+ *
+ * A null result renders as an em dash with the record's own unsupported reason beside it. A
+ * section that quietly omitted its unverifiable rows would read as a complete verification
+ * of everything it happened to mention, which is exactly how a footing with no soil data
+ * comes to look checked.
+ */
+function familySections(
+  a: DocumentAssembly,
+  L: (es: string, en: string) => string,
+  translate: (key: string, params?: Record<string, unknown>) => string,
+): string[] {
+  if (a.families.length === 0) return [];
+  const rows: string[] = [];
+  const certOf = (ownerId: string) =>
+    a.familyCertificates.find((c) => c.ownerId === ownerId);
+
+  // ── The certificate table: one row per family member, with WHY it does or does not apply ──
+  rows.push(`<h3>${L('Certificados de familia', 'Family certificates')}</h3>`);
+  rows.push('<table><thead><tr>'
+    + `<th>${L('Familia', 'Family')}</th><th>${L('Elemento', 'Member')}</th>`
+    + `<th>${L('Estado', 'Status')}</th><th>${L('Madurez', 'Maturity')}</th>`
+    + `<th>${L('Vigencia', 'Applies')}</th></tr></thead><tbody>`);
+  for (const c of a.familyCertificates) {
+    rows.push(`<tr><td>${esc(c.family)}</td><td>${esc(c.ownerId)}</td>`
+      + `<td>${esc(c.certificate.status)}</td><td>${esc(c.certificate.maturity)}</td>`
+      // The freshness REASON, not just yes/no: `missing` and `geometryMismatch` have
+      // different remedies and a reader must not have to guess which applies.
+      + `<td class="${c.applies ? 'ok' : 'bad'}">${esc(c.freshness)}</td></tr>`);
+  }
+  rows.push('</tbody></table>');
+
+  for (const r of a.families) {
+    const cert = certOf(r.ownerId);
+    rows.push(`<h3>${esc(r.ownerId)} — ${esc(r.family)}</h3>`);
+    rows.push(`<p>${L('Estado del registro', 'Record status')}: <strong>${esc(r.status)}</strong>`
+      + ` · ${L('Madurez', 'Maturity')}: ${esc(r.maturity)}`
+      + ` · ${L('Edición', 'Edition')}: ${esc(r.edition)}`
+      + ` · ${L('Rev. análisis/cargas/reglamento/entidad', 'Rev. analysis/loads/regulation/entity')}: `
+      + `${r.revisions.analysis}/${r.revisions.loads}/${r.revisions.regulation}/${r.revisions.entity}`
+      + (cert ? ` · ${L('Certificado', 'Certificate')}: ${esc(cert.freshness)}` : '')
+      + '</p>');
+
+    if (r.governingCombinations.length > 0) {
+      rows.push(`<p>${L('Combinaciones gobernantes', 'Governing combinations')}: `
+        + `${esc(r.governingCombinations.join(', '))}</p>`);
+    }
+
+    // ── Checks: every one the record carries, passing or not ──
+    rows.push('<table><thead><tr>'
+      + `<th>${L('Verificación', 'Check')}</th><th>${L('Estado', 'Status')}</th>`
+      + `<th>${L('Utilización', 'Utilisation')}</th><th>${L('Combinación', 'Combination')}</th>`
+      + '</tr></thead><tbody>');
+    for (const c of r.checks) {
+      rows.push(`<tr><td>${esc(c.key)}</td>`
+        + `<td class="${c.status === 'OK' ? 'ok' : 'bad'}">${esc(c.status)}</td>`
+        + `<td>${c.utilization === null ? '—' : n(c.utilization, 2)}</td>`
+        + `<td>${esc(c.governingCombination ?? '—')}</td></tr>`);
+    }
+    rows.push('</tbody></table>');
+
+    if (r.family === 'footing') rows.push(...footingDetail(r, L));
+    if (r.family === 'slab') rows.push(...slabDetail(r, L));
+    if (r.family === 'wall') rows.push(...wallDetail(r, L));
+
+    // Unsupported conditions and assumptions, in SEPARATE blocks. A limitation and a
+    // hypothesis are different things and mixing them buries the one that matters.
+    if (r.unsupported.length > 0) {
+      rows.push(`<h4 class="bad">${L('No verificado', 'Not verified')}</h4><ul>`);
+      for (const m of r.unsupported) rows.push(`<li>${esc(translate(m.key, m.params))}</li>`);
+      rows.push('</ul>');
+    }
+    if (r.assumptions.length > 0) {
+      rows.push(`<h4>${L('Hipótesis', 'Assumptions')}</h4><ul>`);
+      for (const m of r.assumptions) rows.push(`<li>${esc(translate(m.key, m.params))}</li>`);
+      rows.push('</ul>');
+    }
+  }
+  return rows;
+}
+
+function kv(label: string, value: string): string {
+  return `<tr><th>${label}</th><td>${value}</td></tr>`;
+}
+
+function footingDetail(
+  r: Extract<FloorFamilyDesignRecord, { family: 'footing' }>,
+  L: (es: string, en: string) => string,
+): string[] {
+  const g = r.geometry;
+  const out: string[] = ['<table><tbody>'];
+  out.push(kv(L('Dimensiones B × L × h', 'Dimensions B × L × h'),
+    `${n(g.B, 2)} × ${n(g.L, 2)} × ${n(g.thickness, 2)} m`));
+  out.push(kv(L('Altura útil d', 'Effective depth d'), `${n(g.d, 3)} m`));
+  out.push(kv(L('Recubrimiento', 'Cover'), `${n(g.cover * 1000, 0)} mm`));
+  out.push(kv(L('Cota de fundación', 'Founding level'), `${n(g.foundingElevation, 2)} m`));
+  out.push(kv(L('Excentricidad de planta', 'Plan eccentricity'),
+    `${n(g.eccentricityB, 3)} / ${n(g.eccentricityL, 3)} m`));
+  out.push(kv(L('Rotación', 'Rotation'), `${n(g.rotationDeg, 1)}°`));
+  out.push(kv(L('Columna soportada', 'Supported column'),
+    r.support.columnElementId === null
+      ? L('no identificada', 'not identified')
+      : `#${r.support.columnElementId} — ${n(r.support.columnB, 2)} × ${n(r.support.columnH, 2)} m`));
+  out.push(kv(L('Nudo', 'Node'), `#${r.support.nodeId}`));
+  out.push('</tbody></table>');
+
+  // ── The ground, with its PROVENANCE. Bearing pressure has no regulatory source. ──
+  out.push(`<h4>${L('Condiciones del terreno', 'Ground conditions')}</h4>`);
+  if (!r.ground) {
+    out.push(`<p class="bad">${L(
+      'No se resolvió ningún perfil de suelo para esta zapata, por lo que no hay tensión admisible contra la cual verificarla.',
+      'No soil profile resolved for this footing, so there is no allowable pressure to check it against.')}</p>`);
+  } else {
+    out.push('<table><tbody>');
+    out.push(kv(L('Estrato', 'Stratum'), esc(r.ground.name)));
+    out.push(kv(L('Tensión admisible', 'Allowable pressure'),
+      r.ground.allowableBearingKPa === null
+        ? L('NO DECLARADA', 'NOT STATED')
+        : `${n(r.ground.allowableBearingKPa, 1)} kPa`));
+    // Printed on every document that relies on it: an assumed value must never read as a
+    // measured one, and this figure comes from a geotechnical study rather than a code.
+    out.push(kv(L('Procedencia', 'Provenance'),
+      `${esc(r.ground.source)}${r.ground.reference ? ` — ${esc(r.ground.reference)}` : ''}`));
+    out.push(kv(L('Peso unitario', 'Unit weight'),
+      r.ground.unitWeightKNm3 === null ? '—' : `${n(r.ground.unitWeightKNm3, 1)} kN/m³`));
+    out.push(kv(L('Napa', 'Groundwater'),
+      r.ground.groundwaterDepthM === null ? '—' : `${n(r.ground.groundwaterDepthM, 2)} m`));
+    out.push('</tbody></table>');
+  }
+
+  // ── The reaction the footing was designed for ──
+  out.push(`<h4>${L('Reacción de diseño', 'Design reaction')}</h4>`);
+  if (!r.demand) {
+    out.push(`<p class="bad">${L('No se resolvió ninguna reacción en este nudo.',
+      'No reaction was resolved at this node.')}</p>`);
+  } else {
+    out.push('<table><tbody>');
+    out.push(kv(L('Combinación gobernante', 'Governing combination'),
+      esc(r.demand.governingCombination)));
+    out.push(kv(L('N mayorado', 'Factored N'), `${n(r.demand.factoredAxial, 1)} kN`));
+    out.push(kv(L('N de servicio', 'Service N'), `${n(r.demand.serviceAxial, 1)} kN`));
+    out.push(kv(L('Momentos de servicio MB / ML', 'Service moments MB / ML'),
+      `${n(r.demand.serviceMomentB, 1)} / ${n(r.demand.serviceMomentL, 1)} kN·m`));
+    out.push(kv(L('Casos sumados para servicio', 'Cases summed for service'),
+      r.demand.serviceCaseTypes.length > 0
+        ? esc(r.demand.serviceCaseTypes.join(' + '))
+        : L('ninguno', 'none')));
+    out.push('</tbody></table>');
+    // Every combination that was offered, so the choice of governing is auditable rather
+    // than asserted.
+    out.push(`<p>${L('Combinaciones consideradas', 'Combinations considered')}: `
+      + esc(r.demand.considered
+        .map((c) => `${c.combinationName} (Fz ${c.fz.toFixed(0)} kN)`).join('; ')) + '</p>');
+  }
+
+  // ── The checks, with their numbers ──
+  out.push(`<h4>${L('Resultados', 'Results')}</h4><table><tbody>`);
+  out.push(kv(L('Presión de contacto qmax / qmin', 'Contact pressure qmax / qmin'),
+    r.bearing ? `${n(r.bearing.qMax, 1)} / ${n(r.bearing.qMin, 1)} kPa` : '—'));
+  out.push(kv(L('Excentricidad eB / eL', 'Eccentricity eB / eL'),
+    r.bearing ? `${n(r.bearing.eB, 3)} / ${n(r.bearing.eL, 3)} m` : '—'));
+  out.push(kv(L('Contacto parcial', 'Partial contact'),
+    r.bearing ? (r.bearing.uplift ? L('SÍ — base despegada', 'YES — base lifts off')
+      : L('no', 'no')) : '—'));
+  out.push(kv(L('Capacidad portante', 'Bearing'),
+    r.bearing
+      ? `${n(r.bearing.qMax, 1)} / ${n(r.bearing.allowable, 1)} kPa `
+        + `(${n(r.bearing.utilization, 2)})`
+      : '—'));
+  out.push(kv(L('Flexión Mu en la cara', 'Flexure Mu at the face'),
+    r.flexure ? `${n(r.flexure.Mu, 1)} kN·m` : '—'));
+  out.push(kv(L('Corte en una dirección Vu / φVc', 'One-way shear Vu / φVc'),
+    r.oneWayShear
+      ? `${n(r.oneWayShear.Vu, 1)} / ${n(r.oneWayShear.phiVc, 1)} kN `
+        + `(${n(r.oneWayShear.utilization, 2)})`
+      : '—'));
+  if (r.punching) {
+    out.push(kv(L('Punzonado Vu / φVc', 'Punching Vu / φVc'),
+      `${n(r.punching.Vu, 1)} / ${n(r.punching.phiVc, 1)} kN `
+      + `(${n(r.punching.utilization, 2)})`));
+    out.push(kv(L('Perímetro crítico', 'Critical perimeter'),
+      `${esc(r.punching.position ?? '—')} — `
+      + `${r.punching.truncatedSides} ${L('cara(s) truncada(s)', 'truncated side(s)')}`));
+    // The equilibrium residual: N_u − (V_u + q_u·A_enclosed) must be zero, and printing it
+    // is how a reader confirms the free body the record describes is the one that was solved.
+    out.push(kv(L('Residuo de equilibrio', 'Equilibrium residual'),
+      r.punching.equilibriumResidual === null
+        ? L('no medido', 'not measured')
+        : `${n(r.punching.equilibriumResidual, 3)} kN`));
+  } else {
+    out.push(kv(L('Punzonado', 'Punching'), '—'));
+  }
+  out.push('</tbody></table>');
+
+  // ── Dowels and starter ties ──
+  out.push(`<h4>${L('Pelos y estribos de arranque', 'Dowels and starter ties')}</h4>`);
+  if (!r.dowels) {
+    out.push(`<p>${L('No se generaron pelos: la columna no tiene barras resueltas.',
+      'No dowels generated: the column has no resolved bars.')}</p>`);
+  } else {
+    out.push('<table><tbody>');
+    out.push(kv(L('Pelos', 'Dowels'),
+      `${r.dowels.count} Ø${r.dowels.diameterMm} mm`));
+    out.push(kv(L('Anclaje en zapata ld', 'Development in footing ld'),
+      `${n(r.dowels.ldFooting * 1000, 0)} mm`));
+    out.push(kv(L('Empalme sobre zapata', 'Lap above footing'),
+      `${n(r.dowels.lapAbove * 1000, 0)} mm`));
+    out.push(kv(L('Remate inferior', 'Bottom treatment'),
+      r.dowels.hooked
+        ? L('gancho a 90° sobre la parrilla inferior', '90° hook over the bottom mat')
+        : L('recto', 'straight')));
+    out.push(kv(L('Estribos de arranque', 'Starter ties'),
+      r.starterTies
+        ? `${r.starterTies.pieces} × Ø${r.starterTies.diameterMm} mm`
+        : L('ninguno', 'none')));
+    out.push('</tbody></table>');
+  }
+  return out;
+}
+
+function slabDetail(
+  r: Extract<FloorFamilyDesignRecord, { family: 'slab' }>,
+  L: (es: string, en: string) => string,
+): string[] {
+  const g = r.geometry;
+  const out: string[] = ['<table><tbody>'];
+  out.push(kv(L('Paño lx × ly × h', 'Panel lx × ly × h'),
+    `${n(g.lx, 2)} × ${n(g.ly, 2)} × ${n(g.thickness, 3)} m`));
+  out.push(kv(L('Comportamiento', 'Behaviour'), esc(g.behaviour)));
+  out.push(kv(L('Bordes apoyados', 'Supported edges'), String(g.supportedSides)));
+  out.push(kv(L('Recubrimiento', 'Cover'), `${n(g.cover * 1000, 0)} mm`));
+  out.push('</tbody></table>');
+
+  // ── Raw plate moments AND the Wood-Armer transform, side by side ──
+  //
+  // Both, because `mxy` is the field a naive slab design discards and discarding it
+  // under-reinforces a twisted panel. Printing only the transformed pair would make the
+  // transformation unauditable; printing both lets a reviewer check it.
+  out.push(`<h4>${L('Solicitaciones y Wood-Armer', 'Demands and Wood-Armer')}</h4>`);
+  out.push('<table><thead><tr>'
+    + `<th>${L('Región', 'Region')}</th><th>mx</th><th>my</th><th>mxy</th>`
+    + `<th>${L('m inf. x', 'm bot. x')}</th><th>${L('m inf. y', 'm bot. y')}</th>`
+    + `<th>${L('m sup. x', 'm top x')}</th><th>${L('m sup. y', 'm top y')}</th>`
+    + `<th>qu</th></tr></thead><tbody>`);
+  for (const d of r.demands) {
+    out.push(`<tr><td>${esc(d.region)}</td>`
+      + `<td>${n(d.mx)}</td><td>${n(d.my)}</td><td>${n(d.mxy)}</td>`
+      + `<td>${n(d.woodArmer.mxBottom)}</td><td>${n(d.woodArmer.myBottom)}</td>`
+      + `<td>${n(d.woodArmer.mxTop)}</td><td>${n(d.woodArmer.myTop)}</td>`
+      + `<td>${n(d.qu, 2)}</td></tr>`);
+  }
+  out.push(`</tbody></table><p class="note">${L(
+    'Momentos en kN·m/m; qu en kPa.', 'Moments in kN·m/m; qu in kPa.')}</p>`);
+
+  if (r.reinforcement.length > 0) {
+    out.push(`<h4>${L('Armadura por región', 'Reinforcement by region')}</h4>`);
+    out.push('<table><thead><tr>'
+      + `<th>${L('Cara', 'Face')}</th><th>${L('Dirección', 'Direction')}</th>`
+      + `<th>Ø</th><th>${L('Separación', 'Spacing')}</th>`
+      + `<th>As req.</th><th>As prov.</th><th>${L('Gobierna', 'Governed by')}</th>`
+      + `<th>${L('Barras', 'Bars')}</th></tr></thead><tbody>`);
+    for (const z of r.reinforcement) {
+      out.push(`<tr><td>${esc(z.face)}</td><td>${esc(z.direction)}</td>`
+        + `<td>${z.diameterMm}</td><td>${n(z.spacing * 1000, 0)} mm</td>`
+        + `<td>${n(z.asRequired, 0)}</td><td>${n(z.asProvided, 0)}</td>`
+        + `<td>${esc(z.governedBy)}</td><td>${z.barIds.length}</td></tr>`);
+    }
+    out.push(`</tbody></table><p class="note">${L(
+      'As en mm²/m.', 'As in mm²/m.')}</p>`);
+  }
+
+  out.push('<table><tbody>');
+  out.push(kv(L('Corte en una dirección Vu / φVc', 'One-way shear Vu / φVc'),
+    r.oneWayShear
+      ? `${n(r.oneWayShear.Vu, 1)} / ${n(r.oneWayShear.phiVc, 1)} kN/m `
+        + `(${n(r.oneWayShear.utilization, 2)})`
+      : '—'));
+  out.push('</tbody></table>');
+
+  // Punching per supported column. An EMPTY list is a measured "this panel supports no
+  // column", and it is said out loud so it cannot be read as an omitted check.
+  out.push(`<h4>${L('Punzonado losa-columna', 'Slab-column punching')}</h4>`);
+  if (r.punching.length === 0) {
+    out.push(`<p>${L(
+      'Este paño no soporta ninguna columna, por lo que no hay nudo de punzonado que verificar.',
+      'This panel supports no column, so there is no punching joint to check.')}</p>`);
+  } else {
+    out.push('<table><thead><tr>'
+      + `<th>${L('Columna', 'Column')}</th><th>${L('Nudo', 'Node')}</th>`
+      + `<th>${L('Estado', 'Status')}</th><th>Vu</th><th>φVc</th>`
+      + `<th>${L('Perímetro', 'Perimeter')}</th></tr></thead><tbody>`);
+    for (const p of r.punching) {
+      out.push(`<tr><td>#${p.columnElementId}</td><td>#${p.nodeId}</td>`
+        + `<td class="${p.status === 'OK' ? 'ok' : 'bad'}">${esc(p.status)}</td>`
+        + `<td>${n(p.Vu, 1)}</td><td>${n(p.phiVc, 1)}</td>`
+        + `<td>${esc(p.position ?? '—')}</td></tr>`);
+    }
+    out.push('</tbody></table>');
+  }
+  return out;
+}
+
+function wallDetail(
+  r: Extract<FloorFamilyDesignRecord, { family: 'wall' }>,
+  L: (es: string, en: string) => string,
+): string[] {
+  const g = r.geometry;
+  const out: string[] = ['<table><tbody>'];
+  out.push(kv(L('Longitud × altura × espesor', 'Length × height × thickness'),
+    `${n(g.length, 2)} × ${n(g.height, 2)} × ${n(g.thickness, 3)} m`));
+  out.push(kv(L('Cortinas', 'Curtains'), String(r.reinforcement.curtains)));
+  out.push(kv(L('Recubrimiento', 'Cover'), `${n(g.cover * 1000, 0)} mm`));
+  out.push('</tbody></table>');
+
+  out.push(`<h4>${L('Solicitaciones', 'Demands')}</h4>`);
+  out.push('<table><thead><tr>'
+    + `<th>${L('Elemento', 'Member')}</th><th>σxx</th><th>σyy</th><th>τxy</th>`
+    + `<th>Pu</th><th>Mu</th><th>Vu</th>`
+    + `<th>${L('Origen del momento', 'Moment source')}</th></tr></thead><tbody>`);
+  for (const d of r.demands) {
+    out.push(`<tr><td>#${d.elementId}</td>`
+      + `<td>${n(d.sigmaXx, 0)}</td><td>${n(d.sigmaYy, 0)}</td><td>${n(d.tauXy, 0)}</td>`
+      + `<td>${n(d.pu, 1)}</td><td>${n(d.muInPlane, 1)}</td><td>${n(d.vuInPlane, 1)}</td>`
+      // A membrane-only resolution gives ZERO in-plane moment, which is not a wall's real
+      // demand. Named on the row rather than left for the reader to infer from a zero.
+      + `<td class="${d.fromMembraneOnly ? 'bad' : ''}">${d.fromMembraneOnly
+        ? L('sólo membrana — Mu no resuelto', 'membrane only — Mu unresolved')
+        : L('fuerzas de elemento', 'element forces')}</td></tr>`);
+  }
+  out.push(`</tbody></table><p class="note">${L(
+    'Tensiones en kPa; Pu y Vu en kN; Mu en kN·m.',
+    'Stresses in kPa; Pu and Vu in kN; Mu in kN·m.')}</p>`);
+
+  out.push(`<h4>${L('Resultados', 'Results')}</h4><table><tbody>`);
+  out.push(kv(L('Axial-flexión Pu / φMn', 'Axial-flexure Pu / φMn'),
+    `${n(r.axialFlexure.pu, 1)} kN / ${n(r.axialFlexure.phiMn, 1)} kN·m `
+    + `(${n(r.axialFlexure.utilization, 2)})`));
+  out.push(kv(L('Corte en el plano Vu / φVn', 'In-plane shear Vu / φVn'),
+    `${n(r.inPlaneShear.Vu, 1)} / ${n(r.inPlaneShear.phiVn, 1)} kN `
+    + `(${n(r.inPlaneShear.utilization, 2)})`));
+  // §11.5.4.6: above the ceiling the wall fails by web crushing and horizontal steel does
+  // not help. Stating it separately is what stops the report recommending a remedy that
+  // would not work.
+  out.push(kv(L('Techo de aplastamiento del alma (11.5.4.6)',
+    'Web-crushing ceiling (11.5.4.6)'),
+  `${n(r.inPlaneShear.webCrushingLimit, 1)} kN — `
+    + (r.inPlaneShear.webCrushingGoverns
+      ? L('GOBIERNA: agregar armadura horizontal no ayuda',
+        'GOVERNS: adding horizontal steel does not help')
+      : L('no gobierna', 'does not govern'))));
+  out.push(kv(L('Vertical', 'Vertical'),
+    `Ø${r.reinforcement.verticalDiameterMm} c/${n(r.reinforcement.verticalSpacing * 1000, 0)} mm `
+    + `(ρ ${n(r.reinforcement.rhoVertical, 4)}, ${esc(r.reinforcement.verticalGovernedBy)})`));
+  out.push(kv(L('Horizontal', 'Horizontal'),
+    `Ø${r.reinforcement.horizontalDiameterMm} c/${n(r.reinforcement.horizontalSpacing * 1000, 0)} mm `
+    + `(ρ ${n(r.reinforcement.rhoHorizontal, 4)}, ${esc(r.reinforcement.horizontalGovernedBy)})`));
+  out.push(kv(L('Barras físicas', 'Physical bars'), String(r.reinforcement.barIds.length)));
+  out.push(kv(L('Elemento de borde', 'Boundary element'),
+    r.boundaryElement === null
+      ? L('no evaluado', 'not evaluated')
+      : r.boundaryElement.required
+        ? (r.boundaryElement.detailing
+          ? `${L('requerido', 'required')} — ${n(r.boundaryElement.detailing.lengthM, 2)} m`
+          : L('REQUERIDO — despiece NO implementado', 'REQUIRED — detailing NOT implemented'))
+        : L('no requerido', 'not required')));
+  out.push('</tbody></table>');
+  return out;
 }
 
 // ─── DXF ───
@@ -385,6 +774,96 @@ export function renderSchedule(
       for (const l of a.laps) {
         aoa.push([l.jointId, l.fromBarId, l.toBarId, l.kind, l.spliceClass,
           Math.round(l.lapLength * 1000)]);
+      }
+    }
+
+    // ── Floor-family blocks, from the records and the marked assembly ──────────
+    //
+    // The bar rows above already cover slab, wall, footing, dowel and tie steel: they come
+    // from `a.source.marks`, which is `assignMarks` over the assembly's own bars, and a
+    // footing's dowels are bars in that list like any other. What is added here is the
+    // per-family EVIDENCE a fabricator and a checker need beside the quantities — which
+    // record each mark belongs to, and whether its certificate still applies.
+    if (a.families.length > 0) {
+      aoa.push([]);
+      aoa.push([L('FAMILIAS DE PISO', 'FLOOR FAMILIES')]);
+      aoa.push([L('Familia', 'Family'), L('Elemento', 'Member'), L('Estado', 'Status'),
+        L('Madurez', 'Maturity'), L('Certificado', 'Certificate'),
+        L('Vigencia', 'Applies'), L('Marcas', 'Marks'), L('Barras', 'Bars'),
+        L('Rev. análisis', 'Rev. analysis'), L('Rev. cargas', 'Rev. loads'),
+        L('Rev. reglamento', 'Rev. regulation'), L('Rev. entidad', 'Rev. entity')]);
+      for (const r of a.families) {
+        const cert = a.familyCertificates.find((c) => c.ownerId === r.ownerId);
+        aoa.push([r.family, r.ownerId, r.status, r.maturity,
+          r.certificate.status, cert?.freshness ?? '',
+          r.markIds.join(', '), r.barIds.length,
+          r.revisions.analysis, r.revisions.loads,
+          r.revisions.regulation, r.revisions.entity]);
+      }
+
+      // Every check, so the spreadsheet carries the same verification statement the report
+      // does. A schedule that lists quantities without their verification state is how a
+      // fabricator comes to build an unverified footing.
+      aoa.push([]);
+      aoa.push([L('VERIFICACIONES POR FAMILIA', 'FAMILY CHECKS')]);
+      aoa.push([L('Elemento', 'Member'), L('Verificación', 'Check'), L('Estado', 'Status'),
+        L('Utilización', 'Utilisation'), L('Combinación', 'Combination')]);
+      for (const r of a.families) {
+        for (const c of r.checks) {
+          aoa.push([r.ownerId, c.key, c.status,
+            c.utilization === null ? '' : Math.round(c.utilization * 1000) / 1000,
+            c.governingCombination ?? '']);
+        }
+      }
+
+      // Footing quantities and ground provenance: the columns a site engineer reads before
+      // pouring, and the one figure in the whole document that has no regulatory source.
+      const footings = a.families.filter((r) => r.family === 'footing');
+      if (footings.length > 0) {
+        aoa.push([]);
+        aoa.push([L('ZAPATAS', 'FOOTINGS')]);
+        aoa.push([L('Zapata', 'Footing'), 'B (m)', 'L (m)', 'h (m)', 'd (m)',
+          L('Cota', 'Level'), L('Estrato', 'Stratum'),
+          L('q adm (kPa)', 'q allow (kPa)'), L('Procedencia', 'Provenance'),
+          L('Referencia', 'Reference'), L('Combinación', 'Combination'),
+          L('Nu (kN)', 'Nu (kN)'), L('N serv (kN)', 'N serv (kN)'),
+          L('qmax (kPa)', 'qmax (kPa)'), L('Contacto parcial', 'Partial contact'),
+          L('Mu (kN·m)', 'Mu (kN·m)'), L('Util. corte', 'Shear util.'),
+          L('Util. punzonado', 'Punching util.'), L('Residuo equil. (kN)', 'Equil. residual (kN)'),
+          L('Pelos', 'Dowels'), L('Estribos arranque', 'Starter ties')]);
+        for (const r of footings) {
+          if (r.family !== 'footing') continue;
+          const g = r.geometry;
+          aoa.push([
+            g.name, g.B, g.L, g.thickness, g.d, g.foundingElevation,
+            r.ground?.name ?? '',
+            // Blank, never zero: an unstated allowable pressure is not 0 kPa, and a
+            // spreadsheet cell containing 0 would be read as a number somebody measured.
+            r.ground?.allowableBearingKPa ?? '',
+            r.ground?.source ?? '', r.ground?.reference ?? '',
+            r.demand?.governingCombination ?? '',
+            r.demand?.factoredAxial ?? '', r.demand?.serviceAxial ?? '',
+            r.bearing?.qMax ?? '',
+            r.bearing ? (r.bearing.uplift ? L('SÍ', 'YES') : L('no', 'no')) : '',
+            r.flexure?.Mu ?? '',
+            r.oneWayShear?.utilization ?? '',
+            r.punching?.utilization ?? '',
+            r.punching?.equilibriumResidual ?? '',
+            r.dowels ? `${r.dowels.count} Ø${r.dowels.diameterMm}` : '',
+            r.starterTies ? `${r.starterTies.pieces} Ø${r.starterTies.diameterMm}` : '',
+          ]);
+        }
+      }
+
+      // Everything the families could not verify, verbatim. A limitation that appears only in
+      // the PDF is a limitation the spreadsheet reader does not know about.
+      const notVerified = a.families.flatMap((r) =>
+        r.unsupported.map((m) => [r.ownerId, m.key] as (string | number)[]));
+      if (notVerified.length > 0) {
+        aoa.push([]);
+        aoa.push([L('NO VERIFICADO', 'NOT VERIFIED')]);
+        aoa.push([L('Elemento', 'Member'), L('Condición', 'Condition')]);
+        aoa.push(...notVerified);
       }
     }
 

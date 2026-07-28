@@ -6,6 +6,7 @@ import { dsmStepsStore } from './dsmSteps.svelte';
 import { tabManager } from './tabs.svelte';
 import { tourStore } from './tour.svelte';
 import { verificationStore } from './verification.svelte';
+import { detailingStore } from './detailing.svelte';
 import { shouldProjectModelToXZ } from '../geometry/coordinate-system';
 // Registering the design-code adapters at store-wiring time guarantees the registry
 // is populated before any component queries it. Importing for side effects only.
@@ -31,6 +32,23 @@ modelStore._setOnMutation(() => {
 // the retained demand with zero structural solves.
 modelStore._setOnReinforcementCommit((written) => {
   verificationStore.invalidateElements(written);
+});
+
+// A foundation edit is analysis-neutral and document-INVALIDATING.
+//
+// Footing and geotechnical mutations deliberately bypass `_setOnMutation`, because a footing
+// carries a support reaction rather than contributing stiffness — routing them through it
+// cleared the solve on every edit and left every footing reporting "no reaction" at design
+// time. But widening a base, or restating an allowable bearing pressure, invalidates the
+// footing design and every drawing, schedule and report built from it. PR18 declared that
+// edge and never connected it, so a project could edit a footing and keep issuing the
+// document that justified the old one.
+//
+// Non-destructive: `supersedeDocuments` keeps the old revision and its content and moves it
+// to the superseded list, because a project that cannot show what it previously issued cannot
+// answer the only question that matters after something goes wrong.
+modelStore._setOnFoundationChange(() => {
+  detailingStore.supersedeDocuments();
 });
 
 // Let verificationStore read the current provided reinforcement without importing

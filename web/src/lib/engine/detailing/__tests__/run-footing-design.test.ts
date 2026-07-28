@@ -46,6 +46,15 @@ const reactions = (over: Partial<NodeReactions> = {}): NodeReactions => ({
   ...over,
 });
 
+/**
+ * The upstream revisions the run is reading.
+ *
+ * Distinct values on purpose: a record that collapsed the three stages into one number could
+ * report a certificate as stale without being able to say whether the loads, the analysis or
+ * the regulation moved, and those have three different remedies.
+ */
+const REVISIONS = { analysis: 6, loads: 4, regulation: 2 };
+
 const run = (over: Partial<RunFootingDesignInput> = {}) => runFootingDesign({
   footings: [footing()],
   geotechnical: geo(),
@@ -53,6 +62,7 @@ const run = (over: Partial<RunFootingDesignInput> = {}) => runFootingDesign({
   columns: new Map([[3, column()]]),
   reactions: new Map([[10, reactions()]]),
   fc: 25, fy: 420, edition: '2025', barDiameterMm: 16,
+  revisions: REVISIONS, regulationIds: ['cirsoc-201'],
   ...over,
 });
 
@@ -91,11 +101,13 @@ describe('runFootingDesign — the production path', () => {
     const forward = runFootingDesign({
       footings: two, geotechnical: geo(), nodes, columns: new Map([[3, column()]]),
       reactions: rx, fc: 25, fy: 420, edition: '2025', barDiameterMm: 16,
+      revisions: REVISIONS, regulationIds: ['cirsoc-201'],
     });
     const reversed = runFootingDesign({
       footings: [...two].reverse(), geotechnical: geo(), nodes,
       columns: new Map([[3, column()]]),
       reactions: rx, fc: 25, fy: 420, edition: '2025', barDiameterMm: 16,
+      revisions: REVISIONS, regulationIds: ['cirsoc-201'],
     });
     expect(reversed.outcomes.map((o) => o.footingId)).toEqual(forward.outcomes.map((o) => o.footingId));
     expect(reversed.entriesByLevel.get(-1.2)!.map((e) => e.id))
@@ -217,6 +229,7 @@ describe('honest reporting of what a result does and does not cover', () => {
       columns: new Map([[3, column()]]),
       reactions: new Map([[10, reactions()], [11, reactions()]]),
       fc: 25, fy: 420, edition: '2025', barDiameterMm: 16,
+      revisions: REVISIONS, regulationIds: ['cirsoc-201'],
     });
     expect(r.outcomes.find((o) => o.footingId === 1)!.check).toBeNull();
     expect(r.outcomes.find((o) => o.footingId === 2)!.check).not.toBeNull();

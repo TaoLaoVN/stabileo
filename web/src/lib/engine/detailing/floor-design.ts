@@ -32,6 +32,12 @@ import { clause, type ClauseRef, type RegulationEdition } from '../../codes/regu
 import { worstMaturity, type Maturity } from '../../codes/maturity';
 import { dedupeMessages, type EngineMessage } from '../../codes/message';
 import { assessConstructibility } from './constructibility';
+import {
+  certificateFreshness, completeFamilyRecord, emptyRequirement, familyDesignsPass,
+  tallyRequirement,
+  type CertificateFreshness, type FamilyCertificate, type FamilyRecordDraft,
+  type FamilyRequirement, type FloorFamily, type FloorFamilyDesignRecord,
+} from './family-record';
 import { assignMarks, evaluateState, type DetailingAssembly, type UnsupportedCondition } from './assembly';
 import { detectCollisions, type BarConflict, type CollisionTolerances } from './collision';
 import { classifyPair } from './classify';
@@ -228,7 +234,11 @@ export interface FloorAssemblyInput {
   previousRevision?: number;
   maxAggregateSizeMm: number;
   tolerances?: CollisionTolerances;
-  slabs: Array<{ geometry: SlabPanelGeometry; design: SlabDesignResult }>;
+  slabs: Array<{
+    geometry: SlabPanelGeometry; design: SlabDesignResult;
+    /** Optional for the same reason as the footing's: see that field. */
+    record?: FamilyRecordDraft<Extract<FloorFamilyDesignRecord, { family: 'slab' }>>;
+  }>;
   /**
    * `geometry` and `barDiameterMm` are what turn a designed wall into a drawn one. Without
    * them the wall contributes ratios and a maturity and no steel, which is how walls came
@@ -237,12 +247,44 @@ export interface FloorAssemblyInput {
   walls: Array<{
     wallId: string; design: WallDesignResult; elementIds: number[];
     geometry?: WallGeometry; barDiameterMm?: number;
+    record?: FamilyRecordDraft<Extract<FloorFamilyDesignRecord, { family: 'wall' }>>;
   }>;
-  footings: Array<{ id: string; check: FootingCheck; elementIds: number[]; dowels?: DowelInput }>;
+  footings: Array<{
+    id: string; check: FootingCheck; elementIds: number[]; dowels?: DowelInput;
+    /**
+     * The footing's design evidence, complete except for its steel.
+     *
+     * Optional only so that the unit tests that exercise bar generation in isolation can
+     * still call this function with a bare check. A run WITHOUT a record produces an
+     * assembly with no footing certificate, so the gate reports the footing as applicable
+     * and uncertified — which is the correct reading of "bars generated, design not
+     * recorded" and is exactly what the production adapter must never do.
+     */
+    record?: FamilyRecordDraft<FootingDesignRecordLike>;
+  }>;
   /** Beam top-bar depths at each support, so slab bars can be placed above them. */
   beamTopDepths?: Map<string, number>;
   membersVerified: boolean;
+  /**
+   * Records for family members that produced no steel — a footing with no soil data, a wall
+   * with no geometry.
+   *
+   * They are certified against an EMPTY cage, which is the honest statement: the design
+   * evidence exists, it records why nothing could be verified, and its certificate is
+   * UNSUPPORTED. Leaving them out would keep the one footing a reader most needs to find out
+   * of the document and out of the certificate tally at once.
+   */
+  unverifiedRecords?: Array<FamilyRecordDraft<FloorFamilyDesignRecord>>;
 }
+
+/**
+ * Structural shape of a footing record, referenced without importing the run adapter.
+ *
+ * `run-footing-design.ts` imports `DowelInput` from this module, so importing its
+ * `FootingDesignRecord` back would close a cycle. The record type itself lives in
+ * `family-record.ts`; this alias is only how the assembly input names it.
+ */
+type FootingDesignRecordLike = Extract<FloorFamilyDesignRecord, { family: 'footing' }>;
 
 export interface FloorAssemblyResult {
   assembly: DetailingAssembly;
@@ -272,6 +314,19 @@ export function buildFloorAssembly(input: FloorAssemblyInput): FloorAssemblyResu
   // to disagree or the condition proves nothing.
   let materialisedTransverse = 0;
 
+  /**
+   * Family records awaiting their steel.
+   *
+   * A record cannot be certified until the bars exist, and the bars cannot be MARKED until
+   * every family has generated its own, so completion happens in one pass after
+   * `assignMarks`. Holding the drafts here with the bar list each one produced is what keeps
+   * a record bound to its own cage rather than to the floor's.
+   */
+  const pending: Array<{
+    draft: FamilyRecordDraft<FloorFamilyDesignRecord>;
+    bars: BarPath[];
+  }> = [];
+
   // Which spacing rule governs each element's bars. Starter dowels are column bars —
   // §25.2.3 is what governs them — so a footing's elements are declared as columns rather
   // than left undefined, which would silently fall back to the beam rule.
@@ -283,6 +338,19 @@ export function buildFloorAssembly(input: FloorAssemblyInput): FloorAssemblyResu
   for (const s of input.slabs) {
     const panelBars = generateSlabBars(s.geometry, s.design.layers, input.edition);
     bars.push(...panelBars);
+    if (s.record) {
+      // Each reinforcement region gains the bar ids generated for it. Matched by the id
+      // pattern `generateSlabBars` writes — face initial and direction — so a schedule row
+      // for a top-x mat and the region that sized it name the same steel.
+      s.record.reinforcement = s.record.reinforcement.map((region) => ({
+        ...region,
+        barIds: panelBars
+          .filter((b) => b.id.startsWith(
+            `${s.geometry.panelId}-${region.face[0]}${region.direction}-`))
+          .map((b) => b.id).sort(),
+      }));
+      pending.push({ draft: s.record, bars: panelBars });
+    }
     maturities.push(s.design.maturity.maturity);
     assumptions.push(...s.design.maturity.assumptions);
     trace.push(
@@ -308,8 +376,21 @@ export function buildFloorAssembly(input: FloorAssemblyInput): FloorAssemblyResu
       const wallBars = generateWallBars(
         w.geometry, w.design, w.barDiameterMm, input.edition);
       bars.push(...wallBars);
+      if (w.record) {
+        w.record.reinforcement = {
+          ...w.record.reinforcement,
+          barIds: wallBars.map((b) => b.id).sort(),
+        };
+        pending.push({ draft: w.record, bars: wallBars });
+      }
       trace.push(`Tabique ${w.wallId}: ${wallBars.length} barra(s) físicas.`);
     } else {
+      // A wall with no geometry produced no steel, so its record — if one exists — is
+      // completed against an EMPTY cage rather than omitted. That is the honest statement:
+      // the checks are real, the reinforcement hash is the hash of nothing, and the
+      // certificate binds to that. Dropping the record instead would count the wall as
+      // uncertified for a missing record when the real fault is missing geometry.
+      if (w.record) pending.push({ draft: w.record, bars: [] });
       // Said out loud rather than silently skipped: a wall with no geometry is a wall with
       // no drawing, and the previous version made that invisible.
       unsupported.push({
@@ -332,6 +413,9 @@ export function buildFloorAssembly(input: FloorAssemblyInput): FloorAssemblyResu
   for (const f of input.footings) {
     trace.push(`Fundación ${f.id}: ${f.check.status}.`);
     maturities.push(f.check.status === 'UNSUPPORTED' ? 'UNSUPPORTED' : 'IMPLEMENTED_PROVISIONAL');
+    // The bars THIS footing produces, kept separate from the floor's so its certificate
+    // binds to its own steel. An edit to Z7 must not void Z1's certificate.
+    const ownBars: BarPath[] = [];
     for (const u of f.check.unsupported) {
       unsupported.push({
         key: 'foundation', scope: { elementIds: f.elementIds }, message: u, refs: f.check.refs,
@@ -343,6 +427,7 @@ export function buildFloorAssembly(input: FloorAssemblyInput): FloorAssemblyResu
     if (f.dowels) {
       const d = generateDowels(f.dowels);
       bars.push(...d.bars);
+      ownBars.push(...d.bars);
       trace.push(...d.notes);
       trace.push(`Fundación ${f.id}: ${d.bars.length} barra(s) de espera.`);
 
@@ -360,6 +445,7 @@ export function buildFloorAssembly(input: FloorAssemblyInput): FloorAssemblyResu
 
       const ties = generateStarterTies(cage, d.positions);
       bars.push(...ties.bars);
+      ownBars.push(...ties.bars);
       materialisedTransverse += ties.pieces.length;
       trace.push(
         `Fundación ${f.id}: ${ties.pieces.length} estribo(s) de arranque sobre el empalme.`);
@@ -371,7 +457,30 @@ export function buildFloorAssembly(input: FloorAssemblyInput): FloorAssemblyResu
           refs: [ref],
         });
       }
+
+      // The record's dowel and starter-tie entries gain the bar ids they were designed for.
+      // Written back onto the DRAFT rather than recomputed later, so the schedule row for a
+      // dowel and the record that justifies it name the same pieces.
+      if (f.record && f.record.family === 'footing') {
+        f.record.dowels = f.record.dowels
+          ? { ...f.record.dowels, barIds: d.bars.map((b) => b.id).sort() }
+          : null;
+        f.record.starterTies = ties.pieces.length > 0
+          ? {
+            pieces: ties.pieces.length,
+            diameterMm: f.dowels.tieDia,
+            barIds: ties.bars.map((b) => b.id).sort(),
+          }
+          : null;
+      }
     }
+
+    if (f.record) pending.push({ draft: f.record, bars: ownBars });
+  }
+
+  // Records with no steel of their own. Certified against an empty cage.
+  for (const draft of input.unverifiedRecords ?? []) {
+    pending.push({ draft, bars: [] });
   }
 
   // ── Whole-floor collision check, through the AUTHORITATIVE classifier ────────
@@ -413,6 +522,77 @@ export function buildFloorAssembly(input: FloorAssemblyInput): FloorAssemblyResu
 
   const marks = assignMarks(bars, 'F');
 
+  // ── Certify each family record against the cage it actually produced ──────────
+  //
+  // Here, and nowhere else. This is the one point in the pass where both halves exist: the
+  // design evidence the engines established, and the physical bars — marked, coordinated and
+  // collision-checked — that came out of it. Certifying earlier would bind the certificate to
+  // an intent; certifying in a second module would let the two drift.
+  const families: FloorFamilyDesignRecord[] = pending.map(({ draft, bars: own }) => {
+    // The marks covering this record's own bars. Read off the assembly's marks rather than
+    // re-derived, so a schedule row and the record that justifies it cannot disagree about
+    // which mark a dowel carries.
+    const ownIds = new Set(own.map((b) => b.id));
+    const markIds = marks.filter((m) => m.barIds.some((id) => ownIds.has(id)))
+      .map((m) => m.mark);
+    return completeFamilyRecord(draft, own, markIds);
+  });
+  const familyCertificates: FamilyCertificate[] = families.map((r) => r.certificate);
+
+  /**
+   * The certificate evidence, measured per family.
+   *
+   * Freshness is decided by the SAME function the store calls later against the live model,
+   * rather than by a build-time shortcut such as "it was just issued, so it is fresh". The
+   * hashes it compares are the record's own here, so the verdict reduces to whether the
+   * design was certifiable at all — but the call path is the production one, which means a
+   * change to what freshness means cannot silently apply to reloaded projects only.
+   */
+  /**
+   * How many members of each family this pass DESIGNED — not how many it recorded.
+   *
+   * This distinction is the whole point. A family member that was designed and detailed but
+   * carries no design record is `applicable` and `missing`: real steel with no evidence
+   * behind it. Deriving `applicable` from the record list instead would make that state
+   * invisible — a floor with three panels and no panel records would report "0 of 0
+   * certified" and pass, which is precisely the pass-created-by-absence this gate exists to
+   * refuse. The count comes from the INPUT, so it cannot be satisfied by producing nothing.
+   */
+  const unverifiedOf = (family: FloorFamily) =>
+    (input.unverifiedRecords ?? []).filter((r) => r.family === family).length;
+  const applicableOf: Record<FloorFamily, number> = {
+    slab: input.slabs.length + unverifiedOf('slab'),
+    wall: input.walls.length + unverifiedOf('wall'),
+    // A footing that could not be checked is still a MODELLED footing, so it is applicable.
+    // Counting only the ones that produced steel would let an unverifiable footing vanish
+    // from the tally and the project read as fully certified.
+    footing: input.footings.length + unverifiedOf('footing'),
+  };
+  const requirementFor = (family: FloorFamily): FamilyRequirement => {
+    const applicable = applicableOf[family];
+    if (applicable === 0) return emptyRequirement(family);
+    const own = families.filter((r) => r.family === family);
+    const verdicts: Array<CertificateFreshness | 'absent'> = own.map((r) =>
+      certificateFreshness({
+        certificate: r.certificate,
+        current: r.revisions,
+        currentGeometryHash: r.geometryHash,
+        currentInputHash: r.inputHash,
+        currentReinforcementHash: r.reinforcementHash,
+        currentFinalGeometryHash: r.certificate.finalGeometryHash,
+      }));
+    // Every designed member with no record of its own is an explicit `absent`, so the tally
+    // counts it as missing rather than as one fewer applicable member.
+    for (let i = own.length; i < applicable; i++) verdicts.push('absent');
+    return tallyRequirement(family, verdicts);
+  };
+  const familyRequirements: FamilyRequirement[] = [
+    requirementFor('slab'), requirementFor('wall'), requirementFor('footing'),
+  ];
+  trace.push(
+    `Certificados de familia: ${familyRequirements.map((r) =>
+      `${r.family} ${r.certified}/${r.applicable}`).join(', ')}.`);
+
   // ── The thirteenth condition, answered rather than skipped ──────────
   //
   // This object previously omitted `requiredTransversePieces` and
@@ -438,19 +618,54 @@ export function buildFloorAssembly(input: FloorAssemblyInput): FloorAssemblyResu
   // rules and the verification status are all real measurements, and CONSTRUCTIBLE is
   // withheld on any of them exactly as it is for a beam floor.
   const prohibited = conflicts.filter((c) => c.pairClass === 'prohibitedOverlap').length;
+
+  /**
+   * The applicable members of a floor assembly are its FAMILIES, so its verification is its
+   * family certificates.
+   *
+   * ── What this replaces, and why ─────────────────────────────────────
+   *
+   * The gate used to be handed `applicableMembers: 1` with `reverifiedMembers` following a
+   * caller flag. Both halves were wrong. There is no ONE member — there are panels, walls and
+   * footings — and there is no frame verifier in this pass to reverify anything, which is why
+   * `run-floor-design` passed `membersVerified: false` and meant it. The consequence was a
+   * floor that could never be CONSTRUCTIBLE however complete its design, and the only way out
+   * of it was to pass `true` and satisfy two conditions that nothing measured.
+   *
+   * So the frame counts are now stated as the measurement they are — a floor assembly has
+   * ZERO applicable frame members, which makes the two frame conditions vacuously true — and
+   * the real evidence is carried by the family conditions, counted per family over the
+   * records that were just certified against the actual cage.
+   *
+   * `input.membersVerified` is retained for a caller that genuinely has frame members in the
+   * same assembly, and it can no longer manufacture a family certificate: with zero
+   * applicable frame members it cannot lower the gate, and with families present it cannot
+   * substitute for their records.
+   */
+  const familyApplicable = familyRequirements.reduce((n, r) => n + r.applicable, 0);
+  const membersVerified = familyApplicable > 0
+    // `familyDesignsPass`, not `allFamiliesCertified`. The ladder's first question is
+    // whether every member passed the checks that were PERFORMED, and a wall whose boundary
+    // element is 103-II work has not failed anything — it is capped at COORDINATED by its
+    // unsupported conditions, not dropped to DRAFT as though it were too thin.
+    ? familyDesignsPass(familyRequirements)
+    : input.membersVerified;
   const constructibility = assessConstructibility({
     requiredTransversePieces: totals.requiredPieces,
     materialisedTransversePieces: totals.materialisedPieces,
     completeEnvelope: true,
     searchTruncated: false,
-    applicableMembers: 1,
-    assignedMembers: 1,
+    // Measured, not assumed: this pass designs shells and foundations, and it runs no
+    // beam-line search, so there are no frame members for it to assign or reverify.
+    applicableMembers: 0,
+    assignedMembers: 0,
     selectedTransitions: 0,
     materialisedTransitions: 0,
     unmaterialisedTransitions: 0,
     prohibitedConflicts: prohibited,
-    reverifiedMembers: input.membersVerified ? 1 : 0,
-    certificateHashMatches: input.membersVerified ? 1 : 0,
+    reverifiedMembers: 0,
+    certificateHashMatches: 0,
+    familyRequirements,
     spacingNotCodeLegal: conflicts.filter((c) => c.pairClass === 'sameLayerSpacing'
       || c.pairClass === 'betweenLayerSpacing' || c.pairClass === 'crossMemberSpacing').length,
     spacingNotPlacementRobust: 0,
@@ -459,7 +674,7 @@ export function buildFloorAssembly(input: FloorAssemblyInput): FloorAssemblyResu
   });
   const evaluation = evaluateState({
     bars, conflicts, unsupported,
-    membersVerified: input.membersVerified,
+    membersVerified,
     coordinated: true,
     constructibility,
   });
@@ -481,6 +696,10 @@ export function buildFloorAssembly(input: FloorAssemblyInput): FloorAssemblyResu
         ]),
       ].sort((a, b) => a - b),
       bars, marks, joints: [], conflicts, unsupported,
+      // The design evidence travels WITH the steel it justifies. Absent rather than empty
+      // when nothing was recorded, so "no families in this assembly" stays distinguishable
+      // from "families designed, none recorded".
+      ...(families.length > 0 ? { families, familyCertificates } : {}),
       detailingRevision: (input.previousRevision ?? 0) + 1,
       demandRevision: input.demandRevision,
       state: evaluation.state,

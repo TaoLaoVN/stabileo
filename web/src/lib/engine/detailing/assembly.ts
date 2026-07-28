@@ -31,8 +31,17 @@ import type { Maturity } from '../../codes/maturity';
 import type { BarConflict } from './collision';
 import type { ConstructibilityAssessment } from './constructibility';
 import type { EngineMessage } from '../../codes/message';
+import type { FamilyCertificate, FloorFamilyDesignRecord } from './family-record';
 
-export const DETAILING_SCHEMA_VERSION = 1;
+/**
+ * Bumped to 2 when floor-family design records became part of the persisted assembly.
+ *
+ * A version-1 store is still readable and loses nothing it ever had: it simply carries no
+ * family records, which is the truth about a project detailed before they existed. The
+ * migration below does NOT synthesise them — a fabricated record would be evidence of a
+ * design that was never performed, which is worse than an absent one.
+ */
+export const DETAILING_SCHEMA_VERSION = 2;
 
 export type AssemblyKind = 'beamLine' | 'columnStack';
 
@@ -205,6 +214,37 @@ export interface DetailingAssembly {
   /** Worst maturity across every calculation in the assembly. */
   maturity: Maturity;
   provenance: AssemblyProvenance;
+  /**
+   * The authoritative design evidence for the floor families in this assembly.
+   *
+   * ── Why it lives HERE ───────────────────────────────────────────
+   *
+   * Because this is the object the steel lives on, and the two must travel together. Before
+   * this, slab/wall/footing results existed only in `$state` — `lastFloorRun`,
+   * `lastFootingRun` — while the bars they sized were persisted with the model. Reopening a
+   * project therefore produced a coordinated cage with no record of the demands,
+   * combinations or ground profile behind it: steel that had outlived its own justification
+   * and still read as a design.
+   *
+   * Persisting the records alongside the bars means .ded save/open, undo/redo, tab capture,
+   * autosave and URL sharing carry the evidence for free — they all go through
+   * `snapshot()`/`restore()` — and it means a record that drifts from its steel is
+   * DETECTABLE, because the record carries the hash of the cage it produced.
+   *
+   * Absent on a beam-line or column-stack assembly, and on any floor detailed before the
+   * records existed. Absent is not empty: an empty array asserts "designed, nothing found",
+   * and `undefined` says the question was never asked.
+   */
+  families?: FloorFamilyDesignRecord[];
+  /**
+   * The family certificates, one per applicable family member.
+   *
+   * Carried separately from the records rather than only inside them, because the
+   * constructibility gate reads certificates without needing the full design evidence, and
+   * a certificate has a different lifetime: it is VOIDED by an edit that leaves the record
+   * intact as the historical statement of what was designed.
+   */
+  familyCertificates?: FamilyCertificate[];
 }
 
 // ─── Marks ───────────────────────────────────────────────────────
@@ -487,6 +527,15 @@ export function migrateDetailingStore(raw: unknown): DetailingMigration {
       provenance: cand.provenance ?? {
         edition: '2025', verifierId: 'unknown', trace: [], assumptions: [],
       },
+      // Family records and certificates are carried through UNCHANGED when present and left
+      // ABSENT when not. Nothing here fabricates one for a version-1 store: a synthesised
+      // record would be evidence of a design that was never performed, and a synthesised
+      // certificate would be a claim nobody made. A pre-record project regenerates its
+      // families on the next run, which is the honest outcome.
+      ...(Array.isArray(cand.families) ? { families: cand.families } : {}),
+      ...(Array.isArray(cand.familyCertificates)
+        ? { familyCertificates: cand.familyCertificates }
+        : {}),
     });
   }
 

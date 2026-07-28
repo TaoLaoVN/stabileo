@@ -15,6 +15,7 @@ import {
   countsAsVerified, deriveMaturity, isProducible, maturityLabelKey, worstMaturity,
 } from '../../../codes/maturity';
 import { clause } from '../../../codes/regulation';
+import { noFloorFamilies } from '../family-record';
 
 const X = { x: 1, y: 0, z: 0 };
 const Z = { x: 0, y: 0, z: 1 };
@@ -192,6 +193,8 @@ describe('earned review state', () => {
       prohibitedConflicts: 0, reverifiedMembers: 1, certificateHashMatches: 1,
       spacingNotCodeLegal: 0, spacingNotPlacementRobust: 0,
       unsupportedRules: 0, staleAssemblies: 0,
+      // A beam line: no panels, walls or footings. Measured, not omitted.
+      familyRequirements: noFloorFamilies(),
     }),
   };
 

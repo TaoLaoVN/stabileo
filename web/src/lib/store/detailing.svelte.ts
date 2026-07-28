@@ -130,6 +130,16 @@ const DEFAULT_WALL_BAR_DIA_MM = 12;
  */
 const DEFAULT_FOOTING_BAR_DIA_MM = 16;
 
+/**
+ * The concrete regulation this project's RC work is resolved against.
+ *
+ * One constant, consumed by the family records AND by the DocumentModel's regulation list,
+ * so a record and the document built from it cannot name different regulations. The EDITION
+ * still comes from Project Regulations via `currentConcreteEdition()` — that is the
+ * selector, and this is only the instrument's identity.
+ */
+const CONCRETE_REGULATION_ID = 'cirsoc-201';
+
 /** Every shell in the model — quads and plates alike are shells and both are designed. */
 function collectShells(): FloorShell[] {
   const out: FloorShell[] = [];
@@ -288,6 +298,38 @@ function collectFootingColumns(): Map<number, FootingColumn> {
       ...(bars ? { bars } : {}),
       ...(tie ? { tieDiaMm: tie } : {}),
     });
+  }
+  return out;
+}
+
+/**
+ * Every column in the model, keyed by the node it frames into.
+ *
+ * ── What this answers, and what it does not ─────────────────────
+ *
+ * Whether a slab panel supports a column, which is what decides if punching APPLIES to it.
+ * A beam-supported floor gets an empty map and no punching claim; a flat plate on columns
+ * gets one entry per joint and each is reported as unverified until its demand is derived.
+ *
+ * It does NOT carry forces. The punching demand is the change in column axial force across
+ * the slab joint, per combination, and that needs the element end forces rather than the
+ * geometry — so this collector deliberately stops at applicability.
+ *
+ * Both ends of the column are registered: a column below the slab meets it at its top node
+ * and a column above meets it at its bottom node, and a joint is a joint either way.
+ */
+function collectSlabColumns(): Map<number, { elementId: number; b: number; h: number }> {
+  const out = new Map<number, { elementId: number; b: number; h: number }>();
+  for (const el of modelStore.model.elements.values()) {
+    const ctx = verificationStore.contexts.get(el.id);
+    if (ctx?.elementType !== 'column') continue;
+    const sec = modelStore.model.sections.get(el.sectionId);
+    if (!sec?.b || !sec?.h) continue;
+    for (const nodeId of [el.nodeI, el.nodeJ]) {
+      // First column wins, deterministically: elements are iterated in insertion order and
+      // the answer this map gives is "is there a column here", not "which one".
+      if (!out.has(nodeId)) out.set(nodeId, { elementId: el.id, b: sec.b, h: sec.h });
+    }
   }
   return out;
 }
@@ -700,6 +742,23 @@ function createDetailingStore() {
           fy: props.fy,
           edition: currentConcreteEdition(),
           barDiameterMm: DEFAULT_FOOTING_BAR_DIA_MM,
+          // The revision vector the records and certificates are stamped with. Read from the
+          // authoritative stores rather than defaulted: a certificate whose vector was
+          // invented cannot detect its own staleness, and PR18 already found one instance of
+          // that — a certificate stamped at analysis 6 comparing FRESH against an empty
+          // vector, which is the precise failure the revision graph exists to prevent.
+          // Three DISTINCT stages of the project's own revision vector, not one number
+          // repeated. `analysis` moves on a re-solve, `combination` on a load change and
+          // `regulationConfig` on a regulation change, and the three have different remedies
+          // — a record that collapsed them could say a certificate was stale but not why.
+          revisions: {
+            analysis: regulationsStore.revisions.analysis,
+            loads: regulationsStore.revisions.combination,
+            regulation: regulationsStore.revisions.regulationConfig,
+          },
+          // The same single-element stack the DocumentModel states, so a record and the
+          // document built from it cannot disagree about which regulation was applied.
+          regulationIds: [CONCRETE_REGULATION_ID],
         });
         lastFootingRun = footingRun;
         const result = runFloorDesign({
@@ -718,6 +777,21 @@ function createDetailingStore() {
           previousRevision: maxRevision(store.assemblies),
           seismicRequired: regulationsStore.binding('seismic').adapterId !== null,
           footingsByLevel: footingRun.entriesByLevel,
+          // Footings that could not be checked reach their level's assembly too, so the
+          // reason appears in the document rather than only in the panel.
+          unverifiedFootingsByLevel: footingRun.unverifiedByLevel,
+          // The same vector the footings were stamped with, so one run produces one
+          // consistent revision across all three families.
+          revisions: {
+            analysis: regulationsStore.revisions.analysis,
+            loads: regulationsStore.revisions.combination,
+            regulation: regulationsStore.revisions.regulationConfig,
+          },
+          regulationIds: [CONCRETE_REGULATION_ID],
+          // Which panels support a column, so punching applies to those joints and to no
+          // others. Absent it, every beam-supported floor would carry a punching claim it
+          // has no joint for.
+          slabColumns: collectSlabColumns(),
           // Shell design does not go through the frame verifier, so its members have not
           // been rechecked at a final effective depth. Claiming otherwise would satisfy
           // two constructibility conditions that nothing measured.
@@ -876,10 +950,23 @@ function createDetailingStore() {
      * labelling it the other is the failure this whole workflow exists to prevent.
      */
     buildDocument(opts: { author: string; at: string }): DocumentModel | null {
-      if (store.assemblies.length === 0) return null;
+      /**
+       * Read from the PERSISTED store, not from the `store` derived.
+       *
+       * Same trap `generateFloors` documents, and it bites harder here. A `$derived` does not
+       * necessarily recompute inside the synchronous turn that wrote its dependency, so
+       * "design the floor, then export it" — which is one user gesture and one tick — could
+       * see an empty assembly list and return null. The command appeared to do nothing.
+       *
+       * The model is also the stronger source on principle: a document must describe what is
+       * PERSISTED, because that is what a reopened project will contain. A view that is one
+       * tick behind is not the thing being issued.
+       */
+      const persisted = modelStore.model.detailing ?? emptyDetailingStore();
+      if (persisted.assemblies.length === 0) return null;
       const laps = lastRun?.lapping.laps ?? [];
       const certificates: CertificateEntry[] = [];
-      for (const a of store.assemblies) {
+      for (const a of persisted.assemblies) {
         for (const id of a.elementIds) {
           const reinf = verificationStore.reinforcementFor(id);
           const result = verificationStore.providedFor(id);
@@ -905,13 +992,26 @@ function createDetailingStore() {
           number: documentRevision,
           at: opts.at,
           author: opts.author,
-          detailingRevision: maxRevision(store.assemblies),
+          detailingRevision: maxRevision(persisted.assemblies),
           demandRevision: verificationStore.demandRevision,
         },
-        regulations: [{ id: 'cirsoc-201', edition: currentConcreteEdition() }],
-        assemblies: store.assemblies,
+        regulations: [{ id: CONCRETE_REGULATION_ID, edition: currentConcreteEdition() }],
+        assemblies: persisted.assemblies,
         laps,
         certificates,
+        // The vector as it stands NOW, so a family certificate stamped at an earlier analysis
+        // is reported as STALE rather than compared against its own vector and found equal.
+        // Omitting this would produce a document that structurally cannot detect staleness.
+        currentRevisions: {
+          analysis: regulationsStore.revisions.analysis,
+          loads: regulationsStore.revisions.combination,
+          regulation: regulationsStore.revisions.regulationConfig,
+          // The per-entity revision is per RECORD, so there is no single project-wide value
+          // to compare against. Each record's own entity revision is used, which makes this
+          // field a no-op for the comparison and keeps a footing edit detectable through the
+          // geometry and input hashes instead.
+          entity: -1,
+        },
       });
       currentDocument = doc;
       return doc;

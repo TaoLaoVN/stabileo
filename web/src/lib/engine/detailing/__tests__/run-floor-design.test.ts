@@ -46,6 +46,9 @@ function input(over: Partial<RunFloorDesignInput> = {}): RunFloorDesignInput {
     fc: 25, fy: 420, cover: 0.025, maxAggregateSizeMm: 20, wallBarDiameterMm: 12,
     edition: '2025', verifierId: 'cirsoc201.provided.v2.2025',
     demandRevision: 5, seismicRequired: false, membersVerified: true,
+    // Three distinct stages, so a test that asserts staleness can move one of them alone.
+    revisions: { analysis: 6, loads: 4, regulation: 2 },
+    regulationIds: ['cirsoc-201'],
     ...over,
   };
 }

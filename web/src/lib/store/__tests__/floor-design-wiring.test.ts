@@ -161,17 +161,104 @@ describe('detailingStore.generateFloors — the production command', () => {
     expect(qu).toBeGreaterThan(10);
   });
 
-  it('does not claim members were re-verified when no verifier ran on them', () => {
+  /**
+   * A shell floor's evidence is its OWN certificate — not a frame verification it never had.
+   *
+   * This assertion used to be `blocking` contains `allMembersReverified`, and it was right
+   * for as long as the gate had only one certificate instrument: a floor could not reach
+   * CONSTRUCTIBLE because the frame verifier had not run on it, and the only alternative was
+   * to claim it had. Both answers were wrong about the same thing — that a slab's evidence is
+   * a frame member's evidence.
+   *
+   * The frame conditions now count FRAME members, of which a shell floor has none, so they
+   * are satisfied by a measured zero rather than by a flag. The real evidence is the slab's
+   * design record and the certificate issued against its actual cage, and that is what these
+   * assertions check.
+   */
+  it('reaches readiness on its own family certificate, not on frame verification', () => {
     const { quad } = buildSlabModel();
     modelStore.addSurfaceLoad3D(quad, 12);
     publishStresses([
       { elementId: quad, sigmaXx: 0, sigmaYy: 0, tauXy: 0, mx: 40, my: 30, mxy: 8, vonMises: 0 },
     ]);
     const r = detailingStore.generateFloors();
-    // Shell design does not go through the frame verifier. Claiming otherwise would
-    // satisfy two constructibility conditions that nothing measured.
     const a = r!.assemblies[0];
-    expect(a.constructibility.blocking).toContain('allMembersReverified');
-    expect(a.state).not.toBe('CONSTRUCTIBLE');
+
+    // No frame members, so nothing to reverify — and the gate says so as a MEASUREMENT.
+    const cond = (k: string) => a.constructibility!.conditions.find((c) => c.condition === k)!;
+    expect(cond('allMembersReverified').passed).toBe(true);
+    expect(cond('allMembersReverified').failing).toBe(0);
+
+    // The evidence that actually carries the claim: a persisted slab record, certified
+    // against the bars in this assembly.
+    const slab = a.families?.find((f) => f.family === 'slab');
+    expect(slab, 'the production run must persist a slab design record').toBeTruthy();
+    expect(slab!.certificate.status).toBe('CERTIFIED');
+    expect(cond('allApplicableFamiliesCertified').passed).toBe(true);
+
+    // And it is bound to the real steel: the record's bars are this assembly's bars.
+    const ids = new Set(a.bars.map((b) => b.id));
+    expect(slab!.barIds.length).toBeGreaterThan(0);
+    for (const id of slab!.barIds) expect(ids.has(id), id).toBe(true);
+  });
+
+  it('records the raw mx, my and mxy the design read, not only the transform', () => {
+    // `mxy` is the field a naive slab design discards, and discarding it under-reinforces a
+    // twisted panel. Both the raw triple and the Wood-Armer pair are persisted so the
+    // transformation is auditable rather than taken on trust.
+    const { quad } = buildSlabModel();
+    // On case 1, so the load is factored by the project's own combinations and `qu` is the
+    // real factored demand the shear check received rather than an unfactored zero.
+    modelStore.addSurfaceLoad3D(quad, 12, 1);
+    publishStresses([
+      { elementId: quad, sigmaXx: 0, sigmaYy: 0, tauXy: 0, mx: 40, my: 30, mxy: 8, vonMises: 0 },
+    ]);
+    const a = detailingStore.generateFloors()!.assemblies[0];
+    const slab = a.families!.find((f) => f.family === 'slab')!;
+    if (slab.family !== 'slab') throw new Error('narrowing');
+    const d = slab.demands[0];
+    expect(d.mx).toBe(40);
+    expect(d.my).toBe(30);
+    expect(d.mxy).toBe(8);
+    // Wood-Armer folds |mxy| in rather than dropping it, so each bottom moment exceeds its
+    // raw counterpart.
+    expect(d.woodArmer.mxBottom).toBeGreaterThan(40);
+    expect(d.woodArmer.myBottom).toBeGreaterThan(30);
+    expect(d.qu).toBeGreaterThan(0);
+  });
+
+  it('does not claim punching on a panel that supports no column', () => {
+    // Two-way shear is a property of a joint. A beam-supported panel has none, and reporting
+    // one as unverified there would make an ordinary floor permanently uncertifiable for a
+    // condition that does not arise in it.
+    const { quad } = buildSlabModel();
+    modelStore.addSurfaceLoad3D(quad, 12);
+    publishStresses([
+      { elementId: quad, sigmaXx: 0, sigmaYy: 0, tauXy: 0, mx: 40, my: 30, mxy: 8, vonMises: 0 },
+    ]);
+    const a = detailingStore.generateFloors()!.assemblies[0];
+    const slab = a.families!.find((f) => f.family === 'slab')!;
+    if (slab.family !== 'slab') throw new Error('narrowing');
+    expect(slab.punching).toEqual([]);
+    expect(slab.checks.some((c) => c.key === 'punching')).toBe(false);
+  });
+
+  it('stamps the record with three distinct upstream revisions', () => {
+    // One number cannot say whether the loads, the analysis or the regulation moved, and the
+    // three have different remedies. A certificate that cannot say which is stale is a
+    // certificate an engineer cannot act on.
+    const { quad } = buildSlabModel();
+    modelStore.addSurfaceLoad3D(quad, 12);
+    publishStresses([
+      { elementId: quad, sigmaXx: 0, sigmaYy: 0, tauXy: 0, mx: 40, my: 30, mxy: 8, vonMises: 0 },
+    ]);
+    const a = detailingStore.generateFloors()!.assemblies[0];
+    const rec = a.families![0];
+    for (const k of ['analysis', 'loads', 'regulation', 'entity'] as const) {
+      expect(typeof rec.revisions[k], k).toBe('number');
+    }
+    // The certificate carries the same vector it was stamped with — not a fresh read, which
+    // would always compare equal and could never detect staleness.
+    expect(rec.certificate.revisions).toEqual(rec.revisions);
   });
 });

@@ -33,7 +33,8 @@
  */
 
 import { msg, type EngineMessage } from '../../codes/message';
-import type { RegulationEdition } from '../../codes/regulation';
+import type { ClauseRef, RegulationEdition } from '../../codes/regulation';
+import type { Maturity } from '../../codes/maturity';
 import { deriveDevelopment, type DevelopmentResult } from '../../codes/cirsoc201/anchorage';
 import {
   footingEffectiveDepth, validateFooting, type Footing,
@@ -44,6 +45,14 @@ import {
 import { checkFooting, type FootingCheck, type FootingInput } from './foundation-check';
 import type { ColumnPosition } from './punching-shear';
 import type { DowelInput } from './floor-design';
+import {
+  familyHash, familyRecordId,
+  type FamilyCheckOutcome, type FamilyRecordDraft, type FamilyRevisionVector,
+  type FootingDemandSnapshot, type FootingDesignRecord, type FootingGeometrySnapshot,
+  type GroundSnapshot,
+  FAMILY_RECORD_SCHEMA_VERSION, recordStatusFor,
+} from './family-record';
+import type { SoilProfile } from '../../model/geotechnical';
 
 export interface FootingNode { x: number; y: number; z?: number }
 
@@ -99,6 +108,19 @@ export interface RunFootingDesignInput {
   edition: RegulationEdition;
   /** Bottom-mat bar diameter, mm — sets the effective depth. */
   barDiameterMm: number;
+  /**
+   * The upstream revisions this run is reading.
+   *
+   * Required, not defaulted. A record whose revision vector was invented cannot detect its
+   * own staleness, and a certificate that cannot go stale is the exact failure the revision
+   * graph exists to prevent — PR18 already found one instance of it, where a certificate
+   * stamped at analysis 6 compared as FRESH against an empty vector.
+   *
+   * The footing's OWN revision is not here: it is per-footing and read off each entity.
+   */
+  revisions: Omit<FamilyRevisionVector, 'entity'>;
+  /** Regulation ids in force, so a record states its stack and not only its edition. */
+  regulationIds: readonly string[];
 }
 
 /** What `buildFloorAssembly` consumes for one footing. */
@@ -107,6 +129,14 @@ export interface FootingAssemblyEntry {
   check: FootingCheck;
   elementIds: number[];
   dowels?: DowelInput;
+  /**
+   * The design evidence, complete except for the bars it has not generated yet.
+   *
+   * Travels ON the assembly entry so that `buildFloorAssembly` — the one place that has both
+   * the design and the physical cage — can finish it and certify it. Passing it separately
+   * would allow an entry and a record to arrive out of step.
+   */
+  record: FamilyRecordDraft<FootingDesignRecord>;
 }
 
 export interface FootingDesignOutcome {
@@ -121,12 +151,35 @@ export interface FootingDesignOutcome {
   governingCombination: string | null;
   unsupported: EngineMessage[];
   assumptions: EngineMessage[];
+  /**
+   * The design record, emitted for EVERY modelled footing — verified or not.
+   *
+   * A footing that could not be checked is exactly the one a reader most needs to find in
+   * the document, and leaving it out of the record set would also leave it out of the
+   * certificate tally, so a project with one unverifiable footing would read as fully
+   * certified. Its record carries null results, its `unsupported` says why, and its
+   * certificate is UNSUPPORTED — which blocks readiness rather than passing quietly.
+   */
+  record: FamilyRecordDraft<FootingDesignRecord>;
 }
 
 export interface RunFootingDesignResult {
   outcomes: FootingDesignOutcome[];
   /** Entries grouped by level, ready for `buildFloorAssembly`. */
   entriesByLevel: Map<number, FootingAssemblyEntry[]>;
+  /**
+   * Records for footings that produced NO assembly entry, grouped by founding level.
+   *
+   * A footing that could not be checked generates no steel, so it has no entry — and it was
+   * therefore reaching no assembly, no document and no export. That made the one footing a
+   * reader most needs to find the only one invisible: "Z3 has no soil data" appeared in the
+   * panel and nowhere in the deliverable.
+   *
+   * These records carry the geometry and the reason and no results. They join their level's
+   * assembly so the document can name every modelled footing, and their certificates are
+   * UNSUPPORTED, so a project with one unverifiable footing cannot read as fully certified.
+   */
+  unverifiedByLevel: Map<number, Array<FamilyRecordDraft<FootingDesignRecord>>>;
   trace: string[];
 }
 
@@ -183,6 +236,7 @@ export function punchingPosition(
 export function runFootingDesign(input: RunFootingDesignInput): RunFootingDesignResult {
   const outcomes: FootingDesignOutcome[] = [];
   const entriesByLevel = new Map<number, FootingAssemblyEntry[]>();
+  const unverifiedByLevel = new Map<number, Array<FamilyRecordDraft<FootingDesignRecord>>>();
   const trace: string[] = [];
   const levelKey = (z: number) => Math.round(z * 1000) / 1000;
 
@@ -194,30 +248,141 @@ export function runFootingDesign(input: RunFootingDesignInput): RunFootingDesign
     const unsupported: EngineMessage[] = [];
     const assumptions: EngineMessage[] = [];
     const level = levelKey(f.foundingElevation);
-    const fail = (governing: string | null = null): void => {
+
+    // ── Everything the record needs is accumulated as the run proceeds ──────────
+    //
+    // Declared here rather than assembled at the end so that a footing which fails EARLY
+    // still produces a record of exactly how far it got: geometry always, ground when the
+    // stratum resolved, demand when a reaction was found. The alternative — build the record
+    // only on the success path — is what left unverifiable footings out of the evidence set
+    // and therefore out of the certificate tally.
+    let ground: GroundSnapshot | null = null;
+    let demand: FootingDemandSnapshot | null = null;
+    let effectiveDepth = footingEffectiveDepth(f, input.barDiameterMm);
+    if (!Number.isFinite(effectiveDepth)) effectiveDepth = 0;
+
+    const geometry = (): FootingGeometrySnapshot => ({
+      footingId: f.id, name: f.name, kind: f.kind,
+      B: f.B, L: f.L, thickness: f.thickness,
+      rotationDeg: f.rotationDeg,
+      eccentricityB: f.eccentricityB, eccentricityL: f.eccentricityL,
+      cover: f.cover, foundingElevation: f.foundingElevation,
+      d: effectiveDepth,
+      ...(f.pedestal
+        ? { pedestal: { B: f.pedestal.B, L: f.pedestal.L, height: f.pedestal.height } }
+        : {}),
+    });
+
+    const column0 = f.columnElementId === undefined
+      ? undefined
+      : input.columns.get(f.columnElementId);
+
+    /**
+     * Build the record for this footing at whatever stage it reached.
+     *
+     * `checks` is the certificate's whole basis, so an early failure passes a single
+     * UNSUPPORTED outcome rather than an empty list: `certificateStatusFor([])` is also
+     * UNSUPPORTED, but an empty list cannot say WHICH check was impossible.
+     */
+    const draftRecord = (
+      checks: FamilyCheckOutcome[],
+      results: Pick<FootingDesignRecord,
+        'bearing' | 'flexure' | 'oneWayShear' | 'punching' | 'dowels' | 'starterTies'>,
+      refs: readonly ClauseRef[],
+    ): FamilyRecordDraft<FootingDesignRecord> => {
+      const geom = geometry();
+      const materialHash = familyHash({
+        fc: input.fc, fy: input.fy, cover: f.cover,
+        barDiameterMm: input.barDiameterMm,
+        concreteMaterialId: f.concreteMaterialId, rebarMaterialId: f.rebarMaterialId,
+      });
+      const geometryHash = familyHash(geom);
+      // The input hash covers everything the design read. Editing ANY of it must void the
+      // certificate, which is why the ground and the demand are inside it and not merely
+      // alongside it.
+      const inputHash = familyHash({
+        geometry: geom, materialHash, ground, demand,
+        edition: input.edition, regulationIds: [...input.regulationIds].sort(),
+      });
+      const maturity: Maturity = checks.some((c) => c.status === 'UNSUPPORTED')
+        ? 'UNSUPPORTED'
+        : 'IMPLEMENTED_PROVISIONAL';
+      return {
+        schemaVersion: FAMILY_RECORD_SCHEMA_VERSION,
+        recordId: familyRecordId('footing', `F${f.id}`),
+        family: 'footing',
+        ownerId: `F${f.id}`,
+        ownerElementIds: column0 ? [column0.elementId] : [],
+        geometryHash,
+        revisions: { ...input.revisions, entity: f.revision },
+        edition: input.edition,
+        regulationIds: [...input.regulationIds],
+        materialHash,
+        inputHash,
+        resultHash: familyHash(results),
+        governingCombinations: [...new Set(
+          checks.map((c) => c.governingCombination).filter((s): s is string => !!s),
+        )].sort(),
+        checks,
+        assumptions: [...assumptions],
+        unsupported: [...unsupported],
+        refs: [...refs],
+        maturity,
+        status: recordStatusFor(checks, maturity),
+        geometry: geom,
+        support: {
+          nodeId: f.nodeId,
+          columnElementId: column0?.elementId ?? null,
+          columnB: column0?.b ?? null,
+          columnH: column0?.h ?? null,
+        },
+        ground, demand,
+        ...results,
+      };
+    };
+
+    /** No results at all: one named UNSUPPORTED check, so the reason survives to the report. */
+    const failRecord = (key: string): FamilyRecordDraft<FootingDesignRecord> => draftRecord(
+      [{
+        key, status: 'UNSUPPORTED', utilization: null,
+        governingCombination: demand?.governingCombination ?? null,
+        refs: [], unsupported: [...unsupported],
+      }],
+      {
+        bearing: null, flexure: null, oneWayShear: null, punching: null,
+        dowels: null, starterTies: null,
+      },
+      [],
+    );
+
+    const fail = (governing: string | null = null, key = 'footing.design'): void => {
+      const record = failRecord(key);
       outcomes.push({
         footingId: f.id, name: f.name, check: null, entry: null, level,
         governingCombination: governing, unsupported, assumptions,
+        record,
       });
+      const list = unverifiedByLevel.get(level);
+      if (list) list.push(record); else unverifiedByLevel.set(level, [record]);
     };
 
     // ── Geometry ────────────────────────────────────────────────
     const geometryIssues = validateFooting(f).filter((i) => i.severity === 'blocking');
     if (geometryIssues.length > 0) {
       unsupported.push(...geometryIssues.map((i) => i.message));
-      fail();
+      fail(null, 'footing.geometry');
       continue;
     }
     if (f.kind !== 'isolated') {
       // `checkFooting` would return UNSUPPORTED for this anyway; refusing here keeps the
       // reason attached to the footing rather than buried in a check result.
       unsupported.push(msg('footing.run.kindNotImplemented', { footing: f.name, kind: f.kind }));
-      fail();
+      fail(null, 'footing.kind');
       continue;
     }
     if (!input.nodes.has(f.nodeId)) {
       unsupported.push(msg('footing.run.nodeMissing', { footing: f.name, node: f.nodeId }));
-      fail();
+      fail(null, 'footing.support');
       continue;
     }
 
@@ -225,14 +390,18 @@ export function runFootingDesign(input: RunFootingDesignInput): RunFootingDesign
     const profile = findProfile(input.geotechnical, f.soilProfileId);
     if (!profile) {
       unsupported.push(msg('footing.run.noSoilProfile', { footing: f.name }));
-      fail();
+      fail(null, 'footing.ground');
       continue;
     }
+    // Snapshotted BEFORE the bearing-kind test, so a profile that states no capacity still
+    // reaches the record and the document with its name and its provenance. "Stratum E-2,
+    // capacity not stated, assumed" is actionable; a footing with no ground at all is not.
+    ground = groundSnapshot(profile);
     if (profile.bearing.kind !== 'allowablePressure') {
       unsupported.push(msg('footing.run.bearingUnstated', {
         footing: f.name, profile: profile.name,
       }));
-      fail();
+      fail(null, 'footing.bearing');
       continue;
     }
     const allowableBearing = profile.bearing.allowableBearingKPa;
@@ -244,7 +413,7 @@ export function runFootingDesign(input: RunFootingDesignInput): RunFootingDesign
       // No reaction means no load. Designing for zero would produce a footing reinforced
       // for nothing, which is worse than an unchecked one.
       unsupported.push(msg('footing.run.noReaction', { footing: f.name, node: f.nodeId }));
-      fail();
+      fail(null, 'footing.demand');
       continue;
     }
 
@@ -288,11 +457,37 @@ export function runFootingDesign(input: RunFootingDesignInput): RunFootingDesign
     } else {
       unsupported.push(msg('footing.run.noServiceCases', { footing: f.name }));
     }
+    // The demand is snapshotted as soon as the governing combination is known, so a footing
+    // that fails on rotation or on a missing column still records WHAT it was carrying.
+    // `considered` keeps every strength combination that was offered, which is what makes
+    // the choice of `governing` auditable instead of a claim: a reviewer can see that the
+    // largest vertical really was the one used.
+    demand = {
+      nodeId: f.nodeId,
+      governingCombination: governing.combinationName,
+      factoredAxial,
+      serviceAxial: serviceAxial ?? 0,
+      serviceMomentB, serviceMomentL,
+      serviceCaseTypes: r.cases
+        ? [...new Set(r.cases.filter((c) => GRAVITY_CASES.has(c.caseType))
+          .map((c) => c.caseType))].sort()
+        : [],
+      considered: r.factored.map((c) => ({
+        combinationName: c.combinationName, fz: c.fz, mx: c.mx, my: c.my,
+      })),
+    };
+
     if (serviceAxial === null) {
       // Bearing is the check the footing exists to satisfy. Without a service demand there
       // is no footing verification, and dividing the factored load by an assumed 1,4 would
       // be inventing the load factor the project already states somewhere else.
-      fail(governing.combinationName);
+      //
+      // The demand snapshot above carries `serviceAxial: 0` in this branch and that is NOT a
+      // claim that the service load is zero: the record's status is unsupported and
+      // `footing.run.noServiceCases` names the reason. The factored reaction, which is real,
+      // is preserved so the document can still state what the footing carries.
+      demand = { ...demand, serviceAxial: 0 };
+      fail(governing.combinationName, 'footing.bearing');
       continue;
     }
 
@@ -303,26 +498,24 @@ export function runFootingDesign(input: RunFootingDesignInput): RunFootingDesign
       unsupported.push(msg('footing.run.rotationNotResolved', {
         footing: f.name, rotation: f.rotationDeg,
       }));
-      fail(governing.combinationName);
+      fail(governing.combinationName, 'footing.geometry');
       continue;
     }
 
     // ── The column ──────────────────────────────────────────────
-    const column = f.columnElementId === undefined
-      ? undefined
-      : input.columns.get(f.columnElementId);
+    const column = column0;
     if (!column) {
       // Bearing and one-way shear need no column; punching and the dowels do. `checkFooting`
       // rolls its own unsupported punching up to UNSUPPORTED, so this cannot read as OK.
       unsupported.push(msg('footing.run.noColumn', { footing: f.name }));
-      fail(governing.combinationName);
+      fail(governing.combinationName, 'footing.punching');
       continue;
     }
 
-    const d = footingEffectiveDepth(f, input.barDiameterMm);
+    const d = effectiveDepth;
     if (!(d > 0)) {
       unsupported.push(msg('footing.run.noEffectiveDepth', { footing: f.name }));
-      fail(governing.combinationName);
+      fail(governing.combinationName, 'footing.geometry');
       continue;
     }
     assumptions.push(msg('footing.assumption.averageMatDepth', {
@@ -337,7 +530,7 @@ export function runFootingDesign(input: RunFootingDesignInput): RunFootingDesign
           : 'footing.run.perimeterOppositeFaces',
         { footing: f.name },
       ));
-      fail(governing.combinationName);
+      fail(governing.combinationName, 'footing.punching');
       continue;
     }
     const position = perimeter.position;
@@ -367,10 +560,31 @@ export function runFootingDesign(input: RunFootingDesignInput): RunFootingDesign
     const starter = column.bars
       ? starterDevelopment(column.bars.diameterMm, input)
       : null;
+    const dowelsPresent = Boolean(column.bars && starter);
+    const entryDraft: FootingAssemblyEntry['record'] = footingRecord({
+      check, perimeter, position, d,
+      B: f.B, L: f.L,
+      factoredAxial,
+      allowableBearing, governing,
+      dowels: dowelsPresent && column.bars && starter
+        ? {
+          count: column.bars.count,
+          diameterMm: column.bars.diameterMm,
+          ldFooting: starter.ldM,
+          lapAbove: CLASS_B_LAP_FACTOR * starter.ldM,
+          // The same test `generateDowels` applies: a straight l_d that does not fit inside
+          // the footing's useful height turns 90° over the bottom mat. Recorded here so the
+          // document states it without asking the bar generator a second time.
+          hooked: starter.ldM > f.thickness - f.cover - 0.05,
+        }
+        : null,
+      draft: draftRecord,
+    });
     const entry: FootingAssemblyEntry = {
       id: `F${f.id}`,
       check,
       elementIds,
+      record: entryDraft,
       ...(column.bars && starter
         ? {
           dowels: {
@@ -408,6 +622,7 @@ export function runFootingDesign(input: RunFootingDesignInput): RunFootingDesign
       footingId: f.id, name: f.name, check, entry, level,
       governingCombination: governing.combinationName,
       unsupported, assumptions,
+      record: entryDraft,
     });
     const list = entriesByLevel.get(level);
     if (list) list.push(entry); else entriesByLevel.set(level, [entry]);
@@ -418,11 +633,160 @@ export function runFootingDesign(input: RunFootingDesignInput): RunFootingDesign
     `Fundaciones: ${checked} de ${outcomes.length} zapata(s) verificada(s), ` +
     `${outcomes.reduce((n, o) => n + o.unsupported.length, 0)} condición(es) no soportada(s).`);
 
-  return { outcomes, entriesByLevel, trace };
+  return { outcomes, entriesByLevel, unverifiedByLevel, trace };
 }
 
 /** §25.5.2.1 Class B lap multiplier. */
 const CLASS_B_LAP_FACTOR = 1.3;
+
+/**
+ * Snapshot a soil profile, with its provenance and its own hash.
+ *
+ * The hash is over the VALUES, not the object, so editing the allowable pressure changes it
+ * and renaming the reference does too — a footing verified against "assumed 200 kPa" is not
+ * verified against "study SR-14, 200 kPa", even though the number is the same. The second is
+ * a design; the first is a placeholder, and the certificate has to be able to tell them
+ * apart.
+ */
+function groundSnapshot(p: SoilProfile): GroundSnapshot {
+  const values = {
+    profileId: p.id,
+    name: p.name,
+    allowableBearingKPa: p.bearing.kind === 'allowablePressure'
+      ? p.bearing.allowableBearingKPa
+      : null,
+    unitWeightKNm3: p.unitWeightKNm3,
+    subgradeModulusKNm3: p.subgradeModulusKNm3,
+    groundwaterDepthM: p.groundwaterDepthM,
+    source: p.provenance.source,
+    reference: p.provenance.reference,
+  };
+  return { ...values, hash: familyHash(values) };
+}
+
+/**
+ * Project a completed `FootingCheck` into the record's structured results.
+ *
+ * Every number is COPIED from the check. Nothing is recomputed, and in particular no
+ * capacity, utilisation or demand is derived here — this module would then be a second
+ * foundation engine, and two engines are how one project comes to hold two answers about the
+ * same footing.
+ *
+ * The one value that is computed is the punching equilibrium RESIDUAL, and it is a
+ * measurement of the check rather than part of it: the free body says the transferred force
+ * is the reaction less the soil pressure inside the critical perimeter, so
+ * `N_u − (V_u + q_u · A_enclosed)` must be zero. A non-zero residual means the free body the
+ * check solved is not the one the record describes, which is exactly the disagreement a
+ * reviewer cannot otherwise see.
+ */
+function footingRecord(args: {
+  check: FootingCheck;
+  perimeter: { truncatedSides: number };
+  position: ColumnPosition;
+  d: number;
+  /** Plan dimensions, m — for the factored-pressure restatement the residual needs. */
+  B: number;
+  L: number;
+  factoredAxial: number;
+  allowableBearing: number;
+  governing: CombinationReaction;
+  dowels: {
+    count: number; diameterMm: number; ldFooting: number; lapAbove: number; hooked: boolean;
+  } | null;
+  draft: (
+    checks: FamilyCheckOutcome[],
+    results: Pick<FootingDesignRecord,
+      'bearing' | 'flexure' | 'oneWayShear' | 'punching' | 'dowels' | 'starterTies'>,
+    refs: readonly ClauseRef[],
+  ) => FamilyRecordDraft<FootingDesignRecord>;
+}): FamilyRecordDraft<FootingDesignRecord> {
+  const { check, governing } = args;
+  const combo = governing.combinationName;
+  const b = check.bearing;
+  const punch = check.punching;
+
+  // The factored net upward pressure the strength checks were run against: N_u / (B·L), the
+  // same expression `checkFooting` uses. Restated here for ONE purpose — measuring the
+  // punching free-body residual against it — and never fed back into a capacity.
+  const area = args.B * args.L;
+  const qFactored = area > 0 ? args.factoredAxial / area : 0;
+  const enclosed = punch?.critical.enclosedArea ?? 0;
+  const residual = punch && punch.demand.outcome === 'DERIVED' && qFactored > 0
+    ? args.factoredAxial - (punch.demand.Vu + qFactored * enclosed)
+    : null;
+
+  const bearing: FootingDesignRecord['bearing'] = {
+    status: b.status, qMax: b.qMax, qMin: b.qMin, eB: b.eB, eL: b.eL,
+    uplift: b.uplift, allowable: args.allowableBearing, utilization: b.utilization,
+  };
+  const flexure: FootingDesignRecord['flexure'] = {
+    status: 'OK', Mu: check.Mu, criticalSection: 0,
+  };
+  const oneWayShear: FootingDesignRecord['oneWayShear'] = check.oneWayShear
+    ? {
+      status: check.oneWayShear.status,
+      Vu: check.oneWayShear.Vu,
+      phiVc: check.oneWayShear.phiVc,
+      utilization: check.oneWayShear.utilization,
+    }
+    : null;
+  const punching: FootingDesignRecord['punching'] = punch
+    ? {
+      status: punch.status === 'OK' ? 'OK' : punch.status === 'FAIL' ? 'FAIL' : 'UNSUPPORTED',
+      position: args.position,
+      truncatedSides: args.perimeter.truncatedSides,
+      Vu: punch.demand.Vu,
+      // The punching engine works in stress; the record states the FORCE capacity the
+      // stress implies over the same critical section, so it is comparable with V_u on the
+      // same row of the report. Same two numbers the engine already produced.
+      phiVc: punch.phiVc * punch.critical.bo * punch.critical.d * 1000,
+      utilization: punch.utilization,
+      equilibriumResidual: residual,
+    }
+    : null;
+
+  const checks: FamilyCheckOutcome[] = [
+    {
+      key: 'bearing', status: b.status, utilization: b.utilization,
+      // Bearing is a SERVICE check summed over gravity cases, so no strength combination
+      // governs it. Naming one here would be the commonest kind of certificate lie.
+      governingCombination: null,
+      refs: b.refs,
+      unsupported: b.status === 'UNSUPPORTED'
+        ? [msg('footing.record.bearingUnsupported')] : [],
+    },
+    {
+      key: 'flexure', status: 'OK', utilization: null,
+      governingCombination: combo, refs: [], unsupported: [],
+    },
+    ...(oneWayShear
+      ? [{
+        key: 'oneWayShear', status: oneWayShear.status, utilization: oneWayShear.utilization,
+        governingCombination: combo, refs: check.oneWayShear!.refs, unsupported: [],
+      } satisfies FamilyCheckOutcome]
+      : []),
+    ...(punching
+      ? [{
+        key: 'punching', status: punching.status, utilization: punching.utilization,
+        governingCombination: combo, refs: punch!.refs,
+        unsupported: punching.status === 'UNSUPPORTED'
+          ? [msg('footing.record.punchingUnsupported')] : [],
+      } satisfies FamilyCheckOutcome]
+      : []),
+  ];
+
+  return args.draft(
+    checks,
+    {
+      bearing, flexure, oneWayShear, punching,
+      // Bar ids are filled by `completeFamilyRecord`, which is the only place that has the
+      // generated cage. The counts and lengths are the DESIGN, and they belong here.
+      dowels: args.dowels ? { ...args.dowels, barIds: [] } : null,
+      starterTies: null,
+    },
+    check.refs,
+  );
+}
 
 /**
  * Development length for a column starter out of a footing.

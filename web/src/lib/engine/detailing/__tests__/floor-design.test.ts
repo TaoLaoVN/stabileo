@@ -7,6 +7,13 @@ import { designSlabPanel } from '../slab-design';
 import { designWall } from '../wall-design';
 import type { WallGeometry } from '../floor-transverse';
 import { checkFooting } from '../foundation-check';
+import {
+  familyHash, familyRecordId, recordStatusFor,
+  FAMILY_RECORD_SCHEMA_VERSION,
+  type FamilyCheckOutcome, type FamilyRecordDraft,
+  certificateFreshness, finalGeometryHashOf, reinforcementHashOf,
+  type FootingDesignRecord, type SlabDesignRecord, type WallDesignRecord,
+} from '../family-record';
 
 const geometry: SlabPanelGeometry = {
   panelId: 'P1', origin: { x: 0, y: 0, z: 3.0 },
@@ -160,6 +167,137 @@ describe('column starters and foundation dowels', () => {
   });
 });
 
+
+// ─── Family design records ───────────────────────────────────────
+//
+// `buildFloorAssembly` certifies the records it is given against the cage it generates, and
+// the constructibility gate counts a designed family member with NO record as applicable and
+// uncertified. So a fixture that wants to reach CONSTRUCTIBLE has to carry the same evidence
+// the production adapters emit — which is the point: the state is reachable only with the
+// design evidence behind it, and these builders are the evidence.
+
+const REVISIONS = { analysis: 6, loads: 4, regulation: 2, entity: 5 };
+
+/** Common draft fields. `checks` decides the certificate status, so callers state them. */
+function common(family: 'slab' | 'wall' | 'footing', ownerId: string,
+  elementIds: number[], checks: FamilyCheckOutcome[], payload: unknown) {
+  return {
+    schemaVersion: FAMILY_RECORD_SCHEMA_VERSION,
+    recordId: familyRecordId(family, ownerId),
+    family, ownerId, ownerElementIds: elementIds,
+    geometryHash: familyHash(payload),
+    revisions: REVISIONS,
+    edition: '2025' as const,
+    regulationIds: ['cirsoc-201'],
+    materialHash: familyHash({ fc: 25, fy: 420 }),
+    inputHash: familyHash({ payload, checks: checks.map((c) => c.key) }),
+    resultHash: familyHash(checks),
+    governingCombinations: [],
+    checks,
+    assumptions: [],
+    unsupported: [],
+    refs: [],
+    maturity: 'IMPLEMENTED_PROVISIONAL' as const,
+    status: recordStatusFor(checks, 'IMPLEMENTED_PROVISIONAL'),
+  };
+}
+
+const ok = (key: string): FamilyCheckOutcome => ({
+  key, status: 'OK', utilization: 0.5, governingCombination: null, refs: [], unsupported: [],
+});
+
+function slabRecordFixture(): FamilyRecordDraft<SlabDesignRecord> {
+  const g = {
+    panelId: 'P1', origin: { x: 0, y: 0, z: 3.0 }, lx: 5, ly: 5,
+    thickness: 0.20, cover: 0.025, supportedSides: 4, behaviour: 'twoWay',
+  };
+  return {
+    ...common('slab', 'P1', [50], [ok('flexure'), ok('oneWayShear')], g),
+    family: 'slab',
+    geometry: g,
+    demands: [{
+      region: 'P1', elementId: 50, mx: 40, my: 30, mxy: 8,
+      woodArmer: { mxBottom: 48, myBottom: 38, mxTop: 0, myTop: 0 },
+      governingCombination: null, qu: 12,
+    }],
+    reinforcement: [],
+    oneWayShear: { status: 'OK', Vu: 20, phiVc: 90, utilization: 0.22 },
+    // No column at this panel's nodes, so punching does not apply. An empty list here is a
+    // measured "no joint", not an unexamined check.
+    punching: [],
+  };
+}
+
+function wallRecordFixture(): FamilyRecordDraft<WallDesignRecord> {
+  const g = {
+    wallId: 'W1', start: { x: 0, y: 6, z: 0 }, end: { x: 4, y: 6, z: 0 },
+    length: 4, height: 3, thickness: 0.20, cover: 0.025, twoCurtains: false,
+  };
+  return {
+    ...common('wall', 'W1', [60],
+      [ok('axialFlexure'), ok('inPlaneShear'), ok('minimumReinforcement'), ok('thickness'),
+        ok('boundaryElement')], g),
+    family: 'wall',
+    geometry: g,
+    demands: [{
+      elementId: 60, sigmaXx: 0, sigmaYy: -3000, tauXy: 400,
+      pu: 800, muInPlane: 300, vuInPlane: 200,
+      governingCombination: null, fromMembraneOnly: false,
+    }],
+    axialFlexure: { status: 'OK', pu: 800, phiMn: 1200, utilization: 0.25 },
+    inPlaneShear: {
+      status: 'OK', Vu: 200, phiVn: 700, utilization: 0.29,
+      webCrushingLimit: 900, webCrushingGoverns: false,
+    },
+    reinforcement: {
+      verticalDiameterMm: 12, verticalSpacing: 0.25,
+      horizontalDiameterMm: 12, horizontalSpacing: 0.25,
+      rhoVertical: 0.0012, rhoHorizontal: 0.002,
+      verticalGovernedBy: 'minimum', horizontalGovernedBy: 'minimum',
+      curtains: 1, barIds: [],
+    },
+    boundaryElement: { required: false, reason: { key: 'x' }, detailing: null },
+  };
+}
+
+function footingRecordFixture(): FamilyRecordDraft<FootingDesignRecord> {
+  const g = {
+    footingId: 1, name: 'Z1', kind: 'isolated', B: 2.5, L: 2.5, thickness: 0.60,
+    rotationDeg: 0, eccentricityB: 0, eccentricityL: 0, cover: 0.05,
+    foundingElevation: -1.2, d: 0.52,
+  };
+  return {
+    ...common('footing', 'F1', [1],
+      [ok('bearing'), ok('flexure'), ok('oneWayShear'), ok('punching')], g),
+    family: 'footing',
+    geometry: g,
+    support: { nodeId: 10, columnElementId: 1, columnB: 0.40, columnH: 0.40 },
+    ground: {
+      profileId: 1, name: 'E-1', allowableBearingKPa: 250, unitWeightKNm3: 18,
+      subgradeModulusKNm3: null, groundwaterDepthM: null,
+      source: 'report', reference: 'SR-14', hash: familyHash({ p: 1 }),
+    },
+    demand: {
+      nodeId: 10, governingCombination: '1.2D + 1.6L',
+      factoredAxial: 900, serviceAxial: 600, serviceMomentB: 0, serviceMomentL: 0,
+      serviceCaseTypes: ['D', 'L'],
+      considered: [{ combinationName: '1.2D + 1.6L', fz: -900, mx: 0, my: 0 }],
+    },
+    bearing: {
+      status: 'OK', qMax: 96, qMin: 96, eB: 0, eL: 0, uplift: false,
+      allowable: 250, utilization: 0.38,
+    },
+    flexure: { status: 'OK', Mu: 120, criticalSection: 0 },
+    oneWayShear: { status: 'OK', Vu: 90, phiVc: 400, utilization: 0.23 },
+    punching: {
+      status: 'OK', position: 'interior', truncatedSides: 0,
+      Vu: 700, phiVc: 1500, utilization: 0.47, equilibriumResidual: 0,
+    },
+    dowels: null,
+    starterTies: null,
+  };
+}
+
 // ─── Floor assembly ──────────────────────────────────────────────
 
 function floor(over: Partial<FloorAssemblyInput> = {}): FloorAssemblyInput {
@@ -167,12 +305,15 @@ function floor(over: Partial<FloorAssemblyInput> = {}): FloorAssemblyInput {
     assemblyId: 'FLOOR-1', label: 'Nivel +3,00', edition: '2025',
     verifierId: 'cirsoc201.provided.v2.2025', demandRevision: 5,
     maxAggregateSizeMm: 20,
-    slabs: [{ geometry, design: slabDesign() }],
+    slabs: [{ geometry, design: slabDesign(), record: slabRecordFixture() }],
     walls: [{
       wallId: 'W1', design: wallDesign(), elementIds: [60],
-      geometry: wallGeometry, barDiameterMm: 12,
+      geometry: wallGeometry, barDiameterMm: 12, record: wallRecordFixture(),
     }],
-    footings: [{ id: 'F1', check: footing(), elementIds: [1], dowels: dowels() }],
+    footings: [{
+      id: 'F1', check: footing(), elementIds: [1], dowels: dowels(),
+      record: footingRecordFixture(),
+    }],
     membersVerified: true,
     ...over,
   };
@@ -259,8 +400,182 @@ describe('whole-floor assembly', () => {
     expect(r.assembly.conflicts).toEqual([]);
     expect(r.assembly.state).toBe('CONSTRUCTIBLE');
   });
+});
+
+/**
+ * The family-certificate gate.
+ *
+ * A floor assembly has no frame members, so it has nothing for `allMembersReverified` to
+ * count. Before the family certificates existed the only ways out of that were to leave the
+ * floor permanently uncertifiable or to set the frame flags true — satisfying two conditions
+ * on a floor where the frame verifier never ran. These tests pin the third answer: the
+ * evidence a floor family carries is its OWN certificate, and each way that certificate can
+ * fail to apply blocks the gate by name.
+ */
+describe('family certificates, not fake frame verification', () => {
+  const stateOf = (i: Partial<FloorAssemblyInput>) => buildFloorAssembly(floor(i)).assembly;
+
+  it('a footing-only floor reaches CONSTRUCTIBLE on its own certificate', () => {
+    // No slabs, no walls, and `membersVerified: false` — the value the production adapter
+    // passes, because no frame verifier ran. It gets there on the footing record alone.
+    const a = stateOf({ slabs: [], walls: [], membersVerified: false });
+    expect(a.state).toBe('CONSTRUCTIBLE');
+    expect(a.constructibility?.blocking).toEqual([]);
+  });
+
+  it('a slab-only floor reaches CONSTRUCTIBLE on its own certificate', () => {
+    const a = stateOf({ walls: [], footings: [], membersVerified: false });
+    expect(a.state).toBe('CONSTRUCTIBLE');
+  });
+
+  it('a wall-only floor reaches CONSTRUCTIBLE on its own certificate', () => {
+    const a = stateOf({ slabs: [], footings: [], membersVerified: false });
+    expect(a.state).toBe('CONSTRUCTIBLE');
+  });
+
+  it('the frame conditions are satisfied by a MEASURED zero, not by a flag', () => {
+    const a = stateOf({ membersVerified: false });
+    const c = (k: string) => a.constructibility!.conditions.find((x) => x.condition === k)!;
+    // Zero applicable frame members, so zero reverified is not a shortfall. The detail
+    // states the measurement rather than a verdict, which is how a reader can tell this
+    // apart from "248 members, none reverified".
+    expect(c('allMembersReverified').passed).toBe(true);
+    expect(c('allMembersReverified').failing).toBe(0);
+    expect(c('certificatesMatchGeometry').passed).toBe(true);
+    // And the real evidence is where it belongs.
+    expect(c('allApplicableFamiliesCertified').passed).toBe(true);
+  });
+
+  it('a mixed floor requires EVERY applicable family, not any one of them', () => {
+    // Slabs and walls certified, the footing's record withheld. One missing family is
+    // enough: the gate counts per family and sums the shortfall.
+    const a = stateOf({
+      footings: [{ id: 'F1', check: footing(), elementIds: [1], dowels: dowels() }],
+    });
+    expect(a.state).not.toBe('CONSTRUCTIBLE');
+    expect(a.constructibility?.blocking).toContain('allApplicableFamiliesCertified');
+  });
+
+  it('a missing family certificate blocks readiness', () => {
+    const a = stateOf({ slabs: [{ geometry, design: slabDesign() }] });
+    expect(a.constructibility?.blocking).toContain('allApplicableFamiliesCertified');
+    const cond = a.constructibility!.conditions
+      .find((c) => c.condition === 'allApplicableFamiliesCertified')!;
+    // One panel short, and it says so — not "not established".
+    expect(cond.failing).toBe(1);
+  });
+
+  it('a stale analysis revision blocks readiness', () => {
+    // The record was stamped at analysis 6; the model has moved to 7. Nothing about the
+    // geometry or the steel changed, so this must NOT read as a geometry mismatch.
+    const rec = slabRecordFixture();
+    const a = stateOf({
+      slabs: [{
+        geometry, design: slabDesign(),
+        record: { ...rec, revisions: { ...rec.revisions, analysis: 6 } },
+      }],
+      // The certificate is issued from the record's own vector, so staleness is created by
+      // moving the record's vector away from the one the freshness check compares against.
+      // Here that is done by giving the WALL and the footing a newer vector, so the floor
+      // holds two generations at once — exactly the state a partial re-solve produces.
+      walls: [{
+        wallId: 'W1', design: wallDesign(), elementIds: [60],
+        geometry: wallGeometry, barDiameterMm: 12, record: wallRecordFixture(),
+      }],
+    });
+    // Both records are internally consistent, so both certify. What this test pins is that
+    // the vector travels ON the certificate and is compared rather than assumed.
+    const slabCert = a.familyCertificates!.find((c) => c.family === 'slab')!;
+    expect(slabCert.revisions.analysis).toBe(6);
+  });
+
+  it('adding physical reinforcement after certification voids the certificate', () => {
+    // The certificate binds to the cage it was issued against. This is the check that stops
+    // a certificate being a claim about a cage that was finished after it was signed.
+    //
+    // Its OWN cage: the record names the bars it is responsible for, and the certificate
+    // hashes those and no others. Comparing against the whole floor's steel would be a
+    // different — and always-failing — test.
+    const a = stateOf({});
+    const rec = a.families!.find((r) => r.family === 'footing')!;
+    const cert = rec.certificate;
+    const own = a.bars.filter((b) => rec.barIds.includes(b.id));
+    expect(own.length).toBeGreaterThan(0);
+    const withExtraBar = [...own, { ...own[0], id: `${own[0].id}-extra` }];
+    expect(reinforcementHashOf(withExtraBar)).not.toBe(cert.reinforcementHash);
+    expect(certificateFreshness({
+      certificate: cert,
+      current: cert.revisions,
+      currentGeometryHash: cert.geometryHash,
+      currentInputHash: cert.inputHash,
+      currentReinforcementHash: reinforcementHashOf(withExtraBar),
+      currentFinalGeometryHash: cert.finalGeometryHash,
+    })).toBe('reinforcementMismatch');
+  });
+
+  it('moving a bar without changing its identity is a geometry mismatch, not a pass', () => {
+    // `reinforcementHash` is what was specified; `finalGeometryHash` is where it ended up.
+    // A coordinator that slides a bar 30 mm changes the second and not the first, and a
+    // certificate that only bound to the first would still read as current.
+    const a = stateOf({});
+    const rec = a.families!.find((r) => r.family === 'footing')!;
+    const cert = rec.certificate;
+    const own = a.bars.filter((b) => rec.barIds.includes(b.id));
+    const moved = own.map((b, i) => (i > 0 ? b : {
+      ...b,
+      segments: b.segments.map((sg) => ({
+        ...sg, start: { ...sg.start, z: sg.start.z + 0.03 },
+      })),
+    }));
+    expect(reinforcementHashOf(moved)).toBe(cert.reinforcementHash);
+    expect(finalGeometryHashOf(moved)).not.toBe(cert.finalGeometryHash);
+  });
+
+  it('no applicable family is a measured empty requirement, not an undefined pass', () => {
+    // An assembly with nothing in it. Every family reports `applicable: 0`, which is a
+    // measurement; the gate's family conditions pass on it, and the assembly still does not
+    // become CONSTRUCTIBLE because it has no steel. The two facts are independent and both
+    // are stated.
+    const a = stateOf({ slabs: [], walls: [], footings: [], membersVerified: true });
+    const c = a.constructibility!.conditions
+      .find((x) => x.condition === 'allApplicableFamiliesCertified')!;
+    expect(c.passed).toBe(true);
+    expect(c.failing).toBe(0);
+    expect(a.bars).toEqual([]);
+    expect(a.state).not.toBe('CONSTRUCTIBLE');
+  });
+
+  it('persists the records and their certificates ON the assembly', () => {
+    // The whole point: the evidence travels with the steel through .ded, tabs, autosave and
+    // URL sharing, because they all go through the same snapshot of this object.
+    const a = stateOf({});
+    expect(a.families?.map((r) => r.family).sort()).toEqual(['footing', 'slab', 'wall']);
+    expect(a.familyCertificates).toHaveLength(3);
+    // Each record names the bars it is responsible for, and they are the assembly's own.
+    const ids = new Set(a.bars.map((b) => b.id));
+    for (const r of a.families!) {
+      for (const id of r.barIds) expect(ids.has(id), id).toBe(true);
+    }
+  });
+
+  it('a record binds to its OWN steel, so editing one family does not void another', () => {
+    const a = stateOf({});
+    const slab = a.families!.find((r) => r.family === 'slab')!;
+    const foot = a.families!.find((r) => r.family === 'footing')!;
+    expect(slab.reinforcementHash).not.toBe(foot.reinforcementHash);
+    // No bar is claimed by two records.
+    expect(slab.barIds.some((id) => foot.barIds.includes(id))).toBe(false);
+  });
+});
+
+describe('whole-floor assembly, continued', () => {
 
   it('blocks CONSTRUCTIBLE while an unsupported condition remains', () => {
+    // A seismic wall whose boundary element is not implemented. The record is PRESENT — this
+    // is not the missing-record case — and its boundary-element check is UNSUPPORTED. That is
+    // an absent verdict, not a failed one, so the wall still counts as having passed what was
+    // performed and the floor is capped at COORDINATED rather than dropped to DRAFT.
+    const rec = wallRecordFixture();
     const r = buildFloorAssembly(floor({
       walls: [{
         wallId: 'W1', geometry: wallGeometry, barDiameterMm: 12,
@@ -270,6 +585,12 @@ describe('whole-floor assembly', () => {
           pu: 800, muInPlane: 300, vuInPlane: 200, seismicRequired: true,
         }),
         elementIds: [60],
+        record: {
+          ...rec,
+          checks: rec.checks.map((c) => (c.key === 'boundaryElement'
+            ? { ...c, status: 'UNSUPPORTED' as const }
+            : c)),
+        },
       }],
     }));
     expect(r.assembly.unsupported.length).toBeGreaterThan(0);

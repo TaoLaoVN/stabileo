@@ -36,6 +36,10 @@ import type { DetailingAssembly, ReviewState } from './assembly';
 import type { BarConflict } from './collision';
 import type { LapInterval } from './lap-materialize';
 import type { ConstructibilityAssessment } from './constructibility';
+import {
+  certificateFreshness, finalGeometryHashOf, reinforcementHashOf,
+  type FamilyCertificate, type FloorFamily, type FloorFamilyDesignRecord,
+} from './family-record';
 
 /**
  * What this document may claim.
@@ -104,6 +108,45 @@ export interface DocumentAssembly {
    * out of step with it.
    */
   source: DetailingAssembly;
+  /**
+   * The floor-family design records this assembly carries, PROJECTED not recomputed.
+   *
+   * The document exists so a report, a drawing set and a schedule cannot disagree. That rule
+   * is what forbids the alternative here: recomputing a bearing pressure or a Wood-Armer
+   * moment at document time would create a second answer, and the two would differ the first
+   * time a clause changed. Every number a family section prints is read off the record that
+   * was persisted when the design ran.
+   *
+   * Empty for a beam line or a column stack.
+   */
+  families: FloorFamilyDesignRecord[];
+  /** Their certificates, and whether each still describes what is in the model. */
+  familyCertificates: FamilyCertificateEntry[];
+}
+
+/**
+ * One family certificate as the document reports it.
+ *
+ * The frame equivalent is `CertificateEntry`, keyed by `elementId`. A family certificate
+ * cannot use that shape: a slab panel is not one member id, a footing's owner is an entity
+ * rather than an element, and the question asked is not only "does the hash match" but
+ * "which of the five ways this can stop applying happened". So it is its own type, and the
+ * two are reported side by side rather than one impersonating the other.
+ */
+export interface FamilyCertificateEntry {
+  family: FloorFamily;
+  ownerId: string;
+  ownerElementIds: number[];
+  certificate: FamilyCertificate;
+  /**
+   * Whether the certificate still applies, and if not, why — `fresh`, `missing`,
+   * `staleRevision`, `geometryMismatch`, `reinforcementMismatch`, `designFailed` or
+   * `designUnsupported`. Carried as the string the freshness check produced rather than
+   * reduced to a boolean, because the remedies differ.
+   */
+  freshness: string;
+  /** The only question a readiness decision asks. */
+  applies: boolean;
 }
 
 export interface DocumentModel {
@@ -179,10 +222,31 @@ export function documentReadiness(input: {
     a.conflicts.some((c) => c.severity !== 'marginal'));
   if (anyConflict) return 'REVIEW_DRAFT';
 
-  // A certificate that does not describe the steel in the model is worse than none: it is
-  // a correct-looking claim about geometry that no longer exists.
-  if (input.certificates.length === 0
-    || input.certificates.some((c) => !c.matches || c.status === 'fail')) {
+  /**
+   * A family certificate that does not apply is exactly as disqualifying as a frame one.
+   *
+   * Checked FIRST, and separately, because the frame test below reads `certificates`, which
+   * for a floor assembly is a list of element ids with no reinforcement behind them — every
+   * entry `notRun` with two empty hashes. A slab-only document would therefore have been a
+   * REVIEW_DRAFT forever on the strength of a question that does not apply to it, while its
+   * own certificates went unread.
+   */
+  const familyEntries = input.assemblies.flatMap((a) => a.familyCertificates);
+  if (familyEntries.some((c) => !c.applies)) return 'REVIEW_DRAFT';
+
+  /**
+   * The frame certificate test, applied only where frame certificates are the evidence.
+   *
+   * An assembly whose members are floor families answers with its family certificates, which
+   * were just checked. Demanding a frame certificate for a footing's column id as well would
+   * be the same category error in the other direction.
+   */
+  const framePart = input.certificates.filter((c) =>
+    !familyEntries.some((f) => f.ownerElementIds.includes(c.elementId)));
+  const needsFrameEvidence = familyEntries.length === 0 || framePart.length > 0;
+  if (needsFrameEvidence
+    && (framePart.length === 0
+      || framePart.some((c) => !c.matches || c.status === 'fail'))) {
     return 'REVIEW_DRAFT';
   }
 
@@ -197,9 +261,17 @@ export function documentReadiness(input: {
   return 'REVIEW_DRAFT';
 }
 
-/** Turn an assembly's conflicts into records an engineer can act on. */
+/**
+ * Turn an assembly's conflicts into records an engineer can act on.
+ *
+ * Takes only the four fields it reads. It used to demand a whole `DocumentAssembly`, which
+ * meant every caller and every test had to supply a source assembly, family records and
+ * certificates to ask a question about conflicts — and a function whose signature overstates
+ * its needs is one whose callers eventually satisfy it with a cast.
+ */
 export function openConflictsOf(
-  a: DocumentAssembly, attempted: readonly EngineMessage[] = [],
+  a: Pick<DocumentAssembly, 'id' | 'conflicts' | 'maturity'>,
+  attempted: readonly EngineMessage[] = [],
 ): OpenConflict[] {
   return a.conflicts
     .filter((c) => c.severity !== 'marginal')
@@ -241,12 +313,70 @@ export function buildDocumentModel(input: {
   supersededBy?: number;
   /** Alternatives the coordinator tried, for the conflict records. */
   attempted?: readonly EngineMessage[];
+  /**
+   * The revision vector as it stands NOW, for deciding family-certificate freshness.
+   *
+   * Supplied by the caller because this module is pure and cannot read a store. Absent, every
+   * family certificate is reported against its OWN vector, which always compares equal — so a
+   * caller that omits it gets a document that cannot detect a stale certificate. That is why
+   * the production caller always passes it, and why omitting it is visible here rather than
+   * silently benign.
+   */
+  currentRevisions?: FamilyCertificate['revisions'];
 }): DocumentModel {
   const docAssemblies: DocumentAssembly[] = input.assemblies.map((a) => {
     const layers = [...new Set(a.bars.map((b) => b.layerId).filter(Boolean) as string[])]
       .sort();
     const ownIds = new Set(a.bars.map((b) => b.id));
+
+    // ── Family records and their certificates, projected ────────────────
+    //
+    // Freshness is decided HERE, against the model as it stands, rather than trusted from the
+    // record. A record is a historical statement and remains true; whether its certificate
+    // still describes the current steel is a question only the present can answer, and it is
+    // the question a document must not get wrong.
+    const families = [...(a.families ?? [])];
+    const familyCertificates: FamilyCertificateEntry[] = families.map((r) => {
+      const freshness = certificateFreshness({
+        certificate: r.certificate,
+        current: {
+          // The three PROJECT-wide stages come from the caller's current vector, so a
+          // certificate stamped before a re-solve is reported as stale.
+          ...(input.currentRevisions ?? r.certificate.revisions),
+          /**
+           * The ENTITY revision is per record, and the document has no project-wide value to
+           * compare it against — footing Z7's revision is not footing Z1's. So the record's
+           * own is used, which makes this field a no-op for the comparison.
+           *
+           * That is not a hole: an entity edit that changes anything the design read also
+           * changes the geometry and input hashes, and those ARE compared below against
+           * freshly computed values. The entity revision exists for TARGETED invalidation
+           * upstream, not as the document's staleness test.
+           */
+          entity: r.certificate.revisions.entity,
+        },
+        currentGeometryHash: r.geometryHash,
+        currentInputHash: r.inputHash,
+        // Hashed from the bars in the assembly RIGHT NOW, filtered to the ones this record
+        // owns. This is what catches a bar added, removed or moved after certification.
+        currentReinforcementHash: reinforcementHashOf(
+          a.bars.filter((b) => r.barIds.includes(b.id))),
+        currentFinalGeometryHash: finalGeometryHashOf(
+          a.bars.filter((b) => r.barIds.includes(b.id))),
+      });
+      return {
+        family: r.family,
+        ownerId: r.ownerId,
+        ownerElementIds: [...r.ownerElementIds],
+        certificate: r.certificate,
+        freshness,
+        applies: freshness === 'fresh',
+      };
+    });
+
     return {
+      families,
+      familyCertificates,
       id: a.id,
       label: msg(a.labelKey ?? 'detailing.assembly.generic', a.labelParams ?? {}),
       state: a.state,
@@ -299,8 +429,17 @@ export function buildDocumentModel(input: {
     assemblies: docAssemblies,
     certificates: [...input.certificates],
     openConflicts,
-    maturity: worstMaturity(docAssemblies.map((a) => a.maturity)),
-    assumptions: docAssemblies.flatMap((a) => a.assumptions),
+    // The family records' maturities count too. A footing whose punching is UNSUPPORTED must
+    // not be able to raise the document's maturity above its own by being reported in a
+    // section the roll-up does not read.
+    maturity: worstMaturity([
+      ...docAssemblies.map((a) => a.maturity),
+      ...docAssemblies.flatMap((a) => a.families.map((r) => r.maturity)),
+    ]),
+    assumptions: [
+      ...docAssemblies.flatMap((a) => a.assumptions),
+      ...docAssemblies.flatMap((a) => a.families.flatMap((r) => r.assumptions)),
+    ],
     summary: msg(
       readiness === 'REVIEW_DRAFT'
         ? 'detailing.document.reviewDraft'

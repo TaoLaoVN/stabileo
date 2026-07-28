@@ -7,6 +7,7 @@ import { straightSegment, type BarPath } from '../../../codes/cirsoc201/bar-geom
 import { DEFAULT_TOLERANCES } from '../collision';
 import { assessConstructibility } from '../constructibility';
 import { clause } from '../../../codes/regulation';
+import { noFloorFamilies } from '../family-record';
 
 function bar(id: string, y: number, opts: Partial<BarPath> = {}): BarPath {
   return {
@@ -106,6 +107,7 @@ function input(over: Partial<FloorCoordinationInput> = {}): FloorCoordinationInp
       prohibitedConflicts: 0, reverifiedMembers: 2, certificateHashMatches: 2,
       spacingNotCodeLegal: 0, spacingNotPlacementRobust: 0,
       unsupportedRules: 0, staleAssemblies: 0,
+      familyRequirements: noFloorFamilies(),
     }),
     ...over,
   };

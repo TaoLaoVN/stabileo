@@ -1,5 +1,5 @@
 {
-	"total": 497,
+	"total": 494,
 	"entries": [
 		{
 			"file": "src/lib/ai/__tests__/build-model.test.ts",
@@ -884,12 +884,6 @@
 			"count": 1
 		},
 		{
-			"file": "src/lib/engine/detailing/__tests__/document-model.test.ts",
-			"code": "TS2741",
-			"message": "Property 'source' is missing in type '{ id: string; label: { key: string; params: {}; }; state: \"COORDINATED\"; elementIds: number[]; bars: never[]; layers: never[]; laps: never[]; fusions: never[]; conflicts: BarConflict[]; maturity: \"VALIDATED\"; assumptions: never[]; }' but required in type 'DocumentAssembly'.",
-			"count": 1
-		},
-		{
 			"file": "src/lib/engine/detailing/__tests__/document-render.test.ts",
 			"code": "TS2352",
 			"message": "Conversion of type '{ severity: \"blocking\"; barA: string; barB: string; at: { x: number; y: number; z: number; }; clearance: number; required: number; shortfall: number; elementIds: number[]; pairClass: \"prohibitedOverlap\"; }' to type 'BarConflict' may be a mistake because neither type sufficiently overlaps with the other. If this was intentional, convert the expression to 'unknown' first.",
@@ -923,12 +917,6 @@
 			"file": "src/lib/engine/detailing/__tests__/quantity-reconciliation.test.ts",
 			"code": "TS18048",
 			"message": "'r.zoneIds' is possibly 'undefined'.",
-			"count": 1
-		},
-		{
-			"file": "src/lib/engine/detailing/document-render.ts",
-			"code": "TS6133",
-			"message": "'BarMark' is declared but its value is never read.",
 			"count": 1
 		},
 		{
@@ -1151,12 +1139,6 @@
 			"file": "src/lib/geometry/plane-projection.ts",
 			"code": "TS6133",
 			"message": "'mergedNodes' is declared but its value is never read.",
-			"count": 1
-		},
-		{
-			"file": "src/lib/store/__tests__/floor-design-wiring.test.ts",
-			"code": "TS18048",
-			"message": "'a.constructibility' is possibly 'undefined'.",
 			"count": 1
 		},
 		{

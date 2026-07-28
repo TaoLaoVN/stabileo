@@ -36,10 +36,17 @@
  * Pure: no store, no runes, no i18n.
  */
 
-import type { RegulationEdition } from '../../codes/regulation';
+import type { ClauseRef, RegulationEdition } from '../../codes/regulation';
+import type { Maturity } from '../../codes/maturity';
 import { msg, type EngineMessage } from '../../codes/message';
 import { designSlabPanel, type SlabDesignResult } from './slab-design';
 import { designWall, type WallDesignResult } from './wall-design';
+import {
+  familyHash, familyRecordId,
+  FAMILY_RECORD_SCHEMA_VERSION, recordStatusFor,
+  type FamilyCheckOutcome, type FamilyRecordDraft, type FamilyRevisionVector,
+  type FootingDesignRecord, type SlabDesignRecord, type WallDesignRecord,
+} from './family-record';
 import {
   buildFloorAssembly, type FloorAssemblyResult, type SlabPanelGeometry,
 } from './floor-design';
@@ -102,6 +109,37 @@ export interface RunFloorDesignInput {
    * gate. Grouping by level is what lets a footing join the assembly its column belongs to.
    */
   footingsByLevel?: ReadonlyMap<number, readonly FootingAssemblyEntry[]>;
+  /**
+   * Footing records that produced no steel, grouped by founding level.
+   *
+   * Their levels join the assembly set: a level whose only footing could not be checked still
+   * needs an assembly, or the record — and the reason — reaches no document.
+   */
+  unverifiedFootingsByLevel?: ReadonlyMap<number,
+    readonly FamilyRecordDraft<FootingDesignRecord>[]>;
+  /**
+   * The upstream revisions the shell records are stamped with. Same requirement, and same
+   * reason, as `runFootingDesign`: a certificate that cannot go stale is not a certificate.
+   */
+  revisions: Omit<FamilyRevisionVector, 'entity'>;
+  regulationIds: readonly string[];
+  /**
+   * Columns framing into slab nodes, keyed by node id.
+   *
+   * ── Why punching needs this ─────────────────────────────────────
+   *
+   * Because two-way shear is a property of a JOINT, not of a panel. A panel with no column
+   * at any of its nodes has no punching to check, and reporting one as unverified there
+   * would be a false limitation — it would make an ordinary beam-supported floor
+   * permanently uncertifiable for a condition that does not arise in it.
+   *
+   * A panel that DOES support a column has a real punching check, and it is not implemented:
+   * the demand must come from the change in column axial force across the slab joint, and
+   * this adapter is not given per-combination column end forces. So punching is reported as
+   * unverified for exactly those panels and is absent from the rest. Applicability is
+   * measured, not assumed in either direction.
+   */
+  slabColumns?: ReadonlyMap<number, { elementId: number; b: number; h: number }>;
 }
 
 export type ShellFamily = 'slab' | 'wall' | 'inclined' | 'degenerate';
@@ -222,10 +260,14 @@ export function runFloorDesign(input: RunFloorDesignInput): RunFloorDesignResult
     return pts.every((p): p is FloorNode => p !== undefined) ? pts : null;
   };
 
-  type SlabEntry = { geometry: SlabPanelGeometry; design: SlabDesignResult };
+  type SlabEntry = {
+    geometry: SlabPanelGeometry; design: SlabDesignResult;
+    record: FamilyRecordDraft<SlabDesignRecord>;
+  };
   type WallEntry = {
     wallId: string; design: WallDesignResult; elementIds: number[];
     geometry: WallGeometry; barDiameterMm: number;
+    record: FamilyRecordDraft<WallDesignRecord>;
   };
   const slabsByLevel = new Map<number, SlabEntry[]>();
   const wallsByLevel = new Map<number, WallEntry[]>();
@@ -299,15 +341,31 @@ export function runFloorDesign(input: RunFloorDesignInput): RunFloorDesignResult
       });
       slabs.push(design);
       const key = levelKey(cls.level);
+      const panelGeometry: SlabPanelGeometry = {
+        panelId: `P${shell.id}`,
+        origin: { x: ext.x0, y: ext.y0, z: cls.level },
+        lx: ext.lx, ly: ext.ly,
+        thickness: shell.thickness, cover: input.cover,
+        elementIds: [shell.id],
+      };
       const entry: SlabEntry = {
-        geometry: {
-          panelId: `P${shell.id}`,
-          origin: { x: ext.x0, y: ext.y0, z: cls.level },
-          lx: ext.lx, ly: ext.ly,
-          thickness: shell.thickness, cover: input.cover,
-          elementIds: [shell.id],
-        },
+        geometry: panelGeometry,
         design,
+        record: slabRecord({
+          shell, geometry: panelGeometry, design, stress, qu,
+          supportedSides: Math.max(1, supportedSideCount(shell, input.shells)),
+          // Measured from this panel's OWN nodes, in node order so the record is
+          // deterministic under any Map iteration order.
+          columnNodes: [...shell.nodes]
+            .map((nodeId) => {
+              const c = input.slabColumns?.get(nodeId);
+              return c ? { nodeId, elementId: c.elementId, b: c.b, h: c.h } : null;
+            })
+            .filter((c): c is { nodeId: number; elementId: number; b: number; h: number } =>
+              c !== null)
+            .sort((a, b) => a.nodeId - b.nodeId),
+          input,
+        }),
       };
       const list = slabsByLevel.get(key);
       if (list) list.push(entry); else slabsByLevel.set(key, [entry]);
@@ -373,16 +431,21 @@ export function runFloorDesign(input: RunFloorDesignInput): RunFloorDesignResult
     });
     walls.push(design);
     const key = levelKey(baseZ);
+    const wallGeom: WallGeometry = {
+      wallId: `W${shell.id}`,
+      start: { x: start.x, y: start.y, z: baseZ },
+      end: { x: end.x, y: end.y, z: baseZ },
+      height, thickness: shell.thickness, cover: input.cover,
+      elementIds: [shell.id],
+    };
     const entry: WallEntry = {
       wallId: `W${shell.id}`, design, elementIds: [shell.id],
-      geometry: {
-        wallId: `W${shell.id}`,
-        start: { x: start.x, y: start.y, z: baseZ },
-        end: { x: end.x, y: end.y, z: baseZ },
-        height, thickness: shell.thickness, cover: input.cover,
-        elementIds: [shell.id],
-      },
+      geometry: wallGeom,
       barDiameterMm: input.wallBarDiameterMm,
+      record: wallRecord({
+        shell, geometry: wallGeom, design, stress, demands,
+        fromMembraneOnly: !supplied, input,
+      }),
     };
     const list = wallsByLevel.get(key);
     if (list) list.push(entry); else wallsByLevel.set(key, [entry]);
@@ -392,8 +455,10 @@ export function runFloorDesign(input: RunFloorDesignInput): RunFloorDesignResult
   // Footing levels join the set: a footing at a level with no shell still needs an assembly,
   // or its bars would be checked, marked and then dropped before coordination.
   const footingsByLevel = input.footingsByLevel ?? new Map();
+  const unverifiedFootings = input.unverifiedFootingsByLevel ?? new Map();
   const levels = [...new Set([
     ...slabsByLevel.keys(), ...wallsByLevel.keys(), ...footingsByLevel.keys(),
+    ...unverifiedFootings.keys(),
   ])].sort((a, b) => a - b);
   const assemblies: DetailingAssembly[] = [];
   for (const level of levels) {
@@ -408,6 +473,7 @@ export function runFloorDesign(input: RunFloorDesignInput): RunFloorDesignResult
       slabs: slabsByLevel.get(level) ?? [],
       walls: wallsByLevel.get(level) ?? [],
       footings: [...(footingsByLevel.get(level) ?? [])],
+      unverifiedRecords: [...(unverifiedFootings.get(level) ?? [])],
       membersVerified: input.membersVerified,
     });
     assemblies.push(built.assembly);
@@ -419,6 +485,352 @@ export function runFloorDesign(input: RunFloorDesignInput): RunFloorDesignResult
     `${assemblies.length} conjunto(s) de nivel, ${unsupported.length} condición(es) no soportada(s).`);
 
   return { assemblies, slabs, walls, classifications, unsupported, trace };
+}
+
+// ─── Family records ──────────────────────────────────────────────
+
+/**
+ * What a shell record can and cannot say about the combination that governed it.
+ *
+ * `input.stresses` are the shell results of the LAST SOLVE, not per-combination output:
+ * `resultsStore.results3D.quadStresses` is one field per element, and the app's
+ * per-combination shell enrichment is not exposed element-by-element to this adapter. So a
+ * shell record names NO governing combination, and says so, rather than naming the
+ * combination that happened to govern a footing reaction at the same node — which would be a
+ * plausible and wrong attribution.
+ *
+ * The consequence is stated on every shell record as an assumption, so a reader of the
+ * certificate knows the demand is the solved state and not an enveloped design combination.
+ */
+const SHELL_DEMAND_NOT_PER_COMBINATION = msg('detailing.floorRun.shellDemandNotPerCombination');
+
+/** Common record fields for a shell family — the two differ only in their evidence. */
+function shellRecordCommon(args: {
+  family: 'slab' | 'wall';
+  ownerId: string;
+  elementIds: number[];
+  geometrySnapshot: unknown;
+  /** Everything the design read, for the input hash. */
+  demandSnapshot: unknown;
+  results: unknown;
+  checks: FamilyCheckOutcome[];
+  assumptions: readonly EngineMessage[];
+  unsupported: readonly EngineMessage[];
+  refs: readonly ClauseRef[];
+  maturity: Maturity;
+  input: Pick<RunFloorDesignInput,
+    'fc' | 'fy' | 'cover' | 'edition' | 'regulationIds' | 'revisions' | 'demandRevision'>;
+  barDiameterMm: number | null;
+} & { thickness: number }) {
+  const materialHash = familyHash({
+    fc: args.input.fc, fy: args.input.fy, cover: args.input.cover,
+    thickness: args.thickness, barDiameterMm: args.barDiameterMm,
+  });
+  const geometryHash = familyHash(args.geometrySnapshot);
+  return {
+    schemaVersion: FAMILY_RECORD_SCHEMA_VERSION,
+    recordId: familyRecordId(args.family, args.ownerId),
+    family: args.family,
+    ownerId: args.ownerId,
+    ownerElementIds: [...args.elementIds],
+    geometryHash,
+    /**
+     * A shell has no per-entity revision of its own — a panel is a solver element, not a
+     * modelled entity like a footing — so `entity` carries the DEMAND revision. That is the
+     * thing whose change must invalidate a panel's design, and using it here means a
+     * re-solve stales the record exactly as a footing edit stales a footing's.
+     */
+    revisions: { ...args.input.revisions, entity: args.input.demandRevision },
+    edition: args.input.edition,
+    regulationIds: [...args.input.regulationIds],
+    materialHash,
+    inputHash: familyHash({
+      geometry: args.geometrySnapshot, materialHash, demand: args.demandSnapshot,
+      edition: args.input.edition,
+      regulationIds: [...args.input.regulationIds].sort(),
+    }),
+    resultHash: familyHash(args.results),
+    // Empty, and said out loud in `assumptions`: a shell demand is not attributed to a
+    // named combination by this adapter. An invented name would be worse than none.
+    governingCombinations: [] as string[],
+    checks: args.checks,
+    assumptions: [...args.assumptions, SHELL_DEMAND_NOT_PER_COMBINATION],
+    unsupported: [...args.unsupported],
+    refs: [...args.refs],
+    maturity: args.maturity,
+    status: recordStatusFor(args.checks, args.maturity),
+  };
+}
+
+/**
+ * The slab panel's design evidence.
+ *
+ * Both the RAW plate moments and the Wood-Armer transform are recorded. Storing only the
+ * transformed pair would make the transformation unauditable, and `mxy` is precisely the
+ * field a naive slab design discards — a reviewer has to be able to see that it was folded
+ * in rather than dropped.
+ */
+function slabRecord(args: {
+  shell: FloorShell;
+  geometry: SlabPanelGeometry;
+  design: SlabDesignResult;
+  stress: FloorShellStress;
+  qu: number;
+  supportedSides: number;
+  /** Columns framing into this panel's own nodes. Empty means punching does not apply. */
+  columnNodes: Array<{ nodeId: number; elementId: number; b: number; h: number }>;
+  input: RunFloorDesignInput;
+}): FamilyRecordDraft<SlabDesignRecord> {
+  const { design, stress, geometry } = args;
+  const geometrySnapshot = {
+    panelId: geometry.panelId,
+    origin: { ...geometry.origin },
+    lx: geometry.lx, ly: geometry.ly,
+    thickness: geometry.thickness, cover: geometry.cover,
+    supportedSides: args.supportedSides,
+    behaviour: design.behaviour,
+  };
+  const demands: SlabDesignRecord['demands'] = [{
+    // One shell element IS one panel in this adapter, so the region is the element. Stated
+    // as a region rather than assumed to be the whole panel, because a meshed floor has many
+    // and the record has to survive the day a strip envelope spans them.
+    region: geometry.panelId,
+    elementId: args.shell.id,
+    mx: stress.mx, my: stress.my, mxy: stress.mxy,
+    woodArmer: {
+      mxBottom: design.design.bottomX,
+      myBottom: design.design.bottomY,
+      mxTop: design.design.topX,
+      myTop: design.design.topY,
+    },
+    governingCombination: null,
+    qu: args.qu,
+  }];
+  const reinforcement: SlabDesignRecord['reinforcement'] = design.layers.map((l) => ({
+    face: l.face, direction: l.direction,
+    diameterMm: l.diameterMm, spacing: l.spacing,
+    // The engine works in m²/m; the record states mm²/m, which is what a schedule and a
+    // drawing note both use. One conversion, here, rather than one per consumer.
+    asProvided: l.asProvided * 1e6,
+    asRequired: l.asRequired * 1e6,
+    governedBy: l.minimumGoverns ? 'minimum' : 'flexure',
+    barIds: [],
+  }));
+  const oneWayShear: SlabDesignRecord['oneWayShear'] = {
+    status: design.shear.ok ? 'OK' : 'FAIL',
+    // Per metre width, as the engine reports it: the panel's strip demand, not a total.
+    Vu: design.shear.vu, phiVc: design.shear.phiVc,
+    utilization: design.shear.utilization,
+  };
+  const unsupported = design.unsupported.map((u) =>
+    msg('detailing.floorRun.slabUnsupported', { panel: geometry.panelId, reason: u }));
+  const checks: FamilyCheckOutcome[] = [
+    {
+      key: 'flexure', status: 'OK', utilization: null,
+      governingCombination: null, refs: design.refs, unsupported: [],
+    },
+    {
+      key: 'oneWayShear', status: oneWayShear.status, utilization: oneWayShear.utilization,
+      governingCombination: null, refs: design.shear.refs, unsupported: [],
+    },
+    /**
+     * Punching, present ONLY when this panel supports a column.
+     *
+     * Two-way shear is a property of a joint. Emitting the check unconditionally would make
+     * every beam-supported floor permanently uncertifiable for a condition that does not
+     * arise in it; omitting it unconditionally would let a flat plate on columns certify with
+     * its governing check unexamined. So applicability is measured from the columns at this
+     * panel's own nodes, and where it applies the check is UNSUPPORTED — the demand needs the
+     * change in column axial force across the joint, and this adapter is not given
+     * per-combination column end forces.
+     */
+    ...(args.columnNodes.length > 0
+      ? [{
+        key: 'punching', status: 'UNSUPPORTED', utilization: null,
+        governingCombination: null, refs: [],
+        unsupported: [msg('detailing.floorRun.slabPunchingNoCaller', {
+          panel: geometry.panelId,
+          columns: args.columnNodes.map((c) => c.elementId).join(', '),
+        })],
+      } satisfies FamilyCheckOutcome]
+      : []),
+  ];
+  /**
+   * The per-column punching entries, one per column this panel supports.
+   *
+   * Every force field is zero and the status is UNSUPPORTED — the entry records WHICH joint
+   * is unverified and why, not a result. A zero here is not a claim that the demand is zero:
+   * `status` is what a consumer reads, and `unsupported` says what is missing.
+   */
+  const punching: SlabDesignRecord['punching'] = args.columnNodes.map((c) => ({
+    columnElementId: c.elementId,
+    nodeId: c.nodeId,
+    status: 'UNSUPPORTED' as const,
+    position: null,
+    truncatedSides: 0,
+    Vu: 0, phiVc: 0, utilization: 0,
+    axialAbove: 0, axialBelow: 0,
+    equilibriumResidual: null,
+    governingCombination: null,
+    unsupported: [msg('detailing.floorRun.slabPunchingNoCaller', {
+      panel: geometry.panelId, columns: String(c.elementId),
+    })],
+  }));
+  const results = { reinforcement, oneWayShear, punching };
+  return {
+    ...shellRecordCommon({
+      family: 'slab',
+      ownerId: geometry.panelId,
+      elementIds: geometry.elementIds,
+      geometrySnapshot,
+      demandSnapshot: demands,
+      results,
+      checks,
+      assumptions: design.maturity.assumptions,
+      unsupported,
+      refs: design.refs,
+      maturity: design.maturity.maturity,
+      input: args.input,
+      thickness: geometry.thickness,
+      barDiameterMm: design.layers[0]?.diameterMm ?? null,
+    }),
+    family: 'slab',
+    geometry: geometrySnapshot,
+    demands,
+    reinforcement,
+    oneWayShear,
+    punching,
+  };
+}
+
+/** The wall's design evidence. */
+function wallRecord(args: {
+  shell: FloorShell;
+  geometry: WallGeometry;
+  design: WallDesignResult;
+  stress: FloorShellStress;
+  demands: { pu: number; muInPlane: number; vuInPlane: number };
+  fromMembraneOnly: boolean;
+  input: RunFloorDesignInput;
+}): FamilyRecordDraft<WallDesignRecord> {
+  const { design, geometry, stress } = args;
+  const length = Math.hypot(geometry.end.x - geometry.start.x, geometry.end.y - geometry.start.y);
+  const geometrySnapshot = {
+    wallId: geometry.wallId,
+    start: { ...geometry.start }, end: { ...geometry.end },
+    length, height: geometry.height,
+    thickness: geometry.thickness, cover: geometry.cover,
+    // §11.7.2.3: two curtains once the wall passes 250 mm. Read off the thickness that was
+    // designed, not off a flag a caller could set.
+    twoCurtains: geometry.thickness > 0.25,
+  };
+  const demandSnapshot: WallDesignRecord['demands'] = [{
+    elementId: args.shell.id,
+    sigmaXx: stress.sigmaXx, sigmaYy: stress.sigmaYy, tauXy: stress.tauXy,
+    pu: args.demands.pu, muInPlane: args.demands.muInPlane, vuInPlane: args.demands.vuInPlane,
+    governingCombination: null,
+    fromMembraneOnly: args.fromMembraneOnly,
+  }];
+  const axialFlexure: WallDesignRecord['axialFlexure'] = {
+    status: design.axialFlexure.ok ? 'OK' : 'FAIL',
+    pu: design.axialFlexure.pu,
+    phiMn: design.axialFlexure.mn,
+    utilization: design.axialFlexure.utilization,
+  };
+  const inPlaneShear: WallDesignRecord['inPlaneShear'] = {
+    status: design.shear.ok ? 'OK' : 'FAIL',
+    Vu: design.shear.vu, phiVn: design.shear.phiVn,
+    utilization: design.shear.utilization,
+    webCrushingLimit: design.shear.vnLimit,
+    // §11.5.4.6: at the ceiling the wall fails by web crushing and horizontal steel does not
+    // help. Recorded as its own flag so a report can say "add steel" or "thicken the wall"
+    // rather than reporting a shortfall whose stated remedy would not work.
+    webCrushingGoverns: design.shear.atLimit,
+  };
+  const reinforcement: WallDesignRecord['reinforcement'] = {
+    verticalDiameterMm: args.input.wallBarDiameterMm,
+    verticalSpacing: design.verticalSpacing,
+    horizontalDiameterMm: args.input.wallBarDiameterMm,
+    horizontalSpacing: design.horizontalSpacing,
+    rhoVertical: design.ratios.rhoL,
+    rhoHorizontal: design.ratios.rhoT,
+    // These ratios come from §11.6.1's minimum table in every current path, so the record
+    // states `minimum` rather than implying a demand-driven amount that was not computed.
+    verticalGovernedBy: 'minimum',
+    horizontalGovernedBy: 'minimum',
+    curtains: geometrySnapshot.twoCurtains ? 2 : 1,
+    barIds: [],
+  };
+  const unsupported = design.unsupported.map((u) =>
+    msg('detailing.floorRun.wallUnsupported', { wall: geometry.wallId, reason: u }));
+  const checks: FamilyCheckOutcome[] = [
+    {
+      key: 'axialFlexure', status: axialFlexure.status, utilization: axialFlexure.utilization,
+      governingCombination: null, refs: design.axialFlexure.refs, unsupported: [],
+    },
+    {
+      key: 'inPlaneShear', status: inPlaneShear.status, utilization: inPlaneShear.utilization,
+      governingCombination: null, refs: design.shear.refs, unsupported: [],
+    },
+    {
+      key: 'minimumReinforcement', status: 'OK', utilization: null,
+      governingCombination: null, refs: design.ratios.refs, unsupported: [],
+    },
+    {
+      key: 'thickness', status: design.thicknessOk ? 'OK' : 'FAIL', utilization: null,
+      governingCombination: null, refs: [], unsupported: [],
+    },
+    /**
+     * Boundary elements are 103-II territory and are NOT designed here.
+     *
+     * A non-seismic boundary element would look like a complete design and would not be one.
+     * So the check is UNSUPPORTED whenever the project binds a seismic regulation — the case
+     * where the question actually arises — and OK, with the trigger recorded as not fired,
+     * when it does not.
+     */
+    {
+      key: 'boundaryElement',
+      status: args.input.seismicRequired ? 'UNSUPPORTED' : 'OK',
+      utilization: null, governingCombination: null, refs: [],
+      unsupported: args.input.seismicRequired
+        ? [msg('detailing.floorRun.wallBoundaryNotImplemented', { wall: geometry.wallId })]
+        : [],
+    },
+  ];
+  const results = { axialFlexure, inPlaneShear, reinforcement };
+  return {
+    ...shellRecordCommon({
+      family: 'wall',
+      ownerId: geometry.wallId,
+      elementIds: geometry.elementIds,
+      geometrySnapshot,
+      demandSnapshot,
+      results,
+      checks,
+      assumptions: design.maturity.assumptions,
+      unsupported,
+      refs: design.refs,
+      maturity: design.maturity.maturity,
+      input: args.input,
+      thickness: geometry.thickness,
+      barDiameterMm: args.input.wallBarDiameterMm,
+    }),
+    family: 'wall',
+    geometry: geometrySnapshot,
+    demands: demandSnapshot,
+    axialFlexure,
+    inPlaneShear,
+    reinforcement,
+    boundaryElement: {
+      required: args.input.seismicRequired,
+      reason: msg(args.input.seismicRequired
+        ? 'detailing.floorRun.wallBoundaryRequired'
+        : 'detailing.floorRun.wallBoundaryNotTriggered', { wall: geometry.wallId }),
+      // Null and REQUIRED is the honest pair: the trigger fired and the detailing does not
+      // exist. Null with `required: false` says the question was asked and answered no.
+      detailing: null,
+    },
+  };
 }
 
 /**

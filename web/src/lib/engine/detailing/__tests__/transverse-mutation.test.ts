@@ -25,6 +25,7 @@ import { detectCollisions } from '../collision';
 import { rebarHash } from '../../design/rebar-hash';
 import { supersede } from '../document-model';
 import { straightSegment, type BarPath } from '../../../codes/cirsoc201/bar-geometry';
+import { noFloorFamilies } from '../family-record';
 
 let cached: RunDetailingResult | null = null;
 function run(): RunDetailingResult {
@@ -54,6 +55,7 @@ function facts(): ConstructibilityFacts {
     reverifiedMembers: a.elementIds.length, certificateHashMatches: a.elementIds.length,
     spacingNotCodeLegal: 0, spacingNotPlacementRobust: 0,
     unsupportedRules: 0, staleAssemblies: 0,
+    familyRequirements: noFloorFamilies(),
   };
 }
 

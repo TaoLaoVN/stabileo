@@ -831,6 +831,12 @@ function createModelStore() {
   let _pushUndoSilent: (() => void) | null = null;
   /** Called after a reinforcement transaction commits, with the written ids. */
   let _onReinforcementCommit: ((written: Set<number>) => void) | null = null;
+  /**
+   * Called when a footing or geotechnical input changes.
+   *
+   * Analysis-neutral, document-INVALIDATING. See `_setOnFoundationChange`.
+   */
+  let _onFoundationChange: (() => void) | null = null;
   let _undoBatching = false;
   // Results invalidation callback — set externally by store/index.ts to clear stale results
   let _onMutation: (() => void) | null = null;
@@ -858,6 +864,26 @@ function createModelStore() {
      *  set of element ids written. Wired in store/index.ts so this store never
      *  imports verificationStore. */
     _setOnReinforcementCommit(fn: (written: Set<number>) => void) { _onReinforcementCommit = fn; },
+
+    /**
+     * Register a callback fired when a FOUNDATION input changes.
+     *
+     * ── The edge this closes ────────────────────────────────────────
+     *
+     * Footing and geotechnical edits are analysis-NEUTRAL and deliberately do not go through
+     * `_pushUndo`: a footing carries a reaction, it does not change the stiffness that
+     * produced one, and routing them through the mutation hook cleared the solve on every
+     * edit — which left every footing reporting "no reaction" at design time.
+     *
+     * But they are NOT document-neutral. Widening a base, or changing the allowable bearing
+     * pressure, invalidates the footing design and every drawing, schedule and report built
+     * from it. That edge was declared in PR18 and never connected, so a project could edit a
+     * footing and keep issuing the document that justified the old one.
+     *
+     * Injected rather than imported, like the two hooks above, so this store never imports
+     * `detailingStore` — which imports this one.
+     */
+    _setOnFoundationChange(fn: () => void) { _onFoundationChange = fn; },
 
     /**
      * Run one undoable reinforcement transaction.
@@ -1656,6 +1682,7 @@ function createModelStore() {
       const m = new Map(model.footings);
       m.set(id, f);
       model.footings = m;
+      _onFoundationChange?.();
       return id;
     },
 
@@ -1666,6 +1693,7 @@ function createModelStore() {
       const m = new Map(model.footings);
       m.set(id, { ...cur, ...data, id, revision: cur.revision + 1 });
       model.footings = m;
+      _onFoundationChange?.();
     },
 
     removeFooting(id: number): void {
@@ -1673,11 +1701,13 @@ function createModelStore() {
       const m = new Map(model.footings);
       m.delete(id);
       model.footings = m;
+      _onFoundationChange?.();
     },
 
     clearFootings(): void {
       if (!_undoBatching) _pushUndoSilent?.();
       model.footings = new Map();
+      _onFoundationChange?.();
     },
 
     /** Footings founded on a given node — how the design pass finds its reaction. */
@@ -1709,6 +1739,7 @@ function createModelStore() {
         // somewhere to bear without a second decision.
         defaultProfileId: geo.defaultProfileId ?? id,
       };
+      _onFoundationChange?.();
       return id;
     },
 
@@ -1720,6 +1751,7 @@ function createModelStore() {
         ...geo,
         profiles: geo.profiles.map((p) => (p.id === id ? { ...p, ...data, id } : p)),
       };
+      _onFoundationChange?.();
     },
 
     /**
@@ -1750,12 +1782,17 @@ function createModelStore() {
         orphaned = true;
       }
       if (orphaned) model.footings = m;
+      _onFoundationChange?.();
     },
 
     setDefaultSoilProfile(id: number | null): void {
       if (!_undoBatching) _pushUndoSilent?.();
       const geo = model.geotechnical ?? emptyGeotechnical();
       model.geotechnical = { ...geo, defaultProfileId: id };
+      // Which stratum a NEW footing will reference changes nothing about a footing that
+      // already exists, so no document is retired here. The hook is deliberately not fired:
+      // retiring a document on a change that cannot alter any result would train the user to
+      // ignore supersession.
     },
 
     removeLoad(loadId: number): void {

@@ -18,6 +18,7 @@ import {
 } from '../../../codes/cirsoc201/placement';
 import { assessConstructibility } from '../constructibility';
 import { DEFAULT_TOLERANCES } from '../collision';
+import { noFloorFamilies } from '../family-record';
 
 const CODE_MIN = 0.025;
 
@@ -115,6 +116,7 @@ describe('placementRobust gates CONSTRUCTIBLE', () => {
     prohibitedConflicts: 0, reverifiedMembers: 4, certificateHashMatches: 4,
     spacingNotCodeLegal: 0, spacingNotPlacementRobust: 0,
     unsupportedRules: 0, staleAssemblies: 0,
+    familyRequirements: noFloorFamilies(),
   };
 
   it('a cage that is legal but not robust is withheld', () => {
