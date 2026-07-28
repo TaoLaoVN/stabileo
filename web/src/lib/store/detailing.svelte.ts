@@ -662,10 +662,32 @@ function lockedMemberIds(): ReadonlySet<number> {
   return out;
 }
 
-/** Highest revision among existing assemblies, so a regeneration increments. */
-function maxRevision(assemblies: readonly DetailingAssembly[]): number {
+/**
+ * Highest revision among the PERSISTED assemblies, so a regeneration increments.
+ *
+ * ── Why this reads the model and takes no argument ──────────────────
+ *
+ * It used to be called as `maxRevision(store.assemblies)`, and `store` is a `$derived`. A
+ * `$derived` is lazy and memoised: it recomputes when a dependency changes AND it is read, so
+ * whether it is current at the moment a command runs depends on what ELSE read it in the same
+ * tick. That made the revision counter a function of unrelated parts of the UI — mounting one
+ * more panel elsewhere in the tab was enough to make every regeneration report revision 1.
+ *
+ * This branch already found and fixed the identical class twice, a few lines away, and said so
+ * in the source: the floor-assembly merge and `buildDocument` both read
+ * `modelStore.model.detailing` directly because a `$derived` does not recompute inside the
+ * synchronous call that wrote it. These two callers were left on the derived.
+ *
+ * The argument is REMOVED rather than left optional. A helper that can be handed either source
+ * is a helper that will be handed the wrong one again; there is exactly one correct source for
+ * "what revision is this project on", and it is the persisted model — which is also what a
+ * reopened project carries.
+ */
+function maxPersistedRevision(): number {
   let r = 0;
-  for (const a of assemblies) r = Math.max(r, a.detailingRevision ?? 0);
+  for (const a of modelStore.model.detailing?.assemblies ?? []) {
+    r = Math.max(r, a.detailingRevision ?? 0);
+  }
   return r;
 }
 
@@ -878,7 +900,7 @@ function createDetailingStore() {
           edition: currentConcreteEdition(),
           verifierId: opts.verifierId ?? '',
           demandRevision: verificationStore.demandRevision,
-          previousRevision: maxRevision(store.assemblies),
+          previousRevision: maxPersistedRevision(),
           maxAggregateSizeMm: resolveAggregate(),
           spacingMargin: resolveSpacingMargin(),
           /**
@@ -1022,7 +1044,7 @@ function createDetailingStore() {
           edition: currentConcreteEdition(),
           verifierId: opts.verifierId ?? '',
           demandRevision: verificationStore.demandRevision,
-          previousRevision: maxRevision(store.assemblies),
+          previousRevision: maxPersistedRevision(),
           seismicRequired: regulationsStore.binding('seismic').adapterId !== null,
           footingsByLevel: footingRun.entriesByLevel,
           // Footings that could not be checked reach their level's assembly too, so the
@@ -1248,7 +1270,9 @@ function createDetailingStore() {
           number: documentRevision,
           at: opts.at,
           author: opts.author,
-          detailingRevision: maxRevision(persisted.assemblies),
+          // Already the persisted source — `persisted` IS `modelStore.model.detailing` — so
+          // this is the same read the helper now performs, by name rather than by argument.
+          detailingRevision: maxPersistedRevision(),
           demandRevision: verificationStore.demandRevision,
         },
         regulations: [{ id: CONCRETE_REGULATION_ID, edition: currentConcreteEdition() }],
