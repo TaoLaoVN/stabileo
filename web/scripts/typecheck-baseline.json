@@ -1,5 +1,5 @@
 {
-	"total": 499,
+	"total": 497,
 	"entries": [
 		{
 			"file": "src/lib/ai/__tests__/build-model.test.ts",
@@ -1175,18 +1175,6 @@
 			"file": "src/lib/store/design-run.svelte.ts",
 			"code": "TS6133",
 			"message": "'DesignCodeId' is declared but its value is never read.",
-			"count": 1
-		},
-		{
-			"file": "src/lib/store/model.svelte.ts",
-			"code": "TS2304",
-			"message": "Cannot find name 'RevisionVector'.",
-			"count": 1
-		},
-		{
-			"file": "src/lib/store/model.svelte.ts",
-			"code": "TS2304",
-			"message": "Cannot find name 'StoredRegulations'.",
 			"count": 1
 		},
 		{

@@ -4,6 +4,8 @@ import {
 import {
   emptyDetailingStore, migrateDetailingStore, type DetailingStore,
 } from '../engine/detailing/assembly';
+import { migrateRegulations, type StoredRegulations } from '../codes/roles';
+import type { RevisionVector } from '../codes/revisions';
 // Model store - manages the structural model
 import type { KinematicResult } from '../engine/kinematic-2d';
 import type { SolverInput, FullEnvelope, AnalysisResults } from '../engine/types';
@@ -985,6 +987,16 @@ function createModelStore() {
         detailing: snap.detailing
           ? (JSON.parse(JSON.stringify(snap.detailing)) as DetailingStore)
           : emptyDetailingStore(),
+        // Both of these were declared on StructureModel AND on ModelSnapshot and
+        // emitted by neither, so the regulation stack and the revision vector were
+        // dropped by every path that goes through snapshot(): .ded save, undo/redo,
+        // tab capture and autosave. A project silently reverted to the default
+        // regulations on open, and a stored certificate's stamp became
+        // uninterpretable because the vector it was compared against was gone.
+        regulations: snap.regulations
+          ? (JSON.parse(JSON.stringify(snap.regulations)) as StoredRegulations)
+          : undefined,
+        revisions: snap.revisions ? { ...snap.revisions } : undefined,
       };
       if (snap.provenance) {
         result.provenance = {
@@ -1096,6 +1108,32 @@ function createModelStore() {
       // CIRSOC 201-2005, the edition its stored results were actually checked against.
       model.codeSettings = migrateCodeSettings(s.codeSettings).settings;
       model.detailing = migrateDetailingStore(s.detailing).store;
+      // `migrateRegulations` was written, unit-tested and never called from anywhere in
+      // production. Calling it here is what makes a stored regulation stack survive a
+      // save/open, an undo and a tab switch, and what upgrades a v1 (CIRSOC-specific)
+      // payload instead of misreading it.
+      //
+      // An ABSENT stack is left absent rather than materialised into the default. That is
+      // not a detail: `snapshot()`/`restore()` has to be idempotent, because Cancel on a
+      // CAD draft is implemented as "restore the snapshot taken before Apply" and is
+      // asserted to undo EXACTLY. Materialising defaults here made a cancelled draft differ
+      // from its own starting point by a whole regulation stack. Absent already means
+      // "derive the defaults" everywhere that reads it, so nothing is lost by respecting it.
+      //
+      // Its `rescuedAggregateMm` is deliberately dropped: the v1 aggregate size is already
+      // recovered by `migrateCodeSettings` above, which reads the same
+      // `concrete.maxAggregateSizeMm` field into its own home on `codeSettings`. Taking it
+      // twice would not place it anywhere new. Its `notices` are dropped for the same
+      // reason `migrateCodeSettings`'s are — migration notes are surfaced at the .ded
+      // boundary in file.ts, not from inside a restore that undo/redo also drives.
+      model.regulations = s.regulations === undefined
+        ? undefined
+        : migrateRegulations(s.regulations).stored;
+      // The revision vector is restored as stored. It is NOT reset to `emptyRevisions()`:
+      // the whole point of a stamp is that it is compared against the vector the project
+      // actually carries, so zeroing it on open would make every stored certificate look
+      // freshly current.
+      model.revisions = s.revisions ? { ...s.revisions } : undefined;
     },
 
     /** Explicit user action: clear the CAD-draft "unreviewed" tag. */
