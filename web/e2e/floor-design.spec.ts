@@ -189,7 +189,13 @@ test.describe('@smoke floor conflicts and review', () => {
     // Provisional, so a bare review is refused.
     await page.getByTestId('review-engineer').fill('Ing. R. Pérez');
     await page.getByTestId('review-submit').click();
-    await expect(page.getByTestId('review-error')).toContainText('provisorios');
+    // In ENGLISH, because this spec runs in the default `en` locale. It used to assert the
+    // Spanish word "provisorios" and pass — which is the proof that the refusal was a Spanish
+    // literal built inside a pure module and shown to an English-locale user unchanged.
+    const error = page.getByTestId('review-error');
+    await expect(error).toContainText('provisional calculations without express acceptance');
+    // And it names WHICH one, so the refusal is actionable.
+    await expect(error).toContainText('assembly');
 
     await page.getByTestId('ack-assembly').check();
     await page.getByTestId('review-submit').click();

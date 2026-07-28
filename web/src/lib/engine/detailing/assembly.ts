@@ -30,7 +30,7 @@ import type { ClauseRef, RegulationEdition } from '../../codes/regulation';
 import type { Maturity } from '../../codes/maturity';
 import type { BarConflict } from './collision';
 import type { ConstructibilityAssessment } from './constructibility';
-import type { EngineMessage } from '../../codes/message';
+import { msg, type EngineMessage } from '../../codes/message';
 import type { FamilyCertificate, FloorFamilyDesignRecord } from './family-record';
 
 /**
@@ -400,8 +400,15 @@ export function evaluateState(a: {
 export interface ReviewAttempt {
   ok: boolean;
   assembly?: DetailingAssembly;
-  /** Why the review was refused. */
-  reason?: string;
+  /**
+   * Why the review was refused, as a KEY.
+   *
+   * These four sentences were Spanish string literals in a pure module, so an English-locale
+   * user who tried to review a floor that had not reached CONSTRUCTIBLE was told why in
+   * Spanish. Found by the bilingual acceptance journey. The store is the locale boundary and
+   * translates it, exactly as it does for every other engine message.
+   */
+  reason?: EngineMessage;
 }
 
 /**
@@ -420,25 +427,23 @@ export function applyReview(
   if (reviewRank(assembly.state) < reviewRank('CONSTRUCTIBLE')) {
     return {
       ok: false,
-      reason: `El conjunto está en estado ${assembly.state}; sólo puede revisarse a ` +
-              'partir de CONSTRUCTIBLE.',
+      reason: msg('detailing.review.notConstructible', { state: assembly.state }),
     };
   }
   if (!record.engineer.trim()) {
-    return { ok: false, reason: 'Debe indicarse el profesional que revisa.' };
+    return { ok: false, reason: msg('detailing.review.engineerRequired') };
   }
 
   const outstanding = provisionalKeys.filter((k) => !record.acknowledgedProvisional.includes(k));
   if (outstanding.length > 0) {
     return {
       ok: false,
-      reason:
-        'Hay cálculos provisorios sin aceptación expresa: ' + outstanding.join(', ') +
-        '. Un cálculo provisorio puede aceptarse, pero debe hacerse deliberadamente.',
+      reason: msg('detailing.review.provisionalOutstanding',
+        { keys: outstanding.join(', '), count: outstanding.length }),
     };
   }
   if (provisionalKeys.length > 0 && !record.provisionalAcknowledged) {
-    return { ok: false, reason: 'Falta la aceptación expresa de los cálculos provisorios.' };
+    return { ok: false, reason: msg('detailing.review.provisionalNotAcknowledged') };
   }
 
   return {

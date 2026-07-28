@@ -4445,6 +4445,11 @@ const es: Record<string, string> = {
   'detailing.floorRun.slabUnsupported': 'Losa {panel}: {reason}',
   /** Se conserva para registros PERSISTIDOS antes de que existiera el colector losa-columna. */
   'detailing.floorRun.slabPunchingNoCaller': 'La losa {panel} soporta la(s) columna(s) {columns}: el corte en dos direcciones (punzonado) en el nudo losa-columna NO estaba verificado cuando se produjo este registro, porque no existía ningún llamador losa-columna que derivara la solicitación del salto de la fuerza axial de la columna en el nudo. Ahora existe; regenerar el despiece del piso para obtener la verificación.',
+  'detailing.review.notConstructible': 'El conjunto está en estado {state}; sólo puede revisarse a partir de CONSTRUCTIBLE.',
+  'detailing.review.engineerRequired': 'Debe indicarse el profesional que revisa.',
+  'detailing.review.provisionalOutstanding': 'Hay cálculos provisorios sin aceptación expresa: {keys}. Un cálculo provisorio puede aceptarse, pero debe hacerse deliberadamente.',
+  'detailing.review.provisionalNotAcknowledged': 'Falta la aceptación expresa de los cálculos provisorios.',
+  'detailing.review.notRecorded': 'No se pudo registrar la revisión.',
   'slab.maturity.promotionPath': 'Contrastar contra un ejemplo resuelto de losa en dos direcciones del reglamento o de bibliografía reconocida, con momentos de Wood-Armer y armadura resultante.',
   'slab.maturity.leverArm': 'Brazo elástico interno adoptado como 0,9 d, habitual en losas de armadura reducida.',
   'wall.maturity.promotionPath': 'Contrastar la interacción carga axial-flexión contra un diagrama de interacción completo o un ejemplo resuelto de tabique.',

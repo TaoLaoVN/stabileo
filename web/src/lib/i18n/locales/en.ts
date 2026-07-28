@@ -4489,6 +4489,11 @@ const en: Record<string, string> = {
    * as itself. Deleting it would put a raw key on the face of a reopened document.
    */
   'detailing.floorRun.slabPunchingNoCaller': 'Panel {panel} supports column(s) {columns}: two-way (punching) shear at the slab-column joint was NOT verified when this record was produced, because no slab-column caller existed to derive the demand from the change in column axial force across the joint. One exists now; regenerate the floor detailing to obtain the check.',
+  'detailing.review.notConstructible': 'The assembly is in state {state}; it can only be reviewed from CONSTRUCTIBLE onwards.',
+  'detailing.review.engineerRequired': 'The reviewing engineer must be named.',
+  'detailing.review.provisionalOutstanding': 'There are provisional calculations without express acceptance: {keys}. A provisional calculation may be accepted, but it must be done deliberately.',
+  'detailing.review.provisionalNotAcknowledged': 'The express acceptance of the provisional calculations is missing.',
+  'detailing.review.notRecorded': 'The review could not be recorded.',
   'slab.maturity.promotionPath': 'Reproduce a worked two-way slab example from the regulation or from recognised literature, with its Wood-Armer moments and the resulting reinforcement.',
   'slab.maturity.leverArm': 'The internal lever arm is taken as 0,9 d, the usual assumption for lightly reinforced slabs.',
   'wall.maturity.promotionPath': 'Compare the axial-flexural interaction against a full interaction diagram or a worked wall example.',

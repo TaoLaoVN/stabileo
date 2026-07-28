@@ -59,7 +59,7 @@ import type { EngineMessage } from '../codes/message';
 // A store is a locale boundary — `model.svelte.ts` translates here too. The combination
 // name is a plain string because a user-given combination name is not translatable; only
 // the synthetic "active result set" stand-in needs a locale.
-import { t } from '../i18n';
+import { t, tp } from '../i18n';
 import type { RegulationEdition } from '../codes/regulation';
 import type { MemberDesignOutcome } from '../engine/design/outcome';
 import type { BentUpPolicy } from '../engine/detailing/generate-beam';
@@ -1135,7 +1135,12 @@ function createDetailingStore() {
       retireDocument();
       const r = applyReview(selected, record, provisionalKeys(selected));
       if (!r.ok || !r.assembly) {
-        lastError = r.reason ?? 'No se pudo registrar la revisión.';
+        // The store is the locale boundary, so the engine's refusal is translated HERE. It used
+        // to arrive as a Spanish sentence built inside a pure module, which told an
+        // English-locale user why their review was refused in the wrong language.
+        lastError = r.reason
+          ? tp(r.reason.key, (r.reason.params ?? {}) as Record<string, string | number>)
+          : t('detailing.review.notRecorded');
         return false;
       }
       replace(r.assembly);
