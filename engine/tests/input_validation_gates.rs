@@ -99,6 +99,42 @@ fn modal_2d_rejects_all_zero_densities() {
     expect_clean_err("modal 2D zero mass", || modal::solve_modal_2d(&input, &densities, 3));
 }
 
+/// A density entry keyed to a material id that no element references must not
+/// count toward "at least one positive density" — otherwise mass assembly
+/// (which looks up `densities.get(&elem.material_id.to_string())`) silently
+/// yields an all-zero mass matrix while validation reports success.
+#[test]
+fn modal_2d_rejects_unreferenced_density_keys() {
+    let input = tiny_beam_2d(); // element references material "1" only
+    let densities = HashMap::from([("999".to_string(), 7850.0)]);
+    expect_clean_err("modal 2D unreferenced density key", || {
+        modal::solve_modal_2d(&input, &densities, 3)
+    });
+}
+
+/// Coverage gaps for *individual* materials are legitimate (massless members
+/// are a valid modeling choice) — density validation must not reject a model
+/// just because some unused material lacks a density entry.
+#[test]
+fn modal_2d_allows_partial_density_coverage() {
+    let mut input = tiny_beam_2d();
+    // Extra, unused material — not referenced by any element, and has no
+    // density entry in the map below.
+    input.materials.insert("2".to_string(), SolverMaterial { id: 2, e: 200_000.0, nu: 0.3 });
+    let densities = densities_1(); // only material "1" (the referenced one) has a density
+    let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        modal::solve_modal_2d(&input, &densities, 3)
+    }));
+    match result {
+        Err(p) => panic!("modal 2D partial density coverage: PANICKED: {p:?}"),
+        Ok(Err(msg)) => assert!(
+            !msg.to_lowercase().contains("density"),
+            "modal 2D partial density coverage: rejected on density validation: {msg}"
+        ),
+        Ok(Ok(_)) => {}
+    }
+}
+
 #[test]
 fn modal_3d_rejects_bad_node_ref() {
     let mut input = make_3d_input(
@@ -171,6 +207,19 @@ fn time_history_2d_rejects_bad_node_ref() {
     let mut solver = tiny_beam_2d();
     solver.elements.get_mut("1").unwrap().node_j = 99;
     expect_clean_err("TH 2D bad node ref", || time_integration::solve_time_history_2d(&th_input(solver)));
+}
+
+/// Reproduces the bug from the PR #69 review: a density map keyed to a
+/// material no element references (e.g. a typo'd id) previously passed
+/// validation and produced a silently massless model — time-history returned
+/// Ok instead of Err.
+#[test]
+fn time_history_2d_rejects_unreferenced_density_keys() {
+    let mut input = th_input(tiny_beam_2d()); // element references material "1" only
+    input.densities = HashMap::from([("999".to_string(), 7850.0)]);
+    expect_clean_err("TH 2D unreferenced density key", || {
+        time_integration::solve_time_history_2d(&input)
+    });
 }
 
 #[test]

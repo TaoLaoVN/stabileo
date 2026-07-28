@@ -68,7 +68,8 @@ fn default_response_dof_3d() -> String { "z".into() }
 
 pub fn solve_harmonic_2d(input: &HarmonicInput) -> Result<HarmonicResult, String> {
     super::linear::validate_input_2d(&input.solver)?;
-    super::dynamic_validation::validate_densities(&input.densities)?;
+    let referenced_material_ids = super::dynamic_validation::referenced_material_ids_2d(&input.solver);
+    super::dynamic_validation::validate_densities(&input.densities, &referenced_material_ids)?;
     if !input.damping_ratio.is_finite() {
         return Err("damping_ratio must be finite".to_string());
     }
@@ -174,7 +175,8 @@ pub fn solve_harmonic_2d(input: &HarmonicInput) -> Result<HarmonicResult, String
 
 pub fn solve_harmonic_3d(input: &HarmonicInput3D) -> Result<HarmonicResult, String> {
     super::linear::validate_input_3d(&input.solver)?;
-    super::dynamic_validation::validate_densities(&input.densities)?;
+    let referenced_material_ids = super::dynamic_validation::referenced_material_ids_3d(&input.solver);
+    super::dynamic_validation::validate_densities(&input.densities, &referenced_material_ids)?;
     if !input.damping_ratio.is_finite() {
         return Err("damping_ratio must be finite".to_string());
     }

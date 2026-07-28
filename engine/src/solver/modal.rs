@@ -51,7 +51,8 @@ pub fn solve_modal_2d(
     num_modes: usize,
 ) -> Result<ModalResult, String> {
     super::linear::validate_input_2d(input)?;
-    super::dynamic_validation::validate_densities(densities)?;
+    let referenced_material_ids = super::dynamic_validation::referenced_material_ids_2d(input);
+    super::dynamic_validation::validate_densities(densities, &referenced_material_ids)?;
     if num_modes == 0 {
         return Err("num_modes must be >= 1".to_string());
     }
@@ -261,7 +262,8 @@ pub fn solve_modal_3d(
     num_modes: usize,
 ) -> Result<ModalResult3D, String> {
     super::linear::validate_input_3d(input)?;
-    super::dynamic_validation::validate_densities(densities)?;
+    let referenced_material_ids = super::dynamic_validation::referenced_material_ids_3d(input);
+    super::dynamic_validation::validate_densities(densities, &referenced_material_ids)?;
     if num_modes == 0 {
         return Err("num_modes must be >= 1".to_string());
     }

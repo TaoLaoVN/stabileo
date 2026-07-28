@@ -17,7 +17,8 @@ pub fn solve_time_history_2d(
     input: &TimeHistoryInput,
 ) -> Result<TimeHistoryResult, String> {
     super::linear::validate_input_2d(&input.solver)?;
-    super::dynamic_validation::validate_densities(&input.densities)?;
+    let referenced_material_ids = super::dynamic_validation::referenced_material_ids_2d(&input.solver);
+    super::dynamic_validation::validate_densities(&input.densities, &referenced_material_ids)?;
     super::dynamic_validation::validate_time_params(input.time_step, input.n_steps)?;
     if !input.beta.is_finite() || !input.gamma.is_finite() {
         return Err("Newmark beta/gamma parameters must be finite".to_string());
@@ -804,7 +805,8 @@ pub fn solve_time_history_3d(
     input: &TimeHistoryInput3D,
 ) -> Result<TimeHistoryResult3D, String> {
     super::linear::validate_input_3d(&input.solver)?;
-    super::dynamic_validation::validate_densities(&input.densities)?;
+    let referenced_material_ids = super::dynamic_validation::referenced_material_ids_3d(&input.solver);
+    super::dynamic_validation::validate_densities(&input.densities, &referenced_material_ids)?;
     super::dynamic_validation::validate_time_params(input.time_step, input.n_steps)?;
     if !input.beta.is_finite() || !input.gamma.is_finite() {
         return Err("Newmark beta/gamma parameters must be finite".to_string());
