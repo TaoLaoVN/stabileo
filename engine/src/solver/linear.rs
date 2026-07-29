@@ -1920,6 +1920,44 @@ fn build_reactions_3d_inclined(
 // ── Input validation helpers ──
 
 pub(crate) fn validate_input_2d(input: &SolverInput) -> Result<(), String> {
+    // 0. Non-finite input rejection (NaN/Inf). Note: JSON cannot carry NaN, so
+    // this primarily protects native/Rust API callers and internally-built inputs.
+    for n in input.nodes.values() {
+        if !n.x.is_finite() || !n.z.is_finite() {
+            return Err(format!("Node {}: coordinates must be finite", n.id));
+        }
+    }
+    for m in input.materials.values() {
+        if !m.e.is_finite() || !m.nu.is_finite() {
+            return Err(format!("Material {}: E and nu must be finite", m.id));
+        }
+    }
+    for s in input.sections.values() {
+        if !s.a.is_finite() || !s.iz.is_finite() || s.as_y.is_some_and(|v| !v.is_finite()) {
+            return Err(format!("Section {}: properties must be finite", s.id));
+        }
+    }
+    for sup in input.supports.values() {
+        for v in [sup.kx, sup.ky, sup.kz, sup.dx, sup.dz, sup.dry, sup.angle].into_iter().flatten() {
+            if !v.is_finite() {
+                return Err(format!("Support {}: numeric fields must be finite", sup.id));
+            }
+        }
+    }
+    for load in &input.loads {
+        let finite = match load {
+            SolverLoad::Nodal(l) => l.fx.is_finite() && l.fz.is_finite() && l.my.is_finite(),
+            SolverLoad::Distributed(l) => l.q_i.is_finite() && l.q_j.is_finite()
+                && l.a.map_or(true, |v| v.is_finite()) && l.b.map_or(true, |v| v.is_finite()),
+            SolverLoad::PointOnElement(l) => l.a.is_finite() && l.p.is_finite()
+                && l.px.map_or(true, |v| v.is_finite()) && l.my.map_or(true, |v| v.is_finite()),
+            SolverLoad::Thermal(l) => l.dt_uniform.is_finite() && l.dt_gradient.is_finite(),
+        };
+        if !finite {
+            return Err("Load contains non-finite (NaN/Inf) values".to_string());
+        }
+    }
+
     let node_ids: std::collections::HashSet<usize> =
         input.nodes.values().map(|n| n.id).collect();
     let mat_ids: std::collections::HashSet<usize> =
@@ -2077,6 +2115,56 @@ pub(crate) fn validate_loads_2d(input: &SolverInput, loads: &[SolverLoad]) -> Re
 }
 
 pub(crate) fn validate_input_3d(input: &SolverInput3D) -> Result<(), String> {
+    // 0. Non-finite input rejection (NaN/Inf) — core structural fields.
+    for n in input.nodes.values() {
+        if !n.x.is_finite() || !n.y.is_finite() || !n.z.is_finite() {
+            return Err(format!("Node {}: coordinates must be finite", n.id));
+        }
+    }
+    for m in input.materials.values() {
+        if !m.e.is_finite() || !m.nu.is_finite() {
+            return Err(format!("Material {}: E and nu must be finite", m.id));
+        }
+    }
+    for s in input.sections.values() {
+        let opts_finite = [s.cw, s.as_y, s.as_z].into_iter().flatten().all(|v| v.is_finite());
+        if !s.a.is_finite() || !s.iy.is_finite() || !s.iz.is_finite() || !s.j.is_finite() || !opts_finite {
+            return Err(format!("Section {}: properties must be finite", s.id));
+        }
+    }
+    for sup in input.supports.values() {
+        let vals = [sup.kx, sup.ky, sup.kz, sup.krx, sup.kry, sup.krz,
+                    sup.dx, sup.dy, sup.dz, sup.drx, sup.dry, sup.drz,
+                    sup.kw, sup.normal_x, sup.normal_y, sup.normal_z];
+        if vals.into_iter().flatten().any(|v| !v.is_finite()) {
+            return Err(format!("Support on node {}: numeric fields must be finite", sup.node_id));
+        }
+    }
+    for load in &input.loads {
+        let finite = match load {
+            SolverLoad3D::Nodal(l) => l.fx.is_finite() && l.fy.is_finite() && l.fz.is_finite()
+                && l.mx.is_finite() && l.my.is_finite() && l.mz.is_finite()
+                && l.bw.map_or(true, |v| v.is_finite()),
+            SolverLoad3D::Distributed(l) => l.q_yi.is_finite() && l.q_yj.is_finite()
+                && l.q_zi.is_finite() && l.q_zj.is_finite()
+                && l.a.map_or(true, |v| v.is_finite()) && l.b.map_or(true, |v| v.is_finite()),
+            SolverLoad3D::PointOnElement(l) => l.a.is_finite() && l.py.is_finite() && l.pz.is_finite(),
+            SolverLoad3D::Thermal(l) => l.dt_uniform.is_finite()
+                && l.dt_gradient_y.is_finite() && l.dt_gradient_z.is_finite(),
+            // Shell/plate load variants keep their existing referential checks;
+            // finite-checking their fields is deliberately out of scope here.
+            _ => true,
+        };
+        if !finite {
+            return Err("Load contains non-finite (NaN/Inf) values".to_string());
+        }
+    }
+    for e in input.elements.values() {
+        if [e.local_yx, e.local_yy, e.local_yz, e.roll_angle].into_iter().flatten().any(|v| !v.is_finite()) {
+            return Err(format!("Element {}: local axis fields must be finite", e.id));
+        }
+    }
+
     let node_ids: std::collections::HashSet<usize> =
         input.nodes.values().map(|n| n.id).collect();
     let mat_ids: std::collections::HashSet<usize> =
@@ -2130,6 +2218,62 @@ pub(crate) fn validate_input_3d(input: &SolverInput3D) -> Result<(), String> {
 
     // 3. Referential integrity — load → node/element, and point-load positions
     validate_loads_3d(input, &input.loads)?;
+
+    // 3b. Referential integrity — shell elements (plate/quad/quad9/solid-shell/curved-shell)
+    // → node, material. Node-list lengths are fixed-size arrays ([usize; N]) so those are
+    // guaranteed by the type system; only existence of the referenced ids needs checking.
+    // Assembly and mass indexing dereference these ids directly (e.g. node_by_id[&plate.nodes[0]]),
+    // so a dangling reference here would otherwise panic deep inside modal/TH/harmonic 3D.
+    for p in input.plates.values() {
+        for &nid in &p.nodes {
+            if !node_ids.contains(&nid) {
+                return Err(format!("Plate {}: node {} does not exist", p.id, nid));
+            }
+        }
+        if !mat_ids.contains(&p.material_id) {
+            return Err(format!("Plate {}: material {} does not exist", p.id, p.material_id));
+        }
+    }
+    for q in input.quads.values() {
+        for &nid in &q.nodes {
+            if !node_ids.contains(&nid) {
+                return Err(format!("Quad {}: node {} does not exist", q.id, nid));
+            }
+        }
+        if !mat_ids.contains(&q.material_id) {
+            return Err(format!("Quad {}: material {} does not exist", q.id, q.material_id));
+        }
+    }
+    for q9 in input.quad9s.values() {
+        for &nid in &q9.nodes {
+            if !node_ids.contains(&nid) {
+                return Err(format!("Quad9 {}: node {} does not exist", q9.id, nid));
+            }
+        }
+        if !mat_ids.contains(&q9.material_id) {
+            return Err(format!("Quad9 {}: material {} does not exist", q9.id, q9.material_id));
+        }
+    }
+    for ss in input.solid_shells.values() {
+        for &nid in &ss.nodes {
+            if !node_ids.contains(&nid) {
+                return Err(format!("Solid shell {}: node {} does not exist", ss.id, nid));
+            }
+        }
+        if !mat_ids.contains(&ss.material_id) {
+            return Err(format!("Solid shell {}: material {} does not exist", ss.id, ss.material_id));
+        }
+    }
+    for cs in input.curved_shells.values() {
+        for &nid in &cs.nodes {
+            if !node_ids.contains(&nid) {
+                return Err(format!("Curved shell {}: node {} does not exist", cs.id, nid));
+            }
+        }
+        if !mat_ids.contains(&cs.material_id) {
+            return Err(format!("Curved shell {}: material {} does not exist", cs.id, cs.material_id));
+        }
+    }
 
     // 4. Material properties
     for mat in input.materials.values() {

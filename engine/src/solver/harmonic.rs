@@ -67,6 +67,18 @@ fn default_response_dof_3d() -> String { "z".into() }
 // ==================== 2D Harmonic Analysis ====================
 
 pub fn solve_harmonic_2d(input: &HarmonicInput) -> Result<HarmonicResult, String> {
+    super::linear::validate_input_2d(&input.solver)?;
+    let referenced_material_ids = super::dynamic_validation::referenced_material_ids_2d(&input.solver);
+    super::dynamic_validation::validate_densities(&input.densities, &referenced_material_ids)?;
+    if !input.damping_ratio.is_finite() {
+        return Err("damping_ratio must be finite".to_string());
+    }
+    if input.frequencies.is_empty() {
+        return Err("Harmonic analysis requires at least one frequency".to_string());
+    }
+    if input.frequencies.iter().any(|f| !f.is_finite() || *f < 0.0) {
+        return Err("Harmonic frequencies must be finite and >= 0".to_string());
+    }
     let dof_num = DofNumbering::build_2d(&input.solver);
     let nf = dof_num.n_free;
     let n = dof_num.n_total;
@@ -162,6 +174,18 @@ pub fn solve_harmonic_2d(input: &HarmonicInput) -> Result<HarmonicResult, String
 // ==================== 3D Harmonic Analysis ====================
 
 pub fn solve_harmonic_3d(input: &HarmonicInput3D) -> Result<HarmonicResult, String> {
+    super::linear::validate_input_3d(&input.solver)?;
+    let referenced_material_ids = super::dynamic_validation::referenced_material_ids_3d(&input.solver);
+    super::dynamic_validation::validate_densities(&input.densities, &referenced_material_ids)?;
+    if !input.damping_ratio.is_finite() {
+        return Err("damping_ratio must be finite".to_string());
+    }
+    if input.frequencies.is_empty() {
+        return Err("Harmonic analysis requires at least one frequency".to_string());
+    }
+    if input.frequencies.iter().any(|f| !f.is_finite() || *f < 0.0) {
+        return Err("Harmonic frequencies must be finite and >= 0".to_string());
+    }
     let dof_num = DofNumbering::build_3d(&input.solver);
     let nf = dof_num.n_free;
     let n = dof_num.n_total;
