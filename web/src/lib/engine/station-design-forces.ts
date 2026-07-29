@@ -2122,9 +2122,17 @@ export function verifyProvidedReinforcement(
         // invert to the demand/capacity convention used across the design surface.
         let util: number; let phiPn: number; let phiMn = 0; let geo = false; let sc = false; let cN: number | undefined;
         if (isBiax) {
-          // Muy = moment about local y, Muz = moment about local z.
-          const muy = axes.flexure === 'My' ? Mprim : Msec;
-          const muz = axes.flexure === 'Mz' ? Mprim : Msec;
+          // The section arrives flex-rotated (b=bFlex, h=hFlex): the PRIMARY axis
+          // always bends over depth h, the SECONDARY axis over depth b — same
+          // mapping as the uniaxial branch below (primary→'z', secondary→'y'),
+          // NOT moment-name→axis. computeBiaxialCapacity internally pairs Muz
+          // with depth h (capAxis 'z') and Muy with depth b (capAxis 'y'), so Muz
+          // must carry the PRIMARY moment and Muy the SECONDARY one regardless of
+          // which of My/Mz happens to be primary. Forwarding by name (muy=My,
+          // muz=Mz) was only correct when Mz was primary; when My was primary
+          // both moments hit the wrong bending depth.
+          const muz = Mprim;
+          const muy = Msec;
           const cap = computeBiaxialCapacity(provArea, section.b, section.h, section.fc, section.fy, section.cover, section.stirrupDia, Nu, muy, muz, colBars);
           util = cap.ratio > 1e-6 ? 1 / cap.ratio : Number.POSITIVE_INFINITY;
           phiPn = cap.phiPn; geo = cap.geometryAware; sc = cap.strainCompatible;

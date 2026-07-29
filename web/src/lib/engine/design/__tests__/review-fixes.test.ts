@@ -11,6 +11,9 @@
  *     weakened and tension strengthened, both inverted.
  *  4. Column tie checks used the primary-axis effective depth for BOTH shear
  *     axes — the secondary axis was over/under-estimated when b != h.
+ *  5. Column BIAXIAL P-M capacity forwarded Muy/Muz to computeBiaxialCapacity
+ *     BY NAME instead of by primary/secondary role. Only correct when Mz was
+ *     primary; when My was primary both moments hit the wrong bending depth.
  */
 import { describe, expect, it } from 'vitest';
 import {
@@ -248,5 +251,91 @@ describe('column tie checks use the per-axis effective depth', () => {
     expect(secondary!.capacity).toBeCloseTo(
       computeShearCapacity(8, 2, 0.15, 0.3, dTieFor(0.6), 25, 420, 500).phiVn, 1,
     );
+  });
+});
+
+// ─── 5. Biaxial column P-M axis mapping (mirror-symmetry probe) ──────
+
+describe('column biaxial P-M capacity is invariant under axis relabeling', () => {
+  // The physical column: 0.3(b) x 0.6(h), N = -500 kN, primary moment 150 kN·m,
+  // secondary moment 60 kN·m. Mirror pair: describe the SAME physical member once
+  // with My as the primary axis and once with Mz as the primary axis (a 90°
+  // relabeling of the local y/z convention). Because the section is passed
+  // flex-rotated (b=bFlex, h=hFlex), the flex-rotated dims are IDENTICAL for both
+  // namings here (bFlex=0.3, hFlex=0.6) — only the axis names and which raw tuple
+  // component (my/mz) carries which magnitude differ. A correct implementation
+  // must produce the exact same utilization either way.
+  const section = { b: 0.3, h: 0.6, fc: 25, fy: 420, cover: 0.04, stirrupDia: 8 };
+  const columnReinf: ProvidedReinforcement = {
+    column: { cornerDia: 20, faceDia: 20, nBottom: 2, nTop: 2, nLeft: 1, nRight: 1 },
+    stirrups: { diameter: 8, legs: 2, spacing: 0.15 },
+  };
+  const MPRIM = 150;
+  const MSEC = 60;
+  const NU = -500;
+
+  const AXES_MY_PRIMARY: DesignAxes = {
+    flexure: 'My', shear: 'Vz', secondaryFlexure: 'Mz', secondaryShear: 'Vy',
+    bFlex: 0.3, hFlex: 0.6, biaxial: true,
+    sagCategory: 'My+', hogCategory: 'My-', basis: 'dominant-moment',
+    secondaryRatio: +(MSEC / MPRIM).toFixed(4),
+  };
+  const AXES_MZ_PRIMARY: DesignAxes = {
+    flexure: 'Mz', shear: 'Vy', secondaryFlexure: 'My', secondaryShear: 'Vz',
+    bFlex: 0.3, hFlex: 0.6, biaxial: true,
+    sagCategory: 'Mz+', hogCategory: 'Mz-', basis: 'dominant-moment',
+    secondaryRatio: +(MSEC / MPRIM).toFixed(4),
+  };
+
+  function biaxialUtil(axes: DesignAxes, primaryOnMy: boolean) {
+    // Load the primary/secondary magnitudes onto whichever raw tuple field the
+    // naming assigns as primary, so tupleMoment(t, axes.flexure) === MPRIM and
+    // tupleMoment(t, axes.secondaryFlexure) === MSEC in both cases.
+    const my = primaryOnMy ? MPRIM : MSEC;
+    const mz = primaryOnMy ? MSEC : MPRIM;
+    const res = verifyProvidedReinforcement(
+      1, 'column', columnReinf, undefined,
+      { flexure: { AsReq: 0 }, shear: { AvOverS: 0, AvOverSMin: 0 } },
+      section,
+      stationResult([st(0.5, { my, mz, n: NU })]),
+      undefined,
+      { axes, slenderDeltaNs: 1 },
+    );
+    const check = res.checks.find(c => c.category.startsWith('Biaxial P-M'));
+    expect(check, 'a Biaxial P-M check must exist').toBeDefined();
+    return check!.ratio;
+  }
+
+  it('gives the identical utilization whether My or Mz is named primary', () => {
+    const utilMyPrimary = biaxialUtil(AXES_MY_PRIMARY, true);
+    const utilMzPrimary = biaxialUtil(AXES_MZ_PRIMARY, false);
+    expect(utilMyPrimary).toBeCloseTo(utilMzPrimary, 9);
+  });
+
+  // Sanity control: the uniaxial branch's primary→'z'/secondary→'y' mapping is
+  // already axis-name invariant (that was the earlier PR15 review fix) — this
+  // stays green both before and after the biaxial fix.
+  it('control: uniaxial P-M is already invariant under axis relabeling', () => {
+    const uniMy = verifyProvidedReinforcement(
+      1, 'column', columnReinf, undefined,
+      { flexure: { AsReq: 0 }, shear: { AvOverS: 0, AvOverSMin: 0 } },
+      section,
+      stationResult([st(0.5, { my: 200, mz: 0, n: NU })]),
+      undefined,
+      { axes: AXES_MY_PRIMARY, slenderDeltaNs: 1 },
+    );
+    const uniMz = verifyProvidedReinforcement(
+      1, 'column', columnReinf, undefined,
+      { flexure: { AsReq: 0 }, shear: { AvOverS: 0, AvOverSMin: 0 } },
+      section,
+      stationResult([st(0.5, { my: 0, mz: 200, n: NU })]),
+      undefined,
+      { axes: AXES_MZ_PRIMARY, slenderDeltaNs: 1 },
+    );
+    const checkMy = uniMy.checks.find(c => c.category.startsWith('Uniaxial P-M'));
+    const checkMz = uniMz.checks.find(c => c.category.startsWith('Uniaxial P-M'));
+    expect(checkMy).toBeDefined();
+    expect(checkMz).toBeDefined();
+    expect(checkMy!.ratio).toBeCloseTo(checkMz!.ratio, 9);
   });
 });
