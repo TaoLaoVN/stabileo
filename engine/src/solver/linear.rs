@@ -333,36 +333,17 @@ fn prepare_static_2d_impl(input: &SolverInput, force_dense: bool) -> Result<Prep
         // Conditioning report from the CSC diagonal (same thresholds as dense)
         let cond_report = sparse_conditioning_2d(&stiff.k_ff, nf);
 
-        // Symbolic + numeric sparse Cholesky with diagonal-shift
-        // regularization retry (mirrors the 3D sparse path)
+        // Symbolic + numeric sparse Cholesky. NO diagonal-shift regularization
+        // on the 2D path: the legacy 2D solver never regularized, and a shifted
+        // factor "succeeds" on genuine mechanisms (e.g. hinge chains in plastic
+        // analysis), returning a garbage perturbed solution where the legacy
+        // contract is an error. On failure we fall to the legacy dense LU of
+        // the ORIGINAL K_ff below, which reports "Singular stiffness matrix"
+        // for mechanisms exactly as before. (The 3D path keeps its shift
+        // ladder — shell drilling DOFs need it.)
         let sym = symbolic_cholesky(&stiff.k_ff);
-        let num_result = numeric_cholesky(&sym, &stiff.k_ff);
-
-        let num = if let Some(num) = num_result {
-            Some((num, false, 0.0))
-        } else {
-            // Regularize: clone K_ff and add a diagonal shift to make it SPD.
-            let max_d = stiff.max_diag_k;
-            let mut factored = None;
-            let mut shift = 0.0;
-            for &alpha in &[1e-6, 1e-4, 1e-2, 1e-1, 1.0, 10.0] {
-                shift = alpha * max_d;
-                let mut k_reg = stiff.k_ff.clone();
-                for j in 0..nf {
-                    for p in k_reg.col_ptr[j]..k_reg.col_ptr[j + 1] {
-                        if k_reg.row_idx[p] == j {
-                            k_reg.values[p] += shift;
-                            break;
-                        }
-                    }
-                }
-                if let Some(num) = numeric_cholesky(&sym, &k_reg) {
-                    factored = Some(num);
-                    break;
-                }
-            }
-            factored.map(|num| (num, true, shift))
-        };
+        let num = numeric_cholesky(&sym, &stiff.k_ff)
+            .map(|num| (num, false, 0.0));
 
         let has_prescribed = u_r.iter().any(|v| v.abs() > 1e-15);
 
@@ -803,13 +784,13 @@ impl PreparedStatic2D<'_> {
                 }
                 let rel_residual = res2.sqrt() / f2.sqrt().max(1e-30);
 
-                let mut used_fallback = false;
-                let u_f = if rel_residual < 1e-6 {
-                    u
-                } else {
-                    used_fallback = true;
-                    self.dense_lu_fallback_2d(loads)?
-                };
+                // Legacy 2D semantics: report a large residual as a structured
+                // warning but KEEP the sparse solution. A hard dense-LU fallback
+                // costs O(n³) — measured 216 s at nf=2997 vs 0.12 s sparse —
+                // for conditioning this model class routinely produces (the 3D
+                // path keeps its hard fallback, unchanged). The residual is
+                // reported below via ResidualOk/ResidualHigh.
+                let u_f = u;
 
                 // NaN/Inf guard: numerical blow-up means singular matrix
                 let has_nan_inf = u_f.iter().any(|v| v.is_nan() || v.is_infinite());
@@ -842,21 +823,6 @@ impl PreparedStatic2D<'_> {
                     reactions_vec[i] = ku[nf + i] - f_r[i];
                 }
 
-                // On dense-LU residual fallback, recompute the residual from the
-                // returned solution (the old value describes the rejected attempt)
-                let rel_residual = if used_fallback {
-                    let mut res2 = 0.0f64;
-                    let mut f2 = 0.0f64;
-                    for i in 0..nf {
-                        let r = ku[i] - f[i];
-                        res2 += r * r;
-                        f2 += f[i] * f[i];
-                    }
-                    res2.sqrt() / f2.sqrt().max(1e-30)
-                } else {
-                    rel_residual
-                };
-
                 // Reverse inclined transforms on displacements before building results
                 for it in &self.inclined_transforms_2d {
                     reverse_inclined_transform_2d(&mut u_full, &it.dofs, &it.r);
@@ -878,19 +844,11 @@ impl PreparedStatic2D<'_> {
                 structured.extend(self.pre_solve_diags.iter().cloned());
 
                 // Solver path
-                if used_fallback {
-                    structured.push(StructuredDiagnostic::global(
-                        DiagnosticCode::SparseFallbackDenseLu,
-                        Severity::Warning,
-                        format!("Sparse Cholesky residual too large, fell back to dense LU ({} free DOFs)", nf),
-                    ).with_phase("solve"));
-                } else {
-                    structured.push(StructuredDiagnostic::global(
-                        DiagnosticCode::SparseCholesky,
-                        Severity::Info,
-                        format!("Sparse Cholesky solver ({} free DOFs)", nf),
-                    ).with_phase("solve"));
-                }
+                structured.push(StructuredDiagnostic::global(
+                    DiagnosticCode::SparseCholesky,
+                    Severity::Info,
+                    format!("Sparse Cholesky solver ({} free DOFs)", nf),
+                ).with_phase("solve"));
 
                 // Diagonal regularization info
                 if p.regularized {
@@ -970,7 +928,7 @@ impl PreparedStatic2D<'_> {
                     ).with_value(rel_residual, 1e-6).with_phase("solve")
                 });
 
-                let solver_path_2d = if used_fallback { "sparse_fallback_dense_lu" } else { "sparse_cholesky" };
+                let solver_path_2d = "sparse_cholesky";
                 let mut results = AnalysisResults {
                     displacements,
                     reactions,
@@ -1174,25 +1132,6 @@ impl PreparedStatic2D<'_> {
                 Ok(results)
             }
         }
-    }
-
-    /// Dense LU fallback (per case): dense K_ff factor + dense load vector.
-    /// Used when the sparse Cholesky solve gives a bad residual.
-    fn dense_lu_fallback_2d(&self, loads: &[SolverLoad]) -> Result<Vec<f64>, String> {
-        let input = self.input;
-        let dof_num = &self.dof_num;
-        let (n, nf, nr) = (self.n, self.nf, self.nr);
-        let stiff_d = assemble_stiffness_2d(input, dof_num);
-        let f_d = assemble_load_vector_2d(input, loads, dof_num, &stiff_d.inclined_transforms_2d);
-        let free_idx: Vec<usize> = (0..nf).collect();
-        let rest_idx: Vec<usize> = (nf..n).collect();
-        let k_fr = extract_submatrix(&stiff_d.k, n, &free_idx, &rest_idx);
-        let kfr_ur_d = mat_vec_rect(&k_fr, &self.u_r, nf, nr);
-        let mut f_work: Vec<f64> = f_d[..nf].to_vec();
-        for i in 0..nf { f_work[i] -= kfr_ur_d[i]; }
-        let mut k_ff_d = extract_submatrix(&stiff_d.k, n, &free_idx, &free_idx);
-        lu_solve(&mut k_ff_d, &mut f_work, nf)
-            .ok_or_else(|| "Singular stiffness matrix — structure is a mechanism".to_string())
     }
 }
 

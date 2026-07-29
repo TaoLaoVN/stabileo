@@ -275,7 +275,6 @@ pub fn assemble_stiffness_sparse_2d(input: &SolverInput, dof_num: &DofNumbering)
     let mut trip_vals = Vec::new();
     let mut diag_vals = vec![0.0f64; n];
     // Max |K| entry per DOF (row+col), for the orphan rotation guard
-    let mut dof_max = vec![0.0f64; n];
 
     // Pre-build O(1) lookup maps
     let node_map: std::collections::HashMap<usize, &SolverNode> =
@@ -317,8 +316,6 @@ pub fn assemble_stiffness_sparse_2d(input: &SolverInput, dof_num: &DofNumbering)
                     if gi >= gj {
                         trip_rows.push(gi); trip_cols.push(gj); trip_vals.push(v);
                     }
-                    dof_max[gi] = dof_max[gi].max(v.abs());
-                    dof_max[gj] = dof_max[gj].max(v.abs());
                 }
                 diag_vals[truss_dofs[i]] += k_elem[i * ndof + i];
             }
@@ -346,8 +343,6 @@ pub fn assemble_stiffness_sparse_2d(input: &SolverInput, dof_num: &DofNumbering)
                     if gi >= gj {
                         trip_rows.push(gi); trip_cols.push(gj); trip_vals.push(v);
                     }
-                    dof_max[gi] = dof_max[gi].max(v.abs());
-                    dof_max[gj] = dof_max[gj].max(v.abs());
                 }
                 diag_vals[elem_dofs[i]] += k_glob[i * ndof + i];
             }
@@ -380,8 +375,6 @@ pub fn assemble_stiffness_sparse_2d(input: &SolverInput, dof_num: &DofNumbering)
                     if gi >= gj {
                         trip_rows.push(gi); trip_cols.push(gj); trip_vals.push(v);
                     }
-                    dof_max[gi] = dof_max[gi].max(v.abs());
-                    dof_max[gj] = dof_max[gj].max(v.abs());
                 }
                 diag_vals[dofs[i]] += ke[i * 6 + i];
             }
@@ -414,8 +407,6 @@ pub fn assemble_stiffness_sparse_2d(input: &SolverInput, dof_num: &DofNumbering)
                         trip_rows.push(r); trip_cols.push(cc); trip_vals.push(k_xz);
                         diag_vals[dxd] += k_xx;
                         diag_vals[dz] += k_zz;
-                        dof_max[dxd] = dof_max[dxd].max(k_xx.abs()).max(k_xz.abs());
-                        dof_max[dz] = dof_max[dz].max(k_zz.abs()).max(k_xz.abs());
                     }
                 } else {
                     // No rotation or zero angle: standard diagonal assembly
@@ -423,14 +414,12 @@ pub fn assemble_stiffness_sparse_2d(input: &SolverInput, dof_num: &DofNumbering)
                         if let Some(&d) = dof_num.map.get(&(sup.node_id, 0)) {
                             trip_rows.push(d); trip_cols.push(d); trip_vals.push(kx_val);
                             diag_vals[d] += kx_val;
-                            dof_max[d] = dof_max[d].max(kx_val.abs());
                         }
                     }
                     if ky_val > 0.0 {
                         if let Some(&d) = dof_num.map.get(&(sup.node_id, 1)) {
                             trip_rows.push(d); trip_cols.push(d); trip_vals.push(ky_val);
                             diag_vals[d] += ky_val;
-                            dof_max[d] = dof_max[d].max(ky_val.abs());
                         }
                     }
                 }
@@ -440,14 +429,12 @@ pub fn assemble_stiffness_sparse_2d(input: &SolverInput, dof_num: &DofNumbering)
                     if let Some(&d) = dof_num.map.get(&(sup.node_id, 0)) {
                         trip_rows.push(d); trip_cols.push(d); trip_vals.push(kx_val);
                         diag_vals[d] += kx_val;
-                        dof_max[d] = dof_max[d].max(kx_val.abs());
                     }
                 }
                 if ky_val > 0.0 {
                     if let Some(&d) = dof_num.map.get(&(sup.node_id, 1)) {
                         trip_rows.push(d); trip_cols.push(d); trip_vals.push(ky_val);
                         diag_vals[d] += ky_val;
-                        dof_max[d] = dof_max[d].max(ky_val.abs());
                     }
                 }
             }
@@ -457,14 +444,12 @@ pub fn assemble_stiffness_sparse_2d(input: &SolverInput, dof_num: &DofNumbering)
                 if let Some(&d) = dof_num.map.get(&(sup.node_id, 0)) {
                     trip_rows.push(d); trip_cols.push(d); trip_vals.push(kx_val);
                     diag_vals[d] += kx_val;
-                    dof_max[d] = dof_max[d].max(kx_val.abs());
                 }
             }
             if ky_val > 0.0 {
                 if let Some(&d) = dof_num.map.get(&(sup.node_id, 1)) {
                     trip_rows.push(d); trip_cols.push(d); trip_vals.push(ky_val);
                     diag_vals[d] += ky_val;
-                    dof_max[d] = dof_max[d].max(ky_val.abs());
                 }
             }
         }
@@ -473,7 +458,6 @@ pub fn assemble_stiffness_sparse_2d(input: &SolverInput, dof_num: &DofNumbering)
             if let Some(&d) = dof_num.map.get(&(sup.node_id, 2)) {
                 trip_rows.push(d); trip_cols.push(d); trip_vals.push(kz_val);
                 diag_vals[d] += kz_val;
-                dof_max[d] = dof_max[d].max(kz_val.abs());
             }
         }
     }
@@ -521,32 +505,9 @@ pub fn assemble_stiffness_sparse_2d(input: &SolverInput, dof_num: &DofNumbering)
                 if let Some(&idx) = dof_num.map.get(&(node_id, 2)) {
                     if idx < dof_num.n_free {
                         trip_rows.push(idx); trip_cols.push(idx); trip_vals.push(artificial_k);
-                        dof_max[idx] = dof_max[idx].max(artificial_k.abs());
                         artificial_dofs.push(idx);
                     }
                 }
-            }
-        }
-
-        // Topology-agnostic orphan-ROTATION-DOF guard: any free *rotation* DOF
-        // whose row+col in K is identically zero gets artificial stiffness
-        // so the linear solver doesn't trip on a singular matrix. Restricted to
-        // rotation DOFs (local_dof=2 in 2D) so a truly floating node (translation
-        // DOFs all-zero) still surfaces as a singular-matrix error.
-        let already: std::collections::HashSet<usize> = artificial_dofs.iter().copied().collect();
-        let orphan_tol = if max_diag > 0.0 { max_diag * 1e-12 } else { 1e-14 };
-        let mut idx_to_local: std::collections::HashMap<usize, usize> = std::collections::HashMap::new();
-        for (&(_, ld), &idx) in &dof_num.map {
-            if idx < nf {
-                idx_to_local.insert(idx, ld);
-            }
-        }
-        for (i, &dm) in dof_max.iter().enumerate().take(nf) {
-            if already.contains(&i) { continue; }
-            if idx_to_local.get(&i).copied() != Some(2) { continue; }
-            if dm <= orphan_tol {
-                trip_rows.push(i); trip_cols.push(i); trip_vals.push(artificial_k);
-                artificial_dofs.push(i);
             }
         }
     }
@@ -594,7 +555,48 @@ pub fn assemble_stiffness_sparse_2d(input: &SolverInput, dof_num: &DofNumbering)
     }
 
     // Full-K CSC (reactions + prescribed-displacement cross-block)
-    let k_full = CscMatrix::from_triplets(n, &trip_rows, &trip_cols, &trip_vals);
+    let mut k_full = CscMatrix::from_triplets(n, &trip_rows, &trip_cols, &trip_vals);
+
+    // Topology-agnostic orphan-ROTATION-DOF guard, on the SUMMED K (matching
+    // the dense assembler exactly): a free rotation DOF whose summed row+col
+    // is ~zero gets artificial stiffness. (The earlier per-contribution test
+    // missed cancellation between elements — e.g. hinges forming around a
+    // node in plastic analysis — leaving the DOF bare and the solve garbage.)
+    if dof_num.dofs_per_node >= 3 {
+        let artificial_k = if max_diag > 0.0 { max_diag * 1e-10 } else { 1e-6 };
+        let orphan_tol = if max_diag > 0.0 { max_diag * 1e-12 } else { 1e-14 };
+        let already: std::collections::HashSet<usize> = artificial_dofs.iter().copied().collect();
+        let mut idx_to_local: std::collections::HashMap<usize, usize> = std::collections::HashMap::new();
+        for (&(_, ld), &idx) in &dof_num.map {
+            if idx < nf {
+                idx_to_local.insert(idx, ld);
+            }
+        }
+        // Max |entry| per free DOF over the summed full K (lower-tri CSC:
+        // each stored entry touches both endpoints' row+col).
+        let mut row_max = vec![0.0f64; nf];
+        for j in 0..n {
+            for p in k_full.col_ptr[j]..k_full.col_ptr[j + 1] {
+                let i = k_full.row_idx[p];
+                let v = k_full.values[p].abs();
+                if i < nf { row_max[i] = row_max[i].max(v); }
+                if j < nf && i != j { row_max[j] = row_max[j].max(v); }
+            }
+        }
+        let mut added = false;
+        for (i, &mx) in row_max.iter().enumerate() {
+            if already.contains(&i) { continue; }
+            if idx_to_local.get(&i).copied() != Some(2) { continue; }
+            if mx <= orphan_tol {
+                trip_rows.push(i); trip_cols.push(i); trip_vals.push(artificial_k);
+                artificial_dofs.push(i);
+                added = true;
+            }
+        }
+        if added {
+            k_full = CscMatrix::from_triplets(n, &trip_rows, &trip_cols, &trip_vals);
+        }
+    }
 
     // Filter triplets for Kff (free-free block)
     let mut ff_rows = Vec::with_capacity(trip_rows.len());
