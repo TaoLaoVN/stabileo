@@ -342,7 +342,7 @@ fn prepare_static_2d_impl(input: &SolverInput, force_dense: bool) -> Result<Prep
         // the ORIGINAL K_ff below, which reports "Singular stiffness matrix"
         // for mechanisms exactly as before. (The 3D path keeps its shift
         // ladder — shell drilling DOFs need it.)
-        let sym = symbolic_cholesky(&stiff.k_ff);
+        let sym = std::rc::Rc::new(symbolic_cholesky(&stiff.k_ff));
         let num = numeric_cholesky(&sym, &stiff.k_ff)
             .map(|num| (num, false, 0.0));
 
