@@ -92,7 +92,10 @@ pub fn solve_modal_2d(
                 .ok_or_else(|| "Eigenvalue decomposition failed".to_string())?;
             (result, cs.n_free_indep, m_solve)
         } else {
-            let result = lanczos_generalized_eigen_sparse(&sasm.k_ff, &m_ff, nf, num_modes, 0.0)
+            // Sparse shift-invert op takes the mass as CSC (PR #73 signature);
+            // convert the dense free block at the call site (same values).
+            let m_csc = crate::linalg::CscMatrix::from_dense_symmetric(&m_ff, nf);
+            let result = lanczos_generalized_eigen_sparse(&sasm.k_ff, &m_csc, num_modes, 0.0)
                 .ok_or_else(|| "Eigenvalue decomposition failed".to_string())?;
             (result, nf, m_ff)
         }
