@@ -1,6 +1,7 @@
 use crate::types::*;
 use crate::linalg::*;
 use crate::element;
+use std::rc::Rc;
 use super::dof::DofNumbering;
 use super::assembly::*;
 
@@ -438,7 +439,7 @@ fn prepare_static_2d_impl(input: &SolverInput, force_dense: bool) -> Result<Prep
     let (factor, used_sparse, cholesky_failed) = if nf >= SPARSE_THRESHOLD {
         // Sparse path
         let k_ff_sparse = CscMatrix::from_dense_symmetric(&k_ff, nf);
-        let sym = symbolic_cholesky(&k_ff_sparse);
+        let sym = Rc::new(symbolic_cholesky(&k_ff_sparse));
         match numeric_cholesky(&sym, &k_ff_sparse) {
             Some(num) => (FactorizedKff::SparseCholesky(num), true, false),
             None => {
@@ -1346,7 +1347,7 @@ pub fn prepare_static_3d(input: &SolverInput3D) -> Result<PreparedStatic3D, Stri
 
         // Symbolic + numeric factorization of K_ff (split phases, K-only)
         let t0 = now_micros();
-        let sym = symbolic_cholesky(&stiff.k_ff);
+        let sym = Rc::new(symbolic_cholesky(&stiff.k_ff));
         let symbolic_us = now_micros().saturating_sub(t0);
         let nnz_kff = stiff.k_ff.col_ptr[nf]; // total nnz in lower triangle
         let nnz_l = sym.l_nnz;
