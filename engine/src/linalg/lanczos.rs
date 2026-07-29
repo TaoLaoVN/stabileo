@@ -798,7 +798,7 @@ mod tests {
 
     impl DenseBShiftInvertOp {
         fn new(k_csc: &CscMatrix, b_dense: &[f64], n: usize) -> Option<Self> {
-            let sym = symbolic_cholesky(k_csc);
+            let sym = std::rc::Rc::new(symbolic_cholesky(k_csc));
             let factor = numeric_cholesky(&sym, k_csc)?;
             Some(Self { factor, b_dense: b_dense.to_vec(), n })
         }
