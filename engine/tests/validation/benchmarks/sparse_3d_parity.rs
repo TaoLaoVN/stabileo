@@ -762,3 +762,162 @@ fn sparse_3d_parity_combined() {
     let input = make_shell_input(nodes, quads, supports, loads);
     assert_parity(&input, "combined_all_features");
 }
+
+// ─── Test 9: skew member into an inclined support (regression) ─────────
+//
+// Regression for the triplet inclined-transform double-counted block diagonal
+// (apply_inclined_transform_triplets_k stored one triangle of the DOF block
+// then pushed all 9 pairs, so CSC duplicate summation computed R·(B+Bᵀ)·Rᵀ
+// with a non-symmetric block — the block diagonal was doubled and cross-block
+// entries were corrupted). A diagonal block (axis-aligned members only) hides
+// the bug; a SKEW beam into the inclined node gives the block nonzero
+// off-diagonals and exposes it. Pre-fix this test fails on k_full cross-block
+// entries; post-fix it passes to 1e-12.
+
+#[test]
+fn sparse_3d_parity_inclined_support_skew_member() {
+    // Same 2×3×4-level frame as the inclined test, plus a plan-diagonal beam
+    // from the inclined node (1) to node 5 (ix=1, iz=1), so the 3×3
+    // translational stiffness block at node 1 has nonzero off-diagonals.
+    let e = 200_000.0;
+    let nu = 0.3;
+    let nx = 2;
+    let nz = 3;
+    let n_levels = 4;
+
+    let mut nodes = HashMap::new();
+    let mut nid = 1;
+    let cols_per_level = nx * nz;
+    for level in 0..n_levels {
+        for ix in 0..nx {
+            for iz_idx in 0..nz {
+                nodes.insert(nid.to_string(), SolverNode3D {
+                    id: nid,
+                    x: ix as f64 * 4.0,
+                    y: level as f64 * 3.0,
+                    z: iz_idx as f64 * 4.0,
+                });
+                nid += 1;
+            }
+        }
+    }
+
+    let mut mats = HashMap::new();
+    mats.insert("1".to_string(), SolverMaterial { id: 1, e, nu });
+    let mut secs = HashMap::new();
+    secs.insert("1".to_string(), SolverSection3D {
+        id: 1, name: None, a: 0.01, iy: 8.33e-6, iz: 8.33e-6, j: 1.41e-5,
+        cw: None, as_y: None, as_z: None,
+    });
+
+    let mut elems = HashMap::new();
+    let mut eid = 1;
+    for level in 0..(n_levels - 1) {
+        for col in 0..cols_per_level {
+            let ni = level * cols_per_level + col + 1;
+            let nj = (level + 1) * cols_per_level + col + 1;
+            elems.insert(eid.to_string(), SolverElement3D {
+                id: eid, elem_type: "frame".to_string(),
+                node_i: ni, node_j: nj, material_id: 1, section_id: 1,
+                release_my_start: false, release_my_end: false, release_mz_start: false, release_mz_end: false, release_t_start: false, release_t_end: false,
+                local_yx: None, local_yy: None, local_yz: None, roll_angle: None,
+            });
+            eid += 1;
+        }
+    }
+    for level in 1..n_levels {
+        let base = level * cols_per_level;
+        for iz_idx in 0..nz {
+            for ix in 0..(nx - 1) {
+                let ni = base + ix * nz + iz_idx + 1;
+                let nj = base + (ix + 1) * nz + iz_idx + 1;
+                elems.insert(eid.to_string(), SolverElement3D {
+                    id: eid, elem_type: "frame".to_string(),
+                    node_i: ni, node_j: nj, material_id: 1, section_id: 1,
+                    release_my_start: false, release_my_end: false, release_mz_start: false, release_mz_end: false, release_t_start: false, release_t_end: false,
+                    local_yx: None, local_yy: None, local_yz: None, roll_angle: None,
+                });
+                eid += 1;
+            }
+        }
+        for ix in 0..nx {
+            for iz_idx in 0..(nz - 1) {
+                let ni = base + ix * nz + iz_idx + 1;
+                let nj = base + ix * nz + iz_idx + 2;
+                elems.insert(eid.to_string(), SolverElement3D {
+                    id: eid, elem_type: "frame".to_string(),
+                    node_i: ni, node_j: nj, material_id: 1, section_id: 1,
+                    release_my_start: false, release_my_end: false, release_mz_start: false, release_mz_end: false, release_t_start: false, release_t_end: false,
+                    local_yx: None, local_yy: None, local_yz: None, roll_angle: None,
+                });
+                eid += 1;
+            }
+        }
+    }
+    // The discriminating member: plan-diagonal beam from node 1 to node 5.
+    elems.insert(eid.to_string(), SolverElement3D {
+        id: eid, elem_type: "frame".to_string(),
+        node_i: 1, node_j: 5, material_id: 1, section_id: 1,
+        release_my_start: false, release_my_end: false, release_mz_start: false, release_mz_end: false, release_t_start: false, release_t_end: false,
+        local_yx: None, local_yy: None, local_yz: None, roll_angle: None,
+    });
+
+    let s = 1.0 / (2.0f64).sqrt();
+    let mut supports = HashMap::new();
+    for col in 0..cols_per_level {
+        let nid = col + 1;
+        if col == 0 {
+            supports.insert((col + 1).to_string(), inclined_sup3d(nid, true, true, true, true, true, true, s, s, 0.0));
+        } else {
+            supports.insert((col + 1).to_string(), sup3d(nid, true, true, true, true, true, true));
+        }
+    }
+
+    let top_node = (n_levels - 1) * cols_per_level + 1;
+    let loads = vec![SolverLoad3D::Nodal(SolverNodalLoad3D {
+        node_id: top_node, fx: 5.0, fy: -20.0, fz: 3.0,
+        mx: 0.0, my: 0.0, mz: 0.0, bw: None,
+    })];
+
+    let input = SolverInput3D {
+        nodes, materials: mats, sections: secs, elements: elems,
+        supports, loads, constraints: vec![], left_hand: None,
+        plates: HashMap::new(), quads: HashMap::new(), quad9s: HashMap::new(), solid_shells: HashMap::new(), curved_shells: HashMap::new(),
+        curved_beams: vec![], connectors: HashMap::new(),
+    };
+
+    // Full-K parity (dense n×n vs sparse k_full reconstituted) — this is where
+    // the bug lived: k_full cross-block entries were corrupted even when Kff
+    // parity passed. Compare EVERY entry, not just the free block.
+    let dof_num = DofNumbering::build_3d(&input);
+    let nf = dof_num.n_free;
+    let n = dof_num.n_total;
+    assert!(nf >= 64, "need nf >= 64 for sparse path, got {}", nf);
+
+    let dense = assembly::assemble_3d(&input, &dof_num);
+    let sparse = assembly::assemble_sparse_3d(&input, &dof_num, true);
+    let k_full_sparse = sparse.k_full.as_ref().unwrap().to_dense_symmetric();
+
+    let mut max_err = 0.0f64;
+    let mut worst = (0usize, 0usize, 0.0f64, 0.0f64);
+    for i in 0..n {
+        for j in 0..n {
+            let dv = dense.k[i * n + j];
+            let sv = k_full_sparse[i * n + j];
+            let diff = (dv - sv).abs();
+            let scale = dv.abs().max(1.0);
+            let rel = diff / scale;
+            if rel > max_err { max_err = rel; worst = (i, j, dv, sv); }
+        }
+    }
+    assert!(
+        max_err < 1e-9,
+        "full-K mismatch with skew member into inclined node: max_rel_err = {:.3e} at {:?}",
+        max_err, worst
+    );
+
+    // And the solve must succeed and balance (nonzero reactions).
+    let res = linear::solve_3d(&input).expect("solve_3d failed on skew inclined model");
+    let sum: f64 = res.reactions.iter().map(|r| r.fx.abs() + r.fy.abs() + r.fz.abs()).sum();
+    assert!(sum > 1e-10, "zero reactions despite applied loads");
+}

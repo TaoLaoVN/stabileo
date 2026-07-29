@@ -4,8 +4,10 @@
 /// Production code now prepares the structure once (`prepare_static_2d/3d`)
 /// and reuses the factorization per train position / sampled unit load. The
 /// legacy reference below runs one full `solve_2d`/`solve_3d` per position or
-/// point, over exactly the same load sets (built with the same public
-/// helpers). All f64 comparisons are exact (`==`).
+/// point, over load sets built with TEST-LOCAL transcriptions of the
+/// pre-refactor algorithm (the `legacy_*` functions — no production helper is
+/// shared, so a future transcription drift in production fails these tests).
+/// All f64 comparisons are exact (`==`).
 
 use dedaliano_engine::postprocess::influence::*;
 use dedaliano_engine::solver::linear::{solve_2d, solve_3d};
@@ -147,13 +149,356 @@ fn train_3axle() -> LoadTrain {
     }
 }
 
+// ==================== Test-local legacy algorithm transcriptions ==========
+//
+// These functions transcribe the PRE-refactor algorithm (from the parent of
+// the extraction commit) verbatim into the test, so the legacy reference does
+// NOT share any production helper. The blind spot they close: if the
+// production helpers (build_load_path*, moving_loads_at_position_*,
+// influence_unit_loads_*, extract_value*) are mistranscribed in a future
+// edit, this reference stays faithful to the original algorithm and the
+// parity tests fail loudly instead of passing on both sides.
+
+fn legacy_build_path_2d(solver_input: &SolverInput, path_element_ids: Option<&[usize]>) -> Vec<PathSegment> {
+    let mut path = Vec::new();
+    let mut cum_pos = 0.0;
+    let node_by_id: HashMap<usize, &SolverNode> = solver_input.nodes.values().map(|n| (n.id, n)).collect();
+    let elem_by_id: HashMap<usize, &SolverElement> = solver_input.elements.values().map(|e| (e.id, e)).collect();
+    // Transcription of the old auto_detect_path (elements sorted by start-node X).
+    let elem_ids: Vec<usize> = match path_element_ids {
+        Some(ids) => ids.to_vec(),
+        None => {
+            let mut elem_list: Vec<&SolverElement> = solver_input.elements.values().collect();
+            elem_list.sort_by(|a, b| {
+                let na = node_by_id[&a.node_i];
+                let nb = node_by_id[&b.node_i];
+                na.x.partial_cmp(&nb.x).unwrap()
+            });
+            elem_list.iter().map(|e| e.id).collect()
+        }
+    };
+    for eid in &elem_ids {
+        let elem = elem_by_id.get(eid).unwrap_or_else(|| panic!("Element {} not found", eid));
+        let ni = node_by_id[&elem.node_i];
+        let nj = node_by_id[&elem.node_j];
+        let dx = nj.x - ni.x;
+        let dy = nj.z - ni.z;
+        let l = (dx * dx + dy * dy).sqrt();
+        let cos = dx / l;
+        let sin = dy / l;
+        path.push(PathSegment {
+            element_id: *eid,
+            start_pos: cum_pos,
+            end_pos: cum_pos + l,
+            length: l,
+            cos,
+            sin,
+        });
+        cum_pos += l;
+    }
+    path
+}
+
+fn legacy_find_segment_2d(path: &[PathSegment], global_pos: f64) -> Option<(&PathSegment, f64)> {
+    for seg in path {
+        if global_pos >= seg.start_pos - 1e-10 && global_pos <= seg.end_pos + 1e-10 {
+            let local = (global_pos - seg.start_pos).max(0.0).min(seg.length);
+            return Some((seg, local));
+        }
+    }
+    None
+}
+
+fn legacy_loads_at_position_2d(
+    solver_input: &SolverInput,
+    train: &LoadTrain,
+    path: &[PathSegment],
+    pos: f64,
+    total_length: f64,
+) -> Vec<SolverLoad> {
+    let mut loads: Vec<SolverLoad> = solver_input.loads.iter().filter(|l| {
+        matches!(l, SolverLoad::Nodal(_) | SolverLoad::Distributed(_) | SolverLoad::Thermal(_))
+    }).cloned().collect();
+
+    for axle in &train.axles {
+        let axle_pos = pos + axle.offset;
+        if axle_pos < -1e-10 || axle_pos > total_length + 1e-10 {
+            continue;
+        }
+        if let Some((seg, local_pos)) = legacy_find_segment_2d(path, axle_pos) {
+            let perp_force = -axle.weight;
+            loads.push(SolverLoad::PointOnElement(SolverPointLoadOnElement {
+                element_id: seg.element_id,
+                a: local_pos,
+                p: perp_force * seg.cos.powi(2).max(0.0).sqrt().copysign(1.0),
+                px: None,
+                my: None,
+            }));
+            if seg.sin.abs() > 1e-6 {
+                let p_perp = -axle.weight * seg.cos;
+                let p_axial = -axle.weight * seg.sin;
+                loads.pop();
+                loads.push(SolverLoad::PointOnElement(SolverPointLoadOnElement {
+                    element_id: seg.element_id,
+                    a: local_pos,
+                    p: p_perp,
+                    px: Some(p_axial),
+                    my: None,
+                }));
+            }
+        }
+    }
+    loads
+}
+
+fn legacy_build_path_3d(solver_input: &SolverInput3D, path_element_ids: Option<&[usize]>) -> Vec<PathSegment3D> {
+    let mut path = Vec::new();
+    let mut cum_pos = 0.0;
+    let node_by_id: HashMap<usize, &SolverNode3D> = solver_input.nodes.values().map(|n| (n.id, n)).collect();
+    let elem_by_id: HashMap<usize, &SolverElement3D> = solver_input.elements.values().map(|e| (e.id, e)).collect();
+    // Transcription of the old auto_detect_path_3d (elements sorted by start-node X).
+    let elem_ids: Vec<usize> = match path_element_ids {
+        Some(ids) => ids.to_vec(),
+        None => {
+            let mut elem_list: Vec<&SolverElement3D> = solver_input.elements.values().collect();
+            elem_list.sort_by(|a, b| {
+                let na = node_by_id[&a.node_i];
+                let nb = node_by_id[&b.node_i];
+                na.x.partial_cmp(&nb.x).unwrap()
+            });
+            elem_list.iter().map(|e| e.id).collect()
+        }
+    };
+    for eid in &elem_ids {
+        let elem = elem_by_id.get(eid).unwrap_or_else(|| panic!("Element {} not found", eid));
+        let ni = node_by_id[&elem.node_i];
+        let nj = node_by_id[&elem.node_j];
+        let dx = nj.x - ni.x;
+        let dy = nj.y - ni.y;
+        let dz = nj.z - ni.z;
+        let l = (dx * dx + dy * dy + dz * dz).sqrt();
+        path.push(PathSegment3D {
+            element_id: *eid,
+            start_pos: cum_pos,
+            end_pos: cum_pos + l,
+            length: l,
+            dir_x: dx / l,
+            dir_y: dy / l,
+            dir_z: dz / l,
+        });
+        cum_pos += l;
+    }
+    path
+}
+
+fn legacy_find_segment_3d(path: &[PathSegment3D], global_pos: f64) -> Option<(&PathSegment3D, f64)> {
+    for seg in path {
+        if global_pos >= seg.start_pos - 1e-10 && global_pos <= seg.end_pos + 1e-10 {
+            let local = (global_pos - seg.start_pos).max(0.0).min(seg.length);
+            return Some((seg, local));
+        }
+    }
+    None
+}
+
+fn legacy_loads_at_position_3d(
+    solver_input: &SolverInput3D,
+    train: &LoadTrain,
+    gravity: &str,
+    path: &[PathSegment3D],
+    pos: f64,
+    total_length: f64,
+) -> Vec<SolverLoad3D> {
+    let mut loads: Vec<SolverLoad3D> = solver_input.loads.iter().filter(|l| {
+        matches!(l, SolverLoad3D::Nodal(_) | SolverLoad3D::Distributed(_) | SolverLoad3D::Thermal(_))
+    }).cloned().collect();
+
+    let node_by_id: HashMap<usize, &SolverNode3D> = solver_input.nodes.values().map(|n| (n.id, n)).collect();
+    let elem_by_id: HashMap<usize, &SolverElement3D> = solver_input.elements.values().map(|e| (e.id, e)).collect();
+
+    for axle in &train.axles {
+        let axle_pos = pos + axle.offset;
+        if axle_pos < -1e-10 || axle_pos > total_length + 1e-10 {
+            continue;
+        }
+        if let Some((seg, local_pos)) = legacy_find_segment_3d(path, axle_pos) {
+            let (gx, gy, gz) = match gravity {
+                "y" => (0.0, -axle.weight, 0.0),
+                _ => (0.0, 0.0, -axle.weight),
+            };
+            if let Some(&elem) = elem_by_id.get(&seg.element_id) {
+                let ni = node_by_id[&elem.node_i];
+                let nj = node_by_id[&elem.node_j];
+                let left_hand = solver_input.left_hand.unwrap_or(false);
+                let (_lex, ley, lez) = dedaliano_engine::element::compute_local_axes_3d(
+                    ni.x, ni.y, ni.z, nj.x, nj.y, nj.z,
+                    elem.local_yx, elem.local_yy, elem.local_yz,
+                    elem.roll_angle, left_hand,
+                );
+                let py = gx * ley[0] + gy * ley[1] + gz * ley[2];
+                let pz = gx * lez[0] + gy * lez[1] + gz * lez[2];
+                loads.push(SolverLoad3D::PointOnElement(SolverPointLoad3D {
+                    element_id: seg.element_id,
+                    a: local_pos,
+                    py,
+                    pz,
+                }));
+            }
+        }
+    }
+    loads
+}
+
+/// 2D influence-line unit load (pre-extraction inline block, verbatim).
+fn legacy_unit_loads_2d(elem: &SolverElement, a: f64, t: f64, cos_theta: f64, sin_theta: f64) -> Vec<SolverLoad> {
+    let p_perp = -cos_theta;
+    let p_axial = -sin_theta;
+    let mut loads: Vec<SolverLoad> = Vec::new();
+    if p_perp.abs() > 1e-10 {
+        loads.push(SolverLoad::PointOnElement(SolverPointLoadOnElement {
+            element_id: elem.id,
+            a,
+            p: p_perp,
+            px: None,
+            my: None,
+        }));
+    }
+    if p_axial.abs() > 1e-10 {
+        let fi = p_axial * (1.0 - t);
+        let fj = p_axial * t;
+        loads.push(SolverLoad::Nodal(SolverNodalLoad {
+            node_id: elem.node_i,
+            fx: fi * cos_theta,
+            fz: fi * sin_theta,
+            my: 0.0,
+        }));
+        loads.push(SolverLoad::Nodal(SolverNodalLoad {
+            node_id: elem.node_j,
+            fx: fj * cos_theta,
+            fz: fj * sin_theta,
+            my: 0.0,
+        }));
+    }
+    loads
+}
+
+/// 3D influence-line unit load (pre-extraction inline block, verbatim).
+fn legacy_unit_loads_3d(elem_id: usize, a: f64, g_local_y: f64, g_local_z: f64) -> Vec<SolverLoad3D> {
+    let mut loads: Vec<SolverLoad3D> = Vec::new();
+    if g_local_y.abs() > 1e-10 || g_local_z.abs() > 1e-10 {
+        loads.push(SolverLoad3D::PointOnElement(SolverPointLoad3D {
+            element_id: elem_id,
+            a,
+            py: g_local_y,
+            pz: g_local_z,
+        }));
+    }
+    loads
+}
+
+/// 2D result extraction (pre-extraction inline block, verbatim; keeps the
+/// pre-existing library `compute_diagram_value_at`, which this refactor did
+/// not touch).
+fn legacy_extract_value(
+    quantity: &str,
+    target_node_id: Option<usize>,
+    target_element_id: Option<usize>,
+    target_position: f64,
+    result: &AnalysisResults,
+) -> f64 {
+    match quantity {
+        "Ry" | "Rx" | "Mz" => {
+            if let Some(node_id) = target_node_id {
+                if let Some(reaction) = result.reactions.iter().find(|r| r.node_id == node_id) {
+                    match quantity {
+                        "Ry" | "Rz" => reaction.rz,
+                        "Rx" => reaction.rx,
+                        "Mz" | "My" => reaction.my,
+                        _ => 0.0,
+                    }
+                } else {
+                    0.0
+                }
+            } else {
+                0.0
+            }
+        }
+        "V" | "M" => {
+            if let Some(elem_id) = target_element_id {
+                if let Some(forces) = result.element_forces.iter().find(|f| f.element_id == elem_id) {
+                    let kind = if quantity == "V" { "shear" } else { "moment" };
+                    dedaliano_engine::postprocess::diagrams::compute_diagram_value_at(kind, target_position, forces)
+                } else {
+                    0.0
+                }
+            } else {
+                0.0
+            }
+        }
+        _ => 0.0,
+    }
+}
+
+/// 3D result extraction (pre-extraction inline block, verbatim).
+fn legacy_extract_value_3d(
+    quantity: &str,
+    target_node_id: Option<usize>,
+    target_element_id: Option<usize>,
+    target_position: f64,
+    result: &AnalysisResults3D,
+) -> f64 {
+    match quantity {
+        "Fx" | "Fy" | "Fz" | "Mx" | "My" | "Mz" => {
+            if let Some(node_id) = target_node_id {
+                if let Some(reaction) = result.reactions.iter().find(|r| r.node_id == node_id) {
+                    match quantity {
+                        "Fx" => reaction.fx,
+                        "Fy" => reaction.fy,
+                        "Fz" => reaction.fz,
+                        "Mx" => reaction.mx,
+                        "My" => reaction.my,
+                        "Mz" => reaction.mz,
+                        _ => 0.0,
+                    }
+                } else {
+                    0.0
+                }
+            } else {
+                0.0
+            }
+        }
+        "Vy" | "Vz" | "N" | "My_diag" | "Mz_diag" | "T" => {
+            if let Some(elem_id) = target_element_id {
+                if let Some(forces) = result.element_forces.iter().find(|f| f.element_id == elem_id) {
+                    let kind = match quantity {
+                        "Vy" => "shearY",
+                        "Vz" => "shearZ",
+                        "N" => "axial",
+                        "My_diag" => "momentY",
+                        "Mz_diag" => "momentZ",
+                        "T" => "torsion",
+                        _ => return 0.0,
+                    };
+                    dedaliano_engine::postprocess::diagrams_3d::evaluate_diagram_3d_at(forces, kind, target_position)
+                } else {
+                    0.0
+                }
+            } else {
+                0.0
+            }
+        }
+        _ => 0.0,
+    }
+}
+
 // ==================== Legacy references (full solve per position/point) ====================
+
 
 fn legacy_moving_2d(input: &MovingLoadInput) -> MovingLoadEnvelope {
     let solver_input = &input.solver;
     let train = &input.train;
     let step = input.step.unwrap_or(0.25);
-    let path = build_load_path(solver_input, input.path_element_ids.as_deref()).unwrap();
+    let path = legacy_build_path_2d(solver_input, input.path_element_ids.as_deref());
     let total_length: f64 = path.iter().map(|s| s.length).sum();
     let max_offset: f64 = train.axles.iter().map(|a| a.offset).fold(0.0, f64::max);
 
@@ -170,7 +515,7 @@ fn legacy_moving_2d(input: &MovingLoadInput) -> MovingLoadEnvelope {
     let mut num_positions = 0;
     while pos <= total_length + 1e-10 {
         num_positions += 1;
-        let loads = moving_loads_at_position_2d(solver_input, train, &path, pos, total_length);
+        let loads = legacy_loads_at_position_2d(solver_input, train, &path, pos, total_length);
         let mut modified_input = solver_input.clone();
         modified_input.loads = loads;
         if let Ok(results) = solve_2d(&modified_input) {
@@ -202,7 +547,7 @@ fn legacy_moving_3d(input: &MovingLoadInput3D) -> MovingLoadEnvelope3D {
     let train = &input.train;
     let step = input.step.unwrap_or(0.25);
     let gravity = input.gravity_direction.as_deref().unwrap_or("z");
-    let path = build_load_path_3d(solver_input, input.path_element_ids.as_deref()).unwrap();
+    let path = legacy_build_path_3d(solver_input, input.path_element_ids.as_deref());
     let total_length: f64 = path.iter().map(|s| s.length).sum();
     let max_offset: f64 = train.axles.iter().map(|a| a.offset).fold(0.0, f64::max);
 
@@ -222,7 +567,7 @@ fn legacy_moving_3d(input: &MovingLoadInput3D) -> MovingLoadEnvelope3D {
     let mut num_positions = 0;
     while pos <= total_length + 1e-10 {
         num_positions += 1;
-        let loads = moving_loads_at_position_3d(solver_input, train, gravity, &path, pos, total_length);
+        let loads = legacy_loads_at_position_3d(solver_input, train, gravity, &path, pos, total_length);
         let mut modified_input = solver_input.clone();
         modified_input.loads = loads;
         if let Ok(results) = solve_3d(&modified_input) {
@@ -358,11 +703,11 @@ fn parity_influence_line_2d() {
             for k in 0..=input.n_points_per_element {
                 let t = k as f64 / input.n_points_per_element as f64;
                 let a = t * l;
-                let loads = influence_unit_loads_2d(elem, a, t, cos_theta, sin_theta);
+                let loads = legacy_unit_loads_2d(elem, a, t, cos_theta, sin_theta);
                 let mut trial = base.clone();
                 trial.loads = loads;
                 let value = match solve_2d(&trial) {
-                    Ok(result) => extract_value(&input.quantity, input.target_node_id, input.target_element_id, input.target_position, &result),
+                    Ok(result) => legacy_extract_value(&input.quantity, input.target_node_id, input.target_element_id, input.target_position, &result),
                     Err(_) => 0.0,
                 };
                 legacy_points.push((nix + t * dx, niy + t * dy, elem.id, t, value));
@@ -425,11 +770,11 @@ fn parity_influence_line_3d() {
             for k in 0..=input.n_points_per_element {
                 let t = k as f64 / input.n_points_per_element as f64;
                 let a = t * l;
-                let loads = influence_unit_loads_3d(elem.id, a, g_local_y, g_local_z);
+                let loads = legacy_unit_loads_3d(elem.id, a, g_local_y, g_local_z);
                 let mut trial = base.clone();
                 trial.loads = loads;
                 let value = match solve_3d(&trial) {
-                    Ok(result) => extract_value_3d(&input.quantity, input.target_node_id, input.target_element_id, input.target_position, &result),
+                    Ok(result) => legacy_extract_value_3d(&input.quantity, input.target_node_id, input.target_element_id, input.target_position, &result),
                     Err(_) => 0.0,
                 };
                 legacy_points.push((nix + t * dx, niy + t * dy, niz + t * dz, elem.id, t, value));
@@ -449,4 +794,91 @@ fn parity_influence_line_3d() {
         let any_nonzero = new.points.iter().any(|p| p.value != 0.0);
         assert!(any_nonzero, "influence line unexpectedly all zero for {}", quantity);
     }
+}
+
+// ==================== Constraints → legacy fallback ====================
+
+/// A moving-loads model WITH constraints must use the legacy per-position
+/// full-solve path — the prepared path ignores constraints entirely, so
+/// silently using it would solve the model WITHOUT its constraints. Pin:
+/// (a) production equals the legacy reference bit-for-bit, and (b) the
+/// constrained result genuinely differs from the unconstrained model.
+#[test]
+fn moving_loads_with_constraints_uses_legacy_fallback() {
+    let mut nodes = HashMap::new();
+    nodes.insert("1".to_string(), SolverNode { id: 1, x: 0.0, z: 0.0 });
+    nodes.insert("2".to_string(), SolverNode { id: 2, x: 4.0, z: 0.0 });
+    nodes.insert("3".to_string(), SolverNode { id: 3, x: 8.0, z: 0.0 });
+    nodes.insert("4".to_string(), SolverNode { id: 4, x: 4.0, z: 3.0 }); // wall node
+
+    let mut materials = HashMap::new();
+    materials.insert("1".to_string(), SolverMaterial { id: 1, e: 200e6, nu: 0.3 });
+    let mut sections = HashMap::new();
+    sections.insert("1".to_string(), SolverSection { id: 1, a: 0.05, iz: 1.0e-4, as_y: None });
+
+    let mut elements = HashMap::new();
+    for (id, ni, nj) in [(1, 1, 2), (2, 2, 3)] {
+        elements.insert(id.to_string(), SolverElement {
+            id, elem_type: "frame".to_string(),
+            node_i: ni, node_j: nj,
+            material_id: 1, section_id: 1,
+            hinge_start: false, hinge_end: false,
+        });
+    }
+
+    let mut supports = HashMap::new();
+    supports.insert("1".to_string(), sup_2d(1, 1, "pinned"));
+    supports.insert("2".to_string(), sup_2d(2, 3, "rollerX"));
+    supports.insert("3".to_string(), sup_2d(3, 4, "fixed"));
+
+    let train = LoadTrain {
+        name: "T1".to_string(),
+        axles: vec![Axle { offset: 0.0, weight: 10.0 }],
+    };
+    let input = MovingLoadInput {
+        solver: SolverInput {
+            nodes, materials, sections, elements, supports,
+            loads: vec![],
+            constraints: vec![Constraint::RigidLink(RigidLinkConstraint {
+                master_node: 4, slave_node: 2, dofs: vec![],
+            })],
+            connectors: HashMap::new(),
+        },
+        train,
+        path_element_ids: Some(vec![1, 2]),
+        step: Some(1.0),
+    };
+
+    // (a) production == legacy reference, exactly.
+    let prod = solve_moving_loads_2d(&input).expect("constrained moving loads failed");
+    let reference = legacy_moving_2d(&input);
+    assert_eq!(prod.num_positions, reference.num_positions, "num_positions");
+    for (eid, env) in &prod.elements {
+        let r = &reference.elements[eid];
+        let c = format!("elem {}", eid);
+        assert_f64_eq(env.m_max_pos, r.m_max_pos, &format!("{} m_max_pos", c));
+        assert_f64_eq(env.m_max_neg, r.m_max_neg, &format!("{} m_max_neg", c));
+        assert_f64_eq(env.v_max_pos, r.v_max_pos, &format!("{} v_max_pos", c));
+        assert_f64_eq(env.v_max_neg, r.v_max_neg, &format!("{} v_max_neg", c));
+        assert_f64_eq(env.n_max_pos, r.n_max_pos, &format!("{} n_max_pos", c));
+        assert_f64_eq(env.n_max_neg, r.n_max_neg, &format!("{} n_max_neg", c));
+    }
+
+    // (b) the constraint was honored: the unconstrained model gives a
+    // materially different envelope (midspan is not locked there).
+    let mut uncon = MovingLoadInput { solver: SolverInput { constraints: vec![], ..input.solver.clone() }, ..input.clone() };
+    uncon.solver.constraints = vec![];
+    let uncon_prod = solve_moving_loads_2d(&uncon).expect("unconstrained moving loads failed");
+    let mut max_diff = 0.0f64;
+    for (eid, env) in &prod.elements {
+        let u = &uncon_prod.elements[eid];
+        max_diff = max_diff
+            .max((env.m_max_pos - u.m_max_pos).abs())
+            .max((env.m_max_neg - u.m_max_neg).abs());
+    }
+    assert!(
+        max_diff > 1.0,
+        "constrained and unconstrained envelopes should differ materially (max_diff = {})",
+        max_diff
+    );
 }
