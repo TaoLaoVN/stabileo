@@ -14,6 +14,10 @@
  *  5. Column BIAXIAL P-M capacity forwarded Muy/Muz to computeBiaxialCapacity
  *     BY NAME instead of by primary/secondary role. Only correct when Mz was
  *     primary; when My was primary both moments hit the wrong bending depth.
+ *  6. The beam/wall branch only ever checked the PRIMARY axis, even when
+ *     resolveDesignAxes flagged `biaxial` (secondary moment > 10% of primary)
+ *     — a beam with significant Mz/Vy demand could be certified having never
+ *     checked it.
  */
 import { describe, expect, it } from 'vitest';
 import {
@@ -23,6 +27,7 @@ import {
   type StationForces,
 } from '../../station-design-forces';
 import type { DesignAxes } from '../design-axes';
+import { BIAXIAL_RATIO_THRESHOLD } from '../design-axes';
 import type { ProvidedReinforcement } from '../../../store/model.svelte';
 
 // ─── Shared builders ─────────────────────────────────────────
@@ -337,5 +342,65 @@ describe('column biaxial P-M capacity is invariant under axis relabeling', () =>
     expect(checkMy).toBeDefined();
     expect(checkMz).toBeDefined();
     expect(checkMy!.ratio).toBeCloseTo(checkMz!.ratio, 9);
+  });
+});
+
+// ─── 6. Biaxial beams must not certify an unchecked secondary axis ──────
+
+describe('biaxial beams do not certify with an unchecked secondary axis', () => {
+  const beamSection = { b: 0.3, h: 0.6, fc: 30, fy: 420, cover: 0.025, stirrupDia: 8 };
+  // Mz ≈ 0.5·My — well past the 10% biaxial threshold resolveDesignAxes uses.
+  const biaxialBeamAxes: DesignAxes = {
+    flexure: 'My', shear: 'Vz', secondaryFlexure: 'Mz', secondaryShear: 'Vy',
+    bFlex: 0.3, hFlex: 0.6, biaxial: true,
+    sagCategory: 'My+', hogCategory: 'My-', basis: 'stress-proxy', secondaryRatio: 0.5,
+  };
+  // Generous bottom steel: passes the primary axis (My) comfortably on its own,
+  // so a pre-fix run reads as a clean, confident VERIFIED.
+  const reinforcement: ProvidedReinforcement = {
+    regions: {
+      bottomSpan: { count: 4, diameter: 20 },
+      stirrupsSpan: { diameter: 8, legs: 2, spacing: 0.15 },
+      stirrupsSupport: { diameter: 8, legs: 2, spacing: 0.15 },
+    },
+  };
+  const stations = [st(0.5, { my: 200, mz: 100, vz: 60, vy: 30 })];
+
+  function verify() {
+    return verifyProvidedReinforcement(
+      1, 'beam', reinforcement, undefined,
+      { flexure: { AsReq: 0 }, shear: { AvOverS: 0, AvOverSMin: 0 } },
+      beamSection, stationResult(stations), undefined,
+      { axes: biaxialBeamAxes },
+    );
+  }
+
+  it('never reads as a clean pass while Mz/Vy is unchecked', () => {
+    expect(biaxialBeamAxes.secondaryRatio).toBeGreaterThan(BIAXIAL_RATIO_THRESHOLD);
+    const res = verify();
+    const secondaryChecked = res.checkedAxes.includes(biaxialBeamAxes.secondaryFlexure)
+      && res.checkedAxes.includes(biaxialBeamAxes.secondaryShear);
+    if (!secondaryChecked) {
+      // Refusal path (same pattern as the O6 orientation refusal): certification
+      // must be denied, not silently granted on the unchecked axis.
+      expect(res.overallStatus).not.toBe('ok');
+      expect(res.worstUtilization).toBeGreaterThan(1.0);
+      expect(res.checks.some(c => c.limiting === 'biaxial' && c.status === 'fail')).toBe(true);
+    } else {
+      // Checked path: the secondary axis must carry a real strength check.
+      expect(res.checks.some(c => c.category.includes('Mz') && c.status !== undefined)).toBe(true);
+    }
+  });
+
+  it('records the biaxial threshold honestly regardless of which path is taken', () => {
+    // Whichever remediation is chosen, checkedAxes must never falsely claim the
+    // secondary axis was verified when it was not.
+    const res = verify();
+    const secondaryChecked = res.checkedAxes.includes(biaxialBeamAxes.secondaryFlexure);
+    if (secondaryChecked) {
+      expect(res.checks.some(c => c.category.includes('Mz'))).toBe(true);
+    } else {
+      expect(res.checks.some(c => c.limiting === 'biaxial')).toBe(true);
+    }
   });
 });

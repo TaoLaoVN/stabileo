@@ -26,6 +26,7 @@ import { REBAR_DB, classifyElement } from './codes/argentina/cirsoc201';
 // TYPES from this file, so there is no runtime import cycle.
 import {
   resolveDesignAxes, tupleMoment, tupleShear, axisLabel,
+  BIAXIAL_RATIO_THRESHOLD,
   type DesignAxes,
 } from './design/design-axes';
 import { utilizationStatus } from './design/outcome';
@@ -1692,6 +1693,32 @@ export function verifyProvidedReinforcement(
   const V2 = (t: Tuple) => tupleShear(t, axes.secondaryShear);
 
   if ((elementType === 'beam' || elementType === 'wall') && section) {
+    // ─── Biaxial refusal (same pattern as the O6 orientation refusal) ───
+    // resolveDesignAxes flags `biaxial` once the secondary moment exceeds
+    // BIAXIAL_RATIO_THRESHOLD of the primary — but every check below this point
+    // (region flexure, shear zones, ties are column-only) only ever evaluates the
+    // PRIMARY axis pair (M/V from `axes.flexure`/`axes.shear`). The secondary pair
+    // (`axes.secondaryFlexure`/`axes.secondaryShear`) is never checked for beams
+    // or walls: certifying here would silently pass a member whose significant
+    // secondary-axis bending/shear was never verified against the provided steel.
+    // Re-deriving the whole region/curtailment/critical-section pipeline for a
+    // rotated secondary section is a large undertaking with its own risk profile;
+    // refusing explicitly — never a green pass on an unchecked axis — is the
+    // contained, honest choice here.
+    if (axes.biaxial) {
+      pushStrength({
+        category: `Biaxial refusal (${axes.secondaryFlexure}/${axes.secondaryShear} unchecked)`,
+        demandCategory: null,
+        utilization: Number.POSITIVE_INFINITY,
+        unit: '—', method: 'capacity', tuplesChecked: 0,
+        description: `secondary-axis demand is ${(axes.secondaryRatio * 100).toFixed(0)}% of the `
+          + `primary (exceeds the ${(BIAXIAL_RATIO_THRESHOLD * 100).toFixed(0)}% biaxial threshold), `
+          + `but this verifier only checks the primary axis (${axes.flexure}/${axes.shear}) for `
+          + `beams/walls — refusing certification rather than certifying an unchecked axis.`,
+        limiting: 'biaxial',
+      });
+    }
+
     const reg = provided.regions;
 
     // ── Resolve layers from explicit layers or grouped bars ──

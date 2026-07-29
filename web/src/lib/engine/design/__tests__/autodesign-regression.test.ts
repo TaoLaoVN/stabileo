@@ -10,6 +10,17 @@
  *   authoritative verifier     ok 4 / warn 28 / FAIL 376
  *   worst provided utilization 7.69
  * AFTER PR15: 408/408 VERIFIED, worst certified utilization <= 1.00.
+ *
+ * AFTER the PR78 review fixes (biaxial column axis mapping + biaxial-beam
+ * refusal): 386/408 VERIFIED, 22 SEARCH_EXHAUSTED. The 22 are the fixture's
+ * BEAM-Y members under the wind combos — their Mz/Vy secondary demand is
+ * 10.4%-17.1% of the governing My/Vz (resolveDesignAxes' 10% biaxial
+ * threshold), and this verifier only ever checks the PRIMARY axis for beams.
+ * Pre-fix, those 22 were certified VERIFIED having never checked Mz/Vy at
+ * all — a false pass baked into the "408/408" figure above. Post-fix they
+ * honestly refuse (limiting: 'biaxial', provisional retained, never a
+ * certificate) rather than certify an unchecked axis. Worst certified
+ * utilization among the genuinely-verified 386 is unchanged (~0.999).
  */
 
 import { describe, it, expect } from 'vitest';
@@ -33,26 +44,43 @@ describe('flagship 408-member RC frame designs completely', () => {
     expect(solved.orientationIssues).toEqual([]);
   });
 
-  it('produces VERIFIED for every member, with valid certificates', () => {
+  it('produces VERIFIED for every member whose axes are fully checked, and honestly ' +
+     'refuses the 22 BEAM-Y members with unchecked biaxial (Mz/Vy) demand', () => {
     const s = runDesign(cirsoc201Adapter, solved.contexts.values(), { maxRunMs: 120_000 });
     expect(s.total).toBe(408);
-    expect(s.verified).toBe(408);
+    // 22 BEAM-Y members carry Mz/Vy secondary demand above the 10% biaxial
+    // threshold; this verifier only checks the primary axis for beams, so it
+    // refuses rather than falsely certify them (PR78 review fix).
+    expect(s.verified).toBe(386);
     expect(s.sectionInadequate).toBe(0);
     expect(s.demandUnavailable).toBe(0);
-    expect(s.searchExhausted).toBe(0);
+    expect(s.searchExhausted).toBe(22);
     expect(s.unsupported).toBe(0);
-    expect(s.provisionalRetained).toBe(0);
+    expect(s.provisionalRetained).toBe(22);
     expect(s.aborted).toBe(false);
     expect(s.notReached).toBe(0);
 
     let worst = 0;
+    let refused = 0;
     for (const [id, o] of s.outcomes) {
+      if (o.outcome !== 'VERIFIED') {
+        // The refused members must be exactly the honest-refusal case: never a
+        // certificate, always a reason, and the biaxial constraint recorded.
+        expect(o.elementType, `element ${id}`).toBe('beam');
+        expect(o.outcome, `element ${id}`).toBe('SEARCH_EXHAUSTED');
+        expect(o.limiting, `element ${id}`).toContain('biaxial');
+        expect(o.certificate, `element ${id} certificate`).toBeUndefined();
+        expect(o.accepted, `element ${id} accepted rebar`).toBeUndefined();
+        refused++;
+        continue;
+      }
       expect(o.certificate, `element ${id} certificate`).toBeDefined();
       expect(o.accepted, `element ${id} accepted rebar`).toBeDefined();
       expect(o.certificate!.checkCount).toBeGreaterThan(0);
       expect(o.certificate!.checkedAxes.length).toBeGreaterThan(0);
       worst = Math.max(worst, o.certificate!.worstUtilization);
     }
+    expect(refused).toBe(22);
     expect(worst).toBeLessThanOrEqual(UTIL_FAIL_THRESHOLD);
   }, 180_000);
 
