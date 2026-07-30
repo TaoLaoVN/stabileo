@@ -5,6 +5,8 @@
  * Distributes solve_3d calls across workers for parallel execution.
  */
 
+import { getWasmBytes } from './wasm-solver';
+
 interface PendingSolve {
   resolve: (json: string) => void;
   reject: (err: Error) => void;
@@ -17,7 +19,6 @@ interface PoolWorker {
 }
 
 let pool: PoolWorker[] = [];
-let wasmBytes: ArrayBuffer | null = null;
 let initPromise: Promise<void> | null = null;
 let nextId = 0;
 
@@ -30,19 +31,8 @@ const MAX_WORKERS = Math.min(
   8,
 );
 
-/** Fetch the WASM binary once for sharing with workers. */
-async function fetchWasmBytes(): Promise<ArrayBuffer> {
-  if (wasmBytes) return wasmBytes;
-  // The WASM binary is served alongside the JS glue code
-  // Use the same resolution path as the glue code
-  const wasmUrl = new URL('../wasm/dedaliano_engine_bg.wasm', import.meta.url);
-  const resp = await fetch(wasmUrl);
-  wasmBytes = await resp.arrayBuffer();
-  return wasmBytes;
-}
-
 /** Create a single worker and wait for it to become ready. */
-function createWorker(bytes: ArrayBuffer): Promise<PoolWorker> {
+function createWorker(wasmModule: WebAssembly.Module): Promise<PoolWorker> {
   return new Promise((resolve, reject) => {
     const worker = new Worker(
       new URL('./solver-worker.ts', import.meta.url),
@@ -76,8 +66,8 @@ function createWorker(bytes: ArrayBuffer): Promise<PoolWorker> {
       reject(new Error(`Worker error: ${err.message}`));
     };
 
-    // Send WASM bytes (copy, not transfer, since multiple workers need it)
-    worker.postMessage({ type: 'init', wasmBytes: bytes.slice(0) });
+    // Compiled module is structured-cloneable: no byte copy, no per-worker compile
+    worker.postMessage({ type: 'init', wasmModule });
   });
 }
 
@@ -89,11 +79,30 @@ export async function initPool(numWorkers?: number): Promise<void> {
   const count = numWorkers ?? MAX_WORKERS;
 
   initPromise = (async () => {
-    const bytes = await fetchWasmBytes();
-    const workers = await Promise.all(
-      Array.from({ length: count }, () => createWorker(bytes)),
-    );
-    pool = workers;
+    try {
+      // Compile once on the main thread (bytes shared with wasm-solver's init,
+      // so a single fetch); workers instantiate clones of the compiled module.
+      const wasmModule = await WebAssembly.compile(await getWasmBytes());
+      const settled = await Promise.allSettled(
+        Array.from({ length: count }, () => createWorker(wasmModule)),
+      );
+      const failed = settled.find((s): s is PromiseRejectedResult => s.status === 'rejected');
+      if (failed) {
+        // Terminate the workers that DID start (Promise.all would leak them),
+        // then rethrow into the reset path below.
+        for (const s of settled) {
+          if (s.status === 'fulfilled') s.value.worker.terminate();
+        }
+        throw failed.reason;
+      }
+      pool = settled.map(s => (s as PromiseFulfilledResult<PoolWorker>).value);
+    } catch (err) {
+      // Don't poison the pool: a rejected initPromise would make every later
+      // call re-await the same failure until reload. Reset so the next call
+      // retries.
+      initPromise = null;
+      throw err;
+    }
   })();
 
   return initPromise;
