@@ -21,13 +21,15 @@ import { resultsStore } from '../../store/results.svelte';
 import { detailingStore } from '../../store/detailing.svelte';
 import { deserializeProject } from '../../store/file';
 import { isSolverReady } from '../../engine/wasm-solver';
+import type { BarPath } from '../../codes/cirsoc201/bar-geometry';
+import type { DetailingAssembly } from '../../engine/detailing/assembly';
 
 const FIXTURE = new URL('../__fixtures__/rc-footing-cad-poc.ded.json', import.meta.url);
 
 /** Restore the committed project and run the real production analysis + footing detailing. */
 async function restoreAndRun() {
   modelStore.clear();
-  resultsStore.clearAll?.();
+  resultsStore.clear();
   detailingStore.clear();
 
   const text = readFileSync(FIXTURE, 'utf8');
@@ -53,7 +55,7 @@ async function restoreAndRun() {
   // `$derived`, and production code notes a `$derived` does not recompute inside the
   // synchronous call that wrote it. Outside a Svelte component it therefore reads 0 even
   // though the run and the persisted store both hold the assembly.
-  const assemblies = (run as { assemblies?: never[] } | null)?.assemblies ?? [];
+  const assemblies: DetailingAssembly[] = (run as { assemblies?: DetailingAssembly[] } | null)?.assemblies ?? [];
   const persisted = modelStore.model.detailing?.assemblies ?? [];
   return { footing: footings[0], run, assemblies, persisted };
 }
@@ -95,7 +97,7 @@ describe('restored .ded project reaches a production DetailingAssembly', () => {
     expect(assemblies.length, 'generateFloors produced at least one assembly').toBeGreaterThan(0);
     expect(persisted.length, 'and it was persisted to the model').toBe(assemblies.length);
 
-    const withFooting = (assemblies as Array<{ bars: unknown[] }>).filter((a) => a.bars.length > 0);
+    const withFooting = assemblies.filter((a) => a.bars.length > 0);
     // Report the shape honestly rather than asserting a bar count we have not measured.
     const summary = assemblies.map((a) => ({
       id: a.id,
@@ -124,7 +126,7 @@ describe('restored .ded project reaches a production DetailingAssembly', () => {
 
   it('bars that exist carry exact BarPath geometry with arc centres where claimed', async () => {
     const { assemblies } = await restoreAndRun();
-    const bars = (assemblies as Array<{ bars: never[] }>).flatMap((a) => a.bars) as Array<never>;
+    const bars: BarPath[] = assemblies.flatMap((a) => a.bars);
     console.log('BAR COUNT', bars.length);
     for (const b of bars) {
       expect(b.id, 'stable bar id').toBeTruthy();
@@ -149,7 +151,7 @@ describe('restored .ded project reaches a production DetailingAssembly', () => {
 
   it('records honestly that the footing generates no steel yet, and why', async () => {
     const { assemblies } = await restoreAndRun();
-    const bars = (assemblies as Array<{ bars: unknown[] }>).flatMap((a) => a.bars);
+    const bars: BarPath[] = assemblies.flatMap((a) => a.bars);
     const run = detailingStore.lastFootingRun!;
     const reasons = run.outcomes.flatMap((o) => o.unsupported.map((m) => String((m as { key?: string }).key ?? '')));
     // The footing IS verified, but the column carries no provided reinforcement in this
@@ -176,7 +178,7 @@ describe('restored .ded project reaches a production DetailingAssembly', () => {
 
   it('the assembly is current against the restored model, and goes stale when it is edited', async () => {
     const { footing, assemblies } = await restoreAndRun();
-    const before = (assemblies as Array<{ demandRevision: number }>).map((a) => a.demandRevision);
+    const before = assemblies.map((a) => a.demandRevision);
     expect(before.length).toBeGreaterThan(0);
     // A production edit to the footing must be able to mark detailing stale.
     modelStore.updateFooting(footing.id, { thickness: footing.thickness + 0.05 } as never);
