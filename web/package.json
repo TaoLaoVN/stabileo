@@ -9,7 +9,8 @@
     "preview": "vite preview",
     "wasm": "cd ../engine && wasm-pack build --target web --out-dir ../web/src/lib/wasm --no-opt",
     "test": "vitest run",
-    "test:watch": "vitest"
+    "test:watch": "vitest",
+    "bench:wasm-boundary": "node scripts/bench-wasm-boundary.mjs"
   },
   "devDependencies": {
     "@sveltejs/vite-plugin-svelte": "^5.0.3",

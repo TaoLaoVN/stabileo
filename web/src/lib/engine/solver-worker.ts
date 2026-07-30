@@ -44,7 +44,9 @@ self.onmessage = async (e: MessageEvent) => {
       const result = solve_3d(msg.input);
       self.postMessage({ type: 'result', id: msg.id, result });
     } catch (err: any) {
-      self.postMessage({ type: 'result', id: msg.id, error: err.message });
+      // Engine errors cross the boundary as plain strings (JsValue::from_str),
+      // which have no .message — fall back to String() so they are not lost.
+      self.postMessage({ type: 'result', id: msg.id, error: err?.message ?? String(err) });
     }
     return;
   }
