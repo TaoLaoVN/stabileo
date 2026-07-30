@@ -34,26 +34,42 @@ function formatSolveTiming(timings: any): string {
 const VALID_2D_DIAGRAMS = ['deformed', 'moment', 'shear', 'axial', 'colorMap', 'axialColor'] as const;
 const VALID_3D_DIAGRAMS = ['deformed', 'momentY', 'momentZ', 'shearY', 'shearZ', 'axial', 'torsion', 'axialColor', 'colorMap'] as const;
 
+// ─── Stale-response discipline ─────────────────────────────────────────────
+// Solves are async now: while a solve is in flight the user can keep editing
+// (bumping modelStore.modelVersion) or trigger a newer solve. Each solve
+// request captures the model version and a monotonically increasing request
+// id; results are written to the stores only if both are still current.
+let solveRequestSeq = 0;
+
+function nextSolveGuard(): () => boolean {
+  const versionAtStart = modelStore.modelVersion;
+  const requestId = ++solveRequestSeq;
+  return () => modelStore.modelVersion !== versionAtStart || requestId !== solveRequestSeq;
+}
+
 // ─── Live Calc (reactive $effect) ─────────────────────────────────────────
 
 /**
  * Execute live calculation (auto-solve on model change).
  * Called from the $effect in App.svelte when liveCalc is enabled.
- * Sets results/errors directly on the stores.
+ * Sets results/errors directly on the stores, unless the solve went stale
+ * (model edited or a newer solve started while it was in flight).
  *
  * @param analysisMode  Current analysis mode ('2d' | '3d' | 'edu')
  * @param axisConvention3D  Current 3D axis convention string
  * @param prevDiagram  Diagram type the user was viewing before clear() — restored after solve
  */
-export function runLiveCalc(analysisMode: string, axisConvention3D: string, prevDiagram?: string): void {
+export async function runLiveCalc(analysisMode: string, axisConvention3D: string, prevDiagram?: string): Promise<void> {
   // Skip if model is incomplete (e.g., mid-example-load after clear but before fixture applied)
   if (modelStore.nodes.size < 2 || modelStore.elements.size < 1) return;
+  const isStale = nextSolveGuard();
   try {
     if (analysisMode === '3d' || analysisMode === 'pro') {
-      liveCalc3D(axisConvention3D);
+      await liveCalc3D(axisConvention3D, isStale);
     } else {
-      liveCalc2D();
+      await liveCalc2D(isStale);
     }
+    if (isStale()) return;
     // Restore the diagram type the user was viewing before clear() reset it to 'none'.
     // Only restore if it's a valid diagram for the current mode.
     if (prevDiagram && prevDiagram !== 'none') {
@@ -64,11 +80,11 @@ export function runLiveCalc(analysisMode: string, axisConvention3D: string, prev
       }
     }
   } catch (err: any) {
-    uiStore.liveCalcError = err.message ?? t('error.unknown');
+    if (!isStale()) uiStore.liveCalcError = err.message ?? t('error.unknown');
   }
 }
 
-function liveCalc3D(axisConvention: string): void {
+async function liveCalc3D(axisConvention: string, isStale: () => boolean): Promise<void> {
   if (!isWasmReady()) {
     initSolver().catch((err) => {
       console.error('[liveCalc3D] WASM initialization failed:', err);
@@ -77,7 +93,8 @@ function liveCalc3D(axisConvention: string): void {
     return;
   }
   const isPro = uiStore.analysisMode === 'pro';
-  const r = modelStore.solve3D(uiStore.includeSelfWeight, axisConvention === 'leftHand', isPro);
+  const r = await modelStore.solve3DAsync(uiStore.includeSelfWeight, axisConvention === 'leftHand', isPro);
+  if (isStale()) return;
   if (typeof r === 'string') {
     uiStore.liveCalcError = r;
     return;
@@ -92,8 +109,9 @@ function liveCalc3D(axisConvention: string): void {
   resultsStore.setResults3D(r, true);
 }
 
-function liveCalc2D(): void {
-  const r = modelStore.solve(uiStore.includeSelfWeight, uiStore.drawPlane2D);
+async function liveCalc2D(isStale: () => boolean): Promise<void> {
+  const r = await modelStore.solveAsync(uiStore.includeSelfWeight, uiStore.drawPlane2D);
+  if (isStale()) return;
   if (typeof r === 'string') {
     uiStore.liveCalcError = r;
     return;
@@ -107,7 +125,8 @@ function liveCalc2D(): void {
 
   resultsStore.setResults(r, true);
 
-  // Auto-solve combinations if defined
+  // Auto-solve combinations if defined (sync single WASM call — the model
+  // cannot drift while it runs, so no extra stale check is needed here)
   if (modelStore.model.combinations.length > 0) {
     const combo = modelStore.solveCombinations(uiStore.includeSelfWeight, uiStore.drawPlane2D);
     if (combo && typeof combo !== 'string') {
@@ -126,16 +145,18 @@ function liveCalc2D(): void {
  * Handles 2D and 3D, combinations, toasts and mobile panel.
  */
 export async function runGlobalSolve(): Promise<void> {
+  // Supersede any in-flight solve (live calc or an earlier manual solve).
+  const isStale = nextSolveGuard();
   if (uiStore.analysisMode === '3d' || uiStore.analysisMode === 'pro') {
     await ensureWasmReady('runGlobalSolve');
-    await globalSolve3D();
+    await globalSolve3D(isStale);
   } else if (uiStore.analysisMode === 'edu') {
     // Edu mode handles its own solve via edu-solver.ts (registered listener).
     // This branch is a no-op safety fallback — the edu module's listener
     // fires first on the same 'stabileo-solve' event.
     return;
   } else {
-    globalSolve2D();
+    await globalSolve2D(isStale);
   }
 }
 
@@ -167,14 +188,15 @@ function isMechanismError(msg: string): boolean {
     || lc.includes('mechanism') || lc.includes('hypostatic') || lc.includes('unstable');
 }
 
-async function globalSolve3D(): Promise<void> {
+async function globalSolve3D(isStale: () => boolean): Promise<void> {
   const isPro = uiStore.analysisMode === 'pro';
   const leftHand = uiStore.axisConvention3D === 'leftHand';
   const hasCombos = modelStore.model.combinations.length > 0;
   const t0 = performance.now();
 
-  const runSingleSolve = () => {
-    const r = modelStore.solve3D(uiStore.includeSelfWeight, leftHand, isPro);
+  const runSingleSolve = async () => {
+    const r = await modelStore.solve3DAsync(uiStore.includeSelfWeight, leftHand, isPro);
+    if (isStale()) return null;
     if (typeof r === 'string') {
       uiStore.toast(r, 'error');
       return null;
@@ -196,6 +218,7 @@ async function globalSolve3D(): Promise<void> {
 
   const runComboSolve = async () => {
     const comboResult = await modelStore.solveCombinations3DParallel(uiStore.includeSelfWeight, leftHand, isPro);
+    if (isStale()) return null;
     if (typeof comboResult === 'string') return comboResult;
     if (!comboResult) return t('results.emptyModelError');
 
@@ -236,12 +259,12 @@ async function globalSolve3D(): Promise<void> {
         const comboError = await runComboSolve();
         if (comboError) {
           console.warn('[globalSolve3D] Combination solve returned error in PRO, falling back to single solve:', comboError);
-          const fallback = runSingleSolve();
+          const fallback = await runSingleSolve();
           if (!fallback) uiStore.toast(comboError, 'info');
         }
       } catch (e: any) {
         console.error('[globalSolve3D] Combination solving failed in PRO, falling back to single solve:', e.message);
-        const fallback = runSingleSolve();
+        const fallback = await runSingleSolve();
         if (!fallback) uiStore.toast(e.message, 'info');
       }
       return;
@@ -252,23 +275,24 @@ async function globalSolve3D(): Promise<void> {
       if (comboError) {
         console.warn('[globalSolve3D] Combination solve returned error, falling back to single solve:', comboError);
         uiStore.toast(comboError, 'error');
-        runSingleSolve();
+        await runSingleSolve();
         return;
       }
     } catch (e: any) {
       console.error('[globalSolve3D] Combination solving failed:', e.message);
       uiStore.toast(e.message, 'error');
-      runSingleSolve();
+      await runSingleSolve();
     }
     return;
   }
 
   // No combinations — single solve only
-  runSingleSolve();
+  await runSingleSolve();
 }
 
-function globalSolve2D(): void {
-  const r = modelStore.solve(uiStore.includeSelfWeight, uiStore.drawPlane2D);
+async function globalSolve2D(isStale: () => boolean): Promise<void> {
+  const r = await modelStore.solveAsync(uiStore.includeSelfWeight, uiStore.drawPlane2D);
+  if (isStale()) return;
   if (typeof r === 'string') {
     uiStore.toast(r, 'error', isMechanismError(r) ? 'kinematic' : undefined);
     return;

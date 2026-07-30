@@ -1,7 +1,7 @@
 // Solver service — pure functions extracted from model.svelte.ts
 // Each function takes a ModelData parameter instead of accessing reactive store state.
 
-import { solve as solveStructure, solve3D as solve3DEngine, analyzeKinematics, combineResults, combineResults3D, computeEnvelope, computeEnvelope3D, solveMultiCase2D, solveMultiCase3D, input3DToWireObject } from './wasm-solver';
+import { solve as solveStructure, solve3D as solve3DEngine, analyzeKinematics, combineResults, combineResults3D, computeEnvelope, computeEnvelope3D, solveMultiCase2D, solveMultiCase3D, input2DToWireObject, input3DToWireObject } from './wasm-solver';
 import type { SolverInput, FullEnvelope, AnalysisResults } from './types';
 import { computeLocalAxes3D } from './local-axes-3d';
 import type { SolverInput3D, SolverLoad3D, AnalysisResults3D, FullEnvelope3D, Constraint3D } from './types-3d';
@@ -19,7 +19,7 @@ import { expandJoints3D, modelHasJoints3D, EMBED_XZ_DOF_PERMUTATION } from './ex
 import { expandShellOffsets, modelHasShellOffsets } from './shell-offsets';
 import { enrichComboShellStresses } from './shell-combos';
 import { constraintsTo2D } from './constraint-2d-remap';
-import { initPool, isPoolReady, solveParallel } from './solver-pool';
+import { initPool, isPoolReady, solveParallel, solve2DInWorker, solve3DInWorker, PoolUnavailableError } from './solver-pool';
 import { t } from '../i18n';
 import {
   get2DDisplayNodalLoadMoment,
@@ -300,16 +300,22 @@ function preflightModel2D(model: ModelData): { error: string | null; connectedNo
   return { error: null, connectedNodes };
 }
 
+interface Solve2DPreparation {
+  input: SolverInput;
+  slidingHelperIds: Set<number>;
+  modelNodeIds: Set<number>;
+}
+
 /**
- * Full 2D solve with all pre-solve validations.
- * Returns AnalysisResults on success, an error string, or null.
+ * Validation + wire-input construction for a 2D solve (shared by the sync and
+ * async solve paths). Returns the preparation, or an error string, or null.
  * Also returns the KinematicResult via the optional `onKinematic` callback.
  */
-export function validateAndSolve2D(
+function prepareSolve2D(
   model: ModelData,
   includeSelfWeight = false,
   onKinematic?: (k: KinematicResult | null) => void,
-): AnalysisResults | string | null {
+): Solve2DPreparation | string | null {
   if (model.nodes.size < 2 || model.elements.size < 1) {
     return t('svc.needNodesAndElements');
   }
@@ -631,16 +637,113 @@ export function validateAndSolve2D(
     ? expandSlidingJoints2D(input, model.elements)
     : new Set<number>();
 
+  return { input, slidingHelperIds, modelNodeIds: new Set(model.nodes.keys()) };
+}
+
+/** Prune ephemeral sliding-joint helper-node results (no-op without sliders). */
+function finalizeSolve2DResults(results: AnalysisResults, prep: Solve2DPreparation): AnalysisResults {
+  if (prep.slidingHelperIds.size > 0) {
+    return pruneHelperNodeResults(results as any, prep.modelNodeIds) as any;
+  }
+  return results;
+}
+
+export function validateAndSolve2D(
+  model: ModelData,
+  includeSelfWeight = false,
+  onKinematic?: (k: KinematicResult | null) => void,
+): AnalysisResults | string | null {
+  const prep = prepareSolve2D(model, includeSelfWeight, onKinematic);
+  if (prep === null || typeof prep === 'string') return prep;
+
   try {
     const t0 = performance.now();
-    const results = solveStructure(input);
+    const results = solveStructure(prep.input);
     const dt = performance.now() - t0;
     console.log(`Estructura resuelta en ${dt.toFixed(1)} ms — ${model.nodes.size} nodos, ${model.elements.size} elementos`);
-    if (slidingHelperIds.size > 0) {
-      const modelNodeIds = new Set(model.nodes.keys());
-      return pruneHelperNodeResults(results as any, modelNodeIds) as any;
+    return finalizeSolve2DResults(results, prep);
+  } catch (err: any) {
+    console.error('Solver error:', err);
+    return t('svc.solverError').replace('{n}', err.message);
+  }
+}
+
+// ─── Solve-result memoization (LRU) ─────────────────────────────
+
+/**
+ * Small LRU over finalized solve results, keyed by the serialized wire input.
+ * The wire already encodes every analysis-relevant option: includeSelfWeight
+ * (baked into loads), leftHand (wire field), drawPlane (model remapped before
+ * the call), constraints/connectors. The '2d:'/'3d:' prefix distinguishes
+ * analysis modes. Used by the async (worker) solve paths only.
+ */
+const SOLVE_CACHE_MAX = 6;
+const solveResultCache = new Map<string, AnalysisResults | AnalysisResults3D>();
+
+function solveCacheGet(key: string): AnalysisResults | AnalysisResults3D | undefined {
+  const value = solveResultCache.get(key);
+  if (value !== undefined) {
+    // LRU touch: re-insert at the end.
+    solveResultCache.delete(key);
+    solveResultCache.set(key, value);
+  }
+  return value;
+}
+
+function solveCacheSet(key: string, value: AnalysisResults | AnalysisResults3D): void {
+  solveResultCache.delete(key);
+  solveResultCache.set(key, value);
+  if (solveResultCache.size > SOLVE_CACHE_MAX) {
+    solveResultCache.delete(solveResultCache.keys().next().value!);
+  }
+}
+
+/** Test hook: clear the solve-result memoization cache. */
+export function clearSolveResultCache(): void {
+  solveResultCache.clear();
+}
+
+/** Test hook: current number of memoized solve results. */
+export function solveResultCacheSize(): number {
+  return solveResultCache.size;
+}
+
+/**
+ * Async 2D solve: runs the engine in a worker from the pool (UI stays
+ * responsive), with a small LRU memo (undo/redo and no-op edits skip the
+ * solve). Falls back to the synchronous main-thread solver when Workers are
+ * unavailable. Same result shape and string-error semantics as validateAndSolve2D.
+ */
+export async function validateAndSolve2DAsync(
+  model: ModelData,
+  includeSelfWeight = false,
+  onKinematic?: (k: KinematicResult | null) => void,
+): Promise<AnalysisResults | string | null> {
+  const prep = prepareSolve2D(model, includeSelfWeight, onKinematic);
+  if (prep === null || typeof prep === 'string') return prep;
+
+  const wire = input2DToWireObject(prep.input);
+  const cacheKey = `2d:${JSON.stringify(wire)}`;
+  const cached = solveCacheGet(cacheKey);
+  if (cached) {
+    console.log(`Estructura resuelta (caché) — ${model.nodes.size} nodos, ${model.elements.size} elementos`);
+    return cached as AnalysisResults;
+  }
+
+  try {
+    const t0 = performance.now();
+    let results: AnalysisResults;
+    try {
+      results = await solve2DInWorker(wire);
+    } catch (e) {
+      if (!(e instanceof PoolUnavailableError)) throw e;
+      results = solveStructure(prep.input);
     }
-    return results;
+    const dt = performance.now() - t0;
+    console.log(`Estructura resuelta en ${dt.toFixed(1)} ms — ${model.nodes.size} nodos, ${model.elements.size} elementos`);
+    const finalResults = finalizeSolve2DResults(results, prep);
+    solveCacheSet(cacheKey, finalResults);
+    return finalResults;
   } catch (err: any) {
     console.error('Solver error:', err);
     return t('svc.solverError').replace('{n}', err.message);
@@ -1428,7 +1531,11 @@ export function buildSolverInput3D(
 // ─── 3D: validateAndSolve3D ──────────────────────────────────────
 
 /** Solve the current model using the 3D solver. Returns results or error string. */
-export function validateAndSolve3D(model: ModelData, includeSelfWeight = false, leftHand = false): AnalysisResults3D | string | null {
+/**
+ * Validation + wire-input construction for a 3D solve (shared by the sync and
+ * async solve paths). Returns the solver input, or an error string, or null.
+ */
+function prepareSolve3D(model: ModelData, includeSelfWeight = false, leftHand = false): SolverInput3D | string | null {
   if (model.nodes.size < 2 || model.elements.size < 1) {
     return t('svc.needNodesAndElements');
   }
@@ -1525,25 +1632,70 @@ export function validateAndSolve3D(model: ModelData, includeSelfWeight = false, 
 
   const input = buildSolverInput3D(model, includeSelfWeight, leftHand);
   if (!input) return t('svc.emptyModel');
+  return input;
+}
+
+/** Post-solve 3D result enrichment: shell stresses + helper-node pruning. */
+function finalizeSolve3DResults(results: AnalysisResults3D, model: ModelData): AnalysisResults3D {
+  // PRO-only: post-process shell stresses
+  if (model.quads?.size || model.plates?.size) {
+    postProcessShellStresses(results, model.nodes, model.quads ?? new Map(), model.plates ?? new Map(), model.materials);
+  }
+  // Strip ephemeral helper-node results (member/shell offsets or 3D joints).
+  if (modelHasMemberOffsets(model.elements.values()) || modelHasShellOffsets(model.plates, model.quads) || modelHasJoints3D(model.elements.values())) {
+    return pruneHelperNodeResults(results, new Set(model.nodes.keys()));
+  }
+  return results;
+}
+
+export function validateAndSolve3D(model: ModelData, includeSelfWeight = false, leftHand = false): AnalysisResults3D | string | null {
+  const input = prepareSolve3D(model, includeSelfWeight, leftHand);
+  if (input === null || typeof input === 'string') return input;
 
   try {
     const t0 = performance.now();
     const results = solve3DEngine(input);
     const dt = performance.now() - t0;
-    if (typeof results === 'string') {
-      console.warn(`Solver 3D (${dt.toFixed(1)} ms): ${results}`);
-    } else {
-      console.log(`Estructura 3D resuelta en ${dt.toFixed(1)} ms — ${model.nodes.size} nodos, ${model.elements.size} elementos`);
-      // PRO-only: post-process shell stresses
-      if (model.quads?.size || model.plates?.size) {
-        postProcessShellStresses(results, model.nodes, model.quads ?? new Map(), model.plates ?? new Map(), model.materials);
-      }
-      // Strip ephemeral helper-node results (member/shell offsets or 3D joints).
-      if (modelHasMemberOffsets(model.elements.values()) || modelHasShellOffsets(model.plates, model.quads) || modelHasJoints3D(model.elements.values())) {
-        return pruneHelperNodeResults(results, new Set(model.nodes.keys()));
-      }
+    console.log(`Estructura 3D resuelta en ${dt.toFixed(1)} ms — ${model.nodes.size} nodos, ${model.elements.size} elementos`);
+    return finalizeSolve3DResults(results, model);
+  } catch (err: any) {
+    console.error('Solver 3D error:', err);
+    return t('svc.solver3dError').replace('{n}', err.message);
+  }
+}
+
+/**
+ * Async 3D solve: runs the engine in a worker from the pool (UI stays
+ * responsive), with a small LRU memo. Falls back to the synchronous
+ * main-thread solver when Workers are unavailable. Same result shape and
+ * string-error semantics as validateAndSolve3D.
+ */
+export async function validateAndSolve3DAsync(model: ModelData, includeSelfWeight = false, leftHand = false): Promise<AnalysisResults3D | string | null> {
+  const input = prepareSolve3D(model, includeSelfWeight, leftHand);
+  if (input === null || typeof input === 'string') return input;
+
+  const wire = input3DToWireObject(input);
+  const cacheKey = `3d:${JSON.stringify(wire)}`;
+  const cached = solveCacheGet(cacheKey);
+  if (cached) {
+    console.log(`Estructura 3D resuelta (caché) — ${model.nodes.size} nodos, ${model.elements.size} elementos`);
+    return cached as AnalysisResults3D;
+  }
+
+  try {
+    const t0 = performance.now();
+    let results: AnalysisResults3D;
+    try {
+      results = await solve3DInWorker(wire);
+    } catch (e) {
+      if (!(e instanceof PoolUnavailableError)) throw e;
+      results = solve3DEngine(input);
     }
-    return results;
+    const dt = performance.now() - t0;
+    console.log(`Estructura 3D resuelta en ${dt.toFixed(1)} ms — ${model.nodes.size} nodos, ${model.elements.size} elementos`);
+    const finalResults = finalizeSolve3DResults(results, model);
+    solveCacheSet(cacheKey, finalResults);
+    return finalResults;
   } catch (err: any) {
     console.error('Solver 3D error:', err);
     return t('svc.solver3dError').replace('{n}', err.message);
