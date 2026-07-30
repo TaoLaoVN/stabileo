@@ -79,13 +79,30 @@ export async function initPool(numWorkers?: number): Promise<void> {
   const count = numWorkers ?? MAX_WORKERS;
 
   initPromise = (async () => {
-    // Compile once on the main thread (bytes shared with wasm-solver's init,
-    // so a single fetch); workers instantiate clones of the compiled module.
-    const wasmModule = await WebAssembly.compile(await getWasmBytes());
-    const workers = await Promise.all(
-      Array.from({ length: count }, () => createWorker(wasmModule)),
-    );
-    pool = workers;
+    try {
+      // Compile once on the main thread (bytes shared with wasm-solver's init,
+      // so a single fetch); workers instantiate clones of the compiled module.
+      const wasmModule = await WebAssembly.compile(await getWasmBytes());
+      const settled = await Promise.allSettled(
+        Array.from({ length: count }, () => createWorker(wasmModule)),
+      );
+      const failed = settled.find((s): s is PromiseRejectedResult => s.status === 'rejected');
+      if (failed) {
+        // Terminate the workers that DID start (Promise.all would leak them),
+        // then rethrow into the reset path below.
+        for (const s of settled) {
+          if (s.status === 'fulfilled') s.value.worker.terminate();
+        }
+        throw failed.reason;
+      }
+      pool = settled.map(s => (s as PromiseFulfilledResult<PoolWorker>).value);
+    } catch (err) {
+      // Don't poison the pool: a rejected initPromise would make every later
+      // call re-await the same failure until reload. Reset so the next call
+      // retries.
+      initPromise = null;
+      throw err;
+    }
   })();
 
   return initPromise;

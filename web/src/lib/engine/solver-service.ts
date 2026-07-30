@@ -228,22 +228,16 @@ function buildSolverLoads2D(model: ModelData, loads: Load[], includeSelfWeight: 
 }
 
 /**
- * Full 2D solve with all pre-solve validations.
- * Returns AnalysisResults on success, an error string, or null.
- * Also returns the KinematicResult via the optional `onKinematic` callback.
+ * Model-level rejections the 2D solver cannot honor: disconnected nodes,
+ * zero-length elements, and 3D-only features (support types / z-coords).
+ * Returns the exact legacy error string, or null when the model passes.
+ * Shared by `validateAndSolve2D` and the multi-case batch path in
+ * `solveCombinations2D`, which must reject the same models the per-case path
+ * refuses instead of solving them silently. Also returns the connectivity set
+ * (elements + connectors + constraints) that the graph-connectivity check
+ * reuses downstream.
  */
-export function validateAndSolve2D(
-  model: ModelData,
-  includeSelfWeight = false,
-  onKinematic?: (k: KinematicResult | null) => void,
-): AnalysisResults | string | null {
-  if (model.nodes.size < 2 || model.elements.size < 1) {
-    return t('svc.needNodesAndElements');
-  }
-  if (model.supports.size < 1) {
-    return t('svc.needSupport');
-  }
-
+function preflightModel2D(model: ModelData): { error: string | null; connectedNodes: Set<number> } {
   // Constraints are stored in 3D semantics; the 2D solver speaks [ux, uz, ry].
   // Remap ONCE and use the result for both the connectivity preflight and the
   // wire, so the preflight only credits constraints that actually reach the
@@ -270,7 +264,7 @@ export function validateAndSolve2D(
   addConstraintConnectivity(connectedNodes, constraints2D);
   for (const nodeId of model.nodes.keys()) {
     if (!connectedNodes.has(nodeId)) {
-      return t('svc.disconnectedNode').replace('{n}', String(nodeId));
+      return { error: t('svc.disconnectedNode').replace('{n}', String(nodeId)), connectedNodes };
     }
   }
 
@@ -283,9 +277,9 @@ export function validateAndSolve2D(
       if (L2d < 1e-6) {
         const dz = Math.abs((nj.z ?? 0) - (ni.z ?? 0));
         if (dz > 1e-6) {
-          return t('svc.zeroLength2dButZ').replace('{n}', String(elem.id)).replace('{dz}', dz.toFixed(3));
+          return { error: t('svc.zeroLength2dButZ').replace('{n}', String(elem.id)).replace('{dz}', dz.toFixed(3)), connectedNodes };
         }
-        return t('svc.zeroLengthElement').replace('{n}', String(elem.id)).replace('{ni}', String(elem.nodeI)).replace('{nj}', String(elem.nodeJ));
+        return { error: t('svc.zeroLengthElement').replace('{n}', String(elem.id)).replace('{ni}', String(elem.nodeI)).replace('{nj}', String(elem.nodeJ)), connectedNodes };
       }
     }
   }
@@ -295,13 +289,39 @@ export function validateAndSolve2D(
     const types3D = new Set(['fixed3d', 'pinned3d', 'spring3d', 'rollerXZ', 'rollerXY', 'rollerYZ']);
     const sup3D = [...model.supports.values()].find(s => types3D.has(s.type));
     if (sup3D) {
-      return t('svc.model3dSupport').replace('{n}', sup3D.type);
+      return { error: t('svc.model3dSupport').replace('{n}', sup3D.type), connectedNodes };
     }
     const hasZCoords = [...model.nodes.values()].some(n => n.z !== undefined && Math.abs(n.z) > 1e-10);
     if (hasZCoords) {
-      return t('svc.model3dZCoords');
+      return { error: t('svc.model3dZCoords'), connectedNodes };
     }
   }
+
+  return { error: null, connectedNodes };
+}
+
+/**
+ * Full 2D solve with all pre-solve validations.
+ * Returns AnalysisResults on success, an error string, or null.
+ * Also returns the KinematicResult via the optional `onKinematic` callback.
+ */
+export function validateAndSolve2D(
+  model: ModelData,
+  includeSelfWeight = false,
+  onKinematic?: (k: KinematicResult | null) => void,
+): AnalysisResults | string | null {
+  if (model.nodes.size < 2 || model.elements.size < 1) {
+    return t('svc.needNodesAndElements');
+  }
+  if (model.supports.size < 1) {
+    return t('svc.needSupport');
+  }
+
+  const { error: preflightError, connectedNodes } = preflightModel2D(model);
+  if (preflightError) return preflightError;
+
+  // Constraints are stored in 3D semantics; the 2D solver speaks [ux, uz, ry].
+  const constraints2D = constraintsTo2D(model.constraints);
 
   // Count support DOFs for basic stability check
   const hasFrames = [...model.elements.values()].some(e => e.type === 'frame');
@@ -813,6 +833,14 @@ export function solveCombinations2D(
   if (model.supports.size < 1) return t('svc.needSupport');
   if (combinations.length === 0) return t('svc.needCombination');
 
+  // Same model-level rejections as the per-case path (disconnected nodes,
+  // zero-length elements, 3D support types, 3D z-coords) — the engine accepts
+  // these silently (a fixed3d restrains nothing in 2D; z is projected), so
+  // without the gate the batch path would succeed where the legacy path
+  // correctly refused.
+  const preflightError = preflightModel2D(model).error;
+  if (preflightError) return preflightError;
+
   // The engine's multi-case 2D solver rebuilds each case WITHOUT constraints
   // and connectors (load_cases.rs), and sliding joints expand into exactly
   // those primitives — models using them keep the per-case path so their
@@ -855,7 +883,10 @@ export function solveCombinations2D(
     const factors: Record<string, number> = {};
     for (const f of combo.factors) {
       const lc = loadCases.find(c => c.id === f.caseId);
-      if (lc) factors[lc.name] = f.factor;
+      // Accumulate, don't overwrite: the per-case path passes the raw factors
+      // array to combineResults, which SUMS duplicate references to the same
+      // case. A Record keyed by name would silently keep only the last entry.
+      if (lc) factors[lc.name] = (factors[lc.name] ?? 0) + f.factor;
     }
     // The per-case path skips combos whose factors all reference missing cases
     // (combineResults → null); the engine would instead emit a zeroed combo that
@@ -1423,7 +1454,7 @@ export function validateAndSolve3D(model: ModelData, includeSelfWeight = false, 
   addConstraintConnectivity(connectedNodes, model.constraints);
   for (const nodeId of model.nodes.keys()) {
     if (!connectedNodes.has(nodeId)) {
-      return t('svc.disconnectedNode').replace('{n}', String(nodeId));
+      return { error: t('svc.disconnectedNode').replace('{n}', String(nodeId)), connectedNodes };
     }
   }
 

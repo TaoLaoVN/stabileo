@@ -125,3 +125,75 @@ describe('solveCombinations2D (multi-case batch path)', () => {
     expect(typeof solveCombinations2D(model, cases, combos)).toBe('string');
   });
 });
+
+describe('solveCombinations2D — preflight parity with the per-case path', () => {
+  beforeAll(async () => { await initSolver(); });
+
+  it('rejects 3D support types instead of solving with them ignored', () => {
+    const model = beamModel();
+    model.supports.set(2, { id: 2, nodeId: 2, type: 'fixed3d' } as any);
+    const r = solveCombinations2D(model, cases, combos);
+    expect(typeof r).toBe('string');
+    expect(r as string).toContain('fixed3d');
+  });
+
+  it('rejects 3D z-coords instead of silently projecting them', () => {
+    const model = beamModel();
+    (model.nodes.get(2) as any).z = 1.5;
+    const r = solveCombinations2D(model, cases, combos);
+    expect(typeof r).toBe('string');
+  });
+
+  it('rejects an orphan supported node instead of solving around it', () => {
+    const model = beamModel();
+    // Node 3 has a support but no element — legacy svc.disconnectedNode.
+    model.nodes.set(3, { id: 3, x: 9, y: 0 } as any);
+    model.supports.set(3, { id: 3, nodeId: 3, type: 'pinned' } as any);
+    const r = solveCombinations2D(model, cases, combos);
+    expect(typeof r).toBe('string');
+    expect(r as string).toContain('3');
+  });
+
+  it('accumulates duplicate case factors in a combo (legacy sum semantics)', () => {
+    const dupCombos = [
+      { id: 10, name: 'DUP', factors: [{ caseId: 1, factor: 1.0 }, { caseId: 1, factor: 0.5 }] },
+    ] as any;
+    const oneCase = [{ id: 1, type: 'D', name: 'Dead' }] as any;
+    const model = beamModel();
+    (model.loads as any) = model.loads.filter(l => (l.data as any).caseId === 1);
+    const r = solveCombinations2D(model, oneCase, dupCombos);
+    expect(typeof r).not.toBe('string');
+    if (typeof r === 'string' || !r) return;
+    // Case D: fz=-10 @ tip → rz=+10. Sum 1.0+0.5=1.5 → rz=15 (last-wins would give 5).
+    const reaction = r.perCombo.get(10)!.reactions.find(x => x.nodeId === 1)!;
+    expect(reaction.rz).toBeCloseTo(15, 8);
+  });
+
+  it('skips ghost combos while keeping valid ones (no zeroed combos)', () => {
+    const mixedCombos = [
+      { id: 10, name: 'VALID', factors: [{ caseId: 1, factor: 1.0 }] },
+      { id: 11, name: 'GHOST', factors: [{ caseId: 99, factor: 1.4 }] },
+    ] as any;
+    const oneCase = [{ id: 1, type: 'D', name: 'Dead' }] as any;
+    const model = beamModel();
+    (model.loads as any) = model.loads.filter(l => (l.data as any).caseId === 1);
+    const r = solveCombinations2D(model, oneCase, mixedCombos);
+    expect(typeof r).not.toBe('string');
+    if (typeof r === 'string' || !r) return;
+    expect(r.perCombo.has(10)).toBe(true);
+    expect(r.perCombo.has(11)).toBe(false);
+  });
+
+  it('all-ghost factors: same string error as the legacy path (no zeroed combo)', () => {
+    const ghostCombos = [
+      { id: 10, name: 'GHOST', factors: [{ caseId: 99, factor: 1.4 }] },
+    ] as any;
+    const oneCase = [{ id: 1, type: 'D', name: 'Dead' }] as any;
+    const model = beamModel();
+    (model.loads as any) = model.loads.filter(l => (l.data as any).caseId === 1);
+    const r = solveCombinations2D(model, oneCase, ghostCombos);
+    // The legacy path produces no combos → envelope error string, and the
+    // batch path must surface the same refusal rather than a zeroed combo.
+    expect(typeof r).toBe('string');
+  });
+});
