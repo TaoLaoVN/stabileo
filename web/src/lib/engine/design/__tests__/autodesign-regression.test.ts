@@ -161,7 +161,7 @@ describe('honest refusal when the model is broken', () => {
         basis: 'no-demand' as const, secondaryRatio: 0,
       },
       slenderDeltaNs: 1, orientationSuspect: false,
-      analysisRevision: 1, demandRevision: 0,
+      analysisRevision: 1, demandRevision: 0, solveGeneration: 1,
       blocking: ['missingCombinations' as const, 'missingDemand' as const],
       modelData: fm.data,
     }));

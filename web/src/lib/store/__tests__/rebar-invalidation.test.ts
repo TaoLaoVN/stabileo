@@ -86,6 +86,7 @@ function setup() {
     criticalSections: buildCriticalSectionMap(md),
     analysisRevision: verificationStore.analysisRevision,
     demandRevision: verificationStore.demandRevision + 1,
+    solveGeneration: verificationStore.solveGeneration,
   }));
   return [...verificationStore.contexts.keys()].sort((a, b) => a - b);
 }

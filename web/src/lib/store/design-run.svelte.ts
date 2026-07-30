@@ -83,6 +83,7 @@ function createDesignRunStore() {
         orientationSuspect: orient.suspect,
         analysisRevision: verificationStore.analysisRevision,
         demandRevision: verificationStore.demandRevision + 1,
+        solveGeneration: verificationStore.solveGeneration,
       });
       verificationStore.setDemandData(contexts, orient.issues);
       resultsStore.diagramType = 'verification';
