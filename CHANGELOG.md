@@ -9,6 +9,15 @@ It should capture what changed, not what should be built next.
 
 ## Unreleased
 
+### Performance
+
+#### JsValue boundary on the 8 hot WASM exports (2026-07-24)
+
+- `solve_2d`/`solve_3d`, `combine_results_2d`/`3d`, `compute_envelope_2d`/`3d`, and `solve_multi_case_2d`/`3d` now cross the JS↔WASM boundary as `JsValue` (serde-wasm-bindgen, maps as plain objects) instead of JSON text — no `stringify`/`parse` round trip on the hot path. Export names unchanged; ~70 cold exports untouched.
+- Worker pool messages carry structured-cloned plain objects instead of ~1MB JSON strings, removing main-thread JSON work from the parallel 3D combinations path.
+- `assertFiniteWire` guard preserves the old boundary semantics: NaN/Infinity inputs are rejected before reaching the solver (JSON.stringify used to coerce them to `null`, which serde_json rejected).
+- New `web/scripts/bench-wasm-boundary.mjs` benchmark (`npm run bench:wasm-boundary`): combine+envelope per call 1.15–2.1× faster; single-solve total is noise-bound (boundary is ~2% of solve).
+
 ### Fixed
 
 #### Hinge/release correctness cleanup (2026-04-26)
