@@ -4,11 +4,13 @@
  *
  * Messages:
  *   { type: 'init', wasmModule: WebAssembly.Module }  → initialize WASM (pre-compiled module, structured-cloned)
- *   { type: 'solve3d', id: number, json: string } → solve and return results
+ *   { type: 'solve3d', id: number, input: object } → solve and return results (plain objects, structured-cloned)
  */
 
+import { assertFiniteWire } from './wasm-solver';
+
 let initSync: ((moduleOrBytes: any) => void) | null = null;
-let solve_3d: ((json: string) => string) | null = null;
+let solve_3d: ((input: any) => any) | null = null;
 let ready = false;
 
 self.onmessage = async (e: MessageEvent) => {
@@ -36,8 +38,11 @@ self.onmessage = async (e: MessageEvent) => {
       return;
     }
     try {
-      const resultJson = solve_3d(msg.json);
-      self.postMessage({ type: 'result', id: msg.id, resultJson });
+      // solve_3d takes and returns plain JS objects — structured clone both ways.
+      // The finiteness guard preserves the old JSON-boundary semantics (NaN/Inf rejected).
+      assertFiniteWire(msg.input);
+      const result = solve_3d(msg.input);
+      self.postMessage({ type: 'result', id: msg.id, result });
     } catch (err: any) {
       self.postMessage({ type: 'result', id: msg.id, error: err.message });
     }
