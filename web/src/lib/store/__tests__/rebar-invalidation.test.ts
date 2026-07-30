@@ -162,14 +162,106 @@ describe('reinforcement edits preserve analysis state', () => {
   it('6. one transaction = ONE undo step, restoring every member', () => {
     const beams = ids.filter(id => verificationStore.contextFor(id)!.elementType === 'beam');
     const undoBefore = historyStore.undoCount;
+    const resultsBefore = resultsStore.results3D;
+    const analysisRevBefore = verificationStore.analysisRevision;
+    const demandRevBefore = verificationStore.demandRevision;
+    const comboSizeBefore = resultsStore.perCombo3D.size;
+
     commitManualBatch(beams.map(id => [id, REBAR] as [number, ProvidedReinforcement]));
     expect(historyStore.undoCount).toBe(undoBefore + 1);
     for (const id of beams) expect(modelStore.elements.get(id)!.reinforcement).toBeTruthy();
 
     historyStore.undo();
     for (const id of beams) expect(modelStore.elements.get(id)!.reinforcement).toBeUndefined();
+    // Fix A: undoing a reinforcement-only edit must NOT destroy the analysis —
+    // results, demand contexts and revisions must survive untouched (same objects).
+    expect(resultsStore.results3D).toBe(resultsBefore);
+    expect(resultsStore.perCombo3D.size).toBe(comboSizeBefore);
+    expect(verificationStore.analysisRevision).toBe(analysisRevBefore);
+    expect(verificationStore.demandRevision).toBe(demandRevBefore);
+    expect(verificationStore.hasDemandData).toBe(true);
+
     historyStore.redo();
     for (const id of beams) expect(modelStore.elements.get(id)!.reinforcement).toBeTruthy();
+    expect(resultsStore.results3D).toBe(resultsBefore);
+    expect(verificationStore.analysisRevision).toBe(analysisRevBefore);
+    expect(verificationStore.demandRevision).toBe(demandRevBefore);
+  });
+
+  it('13. undo of a single rebar edit restores the previous rebar value without destroying the analysis', () => {
+    const beam = ids.find(id => verificationStore.contextFor(id)!.elementType === 'beam')!;
+    commitManual(beam, REBAR); // pre-edit value: REBAR (4Ø20 bottom span)
+    const resultsBefore = resultsStore.results3D;
+    const analysisRevBefore = verificationStore.analysisRevision;
+    const demandRevBefore = verificationStore.demandRevision;
+
+    // Second, independent edit: weaken the bottom steel.
+    setRegionLayers(beam, 'bottomSpanLayers', [{ count: 2, diameter: 10, row: 0 }]);
+    expect(modelStore.elements.get(beam)!.reinforcement!.regions!.bottomSpanLayers)
+      .toEqual([{ count: 2, diameter: 10, row: 0 }]);
+
+    historyStore.undo(); // undo the weakening edit → back to the REBAR value
+    expect(modelStore.elements.get(beam)!.reinforcement!.regions!.bottomSpanLayers)
+      .toEqual([{ count: 4, diameter: 20, row: 0 }]);
+    expect(resultsStore.results3D).toBe(resultsBefore);
+    expect(verificationStore.analysisRevision).toBe(analysisRevBefore);
+    expect(verificationStore.demandRevision).toBe(demandRevBefore);
+    expect(verificationStore.hasDemandData).toBe(true);
+
+    historyStore.redo(); // redo the weakening edit
+    expect(modelStore.elements.get(beam)!.reinforcement!.regions!.bottomSpanLayers)
+      .toEqual([{ count: 2, diameter: 10, row: 0 }]);
+    expect(resultsStore.results3D).toBe(resultsBefore);
+    expect(verificationStore.analysisRevision).toBe(analysisRevBefore);
+  });
+
+  it('14. mixed sequence: structural edit then rebar edit — the SECOND undo restores full invalidation semantics', () => {
+    const beam = ids.find(id => verificationStore.contextFor(id)!.elementType === 'beam')!;
+
+    // 1. Structural edit — invalidates immediately, as always. (updateSection rather
+    // than addNode: an unconnected node turns the structure into a mechanism and the
+    // re-solve below would fail — updateSection keeps the model solvable.)
+    const sectionBefore = { ...modelStore.sections.get(2)! };
+    modelStore.updateSection(2, { b: 0.5, h: 0.8 });
+    expect(verificationStore.hasDemandData).toBe(false);
+    expect(resultsStore.results3D).toBeNull();
+
+    // Re-establish results/demand data, as the app would after re-solving post-edit.
+    const md = modelData();
+    const combo = solveCombinations3D(modelStore.model as never, modelStore.model.loadCases, modelStore.model.combinations, true, false);
+    if (typeof combo === 'string' || !combo) throw new Error(`solve: ${combo}`);
+    const res = validateAndSolve3D(modelStore.model as never, true, false);
+    if (typeof res === 'string' || !res) throw new Error(`solve3D: ${res}`);
+    resultsStore.setResults3D(res);
+    resultsStore.setCombinationResults3D(combo.perCase, combo.perCombo, combo.envelope);
+    const sd = computeStationDemands(combo.perCombo, modelStore.model.combinations, md as never);
+    verificationStore.setDemandData(buildAllMemberContexts(md, {
+      demands: sd.demands, stations: sd.stations,
+      criticalSections: buildCriticalSectionMap(md),
+      analysisRevision: verificationStore.analysisRevision,
+      demandRevision: verificationStore.demandRevision + 1,
+    }));
+    expect(verificationStore.hasDemandData).toBe(true);
+    const analysisRevAfterResolve = verificationStore.analysisRevision;
+
+    // 2. Rebar edit — must not disturb the analysis.
+    commitManual(beam, REBAR);
+    expect(verificationStore.analysisRevision).toBe(analysisRevAfterResolve);
+
+    // First undo: undoes the rebar edit — silent path, analysis survives.
+    historyStore.undo();
+    expect(modelStore.elements.get(beam)!.reinforcement).toBeUndefined();
+    expect(verificationStore.hasDemandData).toBe(true);
+    expect(verificationStore.analysisRevision).toBe(analysisRevAfterResolve);
+    expect(resultsStore.results3D).not.toBeNull();
+
+    // Second undo: undoes the structural edit — must go back to FULL restore semantics.
+    historyStore.undo();
+    expect(verificationStore.analysisRevision).toBeGreaterThan(analysisRevAfterResolve);
+    expect(verificationStore.hasDemandData).toBe(false);
+    expect(resultsStore.results3D).toBeNull();
+    expect(modelStore.sections.get(2)!.b).toBe(sectionBefore.b);
+    expect(modelStore.sections.get(2)!.h).toBe(sectionBefore.h);
   });
 
   it('7. reinforcement survives snapshot → restore (undo/redo/tab-switch/save-load)', () => {
