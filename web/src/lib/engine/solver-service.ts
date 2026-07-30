@@ -1733,15 +1733,16 @@ export async function solveCombinations3DParallel(
   // round trip only served to obtain this object.
   const baseWire = input3DToWireObject(baseInput);
 
-  // Build per-case inputs
-  const caseInputs: Array<{ caseId: number; caseName: string; json: string }> = [];
+  // Build per-case inputs (plain wire objects — structured-cloned to workers,
+  // no JSON.stringify per case)
+  const caseInputs: Array<{ caseId: number; caseName: string; input: Record<string, any> }> = [];
 
   for (const lc of loadCases) {
     const caseLoads = model.loads.filter(l => (l.data.caseId ?? 1) === lc.id);
     const loads = buildSolverLoads3D(model, caseLoads, includeSelfWeight && lc.type === 'D', leftHand);
-    // Create full solver input JSON with this case's loads
+    // Create full solver input with this case's loads
     const fullInput = { ...baseWire, loads };
-    caseInputs.push({ caseId: lc.id, caseName: lc.name, json: JSON.stringify(fullInput) });
+    caseInputs.push({ caseId: lc.id, caseName: lc.name, input: fullInput });
   }
 
   if (caseInputs.length === 0) return t('svc.noLoadsApplied');
@@ -1755,17 +1756,16 @@ export async function solveCombinations3DParallel(
     }
 
     const t0 = performance.now();
-    const resultJsons = await solveParallel(
-      caseInputs.map(c => ({ id: c.caseId, json: c.json })),
+    const caseResults = await solveParallel(
+      caseInputs.map(c => ({ id: c.caseId, input: c.input })),
     );
     const tSolve = performance.now() - t0;
 
-    // Parse results and build per-case map
+    // Collect results (already plain objects — no JSON.parse) and build per-case map
     const perCase = new Map<number, AnalysisResults3D>();
     for (const ci of caseInputs) {
-      const rJson = resultJsons.get(ci.caseId);
-      if (!rJson) continue;
-      const result: AnalysisResults3D = JSON.parse(rJson);
+      const result: AnalysisResults3D | undefined = caseResults.get(ci.caseId);
+      if (!result) continue;
       if (hasShells) {
         postProcessShellStresses(result, model.nodes, model.quads ?? new Map(), model.plates ?? new Map(), model.materials);
       }
