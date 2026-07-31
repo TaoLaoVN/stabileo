@@ -1288,3 +1288,72 @@ fn loaded_slave_fixed_master_equilibrium_2d() {
         "loaded slave tied to fixed master must equilibrate: sumRz={sum_case}"
     );
 }
+
+/// Settlement AND a loaded slave at once: the u_p particular solution and the
+/// constraint-force redistribution must compose without double counting —
+/// settlement reactions self-equilibrate around the applied load.
+#[test]
+fn settlement_plus_loaded_slave_no_double_count() {
+    let l = 4.0;
+    let mut input = make_3d_input(
+        vec![
+            (1, 0.0, 0.0, 0.0), (2, l, 0.0, 0.0),
+            (3, 0.0, 0.0, 2.0), (4, 2.0 * l, 0.0, 0.0),
+        ],
+        vec![(1, E, NU)],
+        vec![(1, A, IY, IZ, J)],
+        vec![(1, "frame", 1, 2, 1, 1), (2, "frame", 2, 4, 1, 1)],
+        vec![(1, fixed()), (4, fixed())],
+        vec![SolverLoad3D::Nodal(SolverNodalLoad3D {
+            node_id: 3, fx: 0.0, fy: 0.0, fz: -10.0,
+            mx: 0.0, my: 0.0, mz: 0.0, bw: None,
+        })],
+    );
+    for sup in input.supports.values_mut() {
+        if sup.node_id == 1 {
+            sup.dz = Some(-0.01);
+        }
+    }
+    input.constraints.push(Constraint::EqualDOF(EqualDOFConstraint {
+        master_node: 1, slave_node: 3, dofs: vec![0, 1, 2, 3, 4, 5],
+    }));
+    let res = linear::solve_3d(&input).expect("solve");
+    let sum_fz: f64 = res.reactions.iter().map(|r| r.fz).sum();
+    assert!(
+        (sum_fz - 10.0).abs() < 1e-6,
+        "settlement + loaded slave: sumFz={sum_fz}, expected 10 (settlement self-equilibrates)"
+    );
+}
+
+/// Depth-2 chain into the fixed master: load at the chain end must arrive at
+/// the fixed master's reaction through both link resolutions.
+#[test]
+fn chained_loaded_slave_into_fixed_master_equilibrium() {
+    let l = 4.0;
+    let mut input = make_3d_input(
+        vec![
+            (1, 0.0, 0.0, 0.0), (2, l, 0.0, 0.0),
+            (3, 0.0, 0.0, 2.0), (4, 0.0, 0.0, 4.0),
+        ],
+        vec![(1, E, NU)],
+        vec![(1, A, IY, IZ, J)],
+        vec![(1, "frame", 1, 2, 1, 1)],
+        vec![(1, fixed())],
+        vec![SolverLoad3D::Nodal(SolverNodalLoad3D {
+            node_id: 4, fx: 0.0, fy: 0.0, fz: -10.0,
+            mx: 0.0, my: 0.0, mz: 0.0, bw: None,
+        })],
+    );
+    input.constraints.push(Constraint::EqualDOF(EqualDOFConstraint {
+        master_node: 1, slave_node: 3, dofs: vec![0, 1, 2, 3, 4, 5],
+    }));
+    input.constraints.push(Constraint::EqualDOF(EqualDOFConstraint {
+        master_node: 3, slave_node: 4, dofs: vec![0, 1, 2, 3, 4, 5],
+    }));
+    let res = linear::solve_3d(&input).expect("solve");
+    let sum_fz: f64 = res.reactions.iter().map(|r| r.fz).sum();
+    assert!(
+        (sum_fz - 10.0).abs() < 1e-6,
+        "depth-2 chain into fixed master: sumFz={sum_fz}, expected 10"
+    );
+}
