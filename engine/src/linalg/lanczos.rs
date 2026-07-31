@@ -2,6 +2,7 @@ use super::cholesky::{cholesky_decompose, forward_solve, back_solve};
 use super::jacobi::{jacobi_eigen, solve_generalized_eigen, EigenResult};
 use super::sparse::CscMatrix;
 use super::sparse_chol::{symbolic_cholesky, numeric_cholesky, sparse_cholesky_solve};
+use std::rc::Rc;
 
 /// Parameters for Lanczos iteration.
 pub struct LanczosParams {
@@ -614,7 +615,7 @@ impl<'a> SparseShiftInvertOp<'a> {
     /// Returns None if sparse Cholesky fails.
     pub fn new(k_csc: &CscMatrix, b_csc: &'a CscMatrix) -> Option<Self> {
         assert_eq!(k_csc.n, b_csc.n, "K and B must have the same dimension");
-        let sym = symbolic_cholesky(k_csc);
+        let sym = Rc::new(symbolic_cholesky(k_csc));
         let factor = numeric_cholesky(&sym, k_csc)?;
         Some(Self { factor, b_csc })
     }
@@ -797,7 +798,7 @@ mod tests {
 
     impl DenseBShiftInvertOp {
         fn new(k_csc: &CscMatrix, b_dense: &[f64], n: usize) -> Option<Self> {
-            let sym = symbolic_cholesky(k_csc);
+            let sym = std::rc::Rc::new(symbolic_cholesky(k_csc));
             let factor = numeric_cholesky(&sym, k_csc)?;
             Some(Self { factor, b_dense: b_dense.to_vec(), n })
         }

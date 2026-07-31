@@ -139,7 +139,9 @@
       }
     }
     const isPro = uiStore.analysisMode === 'pro';
-    const results = modelStore.solve3D(uiStore.includeSelfWeight, uiStore.axisConvention3D === 'leftHand', isPro);
+    const versionAtStart = modelStore.modelVersion;
+    const results = await modelStore.solve3DAsync(uiStore.includeSelfWeight, uiStore.axisConvention3D === 'leftHand', isPro);
+    if (modelStore.modelVersion !== versionAtStart) return; // stale — user edited mid-solve
     if (typeof results === 'string') {
       uiStore.toast(results, 'error');
     } else if (results) {

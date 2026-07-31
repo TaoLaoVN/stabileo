@@ -13,26 +13,41 @@ pub fn init() {
     console_error_panic_hook::set_once();
 }
 
-/// Solve 2D linear static analysis. JSON in → JSON out.
-#[wasm_bindgen]
-pub fn solve_2d(json: &str) -> Result<String, JsValue> {
-    let input: types::SolverInput = serde_json::from_str(json)
-        .map_err(|e| JsValue::from_str(&format!("Parse error: {}", e)))?;
-    let results = solver::linear::solve_2d(&input)
-        .map_err(|e| JsValue::from_str(&e))?;
-    serde_json::to_string(&results)
-        .map_err(|e| JsValue::from_str(&format!("Serialize error: {}", e)))
+/// Serialize a result to a JsValue with maps as plain JS objects, matching the
+/// shape `JSON.parse(serde_json::to_string(...))` produced on the JS side.
+/// Used by the hot-path exports to skip the JSON text round trip.
+fn to_js_value<T: serde::Serialize>(value: &T) -> Result<JsValue, JsValue> {
+    serde::Serialize::serialize(
+        value,
+        &serde_wasm_bindgen::Serializer::new().serialize_maps_as_objects(true),
+    )
+    .map_err(|e| JsValue::from_str(&format!("Serialize error: {}", e)))
 }
 
-/// Solve 3D linear static analysis. JSON in → JSON out.
+/// Deserialize a hot-path input passed straight from JS (plain objects, no
+/// JSON text). Id-keyed maps are `HashMap<String, _>` on the Rust side, so JS
+/// object keys (already strings) round-trip natively.
+fn from_js_value<T: serde::de::DeserializeOwned>(value: JsValue) -> Result<T, JsValue> {
+    serde_wasm_bindgen::from_value(value)
+        .map_err(|e| JsValue::from_str(&format!("Parse error: {}", e)))
+}
+
+/// Solve 2D linear static analysis. JsValue in → JsValue out (hot path).
 #[wasm_bindgen]
-pub fn solve_3d(json: &str) -> Result<String, JsValue> {
-    let input: types::SolverInput3D = serde_json::from_str(json)
-        .map_err(|e| JsValue::from_str(&format!("Parse error: {}", e)))?;
+pub fn solve_2d(input: JsValue) -> Result<JsValue, JsValue> {
+    let input: types::SolverInput = from_js_value(input)?;
+    let results = solver::linear::solve_2d(&input)
+        .map_err(|e| JsValue::from_str(&e))?;
+    to_js_value(&results)
+}
+
+/// Solve 3D linear static analysis. JsValue in → JsValue out (hot path).
+#[wasm_bindgen]
+pub fn solve_3d(input: JsValue) -> Result<JsValue, JsValue> {
+    let input: types::SolverInput3D = from_js_value(input)?;
     let results = solver::linear::solve_3d(&input)
         .map_err(|e| JsValue::from_str(&e))?;
-    serde_json::to_string(&results)
-        .map_err(|e| JsValue::from_str(&format!("Serialize error: {}", e)))
+    to_js_value(&results)
 }
 
 /// Solve 2D P-Delta analysis. JSON in → JSON out.
@@ -367,51 +382,43 @@ pub fn compute_deformed_shape(json: &str) -> Result<String, JsValue> {
 
 // ==================== Combinations + Envelope ====================
 
-/// Combine 2D results with factors. JSON: CombinationInput
+/// Combine 2D results with factors. JsValue in → JsValue out (hot path).
 #[wasm_bindgen]
-pub fn combine_results_2d(json: &str) -> Result<String, JsValue> {
-    let input: postprocess::combinations::CombinationInput = serde_json::from_str(json)
-        .map_err(|e| JsValue::from_str(&format!("Parse error: {}", e)))?;
+pub fn combine_results_2d(input: JsValue) -> Result<JsValue, JsValue> {
+    let input: postprocess::combinations::CombinationInput = from_js_value(input)?;
     match postprocess::combinations::combine_results(&input) {
-        Some(result) => serde_json::to_string(&result)
-            .map_err(|e| JsValue::from_str(&format!("Serialize error: {}", e))),
-        None => Ok("null".to_string()),
+        Some(result) => to_js_value(&result),
+        None => Ok(JsValue::NULL),
     }
 }
 
-/// Combine 3D results with factors. JSON: CombinationInput3D
+/// Combine 3D results with factors. JsValue in → JsValue out (hot path).
 #[wasm_bindgen]
-pub fn combine_results_3d(json: &str) -> Result<String, JsValue> {
-    let input: postprocess::combinations::CombinationInput3D = serde_json::from_str(json)
-        .map_err(|e| JsValue::from_str(&format!("Parse error: {}", e)))?;
+pub fn combine_results_3d(input: JsValue) -> Result<JsValue, JsValue> {
+    let input: postprocess::combinations::CombinationInput3D = from_js_value(input)?;
     match postprocess::combinations::combine_results_3d(&input) {
-        Some(result) => serde_json::to_string(&result)
-            .map_err(|e| JsValue::from_str(&format!("Serialize error: {}", e))),
-        None => Ok("null".to_string()),
+        Some(result) => to_js_value(&result),
+        None => Ok(JsValue::NULL),
     }
 }
 
-/// Compute 2D envelope. JSON: array of AnalysisResults
+/// Compute 2D envelope. JsValue in → JsValue out (hot path).
 #[wasm_bindgen]
-pub fn compute_envelope_2d(json: &str) -> Result<String, JsValue> {
-    let results: Vec<types::AnalysisResults> = serde_json::from_str(json)
-        .map_err(|e| JsValue::from_str(&format!("Parse error: {}", e)))?;
+pub fn compute_envelope_2d(input: JsValue) -> Result<JsValue, JsValue> {
+    let results: Vec<types::AnalysisResults> = from_js_value(input)?;
     match postprocess::combinations::compute_envelope(&results) {
-        Some(env) => serde_json::to_string(&env)
-            .map_err(|e| JsValue::from_str(&format!("Serialize error: {}", e))),
-        None => Ok("null".to_string()),
+        Some(env) => to_js_value(&env),
+        None => Ok(JsValue::NULL),
     }
 }
 
-/// Compute 3D envelope. JSON: array of AnalysisResults3D
+/// Compute 3D envelope. JsValue in → JsValue out (hot path).
 #[wasm_bindgen]
-pub fn compute_envelope_3d(json: &str) -> Result<String, JsValue> {
-    let results: Vec<types::AnalysisResults3D> = serde_json::from_str(json)
-        .map_err(|e| JsValue::from_str(&format!("Parse error: {}", e)))?;
+pub fn compute_envelope_3d(input: JsValue) -> Result<JsValue, JsValue> {
+    let results: Vec<types::AnalysisResults3D> = from_js_value(input)?;
     match postprocess::combinations::compute_envelope_3d(&results) {
-        Some(env) => serde_json::to_string(&env)
-            .map_err(|e| JsValue::from_str(&format!("Serialize error: {}", e))),
-        None => Ok("null".to_string()),
+        Some(env) => to_js_value(&env),
+        None => Ok(JsValue::NULL),
     }
 }
 
@@ -530,26 +537,22 @@ pub fn compute_diagram_value_at_3d(json: &str) -> Result<f64, JsValue> {
 
 // ==================== Multi-Case Load Combinations ====================
 
-/// Solve 2D multi-case load combinations with envelope. JSON: MultiCaseInput
+/// Solve 2D multi-case load combinations with envelope. JsValue in → JsValue out (hot path).
 #[wasm_bindgen]
-pub fn solve_multi_case_2d(json: &str) -> Result<String, JsValue> {
-    let input: solver::load_cases::MultiCaseInput = serde_json::from_str(json)
-        .map_err(|e| JsValue::from_str(&format!("Parse error: {}", e)))?;
+pub fn solve_multi_case_2d(input: JsValue) -> Result<JsValue, JsValue> {
+    let input: solver::load_cases::MultiCaseInput = from_js_value(input)?;
     let result = solver::load_cases::solve_multi_case_2d(&input)
         .map_err(|e| JsValue::from_str(&e))?;
-    serde_json::to_string(&result)
-        .map_err(|e| JsValue::from_str(&format!("Serialize error: {}", e)))
+    to_js_value(&result)
 }
 
-/// Solve 3D multi-case load combinations with envelope. JSON: MultiCaseInput3D
+/// Solve 3D multi-case load combinations with envelope. JsValue in → JsValue out (hot path).
 #[wasm_bindgen]
-pub fn solve_multi_case_3d(json: &str) -> Result<String, JsValue> {
-    let input: solver::load_cases::MultiCaseInput3D = serde_json::from_str(json)
-        .map_err(|e| JsValue::from_str(&format!("Parse error: {}", e)))?;
+pub fn solve_multi_case_3d(input: JsValue) -> Result<JsValue, JsValue> {
+    let input: solver::load_cases::MultiCaseInput3D = from_js_value(input)?;
     let result = solver::load_cases::solve_multi_case_3d(&input)
         .map_err(|e| JsValue::from_str(&e))?;
-    serde_json::to_string(&result)
-        .map_err(|e| JsValue::from_str(&format!("Serialize error: {}", e)))
+    to_js_value(&result)
 }
 
 // ==================== Harmonic Analysis ====================

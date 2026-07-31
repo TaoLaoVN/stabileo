@@ -46,8 +46,10 @@ verifies every candidate with the authoritative verifier the UI displays. Outcom
 `VERIFIED` (with a certificate), `SECTION_INADEQUATE` (exhaustive, with a preliminary
 section recommendation), `DEMAND_UNAVAILABLE`, `SEARCH_EXHAUSTED` or `UNSUPPORTED` —
 none of which is ever counted as a pass. Measured on `rc-design-frame`:
-**376/408 failing before → 408/408 VERIFIED after**, worst certified utilization
-0.993, 408 members in ~0.4 s.
+**376/408 failing before → 408/408 VERIFIED after** at rebuild time, worst certified
+utilization 0.993, 408 members in ~0.4 s. (The second review round below later
+tightened biaxial coverage: the same frame now reports 386 VERIFIED + 22 honest
+refusals of previously false-passing wind-combo beams.)
 
 **Utilization convention** is now demand/capacity everywhere (warn 0.95 < u ≤ 1.00,
 fail above 1.00); the ad-hoc `1/ratio` inversion in the UI is gone.
@@ -78,7 +80,28 @@ editor keystrokes (Enter collapsed the row being edited). Regression coverage:
 `design/__tests__/review-fixes.test.ts` (9 tests incl. rectangular-column P-M,
 cantilever-style span hogging, shear axial sign) and
 `store/__tests__/rebar-review-fixes.test.ts` (clamps + provisional sync).
-The flagship frame still designs 408/408 VERIFIED with the sweep active.
+The flagship frame still designed 408/408 VERIFIED with the sweep active
+(now 386 + 22 explicit biaxial refusals — see the second review round below).
+
+**Review hardening, second round (independent review of the full PR).** Six
+further fixes, each RED-verified before the change:
+
+- Biaxial column P-M mapping: the first-round axis fix covered the uniaxial branch
+  only; the biaxial branch passed moments by name into the rotated section. Same
+  physical column gave utilization 0.903 vs 0.518 depending on axis naming; now
+  primary→Muz/secondary→Muy with a mirror-symmetry regression test.
+- Biaxial beams (secondary demand ≥10% of primary) are now explicitly REFUSED
+  instead of certified with an unchecked axis — 22 wind-combo beams on the flagship
+  frame moved from false-pass to `SEARCH_EXHAUSTED (limiting: biaxial)`.
+- Undo/redo of reinforcement-only edits goes through the silent path: the analysis,
+  demand and results survive Ctrl+Z (previously a full invalidation).
+- Solve generations are stamped on every results publish: verification computed
+  against superseded forces now displays as `stale` (previously unreachable), closing
+  the self-weight/axis-convention re-solve hole.
+- Solve results that arrive after a model mutation are discarded (mutation-epoch
+  guard in live-calc) — the moving-load fix generalized to the main combination path.
+- The 190 `design.*` i18n keys now exist in all 14 locales (2,280 translated strings)
+  with a key-parity test.
 
 **One "Run Design" button became three explicit commands plus Design all**
 (compute demands / run code check / auto-design), with progress, cancellation and
@@ -115,6 +138,15 @@ stale binary is used.
 **Deferred to the next PR**: continuity-aware continuous-beam detailing, coordinated
 bar cutoff/laps across spans, beam-column joint design, seismic joint checks and
 strong-column/weak-beam design.
+
+### Performance
+
+#### JsValue boundary on the 8 hot WASM exports (2026-07-24)
+
+- `solve_2d`/`solve_3d`, `combine_results_2d`/`3d`, `compute_envelope_2d`/`3d`, and `solve_multi_case_2d`/`3d` now cross the JS↔WASM boundary as `JsValue` (serde-wasm-bindgen, maps as plain objects) instead of JSON text — no `stringify`/`parse` round trip on the hot path. Export names unchanged; ~70 cold exports untouched.
+- Worker pool messages carry structured-cloned plain objects instead of ~1MB JSON strings, removing main-thread JSON work from the parallel 3D combinations path.
+- `assertFiniteWire` guard preserves the old boundary semantics: NaN/Infinity inputs are rejected before reaching the solver (JSON.stringify used to coerce them to `null`, which serde_json rejected).
+- New `web/scripts/bench-wasm-boundary.mjs` benchmark (`npm run bench:wasm-boundary`): combine+envelope per call 1.15–2.1× faster; single-solve total is noise-bound (boundary is ~2% of solve).
 
 ### Fixed
 
