@@ -42,5 +42,8 @@ export default defineConfig({
   },
   test: {
     setupFiles: ['./vitest.setup.ts'],
+    // Playwright owns `e2e/`. Vitest would otherwise try to collect those specs and
+    // fail on `test.describe()` from a different runner.
+    exclude: ['**/node_modules/**', '**/dist/**', 'e2e/**'],
   },
 });

@@ -49,6 +49,9 @@ const fixtures3D: Record<string, FixtureLoader> = {
   // PRO generators (now JSON)
   'torre-irregular-con-retiros': () => import('./fixtures/torre-irregular-con-retiros.json'),
   'rc-design-frame': () => import('./fixtures/rc-design-frame.json'),
+  // Small deterministic RC design fixture (8 members) for fast unit + browser
+  // tests: adequate sections, load combinations present, every member verifiable.
+  'rc-design-qa-8': () => import('./fixtures/rc-design-qa-8.json'),
   // CAD → RC draft examples generated from real architectural DXFs by
   // scripts/build-cad-dxf-examples.ts (PR [9] stress tests).
   'cad-arch-structure-dxf': () => import('./fixtures/cad-arch-structure-dxf.json'),

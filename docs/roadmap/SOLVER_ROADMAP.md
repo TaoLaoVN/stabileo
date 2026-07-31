@@ -441,9 +441,7 @@ Make the solver easier to trust before and after a run, and make diagnostics str
 - Make solver-path selection and fallback behavior transparent
 - Query-ready summaries for maxima/minima/governing cases are now in place; keep them stable so product-level result Q&A and AI explanation do not drift back toward table scraping
 - Strengthen equilibrium and trust oracles in the validation helpers so distributed loads, moment balance, and constrained-force behavior are checked consistently instead of only by weak ad hoc helpers.
-- **Open diagnostic backlog — inclined supports:** equilibrium summary still reports incorrect reaction totals for inclined (rotated) supports because it sums reactions in global axes without resolving the support-aligned interpretation. This is reporting-only and does not affect the solve.
-  - **Why it is still open:** solver outputs are already correct; the missing work is deciding and documenting the summary contract (global totals, support-local totals, or both) and then aligning the reporting layer with it.
-  - **Done means:** one explicit equilibrium-summary contract is chosen and documented, inclined-support summaries match that contract, solver outputs stay unchanged, and reporting tests cover rotated-support cases.
+- ~~**Open diagnostic backlog — inclined supports**~~ — DONE (2026-07-26). The linear path was already fixed earlier in `25d55b1` (per-node reactions and the equilibrium summary both back-transform to global axes). The remaining gaps are now closed too: `solve_constrained_2d/3d` no longer disagrees with itself — per-node reactions and the equilibrium summary both use the inclined-aware builder (`216a34b`); and cable, corotational, reduction, material_nonlinear, and winkler all report reactions and displacements in global axes (`7b6e575`, follow-up `0ec4f23`). The corotational and material_nonlinear fixes went deeper than a reporting change: their per-iteration assemblies were never applying the inclined rotation at all, so the *solve* itself was wrong at inclined supports, not just the report — this is now fixed, including plastic-state updates evaluated on true-global displacements. Staged construction explicitly rejects inclined supports rather than mis-reporting (still open: wiring transforms through staged's custom 2D/3D assembly). The reporting contract — global axes everywhere, staged rejects — is documented in `docs/SOLVER_REFERENCE.md`. Residual gaps: (1) the cable Ernst/slack `dk` correction is still added unrotated when a cable endpoint sits on an inclined-support node (documented inline in `cable.rs`); (2) dynamics paths (modal, spectral, harmonic, time history) do not yet back-rotate inclined-support DOFs — mode shapes and time-history displacements at such nodes are reported in the rotated support frame.
 - Tighten tolerance policy by test type: analytical/reference tests should be much stricter than benchmark-comparison tolerances, and regression tests should not inherit permissive benchmark tolerances by default
 
 **Done when:**
@@ -453,7 +451,7 @@ Make the solver easier to trust before and after a run, and make diagnostics str
 - Solver-run artifacts can be attached to bug reports and replayed locally
 - At least one AI/review consumer uses structured codes, not string parsing
 - Result-query consumers can answer governing-case questions from structured payloads instead of ad hoc UI recomputation
-- Inclined-support equilibrium summaries use a documented and tested reporting contract
+- ~~Inclined-support equilibrium summaries use a documented and tested reporting contract~~ — DONE (2026-07-26): global-axes contract documented in `docs/SOLVER_REFERENCE.md`, back-transform consistent across linear, constrained, cable, corotational, reduction, material_nonlinear, and winkler; staged rejects rather than mis-reports; regression coverage in `inclined_reporting_gates.rs`
 
 ### Step 4 — Runtime and Scale Dominance
 
@@ -523,7 +521,7 @@ Protect major solver paths with visible, release-grade proof. This is how the so
 - **Real-model regression suite:** collect saved models from real users (with permission) or generate realistic messy models (mixed element types, irregular topology, nearly-coplanar shells, short members, eccentric connections). These catch failures that textbook benchmarks miss.
 - **WASM vs native parity tests:** run the same solver inputs through both native `cargo test` and the WASM build, compare results to machine precision. Catches f64 rounding differences, memory layout issues, and WASM-specific codegen bugs.
 - Make missing-fixture behavior explicit in parity/fuzz suites: missing required fixtures should fail or be reported as ignored/skipped infrastructure, never silently count as passing verification
-- **Mutation testing:** use `cargo-mutants` or equivalent to measure whether the test suite actually catches regressions. A test suite with 5908 passing tests is worthless if mutating the solver code doesn't fail any of them.
+- **Mutation testing:** use `cargo-mutants` or equivalent to measure whether the test suite actually catches regressions. A test suite with thousands of passing tests is worthless if mutating the solver code doesn't fail any of them — a lesson this codebase already learned once, when 151 formula-self-check files were found padding the "validation" count without ever calling the engine (see `docs/BENCHMARKS.md` "Test taxonomy").
 - **Design-automation regression tests:** verify that code-check inputs, governing-case extraction, and report-grade metadata remain stable on representative building workflows, not only that raw solve numbers match
 
 **Done when:**
@@ -552,12 +550,8 @@ Stop ugly mixed workflows from being the place where mature solvers obviously ou
 - Add PCG with Jacobi preconditioning; add IC(0) / SSOR if justified by measurements
 - Add GMRES / MINRES for indefinite systems
 - Finish constraint-system maturity: consistent reuse of constrained reductions across solver families, chained constraints, connector depth, eccentric workflow polish, cross-solver parity in forces and outputs. Real structural models rely heavily on diaphragms, rigid links, MPCs, and eccentric connectivity — inconsistent constrained behavior destroys trust.
-- **Open constraint backlog — prescribed displacement semantics:** free-slave → restrained-master with prescribed displacement still gives wrong results because the transformation applies the prescribed value before the slave DOFs are condensed.
-  - **Why it is still open:** this is not a safe micro-fix; it needs an explicit semantic rule for how prescribed support motion should propagate through constrained master/slave chains.
-  - **Done means:** one semantic contract is chosen and documented, all affected solver paths implement the same rule, and regression tests cover rigid links / equal-DOF / diaphragm chains with prescribed displacement.
-- **Open constraint backlog — circular detection depth:** circular constraint detection still only catches depth-2 cycles (A→B→A). Longer cycles can still slip through.
-  - **Why it is still open:** the current detection is pairwise; fixing it requires a proper graph traversal / SCC-style check, not another special case.
-  - **Done means:** arbitrary-depth cycles are detected before solve, valid long chains remain accepted, and tests cover depth-2, depth-3, and longer non-circular chains.
+- ~~**Open constraint backlog — prescribed displacement semantics**~~ — DONE (2026-07-26), `08d92e5`. Chosen contract: a particular solution `u_p = C_fr * u_r` (restrained-master columns of the constraint transform times their prescribed values) is added to the free-DOF reduction, so a free slave now follows its settled master in `solve_constrained_2d/3d`. This also surfaced a reaction-side gap the plan hadn't predicted: constraint-transmitted forces are now redistributed onto restrained masters too, so settlement reactions self-equilibrate instead of silently dropping the transmitted force. ~~**Still open (follow-up):** the redistribution only runs when a nonzero prescribed value triggers the particular-solution path~~ — closed by `74f3e18`: the C^T redistribution onto restrained masters now runs whenever constraint forces map into restrained columns, so a loaded slave tied to a fixed (u_r = 0) master also equilibrates (was ΣReactions = 0 under load). **Residual gap (same class, other paths):** corotational, cable, arc-length, fiber-nonlinear and material-nonlinear compute constraint forces but build reactions as `f_int − f_ext` at restrained DOFs without the redistribution — a loaded slave tied to a restrained master still mis-reports equilibrium on those paths (reporting-only; the solve is unaffected). Regression coverage: `tests/chained_constraints.rs`.
+- ~~**Open constraint backlog — circular detection depth**~~ — DONE (2026-07-26), `91eb53f`. Detection is now a DFS over the `master_of` slave→master graph at any depth, not pairwise A↔B; the existing 3-cycle test at `tests/chained_constraints.rs:287` (previously only printed) now asserts.
 
 **Done when:**
 - Named regressions exist for hard mixed workflows and stay green
@@ -566,8 +560,8 @@ Stop ugly mixed workflows from being the place where mature solvers obviously ou
 - Known nonlinear edge cases have acceptance coverage instead of only anecdotal reproduction
 - 3D releases are represented by one explicit contract end-to-end instead of generic hinge shorthands
 - Pre-solve diagnostics can explain release/support-topology failures without pretending to replace numerical singularity checks
-- Prescribed-displacement behavior through constrained chains is explicitly documented and regression-tested
-- Circular constraint detection is graph-complete rather than depth-2 only
+- ~~Prescribed-displacement behavior through constrained chains is explicitly documented and regression-tested~~ — DONE (2026-07-26): particular-solution semantics (`u_p = C_fr * u_r`) documented above and regression-tested; zero-settlement-through-constraint reaction redistribution remains an open follow-up
+- ~~Circular constraint detection is graph-complete rather than depth-2 only~~ — DONE (2026-07-26): DFS-based, arbitrary depth
 
 ### Step 7 — Shell Workflow Maturity and Breadth
 

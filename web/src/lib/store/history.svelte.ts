@@ -1,6 +1,6 @@
 // Undo/Redo history store using full model snapshots
 import { modelStore } from './model.svelte';
-import type { Release } from './model.svelte';
+import type { Release, ProvidedReinforcement } from './model.svelte';
 import type { Element3DMetadata } from '../model/element-3d-metadata';
 import type { ModelProvenance } from '../model/provenance';
 
@@ -24,6 +24,10 @@ export interface ModelSnapshot {
     sectionId: number;
     releaseI: Release;
     releaseJ: Release;
+    // PRO: provided reinforcement. Always present at runtime (snapshot() spreads
+    // the full Element), but was missing from this type until restoreReinforcementOnly()
+    // needed to read it directly instead of via an `as never as ...` cast.
+    reinforcement?: ProvidedReinforcement;
   } & Element3DMetadata]>;
   supports: Array<[number, { id: number; nodeId: number; type: string; angle?: number; isGlobal?: boolean; kx?: number; ky?: number; kz?: number; dx?: number; dz?: number; dry?: number; dy?: number; drz?: number; drx?: number; krx?: number; kry?: number; krz?: number }]>;
   loads: Array<{ type: string; data: Record<string, unknown> }>;
@@ -39,9 +43,28 @@ export interface ModelSnapshot {
 
 const MAX_HISTORY = 50;
 
+/**
+ * What kind of transaction produced a history entry.
+ *  - 'structural': a real model mutation — undo/redo goes through the FULL
+ *    `modelStore.restore()` path (bumps modelVersion, fires `_onMutation`, wipes
+ *    results/verification). This is the historical, safe-by-default behaviour.
+ *  - 'reinforcement': a `reinforcementTransaction` edit — reinforcement never
+ *    affects the structural analysis, so undo/redo goes through the silent
+ *    `modelStore.restoreReinforcementOnly()` path instead: only the changed
+ *    elements' `reinforcement` field is touched, and only their cached
+ *    provided-rebar verification is dropped. Results/demand data/revisions
+ *    survive untouched.
+ */
+export type SnapshotKind = 'structural' | 'reinforcement';
+
 function createHistoryStore() {
   let undoStack = $state<ModelSnapshot[]>([]);
   let redoStack = $state<ModelSnapshot[]>([]);
+  // Parallel to undoStack/redoStack (same index ↔ same entry): what kind of
+  // transaction pushed that entry. Not itself reactive state — nothing reads it
+  // from a component; it only drives undo()/redo()'s internal branch.
+  let undoKinds: SnapshotKind[] = [];
+  let redoKinds: SnapshotKind[] = [];
 
   const store = {
     get canUndo() { return undoStack.length > 0; },
@@ -49,57 +72,93 @@ function createHistoryStore() {
     get undoCount() { return undoStack.length; },
     get redoCount() { return redoStack.length; },
 
-    pushState(): void {
+    /**
+     * Push the current model onto the undo stack.
+     *
+     * `notifyMutation` (default true) preserves the historical behaviour: bump
+     * modelVersion so App.svelte's reactive effect clears stale results. Pass
+     * `false` for a reinforcement-only transaction — reinforcement does not affect
+     * the analysis, so bumping would destroy valid results and force a re-solve.
+     *
+     * `kind` (default 'structural') tags the entry for undo()/redo() so a
+     * reinforcement-only edit can later be undone/redone through the silent path.
+     * Defaulting to 'structural' is the safe choice for any caller that doesn't
+     * pass it explicitly: worst case is a full restore, never a skipped one.
+     */
+    pushState(opts?: { notifyMutation?: boolean; kind?: SnapshotKind }): void {
       const snapshot = modelStore.snapshot();
+      const kind: SnapshotKind = opts?.kind ?? 'structural';
       undoStack.push(snapshot);
+      undoKinds.push(kind);
       if (undoStack.length > MAX_HISTORY) {
         undoStack.shift();
+        undoKinds.shift();
       }
       redoStack = [];
-      // Bump modelVersion so the reactive $effect in App.svelte detects the change
-      // and clears stale results. This is a no-op when called via _pushUndo (which
-      // already increments modelVersion), but ensures direct pushState() callers
-      // (e.g. ElementEditor) also trigger result invalidation.
-      modelStore.bumpModelVersion();
+      redoKinds = [];
+      if (opts?.notifyMutation !== false) {
+        modelStore.bumpModelVersion();
+      }
     },
 
     undo(): void {
       if (undoStack.length === 0) return;
       const current = modelStore.snapshot();
-      redoStack.push(current);
+      const kind = undoKinds.pop() ?? 'structural';
       const prev = undoStack.pop()!;
-      modelStore.restore(prev);
+      redoStack.push(current);
+      redoKinds.push(kind);
+      if (kind === 'reinforcement') {
+        modelStore.restoreReinforcementOnly(prev);
+      } else {
+        modelStore.restore(prev);
+      }
     },
 
     redo(): void {
       if (redoStack.length === 0) return;
       const current = modelStore.snapshot();
-      undoStack.push(current);
+      const kind = redoKinds.pop() ?? 'structural';
       const next = redoStack.pop()!;
-      modelStore.restore(next);
+      undoStack.push(current);
+      undoKinds.push(kind);
+      if (kind === 'reinforcement') {
+        modelStore.restoreReinforcementOnly(next);
+      } else {
+        modelStore.restore(next);
+      }
     },
 
     clear(): void {
       undoStack = [];
       redoStack = [];
+      undoKinds = [];
+      redoKinds = [];
     },
 
     /** Get current stacks for tab serialization */
-    getStacks(): { undo: ModelSnapshot[]; redo: ModelSnapshot[] } {
-      return { undo: [...undoStack], redo: [...redoStack] };
+    getStacks(): { undo: ModelSnapshot[]; redo: ModelSnapshot[]; undoKinds: SnapshotKind[]; redoKinds: SnapshotKind[] } {
+      return { undo: [...undoStack], redo: [...redoStack], undoKinds: [...undoKinds], redoKinds: [...redoKinds] };
     },
 
-    /** Restore stacks from tab state */
-    setStacks(undo: ModelSnapshot[], redo: ModelSnapshot[]): void {
+    /** Restore stacks from tab state. Kind arrays are optional for backward
+     *  compatibility with any pre-existing serialized TabState; missing entries
+     *  default to 'structural' (the safe, pre-Fix-A behaviour). */
+    setStacks(undo: ModelSnapshot[], redo: ModelSnapshot[], uKinds?: SnapshotKind[], rKinds?: SnapshotKind[]): void {
       undoStack = undo;
       redoStack = redo;
+      undoKinds = uKinds ?? undo.map(() => 'structural' as SnapshotKind);
+      redoKinds = rKinds ?? redo.map(() => 'structural' as SnapshotKind);
     },
   };
 
   // Wire into model store after module initialization settles so this store
   // can survive circular imports in tests/SSR.
   queueMicrotask(() => {
-    modelStore?._setHistoryPush?.(() => store.pushState());
+    // modelStore wraps this fn for the notifying ('structural') path — bumping
+    // modelVersion and firing _onMutation BEFORE calling it — and calls it raw
+    // (tagged 'reinforcement') for the silent path used by reinforcementTransaction.
+    modelStore?._setHistoryPush?.((kind) => store.pushState({ notifyMutation: false, kind }));
   });
 
   return store;

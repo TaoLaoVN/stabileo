@@ -83,10 +83,30 @@ pub fn solve_corotational_2d(
             let mut f_int = vec![0.0; n];
             let mut k_t = vec![0.0; n * n];
 
-            assemble_corotational(input, &dof_num, &u_full, &mut f_int, &mut k_t);
+            // Elements need TRUE global nodal displacements to compute correct
+            // co-rotational geometry — u_full stores inclined-support DOFs in
+            // the rotated (tangent, normal) basis (same "mixed" convention
+            // assemble_2d's solved system produces), so reverse that rotation
+            // on a scratch copy before handing displacements to elements.
+            let mut u_geom = u_full.clone();
+            for it in &asm.inclined_transforms_2d {
+                assembly::reverse_inclined_transform_2d(&mut u_geom, &it.dofs, &it.r);
+            }
+
+            assemble_corotational(input, &dof_num, &u_geom, &mut f_int, &mut k_t);
 
             // Add spring stiffness contributions to K_T and f_int
-            add_spring_contributions(input, &dof_num, &u_full, &mut f_int, &mut k_t);
+            add_spring_contributions(input, &dof_num, &u_geom, &mut f_int, &mut k_t);
+
+            // Rotate K_T/f_int back into the rotated (tangent, normal) basis
+            // at inclined-support DOFs so they stay consistent with f_ext
+            // (already rotated by assemble_2d above) for the residual/solve
+            // below — without this, the tangent-stiffness system enforces
+            // "restrain literal global Z" instead of "restrain normal to
+            // the incline," silently solving the wrong physical problem.
+            for it in &asm.inclined_transforms_2d {
+                assembly::apply_inclined_transform_2d(&mut k_t, &mut f_int, n, &it.dofs, &it.r);
+            }
 
             // Residual R = F_ext - f_int
             let mut residual = vec![0.0; n];
@@ -643,32 +663,51 @@ fn build_final_results(
     let n = dof_num.n_total;
     let nf = dof_num.n_free;
 
-    let displacements = super::linear::build_displacements_2d(dof_num, u_full);
-
     // Reactions: co-rotational internal forces at restrained DOFs minus external loads
     let asm = assembly::assemble_2d(input, dof_num);
     let nr = n - nf;
     let f_r: Vec<f64> = (nf..n).map(|i| asm.f[i]).collect();
 
+    // Reverse the inclined-support rotation to get TRUE global displacements
+    // — needed both for correct co-rotational element geometry (elements
+    // must see real nodal x/z, not the rotated tangent/normal pair stored
+    // at inclined-support DOFs) and for reporting displacements/reactions/
+    // element forces in GLOBAL axes, mirroring linear::solve_2d.
+    let mut u_geom = u_full.to_vec();
+    for it in &asm.inclined_transforms_2d {
+        assembly::reverse_inclined_transform_2d(&mut u_geom, &it.dofs, &it.r);
+    }
+
+    let displacements = super::linear::build_displacements_2d(dof_num, &u_geom);
+
     let mut f_int_corot = vec![0.0; n];
     let mut k_dummy = vec![0.0; n * n];
-    assemble_corotational(input, dof_num, u_full, &mut f_int_corot, &mut k_dummy);
-    add_spring_contributions(input, dof_num, u_full, &mut f_int_corot, &mut k_dummy);
+    assemble_corotational(input, dof_num, &u_geom, &mut f_int_corot, &mut k_dummy);
+    add_spring_contributions(input, dof_num, &u_geom, &mut f_int_corot, &mut k_dummy);
+
+    // Rotate back into the same rotated frame as asm.f before differencing —
+    // mirrors the per-iteration treatment in solve_corotational_2d.
+    for it in &asm.inclined_transforms_2d {
+        assembly::apply_inclined_transform_2d(&mut k_dummy, &mut f_int_corot, n, &it.dofs, &it.r);
+    }
 
     let mut reactions_vec = vec![0.0; nr];
     for i in 0..nr {
         reactions_vec[i] = f_int_corot[nf + i] - asm.f[nf + i];
     }
 
-    let mut reactions = super::linear::build_reactions_2d(
-        input, dof_num, &reactions_vec, &f_r, nf, u_full,
+    let mut reactions = super::linear::build_reactions_2d_inclined(
+        input, dof_num, &reactions_vec, &f_r, nf, &u_geom, &asm.inclined_transforms_2d,
     );
     reactions.sort_by_key(|r| r.node_id);
 
-    let mut element_forces = compute_corotational_forces(input, dof_num, u_full);
+    let mut element_forces = compute_corotational_forces(input, dof_num, &u_geom);
     element_forces.sort_by_key(|ef| ef.element_id);
 
-    // Compute constraint forces if constraints are active
+    // Compute constraint forces if constraints are active. Uses the
+    // pre-reversal u_full/k_dummy/asm.f — all three stay in the same
+    // "mixed" (rotated-at-incline-DOFs) convention the free-DOF solve used,
+    // same rationale as the constrained-path fix (constraints.rs).
     let constraint_forces = if let Some(ref fcs) = cs {
         let mut k_ff = vec![0.0; nf * nf];
         for i in 0..nf {
@@ -916,8 +955,23 @@ pub fn solve_corotational_3d(
             let mut f_int = vec![0.0; n];
             let mut k_t = vec![0.0; n * n];
 
-            assemble_corotational_3d(input, &dof_num, &u_full, &mut f_int, &mut k_t, left_hand);
-            add_spring_contributions_3d(input, &dof_num, &u_full, &mut f_int, &mut k_t);
+            // See the 2D solver's identical comment: elements need TRUE
+            // global nodal displacements; u_full keeps inclined-support
+            // DOFs in the rotated (normal, tangent, tangent) basis.
+            let mut u_geom = u_full.clone();
+            for it in &asm.inclined_transforms {
+                assembly::reverse_inclined_transform(&mut u_geom, &it.dofs, &it.r);
+            }
+
+            assemble_corotational_3d(input, &dof_num, &u_geom, &mut f_int, &mut k_t, left_hand);
+            add_spring_contributions_3d(input, &dof_num, &u_geom, &mut f_int, &mut k_t);
+
+            // Rotate back into the rotated frame so K_T/f_int stay
+            // consistent with f_ext (rotated by assemble_3d) for the
+            // residual/solve below.
+            for it in &asm.inclined_transforms {
+                assembly::apply_inclined_transform(&mut k_t, &mut f_int, n, &it.dofs, &it.r);
+            }
 
             // Residual R = F_ext - f_int
             let mut residual = vec![0.0; n];
@@ -1427,15 +1481,26 @@ fn build_final_results_3d(
     let nf = dof_num.n_free;
     let nr = n - nf;
 
-    let displacements = super::linear::build_displacements_3d(dof_num, u_full);
-
     // Reactions from co-rotational internal forces at restrained DOFs
     let asm = assembly::assemble_3d(input, dof_num);
 
+    // Reverse the inclined-support rotation to get TRUE global displacements
+    // — see the 2D build_final_results for the full rationale.
+    let mut u_geom = u_full.to_vec();
+    for it in &asm.inclined_transforms {
+        assembly::reverse_inclined_transform(&mut u_geom, &it.dofs, &it.r);
+    }
+
+    let displacements = super::linear::build_displacements_3d(dof_num, &u_geom);
+
     let mut f_int_corot = vec![0.0; n];
     let mut k_dummy = vec![0.0; n * n];
-    assemble_corotational_3d(input, dof_num, u_full, &mut f_int_corot, &mut k_dummy, left_hand);
-    add_spring_contributions_3d(input, dof_num, u_full, &mut f_int_corot, &mut k_dummy);
+    assemble_corotational_3d(input, dof_num, &u_geom, &mut f_int_corot, &mut k_dummy, left_hand);
+    add_spring_contributions_3d(input, dof_num, &u_geom, &mut f_int_corot, &mut k_dummy);
+
+    for it in &asm.inclined_transforms {
+        assembly::apply_inclined_transform(&mut k_dummy, &mut f_int_corot, n, &it.dofs, &it.r);
+    }
 
     let mut reactions_vec = vec![0.0; nr];
     for i in 0..nr {
@@ -1443,15 +1508,16 @@ fn build_final_results_3d(
     }
 
     let f_r: Vec<f64> = (nf..n).map(|i| asm.f[i]).collect();
-    let mut reactions = super::linear::build_reactions_3d(
-        input, dof_num, &reactions_vec, &f_r, nf, u_full,
+    let mut reactions = super::linear::build_reactions_3d_inclined(
+        input, dof_num, &reactions_vec, &f_r, nf, &u_geom, &asm.inclined_transforms,
     );
     reactions.sort_by_key(|r| r.node_id);
 
-    let mut element_forces = compute_corotational_forces_3d(input, dof_num, u_full, left_hand);
+    let mut element_forces = compute_corotational_forces_3d(input, dof_num, &u_geom, left_hand);
     element_forces.sort_by_key(|ef| ef.element_id);
 
-    // Compute constraint forces if constraints are active
+    // Compute constraint forces if constraints are active. Uses pre-reversal
+    // u_full/k_dummy/asm.f — same "mixed" convention rationale as the 2D path.
     let constraint_forces = if let Some(ref fcs) = cs {
         let mut k_ff = vec![0.0; nf * nf];
         for i in 0..nf {

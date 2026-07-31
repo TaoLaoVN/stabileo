@@ -7,6 +7,9 @@ import type { GoverningPerElement, GoverningPerElement3D } from '../engine/gover
 import type { MovingLoadEnvelope } from '../engine/moving-loads';
 import type { PDeltaResult, PDeltaResult3D, ModalResult, ModalResult3D, BucklingResult, BucklingResult3D, PlasticResult, SpectralResult, SpectralResult3D } from '../engine/result-types';
 import { get2DDisplayDisplacementVertical } from '../geometry/coordinate-system';
+// Counts published structural analyses so browser tests can assert that a
+// reinforcement-only edit triggers none. Covers the worker/parallel solve paths too.
+import { noteStructuralSolve } from '../utils/solve-counter';
 
 export type DiagramType = 'none' | 'moment' | 'shear' | 'axial' | 'deformed' | 'colorMap' | 'axialColor' | 'verification' | 'influenceLine' | 'modeShape' | 'bucklingMode' | 'plasticHinges' | 'despiece'
   // 3D-specific diagram types
@@ -160,8 +163,50 @@ function createResultsStore() {
   let solveTimings2D = $state<SolveTimings | null>(null);
   let solveTimings3D = $state<SolveTimings | null>(null);
 
+  // Results-publish notification — set externally by store/index.ts so
+  // verificationStore can stamp a solve-generation counter without this store
+  // importing verificationStore (mirrors modelStore's `_onMutation` wiring).
+  let _onResultsPublish: (() => void) | null = null;
+
   return {
+    /** Wired in store/index.ts. Fired on every fresh-solve results publish
+     *  (setResults3D / setCombinationResults3D) so verificationStore can advance
+     *  its solve-generation counter — including a plain re-solve with no
+     *  structural mutation (self-weight / axis-convention toggle). */
+    _setOnResultsPublish(fn: () => void) { _onResultsPublish = fn; },
+
     get results() { return results; },
+    /** True when ANY result of any kind is present. Used by the mutation hook
+     *  to decide whether an edit must clear stale results. Covers 2D + 3D base,
+     *  per-case/per-combo/envelope, every advanced result (2D + 3D), and the
+     *  moving-load envelope plus an in-flight moving-load run — an advanced-only
+     *  or moving-load-only run leaves `results`/`results3D` null, so guarding on
+     *  those alone would skip invalidation entirely. */
+    get hasAnyResults(): boolean {
+      return (
+        results !== null ||
+        results3D !== null ||
+        singleResults !== null ||
+        singleResults3D !== null ||
+        perCase.size > 0 ||
+        perCombo.size > 0 ||
+        perCase3D.size > 0 ||
+        perCombo3D.size > 0 ||
+        envelope !== null ||
+        envelope3D !== null ||
+        pdeltaResult !== null ||
+        modalResult !== null ||
+        bucklingResult !== null ||
+        plasticResult !== null ||
+        spectralResult !== null ||
+        pdeltaResult3D !== null ||
+        modalResult3D !== null ||
+        bucklingResult3D !== null ||
+        spectralResult3D !== null ||
+        movingLoadEnvelope !== null ||
+        movingLoadRunning
+      );
+    },
     get diagramType() { return diagramType; },
     set diagramType(v: DiagramType) {
       diagramType = v;
@@ -561,9 +606,19 @@ function createResultsStore() {
       plasticResult = null;
       plasticStep = 0;
       spectralResult = null;
+      // 3D advanced results were previously only nulled in clearAdvanced()
+      // (called on a new advanced run), so a plain model edit left stale mode
+      // shapes / P-Delta / buckling / spectral 3D results rendered as current.
+      pdeltaResult3D = null;
+      modalResult3D = null;
+      bucklingResult3D = null;
+      spectralResult3D = null;
       movingLoadShowEnvelope = false;
       movingLoadRunning = false;
       movingLoadProgress = null;
+      // Abort any in-flight moving-load solve before dropping the controller,
+      // otherwise a running analysis can resurrect pre-edit forces after clear().
+      movingLoadAbortController?.abort();
       movingLoadAbortController = null;
       showReactions = false;
       showConstraintForces = false;
@@ -590,6 +645,8 @@ function createResultsStore() {
     get results3D() { return results3D; },
 
     setResults3D(r: AnalysisResults3D, preserveDiagram = false) {
+      noteStructuralSolve();
+      _onResultsPublish?.();
       results3D = r;
       singleResults3D = r;
       showReactions = false;
@@ -657,6 +714,8 @@ function createResultsStore() {
     setGoverning3D(g: Map<number, GoverningPerElement3D>) { governing3D = g; },
 
     setCombinationResults3D(pc: Map<number, AnalysisResults3D>, pco: Map<number, AnalysisResults3D>, env: FullEnvelope3D) {
+      noteStructuralSolve();
+      _onResultsPublish?.();
       perCase3D = pc;
       perCombo3D = pco;
       envelope3D = env;

@@ -94,6 +94,58 @@ export function createTextSprite(
   return sprite;
 }
 
+// ── Cached text sprites ──────────────────────────────────────
+// Load-heavy scenes repeat the same few label texts hundreds of times
+// ("5.0 kN/m²" on every quad). Creating a canvas + CanvasTexture per sprite is
+// the CPU/GPU-memory cost that makes syncLoads rebuilds stutter, so textures
+// are shared by (text, color, fontSize). Sprites made here carry
+// userData.sharedTexture so disposeObject() leaves the shared map alive.
+const TEXTURE_CACHE_MAX = 500;
+const textTextureCache = new Map<string, THREE.CanvasTexture>();
+
+function labelTexture(text: string, color: string, fontSize: number): THREE.CanvasTexture {
+  const key = `${text}|${color}|${fontSize}`;
+  const cached = textTextureCache.get(key);
+  if (cached) {
+    // Refresh recency (Map iteration is insertion-ordered for eviction).
+    textTextureCache.delete(key);
+    textTextureCache.set(key, cached);
+    return cached;
+  }
+  const canvas = document.createElement('canvas');
+  const size = 128;
+  canvas.width = size;
+  canvas.height = size;
+  const ctx = canvas.getContext('2d')!;
+  ctx.fillStyle = color;
+  ctx.font = `bold ${fontSize}px sans-serif`;
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillText(text, size / 2, size / 2);
+  const texture = new THREE.CanvasTexture(canvas);
+  textTextureCache.set(key, texture);
+  if (textTextureCache.size > TEXTURE_CACHE_MAX) {
+    const oldest = textTextureCache.keys().next().value!;
+    textTextureCache.get(oldest)?.dispose();
+    textTextureCache.delete(oldest);
+  }
+  return texture;
+}
+
+/** Like createTextSprite but with a shared cached texture (see above). */
+export function createTextSpriteCached(
+  text: string,
+  color: string = '#ffffff',
+  fontSize: number = 36,
+): THREE.Sprite {
+  const texture = labelTexture(text, color, fontSize);
+  const mat = new THREE.SpriteMaterial({ map: texture, depthTest: false, transparent: true });
+  const sprite = new THREE.Sprite(mat);
+  sprite.scale.set(0.6, 0.6, 1);
+  sprite.userData.sharedTexture = true;
+  return sprite;
+}
+
 /**
  * Heatmap color: norm ∈ [0,1] → blue(0) → green(0.5) → red(1)
  * Used for stress ratio, moment magnitude, etc.
@@ -106,16 +158,43 @@ export function heatmapColor(norm: number): number {
 }
 
 /**
- * Verification status color: ok → green, warn → yellow, fail → red.
- * Ratio-based: uses continuous gradient from green(0) → yellow(0.8) → red(1.2+).
+ * Verification status color: ok → green, warn → amber, fail → red.
+ * Utilization convention is demand/capacity: <= 1.0 passes.
  */
 export function verificationColor(ratio: number | null): number {
-  if (ratio === null) return 0x888888; // no verification → gray
+  if (ratio === null) return VERIFICATION_UNAVAILABLE_COLOR; // nothing verified → gray
   if (ratio <= 0.5) return 0x22cc66;     // green (safe)
   if (ratio <= 0.9) return 0x88cc22;     // yellow-green
-  if (ratio <= 1.0) return 0xddaa00;     // amber (near limit)
+  if (ratio <= 0.95) return 0xbfcc11;    // yellow (approaching)
+  if (ratio <= 1.0) return 0xddaa00;     // amber (warn band 0.95–1.00)
   if (ratio <= 1.1) return 0xff6600;     // orange (marginal fail)
   return 0xee2222;                        // red (fail)
+}
+
+/** "Nothing was verified here" — never green, visually distinct from a pass. */
+export const VERIFICATION_UNAVAILABLE_COLOR = 0x888888;
+
+/**
+ * Desaturate a status colour toward gray for the STALE state (approved decision:
+ * desaturated status colours plus hatch/glyph). Keeps the ratio information
+ * legible while making "not current" unmistakable, and never turns a failing
+ * member green.
+ */
+export function desaturateTowardGray(hex: number, amount = 0.55): number {
+  const r = (hex >> 16) & 0xff, g = (hex >> 8) & 0xff, b = hex & 0xff;
+  const lum = Math.round(0.299 * r + 0.587 * g + 0.114 * b);
+  const mix = (c: number) => Math.round(c + (lum - c) * amount);
+  return (mix(r) << 16) | (mix(g) << 8) | mix(b);
+}
+
+/** Three-state verification colour for the viewport overlay. */
+export function verificationStateColor(
+  ratio: number | null,
+  state: 'current' | 'stale' | 'unavailable',
+): number {
+  if (state === 'unavailable') return VERIFICATION_UNAVAILABLE_COLOR;
+  const base = verificationColor(ratio);
+  return state === 'stale' ? desaturateTowardGray(base) : base;
 }
 
 /**
@@ -145,7 +224,11 @@ export function disposeObject(obj: THREE.Object3D): void {
       }
     }
     if (child instanceof THREE.Sprite) {
-      (child.material as THREE.SpriteMaterial).map?.dispose();
+      // Cached-label textures are shared across sprites — disposing one would
+      // corrupt every other sprite using it. Only dispose private maps.
+      if (!child.userData?.sharedTexture) {
+        (child.material as THREE.SpriteMaterial).map?.dispose();
+      }
       child.material.dispose();
     }
   });

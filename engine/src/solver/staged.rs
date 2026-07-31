@@ -35,8 +35,23 @@ pub fn solve_staged_2d(input: &StagedInput) -> Result<StagedAnalysisResults, Str
         return Err("No construction stages defined".into());
     }
 
+    // Staged construction's custom assembly (assemble_stage_2d, below) hardcodes
+    // inclined_transforms_2d: vec![] — it never rotates K/F for inclined
+    // supports. This means the solve would silently treat an inclined roller
+    // as a flat roller (wrong boundary condition and wrong stiffness), not
+    // just mis-report results. Reject explicitly until that assembly carries
+    // transforms.
+    let has_inclined = input.supports.values().any(|s| {
+        s.support_type == "inclinedRoller"
+    });
+    if has_inclined {
+        return Err("Inclined supports are not yet supported in staged construction analysis \
+                    (reactions would be reported in the rotated support frame)".to_string());
+    }
+
     // Build DOF numbering from the full structure (all nodes, all elements)
     let full_solver_input = staged_to_full_solver_input(input);
+    super::linear::validate_input_2d(&full_solver_input)?;
     let dof_num = DofNumbering::build_2d(&full_solver_input);
 
     if dof_num.n_free == 0 {
@@ -358,7 +373,7 @@ fn assemble_staged_2d(
 
             // Assemble element loads (FEF) for this stage's loads
             assemble_element_loads_2d(
-                stage_input, elem, &k_local, &t, l, e, sec, node_i, &elem_dofs, &mut f_global,
+                &stage_input.loads, elem, &t, l, e, sec, &elem_dofs, &mut f_global,
             );
         }
     }
@@ -768,8 +783,27 @@ pub fn solve_staged_3d(input: &StagedInput3D) -> Result<StagedAnalysisResults3D,
         return Err("No construction stages defined".into());
     }
 
+    // Unlike the 2D path, solve_staged_3d's per-stage assembly does reuse
+    // assemble_3d (which correctly rotates K/F for inclined supports).
+    // However, build_results_from_u_3d computes reactions and element
+    // forces by summing per-element local-frame forces (via each element's
+    // OWN axis transform), which requires TRUE global nodal displacements —
+    // cumulative_u keeps inclined-support DOFs in the rotated (normal,
+    // tangent, tangent) basis assemble_3d's solve produces, so those
+    // per-element computations would be wrong for any element touching an
+    // inclined-support node. Reject explicitly rather than reporting
+    // silently-wrong element forces/reactions.
+    let has_inclined = input.supports.values().any(|s| {
+        s.is_inclined == Some(true)
+    });
+    if has_inclined {
+        return Err("Inclined supports are not yet supported in staged construction analysis \
+                    (reactions would be reported in the rotated support frame)".to_string());
+    }
+
     // Build DOF numbering from the full structure (all nodes, all elements)
     let full_input = staged_to_full_solver_input_3d(input);
+    super::linear::validate_input_3d(&full_input)?;
     let dof_num = DofNumbering::build_3d(&full_input);
 
     if dof_num.n_free == 0 {
