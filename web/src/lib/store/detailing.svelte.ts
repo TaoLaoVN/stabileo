@@ -84,19 +84,28 @@ function currentConcreteEdition(): RegulationEdition {
 }
 
 /**
- * Maximum aggregate size, from the materials.
+ * Maximum aggregate size as the MATERIALS state it, or null when none of them does.
  *
  * PR16 moved this off the regulation panel and onto the material, where a mix property
  * belongs. The largest value across the concretes in use governs the bar spacing, which is
  * the conservative reading when a model mixes mixes.
+ *
+ * Split from `resolveAggregate` so "stated" and "assumed" stay distinguishable. Both callers
+ * need the same number, but an export must additionally say WHICH it is: the assumed 20 mm is
+ * not a regulatory default, and a document that presented it as one would be claiming a
+ * provenance it does not have.
  */
-function resolveAggregate(): number {
+function statedAggregate(): number | null {
   let max = 0;
   for (const m of modelStore.model.materials.values()) {
     const d = (m as { maxAggregateSizeMm?: number | null }).maxAggregateSizeMm;
     if (typeof d === 'number' && d > max) max = d;
   }
-  return max > 0 ? max : DAGG_ASSUMED_MM;
+  return max > 0 ? max : null;
+}
+
+function resolveAggregate(): number {
+  return statedAggregate() ?? DAGG_ASSUMED_MM;
 }
 
 /**
@@ -1112,6 +1121,18 @@ function createDetailingStore() {
      * about its soil, its reaction and its column.
      */
     get lastFootingRun(): RunFootingDesignResult | null { return lastFootingRun; },
+
+    /**
+     * The coarse-aggregate size the spacing rules were resolved against.
+     *
+     * Exposed because an export has to state the same number the rules used AND whether it was
+     * stated by a material or assumed. Recomputing it at the export site would be a second copy
+     * of the resolution rule, free to drift from this one.
+     */
+    get aggregate(): { maxAggregateSizeMm: number; assumed: boolean } {
+      const stated = statedAggregate();
+      return { maxAggregateSizeMm: stated ?? DAGG_ASSUMED_MM, assumed: stated === null };
+    },
 
     /** Footings that could not be checked, with the reason — the gate, as data for the UI. */
     get footingsNotVerified(): Array<{ name: string; reasons: EngineMessage[] }> {

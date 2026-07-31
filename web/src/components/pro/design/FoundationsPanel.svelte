@@ -22,6 +22,7 @@
   import { modelStore } from '../../../lib/store/model.svelte';
   import { validateFooting } from '../../../lib/model/footing';
   import { validateSoilProfile } from '../../../lib/model/geotechnical';
+  import { exportFootingCadHandoff } from '../../../lib/store/rc-cad-export';
 
   const footings = $derived([...modelStore.model.footings.values()].sort((a, b) => a.id - b.id));
   const profiles = $derived(modelStore.model.geotechnical?.profiles ?? []);
@@ -59,6 +60,32 @@
   function num(v: string): number {
     const n = Number(v);
     return Number.isFinite(n) ? n : 0;
+  }
+
+  /**
+   * The last CAD handoff attempt, keyed by footing so a result never appears under a footing
+   * it does not describe.
+   */
+  type CadOutcome =
+    | { footingId: number; ok: true; filename: string; byteLength: number }
+    | {
+      footingId: number; ok: false;
+      refusals: ReadonlyArray<{ code: string; messageKey: string; params?: Record<string, unknown> }>;
+      /** Developer-facing validator output, shown when the manifest failed its own schema. */
+      details: string[];
+    };
+  let cadResult = $state<CadOutcome | null>(null);
+
+  function runCadExport(footingId: number) {
+    // `tp` is passed straight through, so every sentence in the manifest is the app's own
+    // translated text in the user's locale rather than a second set of strings written here.
+    const r = exportFootingCadHandoff(footingId, (k, params) => tp(k, params ?? {}));
+    cadResult = r.ok
+      ? { footingId, ok: true, filename: r.filename, byteLength: r.byteLength }
+      : {
+        footingId, ok: false, refusals: r.refusals,
+        details: [...(r.invalid?.schema ?? []), ...(r.invalid?.semantic ?? [])],
+      };
   }
 </script>
 
@@ -230,6 +257,52 @@
           {/if}
         {/each}
 
+        <!--
+          The CAD handoff.
+
+          Deliberately inside the SELECTED footing's editor rather than a global toolbar
+          button: one manifest describes one footing's connection, and a control that did not
+          say which footing it meant would produce a file whose subject the user had to infer.
+
+          The scope sentence sits above the button, not in a tooltip. A reader who exports this
+          and opens it in CAD must already know it is the transfer cage and not the mats.
+        -->
+        <div class="cad-export" data-testid="footing-cad-export">
+          <h5>{t('footing.cad.ui.title')}</h5>
+          <p class="note">{t('footing.cad.ui.scope')}</p>
+          <button data-testid="footing-cad-export-run" onclick={() => runCadExport(f.id)}>
+            {t('footing.cad.ui.export')}
+          </button>
+          {#if cadResult?.footingId === f.id}
+            {#if cadResult.ok}
+              <p class="ok" data-testid="footing-cad-export-ok">
+                {tp('footing.cad.ui.exported', {
+                  filename: cadResult.filename, bytes: cadResult.byteLength,
+                })}
+              </p>
+            {:else}
+              <!--
+                Every refusal is shown verbatim. A disabled button with no explanation is the
+                thing this panel's own header comment refuses to do, and an export that cannot
+                honestly be produced has a specific reason the user can act on.
+              -->
+              <div class="failed" data-testid="footing-cad-export-failed">
+                <p>{t('footing.cad.ui.failed')}</p>
+                <ul>
+                  {#each cadResult.refusals as r (r.code)}
+                    <li>{tp(r.messageKey, r.params ?? {})}</li>
+                  {/each}
+                </ul>
+                {#if cadResult.details.length > 0}
+                  <ul class="details" data-testid="footing-cad-export-details">
+                    {#each cadResult.details as line (line)}<li><code>{line}</code></li>{/each}
+                  </ul>
+                {/if}
+              </div>
+            {/if}
+          {/if}
+        </div>
+
         <button class="danger" data-testid="footing-delete"
                 onclick={() => { modelStore.removeFooting(f.id); selectedId = null; }}>
           {t('footing.ui.delete')}
@@ -377,4 +450,14 @@
   }
   button { font: inherit; cursor: pointer; }
   .danger { margin-top: 0.5rem; }
+
+  .cad-export { margin-top: 0.75rem; padding-top: 0.5rem; border-top: 1px solid #3a3a3a; }
+  .cad-export h5 { margin: 0; font-size: 0.8rem; }
+  .cad-export .ok { margin: 0.4rem 0 0; font-size: 0.74rem; }
+  /* A refusal reads as a refusal. Nothing here is styled as a success. */
+  .cad-export .failed { margin-top: 0.4rem; font-size: 0.74rem; color: #ffe4e4; }
+  .cad-export .failed p { margin: 0 0 0.2rem; font-weight: 600; }
+  .cad-export .failed li { padding: 0.15rem 0.4rem; border-radius: 3px; background: #5c1a1a; }
+  .cad-export .details li { background: none; opacity: 0.85; }
+  .cad-export .details code { font-size: 0.7rem; word-break: break-all; }
 </style>

@@ -23,6 +23,7 @@ import { describe, it, expect, beforeEach } from 'vitest';
 import { readFileSync, writeFileSync, existsSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { modelStore } from '../../store/model.svelte';
+import { uiStore } from '../../store/ui.svelte';
 import { serializeProject, deserializeProject } from '../../store/file';
 
 const FIXTURE_URL = new URL('../__fixtures__/rc-footing-cad-poc.ded.json', import.meta.url);
@@ -76,6 +77,13 @@ async function buildProject(): Promise<{ ded: string; nodeId: number; footingId:
   modelStore.clear();
   await modelStore.loadExample('rc-design-qa-8');
 
+  // A project containing a FOOTING is a PRO project, because the Foundations editor exists only
+  // in PRO. Saving it in any other mode produces a file that reopens into a mode where the
+  // footing the user created is neither visible nor reachable — `deserializeProject` restores
+  // `analysisMode`, and `uiStore.appMode` derives from it. Setting it here is what makes the
+  // fixture a project a user could actually reopen and carry on working in.
+  uiStore.analysisMode = 'pro';
+
   const nodeId = groundSupportNodeId();
 
   const profileId = modelStore.addSoilProfile(INPUTS.soilName);
@@ -111,6 +119,10 @@ describe('canonical PR19 CAD footing project (.ded)', () => {
     const snap = parsed.snapshot as Record<string, unknown>;
     expect(Array.isArray(snap.footings)).toBe(true);
     expect((snap.footings as unknown[]).length).toBe(1);
+    // The saved mode is part of the fixture's meaning, not incidental metadata: it is what
+    // lets the browser journey open this file and land in the PRO tab that owns Foundations.
+    expect(parsed.analysisMode, 'a footing project is a PRO project').toBe('pro');
+    expect(parsed.appMode).toBe('pro');
 
     if (process.env.WRITE_FIXTURE) {
       writeFileSync(FIXTURE_PATH, ded.endsWith('\n') ? ded : `${ded}\n`, 'utf8');

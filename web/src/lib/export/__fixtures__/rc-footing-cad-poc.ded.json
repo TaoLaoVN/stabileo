@@ -1,7 +1,7 @@
 {
   "version": "2.0",
   "name": "RC Design QA (8 members)",
-  "timestamp": "2026-07-30T15:45:45.482Z",
+  "timestamp": "2026-07-31T22:10:36.583Z",
   "snapshot": {
     "name": "RC Design QA (8 members)",
     "nodes": [
@@ -633,8 +633,8 @@
       "defaultProfileId": 1
     }
   },
-  "appMode": "basico",
-  "analysisMode": "3d",
+  "appMode": "pro",
+  "analysisMode": "pro",
   "axisConvention3D": "rightHand",
   "viewportPresentation3D": "native3d"
 }
