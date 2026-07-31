@@ -161,6 +161,25 @@ describe('Fig. 2.4-1 — external pressure coefficients', () => {
     expect(roofCp(0.5, 85).windward).toEqual([0.8]);
   });
 
+  it('computes the ≥ 60° windward column as C_p = 0,01·θ (printed formula, not literal 0,01)', () => {
+    // Fig. 2.4-1 prints `0,01 θ` for the ≥ 60° column: 0.6 at 60°, 0.8 at 80°,
+    // continuous with the 45° value and with the > 80° footnote (C_p = 0,8).
+    for (const hOverL of [0.25, 0.5, 1.0]) {
+      expect(roofCp(hOverL, 60).windward).toEqual([0.6]);
+      expect(roofCp(hOverL, 70).windward).toEqual([0.7]);
+      expect(roofCp(hOverL, 80).windward).toEqual([0.8]);
+    }
+  });
+
+  it('interpolates the windward roof between 45° and 60° toward 0.6, not toward 0.01', () => {
+    // Each printed value-set interpolates toward 0.6 (0,01·θ at 60°), so at the
+    // 52.5° midpoint: h/L ≤ 0.25 gives 0.4→0.5; h/L = 0.5 gives 0.0→0.3 and 0.4→0.5;
+    // h/L ≥ 1.0 gives 0.0→0.3 and 0.3→0.45.
+    expect(roofCp(0.25, 52.5).windward).toEqual([0.5]);
+    expect(roofCp(0.5, 52.5).windward).toEqual([0.3, 0.5]);
+    expect(roofCp(1.0, 52.5).windward).toEqual([0.3, 0.45]);
+  });
+
   it('declares slopes below 10° unsupported rather than approximating', () => {
     const r = roofCp(0.5, 5);
     expect(r.windward).toEqual([]);
