@@ -1561,7 +1561,7 @@ function prepareSolve3D(model: ModelData, includeSelfWeight = false, leftHand = 
   addConstraintConnectivity(connectedNodes, model.constraints);
   for (const nodeId of model.nodes.keys()) {
     if (!connectedNodes.has(nodeId)) {
-      return { error: t('svc.disconnectedNode').replace('{n}', String(nodeId)), connectedNodes };
+      return t('svc.disconnectedNode').replace('{n}', String(nodeId));
     }
   }
 
