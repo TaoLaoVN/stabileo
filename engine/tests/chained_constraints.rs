@@ -1181,3 +1181,110 @@ fn equal_dof_slave_follows_settled_master_2d() {
     let sum_fz: f64 = res.reactions.iter().map(|r| r.rz).sum();
     assert!(sum_fz.abs() < 1e-6, "settlement reactions must self-equilibrate: {}", sum_fz);
 }
+
+// ==================== Loaded slave tied to a fixed master ====================
+//
+// Regression gate: the C^T redistribution of constraint forces into
+// restrained-master reactions must run whenever constraint forces map into
+// restrained columns — not only when a prescribed displacement exists. A
+// loaded EqualDOF slave tied to a FIXED (u_r = 0) master otherwise loses its
+// load from the reported reactions (ΣReactions ≠ ΣApplied). Pre-fix this
+// returned sumFz = 0 for the case below; on main before this branch it also
+// returned 0 (pre-existing defect, partially covered by the
+// prescribed-displacement fix).
+
+/// 3D: load at a slave tied to the fixed base must equilibrate.
+#[test]
+fn loaded_slave_fixed_master_equilibrium_3d() {
+    // Beam 1 -> 2 (fixed at 1). Node 3 has no element of its own; it is
+    // slaved to node 1 on all DOFs and carries the load — its only stiffness
+    // path is the constraint into the fixed master.
+    let l = 4.0;
+    let nodes = vec![
+        (1, 0.0, 0.0, 0.0),
+        (2, l, 0.0, 0.0),
+        (3, 0.0, 0.0, 2.0),
+    ];
+    let elems = vec![(1, "frame", 1, 2, 1, 1)];
+    let sups = vec![(1, fixed())];
+
+    // Control: load at the free tip — reactions must balance trivially.
+    let ctrl_input = {
+        let loads = vec![SolverLoad3D::Nodal(SolverNodalLoad3D {
+            node_id: 2, fx: 0.0, fy: 0.0, fz: -10.0,
+            mx: 0.0, my: 0.0, mz: 0.0, bw: None,
+        })];
+        let mut input = make_3d_input(
+            nodes.clone(),
+            vec![(1, E, NU)],
+            vec![(1, A, IY, IZ, J)],
+            elems.clone(), sups.clone(), loads,
+        );
+        input.constraints.push(Constraint::EqualDOF(EqualDOFConstraint {
+            master_node: 1, slave_node: 3, dofs: vec![0, 1, 2, 3, 4, 5],
+        }));
+        input
+    };
+    let ctrl = linear::solve_3d(&ctrl_input).expect("control solve failed");
+    let sum_ctrl: f64 = ctrl.reactions.iter().map(|r| r.fz).sum();
+    assert!((sum_ctrl - 10.0).abs() < 1e-6, "control: sumFz={sum_ctrl}");
+
+    // Case: load at the slave tied to the FIXED master — the load must flow
+    // into the master's reaction through the link.
+    let case_input = {
+        let loads = vec![SolverLoad3D::Nodal(SolverNodalLoad3D {
+            node_id: 3, fx: 0.0, fy: 0.0, fz: -10.0,
+            mx: 0.0, my: 0.0, mz: 0.0, bw: None,
+        })];
+        let mut input = make_3d_input(
+            nodes,
+            vec![(1, E, NU)],
+            vec![(1, A, IY, IZ, J)],
+            elems, sups, loads,
+        );
+        input.constraints.push(Constraint::EqualDOF(EqualDOFConstraint {
+            master_node: 1, slave_node: 3, dofs: vec![0, 1, 2, 3, 4, 5],
+        }));
+        input
+    };
+    let case = linear::solve_3d(&case_input).expect("case solve failed");
+    let sum_case: f64 = case.reactions.iter().map(|r| r.fz).sum();
+    assert!(
+        (sum_case - 10.0).abs() < 1e-6,
+        "loaded slave tied to fixed master must equilibrate: sumFz={sum_case}"
+    );
+}
+
+/// 2D: same contract through the 2D constrained path.
+#[test]
+fn loaded_slave_fixed_master_equilibrium_2d() {
+    let make = |load_node: usize| {
+        let mut input = make_input(
+            vec![(1, 0.0, 0.0), (2, 4.0, 0.0), (3, 0.0, 2.0)],
+            vec![(1, E, NU)],
+            vec![(1, A, IZ)],
+            vec![(1, "frame", 1, 2, 1, 1, false, false)],
+            vec![(1, 1, "fixed")],
+            vec![SolverLoad::Nodal(SolverNodalLoad {
+                node_id: load_node, fx: 0.0, fz: -10.0, my: 0.0,
+            })],
+        );
+        input.constraints.push(Constraint::EqualDOF(EqualDOFConstraint {
+            master_node: 1,
+            slave_node: 3,
+            dofs: vec![0, 1, 2],
+        }));
+        input
+    };
+
+    let ctrl = linear::solve_2d(&make(2)).expect("control solve failed");
+    let sum_ctrl: f64 = ctrl.reactions.iter().map(|r| r.rz).sum();
+    assert!((sum_ctrl - 10.0).abs() < 1e-6, "control: sumRz={sum_ctrl}");
+
+    let case = linear::solve_2d(&make(3)).expect("case solve failed");
+    let sum_case: f64 = case.reactions.iter().map(|r| r.rz).sum();
+    assert!(
+        (sum_case - 10.0).abs() < 1e-6,
+        "loaded slave tied to fixed master must equilibrate: sumRz={sum_case}"
+    );
+}

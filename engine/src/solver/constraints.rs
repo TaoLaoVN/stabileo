@@ -926,23 +926,21 @@ pub fn solve_constrained_2d(input: &ConstrainedInput) -> Result<AnalysisResults,
     };
     let constraint_forces = map_dof_forces_to_constraint_forces(&raw_forces, &dof_num);
 
-    // A constraint force carried into a RESTRAINED (prescribed) master is not
-    // otherwise reflected anywhere: the master's own equilibrium row isn't
-    // part of the reduced free-DOF system (its value is already known via
-    // u_r), so the plain K_rf*u_f + K_rr*u_r - F_r reaction formula misses
-    // the force the master-slave link transmits into that support. Add it
-    // back with the same C^T redistribution used for the free-DOF reduction,
-    // restricted to the restrained-independent columns of C — this is what
-    // keeps ΣReactions in equilibrium with the (zero, for pure settlement)
-    // applied load.
-    if k_ff_up_opt.is_some() {
-        for &(i, g_i) in &raw_forces {
-            for (j, &d) in ct.independent_dofs.iter().enumerate() {
-                if d >= nf {
-                    let coeff = ct.c_matrix[i * n_indep + j];
-                    if coeff != 0.0 {
-                        reactions_vec[d - nf] += coeff * g_i;
-                    }
+    // A constraint force carried into a RESTRAINED master is not otherwise
+    // reflected anywhere: the master's own equilibrium row isn't part of the
+    // reduced free-DOF system (its value is already known via u_r), so the
+    // plain K_rf*u_f + K_rr*u_r - F_r reaction formula misses the force the
+    // master-slave link transmits into that support. Add it back with the
+    // same C^T redistribution used for the free-DOF reduction, restricted to
+    // the restrained-independent columns of C — this keeps ΣReactions in
+    // equilibrium with the applied load both for pure settlement (prescribed
+    // u_r) and for a loaded slave tied to a fixed (u_r = 0) master.
+    for &(i, g_i) in &raw_forces {
+        for (j, &d) in ct.independent_dofs.iter().enumerate() {
+            if d >= nf {
+                let coeff = ct.c_matrix[i * n_indep + j];
+                if coeff != 0.0 {
+                    reactions_vec[d - nf] += coeff * g_i;
                 }
             }
         }
@@ -1197,23 +1195,21 @@ pub fn solve_constrained_3d(input: &ConstrainedInput3D) -> Result<AnalysisResult
     };
     let constraint_forces = map_dof_forces_to_constraint_forces(&raw_forces, &dof_num);
 
-    // A constraint force carried into a RESTRAINED (prescribed) master is not
-    // otherwise reflected anywhere: the master's own equilibrium row isn't
-    // part of the reduced free-DOF system (its value is already known via
-    // u_r), so the plain K_rf*u_f + K_rr*u_r - F_r reaction formula misses
-    // the force the master-slave link transmits into that support. Add it
-    // back with the same C^T redistribution used for the free-DOF reduction,
-    // restricted to the restrained-independent columns of C — this is what
-    // keeps ΣReactions in equilibrium with the (zero, for pure settlement)
-    // applied load.
-    if k_ff_up_opt.is_some() {
-        for &(i, g_i) in &raw_forces {
-            for (j, &d) in ct.independent_dofs.iter().enumerate() {
-                if d >= nf {
-                    let coeff = ct.c_matrix[i * n_indep + j];
-                    if coeff != 0.0 {
-                        reactions_vec[d - nf] += coeff * g_i;
-                    }
+    // A constraint force carried into a RESTRAINED master is not otherwise
+    // reflected anywhere: the master's own equilibrium row isn't part of the
+    // reduced free-DOF system (its value is already known via u_r), so the
+    // plain K_rf*u_f + K_rr*u_r - F_r reaction formula misses the force the
+    // master-slave link transmits into that support. Add it back with the
+    // same C^T redistribution used for the free-DOF reduction, restricted to
+    // the restrained-independent columns of C — this keeps ΣReactions in
+    // equilibrium with the applied load both for pure settlement (prescribed
+    // u_r) and for a loaded slave tied to a fixed (u_r = 0) master.
+    for &(i, g_i) in &raw_forces {
+        for (j, &d) in ct.independent_dofs.iter().enumerate() {
+            if d >= nf {
+                let coeff = ct.c_matrix[i * n_indep + j];
+                if coeff != 0.0 {
+                    reactions_vec[d - nf] += coeff * g_i;
                 }
             }
         }
