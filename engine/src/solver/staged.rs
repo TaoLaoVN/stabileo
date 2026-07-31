@@ -51,6 +51,7 @@ pub fn solve_staged_2d(input: &StagedInput) -> Result<StagedAnalysisResults, Str
 
     // Build DOF numbering from the full structure (all nodes, all elements)
     let full_solver_input = staged_to_full_solver_input(input);
+    super::linear::validate_input_2d(&full_solver_input)?;
     let dof_num = DofNumbering::build_2d(&full_solver_input);
 
     if dof_num.n_free == 0 {
@@ -372,7 +373,7 @@ fn assemble_staged_2d(
 
             // Assemble element loads (FEF) for this stage's loads
             assemble_element_loads_2d(
-                stage_input, elem, &k_local, &t, l, e, sec, node_i, &elem_dofs, &mut f_global,
+                &stage_input.loads, elem, &t, l, e, sec, &elem_dofs, &mut f_global,
             );
         }
     }
@@ -802,6 +803,7 @@ pub fn solve_staged_3d(input: &StagedInput3D) -> Result<StagedAnalysisResults3D,
 
     // Build DOF numbering from the full structure (all nodes, all elements)
     let full_input = staged_to_full_solver_input_3d(input);
+    super::linear::validate_input_3d(&full_input)?;
     let dof_num = DofNumbering::build_3d(&full_input);
 
     if dof_num.n_free == 0 {

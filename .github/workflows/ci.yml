@@ -19,9 +19,6 @@ jobs:
           components: clippy, rust-src
 
       - name: Install mold linker
-        run: sudo apt-get install -y mold
-
-      - name: Install mold linker
         run: sudo apt-get update && sudo apt-get install -y mold
 
       - uses: Swatinem/rust-cache@v2
@@ -32,6 +29,11 @@ jobs:
         working-directory: engine
         run: cargo clippy --lib -- -W clippy::all -A clippy::erasing_op
 
+  # Named correctness gates. Every gate's tests are EXCLUDED from the suite
+  # job below — each test must run exactly once per CI run. If you add a gate
+  # step here, add its filter to the suite exclusion as well (verified with:
+  # cargo nextest list --profile ci -E '<filter>' | wc -l — suite + gates must
+  # equal the old combined filter's count).
   test:
     runs-on: ubuntu-latest
     steps:
@@ -40,9 +42,6 @@ jobs:
       - uses: dtolnay/rust-toolchain@nightly
         with:
           components: rust-src
-
-      - name: Install mold linker
-        run: sudo apt-get install -y mold
 
       - name: Install mold linker
         run: sudo apt-get update && sudo apt-get install -y mold
@@ -96,14 +95,54 @@ jobs:
         working-directory: engine
         run: cargo nextest run --profile ci --test kfull_overbuild_gates
 
-      # Exclude wall-clock timing benchmarks and the perf-gate binaries: they
-      # are validated in their dedicated single-threaded steps above. Re-running
-      # them here under full-suite parallel contention only adds flakiness (the
-      # measured wall time balloons with co-scheduled load) without extra coverage.
-      - name: Run all tests
+  # The remaining ~6700 tests, sharded 2-way. Excludes the named gates above
+  # (they run in the `test` job) and the wall-clock timing benchmarks/perf
+  # binaries (validated in their dedicated single-threaded gate steps).
+  suite:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1, 2]
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@nightly
+        with:
+          components: rust-src
+
+      - name: Install mold linker
+        run: sudo apt-get update && sudo apt-get install -y mold
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: engine
+
+      - uses: taiki-e/install-action@nextest
+
+      - name: Run test suite (shard ${{ matrix.shard }}/2)
         working-directory: engine
-        run: cargo nextest run --profile ci -E 'all() - test(harmonic_phase_breakdown) - test(harmonic_modal_vs_direct_timing) - binary(perf_regression_advanced) - binary(perf_regression_gates)'
+        run: cargo nextest run --profile ci -E 'all() - test(harmonic_phase_breakdown) - test(harmonic_modal_vs_direct_timing) - binary(perf_regression_advanced) - binary(perf_regression_gates) - (test(/benchmark_shell/) + test(/benchmark_beam_shell/) + test(/benchmark_plate/) + test(/benchmark_navier/) + test(/benchmark_scordelis/) + test(/benchmark_cantilever/) + test(/benchmark_pinched/) + test(/test_quad_thin_plate/)) - (test(/acceptance_.*shell/) + test(/acceptance_.*diaphragm/)) - test(/benchmark_.*constraint/) - binary(sparse_shell_gates) - binary(solver_invariants) - binary(solver_ci_coverage) - binary(conditioning_adversarial) - binary(kfull_overbuild_gates)' --partition count:${{ matrix.shard }}/2
         timeout-minutes: 20
+
+  # Criterion reports are informational (continue-on-error): they must not gate
+  # PRs, so they only run on main. Artifact cadence is unchanged (every main push).
+  bench:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@nightly
+        with:
+          components: rust-src
+
+      - name: Install mold linker
+        run: sudo apt-get update && sudo apt-get install -y mold
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: engine
 
       - name: Benchmarks compile
         working-directory: engine
