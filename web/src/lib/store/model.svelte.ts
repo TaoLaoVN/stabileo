@@ -3,7 +3,7 @@ import type { KinematicResult } from '../engine/kinematic-2d';
 import type { SolverInput, FullEnvelope, AnalysisResults } from '../engine/types';
 import type { SolverInput3D, AnalysisResults3D, FullEnvelope3D, Constraint3D, ConnectorElement } from '../engine/types-3d';
 export type { ConnectorElement };
-import type { ModelSnapshot } from './history.svelte';
+import type { ModelSnapshot, SnapshotKind } from './history.svelte';
 import { getFixture, is2DFixture, is3DFixture } from '../templates/fixture-index';
 import { loadFixture } from '../templates/load-fixture';
 import { inferLoadCaseType } from '../engine/combinations-service';
@@ -720,6 +720,11 @@ function createModelStore() {
 
   // History integration — set externally to avoid circular import
   let _pushUndo: (() => void) | null = null;
+  /** History push that does NOT bump modelVersion or fire the mutation hook.
+   *  Used only by reinforcementTransaction (reinforcement does not affect forces). */
+  let _pushUndoSilent: (() => void) | null = null;
+  /** Called after a reinforcement transaction commits, with the written ids. */
+  let _onReinforcementCommit: ((written: Set<number>) => void) | null = null;
   let _undoBatching = false;
   // Results invalidation callback — set externally by store/index.ts to clear stale results
   let _onMutation: (() => void) | null = null;
@@ -732,12 +737,106 @@ function createModelStore() {
   let _bulkConstraintBuffer: Constraint3D[] | null = null;
 
   return {
-    _setHistoryPush(fn: () => void) {
-      _pushUndo = () => { modelVersion++; _onMutation?.(); fn(); };
+    _setHistoryPush(fn: (kind: SnapshotKind) => void) {
+      _pushUndo = () => { modelVersion++; _onMutation?.(); fn('structural'); };
+      // Same history snapshot, WITHOUT the modelVersion bump and WITHOUT firing the
+      // results-invalidation hook. Required for reinforcement transactions: a rebar
+      // edit must be undoable, but it must not destroy the structural analysis.
+      // Tagged 'reinforcement' so historyStore's undo()/redo() can restore it through
+      // the silent, targeted-invalidation path (restoreReinforcementOnly) instead of
+      // a full model restore that would wipe results.
+      _pushUndoSilent = () => fn('reinforcement');
     },
 
     /** Register a callback to be called on every model mutation (used to clear stale results) */
     _setOnMutation(fn: () => void) { _onMutation = fn; },
+
+    /** Register a callback fired after a reinforcement transaction commits, with the
+     *  set of element ids written. Wired in store/index.ts so this store never
+     *  imports verificationStore. */
+    _setOnReinforcementCommit(fn: (written: Set<number>) => void) { _onReinforcementCommit = fn; },
+
+    /**
+     * Run one undoable reinforcement transaction.
+     *
+     * Guarantees (each pinned by a store test):
+     *   - exactly ONE history snapshot for the whole batch → one Ctrl+Z
+     *   - exactly ONE `model.elements` reassignment → one reactive commit
+     *   - NO `modelVersion` bump, NO `_onMutation` → analysis results survive
+     *   - NO structural solve is triggered
+     *
+     * Elements are REPLACED (via `$state.snapshot` + deep clone) rather than mutated
+     * in place. That also removes an aliasing hazard: `restore()` shallow-spreads
+     * elements, so an in-place edit could previously corrupt an undo snapshot that
+     * shared the same `reinforcement` object.
+     */
+    reinforcementTransaction(
+      fn: (api: { setReinforcement(elemId: number, r: ProvidedReinforcement | undefined): void }) => void,
+    ): Set<number> {
+      const written = new Set<number>();
+      const pending = new Map<number, ProvidedReinforcement | undefined>();
+      fn({
+        setReinforcement(elemId: number, r: ProvidedReinforcement | undefined) {
+          if (!model.elements.has(elemId)) return;
+          pending.set(elemId, r);
+        },
+      });
+      if (pending.size === 0) return written;
+
+      // One snapshot for the whole batch, taken BEFORE any write.
+      _pushUndoSilent?.();
+
+      for (const [elemId, r] of pending) {
+        const elem = model.elements.get(elemId);
+        if (!elem) continue;
+        const plain = $state.snapshot(elem) as Element;
+        plain.reinforcement = r
+          ? (JSON.parse(JSON.stringify($state.snapshot(r))) as ProvidedReinforcement)
+          : undefined;
+        model.elements.set(elemId, plain);
+        written.add(elemId);
+      }
+      // Single reactive commit (Svelte 5 Map reactivity: reassign the Map).
+      model.elements = new Map(model.elements);
+      _onReinforcementCommit?.(written);
+      return written;
+    },
+
+    /**
+     * Undo/redo counterpart to `reinforcementTransaction`: restore ONLY the
+     * per-element `reinforcement` field from a snapshot known to differ from the
+     * live model in nothing but reinforcement (historyStore uses this exclusively
+     * for a history entry tagged 'reinforcement' — see `_setHistoryPush`).
+     *
+     * Leaves nodes, loads, supports and everything analysis-relevant untouched:
+     * NO `modelVersion` bump, NO `_onMutation` call. A reinforcement edit does not
+     * affect the structural analysis, so undoing/redoing one must not destroy it.
+     *
+     * Returns the set of element ids whose reinforcement actually changed, so the
+     * caller can drop just those elements' cached provided-rebar verification via
+     * the existing `_onReinforcementCommit` hook — the same targeted invalidation
+     * `reinforcementTransaction` uses for a forward edit.
+     */
+    restoreReinforcementOnly(s: ModelSnapshot): Set<number> {
+      const written = new Set<number>();
+      const incoming = new Map(s.elements.map(([id, v]) => [id, v.reinforcement]));
+      for (const [id, elem] of model.elements) {
+        const nextReinf = incoming.get(id);
+        const curKey = JSON.stringify(elem.reinforcement ?? null);
+        const nextKey = JSON.stringify(nextReinf ?? null);
+        if (curKey === nextKey) continue;
+        model.elements.set(id, {
+          ...elem,
+          reinforcement: nextReinf ? (JSON.parse(JSON.stringify(nextReinf)) as ProvidedReinforcement) : undefined,
+        });
+        written.add(id);
+      }
+      if (written.size > 0) {
+        model.elements = new Map(model.elements);
+        _onReinforcementCommit?.(written);
+      }
+      return written;
+    },
 
     /** Increment modelVersion to signal model changed (used by historyStore for direct mutations) */
     bumpModelVersion() { modelVersion++; _onMutation?.(); },

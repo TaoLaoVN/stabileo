@@ -63,6 +63,22 @@ export function t(key: string): string {
 	return (dict as any)[key] ?? (dicts.en as any)[key] ?? key;
 }
 
+/**
+ * Translate with `{placeholder}` interpolation.
+ *
+ * `t()` has no parameter support, so PR15's design messages (which carry element
+ * ids, utilizations and dimensions) go through this. Missing params are left as the
+ * literal placeholder so an omission is visible rather than silently blank.
+ */
+export function tp(key: string, params?: Record<string, string | number>): string {
+	const raw = t(key);
+	if (!params) return raw;
+	return raw.replace(/\{(\w+)\}/g, (m, name) => {
+		const v = params[name];
+		return v === undefined || v === null ? m : String(v);
+	});
+}
+
 export function setLocale(loc: string) {
 	_locale = loc;
 	if (hasLocalStorage()) {

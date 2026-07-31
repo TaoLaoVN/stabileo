@@ -217,10 +217,18 @@ async function globalSolve3D(isStale: () => boolean): Promise<void> {
   };
 
   const runComboSolve = async () => {
+    // Version guard: capture the model's mutation epoch right before dispatching
+    // the async solve. If the model changed while the (worker-based) combo solve
+    // was in flight, the result below describes a superseded model — publishing
+    // it would resurrect pre-edit forces as current over whatever the mid-flight
+    // edit already cleared. Discard silently instead (no fallback re-solve, no
+    // toast): the next live-calc pass / manual solve will pick up the new model.
+    const solveEpoch = modelStore.modelVersion;
     const comboResult = await modelStore.solveCombinations3DParallel(uiStore.includeSelfWeight, leftHand, isPro);
     if (isStale()) return null;
     if (typeof comboResult === 'string') return comboResult;
     if (!comboResult) return t('results.emptyModelError');
+    if (modelStore.modelVersion !== solveEpoch) return null;
 
     // Use first per-case result as the "single" baseline view
     const firstCaseResult = comboResult.perCase.values().next().value;

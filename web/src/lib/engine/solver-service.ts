@@ -21,6 +21,9 @@ import { enrichComboShellStresses } from './shell-combos';
 import { constraintsTo2D } from './constraint-2d-remap';
 import { initPool, isPoolReady, solveParallel, solve2DInWorker, solve3DInWorker, PoolUnavailableError } from './solver-pool';
 import { t } from '../i18n';
+// Counts app-side structural-solve dispatches so browser tests can assert that a
+// reinforcement-only edit triggers none. Not part of the solver.
+import { noteStructuralSolve } from '../utils/solve-counter';
 import {
   get2DDisplayNodalLoadMoment,
   get2DDisplayNodalLoadVertical,
@@ -1530,12 +1533,15 @@ export function buildSolverInput3D(
 
 // ─── 3D: validateAndSolve3D ──────────────────────────────────────
 
-/** Solve the current model using the 3D solver. Returns results or error string. */
 /**
  * Validation + wire-input construction for a 3D solve (shared by the sync and
  * async solve paths). Returns the solver input, or an error string, or null.
  */
 function prepareSolve3D(model: ModelData, includeSelfWeight = false, leftHand = false): SolverInput3D | string | null {
+  // Counts app-side structural-solve dispatches (the sync and worker paths both
+  // route through here exactly once) so browser tests can assert that a
+  // reinforcement-only edit triggers none. Not part of the solver.
+  noteStructuralSolve();
   if (model.nodes.size < 2 || model.elements.size < 1) {
     return t('svc.needNodesAndElements');
   }
@@ -1726,6 +1732,7 @@ export function solveCombinations3D(
   includeSelfWeight = false,
   leftHand = false,
 ): { perCase: Map<number, AnalysisResults3D>; perCombo: Map<number, AnalysisResults3D>; envelope: FullEnvelope3D } | string | null {
+  noteStructuralSolve();
   if (model.nodes.size < 2 || model.elements.size < 1) return t('svc.needNodesAndElements');
   if (model.supports.size < 1) return t('svc.needSupport');
   if (combinations.length === 0) return t('svc.needCombination');
