@@ -101,6 +101,18 @@ pub fn rotate_inclined_f_2d(f: &mut [f64], dofs: &[usize; 2], r: &[[f64; 2]; 2])
     }
 }
 
+/// Apply 2D inclined support rotation to K and F at the given translational DOFs.
+///
+/// `pub(crate)`: called by corotational.rs and material_nonlinear.rs, whose
+/// tangent-stiffness assembly is hand-rolled per NR iteration (not routed
+/// through assemble_2d), so they must apply the same rotation themselves to
+/// stay consistent with the reference load vector.
+pub(crate) fn apply_inclined_transform_2d(k: &mut [f64], f: &mut [f64], n: usize,
+                               dofs: &[usize; 2], r: &[[f64; 2]; 2]) {
+    rotate_inclined_k_2d(k, n, dofs, r);
+    rotate_inclined_f_2d(f, dofs, r);
+}
+
 /// Reverse 2D inclined rotation on displacement vector: u_global = R^T * u_rotated
 pub fn reverse_inclined_transform_2d(u: &mut [f64], dofs: &[usize; 2], r: &[[f64; 2]; 2]) {
     let mut vals = [0.0; 2];
@@ -184,6 +196,16 @@ pub fn rotate_inclined_f_3d(f: &mut [f64], dofs: &[usize; 3], r: &[[f64; 3]; 3])
         }
         f[dofs[a]] = sum;
     }
+}
+
+/// Apply 3D inclined support rotation to K and F at the given translational DOFs.
+///
+/// `pub(crate)`: called by corotational.rs and material_nonlinear.rs 3D paths —
+/// see the 2D twin's doc comment for why.
+pub(crate) fn apply_inclined_transform(k: &mut [f64], f: &mut [f64], n: usize,
+                            dofs: &[usize; 3], r: &[[f64; 3]; 3]) {
+    rotate_inclined_k_3d(k, n, dofs, r);
+    rotate_inclined_f_3d(f, dofs, r);
 }
 
 /// Reverse inclined rotation on displacement vector: u_global = R^T * u_rotated
