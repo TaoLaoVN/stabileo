@@ -365,20 +365,41 @@ test.describe('@slow RC design at scale', () => {
       .toBe(408);
     expect(await page.evaluate(() => window.__stabileo.designRunId())).not.toBe(runIdBefore);
 
+    // 22 of the flagship's 408 members are BEAM-Y elements whose Mz/Vy secondary
+    // demand under the wind combos is 10.4%-17.1% of the governing My/Vz — above
+    // resolveDesignAxes' 10% biaxial threshold. This verifier only ever checks the
+    // PRIMARY axis for beams, so (PR78 review fix, commit 3c54d81) it honestly
+    // refuses those 22 rather than certify an axis it never checked. Pre-fix they
+    // were silently certified VERIFIED with Mz/Vy never inspected — a false pass
+    // baked into an earlier "408/408" figure. See the sibling vitest regression
+    // test ("refuses the 22 BEAM-Y members with unchecked biaxial (Mz/Vy) demand"
+    // in autodesign-regression.test.ts) for the same rationale and the per-member
+    // classification this test mirrors.
     const counts = (await page.evaluate(() => window.__stabileo.runCounts()))!;
-    expect(counts.verified).toBe(408);
+    expect(counts.verified).toBe(386);
+    expect(counts.searchExhausted).toBe(22);
     expect(counts.aborted).toBe(0);
     expect(counts.notReached).toBe(0);
 
-    // The summary bar counts DISPLAY status, which splits the 408 code-compliant
-    // members into ok (u <= 0.95) and warn (0.95 < u <= 1.00). Both are VERIFIED;
-    // conflating them would hide the near-capacity members.
+    // The summary bar counts DISPLAY status, which is PROVIDED-reinforcement-first
+    // (verification.svelte.ts getDisplayStatus): it reads what's actually written
+    // to the member, not the design run's internal outcome. The 386 genuinely
+    // VERIFIED members split into ok (u <= 0.95) and warn (0.95 < u <= 1.00); the
+    // 22 refused members never had reinforcement ACCEPTED (only a provisional
+    // candidate retained internally for the detail view), so
+    // reinforcementProvider() sees nothing for them and they display as
+    // `unavailable`, not `fail` — measured empirically, not assumed.
     const display = await page.evaluate(() => window.__stabileo.counts());
-    expect(display.ok + display.warn).toBe(408);
+    expect(display.ok + display.warn).toBe(386);
     expect(display.fail).toBe(0);
-    expect(display.unavailable).toBe(0);
+    expect(display.unavailable).toBe(22);
     await expect(page.getByTestId('summary-count-verified')).toContainText(String(display.ok));
     await expect(page.getByTestId('summary-count-warn')).toContainText(String(display.warn));
+    await expect(page.getByTestId('summary-count-fail')).toContainText(String(display.fail));
+    await expect(page.getByTestId('summary-count-unavailable')).toContainText(String(display.unavailable));
+    // The 22 SEARCH_EXHAUSTED members are also surfaced in the run-outcome cluster
+    // of the counts bar, distinct from the provided-reinforcement display counts.
+    await expect(page.getByTestId('summary-count-exhausted')).toContainText(String(counts.searchExhausted));
 
     // Auto-design selected is the default scope; all-un-designed is explicit.
     await expect(page.getByTestId('cmd-autodesign')).toBeVisible();
