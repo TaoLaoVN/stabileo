@@ -364,10 +364,17 @@
         "start": { "$ref": "#/$defs/point3" },
         "end": { "$ref": "#/$defs/point3" },
         "length": { "type": "number", "exclusiveMinimum": 0 },
-        "radius": { "type": "number", "exclusiveMinimum": 0 },
-        "sweepDeg": { "type": "number" },
+        "radius": {
+          "description": "NOMINAL centreline bend radius, m — the design intent the bend was detailed to, typically a code mandrel value. It is NOT the realised arc radius. The realised arc is defined by start, end and centre, and where the bend plane is inclined to the plane the nominal radius was measured in, the realised centre-to-endpoint distance is slightly larger. Observed in production: a 135° stirrup hook whose tails step out of the tie plane realises 0.015074813 m against a nominal 0.015 m. A consumer MUST NOT reject an arc whose start, end and centre are internally consistent merely because this nominal value differs from the realised distance. `length` is likewise derived from the nominal radius and sweep, so a segment's declared length may differ from the realised centreline length by the same cause, and `cuttingLength` inherits that difference.",
+          "type": "number",
+          "exclusiveMinimum": 0
+        },
+        "sweepDeg": {
+          "description": "NOMINAL swept angle of the bend, degrees, POSITIVE — the detailed hook or corner angle, not the angle the realised arc subtends about its centre. Same caveat as `radius`: an inclined bend plane makes the realised angle slightly larger, and that is not a defect. A consumer MUST retain this field rather than discard it as merely nominal, because start, end and centre alone leave the MAJOR/MINOR branch undetermined: the point triplet is satisfied by both, and this value is the only signal of which was intended. Producers select the major branch by emitting a value greater than 180. LIMITATION, V1: because the field is nominal, a reflex arc whose nominal sweep sits near 180 cannot be resolved from this document alone. No arc in the current producer reaches that case; the ambiguity is documented here rather than resolved, and resolving it is deferred to a future schema version.",
+          "type": "number"
+        },
         "centre": {
-          "description": "Arc centre. REQUIRED for an exact arc: start, end, radius and sweep do NOT determine an arc in three dimensions, because two centres satisfy them in any plane and the plane itself is free. Without it the only reconstructable curve is the chord, and the deviation is the full sagitta. If absent, arcApproximated MUST be true.",
+          "description": "Arc centre. REQUIRED for an exact arc: start, end, radius and sweep do NOT determine an arc in three dimensions, because two centres satisfy them in any plane and the plane itself is free. Without it the only reconstructable curve is the chord, and the deviation is the full sagitta. If absent, arcApproximated MUST be true. Together with start and end this triple is the AUTHORITATIVE realised geometry: a consumer builds the curve from it, and treats `radius` and `sweepDeg` as the producer's nominal bend parameters rather than as constraints to enforce.",
           "$ref": "#/$defs/point3"
         },
         "arcApproximated": {
