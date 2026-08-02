@@ -5,11 +5,11 @@
   const proImage = '/screenshots/pro-features.png';
 </script>
 
-<section class="pricing-section reveal" id="pricing">
+<section class="pricing-section reveal" id="pricing" aria-labelledby="pricing-title">
   <div class="section-inner">
     <div class="section-head">
       <span class="tag">{t('landing.pricing')}</span>
-      <h2>{t('landing.accessTitle')}</h2>
+      <h2 id="pricing-title">{t('landing.accessTitle')}</h2>
       <p class="section-sub">{t('landing.accessSub')}</p>
     </div>
 

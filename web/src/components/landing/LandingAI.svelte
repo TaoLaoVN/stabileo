@@ -2,11 +2,11 @@
   import { t } from '../../lib/i18n';
 </script>
 
-<section class="ai-section reveal" id="ai">
+<section class="ai-section reveal" id="ai" aria-labelledby="ai-title">
   <div class="section-inner">
     <div class="section-head">
       <span class="tag tag-ai">{t('landing.aiTag')}</span>
-      <h2>{t('landing.aiTitle')}</h2>
+      <h2 id="ai-title">{t('landing.aiTitle')}</h2>
       <p class="section-sub">{t('landing.aiSub')}</p>
     </div>
 
@@ -21,7 +21,7 @@
           </div>
         </div>
         <div class="ai-step-arrow">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" width="20" height="20">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" width="20" height="20" aria-hidden="true" focusable="false">
             <path d="M5 12h14M13 6l6 6-6 6"/>
           </svg>
         </div>
@@ -33,7 +33,7 @@
           </div>
         </div>
         <div class="ai-step-arrow">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" width="20" height="20">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" width="20" height="20" aria-hidden="true" focusable="false">
             <path d="M5 12h14M13 6l6 6-6 6"/>
           </svg>
         </div>
@@ -45,7 +45,7 @@
           </div>
         </div>
         <div class="ai-step-arrow">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" width="20" height="20">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" width="20" height="20" aria-hidden="true" focusable="false">
             <path d="M5 12h14M13 6l6 6-6 6"/>
           </svg>
         </div>
@@ -64,7 +64,7 @@
       <div class="ai-points">
         <div class="ai-point">
           <div class="ai-point-icon">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" width="20" height="20">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" width="20" height="20" aria-hidden="true" focusable="false">
               <path d="M16 18l2-2-2-2"/><path d="M8 6L6 8l2 2"/><path d="M14.5 4l-5 16"/>
             </svg>
           </div>
@@ -72,7 +72,7 @@
         </div>
         <div class="ai-point">
           <div class="ai-point-icon">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" width="20" height="20">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" width="20" height="20" aria-hidden="true" focusable="false">
               <circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/>
             </svg>
           </div>
@@ -80,7 +80,7 @@
         </div>
         <div class="ai-point">
           <div class="ai-point-icon">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" width="20" height="20">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" width="20" height="20" aria-hidden="true" focusable="false">
               <path d="M3 3v18h18"/><path d="M7 16l4-8 4 5 5-9"/>
             </svg>
           </div>
@@ -88,7 +88,7 @@
         </div>
         <div class="ai-point">
           <div class="ai-point-icon">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" width="20" height="20">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" width="20" height="20" aria-hidden="true" focusable="false">
               <path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/>
               <path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/>
             </svg>

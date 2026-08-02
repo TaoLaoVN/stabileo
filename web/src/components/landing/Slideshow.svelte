@@ -74,7 +74,8 @@
           class="dot"
           class:active={i === idx}
           onclick={() => goTo(i)}
-          aria-label="{ariaPrefix} {i + 1}"
+          aria-label="{ariaPrefix} {i + 1} of {images.length}"
+          aria-current={i === idx ? 'true' : undefined}
         ></button>
       {/each}
     </div>

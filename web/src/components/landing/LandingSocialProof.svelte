@@ -58,11 +58,11 @@
   }
 </script>
 
-<section class="social-section reveal" id="community" bind:this={sectionEl}>
+<section class="social-section reveal" id="community" bind:this={sectionEl} aria-labelledby="community-title">
   <div class="section-inner">
     <div class="section-head">
       <span class="tag">{t('landing.socialTag')}</span>
-      <h2>{t('landing.socialTitle')}</h2>
+      <h2 id="community-title">{t('landing.socialTitle')}</h2>
       <p class="section-sub">{t('landing.socialSub')}</p>
     </div>
 
@@ -87,41 +87,6 @@
         <div class="stat-label">{t('landing.statFree')}</div>
         <div class="stat-hint">{t('landing.statFreeHint')}</div>
       </div>
-    </div>
-
-    <div class="quote-grid">
-      <article class="quote-card">
-        <p>{t('landing.quote1')}</p>
-        <div class="quote-who">
-          <div class="quote-avatar">MR</div>
-          <div class="quote-who-text">
-            <strong>{t('landing.quote1Name')}</strong>
-            <span>{t('landing.quote1Role')}</span>
-          </div>
-        </div>
-      </article>
-
-      <article class="quote-card">
-        <p>{t('landing.quote2')}</p>
-        <div class="quote-who">
-          <div class="quote-avatar plum">JL</div>
-          <div class="quote-who-text">
-            <strong>{t('landing.quote2Name')}</strong>
-            <span>{t('landing.quote2Role')}</span>
-          </div>
-        </div>
-      </article>
-
-      <article class="quote-card">
-        <p>{t('landing.quote3')}</p>
-        <div class="quote-who">
-          <div class="quote-avatar green">AP</div>
-          <div class="quote-who-text">
-            <strong>{t('landing.quote3Name')}</strong>
-            <span>{t('landing.quote3Role')}</span>
-          </div>
-        </div>
-      </article>
     </div>
   </div>
 </section>

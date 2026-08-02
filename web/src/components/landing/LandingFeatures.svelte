@@ -19,11 +19,11 @@
   ];
 </script>
 
-<section class="features-section" id="features">
+<section class="features-section" id="features" aria-labelledby="features-title">
   <div class="section-inner">
     <div class="section-head reveal">
       <span class="tag">{t('landing.modeBasicBadge')}</span>
-      <h2>{t('landing.todayTitle')}</h2>
+      <h2 id="features-title">{t('landing.todayTitle')}</h2>
       <p class="section-sub">{t('landing.todaySub')}</p>
     </div>
 

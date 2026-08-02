@@ -9,11 +9,11 @@
   ] as const;
 </script>
 
-<section class="changelog-section reveal">
+<section class="changelog-section reveal" aria-labelledby="changelog-title">
   <div class="section-inner">
     <div class="section-head">
       <span class="tag">{t('landing.changelog')}</span>
-      <h2>{t('landing.changelog')}</h2>
+      <h2 id="changelog-title">{t('landing.changelog')}</h2>
       <p class="section-sub">{t('landing.changelogDesc')}</p>
     </div>
 

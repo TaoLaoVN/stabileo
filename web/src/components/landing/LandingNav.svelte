@@ -16,7 +16,7 @@
   }
 </script>
 
-<nav class="nav">
+<nav class="nav" aria-label="Primary">
   <div class="nav-inner">
     <button class="nav-brand" onclick={() => scrollToId('top')} aria-label="Back to top">
       <span class="nav-logo">S</span>

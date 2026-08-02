@@ -2430,3 +2430,30 @@
     transform: none;
   }
 }
+
+/* ─── FOCUS VISIBILITY ─── */
+/*
+  The landing shipped without any focus styles of its own, so keyboard focus
+  fell back to whatever the UA draws — frequently invisible against the dark
+  glass panels and the gradient buttons. These rules use :focus-visible only,
+  so pointer interaction is unchanged.
+*/
+.landing :focus-visible {
+  outline: 2px solid var(--lp-accent-hot);
+  outline-offset: 3px;
+  border-radius: 4px;
+}
+
+.landing .btn-primary:focus-visible,
+.landing .btn-ghost:focus-visible,
+.landing .btn-link:focus-visible {
+  outline-offset: 4px;
+}
+
+/* `.landing` is itself focusable so the page can be scrolled from the keyboard
+   before anything inside it has focus. A ring around the entire viewport would
+   be noise, so it gets a restrained inset one instead. */
+.landing:focus-visible {
+  outline: 2px solid var(--lp-accent-mid);
+  outline-offset: -2px;
+}

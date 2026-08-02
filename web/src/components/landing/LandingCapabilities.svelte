@@ -33,11 +33,11 @@
   ] as const;
 </script>
 
-<section class="cap-section reveal">
+<section class="cap-section reveal" aria-labelledby="capabilities-title">
   <div class="section-inner">
     <div class="section-head">
       <span class="tag">{t('landing.coreDepth')}</span>
-      <h2>{t('landing.capabilitiesTitle')}</h2>
+      <h2 id="capabilities-title">{t('landing.capabilitiesTitle')}</h2>
       <p class="section-sub">{t('landing.coreDepthSub')}</p>
     </div>
 

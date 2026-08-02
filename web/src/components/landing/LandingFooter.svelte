@@ -10,12 +10,12 @@
         <span class="nav-logo">S</span>
         <span>Stabileo</span>
       </div>
-      <div class="footer-links">
+      <nav class="footer-links" aria-label="Footer">
         <a href={DOCS_HUB_URL} target="_blank" rel="noreferrer">{t('landing.docs')}</a>
         <a href={REPO_URL} target="_blank" rel="noreferrer">{t('landing.viewOnGithub')}</a>
         <a href="/demo">{t('landing.tryTour')}</a>
         <button onclick={() => enterApp()}>{t('landing.launchEditor')}</button>
-      </div>
+      </nav>
     </div>
     <p class="footer-desc">{t('landing.openSourceDesc')}</p>
     <p class="footer-copy">&copy; {new Date().getFullYear()} Stabileo. {t('landing.footerRights')}</p>

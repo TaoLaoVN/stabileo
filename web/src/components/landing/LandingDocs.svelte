@@ -3,11 +3,11 @@
   import { QUICK_START_URL, AI_WORKFLOW_URL, SOLVER_REF_URL } from './landing-utils';
 </script>
 
-<section class="docs-section reveal" id="docs">
+<section class="docs-section reveal" id="docs" aria-labelledby="docs-title">
   <div class="section-inner">
     <div class="section-head">
       <span class="tag">{t('landing.docsTag')}</span>
-      <h2>{t('landing.docsTitle')}</h2>
+      <h2 id="docs-title">{t('landing.docsTitle')}</h2>
       <p class="section-sub">{t('landing.docsSub')}</p>
     </div>
 

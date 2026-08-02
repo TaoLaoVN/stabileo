@@ -95,8 +95,15 @@
   />
 </svelte:head>
 
-<div class="landing" bind:this={landingEl}>
-  <div class="scroll-progress" style="width:{scrollPct}%"></div>
+<!--
+  `.landing` is the scroll container (position: fixed; overflow-y: auto), not the
+  document, so without a tabindex a keyboard-only user cannot scroll the page
+  until they happen to Tab onto something inside it. WCAG 2.1.1 / axe
+  `scrollable-region-focusable`.
+-->
+<!-- svelte-ignore a11y_no_noninteractive_tabindex -->
+<div class="landing" bind:this={landingEl} tabindex="0">
+  <div class="scroll-progress" style="width:{scrollPct}%" aria-hidden="true"></div>
 
   <LandingNav />
   <LandingHero {prefersReducedMotion} />

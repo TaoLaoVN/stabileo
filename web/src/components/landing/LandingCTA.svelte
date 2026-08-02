@@ -3,12 +3,12 @@
   import { REPO_URL, enterApp } from './landing-utils';
 </script>
 
-<section class="cta-section reveal">
+<section class="cta-section reveal" aria-labelledby="cta-title">
   <div class="section-inner">
     <div class="cta-block">
       <div class="cta-copy">
         <span class="tag">{t('landing.tryItNow')}</span>
-        <h2>{t('landing.ctaTitle')}</h2>
+        <h2 id="cta-title">{t('landing.ctaTitle')}</h2>
         <p>{t('landing.ctaSub')}</p>
       </div>
       <div class="cta-actions">

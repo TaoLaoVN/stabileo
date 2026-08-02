@@ -11,11 +11,11 @@
   ];
 </script>
 
-<section class="roadmap-section reveal" id="roadmap">
+<section class="roadmap-section reveal" id="roadmap" aria-labelledby="roadmap-title">
   <div class="section-inner">
     <div class="section-head">
       <span class="tag">{t('landing.comingSoon')}</span>
-      <h2>{t('landing.roadmapTitle')}</h2>
+      <h2 id="roadmap-title">{t('landing.roadmapTitle')}</h2>
       <p class="section-sub">{t('landing.roadmapSub')}</p>
     </div>
 
