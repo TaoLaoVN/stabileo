@@ -5,6 +5,9 @@
 
 use serde::{Deserialize, Serialize};
 
+pub mod mesh;
+pub mod poisson;
+
 // ==================== Types ====================
 
 /// A single polygon region of a cross-section.

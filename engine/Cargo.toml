@@ -19,6 +19,13 @@ serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 serde-wasm-bindgen = "0.6"
 
+# Constrained Delaunay triangulation with Ruppert-style quality refinement.
+# Used only by the cross-section mesher (section::mesh). Pure Rust, wasm32-clean,
+# MIT OR Apache-2.0. Selected over `cdt` in the Checkpoint 2A dependency audit:
+# `cdt` handles holes natively but adds no Steiner points, so an L-angle meshes
+# as 4 triangles and no convergence study is possible.
+spade = { version = "2.15", default-features = false }
+
 # Better panic messages in WASM
 console_error_panic_hook = { version = "0.1", optional = true }
 
