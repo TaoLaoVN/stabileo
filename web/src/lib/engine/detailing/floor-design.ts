@@ -133,6 +133,13 @@ export interface DowelInput {
   bars: { count: number; diameterMm: number };
   /** Development length required in the footing, m. */
   ldFooting: number;
+  /**
+   * HOOKED development length per §25.4.3.1, m. Checked against the available
+   * embedment before the 90° hook is credited — a hook that does not develop is
+   * a named shortfall, not an assumption. Optional for backward compatibility of
+   * the input shape; absent means the hook cannot be verified and is not credited.
+   */
+  ldhFooting?: number;
   /** Lap length above the footing, m. */
   lapAbove: number;
   elementIds: number[];
@@ -182,10 +189,28 @@ export function generateDowels(input: DowelInput): {
   const available = input.footingThickness - input.footingCover - 0.05;
   const needsHook = input.ldFooting > available;
   if (needsHook) {
-    notes.push(
-      `La longitud de anclaje recta requerida (${(input.ldFooting * 1000).toFixed(0)} mm) ` +
-      `excede la altura útil de la zapata (${(available * 1000).toFixed(0)} mm): las barras ` +
-      'de espera rematan con gancho a 90° apoyado sobre la parrilla inferior.');
+    // §25.4.3.1: the 90° hook is credited ONLY when the hooked development length
+    // fits the embedment too. A hook that does not develop is not an anchor —
+    // it is a named shortfall, not an assumption.
+    const ldh = input.ldhFooting;
+    if (ldh === undefined) {
+      unsupported.push(
+        '§25.4.3.1: la longitud de anclaje recta no entra en la zapata y no se pudo ' +
+        'verificar la longitud de anclaje con gancho (ldh no calculada): el remate ' +
+        'a 90° no se acredita.');
+    } else if (ldh > available) {
+      unsupported.push(
+        `§25.4.3.1: la longitud de anclaje con gancho requerida (${(ldh * 1000).toFixed(0)} mm) ` +
+        `excede la altura útil de la zapata (${(available * 1000).toFixed(0)} mm): ` +
+        'ni la barra recta ni el gancho a 90° desarrollan la espera — aumentar el espesor ' +
+        'o reducir el diámetro.');
+    } else {
+      notes.push(
+        `La longitud de anclaje recta requerida (${(input.ldFooting * 1000).toFixed(0)} mm) ` +
+        `excede la altura útil de la zapata (${(available * 1000).toFixed(0)} mm): las barras ` +
+        `de espera rematan con gancho a 90° apoyado sobre la parrilla inferior ` +
+        `(ldh = ${(ldh * 1000).toFixed(0)} mm, verificado contra §25.4.3.1).`);
+    }
   }
 
   // Seating comes from the ONE authoritative derivation, not a fourth local copy of it.

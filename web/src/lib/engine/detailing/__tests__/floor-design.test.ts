@@ -54,7 +54,7 @@ function dowels(over: Partial<DowelInput> = {}): DowelInput {
     footingThickness: 0.60, footingCover: 0.05,
     columnB: 0.40, columnH: 0.40, cover: 0.025, tieDia: 8,
     bars: { count: 8, diameterMm: 20 },
-    ldFooting: 0.40, lapAbove: 1.0, elementIds: [1], edition: '2025',
+    ldFooting: 0.40, ldhFooting: 0.45, lapAbove: 1.0, elementIds: [1], edition: '2025',
     ...over,
   };
 }
@@ -678,5 +678,29 @@ describe('§16.3.4.1 — dowel interface minimum', () => {
     expect(d.unsupported.length).toBe(1);
     expect(d.unsupported[0]).toMatch(/16\.3\.4\.1/);
     expect(d.unsupported[0]).toMatch(/0,005·Ag/);
+  });
+});
+
+describe('§25.4.3.1 — hooked development of dowels', () => {
+  it('credits the 90° hook when ldh fits the embedment, and says it was verified', () => {
+    // Straight ld does not fit (1.2 > 0.50 available) but ldh = 0.45 does.
+    const d = generateDowels(dowels({ ldFooting: 1.2, ldhFooting: 0.45 }));
+    expect(d.unsupported).toEqual([]);
+    expect(d.notes.join(' ')).toMatch(/verificado contra §25\.4\.3\.1/);
+    expect(d.bars[0].segments.length).toBeGreaterThan(0);
+  });
+
+  it('refuses to credit the hook when ldh does NOT fit, and names the shortfall', () => {
+    // Straight ld does not fit and neither does ldh (0.60 > 0.50 available).
+    const d = generateDowels(dowels({ ldFooting: 1.2, ldhFooting: 0.60 }));
+    expect(d.unsupported.length).toBe(1);
+    expect(d.unsupported[0]).toMatch(/25\.4\.3\.1/);
+    expect(d.unsupported[0]).toMatch(/excede la altura útil/);
+  });
+
+  it('fails closed when ldh was never computed', () => {
+    const d = generateDowels(dowels({ ldFooting: 1.2, ldhFooting: undefined }));
+    expect(d.unsupported.length).toBe(1);
+    expect(d.unsupported[0]).toMatch(/no se pudo verificar/);
   });
 });

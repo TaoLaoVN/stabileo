@@ -35,7 +35,7 @@
 import { msg, type EngineMessage } from '../../codes/message';
 import type { ClauseRef, RegulationEdition } from '../../codes/regulation';
 import type { Maturity } from '../../codes/maturity';
-import { deriveDevelopment, type DevelopmentResult } from '../../codes/cirsoc201/anchorage';
+import { deriveDevelopment, deriveHookedDevelopment, type DevelopmentResult, type HookedDevelopmentResult } from '../../codes/cirsoc201/anchorage';
 import {
   footingEffectiveDepth, validateFooting, type Footing,
 } from '../../model/footing';
@@ -565,6 +565,9 @@ export function runFootingDesign(input: RunFootingDesignInput): RunFootingDesign
     const starter = column.bars
       ? starterDevelopment(column.bars.diameterMm, input)
       : null;
+    const hooked = column.bars
+      ? starterHookedDevelopment(column.bars.diameterMm, input)
+      : null;
     const dowelsPresent = Boolean(column.bars && starter);
     const entryDraft: FootingAssemblyEntry['record'] = footingRecord({
       check, perimeter, position, d,
@@ -590,7 +593,7 @@ export function runFootingDesign(input: RunFootingDesignInput): RunFootingDesign
       check,
       elementIds,
       record: entryDraft,
-      ...(column.bars && starter
+      ...(column.bars && starter && hooked
         ? {
           dowels: {
             id: `F${f.id}-C${column.elementId}`,
@@ -610,6 +613,10 @@ export function runFootingDesign(input: RunFootingDesignInput): RunFootingDesign
             // second formula written here. `favourableSpacing: false` is the conservative
             // row, correct for starters bunched at a column perimeter rather than spread.
             ldFooting: starter.ldM,
+            // §25.4.3.1 hooked development, from the same authoritative module — the
+            // generator checks it against the available embedment before crediting
+            // the 90° hook, instead of assuming the hook always develops.
+            ldhFooting: hooked.ldhM,
             // §25.5.2.1 Class B: starters out of a footing lap all bars at one station, so
             // the Class A fraction is never satisfied and 1,3·ld is the honest lap.
             lapAbove: CLASS_B_LAP_FACTOR * starter.ldM,
@@ -816,6 +823,22 @@ function starterDevelopment(
     fy: input.fy,
     fc: input.fc,
     favourableSpacing: false,
+    edition: input.edition,
+  });
+}
+
+/**
+ * Hooked development for a column starter whose straight ld does not fit in the
+ * footing, per §25.4.3.1 — same authoritative module as the straight bar, not a
+ * restated formula.
+ */
+function starterHookedDevelopment(
+  barDiameterMm: number, input: Pick<RunFootingDesignInput, 'fc' | 'fy' | 'edition'>,
+): HookedDevelopmentResult {
+  return deriveHookedDevelopment({
+    diameterMm: barDiameterMm,
+    fy: input.fy,
+    fc: input.fc,
     edition: input.edition,
   });
 }
