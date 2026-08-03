@@ -12,6 +12,7 @@
 mod common;
 
 use common::make_3d_input;
+use common::make_input;
 use dedaliano_engine::solver::linear;
 use dedaliano_engine::types::*;
 use std::collections::HashMap;
@@ -164,6 +165,10 @@ fn chain_depth_3_equal_dof_uz() {
 
     let result = linear::solve_3d(&input).expect("Chain depth 3 should solve successfully");
 
+    assert!(!result.structured_diagnostics.iter()
+        .any(|d| d.code == DiagnosticCode::CircularConstraint),
+        "valid chain must not be flagged circular");
+
     let tips: Vec<f64> = [2, 4, 6, 8].iter()
         .map(|&id| result.displacements.iter().find(|d| d.node_id == id).unwrap().uz)
         .collect();
@@ -253,6 +258,10 @@ fn tree_topology_equal_dof() {
 
     let result = linear::solve_3d(&input).expect("Tree topology should solve successfully");
 
+    assert!(!result.structured_diagnostics.iter()
+        .any(|d| d.code == DiagnosticCode::CircularConstraint),
+        "valid chain must not be flagged circular");
+
     let tips: Vec<f64> = [2, 4, 6, 8, 10].iter()
         .map(|&id| result.displacements.iter().find(|d| d.node_id == id).unwrap().uz)
         .collect();
@@ -328,20 +337,82 @@ fn circular_constraint_does_not_panic() {
 
     match result {
         Ok(res) => {
-            // If it succeeds, check that CircularConstraint diagnostic is emitted
-            let has_circular = res.structured_diagnostics.iter()
-                .any(|d| d.code == DiagnosticCode::CircularConstraint);
-            println!("Circular constraint solved OK, circular diag={}", has_circular);
-            // All displacements must be finite (no NaN/Inf)
             for d in &res.displacements {
                 assert!(d.ux.is_finite() && d.uy.is_finite() && d.uz.is_finite(),
-                    "Circular constraint produced NaN/Inf at node {}", d.node_id);
+                    "3-cycle produced NaN/Inf at node {}", d.node_id);
             }
+            let has_circ = res.structured_diagnostics.iter()
+                .any(|d| d.code == DiagnosticCode::CircularConstraint);
+            assert!(has_circ,
+                "Expected CircularConstraint diagnostic for 3-cycle. Got: {:?}",
+                res.structured_diagnostics.iter().map(|d| &d.code).collect::<Vec<_>>());
         }
-        Err(e) => {
-            // Returning an error is also acceptable -- the key is no panic
-            println!("Circular constraint returned error (acceptable): {}", e);
+        Err(e) => println!("3-cycle returned error (acceptable): {}", e),
+    }
+}
+
+/// A -> B -> C -> D -> A circular EqualDOF chain (depth 4).
+/// Must emit a CircularConstraint diagnostic covering the full 4-cycle,
+/// same contract as the depth-3 case.
+#[test]
+fn circular_constraint_depth_4_does_not_panic() {
+    let l = 4.0;
+    let nodes = vec![
+        (1, 0.0, 0.0, 0.0), (2, l, 0.0, 0.0),
+        (3, 0.0, 3.0, 0.0), (4, l, 3.0, 0.0),
+        (5, 0.0, 6.0, 0.0), (6, l, 6.0, 0.0),
+        (7, 0.0, 9.0, 0.0), (8, l, 9.0, 0.0),
+    ];
+    let elems = vec![
+        (1, "frame", 1, 2, 1, 1),
+        (2, "frame", 3, 4, 1, 1),
+        (3, "frame", 5, 6, 1, 1),
+        (4, "frame", 7, 8, 1, 1),
+    ];
+    let sups = vec![
+        (1, fixed()), (3, fixed()), (5, fixed()), (7, fixed()),
+    ];
+    let loads = vec![SolverLoad3D::Nodal(SolverNodalLoad3D {
+        node_id: 2, fx: 0.0, fy: 0.0, fz: -10.0,
+        mx: 0.0, my: 0.0, mz: 0.0, bw: None,
+    })];
+
+    let mut input = make_3d_input(
+        nodes,
+        vec![(1, E, NU)],
+        vec![(1, A, IY, IZ, J)],
+        elems, sups, loads,
+    );
+
+    // Circular chain: 2->4->6->8->2 (uz)
+    input.constraints.push(Constraint::EqualDOF(EqualDOFConstraint {
+        master_node: 4, slave_node: 2, dofs: vec![2],
+    }));
+    input.constraints.push(Constraint::EqualDOF(EqualDOFConstraint {
+        master_node: 6, slave_node: 4, dofs: vec![2],
+    }));
+    input.constraints.push(Constraint::EqualDOF(EqualDOFConstraint {
+        master_node: 8, slave_node: 6, dofs: vec![2],
+    }));
+    input.constraints.push(Constraint::EqualDOF(EqualDOFConstraint {
+        master_node: 2, slave_node: 8, dofs: vec![2],
+    }));
+
+    let result = linear::solve_3d(&input);
+
+    match result {
+        Ok(res) => {
+            for d in &res.displacements {
+                assert!(d.ux.is_finite() && d.uy.is_finite() && d.uz.is_finite(),
+                    "4-cycle produced NaN/Inf at node {}", d.node_id);
+            }
+            let has_circ = res.structured_diagnostics.iter()
+                .any(|d| d.code == DiagnosticCode::CircularConstraint);
+            assert!(has_circ,
+                "Expected CircularConstraint diagnostic for 4-cycle. Got: {:?}",
+                res.structured_diagnostics.iter().map(|d| &d.code).collect::<Vec<_>>());
         }
+        Err(e) => println!("4-cycle returned error (acceptable): {}", e),
     }
 }
 
@@ -994,5 +1065,295 @@ fn linear_mpc_chained_with_equal_dof() {
     assert!(
         (d6.uz - expected_u4z).abs() < tol,
         "Full chain: u_6_z={:.8e}, expected 0.5*u_2_z={:.8e}", d6.uz, expected_u4z
+    );
+}
+
+// ==================== Prescribed displacement through constraints ====================
+
+/// EqualDOF slave must follow a settled (prescribed-displacement) master.
+#[test]
+fn equal_dof_slave_follows_settled_master_3d() {
+    // Beam 1—2—3 along X, fixed at 1 and 3; node 1 support settles dz = -0.01.
+    // EqualDOF ties node 2 uz (slave) to node 1 uz (master).
+    let mut input = make_3d_input(
+        vec![(1, 0.0, 0.0, 0.0), (2, 4.0, 0.0, 0.0), (3, 8.0, 0.0, 0.0)],
+        vec![(1, E, NU)],
+        vec![(1, A, IY, IZ, J)],
+        vec![(1, "frame", 1, 2, 1, 1), (2, "frame", 2, 3, 1, 1)],
+        vec![(1, fixed()), (3, fixed())],
+        vec![],
+    );
+    for sup in input.supports.values_mut() {
+        if sup.node_id == 1 {
+            sup.dz = Some(-0.01);
+        }
+    }
+    input.constraints.push(Constraint::EqualDOF(EqualDOFConstraint {
+        master_node: 1,
+        slave_node: 2,
+        dofs: vec![2], // uz
+    }));
+
+    let res = linear::solve_3d(&input).expect("solve");
+    let u2 = res.displacements.iter().find(|d| d.node_id == 2).expect("node 2");
+    assert!(
+        (u2.uz - (-0.01)).abs() < 1e-9,
+        "slave node 2 must follow settled master: uz = {}, expected -0.01",
+        u2.uz
+    );
+}
+
+/// Depth-2 chain: both slaves follow the settled master.
+#[test]
+fn equal_dof_chain_follows_settled_master_3d() {
+    let mut input = make_3d_input(
+        vec![(1, 0.0, 0.0, 0.0), (2, 4.0, 0.0, 0.0), (3, 8.0, 0.0, 0.0), (4, 12.0, 0.0, 0.0)],
+        vec![(1, E, NU)],
+        vec![(1, A, IY, IZ, J)],
+        vec![(1, "frame", 1, 2, 1, 1), (2, "frame", 2, 3, 1, 1), (3, "frame", 3, 4, 1, 1)],
+        vec![(1, fixed()), (4, fixed())],
+        vec![],
+    );
+    for sup in input.supports.values_mut() {
+        if sup.node_id == 1 {
+            sup.dz = Some(-0.02);
+        }
+    }
+    // chain: node 3 uz <- node 2 uz <- node 1 uz (settled)
+    input.constraints.push(Constraint::EqualDOF(EqualDOFConstraint {
+        master_node: 1, slave_node: 2, dofs: vec![2],
+    }));
+    input.constraints.push(Constraint::EqualDOF(EqualDOFConstraint {
+        master_node: 2, slave_node: 3, dofs: vec![2],
+    }));
+
+    let res = linear::solve_3d(&input).expect("solve");
+    for nid in [2usize, 3] {
+        let u = res.displacements.iter().find(|d| d.node_id == nid).expect("node");
+        assert!(
+            (u.uz - (-0.02)).abs() < 1e-9,
+            "chained slave {} must follow settled master: uz = {}",
+            nid, u.uz
+        );
+    }
+    // Settlement of a doubly-fixed beam is self-equilibrated: reactions sum to zero.
+    let sum_fz: f64 = res.reactions.iter().map(|r| r.fz).sum();
+    assert!(sum_fz.abs() < 1e-6, "settlement reactions must self-equilibrate: {}", sum_fz);
+}
+
+/// 2D analog: EqualDOF slave must follow a settled (prescribed-displacement)
+/// master. Same 3-node beam pattern as the 3D test above, using the 2D
+/// SolverInput with dz settlement and EqualDOF on the vertical DOF (index 1).
+#[test]
+fn equal_dof_slave_follows_settled_master_2d() {
+    // Beam 1—2—3 along X, fixed at 1 and 3; node 1 support settles dz = -0.01.
+    // EqualDOF ties node 2 uz (slave) to node 1 uz (master).
+    let mut input = make_input(
+        vec![(1, 0.0, 0.0), (2, 4.0, 0.0), (3, 8.0, 0.0)],
+        vec![(1, E, NU)],
+        vec![(1, A, IZ)],
+        vec![
+            (1, "frame", 1, 2, 1, 1, false, false),
+            (2, "frame", 2, 3, 1, 1, false, false),
+        ],
+        vec![(1, 1, "fixed"), (2, 3, "fixed")],
+        vec![],
+    );
+    for sup in input.supports.values_mut() {
+        if sup.node_id == 1 {
+            sup.dz = Some(-0.01);
+        }
+    }
+    input.constraints.push(Constraint::EqualDOF(EqualDOFConstraint {
+        master_node: 1,
+        slave_node: 2,
+        dofs: vec![1], // uz
+    }));
+
+    let res = linear::solve_2d(&input).expect("solve");
+    let u2 = res.displacements.iter().find(|d| d.node_id == 2).expect("node 2");
+    assert!(
+        (u2.uz - (-0.01)).abs() < 1e-9,
+        "slave node 2 must follow settled master: uz = {}, expected -0.01",
+        u2.uz
+    );
+    // Settlement of a doubly-fixed beam is self-equilibrated: reactions sum to zero.
+    let sum_fz: f64 = res.reactions.iter().map(|r| r.rz).sum();
+    assert!(sum_fz.abs() < 1e-6, "settlement reactions must self-equilibrate: {}", sum_fz);
+}
+
+// ==================== Loaded slave tied to a fixed master ====================
+//
+// Regression gate: the C^T redistribution of constraint forces into
+// restrained-master reactions must run whenever constraint forces map into
+// restrained columns — not only when a prescribed displacement exists. A
+// loaded EqualDOF slave tied to a FIXED (u_r = 0) master otherwise loses its
+// load from the reported reactions (ΣReactions ≠ ΣApplied). Pre-fix this
+// returned sumFz = 0 for the case below; on main before this branch it also
+// returned 0 (pre-existing defect, partially covered by the
+// prescribed-displacement fix).
+
+/// 3D: load at a slave tied to the fixed base must equilibrate.
+#[test]
+fn loaded_slave_fixed_master_equilibrium_3d() {
+    // Beam 1 -> 2 (fixed at 1). Node 3 has no element of its own; it is
+    // slaved to node 1 on all DOFs and carries the load — its only stiffness
+    // path is the constraint into the fixed master.
+    let l = 4.0;
+    let nodes = vec![
+        (1, 0.0, 0.0, 0.0),
+        (2, l, 0.0, 0.0),
+        (3, 0.0, 0.0, 2.0),
+    ];
+    let elems = vec![(1, "frame", 1, 2, 1, 1)];
+    let sups = vec![(1, fixed())];
+
+    // Control: load at the free tip — reactions must balance trivially.
+    let ctrl_input = {
+        let loads = vec![SolverLoad3D::Nodal(SolverNodalLoad3D {
+            node_id: 2, fx: 0.0, fy: 0.0, fz: -10.0,
+            mx: 0.0, my: 0.0, mz: 0.0, bw: None,
+        })];
+        let mut input = make_3d_input(
+            nodes.clone(),
+            vec![(1, E, NU)],
+            vec![(1, A, IY, IZ, J)],
+            elems.clone(), sups.clone(), loads,
+        );
+        input.constraints.push(Constraint::EqualDOF(EqualDOFConstraint {
+            master_node: 1, slave_node: 3, dofs: vec![0, 1, 2, 3, 4, 5],
+        }));
+        input
+    };
+    let ctrl = linear::solve_3d(&ctrl_input).expect("control solve failed");
+    let sum_ctrl: f64 = ctrl.reactions.iter().map(|r| r.fz).sum();
+    assert!((sum_ctrl - 10.0).abs() < 1e-6, "control: sumFz={sum_ctrl}");
+
+    // Case: load at the slave tied to the FIXED master — the load must flow
+    // into the master's reaction through the link.
+    let case_input = {
+        let loads = vec![SolverLoad3D::Nodal(SolverNodalLoad3D {
+            node_id: 3, fx: 0.0, fy: 0.0, fz: -10.0,
+            mx: 0.0, my: 0.0, mz: 0.0, bw: None,
+        })];
+        let mut input = make_3d_input(
+            nodes,
+            vec![(1, E, NU)],
+            vec![(1, A, IY, IZ, J)],
+            elems, sups, loads,
+        );
+        input.constraints.push(Constraint::EqualDOF(EqualDOFConstraint {
+            master_node: 1, slave_node: 3, dofs: vec![0, 1, 2, 3, 4, 5],
+        }));
+        input
+    };
+    let case = linear::solve_3d(&case_input).expect("case solve failed");
+    let sum_case: f64 = case.reactions.iter().map(|r| r.fz).sum();
+    assert!(
+        (sum_case - 10.0).abs() < 1e-6,
+        "loaded slave tied to fixed master must equilibrate: sumFz={sum_case}"
+    );
+}
+
+/// 2D: same contract through the 2D constrained path.
+#[test]
+fn loaded_slave_fixed_master_equilibrium_2d() {
+    let make = |load_node: usize| {
+        let mut input = make_input(
+            vec![(1, 0.0, 0.0), (2, 4.0, 0.0), (3, 0.0, 2.0)],
+            vec![(1, E, NU)],
+            vec![(1, A, IZ)],
+            vec![(1, "frame", 1, 2, 1, 1, false, false)],
+            vec![(1, 1, "fixed")],
+            vec![SolverLoad::Nodal(SolverNodalLoad {
+                node_id: load_node, fx: 0.0, fz: -10.0, my: 0.0,
+            })],
+        );
+        input.constraints.push(Constraint::EqualDOF(EqualDOFConstraint {
+            master_node: 1,
+            slave_node: 3,
+            dofs: vec![0, 1, 2],
+        }));
+        input
+    };
+
+    let ctrl = linear::solve_2d(&make(2)).expect("control solve failed");
+    let sum_ctrl: f64 = ctrl.reactions.iter().map(|r| r.rz).sum();
+    assert!((sum_ctrl - 10.0).abs() < 1e-6, "control: sumRz={sum_ctrl}");
+
+    let case = linear::solve_2d(&make(3)).expect("case solve failed");
+    let sum_case: f64 = case.reactions.iter().map(|r| r.rz).sum();
+    assert!(
+        (sum_case - 10.0).abs() < 1e-6,
+        "loaded slave tied to fixed master must equilibrate: sumRz={sum_case}"
+    );
+}
+
+/// Settlement AND a loaded slave at once: the u_p particular solution and the
+/// constraint-force redistribution must compose without double counting —
+/// settlement reactions self-equilibrate around the applied load.
+#[test]
+fn settlement_plus_loaded_slave_no_double_count() {
+    let l = 4.0;
+    let mut input = make_3d_input(
+        vec![
+            (1, 0.0, 0.0, 0.0), (2, l, 0.0, 0.0),
+            (3, 0.0, 0.0, 2.0), (4, 2.0 * l, 0.0, 0.0),
+        ],
+        vec![(1, E, NU)],
+        vec![(1, A, IY, IZ, J)],
+        vec![(1, "frame", 1, 2, 1, 1), (2, "frame", 2, 4, 1, 1)],
+        vec![(1, fixed()), (4, fixed())],
+        vec![SolverLoad3D::Nodal(SolverNodalLoad3D {
+            node_id: 3, fx: 0.0, fy: 0.0, fz: -10.0,
+            mx: 0.0, my: 0.0, mz: 0.0, bw: None,
+        })],
+    );
+    for sup in input.supports.values_mut() {
+        if sup.node_id == 1 {
+            sup.dz = Some(-0.01);
+        }
+    }
+    input.constraints.push(Constraint::EqualDOF(EqualDOFConstraint {
+        master_node: 1, slave_node: 3, dofs: vec![0, 1, 2, 3, 4, 5],
+    }));
+    let res = linear::solve_3d(&input).expect("solve");
+    let sum_fz: f64 = res.reactions.iter().map(|r| r.fz).sum();
+    assert!(
+        (sum_fz - 10.0).abs() < 1e-6,
+        "settlement + loaded slave: sumFz={sum_fz}, expected 10 (settlement self-equilibrates)"
+    );
+}
+
+/// Depth-2 chain into the fixed master: load at the chain end must arrive at
+/// the fixed master's reaction through both link resolutions.
+#[test]
+fn chained_loaded_slave_into_fixed_master_equilibrium() {
+    let l = 4.0;
+    let mut input = make_3d_input(
+        vec![
+            (1, 0.0, 0.0, 0.0), (2, l, 0.0, 0.0),
+            (3, 0.0, 0.0, 2.0), (4, 0.0, 0.0, 4.0),
+        ],
+        vec![(1, E, NU)],
+        vec![(1, A, IY, IZ, J)],
+        vec![(1, "frame", 1, 2, 1, 1)],
+        vec![(1, fixed())],
+        vec![SolverLoad3D::Nodal(SolverNodalLoad3D {
+            node_id: 4, fx: 0.0, fy: 0.0, fz: -10.0,
+            mx: 0.0, my: 0.0, mz: 0.0, bw: None,
+        })],
+    );
+    input.constraints.push(Constraint::EqualDOF(EqualDOFConstraint {
+        master_node: 1, slave_node: 3, dofs: vec![0, 1, 2, 3, 4, 5],
+    }));
+    input.constraints.push(Constraint::EqualDOF(EqualDOFConstraint {
+        master_node: 3, slave_node: 4, dofs: vec![0, 1, 2, 3, 4, 5],
+    }));
+    let res = linear::solve_3d(&input).expect("solve");
+    let sum_fz: f64 = res.reactions.iter().map(|r| r.fz).sum();
+    assert!(
+        (sum_fz - 10.0).abs() < 1e-6,
+        "depth-2 chain into fixed master: sumFz={sum_fz}, expected 10"
     );
 }

@@ -1,7 +1,7 @@
 // PR [14] — DXF Plan upgrade: inference, diagnostics, preview, multi-floor,
 // beam-polygon offsets, unit sanity.
 import { describe, it, expect } from 'vitest';
-import type { ArchPlan, RcDraftAssumptions, RcDraftResult } from '../types';
+import type { ArchPlan, RcDraftAssumptions, RcDraftResult, SectionScheduleEntry } from '../types';
 import { parseCadDxf, suggestUnitFromExtent } from '../parse';
 import { extractArchPlan, suggestLayerMappings } from '../classify';
 import { buildStabileoTemplateDxf } from '../template';
@@ -96,6 +96,22 @@ describe('parse.suggestUnitFromExtent (Layer 1 unit sanity)', () => {
   });
   it('does not nag when the unit is already plausible', () => {
     expect(suggestUnitFromExtent({ minX: 0, minY: 0, maxX: 30, maxY: 18 }, 'm')).toBeNull();
+  });
+  it('suggests mm — not the 10x-inflated cm — for a small plan misread as metres', () => {
+    // raw 7300 units, header says metres → 7300 m implausible. cm reads 73 m
+    // (closer to a "typical" 30 m) but mm reads 7.3 m, the real (finer) unit.
+    const s = suggestUnitFromExtent({ minX: 0, minY: 0, maxX: 7300, maxY: 5000 }, 'm');
+    expect(s).not.toBeNull();
+    expect(s!.suggested).toBe('mm');
+    expect(s!.suggestedExtentM).toBeCloseTo(7.3, 6);
+  });
+  it('keeps the closeness pick for a genuinely medium plan (no over-correction)', () => {
+    // raw 5000, header metres → 5000 m implausible; cm reads 50 m (a large but
+    // real building), mm reads 5 m. 50 m is within normal size, so keep cm.
+    const s = suggestUnitFromExtent({ minX: 0, minY: 0, maxX: 5000, maxY: 3000 }, 'm');
+    expect(s).not.toBeNull();
+    expect(s!.suggested).toBe('cm');
+    expect(s!.suggestedExtentM).toBeCloseTo(50, 6);
   });
 });
 
@@ -241,6 +257,57 @@ describe('draft-build.buildDraft', () => {
     expect(built.provenance.assumptions.some((x) => /Per-floor plans/.test(x))).toBe(true);
     const d = diagnoseDraft(built);
     expect(d.level).not.toBe('error'); // connected, supported
+  });
+
+  it('multi-floor: section schedules resolve against BUILDING floors, not range-local', () => {
+    // Ranges A(1-2)/B(3-4). A column schedule authored for building floors 3-4
+    // must land on range B. Without per-range rebasing, range B resolved its own
+    // local floors 1-2 so the 3-4 row silently matched nothing (0 assignments),
+    // while a 1-2 row would have leaked onto the upper block.
+    const schedules: SectionScheduleEntry[] = [
+      { kind: 'column', mark: '*', fromFloor: 3, toFloor: 4, b: 0.6, h: 0.6, source: 'wizard' },
+    ];
+    const built = buildDraft({
+      floorPlans: [
+        { plan: gridPlan(true), fromFloor: 1, toFloor: 2, label: 'A' },
+        { plan: gridPlan(true), fromFloor: 3, toFloor: 4, label: 'B' },
+      ],
+      assumptions: assumptions({ nFloors: 4, storyHeights: [3, 3, 3, 3], schedules }),
+      source: SOURCE,
+    });
+    expect(built.counts.scheduleAssignments).toBeGreaterThan(0);
+    expect(built.counts.specSections.schedule).toBeGreaterThan(0);
+  });
+
+  it('multi-floor: a mid-height gap that strands an upper block is reported, not silently deleted', () => {
+    // Floors 1-2 (grounded) and 4-5, floor 3 uncovered. The upper block never
+    // welds to the lower one (a floor-height apart), so it is disconnected from
+    // support and pruned entirely — that must surface as an error, not vanish.
+    const built = buildDraft({
+      floorPlans: [
+        { plan: gridPlan(true), fromFloor: 1, toFloor: 2, label: 'A' },
+        { plan: gridPlan(true), fromFloor: 4, toFloor: 5, label: 'B' },
+      ],
+      assumptions: assumptions({ nFloors: 5, storyHeights: [3, 3, 3, 3, 3] }),
+      source: SOURCE,
+      allowFloorGaps: true,
+    });
+    const pruned = built.warnings.find((w) => w.message.startsWith('floorRangePruned:'));
+    expect(pruned).toBeDefined();
+    expect(pruned!.message).toContain('B');
+    // Only the grounded lower range survives — not all 5 floors + base.
+    expect(draftPreviewStats(built.snapshot).levels).toBeLessThan(6);
+  });
+});
+
+describe('cropDoc — window normalization (Layer 2)', () => {
+  it('normalizes reversed bounds (x0>x1 / y0>y1) to the same region as normal order', () => {
+    const doc = parseCadDxf(buildStabileoTemplateDxf(), 'stabileo-template.dxf');
+    const bb = doc.bbox!;
+    const normal = cropDoc(doc, { x0: bb.minX, x1: bb.maxX, y0: bb.minY, y1: bb.maxY });
+    const reversed = cropDoc(doc, { x0: bb.maxX, x1: bb.minX, y0: bb.maxY, y1: bb.minY });
+    expect(normal.entities.length).toBeGreaterThan(0);
+    expect(reversed.entities.length).toBe(normal.entities.length); // was 0 before normalization
   });
 });
 

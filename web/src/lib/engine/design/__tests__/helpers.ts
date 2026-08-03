@@ -111,7 +111,7 @@ export function syntheticBeamContext(over: Partial<MemberContext> = {}): MemberC
       sagCategory: 'My+', hogCategory: 'My-', basis: 'stress-proxy', secondaryRatio: 0,
     },
     slenderDeltaNs: 1, orientationSuspect: false,
-    analysisRevision: 1, demandRevision: 1, blocking: [],
+    analysisRevision: 1, demandRevision: 1, solveGeneration: 1, blocking: [],
     modelData: { nodes, elements, sections, materials, supports },
     ...over,
   };

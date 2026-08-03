@@ -235,3 +235,27 @@ describe('the row-2 fixture exercises real three-leg reinforcement', () => {
     expect(alternations).toBeGreaterThan(0);
   });
 });
+
+describe('§15.3.1.4 — joint tie spacing cap', () => {
+  it('no joint tie spacing exceeds 200 mm on the flagship frame', () => {
+    // Pre-fix the joint reused the §10.7.6.2 column-tie value (16·d_b long), which
+    // reached 209,9 mm on this fixture — over the 200 mm §15.3.1.4 allows within the
+    // depth of the deepest beam framing into the joint.
+    const r = detail(rcFrame);
+    const jointTies = r.assemblies.flatMap((a) => a.bars).filter((b) =>
+      b.role === 'transverse' && (b.zoneId ?? '').includes(':ties') && !b.id.includes('crosstie'));
+    expect(jointTies.length).toBeGreaterThan(0);
+    const byZone = new Map<string, number[]>();
+    for (const b of jointTies) {
+      const zs = b.segments.map((s) => (s.start.z + s.end.z) / 2);
+      const z = zs.reduce((x, y) => x + y, 0) / zs.length;
+      byZone.set(b.zoneId!, [...(byZone.get(b.zoneId!) ?? []), z]);
+    }
+    for (const [zone, zs] of byZone) {
+      zs.sort((a, b) => a - b);
+      for (let i = 1; i < zs.length; i++) {
+        expect(zs[i] - zs[i - 1], `${zone} spacing`).toBeLessThanOrEqual(0.2 + 1e-9);
+      }
+    }
+  }, 120_000);
+});

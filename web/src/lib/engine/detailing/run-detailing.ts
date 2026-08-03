@@ -1592,7 +1592,7 @@ export function runDetailing(input: RunDetailingInput): RunDetailingResult {
   // Beam stirrups stop at the support face, which is where a beam's shear reinforcement
   // belongs. That leaves the joint volume, and the joint is not reinforced by either beam:
   // what confines it is the COLUMN's tie cage, continued through, perpendicular to the column
-  // axis. §15.4.2 says so, and refers the geometry to §25.7.2.
+  // axis. §15.3.1.2 says so, and refers the geometry to §25.7.2.
   //
   // This was never modelled. Before the support-face clamp the joint merely CONTAINED steel —
   // the two beams' stirrups, lying in the beams' own section planes, at right angles to the
@@ -1627,6 +1627,12 @@ export function runDetailing(input: RunDetailingInput): RunDetailingResult {
       ?? cCtx.material.stirrupDia;
     const ts = tieSpacing(longDia, cCtx.material.stirrupDia,
       Math.min(cCtx.section.b, cCtx.section.h), input.edition);
+    // §15.3.1.4: within the depth of the deepest beam framing into the joint, the
+    // transverse joint reinforcement spacing must not exceed 200 mm. The §10.7.6.2
+    // column-tie value can exceed it (16·Ø20 = 320 mm), so the cap is applied here,
+    // on the joint, not inside `tieSpacing` (which is correct for the column itself).
+    const jointSpacing = Math.min(ts.spacing, 0.2);
+    const jointSpacingBy = ts.spacing <= 0.2 ? ts.governedBy : '§15.3.1.4 (200 mm)';
 
     // The column bars this cage has to enclose, in the TIE's section frame. The tie lies in
     // the horizontal plane, so `up` is taken as global x and `across` as global y — the same
@@ -1737,7 +1743,7 @@ export function runDetailing(input: RunDetailingInput): RunDetailingResult {
 
     const band = bandHi - bandLo;
     if (!(band > 0)) {
-      cMb.unsupported.push(formatClause(clause('cirsoc-201', input.edition, '15.4.2',
+      cMb.unsupported.push(formatClause(clause('cirsoc-201', input.edition, '15.3.1.2',
         'el nudo no deja luz libre entre la armadura inferior y superior de las vigas ' +
         'para alojar estribos horizontales; la armadura transversal del nudo no se genera')));
       continue;
@@ -1746,7 +1752,7 @@ export function runDetailing(input: RunDetailingInput): RunDetailingResult {
     const zoneId = `joint-${top.id}:ties`;
     const from = bandLo;
     const stations = stirrupStations({
-      from: 0, to: band, spacing: ts.spacing, nextZoneStartsAtEnd: false,
+      from: 0, to: band, spacing: jointSpacing, nextZoneStartsAtEnd: false,
     });
     // The beam steel passing through the joint is CONFINED by these ties, and the tie belongs
     // to the joint rather than to the column alone. Both facts have to be recorded or the
@@ -1812,7 +1818,7 @@ export function runDetailing(input: RunDetailingInput): RunDetailingResult {
       `Nudo ${top.id}: ${built} estribo(s) Ø${cCtx.material.stirrupDia} en la luz libre de ` +
       `${(band * 1000).toFixed(0)} mm entre la armadura inferior y superior de las vigas ` +
       `(canto de nudo ${(depth * 1000).toFixed(0)} mm); separación máxima ` +
-      `${(ts.spacing * 1000).toFixed(0)} mm por ${ts.governedBy} (15.4.2, 25.7.2).`);
+      `${(jointSpacing * 1000).toFixed(0)} mm por ${jointSpacingBy} (15.3.1, 25.7.2).`);
   }
 
   /** Owning members per bar id, for attributing materialised geometry to an assembly. */

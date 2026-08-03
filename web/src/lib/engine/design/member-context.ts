@@ -93,6 +93,13 @@ export interface MemberContext {
   codeEdition: RegulationEdition;
   analysisRevision: number;
   demandRevision: number;
+  /** The verificationStore solve-generation counter at the moment this context was
+   *  built (bumped on every `setResults3D`/`setCombinationResults3D` publish — see
+   *  store/index.ts). A context whose stamped generation is older than the current
+   *  one describes forces that have since been superseded by a fresh solve (e.g. a
+   *  self-weight/axis-convention toggle) without contexts being rebuilt — the
+   *  display must read 'stale', not the demand's own (now-outdated) status. */
+  solveGeneration: number;
   /** Reasons the member cannot be designed at all, if any. */
   blocking: LimitingConstraint[];
   /** Model slices retained so the verifier can compute geometry-aware sections. */
@@ -140,6 +147,7 @@ export interface BuildContextOptions {
   slenderDeltaNs?: Map<number, number>;
   analysisRevision?: number;
   demandRevision?: number;
+  solveGeneration?: number;
   cover?: number;
   stirrupDia?: number;
   rebarFy?: number;
@@ -215,6 +223,7 @@ export function buildMemberContext(
     orientationSuspect: opts.orientationSuspect?.has(elementId) ?? false,
     analysisRevision: opts.analysisRevision ?? 0,
     demandRevision: opts.demandRevision ?? 0,
+    solveGeneration: opts.solveGeneration ?? 0,
     blocking: [...new Set(blocking)],
     modelData: model,
   };

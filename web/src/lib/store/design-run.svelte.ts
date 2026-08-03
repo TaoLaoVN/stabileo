@@ -107,6 +107,7 @@ function createDesignRunStore() {
         // than under what the project states it is designed to.
         codeEdition: concreteEdition(),
         concrete: modelStore.model.codeSettings?.concrete,
+        solveGeneration: verificationStore.solveGeneration,
       });
       verificationStore.setDemandData(contexts, orient.issues);
       resultsStore.diagramType = 'verification';

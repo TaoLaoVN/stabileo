@@ -1,4 +1,5 @@
 use crate::types::*;
+use crate::solver::linear::{prepare_static_2d, prepare_static_3d, solve_2d, solve_3d};
 use std::collections::HashMap;
 
 /// Moving loads analysis result.
@@ -64,59 +65,36 @@ pub fn solve_moving_loads_2d(input: &MovingLoadInput) -> Result<MovingLoadEnvelo
     let mut pos = start_pos;
     let mut num_positions = 0;
 
+    // Prepare the structure once (assembly + factorization of K); each
+    // position then reuses the factorization, rebuilding only its load vector.
+    // Models with constraints keep the legacy per-position full solve (the
+    // constrained solver handles each position's loads itself).
+    let prep_input = if solver_input.constraints.is_empty() {
+        let mut pi = solver_input.clone();
+        pi.loads = vec![];
+        Some(pi)
+    } else {
+        None
+    };
+    let prepared = prep_input.as_ref().and_then(|pi| prepare_static_2d(pi).ok());
+
     while pos <= end_pos + 1e-10 {
         num_positions += 1;
 
         // Build loads for this position
-        let mut loads = base_loads(solver_input);
-
-        for axle in &train.axles {
-            let axle_pos = pos + axle.offset;
-            if axle_pos < -1e-10 || axle_pos > total_length + 1e-10 {
-                continue;
-            }
-
-            // Find which segment this axle is on
-            if let Some((seg, local_pos)) = find_segment(&path, axle_pos) {
-                // Decompose weight into perpendicular component (point on element)
-                // and axial component (nodal load in element direction)
-                let perp_force = -axle.weight; // Downward force
-
-                // Add as point load on element in local Y direction
-                loads.push(SolverLoad::PointOnElement(SolverPointLoadOnElement {
-                    element_id: seg.element_id,
-                    a: local_pos,
-                    p: perp_force * seg.cos.powi(2).max(0.0).sqrt().copysign(1.0),
-                    px: None,
-                    my: None,
-                }));
-
-                // For vertical loads on non-horizontal members, add axial component as well
-                // Simplified: project downward force onto element axes
-                if seg.sin.abs() > 1e-6 {
-                    // Perpendicular component (transverse to element)
-                    let p_perp = -axle.weight * seg.cos;
-                    // Axial component
-                    let p_axial = -axle.weight * seg.sin;
-
-                    // Replace the simple load with proper decomposition
-                    loads.pop(); // Remove the one we just added
-                    loads.push(SolverLoad::PointOnElement(SolverPointLoadOnElement {
-                        element_id: seg.element_id,
-                        a: local_pos,
-                        p: p_perp,
-                        px: Some(p_axial),
-                        my: None,
-                    }));
-                }
-            }
-        }
+        let loads = moving_loads_at_position_2d(solver_input, train, &path, pos, total_length);
 
         // Solve with these loads
-        let mut modified_input = solver_input.clone();
-        modified_input.loads = loads;
+        let results = match &prepared {
+            Some(p) => p.solve_loads(&loads).ok(),
+            None => {
+                let mut modified_input = solver_input.clone();
+                modified_input.loads = loads;
+                solve_2d(&modified_input).ok()
+            }
+        };
 
-        if let Ok(results) = super::linear::solve_2d(&modified_input) {
+        if let Some(results) = results {
             // Update envelopes
             for ef in &results.element_forces {
                 if let Some(env) = envelopes.get_mut(&ef.element_id.to_string()) {
@@ -148,7 +126,64 @@ pub fn solve_moving_loads_2d(input: &MovingLoadInput) -> Result<MovingLoadEnvelo
     })
 }
 
-fn build_load_path(
+/// Build the load set for one train position: permanent loads (nodal,
+/// distributed, thermal) plus the equivalent point loads of every axle
+/// currently on the path.
+pub fn moving_loads_at_position_2d(
+    solver_input: &SolverInput,
+    train: &LoadTrain,
+    path: &[PathSegment],
+    pos: f64,
+    total_length: f64,
+) -> Vec<SolverLoad> {
+    let mut loads = base_loads(solver_input);
+
+    for axle in &train.axles {
+        let axle_pos = pos + axle.offset;
+        if axle_pos < -1e-10 || axle_pos > total_length + 1e-10 {
+            continue;
+        }
+
+        // Find which segment this axle is on
+        if let Some((seg, local_pos)) = find_segment(path, axle_pos) {
+            // Decompose weight into perpendicular component (point on element)
+            // and axial component (nodal load in element direction)
+            let perp_force = -axle.weight; // Downward force
+
+            // Add as point load on element in local Y direction
+            loads.push(SolverLoad::PointOnElement(SolverPointLoadOnElement {
+                element_id: seg.element_id,
+                a: local_pos,
+                p: perp_force * seg.cos.powi(2).max(0.0).sqrt().copysign(1.0),
+                px: None,
+                my: None,
+            }));
+
+            // For vertical loads on non-horizontal members, add axial component as well
+            // Simplified: project downward force onto element axes
+            if seg.sin.abs() > 1e-6 {
+                // Perpendicular component (transverse to element)
+                let p_perp = -axle.weight * seg.cos;
+                // Axial component
+                let p_axial = -axle.weight * seg.sin;
+
+                // Replace the simple load with proper decomposition
+                loads.pop(); // Remove the one we just added
+                loads.push(SolverLoad::PointOnElement(SolverPointLoadOnElement {
+                    element_id: seg.element_id,
+                    a: local_pos,
+                    p: p_perp,
+                    px: Some(p_axial),
+                    my: None,
+                }));
+            }
+        }
+    }
+
+    loads
+}
+
+pub fn build_load_path(
     input: &SolverInput,
     path_element_ids: Option<&[usize]>,
 ) -> Result<Vec<PathSegment>, String> {
@@ -297,69 +332,45 @@ pub fn solve_moving_loads_3d(input: &MovingLoadInput3D) -> Result<MovingLoadEnve
         });
     }
 
-    // Build lookup maps to avoid O(n) linear scans per element
-    let node_by_id: HashMap<usize, &SolverNode3D> = solver_input.nodes.values().map(|n| (n.id, n)).collect();
-    let elem_by_id: HashMap<usize, &SolverElement3D> = solver_input.elements.values().map(|e| (e.id, e)).collect();
-
     let start_pos = -max_offset;
     let end_pos = total_length;
     let mut pos = start_pos;
     let mut num_positions = 0;
 
+    // Prepare the structure once (assembly + factorization of K); each
+    // position then reuses the factorization, rebuilding only its load vector.
+    // Models with constraints keep the legacy per-position full solve.
+    let prep_input = if solver_input.constraints.is_empty() {
+        let mut pi = solver_input.clone();
+        pi.loads = vec![];
+        Some(pi)
+    } else {
+        None
+    };
+    let prepared = prep_input.as_ref().and_then(|pi| prepare_static_3d(pi).ok());
+
+    // Lookup maps for local-axis projection — built once for all positions.
+    let maps = MovingLoadMaps3d::new(solver_input);
+
     while pos <= end_pos + 1e-10 {
         num_positions += 1;
 
         // Build loads for this position
-        let mut loads = base_loads_3d(solver_input);
-
-        for axle in &train.axles {
-            let axle_pos = pos + axle.offset;
-            if axle_pos < -1e-10 || axle_pos > total_length + 1e-10 {
-                continue;
-            }
-
-            if let Some((seg, local_pos)) = find_segment_3d(&path, axle_pos) {
-                // Gravity vector in global coordinates
-                let (gx, gy, gz) = match gravity {
-                    "y" => (0.0, -axle.weight, 0.0),
-                    _ => (0.0, 0.0, -axle.weight), // "z" default
-                };
-
-                // Element direction vector (local x-axis in global frame)
-                let _ex = [seg.dir_x, seg.dir_y, seg.dir_z];
-
-                // Compute the element's local axes using the same function as the solver
-                if let Some(&elem) = elem_by_id.get(&seg.element_id) {
-                    let ni = node_by_id[&elem.node_i];
-                    let nj = node_by_id[&elem.node_j];
-                    let left_hand = solver_input.left_hand.unwrap_or(false);
-                    let (_lex, ley, lez) = crate::element::compute_local_axes_3d(
-                        ni.x, ni.y, ni.z, nj.x, nj.y, nj.z,
-                        elem.local_yx, elem.local_yy, elem.local_yz,
-                        elem.roll_angle, left_hand,
-                    );
-
-                    // Project gravity force onto local axes
-                    // py = gravity · local_y, pz = gravity · local_z
-                    let py = gx * ley[0] + gy * ley[1] + gz * ley[2];
-                    let pz = gx * lez[0] + gy * lez[1] + gz * lez[2];
-
-                    // Apply as point-on-element load (proper FEF treatment)
-                    loads.push(SolverLoad3D::PointOnElement(SolverPointLoad3D {
-                        element_id: seg.element_id,
-                        a: local_pos,
-                        py,
-                        pz,
-                    }));
-                }
-            }
-        }
+        let loads = moving_loads_at_position_3d_with_maps(
+            solver_input, train, gravity, &path, pos, total_length, &maps,
+        );
 
         // Solve with these loads
-        let mut modified_input = solver_input.clone();
-        modified_input.loads = loads;
+        let results = match &prepared {
+            Some(p) => p.solve_loads(&loads).ok(),
+            None => {
+                let mut modified_input = solver_input.clone();
+                modified_input.loads = loads;
+                solve_3d(&modified_input).ok()
+            }
+        };
 
-        if let Ok(results) = super::linear::solve_3d(&modified_input) {
+        if let Some(results) = results {
             for ef in &results.element_forces {
                 if let Some(env) = envelopes.get_mut(&ef.element_id.to_string()) {
                     env.n_max_pos = env.n_max_pos.max(ef.n_start.max(ef.n_end));
@@ -389,7 +400,100 @@ pub fn solve_moving_loads_3d(input: &MovingLoadInput3D) -> Result<MovingLoadEnve
     })
 }
 
-fn build_load_path_3d(
+/// Pre-built node/element lookup maps for `moving_loads_at_position_3d_with_maps`
+/// (build once per analysis, reuse across all positions).
+pub struct MovingLoadMaps3d<'a> {
+    pub node_by_id: HashMap<usize, &'a SolverNode3D>,
+    pub elem_by_id: HashMap<usize, &'a SolverElement3D>,
+}
+
+impl<'a> MovingLoadMaps3d<'a> {
+    pub fn new(input: &'a SolverInput3D) -> Self {
+        Self {
+            node_by_id: input.nodes.values().map(|n| (n.id, n)).collect(),
+            elem_by_id: input.elements.values().map(|e| (e.id, e)).collect(),
+        }
+    }
+}
+
+/// Build the load set for one train position in 3D: permanent loads plus the
+/// axle weights projected onto each path element's local axes as
+/// point-on-element loads.
+///
+/// Hot loops should prefer `moving_loads_at_position_3d_with_maps` (lookup
+/// maps built once) — this wrapper rebuilds them per call for convenience.
+pub fn moving_loads_at_position_3d(
+    solver_input: &SolverInput3D,
+    train: &LoadTrain,
+    gravity: &str,
+    path: &[PathSegment3D],
+    pos: f64,
+    total_length: f64,
+) -> Vec<SolverLoad3D> {
+    let maps = MovingLoadMaps3d::new(solver_input);
+    moving_loads_at_position_3d_with_maps(solver_input, train, gravity, path, pos, total_length, &maps)
+}
+
+/// Same as `moving_loads_at_position_3d` but takes pre-built lookup maps, so
+/// callers iterating over many positions build them once (was O(P·(N+E))
+/// redundant hashing per analysis).
+pub fn moving_loads_at_position_3d_with_maps(
+    solver_input: &SolverInput3D,
+    train: &LoadTrain,
+    gravity: &str,
+    path: &[PathSegment3D],
+    pos: f64,
+    total_length: f64,
+    maps: &MovingLoadMaps3d,
+) -> Vec<SolverLoad3D> {
+    let node_by_id = &maps.node_by_id;
+    let elem_by_id = &maps.elem_by_id;
+    let mut loads = base_loads_3d(solver_input);
+
+    for axle in &train.axles {
+        let axle_pos = pos + axle.offset;
+        if axle_pos < -1e-10 || axle_pos > total_length + 1e-10 {
+            continue;
+        }
+
+        if let Some((seg, local_pos)) = find_segment_3d(path, axle_pos) {
+            // Gravity vector in global coordinates
+            let (gx, gy, gz) = match gravity {
+                "y" => (0.0, -axle.weight, 0.0),
+                _ => (0.0, 0.0, -axle.weight), // "z" default
+            };
+
+            // Compute the element's local axes using the same function as the solver
+            if let Some(&elem) = elem_by_id.get(&seg.element_id) {
+                let ni = node_by_id[&elem.node_i];
+                let nj = node_by_id[&elem.node_j];
+                let left_hand = solver_input.left_hand.unwrap_or(false);
+                let (_lex, ley, lez) = crate::element::compute_local_axes_3d(
+                    ni.x, ni.y, ni.z, nj.x, nj.y, nj.z,
+                    elem.local_yx, elem.local_yy, elem.local_yz,
+                    elem.roll_angle, left_hand,
+                );
+
+                // Project gravity force onto local axes
+                // py = gravity · local_y, pz = gravity · local_z
+                let py = gx * ley[0] + gy * ley[1] + gz * ley[2];
+                let pz = gx * lez[0] + gy * lez[1] + gz * lez[2];
+
+                // Apply as point-on-element load (proper FEF treatment)
+                loads.push(SolverLoad3D::PointOnElement(SolverPointLoad3D {
+                    element_id: seg.element_id,
+                    a: local_pos,
+                    py,
+                    pz,
+                }));
+            }
+        }
+    }
+
+    loads
+}
+
+pub fn build_load_path_3d(
     input: &SolverInput3D,
     path_element_ids: Option<&[usize]>,
 ) -> Result<Vec<PathSegment3D>, String> {
