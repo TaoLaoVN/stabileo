@@ -12,8 +12,8 @@ let wasmReady = false;
 let wasmInitPromise: Promise<void> | null = null;
 
 // Dynamically loaded WASM functions
-let wasmSolve2d: ((json: string) => string) | null = null;
-let wasmSolve3d: ((json: string) => string) | null = null;
+let wasmSolve2d: ((input: any) => any) | null = null;
+let wasmSolve3d: ((input: any) => any) | null = null;
 let wasmSolvePdelta2d: ((json: string, maxIter: number, tolerance: number) => string) | null = null;
 let wasmSolveBuckling2d: ((json: string, numModes: number) => string) | null = null;
 let wasmSolveModal2d: ((json: string, numModes: number) => string) | null = null;
@@ -37,10 +37,10 @@ let wasmAnalyzeKinematics2d: ((json: string) => string) | null = null;
 let wasmAnalyzeKinematics3d: ((json: string) => string) | null = null;
 
 // Combinations & Envelope
-let wasmCombineResults2d: ((json: string) => string) | null = null;
-let wasmCombineResults3d: ((json: string) => string) | null = null;
-let wasmComputeEnvelope2d: ((json: string) => string) | null = null;
-let wasmComputeEnvelope3d: ((json: string) => string) | null = null;
+let wasmCombineResults2d: ((input: any) => any) | null = null;
+let wasmCombineResults3d: ((input: any) => any) | null = null;
+let wasmComputeEnvelope2d: ((input: any) => any) | null = null;
+let wasmComputeEnvelope3d: ((input: any) => any) | null = null;
 
 // Influence Lines
 let wasmComputeInfluenceLine: ((json: string) => string) | null = null;
@@ -94,8 +94,8 @@ let wasmSolveCreepShrinkage2d: ((json: string) => string) | null = null;
 let wasmSolveCreepShrinkage3d: ((json: string) => string) | null = null;
 
 // Multi-case solvers
-let wasmSolveMultiCase2d: ((json: string) => string) | null = null;
-let wasmSolveMultiCase3d: ((json: string) => string) | null = null;
+let wasmSolveMultiCase2d: ((input: any) => any) | null = null;
+let wasmSolveMultiCase3d: ((input: any) => any) | null = null;
 
 // Nonlinear path-following solvers
 let wasmSolveArcLength: ((json: string) => string) | null = null;
@@ -135,6 +135,24 @@ let wasmCheckBoltGroups: ((json: string) => string) | null = null;
 let wasmCheckWeldGroups: ((json: string) => string) | null = null;
 let wasmCheckSpreadFootings: ((json: string) => string) | null = null;
 
+let wasmBytesPromise: Promise<ArrayBuffer> | null = null;
+
+/** Fetch the WASM binary once. Shared between the main-thread init and the
+ *  worker pool so the bytes cross the network a single time. A failed fetch
+ *  is not cached — the next call retries. */
+export function getWasmBytes(): Promise<ArrayBuffer> {
+  if (!wasmBytesPromise) {
+    const wasmUrl = new URL('../wasm/dedaliano_engine_bg.wasm', import.meta.url);
+    wasmBytesPromise = fetch(wasmUrl)
+      .then(resp => {
+        if (!resp.ok) throw new Error(`Failed to fetch WASM binary: HTTP ${resp.status}`);
+        return resp.arrayBuffer();
+      })
+      .catch(err => { wasmBytesPromise = null; throw err; });
+  }
+  return wasmBytesPromise;
+}
+
 /** Initialize the WASM module. Call once at app startup. */
 export async function initSolver(): Promise<void> {
   if (wasmReady) return;
@@ -151,7 +169,7 @@ export async function initSolver(): Promise<void> {
       const wasmBytes = readFileSync(fileURLToPath(wasmUrl));
       wasm.initSync({ module: wasmBytes });
     } else {
-      await wasm.default();
+      await wasm.default(await getWasmBytes());
     }
     wasmSolve2d = wasm.solve_2d;
     wasmSolve3d = wasm.solve_3d;
@@ -296,9 +314,32 @@ export function mapToObj<T>(map: Map<number, T>): Record<string, T> {
   return obj;
 }
 
-/** Serialize SolverInput (with Maps) to JSON string for WASM. */
-function serializeInput2D(input: SolverInput): string {
-  return JSON.stringify({
+/**
+ * Guard for the JsValue boundary: `JSON.stringify` used to coerce NaN/Infinity
+ * to `null`, which serde_json then rejected — non-finite inputs never reached
+ * the solver. serde-wasm-bindgen would pass them through as f64. This walk
+ * restores the old rejection semantics without a string round trip.
+ */
+export function assertFiniteWire(value: any, path = 'input'): void {
+  if (typeof value === 'number') {
+    if (!Number.isFinite(value)) {
+      throw new Error(`Non-finite number (${value}) at ${path}`);
+    }
+    return;
+  }
+  if (Array.isArray(value)) {
+    for (let i = 0; i < value.length; i++) assertFiniteWire(value[i], `${path}[${i}]`);
+    return;
+  }
+  if (value !== null && typeof value === 'object') {
+    for (const k of Object.keys(value)) assertFiniteWire(value[k], `${path}.${k}`);
+  }
+}
+
+/** Convert SolverInput (with Maps) to the plain JSON-ready wire object,
+ *  without a string round trip. */
+export function input2DToWireObject(input: SolverInput): Record<string, any> {
+  return {
     nodes: mapToObj(input.nodes),
     materials: mapToObj(input.materials),
     sections: mapToObj(input.sections),
@@ -307,12 +348,18 @@ function serializeInput2D(input: SolverInput): string {
     loads: input.loads,
     constraints: input.constraints ?? [],
     connectors: input.connectors ? mapToObj(input.connectors) : {},
-  });
+  };
 }
 
-/** Serialize SolverInput3D (with Maps) to JSON string for WASM. */
-export function serializeInput3D(input: SolverInput3D): string {
-  return JSON.stringify({
+/** Serialize SolverInput (with Maps) to JSON string for WASM. */
+function serializeInput2D(input: SolverInput): string {
+  return JSON.stringify(input2DToWireObject(input));
+}
+
+/** Convert SolverInput3D (with Maps) to the plain JSON-ready wire object,
+ *  without a string round trip. */
+export function input3DToWireObject(input: SolverInput3D): Record<string, any> {
+  return {
     nodes: mapToObj(input.nodes),
     materials: mapToObj(input.materials),
     sections: mapToObj(input.sections),
@@ -325,30 +372,35 @@ export function serializeInput3D(input: SolverInput3D): string {
     constraints: input.constraints ?? [],
     connectors: input.connectors ? mapToObj(input.connectors) : {},
     leftHand: input.leftHand ?? false,
-  });
+  };
+}
+
+/** Serialize SolverInput3D (with Maps) to JSON string for WASM. */
+export function serializeInput3D(input: SolverInput3D): string {
+  return JSON.stringify(input3DToWireObject(input));
 }
 
 // ─── Solver functions ───────────────────────────────────────────
 
-/** Solve 2D linear static analysis via WASM. */
+/** Solve 2D linear static analysis via WASM. JsValue in/out — no JSON round trip. */
 export function solve(input: SolverInput): AnalysisResults {
   if (!wasmReady || !wasmSolve2d) throw new Error('WASM solver not initialized. Call initSolver() first.');
-  const json = serializeInput2D(input);
-  const resultJson = wasmSolve2d(json);
-  return JSON.parse(resultJson);
+  const wire = input2DToWireObject(input);
+  assertFiniteWire(wire);
+  return wasmSolve2d(wire);
 }
 
-/** Solve 3D linear static analysis via WASM. */
+/** Solve 3D linear static analysis via WASM. JsValue in/out — no JSON round trip. */
 export function solve3D(input: SolverInput3D): AnalysisResults3D {
   if (!wasmReady || !wasmSolve3d) throw new Error('WASM solver not initialized. Call initSolver() first.');
-  const json = serializeInput3D(input);
+  const wire = input3DToWireObject(input);
+  assertFiniteWire(wire);
   // Intercept console.error to capture Rust panic messages from console_error_panic_hook
   const captured: string[] = [];
   const origError = console.error;
   console.error = (...args: any[]) => { captured.push(args.map(String).join(' ')); origError.apply(console, args); };
   try {
-    const resultJson = wasmSolve3d(json);
-    return JSON.parse(resultJson);
+    return wasmSolve3d(wire);
   } catch (e: any) {
     // Include captured panic message in the error for better diagnostics
     const panicMsg = captured.length > 0 ? captured.join('\n') : '';
@@ -610,7 +662,7 @@ export function analyzeKinematics3D(input: SolverInput3D) {
 
 // ─── Combinations & Envelope ─────────────────────────────────────
 
-/** Combine 2D results with factors via WASM. */
+/** Combine 2D results with factors via WASM. JsValue in/out — no JSON round trip. */
 export function combineResults(
   factors: Array<{ caseId: number; factor: number }>,
   perCase: Map<number, AnalysisResults>,
@@ -620,12 +672,12 @@ export function combineResults(
     .filter(f => perCase.has(f.caseId))
     .map(f => ({ caseId: f.caseId, results: perCase.get(f.caseId)! }));
   if (cases.length === 0) return null;
-  const payload = JSON.stringify({ factors, cases });
-  const result = wasmCombineResults2d(payload);
-  return JSON.parse(result);
+  const payload = { factors, cases };
+  assertFiniteWire(payload);
+  return wasmCombineResults2d(payload);
 }
 
-/** Combine 3D results with factors via WASM. */
+/** Combine 3D results with factors via WASM. JsValue in/out — no JSON round trip. */
 export function combineResults3D(
   factors: Array<{ caseId: number; factor: number }>,
   perCase: Map<number, AnalysisResults3D>,
@@ -635,25 +687,25 @@ export function combineResults3D(
     .filter(f => perCase.has(f.caseId))
     .map(f => ({ caseId: f.caseId, results: perCase.get(f.caseId)! }));
   if (cases.length === 0) return null;
-  const payload = JSON.stringify({ factors, cases });
-  const result = wasmCombineResults3d(payload);
-  return JSON.parse(result);
+  const payload = { factors, cases };
+  assertFiniteWire(payload);
+  return wasmCombineResults3d(payload);
 }
 
-/** Compute 2D envelope via WASM. */
+/** Compute 2D envelope via WASM. JsValue in/out — no JSON round trip. */
 export function computeEnvelope(results: AnalysisResults[]): FullEnvelope | null {
   if (!wasmReady || !wasmComputeEnvelope2d) throw new Error('WASM solver not initialized.');
   if (results.length === 0) return null;
-  const payload = JSON.stringify(results);
-  return JSON.parse(wasmComputeEnvelope2d(payload));
+  assertFiniteWire(results);
+  return wasmComputeEnvelope2d(results);
 }
 
-/** Compute 3D envelope via WASM. */
+/** Compute 3D envelope via WASM. JsValue in/out — no JSON round trip. */
 export function computeEnvelope3D(results: AnalysisResults3D[]): FullEnvelope3D | null {
   if (!wasmReady || !wasmComputeEnvelope3d) throw new Error('WASM solver not initialized.');
   if (results.length === 0) return null;
-  const payload = JSON.stringify(results);
-  return JSON.parse(wasmComputeEnvelope3d(payload));
+  assertFiniteWire(results);
+  return wasmComputeEnvelope3d(results);
 }
 
 // ─── Influence Lines ─────────────────────────────────────────────
@@ -1120,26 +1172,28 @@ export function solveCreepShrinkage3D(config: any): any {
 
 // ─── Multi-Case Solvers ───────────────────────────────────────────
 
-/** Solve 2D multi-case analysis via WASM. */
+/** Solve 2D multi-case analysis via WASM. JsValue in/out — no JSON round trip. */
 export function solveMultiCase2D(config: any): any {
   if (!wasmReady || !wasmSolveMultiCase2d) throw new Error('WASM multi-case 2D solver not available.');
   if (config.solver && config.solver.nodes instanceof Map) {
-    config = { ...config, solver: JSON.parse(serializeInput2D(config.solver)) };
+    config = { ...config, solver: input2DToWireObject(config.solver) };
   }
-  return JSON.parse(wasmSolveMultiCase2d(JSON.stringify(config)));
+  assertFiniteWire(config);
+  return wasmSolveMultiCase2d(config);
 }
 
-/** Solve 3D multi-case analysis via WASM. */
+/** Solve 3D multi-case analysis via WASM. JsValue in/out — no JSON round trip. */
 export function solveMultiCase3D(config: any): any {
   if (!wasmReady || !wasmSolveMultiCase3d) throw new Error('WASM multi-case 3D solver not available.');
   if (config.solver && config.solver.nodes instanceof Map) {
-    config = { ...config, solver: JSON.parse(serializeInput3D(config.solver)) };
+    config = { ...config, solver: input3DToWireObject(config.solver) };
   }
+  assertFiniteWire(config);
   const captured: string[] = [];
   const origError = console.error;
   console.error = (...args: any[]) => { captured.push(args.map(String).join(' ')); origError.apply(console, args); };
   try {
-    return JSON.parse(wasmSolveMultiCase3d(JSON.stringify(config)));
+    return wasmSolveMultiCase3d(config);
   } catch (e: any) {
     const panicMsg = captured.length > 0 ? captured.join('\n') : '';
     const base = e?.message ?? String(e);

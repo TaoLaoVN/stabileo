@@ -35,6 +35,7 @@ import { REBAR_DB, classifyElement } from './codes/argentina/cirsoc201';
 // TYPES from this file, so there is no runtime import cycle.
 import {
   resolveDesignAxes, tupleMoment, tupleShear, axisLabel,
+  BIAXIAL_RATIO_THRESHOLD,
   type DesignAxes,
 } from './design/design-axes';
 import { utilizationStatus } from './design/outcome';
@@ -1787,6 +1788,32 @@ export function verifyProvidedReinforcement(
   const V2 = (t: Tuple) => tupleShear(t, axes.secondaryShear);
 
   if ((elementType === 'beam' || elementType === 'wall') && section) {
+    // ─── Biaxial refusal (same pattern as the O6 orientation refusal) ───
+    // resolveDesignAxes flags `biaxial` once the secondary moment exceeds
+    // BIAXIAL_RATIO_THRESHOLD of the primary — but every check below this point
+    // (region flexure, shear zones, ties are column-only) only ever evaluates the
+    // PRIMARY axis pair (M/V from `axes.flexure`/`axes.shear`). The secondary pair
+    // (`axes.secondaryFlexure`/`axes.secondaryShear`) is never checked for beams
+    // or walls: certifying here would silently pass a member whose significant
+    // secondary-axis bending/shear was never verified against the provided steel.
+    // Re-deriving the whole region/curtailment/critical-section pipeline for a
+    // rotated secondary section is a large undertaking with its own risk profile;
+    // refusing explicitly — never a green pass on an unchecked axis — is the
+    // contained, honest choice here.
+    if (axes.biaxial) {
+      pushStrength({
+        category: `Biaxial refusal (${axes.secondaryFlexure}/${axes.secondaryShear} unchecked)`,
+        demandCategory: null,
+        utilization: Number.POSITIVE_INFINITY,
+        unit: '—', method: 'capacity', tuplesChecked: 0,
+        description: `secondary-axis demand is ${(axes.secondaryRatio * 100).toFixed(0)}% of the `
+          + `primary (exceeds the ${(BIAXIAL_RATIO_THRESHOLD * 100).toFixed(0)}% biaxial threshold), `
+          + `but this verifier only checks the primary axis (${axes.flexure}/${axes.shear}) for `
+          + `beams/walls — refusing certification rather than certifying an unchecked axis.`,
+        limiting: 'biaxial',
+      });
+    }
+
     const reg = provided.regions;
 
     // ── Resolve layers from explicit layers or grouped bars ──
@@ -2271,9 +2298,17 @@ export function verifyProvidedReinforcement(
         // invert to the demand/capacity convention used across the design surface.
         let util: number; let phiPn: number; let phiMn = 0; let geo = false; let sc = false; let cN: number | undefined;
         if (isBiax) {
-          // Muy = moment about local y, Muz = moment about local z.
-          const muy = axes.flexure === 'My' ? Mprim : Msec;
-          const muz = axes.flexure === 'Mz' ? Mprim : Msec;
+          // The section arrives flex-rotated (b=bFlex, h=hFlex): the PRIMARY axis
+          // always bends over depth h, the SECONDARY axis over depth b — same
+          // mapping as the uniaxial branch below (primary→'z', secondary→'y'),
+          // NOT moment-name→axis. computeBiaxialCapacity internally pairs Muz
+          // with depth h (capAxis 'z') and Muy with depth b (capAxis 'y'), so Muz
+          // must carry the PRIMARY moment and Muy the SECONDARY one regardless of
+          // which of My/Mz happens to be primary. Forwarding by name (muy=My,
+          // muz=Mz) was only correct when Mz was primary; when My was primary
+          // both moments hit the wrong bending depth.
+          const muz = Mprim;
+          const muy = Msec;
           const cap = computeBiaxialCapacity(provArea, section.b, section.h, section.fc, section.fy, section.cover, section.stirrupDia, Nu, muy, muz, colBars);
           util = cap.ratio > 1e-6 ? 1 / cap.ratio : Number.POSITIVE_INFINITY;
           phiPn = cap.phiPn; geo = cap.geometryAware; sc = cap.strainCompatible;

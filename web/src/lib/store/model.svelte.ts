@@ -9,12 +9,12 @@ import type { KinematicResult } from '../engine/kinematic-2d';
 import type { SolverInput, FullEnvelope, AnalysisResults } from '../engine/types';
 import type { SolverInput3D, AnalysisResults3D, FullEnvelope3D, Constraint3D, ConnectorElement } from '../engine/types-3d';
 export type { ConnectorElement };
-import type { ModelSnapshot } from './history.svelte';
+import type { ModelSnapshot, SnapshotKind } from './history.svelte';
 import { getFixture, is2DFixture, is3DFixture } from '../templates/fixture-index';
 import { loadFixture } from '../templates/load-fixture';
 import { inferLoadCaseType } from '../engine/combinations-service';
 import { t } from '../i18n';
-import { validateAndSolve2D, buildSolverInput2D, validateAndSolve3D, buildSolverInput3D as buildSolverInput3DFn, solveCombinations2D, solveCombinations3D as solveCombinations3DFn, solveCombinations3DParallel as solveCombinations3DParallelFn } from '../engine/solver-service';
+import { validateAndSolve2D, validateAndSolve2DAsync, buildSolverInput2D, validateAndSolve3D, validateAndSolve3DAsync, buildSolverInput3D as buildSolverInput3DFn, solveCombinations2D, solveCombinations3D as solveCombinations3DFn, solveCombinations3DParallel as solveCombinations3DParallelFn } from '../engine/solver-service';
 import { computeInfluenceLine as computeInfluenceLineFn } from '../engine/influence-service';
 import { to2D, remapNodalLoad2D, remapMoment2D, type DrawPlane } from '../geometry/plane-projection';
 import { pickElement3DMetadata, type Element3DMetadata, type MemberOffset } from '../model/element-3d-metadata';
@@ -813,12 +813,15 @@ function createModelStore() {
   let _bulkConstraintBuffer: Constraint3D[] | null = null;
 
   return {
-    _setHistoryPush(fn: () => void) {
-      _pushUndo = () => { modelVersion++; _onMutation?.(); fn(); };
+    _setHistoryPush(fn: (kind: SnapshotKind) => void) {
+      _pushUndo = () => { modelVersion++; _onMutation?.(); fn('structural'); };
       // Same history snapshot, WITHOUT the modelVersion bump and WITHOUT firing the
       // results-invalidation hook. Required for reinforcement transactions: a rebar
       // edit must be undoable, but it must not destroy the structural analysis.
-      _pushUndoSilent = fn;
+      // Tagged 'reinforcement' so historyStore's undo()/redo() can restore it through
+      // the silent, targeted-invalidation path (restoreReinforcementOnly) instead of
+      // a full model restore that would wipe results.
+      _pushUndoSilent = () => fn('reinforcement');
     },
 
     /** Register a callback to be called on every model mutation (used to clear stale results) */
@@ -872,6 +875,42 @@ function createModelStore() {
       // Single reactive commit (Svelte 5 Map reactivity: reassign the Map).
       model.elements = new Map(model.elements);
       _onReinforcementCommit?.(written);
+      return written;
+    },
+
+    /**
+     * Undo/redo counterpart to `reinforcementTransaction`: restore ONLY the
+     * per-element `reinforcement` field from a snapshot known to differ from the
+     * live model in nothing but reinforcement (historyStore uses this exclusively
+     * for a history entry tagged 'reinforcement' — see `_setHistoryPush`).
+     *
+     * Leaves nodes, loads, supports and everything analysis-relevant untouched:
+     * NO `modelVersion` bump, NO `_onMutation` call. A reinforcement edit does not
+     * affect the structural analysis, so undoing/redoing one must not destroy it.
+     *
+     * Returns the set of element ids whose reinforcement actually changed, so the
+     * caller can drop just those elements' cached provided-rebar verification via
+     * the existing `_onReinforcementCommit` hook — the same targeted invalidation
+     * `reinforcementTransaction` uses for a forward edit.
+     */
+    restoreReinforcementOnly(s: ModelSnapshot): Set<number> {
+      const written = new Set<number>();
+      const incoming = new Map(s.elements.map(([id, v]) => [id, v.reinforcement]));
+      for (const [id, elem] of model.elements) {
+        const nextReinf = incoming.get(id);
+        const curKey = JSON.stringify(elem.reinforcement ?? null);
+        const nextKey = JSON.stringify(nextReinf ?? null);
+        if (curKey === nextKey) continue;
+        model.elements.set(id, {
+          ...elem,
+          reinforcement: nextReinf ? (JSON.parse(JSON.stringify(nextReinf)) as ProvidedReinforcement) : undefined,
+        });
+        written.add(id);
+      }
+      if (written.size > 0) {
+        model.elements = new Map(model.elements);
+        _onReinforcementCommit?.(written);
+      }
       return written;
     },
 
@@ -2164,6 +2203,14 @@ function createModelStore() {
       return validateAndSolve2D(mapped, includeSelfWeight, (k) => { lastKinematicResult = k; });
     },
 
+    /** Async 2D solve via the worker pool (UI stays responsive). Same result
+     *  shape and string-error semantics as solve(). */
+    async solveAsync(includeSelfWeight = false, drawPlane: DrawPlane = 'xy'): Promise<AnalysisResults | string | null> {
+      const mapped = remapModelForPlane(drawPlane);
+      if (typeof mapped === 'string') return mapped;
+      return validateAndSolve2DAsync(mapped, includeSelfWeight, (k) => { lastKinematicResult = k; });
+    },
+
     /** Build a SolverInput from the current model state (no validation). Returns null if model is empty. */
     buildSolverInput(includeSelfWeight = false, drawPlane: DrawPlane = 'xy'): SolverInput | null {
       const mapped = remapModelForPlane(drawPlane);
@@ -2278,6 +2325,21 @@ function createModelStore() {
       // them, so it would silently treat slider ends as rigid. Block instead.
       if (this.hasSlidingJoints()) return t('advanced.sliding3dUnsupported');
       return validateAndSolve3D(
+        { nodes: model.nodes, elements: model.elements, supports: model.supports,
+          loads: model.loads, materials: model.materials, sections: model.sections,
+          plates: isPro ? model.plates : undefined,
+          quads: isPro ? model.quads : undefined,
+          constraints: isPro ? model.constraints : undefined,
+          connectors: isPro ? model.connectors : undefined },
+        includeSelfWeight, leftHand,
+      );
+    },
+
+    /** Async 3D solve via the worker pool (UI stays responsive). Same result
+     *  shape and string-error semantics as solve3D(). */
+    async solve3DAsync(includeSelfWeight = false, leftHand = false, isPro = false): Promise<AnalysisResults3D | string | null> {
+      if (this.hasSlidingJoints()) return t('advanced.sliding3dUnsupported');
+      return validateAndSolve3DAsync(
         { nodes: model.nodes, elements: model.elements, supports: model.supports,
           loads: model.loads, materials: model.materials, sections: model.sections,
           plates: isPro ? model.plates : undefined,

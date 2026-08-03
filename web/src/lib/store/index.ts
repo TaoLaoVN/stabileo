@@ -33,6 +33,16 @@ modelStore._setOnReinforcementCommit((written) => {
   verificationStore.invalidateElements(written);
 });
 
+// Every fresh-solve results publish (setResults3D / setCombinationResults3D) — even
+// a plain re-solve with no structural mutation (a self-weight or axis-convention
+// toggle) — advances the solve-generation counter. Retained MemberContexts are
+// stamped with this at build time, so a re-solve that does NOT rebuild them (as
+// live-calc.ts's auto-solve does) makes their display read 'stale' instead of
+// silently presenting numbers computed from the superseded forces as current.
+resultsStore._setOnResultsPublish(() => {
+  verificationStore.bumpSolveGeneration();
+});
+
 // Let verificationStore read the current provided reinforcement without importing
 // modelStore (which would create a circular dependency).
 verificationStore._setReinforcementProvider(

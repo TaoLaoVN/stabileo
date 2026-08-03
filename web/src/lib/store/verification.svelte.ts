@@ -68,6 +68,13 @@ function createVerificationStore() {
   let analysisRevision = $state(1);
   let demandRevision = $state(0);
   let baselineRevision = $state(0);
+  /** Bumped on EVERY results publish (setResults3D/setCombinationResults3D via
+   *  resultsStore — wired in store/index.ts, decoupled the same way as _onMutation).
+   *  UNLIKE analysisRevision, this advances on a plain re-solve too (e.g. a
+   *  self-weight or axis-convention toggle) — no structural mutation required.
+   *  MemberContext stamps this at build time; a mismatch means the retained
+   *  context describes forces a later solve has since superseded. */
+  let solveGeneration = $state(0);
 
   // ── Retained demand data (independent of presentation) ──
   let contexts = $state<Map<number, MemberContext>>(new Map());
@@ -218,9 +225,21 @@ function createVerificationStore() {
     get demandRevision() { return demandRevision; },
     get baselineRevision() { return baselineRevision; },
     get providedRevision() { return providedRevision; },
+    get solveGeneration() { return solveGeneration; },
+    /** Called on every results publish (wired to resultsStore in store/index.ts). */
+    bumpSolveGeneration() { solveGeneration++; },
     /** True when the code-check baseline was computed for an older analysis. */
     get isBaselineStale() {
       return designResults.length > 0 && baselineRevision !== analysisRevision;
+    },
+    /** True when the retained context for this element was built for an OLDER
+     *  solve generation than the current one — a re-solve (e.g. a self-weight or
+     *  axis-convention toggle) published new forces without contexts being
+     *  rebuilt. Distinct from `isBaselineStale`, which tracks the code-check
+     *  baseline (required steel) against structural mutations, not re-solves. */
+    isContextStale(elementId: number): boolean {
+      const ctx = contexts.get(elementId);
+      return !!ctx && ctx.solveGeneration !== solveGeneration;
     },
     get hasDemandData() { return contexts.size > 0; },
 
@@ -378,6 +397,7 @@ function createVerificationStore() {
       if (!pv || pv.strengthCheckCount === 0) return 'unavailable';
       if (pv.overallStatus === 'none') return 'unavailable';
       if (this.isBaselineStale) return 'stale';
+      if (this.isContextStale(elementId)) return 'stale';
       return pv.overallStatus;
     },
 

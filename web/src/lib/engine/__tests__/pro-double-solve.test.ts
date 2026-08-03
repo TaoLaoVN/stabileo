@@ -37,7 +37,7 @@ describe('PRO solve: no redundant baseline single solve', () => {
   afterEach(() => { vi.restoreAllMocks(); uiStore.analysisMode = '2d'; });
 
   it('combo success: single solve3D is NOT called; combos run once', async () => {
-    const single = vi.spyOn(modelStore, 'solve3D');
+    const single = vi.spyOn(modelStore, 'solve3DAsync');
     const combo = vi.spyOn(modelStore, 'solveCombinations3DParallel').mockResolvedValue(fakeComboResult());
     await runGlobalSolve();
     expect(combo).toHaveBeenCalledTimes(1);
@@ -45,7 +45,7 @@ describe('PRO solve: no redundant baseline single solve', () => {
   });
 
   it('combo failure: falls back to exactly one single solve3D', async () => {
-    const single = vi.spyOn(modelStore, 'solve3D').mockReturnValue(fakeCaseResult());
+    const single = vi.spyOn(modelStore, 'solve3DAsync').mockResolvedValue(fakeCaseResult());
     const combo = vi.spyOn(modelStore, 'solveCombinations3DParallel').mockResolvedValue('combo error');
     await runGlobalSolve();
     expect(combo).toHaveBeenCalledTimes(1);

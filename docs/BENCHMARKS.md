@@ -25,8 +25,10 @@ The benchmark ledger below is curated. It is narrower than the full automated te
 
 Current measured inventory:
 
-- latest reported full-suite status: `5908` passing tests, `0` failures
-- `25` integration test files (`182` integration test functions)
+- Engine-coupled tests (call the solver / its public functions): `5590` passing, `0` failures.
+- Reference-formula self-checks (`engine/tests/reference/`, textbook/code formulas recomputed
+  inline — NOT engine verification): `1192` passing. Counted separately by design.
+- `25` integration test files (`186` integration test functions)
 - dedicated property / differential fuzz coverage (`90` passing tests)
 - explicit benchmark-gate suites for constraints, contact, shells, reduction, sparse / conditioning paths, sparse 3D parity, and sparse modal / buckling / harmonic behavior
 - explicit CI gate stages for shell benchmarks, shell acceptance models, and constraint benchmarks
@@ -221,6 +223,13 @@ Status definitions used here:
 - **Good** = real implementation with meaningful coverage, but still behind top-tier solvers in depth or robustness
 - **Partial** = implemented in a limited or approximated form
 - **Gap** = not yet implemented as a true solver capability
+
+**Test taxonomy:** counts in this file split the same way. `engine/tests/validation/` (and the
+other engine-coupled targets) call `dedaliano_engine`'s public functions and prove solver
+behavior. `engine/tests/reference/` (`engine/tests/reference/main.rs`) recomputes textbook/design-code
+formulas inline as a self-check on the formula itself — it never calls the engine, so it does not
+verify the solver. The two are reported separately (see the Summary above) instead of blended into
+one headline number.
 
 | Category | Current Status | Evidence in Code / Tests | Gap to Best-in-Class |
 |----------|----------------|--------------------------|----------------------|

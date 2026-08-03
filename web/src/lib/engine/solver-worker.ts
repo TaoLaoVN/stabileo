@@ -1,15 +1,36 @@
 /**
- * Web Worker for parallel 3D structural solving.
+ * Web Worker for structural solving (2D and 3D).
  * Each worker loads its own WASM instance and solves independently.
  *
  * Messages:
- *   { type: 'init', wasmBytes: ArrayBuffer }  → initialize WASM module
- *   { type: 'solve3d', id: number, json: string } → solve and return results
+ *   { type: 'init', wasmModule: WebAssembly.Module }  → initialize WASM (pre-compiled module, structured-cloned)
+ *   { type: 'solve',   id: number, input: object }    → 2D solve (SolverInput wire object)
+ *   { type: 'solve3d', id: number, input: object }    → 3D solve (SolverInput3D wire object)
+ * Inputs/outputs are plain JS objects — structured-cloned both ways, no JSON text.
  */
 
-let initSync: ((moduleOrBytes: any) => void) | null = null;
-let solve_3d: ((json: string) => string) | null = null;
+import { assertFiniteWire } from './wasm-solver';
+
+let solve_2d: ((input: any) => any) | null = null;
+let solve_3d: ((input: any) => any) | null = null;
 let ready = false;
+
+function handleSolve(msg: any, solveFn: ((input: any) => any) | null): void {
+  if (!ready || !solveFn) {
+    self.postMessage({ type: 'result', id: msg.id, error: 'Worker not initialized' });
+    return;
+  }
+  try {
+    // The finiteness guard preserves the old JSON-boundary semantics (NaN/Inf rejected).
+    assertFiniteWire(msg.input);
+    const result = solveFn(msg.input);
+    self.postMessage({ type: 'result', id: msg.id, result });
+  } catch (err: any) {
+    // Engine errors cross the boundary as plain strings (JsValue::from_str),
+    // which have no .message — fall back to String() so they are not lost.
+    self.postMessage({ type: 'result', id: msg.id, error: err?.message ?? String(err) });
+  }
+}
 
 self.onmessage = async (e: MessageEvent) => {
   const msg = e.data;
@@ -18,11 +39,10 @@ self.onmessage = async (e: MessageEvent) => {
     try {
       // Dynamic import so the build doesn't fail when WASM files are absent
       const wasm = await import(/* @vite-ignore */ '../wasm/dedaliano_engine.js');
-      initSync = wasm.initSync;
+      solve_2d = wasm.solve_2d;
       solve_3d = wasm.solve_3d;
 
-      const module = new WebAssembly.Module(msg.wasmBytes);
-      initSync(module);
+      wasm.initSync({ module: msg.wasmModule });
       ready = true;
       self.postMessage({ type: 'ready' });
     } catch (err: any) {
@@ -31,17 +51,13 @@ self.onmessage = async (e: MessageEvent) => {
     return;
   }
 
+  if (msg.type === 'solve') {
+    handleSolve(msg, solve_2d);
+    return;
+  }
+
   if (msg.type === 'solve3d') {
-    if (!ready || !solve_3d) {
-      self.postMessage({ type: 'result', id: msg.id, error: 'Worker not initialized' });
-      return;
-    }
-    try {
-      const resultJson = solve_3d(msg.json);
-      self.postMessage({ type: 'result', id: msg.id, resultJson });
-    } catch (err: any) {
-      self.postMessage({ type: 'result', id: msg.id, error: err.message });
-    }
+    handleSolve(msg, solve_3d);
     return;
   }
 };
