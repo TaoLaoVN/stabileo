@@ -520,9 +520,15 @@ describe('Classification and diagnosis messages', () => {
     const result = analyzeKinematics(input);
     // Should have unconstrained DOFs in the result
     expect(result.unconstrainedDofs.length).toBeGreaterThan(0);
-    // Each DOF should have a valid label
+    // Each DOF should carry an APPLICATION-vocabulary label.
+    //
+    // This assertion used to accept the engine's raw Y-up codes
+    // (`ux`/`uy`/`rz`). `analyzeKinematics` now normalizes them at the
+    // boundary to the Z-up names every table and diagram uses, so that a
+    // mechanism diagnosis names the same axis the student can actually find
+    // in the results. See kinematic-2d-normalization.test.ts.
     for (const d of result.unconstrainedDofs) {
-      expect(['ux', 'uy', 'rz']).toContain(d.dof);
+      expect(['ux', 'uz', 'ry']).toContain(d.dof);
       expect(typeof d.nodeId).toBe('number');
     }
   });

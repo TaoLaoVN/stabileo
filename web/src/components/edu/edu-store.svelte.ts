@@ -21,6 +21,16 @@ let exerciseKey = $state(0);
 /** Internal copy of solver results — edu owns its own reference */
 let solvedResults = $state<AnalysisResults | null>(null);
 
+/**
+ * Node ids of the current exercise's model, in `addNode()` call order.
+ *
+ * `EduExercise.supports[].nodeIndex` indexes this array. Exercises are
+ * authored against their own construction order while the model store assigns
+ * ids from a counter shared with whatever was loaded before, so the two only
+ * coincide by luck. Recorded by `EducativePanel` as it runs `exercise.build()`.
+ */
+let nodeIdsByIndex = $state<number[]>([]);
+
 // ─── Public API ────────────────────────────────────────────────────
 
 export const eduStore = {
@@ -31,15 +41,20 @@ export const eduStore = {
   get results() { return solvedResults; },
   set results(r: AnalysisResults | null) { solvedResults = r; },
 
-  loadExercise(ex: EduExercise) {
+  /** Node ids of the built model in `addNode()` order — see `nodeIdsByIndex`. */
+  get nodeIdsByIndex(): readonly number[] { return nodeIdsByIndex; },
+
+  loadExercise(ex: EduExercise, builtNodeIds: readonly number[] = []) {
     currentExercise = ex;
     exerciseKey++;
     solvedResults = null;
+    nodeIdsByIndex = [...builtNodeIds];
   },
 
   clearExercise() {
     currentExercise = null;
     solvedResults = null;
+    nodeIdsByIndex = [];
   },
 
   get hasExercise() { return currentExercise !== null; },

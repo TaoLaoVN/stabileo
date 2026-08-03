@@ -14,6 +14,8 @@ import { modelStore, resultsStore, uiStore } from '../store';
 import { t } from '../i18n';
 import { initSolver, isWasmReady } from './wasm-solver';
 import { computeGoverning2D, computeGoverning3D } from './governing-case';
+import { reportSolverDiagnostics } from './solve-diagnostics';
+import { solveForEdu } from '../../components/edu/edu-solver';
 import { hasInvalid2DDisplacements, hasInvalid3DDisplacements } from '../geometry/coordinate-system';
 
 // ─── Helpers ──────────────────────────────────────────────────────────────
@@ -151,9 +153,16 @@ export async function runGlobalSolve(): Promise<void> {
     await ensureWasmReady('runGlobalSolve');
     await globalSolve3D(isStale);
   } else if (uiStore.analysisMode === 'edu') {
-    // Edu mode handles its own solve via edu-solver.ts (registered listener).
-    // This branch is a no-op safety fallback — the edu module's listener
-    // fires first on the same 'stabileo-solve' event.
+    // Education owns its own solve lifecycle (results are withheld until the
+    // student answers), so dispatch to it explicitly.
+    //
+    // This used to be a bare `return`, on the assumption that edu-solver's own
+    // window listener had already fired on the same 'stabileo-solve' event.
+    // That made correctness depend on listener-registration order — and
+    // edu-solver only registered on EducativePanel mount, so a solve dispatched
+    // before mount silently did nothing at all. A direct call has no ordering
+    // hazard and cannot double-solve.
+    solveForEdu();
     return;
   } else {
     await globalSolve2D(isStale);
@@ -171,15 +180,9 @@ async function ensureWasmReady(context: string): Promise<void> {
   }
 }
 
-/** Show solver diagnostic warnings/errors as toasts (max 2 to avoid spam) */
-function showSolverWarningToasts(diags?: import('./types').SolverDiagnostic[]): void {
-  if (!diags) return;
-  const important = diags.filter(d => d.severity === 'error' || d.severity === 'warning');
-  for (const d of important.slice(0, 2)) {
-    const msg = t(d.message) !== d.message ? t(d.message) : d.message;
-    uiStore.toast(msg, d.severity === 'error' ? 'error' : 'info');
-  }
-}
+/** Show solver diagnostic warnings/errors as toasts (max 2 to avoid spam).
+ *  Lives in `solve-diagnostics.ts` so Education shares the same reporting. */
+const showSolverWarningToasts = reportSolverDiagnostics;
 
 /** Detect if an error message is mechanism/hipostatic-related */
 function isMechanismError(msg: string): boolean {

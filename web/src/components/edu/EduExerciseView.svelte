@@ -3,6 +3,7 @@
   import type { EduExercise, DiagramShape } from './exercises';
   import { t } from '../../lib/i18n';
   import { eduStore } from './edu-store.svelte';
+  import { readSupportReaction, type ReactionDof } from './edu-reactions';
   import type { SolveTimings } from '../../lib/engine/types';
 
   const SHAPE_OPTIONS: DiagramShape[] = ['zero', 'constant', 'linear', 'quadratic'];
@@ -89,18 +90,25 @@
   const allCorrect = $derived(step1Complete && step2Complete && step3Complete);
 
   // ─── Reaction verification ─────────────────────────────────
+  /**
+   * The expected value for one support/DOF, in the convention the app SHOWS.
+   *
+   * Delegates to `edu-reactions.ts`: the support's declared `nodeIndex` is
+   * resolved through the model's actual node ids (never by array position),
+   * and the component is read through the shared display helpers — so a
+   * student is graded against exactly what the results table prints.
+   *
+   * `null` means "cannot be graded" (no results, or no reaction at that node).
+   */
   function getCorrectReaction(supportIndex: number, dof: string): number | null {
-    const results = eduStore.results;
-    if (!results) return null;
-    const reactions = results.reactions;
-    if (supportIndex >= reactions.length) return null;
-    const r = reactions[supportIndex];
-    switch (dof) {
-      case 'Rx': return r.rx;
-      case 'Ry': return r.ry;
-      case 'M': return r.mz ?? 0;
-      default: return null;
-    }
+    const support = exercise.supports[supportIndex];
+    if (!support) return null;
+    return readSupportReaction(
+      eduStore.results,
+      support.nodeIndex,
+      eduStore.nodeIdsByIndex,
+      dof as ReactionDof,
+    );
   }
 
   function checkTolerance(student: number, correct: number): VerifState {
@@ -133,7 +141,13 @@
         if (revealedReactions[i][dof]) { newVerif[i][dof] = 'correct'; continue; }
         const studentVal = parseFloat(reactionAnswers[i][dof].replace(',', '.'));
         const correct = getCorrectReaction(i, dof);
-        if (correct === null || isNaN(studentVal)) { newVerif[i][dof] = 'pending'; continue; }
+        // `correct` is null when the reaction cannot be read at all. Grading
+        // against a fabricated value is how the old code marked every right
+        // answer wrong, so refuse instead and leave the field pending.
+        if (correct === null || !Number.isFinite(correct) || isNaN(studentVal)) {
+          newVerif[i][dof] = 'pending';
+          continue;
+        }
 
         newVerif[i][dof] = checkTolerance(studentVal, correct);
         if (newVerif[i][dof] === 'incorrect') {
@@ -166,7 +180,9 @@
 
   function revealReaction(supIdx: number, dof: string) {
     const correct = getCorrectReaction(supIdx, dof);
-    if (correct === null) return;
+    // Guard on finiteness, not just `null`: the previous `=== null` check let
+    // `undefined` through and the reveal button threw on `.toFixed(2)`.
+    if (correct === null || !Number.isFinite(correct)) return;
     // Clone and reassign all arrays to force Svelte 5 reactivity
     const newRevealed = revealedReactions.map(r => ({ ...r }));
     newRevealed[supIdx][dof] = true;

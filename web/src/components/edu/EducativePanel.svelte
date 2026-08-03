@@ -3,21 +3,30 @@
   import { getExerciseSections, type EduExercise } from './exercises';
   import EduExerciseView from './EduExerciseView.svelte';
   import { t } from '../../lib/i18n';
-  import { solveForEdu, registerEduSolveHandler } from './edu-solver';
+  import { solveForEdu } from './edu-solver';
   import { eduStore } from './edu-store.svelte';
 
   const sections = $derived(getExerciseSections());
 
-  // Register the edu global-solve listener once on mount
-  registerEduSolveHandler();
+  // No listener registration here any more: `live-calc.runGlobalSolve()` calls
+  // `solveForEdu()` directly in edu mode, so a solve dispatched before this
+  // panel mounts is no longer silently dropped.
 
   function loadExercise(ex: EduExercise) {
     modelStore.clear();
     resultsStore.clear();
 
-    // Build the exercise structure via the shared model store
+    // Build the exercise structure via the shared model store.
+    // Node ids are recorded in call order: `supports[].nodeIndex` indexes this
+    // array, not the model's ids (the store's id counter is shared with
+    // whatever was loaded before this exercise).
+    const builtNodeIds: number[] = [];
     ex.build({
-      addNode: (x, y) => modelStore.addNode(x, y),
+      addNode: (x, y) => {
+        const id = modelStore.addNode(x, y);
+        builtNodeIds.push(id);
+        return id;
+      },
       addElement: (nI, nJ) => modelStore.addElement(nI, nJ),
       addSupport: (nodeId, type) => modelStore.addSupport(nodeId, type),
       addNodalLoad: (nodeId, fx, fy, mz) => modelStore.addNodalLoad(nodeId, fx, fy, mz ?? 0),
@@ -25,7 +34,7 @@
     });
 
     // Track in edu store
-    eduStore.loadExercise(ex);
+    eduStore.loadExercise(ex, builtNodeIds);
 
     // Solve internally (results stored but hidden from viewport)
     setTimeout(() => solveForEdu(), 100);
