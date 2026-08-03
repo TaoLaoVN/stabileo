@@ -17,12 +17,12 @@ import type { KinematicResult } from '../engine/kinematic-2d';
 import type { SolverInput, FullEnvelope, AnalysisResults } from '../engine/types';
 import type { SolverInput3D, AnalysisResults3D, FullEnvelope3D, Constraint3D, ConnectorElement } from '../engine/types-3d';
 export type { ConnectorElement };
-import type { ModelSnapshot } from './history.svelte';
+import type { ModelSnapshot, SnapshotKind } from './history.svelte';
 import { getFixture, is2DFixture, is3DFixture } from '../templates/fixture-index';
 import { loadFixture } from '../templates/load-fixture';
 import { inferLoadCaseType } from '../engine/combinations-service';
 import { t } from '../i18n';
-import { validateAndSolve2D, buildSolverInput2D, validateAndSolve3D, buildSolverInput3D as buildSolverInput3DFn, solveCombinations2D, solveCombinations3D as solveCombinations3DFn, solveCombinations3DParallel as solveCombinations3DParallelFn } from '../engine/solver-service';
+import { validateAndSolve2D, validateAndSolve2DAsync, buildSolverInput2D, validateAndSolve3D, validateAndSolve3DAsync, buildSolverInput3D as buildSolverInput3DFn, solveCombinations2D, solveCombinations3D as solveCombinations3DFn, solveCombinations3DParallel as solveCombinations3DParallelFn } from '../engine/solver-service';
 import { computeInfluenceLine as computeInfluenceLineFn } from '../engine/influence-service';
 import { to2D, remapNodalLoad2D, remapMoment2D, type DrawPlane } from '../geometry/plane-projection';
 import { pickElement3DMetadata, type Element3DMetadata, type MemberOffset } from '../model/element-3d-metadata';
@@ -829,6 +829,8 @@ function createModelStore() {
   /** History push that does NOT bump modelVersion or fire the mutation hook.
    *  Used only by reinforcementTransaction (reinforcement does not affect forces). */
   let _pushUndoSilent: (() => void) | null = null;
+  /** Foundation-channel history push. See `_setHistoryPush` and `restoreFoundationOnly`. */
+  let _pushUndoFoundation: (() => void) | null = null;
   /** Called after a reinforcement transaction commits, with the written ids. */
   let _onReinforcementCommit: ((written: Set<number>) => void) | null = null;
   /**
@@ -849,12 +851,22 @@ function createModelStore() {
   let _bulkConstraintBuffer: Constraint3D[] | null = null;
 
   return {
-    _setHistoryPush(fn: () => void) {
-      _pushUndo = () => { modelVersion++; _onMutation?.(); fn(); };
+    _setHistoryPush(fn: (kind: SnapshotKind) => void) {
+      _pushUndo = () => { modelVersion++; _onMutation?.(); fn('structural'); };
       // Same history snapshot, WITHOUT the modelVersion bump and WITHOUT firing the
       // results-invalidation hook. Required for reinforcement transactions: a rebar
       // edit must be undoable, but it must not destroy the structural analysis.
-      _pushUndoSilent = fn;
+      // Tagged 'reinforcement' so historyStore's undo()/redo() can restore it through
+      // the silent, targeted-invalidation path (restoreReinforcementOnly) instead of
+      // a full model restore that would wipe results.
+      _pushUndoSilent = () => fn('reinforcement');
+      // Foundations get their OWN channel for the same reason reinforcement does, but they
+      // are a different slice of the model: a footing edit must be undoable without
+      // destroying the solve, and restoring it must bring back the FOOTINGS and the ground,
+      // which `restoreReinforcementOnly` does not touch. Tagging these 'reinforcement' —
+      // which is what they did — pushed a snapshot that undo then restored through the
+      // reinforcement path, so Ctrl+Z appeared to do nothing to a footing at all.
+      _pushUndoFoundation = () => fn('foundation');
     },
 
     /** Register a callback to be called on every model mutation (used to clear stale results) */
@@ -929,6 +941,75 @@ function createModelStore() {
       model.elements = new Map(model.elements);
       _onReinforcementCommit?.(written);
       return written;
+    },
+
+    /**
+     * Undo/redo counterpart to `reinforcementTransaction`: restore ONLY the
+     * per-element `reinforcement` field from a snapshot known to differ from the
+     * live model in nothing but reinforcement (historyStore uses this exclusively
+     * for a history entry tagged 'reinforcement' — see `_setHistoryPush`).
+     *
+     * Leaves nodes, loads, supports and everything analysis-relevant untouched:
+     * NO `modelVersion` bump, NO `_onMutation` call. A reinforcement edit does not
+     * affect the structural analysis, so undoing/redoing one must not destroy it.
+     *
+     * Returns the set of element ids whose reinforcement actually changed, so the
+     * caller can drop just those elements' cached provided-rebar verification via
+     * the existing `_onReinforcementCommit` hook — the same targeted invalidation
+     * `reinforcementTransaction` uses for a forward edit.
+     */
+    restoreReinforcementOnly(s: ModelSnapshot): Set<number> {
+      const written = new Set<number>();
+      const incoming = new Map(s.elements.map(([id, v]) => [id, v.reinforcement]));
+      for (const [id, elem] of model.elements) {
+        const nextReinf = incoming.get(id);
+        const curKey = JSON.stringify(elem.reinforcement ?? null);
+        const nextKey = JSON.stringify(nextReinf ?? null);
+        if (curKey === nextKey) continue;
+        model.elements.set(id, {
+          ...elem,
+          reinforcement: nextReinf ? (JSON.parse(JSON.stringify(nextReinf)) as ProvidedReinforcement) : undefined,
+        });
+        written.add(id);
+      }
+      if (written.size > 0) {
+        model.elements = new Map(model.elements);
+        _onReinforcementCommit?.(written);
+      }
+      return written;
+    },
+
+    /**
+     * Restore ONLY the foundation slice — footings and the ground they bear on.
+     *
+     * The mirror of `restoreReinforcementOnly`, for the same reason and with the same
+     * guarantees. A footing carries a reaction; it does not contribute stiffness. So undoing
+     * a footing edit must not bump `modelVersion` or fire `_onMutation`, because that would
+     * clear a valid solve and leave every footing reporting "no reaction" at design time —
+     * the exact failure the forward-edit path was written to avoid.
+     *
+     * Restoring the whole snapshot would do precisely that, and restoring through the
+     * reinforcement path (which is what a 'reinforcement'-tagged foundation entry did) does
+     * not touch `footings` at all, so Ctrl+Z silently did nothing. This restores the two
+     * collections that a foundation transaction can write, and nothing else.
+     *
+     * It DOES fire `_onFoundationChange`: undoing back to a narrower base invalidates the
+     * documents built from the wider one exactly as widening it did. A restored footing is a
+     * changed footing.
+     */
+    restoreFoundationOnly(s: ModelSnapshot): void {
+      const nextFootings = new Map((s.footings ?? []).map(([id, f]) => [id, { ...f }]));
+      const beforeFootings = JSON.stringify([...model.footings.entries()]);
+      const afterFootings = JSON.stringify([...nextFootings.entries()]);
+      const beforeGround = JSON.stringify(model.geotechnical ?? null);
+      const afterGround = JSON.stringify(s.geotechnical ?? null);
+      if (beforeFootings === afterFootings && beforeGround === afterGround) return;
+
+      model.footings = nextFootings;
+      model.geotechnical = s.geotechnical
+        ? (JSON.parse(JSON.stringify(s.geotechnical)) as typeof model.geotechnical)
+        : undefined;
+      _onFoundationChange?.();
     },
 
     /** Increment modelVersion to signal model changed (used by historyStore for direct mutations) */
@@ -1640,7 +1721,7 @@ function createModelStore() {
 
     // ─── Footing CRUD ───────────────────────────────────────
     //
-    // Every mutation below uses `_pushUndoSilent`, NOT `_pushUndo`. That is the same
+    // Every mutation below uses `_pushUndoFoundation`, NOT `_pushUndo`. That is the same
     // primitive a reinforcement edit uses, and for the same reason: it records an undo
     // entry WITHOUT bumping `modelVersion` or firing `_onMutation`, so the stored analysis
     // results survive.
@@ -1670,7 +1751,7 @@ function createModelStore() {
      * at a plausible 1,50 m × 1,50 m that would pass a bearing check nobody performed.
      */
     addFooting(nodeId: number, name?: string): number {
-      if (!_undoBatching) _pushUndoSilent?.();
+      if (!_undoBatching) _pushUndoFoundation?.();
       const id = nextId.footing++;
       const f = newFooting(id, nodeId, name ?? `Z${id}`, {
         cover: DEFAULT_COVER,
@@ -1687,7 +1768,7 @@ function createModelStore() {
     },
 
     updateFooting(id: number, data: Partial<Omit<Footing, 'id' | 'revision'>>): void {
-      if (!_undoBatching) _pushUndoSilent?.();
+      if (!_undoBatching) _pushUndoFoundation?.();
       const cur = model.footings.get(id);
       if (!cur) return;
       const m = new Map(model.footings);
@@ -1697,7 +1778,7 @@ function createModelStore() {
     },
 
     removeFooting(id: number): void {
-      if (!_undoBatching) _pushUndoSilent?.();
+      if (!_undoBatching) _pushUndoFoundation?.();
       const m = new Map(model.footings);
       m.delete(id);
       model.footings = m;
@@ -1705,7 +1786,7 @@ function createModelStore() {
     },
 
     clearFootings(): void {
-      if (!_undoBatching) _pushUndoSilent?.();
+      if (!_undoBatching) _pushUndoFoundation?.();
       model.footings = new Map();
       _onFoundationChange?.();
     },
@@ -1728,7 +1809,7 @@ function createModelStore() {
      * put an invented value behind a name the engineer chose — which reads as theirs.
      */
     addSoilProfile(name?: string): number {
-      if (!_undoBatching) _pushUndoSilent?.();
+      if (!_undoBatching) _pushUndoFoundation?.();
       const id = nextId.soilProfile++;
       const geo = model.geotechnical ?? emptyGeotechnical();
       const profile = newSoilProfile(id, name ?? `Suelo ${id}`);
@@ -1744,7 +1825,7 @@ function createModelStore() {
     },
 
     updateSoilProfile(id: number, data: Partial<Omit<SoilProfile, 'id'>>): void {
-      if (!_undoBatching) _pushUndoSilent?.();
+      if (!_undoBatching) _pushUndoFoundation?.();
       const geo = model.geotechnical;
       if (!geo) return;
       model.geotechnical = {
@@ -1763,7 +1844,7 @@ function createModelStore() {
      * chose for it.
      */
     removeSoilProfile(id: number): void {
-      if (!_undoBatching) _pushUndoSilent?.();
+      if (!_undoBatching) _pushUndoFoundation?.();
       const geo = model.geotechnical;
       if (!geo) return;
       const profiles = geo.profiles.filter((p) => p.id !== id);
@@ -1786,7 +1867,7 @@ function createModelStore() {
     },
 
     setDefaultSoilProfile(id: number | null): void {
-      if (!_undoBatching) _pushUndoSilent?.();
+      if (!_undoBatching) _pushUndoFoundation?.();
       const geo = model.geotechnical ?? emptyGeotechnical();
       model.geotechnical = { ...geo, defaultProfileId: id };
       // Which stratum a NEW footing will reference changes nothing about a footing that
@@ -2471,6 +2552,14 @@ function createModelStore() {
       return validateAndSolve2D(mapped, includeSelfWeight, (k) => { lastKinematicResult = k; });
     },
 
+    /** Async 2D solve via the worker pool (UI stays responsive). Same result
+     *  shape and string-error semantics as solve(). */
+    async solveAsync(includeSelfWeight = false, drawPlane: DrawPlane = 'xy'): Promise<AnalysisResults | string | null> {
+      const mapped = remapModelForPlane(drawPlane);
+      if (typeof mapped === 'string') return mapped;
+      return validateAndSolve2DAsync(mapped, includeSelfWeight, (k) => { lastKinematicResult = k; });
+    },
+
     /** Build a SolverInput from the current model state (no validation). Returns null if model is empty. */
     buildSolverInput(includeSelfWeight = false, drawPlane: DrawPlane = 'xy'): SolverInput | null {
       const mapped = remapModelForPlane(drawPlane);
@@ -2585,6 +2674,21 @@ function createModelStore() {
       // them, so it would silently treat slider ends as rigid. Block instead.
       if (this.hasSlidingJoints()) return t('advanced.sliding3dUnsupported');
       return validateAndSolve3D(
+        { nodes: model.nodes, elements: model.elements, supports: model.supports,
+          loads: model.loads, materials: model.materials, sections: model.sections,
+          plates: isPro ? model.plates : undefined,
+          quads: isPro ? model.quads : undefined,
+          constraints: isPro ? model.constraints : undefined,
+          connectors: isPro ? model.connectors : undefined },
+        includeSelfWeight, leftHand,
+      );
+    },
+
+    /** Async 3D solve via the worker pool (UI stays responsive). Same result
+     *  shape and string-error semantics as solve3D(). */
+    async solve3DAsync(includeSelfWeight = false, leftHand = false, isPro = false): Promise<AnalysisResults3D | string | null> {
+      if (this.hasSlidingJoints()) return t('advanced.sliding3dUnsupported');
+      return validateAndSolve3DAsync(
         { nodes: model.nodes, elements: model.elements, supports: model.supports,
           loads: model.loads, materials: model.materials, sections: model.sections,
           plates: isPro ? model.plates : undefined,

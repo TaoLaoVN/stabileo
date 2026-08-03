@@ -826,7 +826,7 @@
 		{
 			"file": "src/lib/engine/design/__tests__/autodesign-regression.test.ts",
 			"code": "TS2345",
-			"message": "Argument of type '{ elementId: number; elementType: \"beam\"; L: number; section: { id: number; name: string; b: number; h: number; }; material: { fc: number; fy: number; cover: number; stirrupDia: number; }; demands: undefined; ... 9 more ...; modelData: ContextModelData; }[]' is not assignable to parameter of type 'Iterable<MemberContext>'.",
+			"message": "Argument of type '{ elementId: number; elementType: \"beam\"; L: number; section: { id: number; name: string; b: number; h: number; }; material: { fc: number; fy: number; cover: number; stirrupDia: number; }; demands: undefined; ... 10 more ...; modelData: ContextModelData; }[]' is not assignable to parameter of type 'Iterable<MemberContext>'.",
 			"count": 1
 		},
 		{
@@ -1180,31 +1180,31 @@
 		{
 			"file": "src/lib/utils/__tests__/url-sharing.test.ts",
 			"code": "TS2322",
-			"message": "Type '[any, { id: any; type: \"frame\" | \"truss\"; nodeI: any; nodeJ: any; materialId: any; sectionId: any; hingeStart: any; hingeEnd: any; }][]' is not assignable to type '[number, { id: number; type: \"frame\" | \"truss\"; nodeI: number; nodeJ: number; materialId: number; sectionId: number; releaseI: Release; releaseJ: Release; } & Element3DMetadata][]'.",
+			"message": "Type '[any, { id: any; type: \"frame\" | \"truss\"; nodeI: any; nodeJ: any; materialId: any; sectionId: any; hingeStart: any; hingeEnd: any; }][]' is not assignable to type '[number, { id: number; type: \"frame\" | \"truss\"; nodeI: number; nodeJ: number; materialId: number; sectionId: number; releaseI: Release; releaseJ: Release; reinforcement?: ProvidedReinforcement | undefined; } & Element3DMetadata][]'.",
 			"count": 1
 		},
 		{
 			"file": "src/lib/utils/__tests__/url-sharing.test.ts",
 			"code": "TS2339",
-			"message": "Property 'hingeEnd' does not exist on type '{ id: number; type: \"frame\" | \"truss\"; nodeI: number; nodeJ: number; materialId: number; sectionId: number; releaseI: Release; releaseJ: Release; } & Element3DMetadata'.",
+			"message": "Property 'hingeEnd' does not exist on type '{ id: number; type: \"frame\" | \"truss\"; nodeI: number; nodeJ: number; materialId: number; sectionId: number; releaseI: Release; releaseJ: Release; reinforcement?: ProvidedReinforcement | undefined; } & Element3DMetadata'.",
 			"count": 2
 		},
 		{
 			"file": "src/lib/utils/__tests__/url-sharing.test.ts",
 			"code": "TS2339",
-			"message": "Property 'hingeStart' does not exist on type '{ id: number; type: \"frame\" | \"truss\"; nodeI: number; nodeJ: number; materialId: number; sectionId: number; releaseI: Release; releaseJ: Release; } & Element3DMetadata'.",
+			"message": "Property 'hingeStart' does not exist on type '{ id: number; type: \"frame\" | \"truss\"; nodeI: number; nodeJ: number; materialId: number; sectionId: number; releaseI: Release; releaseJ: Release; reinforcement?: ProvidedReinforcement | undefined; } & Element3DMetadata'.",
 			"count": 2
 		},
 		{
 			"file": "src/lib/utils/__tests__/url-sharing.test.ts",
 			"code": "TS2353",
-			"message": "Object literal may only specify known properties, and 'hingeStart' does not exist in type '{ id: number; type: \"frame\" | \"truss\"; nodeI: number; nodeJ: number; materialId: number; sectionId: number; releaseI: Release; releaseJ: Release; } & Element3DMetadata'.",
+			"message": "Object literal may only specify known properties, and 'hingeStart' does not exist in type '{ id: number; type: \"frame\" | \"truss\"; nodeI: number; nodeJ: number; materialId: number; sectionId: number; releaseI: Release; releaseJ: Release; reinforcement?: ProvidedReinforcement | undefined; } & Element3DMetadata'.",
 			"count": 6
 		},
 		{
 			"file": "src/lib/utils/url-sharing.ts",
 			"code": "TS2352",
-			"message": "Conversion of type '[number, { id: number; type: \"frame\" | \"truss\"; nodeI: number; nodeJ: number; materialId: number; sectionId: number; releaseI: Release; releaseJ: Release; } & Element3DMetadata][]' to type '[number, Record<string, unknown>][]' may be a mistake because neither type sufficiently overlaps with the other. If this was intentional, convert the expression to 'unknown' first.",
+			"message": "Conversion of type '[number, { id: number; type: \"frame\" | \"truss\"; nodeI: number; nodeJ: number; materialId: number; sectionId: number; releaseI: Release; releaseJ: Release; reinforcement?: ProvidedReinforcement | undefined; } & Element3DMetadata][]' to type '[number, Record<string, unknown>][]' may be a mistake because neither type sufficiently overlaps with the other. If this was intentional, convert the expression to 'unknown' first.",
 			"count": 1
 		},
 		{

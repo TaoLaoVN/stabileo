@@ -51,6 +51,32 @@ Depending on mode and element family, that expands into:
 - deformed shape
 - envelopes and combinations
 
+### Reaction and displacement reporting contract
+
+All solver outputs — per-node reactions, displacements, and equilibrium sums — are
+reported in GLOBAL axes on the following analysis paths:
+- linear
+- constrained (prescribed displacements and multi-point constraints)
+- cable
+- corotational (geometric nonlinearity)
+- reduction (Guyan and Craig-Bampton)
+- material-nonlinear
+- winkler (foundation models)
+- staged construction (rejects inclined supports explicitly rather than mis-reporting)
+
+For these paths, the solve itself uses the rotated support frame internally and
+back-transforms before reporting. This also holds for the internal iteration of the
+geometric/material nonlinear paths (corotational, material nonlinearity): per-iteration
+state updates operate on the same consistently back-rotated frame, not the raw mixed-frame
+solve vector.
+
+Dynamics paths (modal, spectral, harmonic, time history) do not yet back-rotate
+inclined-support DOFs — mode shapes and time-history displacements at such nodes
+are reported in the rotated support frame.
+
+Support-local reaction components are not yet exposed; if added, they will be an
+additive field, not a change to the global-frame default.
+
 ## 4. Diagnostics and Trust
 
 The repo treats trust as a first-class product surface, not a hidden implementation detail.

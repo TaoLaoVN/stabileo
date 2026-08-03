@@ -195,25 +195,30 @@ export function cpLeewardWall(lOverB: number): number {
  *
  * Printed grid, by h/L then θ in degrees. Where the table lists two values, the roof
  * must be designed for both (note 3), so both are returned.
+ *
+ * The "≥ 60" column is printed as the FORMULA `0,01 θ` (Cp = 0.01·θ), not the literal
+ * 0.01: 0.6 at 60°, 0.8 at 80° — continuous with the 45° value and with the > 80°
+ * footnote (Cp = 0,8). Since the formula is linear, the rows at 60° and 80° below
+ * reproduce it exactly through the same interpolation used between printed rows.
  */
 const CP_ROOF_WINDWARD: Record<string, Array<{ theta: number; values: number[] }>> = {
   '0.25': [
     { theta: 10, values: [-0.7, -0.18] }, { theta: 15, values: [-0.5, 0.0] },
     { theta: 20, values: [-0.3, 0.2] }, { theta: 25, values: [-0.2, 0.3] },
     { theta: 30, values: [-0.2, 0.3] }, { theta: 35, values: [0.0, 0.4] },
-    { theta: 45, values: [0.4] }, { theta: 60, values: [0.01] },
+    { theta: 45, values: [0.4] }, { theta: 60, values: [0.6] }, { theta: 80, values: [0.8] },
   ],
   '0.5': [
     { theta: 10, values: [-0.9, -0.18] }, { theta: 15, values: [-0.7, -0.18] },
     { theta: 20, values: [-0.4, 0.0] }, { theta: 25, values: [-0.3, 0.2] },
     { theta: 30, values: [-0.2, 0.2] }, { theta: 35, values: [-0.2, 0.3] },
-    { theta: 45, values: [0.0, 0.4] }, { theta: 60, values: [0.01] },
+    { theta: 45, values: [0.0, 0.4] }, { theta: 60, values: [0.6] }, { theta: 80, values: [0.8] },
   ],
   '1.0': [
     { theta: 10, values: [-1.3, -0.18] }, { theta: 15, values: [-1.0, -0.18] },
     { theta: 20, values: [-0.7, -0.18] }, { theta: 25, values: [-0.5, 0.0] },
     { theta: 30, values: [-0.3, 0.2] }, { theta: 35, values: [-0.2, 0.2] },
-    { theta: 45, values: [0.0, 0.3] }, { theta: 60, values: [0.01] },
+    { theta: 45, values: [0.0, 0.3] }, { theta: 60, values: [0.6] }, { theta: 80, values: [0.8] },
   ],
 };
 

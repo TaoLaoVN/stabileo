@@ -19,7 +19,8 @@
     "typecheck": "node scripts/typecheck.mjs",
     "typecheck:baseline": "node scripts/typecheck.mjs --write",
     "test:unit": "vitest run --project unit",
-    "test:build": "vitest run --project build"
+    "test:build": "vitest run --project build",
+    "bench:wasm-boundary": "node scripts/bench-wasm-boundary.mjs"
   },
   "devDependencies": {
     "@playwright/test": "1.60.0",

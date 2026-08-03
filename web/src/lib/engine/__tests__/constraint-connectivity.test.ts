@@ -16,7 +16,7 @@
  */
 
 import { describe, it, expect } from 'vitest';
-import { validateAndSolve2D, validateAndSolve3D, type ModelData } from '../solver-service';
+import { validateAndSolve2D, validateAndSolve3D, validateAndSolve3DAsync, type ModelData } from '../solver-service';
 import type { Constraint3D } from '../types-3d';
 
 // Build a minimal 2D model: two valid nodes connected by one frame element,
@@ -199,6 +199,23 @@ describe('JS preflight validator: constraint-linked nodes are not orphans', () =
       const m = baseModel2D(99);
       // No constraint; node 99 is genuinely orphan.
       const result = validateAndSolve2D(m);
+      expect(typeof result).toBe('string');
+      expect(result as string).toMatch(ORPHAN_RX);
+    });
+
+    it('3D: orphan error is a STRING via the public contract (regression: PR #75 returned { error, connectedNodes })', () => {
+      const m = baseModel3D(99);
+      const result = validateAndSolve3D(m);
+      // Must be the orphan error string — not an { error, connectedNodes }
+      // object (which callers can't detect via typeof === 'string') and not a
+      // generic WASM parse error from feeding the object into the solver.
+      expect(typeof result).toBe('string');
+      expect(result as string).toMatch(ORPHAN_RX);
+    });
+
+    it('3D async: orphan error resolves to the same STRING (regression: object reached input3DToWireObject and threw)', async () => {
+      const m = baseModel3D(99);
+      const result = await validateAndSolve3DAsync(m);
       expect(typeof result).toBe('string');
       expect(result as string).toMatch(ORPHAN_RX);
     });
