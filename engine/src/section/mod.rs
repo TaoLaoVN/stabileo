@@ -5,6 +5,7 @@
 
 use serde::{Deserialize, Serialize};
 
+pub mod catalogue;
 pub mod mesh;
 pub mod poisson;
 
