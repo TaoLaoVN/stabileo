@@ -76,6 +76,16 @@ describe('one-way shear', () => {
     expect(r.status).toBe('FAIL');
     expect(r.utilization).toBeGreaterThan(1);
   });
+
+  it('computes Vc per Table 22.5.5.1 row (c), not the 0.17 row (a)', () => {
+    // Row (c) for Av < Av,min: 0,66·λs·λ·(ρw)^⅓·√f'c·bw·d, ρw at the 0,0018
+    // floor (footing steel is designed after this check). Pre-fix used row (a)'s
+    // 0,17 — ~2× the (c) value, and the comment wrongly claimed conservative.
+    const r = checkOneWayShear(footing(), 200);
+    const lambdaS = Math.min(1, Math.sqrt(2 / (1 + 0.004 * 520)));
+    const expectedVc = 0.66 * lambdaS * Math.cbrt(0.0018) * 5 * 2.5 * 0.52 * 1000;
+    expect(r.phiVc).toBeCloseTo(0.75 * expectedVc, 6);
+  });
 });
 
 describe('the complete isolated footing', () => {

@@ -289,8 +289,14 @@ export function checkSlabOneWayShear(opts: {
   const a = opts.span / 2 - opts.d;
   const vu = Math.max(0, opts.qu * a);
   const lambdaS = sizeEffectFactor(opts.d);
-  // §22.5.5.1 for a member without shear reinforcement, per metre width (b_w = 1 m).
-  const vc = 0.17 * lambdaS * (opts.lambda ?? 1) * sqrtFcCapped(opts.fc) * 1.0 * opts.d * 1000;
+  // §22.5.5.1 row (c) for a member WITHOUT shear reinforcement (Av < Av,min),
+  // per metre width (b_w = 1 m): 0,66·λs·λ·(ρw)^⅓·√f'c·bw·d. ρw is taken at
+  // the §7.6.1/§8.6.1.1 minimum (0,0018) — the design never provides less, so
+  // this is the conservative floor. Row (a)'s 0,17 form does NOT apply here:
+  // it is for members WITH minimum shear reinforcement and is ~2× the (c) value.
+  const RHO_W_MIN = 0.0018;
+  const vc = 0.66 * lambdaS * (opts.lambda ?? 1) * Math.cbrt(RHO_W_MIN)
+    * sqrtFcCapped(opts.fc) * 1.0 * opts.d * 1000;
   const phiVc = PHI_SHEAR * vc;
   return {
     vu, phiVc,
@@ -299,7 +305,8 @@ export function checkSlabOneWayShear(opts: {
     memo:
       `Corte en una dirección a d del apoyo: a = ${a.toFixed(3)} m, ` +
       `vu = ${opts.qu.toFixed(2)} × ${a.toFixed(3)} = ${vu.toFixed(1)} kN/m contra ` +
-      `φvc = ${phiVc.toFixed(1)} kN/m (λs = ${lambdaS.toFixed(3)}).`,
+      `φvc = ${phiVc.toFixed(1)} kN/m (λs = ${lambdaS.toFixed(3)}, ` +
+      `0,66·(ρw=0,0018)^⅓ = ${(0.66 * Math.cbrt(RHO_W_MIN)).toFixed(4)}).`,
     refs: [clause('cirsoc-201', opts.edition ?? '2025',
       (opts.edition ?? '2025') === '2025' ? '22.5' : '11.3',
       'resistencia a corte en una dirección')],

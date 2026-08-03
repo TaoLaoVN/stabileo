@@ -474,9 +474,14 @@ function collectSlabColumns(): Map<number, SlabColumnJoint> {
       const [n, vy, vz] = o.end === 'start'
         ? [f.nStart, f.vyStart, f.vzStart]
         : [f.nEnd, f.vyEnd, f.vzEnd];
-      // Force the ELEMENT exerts on the NODE, in local axes, per the app's end-force
-      // convention: (−n, vy, vz) at the I end and (n, −vy, −vz) at the J end.
-      const [ln, lvy, lvz] = o.end === 'start' ? [-n, vy, vz] : [n, -vy, -vz];
+      // Force the ELEMENT exerts on the NODE, in local axes. The solver's raw
+      // f_local = K·u − Fef is the force the NODE exerts on the ELEMENT, reported
+      // as (n_start, vy_start, vz_start) = (−f_i_n, +f_i_vy, +f_i_vz) at I and
+      // (n_end, vy_end, vz_end) = (+f_j_n, −f_j_vy, −f_j_vz) at J. Inverting:
+      // element→node is (n, −vy, −vz) at the I end and (−n, vy, vz) at the J end.
+      // (The inverse mapping was previously used — the node-on-element vector —
+      // which inverted every beam-end shear delivered into the joint.)
+      const [ln, lvy, lvz] = o.end === 'start' ? [n, -vy, -vz] : [-n, vy, vz];
       // Local y is horizontal for the default frame, so it contributes nothing vertical.
       void lvy;
       const globalZ = ln * exz + lvz * ezz;

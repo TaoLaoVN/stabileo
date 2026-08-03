@@ -432,3 +432,73 @@ describe('detailingStore.generateFloors — the production command', () => {
     expect(rec.certificate.revisions).toEqual(rec.revisions);
   });
 });
+
+describe('punching F_direct — what beams deliver into the joint', () => {
+  it('deducts the beam delivery with the element-on-node sign, never adds it', () => {
+    const { quad, top, columns } = buildSlabModel();
+    modelStore.addSurfaceLoad3D(quad, 12, 1);
+    // A beam framing into the corner joint at top[0], running out in +x.
+    const far = modelStore.addNode(10, 0, 3);
+    const beam = modelStore.addElement(top[0], far, 'frame');
+
+    const beamF = (scale: number): ElementForces3D => ({
+      elementId: beam, length: 10,
+      nStart: 0, nEnd: 0, vyStart: 0, vyEnd: 0,
+      // The column holds the gravity-loaded beam UP with 50 kN at the joint end;
+      // the solver reports that node-on-element force as vzStart = +50. The beam
+      // pushes the column DOWN with the same 50 — the delivery to deduct.
+      vzStart: 50 * scale, vzEnd: 0,
+      mxStart: 0, mxEnd: 0, myStart: 0, myEnd: 0, mzStart: 0, mzEnd: 0,
+      releaseMyStart: false, releaseMyEnd: false,
+      releaseMzStart: false, releaseMzEnd: false,
+      releaseTStart: false, releaseTEnd: false,
+    } as ElementForces3D);
+
+    const publish = () => {
+      const combos = modelStore.model.combinations;
+      const res = (scale: number) => ({
+        displacements: [], reactions: [],
+        quadStresses: [{ elementId: quad, sigmaXx: 0, sigmaYy: 0, tauXy: 0, mx: 40, my: 30, mxy: 8, vonMises: 0 }],
+        elementForces: [...columns.map((c) => columnForces(c, -220 * scale)), beamF(scale)],
+      }) as never;
+      resultsStore.setCombinationResults3D(
+        new Map(modelStore.model.loadCases.map((c) => [c.id, res(1)])),
+        new Map(combos.map((c, i) => [c.id, res(1 - i * 0.1)])),
+        {} as never,
+      );
+    };
+
+    publish();
+    const a = detailingStore.generateFloors()!.assemblies[0];
+    const slab = a.families!.find((f) => f.family === 'slab')!;
+    if (slab.family !== 'slab') throw new Error('narrowing');
+    const joint = slab.punching.find((p) => p.nodeId === top[0])!;
+
+    // Pre-fix this read −50 (the node-on-element vector) and V_u was inflated
+    // by twice the shear — the failure the collector exists to prevent.
+    expect(joint.contributions![0].directlyDelivered).toBeCloseTo(50, 6);
+    expect(Math.abs(joint.equilibriumResidual!)).toBeLessThan(1e-6);
+
+    // The same joint with NO delivery would carry the full step less q·A:
+    // removing the beam must raise Vu by exactly the deducted 50.
+    const vuWithBeam = joint.Vu;
+    modelStore.deleteEntities([], [beam], []);
+    const res2 = (scale: number) => ({
+      displacements: [], reactions: [],
+      quadStresses: [{ elementId: quad, sigmaXx: 0, sigmaYy: 0, tauXy: 0, mx: 40, my: 30, mxy: 8, vonMises: 0 }],
+      elementForces: columns.map((c) => columnForces(c, -220 * scale)),
+    }) as never;
+    const combos = modelStore.model.combinations;
+    resultsStore.setCombinationResults3D(
+      new Map(modelStore.model.loadCases.map((c) => [c.id, res2(1)])),
+      new Map(combos.map((c, i) => [c.id, res2(1 - i * 0.1)])),
+      {} as never,
+    );
+    const a2 = detailingStore.generateFloors()!.assemblies[0];
+    const slab2 = a2.families!.find((f) => f.family === 'slab')!;
+    if (slab2.family !== 'slab') throw new Error('narrowing');
+    const joint2 = slab2.punching.find((p) => p.nodeId === top[0])!;
+    expect(joint2.contributions![0].directlyDelivered).toBeCloseTo(0, 6);
+    expect(joint2.Vu - vuWithBeam).toBeCloseTo(50, 6);
+  });
+});

@@ -178,16 +178,20 @@ export function checkOneWayShear(f: FootingInput, qFactored: number): OneWayShea
 
   const Vu = qFactored * a * f.L;
   const lambdaS = sizeEffectFactor(f.d);
-  // §22.5.5.1 without axial force and with Av < Av,min: Vc = 0.66 λs λ (ρw)^(1/3) √f'c bw d.
-  // Footings carry no shear reinforcement and ρw is not known here, so the simpler and
-  // widely used 0.17 λ √f'c bw d form is applied, with λs, which is conservative.
-  const Vc = 0.17 * lambdaS * sqrtFcCapped(f.fc) * f.L * f.d * 1000;
+  // §22.5.5.1 row (c) for Av < Av,min (footings carry no shear reinforcement):
+  // Vc = 0,66·λs·λ·(ρw)^⅓·√f'c·bw·d. ρw is floored at the minimum (0,0018) —
+  // footing flexural steel is designed after this check, so the minimum is the
+  // only honest value here, and it is the conservative floor. The previous
+  // 0,17 form is row (a) — for members WITH minimum shear reinforcement — and
+  // is ~2× the (c) value, NOT conservative as the old comment claimed.
+  const RHO_W_MIN = 0.0018;
+  const Vc = 0.66 * lambdaS * Math.cbrt(RHO_W_MIN) * sqrtFcCapped(f.fc) * f.L * f.d * 1000;
   const phiVc = PHI_SHEAR * Vc;
 
   memo.push(
     `Corte en una dirección a d de la cara: a = ${a.toFixed(3)} m, ` +
     `Vu = ${qFactored.toFixed(1)} × ${a.toFixed(3)} × ${f.L.toFixed(2)} = ${Vu.toFixed(1)} kN.`,
-    `φVc = 0,75 × 0,17 × ${lambdaS.toFixed(3)} × √${f.fc} × ${f.L.toFixed(2)} × ` +
+    `φVc = 0,75 × ${(0.66 * Math.cbrt(RHO_W_MIN)).toFixed(4)} × ${lambdaS.toFixed(3)} × √${f.fc} × ${f.L.toFixed(2)} × ` +
     `${f.d.toFixed(3)} = ${phiVc.toFixed(1)} kN.`);
 
   return {
