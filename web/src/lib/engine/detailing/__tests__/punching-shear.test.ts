@@ -25,6 +25,17 @@ describe('§22.6.4 — the critical section', () => {
     expect(corner.bo / interior.bo).toBeCloseTo(0.5, 9);
   });
 
+  it('truncates the ENCLOSED AREA with the perimeter — the d/2 strip past a free edge stands on air', () => {
+    // Deducting q over the full interior rectangle under-states V_u at edge and
+    // corner columns (unconservative): the strip beyond the free edge carries no slab.
+    const interior = criticalSection(0.40, 0.40, 0.20, 'interior');
+    const edge = criticalSection(0.40, 0.40, 0.20, 'edge');
+    const corner = criticalSection(0.40, 0.40, 0.20, 'corner');
+    expect(interior.enclosedArea).toBeCloseTo(0.36, 9);          // 0.6 × 0.6
+    expect(edge.enclosedArea).toBeCloseTo(0.5 * 0.6, 9);         // (0.6 − 0.1) × 0.6
+    expect(corner.enclosedArea).toBeCloseTo(0.5 * 0.5, 9);       // (0.6 − 0.1)²
+  });
+
   it('computes β from the loaded area, not from the critical rectangle', () => {
     const c = criticalSection(0.30, 0.90, 0.20, 'interior');
     expect(c.beta).toBeCloseTo(3, 9);

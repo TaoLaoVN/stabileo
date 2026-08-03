@@ -552,6 +552,11 @@ export function runFootingDesign(input: RunFootingDesignInput): RunFootingDesign
       serviceAxial,
       factoredAxial,
       serviceMomentB, serviceMomentL,
+      // Factored moments of the GOVERNING combination, so the strength checks see
+      // the trapezoid the soil actually imposes — same axis mapping as the service
+      // values (reaction mx → footing L axis, my → B axis, unrotated footing).
+      factoredMomentB: governing.my,
+      factoredMomentL: governing.mx,
       position,
     };
     const check = checkFooting(fi);
@@ -720,7 +725,10 @@ function footingRecord(args: {
     uplift: b.uplift, allowable: args.allowableBearing, utilization: b.utilization,
   };
   const flexure: FootingDesignRecord['flexure'] = {
-    status: 'OK', Mu: check.Mu, criticalSection: 0,
+    // The demand is real (§13.2.7 cantilever integral, trapezoid included), but no
+    // bottom-mat steel exists in the model to verify it against. OK would be a
+    // capacity claim nobody computed — the certificate lies by omission.
+    status: 'UNSUPPORTED', Mu: check.Mu, criticalSection: 0,
   };
   const oneWayShear: FootingDesignRecord['oneWayShear'] = check.oneWayShear
     ? {
@@ -756,8 +764,9 @@ function footingRecord(args: {
         ? [msg('footing.record.bearingUnsupported')] : [],
     },
     {
-      key: 'flexure', status: 'OK', utilization: null,
-      governingCombination: combo, refs: [], unsupported: [],
+      key: 'flexure', status: 'UNSUPPORTED', utilization: null,
+      governingCombination: combo, refs: [],
+      unsupported: [msg('footing.record.flexureNoSteel')],
     },
     ...(oneWayShear
       ? [{

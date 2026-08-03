@@ -214,9 +214,12 @@ describe('the footing slice reaches its documents', () => {
     const entry = a.familyCertificates.find((c) => c.family === 'footing')!;
     expect(entry.ownerId).toBe('F1');
     // Freshness is DECIDED at document time against the model as it stands — not copied off
-    // the record, which would make a stale certificate undetectable.
-    expect(entry.freshness).toBe('fresh');
-    expect(entry.applies).toBe(true);
+    // the record, which would make a stale certificate undetectable. This footing's
+    // certificate records a check that could NOT be performed: flexure demand is computed
+    // but no bottom-mat steel exists in the model to verify it against, so the honest
+    // freshness is designUnsupported — never a fresh pass on an unchecked mechanism.
+    expect(entry.freshness).toBe('designUnsupported');
+    expect(entry.applies).toBe(false);
   });
 
   it('rolls the record maturity into the document, so a footing cannot outrank itself', () => {
@@ -255,9 +258,12 @@ describe('the footing slice reaches its documents', () => {
     // Dowels and starter ties as real quantities.
     expect(html).toMatch(/8 Ø20 mm/);
     expect(html).toMatch(/Estribos de arranque/);
-    // The certificate and its agreement with the model.
+    // The certificate and its agreement with the model — honestly UNSUPPORTED: flexure
+    // demand is shown, but with no bottom-mat steel in the model the certificate cannot
+    // verify it, and the document must print that rather than a fresh pass.
     expect(html).toMatch(/Certificados de familia/);
-    expect(html).toContain('fresh');
+    expect(html).toContain('designUnsupported');
+    expect(html).toMatch(/<td>flexure<\/td><td class="bad">UNSUPPORTED<\/td>/);
   });
 
   it('renders the same footing content in English', () => {

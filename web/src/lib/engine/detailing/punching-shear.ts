@@ -118,17 +118,24 @@ export function criticalSection(
   const hy = h + d;
 
   let bo: number;
+  let enclosedArea: number;
   switch (position) {
     case 'interior':
       bo = 2 * (bx + hy);
+      enclosedArea = bx * hy;
       break;
     case 'edge':
-      // Three sides: the perimeter is truncated at the free edge.
+      // Three sides: the perimeter is truncated at the free edge. The load standing
+      // INSIDE the perimeter is truncated with it — the d/2 strip past the free edge
+      // stands on air, and deducting it would under-state V_u (unconservative).
       bo = 2 * bx + hy;
+      enclosedArea = (bx - d / 2) * hy;
       notes.push('Columna de borde: el perímetro crítico se trunca en el borde libre (tres lados).');
       break;
     case 'corner':
       bo = bx + hy;
+      // Two free edges: the enclosed area loses the d/2 strip on BOTH sides.
+      enclosedArea = (bx - d / 2) * (hy - d / 2);
       notes.push('Columna de esquina: el perímetro crítico se trunca en dos bordes libres (dos lados).');
       break;
   }
@@ -140,7 +147,7 @@ export function criticalSection(
     bo,
     beta: short > 0 ? long / short : 1,
     d,
-    enclosedArea: bx * hy,
+    enclosedArea,
     refs: [R_CRIT],
     notes,
   };

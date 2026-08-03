@@ -66,6 +66,14 @@ export interface FootingInput {
   /** Service moments about the two plan axes, kN·m. */
   serviceMomentB?: number;
   serviceMomentL?: number;
+  /**
+   * FACTORED moments about the two plan axes, kN·m, from the governing strength
+   * combination. Used for the one-way-shear strip integral and the column-face
+   * flexure demand. The punching deduction is unaffected for a centred column:
+   * the bilinear pressure averages to Nu/A over the centred enclosed area.
+   */
+  factoredMomentB?: number;
+  factoredMomentL?: number;
   position?: ColumnPosition;
 }
 
@@ -176,7 +184,16 @@ export function checkOneWayShear(f: FootingInput, qFactored: number): OneWayShea
     };
   }
 
-  const Vu = qFactored * a * f.L;
+  // Factored moment makes the pressure trapezoidal: integrate the strip between the
+  // critical section and the HEAVY edge exactly (linear pressure), instead of the
+  // uniform Nu/A — which under-states the strip average on the loaded side. The
+  // other axis's moment averages out over the strip's full width.
+  const eB = Math.abs(f.factoredMomentB ?? 0) / Math.max(f.factoredAxial, 1e-12);
+  const k = 6 * eB / f.B;
+  const xSec = f.B - a;
+  const qSec = qFactored * (1 + k * (2 * xSec / f.B - 1));
+  const qEdge = qFactored * (1 + k);
+  const Vu = (qSec + qEdge) / 2 * a * f.L;
   const lambdaS = sizeEffectFactor(f.d);
   // §22.5.5.1 row (c) for Av < Av,min (footings carry no shear reinforcement):
   // Vc = 0,66·λs·λ·(ρw)^⅓·√f'c·bw·d. ρw is floored at the minimum (0,0018) —
@@ -190,7 +207,11 @@ export function checkOneWayShear(f: FootingInput, qFactored: number): OneWayShea
 
   memo.push(
     `Corte en una dirección a d de la cara: a = ${a.toFixed(3)} m, ` +
-    `Vu = ${qFactored.toFixed(1)} × ${a.toFixed(3)} × ${f.L.toFixed(2)} = ${Vu.toFixed(1)} kN.`,
+    (eB > 1e-9
+      ? `presión trapezoidal por momento factorizado (eB = ${eB.toFixed(3)} m): ` +
+        `Vu = (q_sección ${qSec.toFixed(1)} + q_borde ${qEdge.toFixed(1)}) / 2 × ${a.toFixed(3)} × ` +
+        `${f.L.toFixed(2)} = ${Vu.toFixed(1)} kN.`
+      : `Vu = ${qFactored.toFixed(1)} × ${a.toFixed(3)} × ${f.L.toFixed(2)} = ${Vu.toFixed(1)} kN.`),
     `φVc = 0,75 × ${(0.66 * Math.cbrt(RHO_W_MIN)).toFixed(4)} × ${lambdaS.toFixed(3)} × √${f.fc} × ${f.L.toFixed(2)} × ` +
     `${f.d.toFixed(3)} = ${phiVc.toFixed(1)} kN.`);
 
@@ -253,46 +274,69 @@ export function checkFooting(f: FootingInput): FootingCheck {
     unsupported.push(bearing.unsupportedReason);
   }
 
-  // Factored net upward pressure for strength checks.
+  // Factored net upward pressure for strength checks. With a factored moment the
+  // resultant leaves the kern when |e| > B/6 (or L/6): the base lifts and the linear
+  // distribution under-states the peak — same refusal as the service bearing path.
   const A = f.B * f.L;
   const qFactored = A > 0 ? f.factoredAxial / A : 0;
+  const fEB = Math.abs(f.factoredMomentB ?? 0) / Math.max(f.factoredAxial, 1e-12);
+  const fEL = Math.abs(f.factoredMomentL ?? 0) / Math.max(f.factoredAxial, 1e-12);
+  const factoredUplift = fEB > f.B / 6 || fEL > f.L / 6;
+  if (factoredUplift) {
+    unsupported.push(
+      `Con la combinación de resistencia gobernante la resultante cae fuera del núcleo ` +
+      `(eB = ${fEB.toFixed(3)} m, eL = ${fEL.toFixed(3)} m): la distribución lineal no vale ` +
+      'y las verificaciones de resistencia no se emiten.');
+  }
 
-  const oneWayShear = checkOneWayShear(f, qFactored);
-  memo.push(...oneWayShear.memo);
+  const oneWayShear = factoredUplift ? null : checkOneWayShear(f, qFactored);
+  if (oneWayShear) memo.push(...oneWayShear.memo);
 
-  const punching = checkPunchingShear({
+  const punching = factoredUplift ? null : checkPunchingShear({
     fc: f.fc, columnB: f.columnB, columnH: f.columnH, d: f.d,
     position: f.position ?? 'interior',
     demand: {
       supportReaction: f.factoredAxial,
       // At a footing the soil pushes UP inside the critical perimeter, and that part of
       // the load never crosses the critical section. Same equilibrium argument as at a
-      // slab-column joint, opposite sign convention.
+      // slab-column joint, opposite sign convention. For a CENTRED column the bilinear
+      // pressure from any factored moment averages to exactly Nu/A over the centred
+      // enclosed area, so the uniform value is exact here even with moment.
       loadInsidePerimeter: qFactored,
     },
   });
-  memo.push(...punching.memo);
-  if (punching.status === 'UNSUPPORTED' && punching.unsupportedReason) {
-    unsupported.push(punching.unsupportedReason);
+  if (punching) {
+    memo.push(...punching.memo);
+    if (punching.status === 'UNSUPPORTED' && punching.unsupportedReason) {
+      unsupported.push(punching.unsupportedReason);
+    }
+    refs.push(...punching.refs);
   }
-  refs.push(...punching.refs);
 
-  // Flexure at the column face, §13.2.7.
+  // Flexure at the column face, §13.2.7 — the cantilever integral with the trapezoidal
+  // pressure (exact for a linear distribution: Mu = L·c²·(2·q_face + q_edge)/6).
   const cantilever = (f.B - f.columnB) / 2;
-  const Mu = qFactored * f.L * cantilever * cantilever / 2;
+  let Mu = 0;
+  if (!factoredUplift) {
+    const xFace = f.B - cantilever;
+    const kB = 6 * fEB / f.B;
+    const qFace = qFactored * (1 + kB * (2 * xFace / f.B - 1));
+    const qEdge = qFactored * (1 + kB);
+    Mu = f.L * cantilever * cantilever * (2 * qFace + qEdge) / 6;
+  }
   memo.push(
-    `Momento en la cara de la columna (13.2.7): Mu = ${qFactored.toFixed(1)} × ` +
-    `${f.L.toFixed(2)} × ${cantilever.toFixed(3)}² / 2 = ${Mu.toFixed(1)} kN·m. ` +
+    `Momento en la cara de la columna (13.2.7): Mu = ${Mu.toFixed(1)} kN·m` +
+    (fEB > 1e-9 ? ` (presión trapezoidal, eB = ${fEB.toFixed(3)} m). ` : ' (presión uniforme). ') +
     'La armadura de flexión se dimensiona con el verificador de secciones.');
   refs.push(R_FLEX, R_ONEWAY);
 
-  const utils = [bearing.utilization, oneWayShear.utilization, punching.utilization]
-    .filter((u) => Number.isFinite(u) && u > 0);
+  const utils = [bearing.utilization, oneWayShear?.utilization, punching?.utilization]
+    .filter((u): u is number => typeof u === 'number' && Number.isFinite(u) && u > 0);
   const worstUtilization = utils.length > 0 ? Math.max(...utils) : 0;
 
   const anyUnsupported = unsupported.length > 0;
-  const anyFail = bearing.status === 'FAIL' || oneWayShear.status === 'FAIL'
-    || punching.status === 'FAIL';
+  const anyFail = bearing.status === 'FAIL' || oneWayShear?.status === 'FAIL'
+    || punching?.status === 'FAIL';
 
   return {
     status: anyUnsupported ? 'UNSUPPORTED' : anyFail ? 'FAIL' : 'OK',

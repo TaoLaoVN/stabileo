@@ -154,13 +154,30 @@ export function generateDowels(input: DowelInput): {
    * bars that actually exist rather than a second guess at the same layout.
    */
   positions: Array<{ x: number; y: number }>;
+  /** Named limitations that must travel to the certificate (e.g. §16.3.4.1 shortfall). */
+  unsupported: string[];
 } {
   const bars: BarPath[] = [];
   const notes: string[] = [];
+  const unsupported: string[] = [];
   const refs = [
     clause('cirsoc-201', input.edition, '16.3.4', 'transmisión de fuerzas por armadura'),
     clause('cirsoc-201', input.edition, '25.5', 'empalmes por yuxtaposición'),
   ];
+
+  // §16.3.4.1 — the dowel area crossing the column-footing interface must be at least
+  // 0,005·Ag of the supported element. Dowels copy the column cage: a column below
+  // ρ = 0,5 % fails the interface minimum even though its own design passes §10.6.1.1.
+  // That is a real shortfall, not a note — it travels as a named limitation.
+  const asInterface = input.bars.count * (Math.PI / 4) * input.bars.diameterMm ** 2; // mm²
+  const ag = input.columnB * input.columnH * 1e6; // mm²
+  if (ag > 0 && asInterface < 0.005 * ag) {
+    unsupported.push(
+      `§16.3.4.1: el área de barras de espera a través de la interfaz ` +
+      `(${asInterface.toFixed(0)} mm²) es menor que 0,005·Ag (${(0.005 * ag).toFixed(0)} mm² ` +
+      `para la sección de ${(input.columnB * 1000).toFixed(0)}×${(input.columnH * 1000).toFixed(0)} mm): ` +
+      'la transferencia columna-zapata no satisface el mínimo de interfaz.');
+  }
 
   const available = input.footingThickness - input.footingCover - 0.05;
   const needsHook = input.ldFooting > available;
@@ -220,7 +237,7 @@ export function generateDowels(input: DowelInput): {
     }));
   }
 
-  return { bars, refs, notes, positions: placed };
+  return { bars, refs, notes, positions: placed, unsupported };
 }
 
 // ─── Floor assembly ──────────────────────────────────────────────
@@ -429,6 +446,11 @@ export function buildFloorAssembly(input: FloorAssemblyInput): FloorAssemblyResu
       bars.push(...d.bars);
       ownBars.push(...d.bars);
       trace.push(...d.notes);
+      for (const u of d.unsupported) {
+        unsupported.push({
+          key: 'foundation', scope: { elementIds: f.elementIds }, message: u, refs: d.refs,
+        });
+      }
       trace.push(`Fundación ${f.id}: ${d.bars.length} barra(s) de espera.`);
 
       // §10.7.6.1.1 — the starter bars are a column cage and must be tied. Without this

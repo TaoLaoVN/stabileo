@@ -48,6 +48,7 @@ import type { ElementForces3D } from '../engine/types-3d';
 // The app's own member classifier, shared with `member-context.ts`. Punching applicability
 // must not depend on the design run having populated `verificationStore.contexts`.
 import { classifyElement } from '../engine/codes/argentina/cirsoc201';
+import { computeLocalAxes3D } from '../engine/local-axes-3d';
 import { DEFAULT_COVER, DEFAULT_REBAR_FY } from '../engine/design/member-context';
 import {
   runFootingDesign,
@@ -447,7 +448,7 @@ function collectSlabColumns(): Map<number, SlabColumnJoint> {
    * direction that matters: less is deducted, so V_u is larger.
    */
   const directlyDelivered = (
-    nodeId: number, forces: ReadonlyMap<number, ElementForces3D>,
+    nodeId: number, forces: ReadonlyMap<number, ElementForces3D>, setId: number,
   ): number => {
     let sum = 0;
     for (const o of others.get(nodeId) ?? []) {
@@ -489,12 +490,21 @@ function collectSlabColumns(): Map<number, SlabColumnJoint> {
       sum += -globalZ;
     }
     // A load applied at the joint node itself also arrives inside the perimeter. Downward is
-    // negative global Z, so it is negated to become a downward-positive delivery.
+    // negative global Z, so it is negated to become a downward-positive delivery. The delivery
+    // must carry the COMBINATION's factors: the set's element forces are factored per case,
+    // so an unfactored raw load would mix magnitudes from two different worlds. The single
+    // active result set (setId 0) is unfactored by construction — the raw value IS right there.
     for (const load of modelStore.model.loads) {
-      if (load.type !== 'nodal') continue;
-      const d = load.data as { nodeId: number; fz?: number };
+      if (load.type !== 'nodal' && load.type !== 'nodal3d') continue;
+      const d = load.data as { nodeId: number; fz?: number; caseId?: number };
       if (d.nodeId !== nodeId) continue;
-      sum += -(d.fz ?? 0);
+      if (setId === 0) {
+        sum += -(d.fz ?? 0);
+        continue;
+      }
+      const combo = modelStore.model.combinations.find((c) => c.id === setId);
+      const factor = combo?.factors.find((fc) => fc.caseId === (d.caseId ?? 1))?.factor ?? 0;
+      sum += factor * -(d.fz ?? 0);
     }
     return sum;
   };
@@ -507,14 +517,29 @@ function collectSlabColumns(): Map<number, SlabColumnJoint> {
     let my = 0;
     for (const leg of legsHere) {
       const f = forces.get(leg.elementId);
-      if (!f) continue;
-      const [m1, m2] = leg.end === 'start' ? [f.myStart, f.mzStart] : [f.myEnd, f.mzEnd];
-      // A column's local y and z lie in the horizontal plane, so its two bending moments ARE
-      // the two horizontal moments the joint transfers. The column below and the column above
-      // enter with opposite signs, which is what makes this a step rather than a sum.
-      const s = leg.below ? 1 : -1;
-      mx += s * (typeof m1 === 'number' ? m1 : 0);
-      my += s * (typeof m2 === 'number' ? m2 : 0);
+      const el = modelStore.model.elements.get(leg.elementId);
+      if (!f || !el) continue;
+      const ni = modelStore.model.nodes.get(el.nodeI);
+      const nj = modelStore.model.nodes.get(el.nodeJ);
+      if (!ni || !nj) continue;
+      // Moment the ELEMENT exerts on the JOINT: the I-end fields are NOT inverted
+      // (m_start = f_i), the J-end fields ARE (m_end = −f_j), so element→joint is
+      // −reported at I and +reported at J. The local components must then be
+      // projected to global with the element's OWN frame — a column modelled
+      // top→base has ey flipped relative to the same column modelled base→top,
+      // so reading local my/mz without projecting gives the moment of a
+      // different building depending on how each member was drawn.
+      const axes = computeLocalAxes3D(
+        { id: ni.id, x: ni.x, y: ni.y, z: ni.z ?? 0 },
+        { id: nj.id, x: nj.x, y: nj.y, z: nj.z ?? 0 },
+      );
+      const [mmx, mmy, mmz] = leg.end === 'start'
+        ? [-f.mxStart, -f.myStart, -f.mzStart]
+        : [f.mxEnd, f.myEnd, f.mzEnd];
+      // M = mmx·ex + mmy·ey + mmz·ez — keep the two horizontal (joint-transfer)
+      // components. For a vertical column ex is vertical and drops out here.
+      mx += mmx * axes.ex[0] + mmy * axes.ey[0] + mmz * axes.ez[0];
+      my += mmx * axes.ex[1] + mmy * axes.ey[1] + mmz * axes.ez[1];
     }
     return { x: mx, y: my };
   };
@@ -544,7 +569,7 @@ function collectSlabColumns(): Map<number, SlabColumnJoint> {
         combinationName: set.name,
         axialBelow: ab,
         axialAbove: aa,
-        directlyDelivered: directlyDelivered(nodeId, set.forces),
+        directlyDelivered: directlyDelivered(nodeId, set.forces, set.id),
         unbalancedMomentX: m.x,
         unbalancedMomentY: m.y,
       });

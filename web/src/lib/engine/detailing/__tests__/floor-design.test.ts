@@ -662,3 +662,21 @@ describe('whole-floor assembly, continued', () => {
     expect(r.assembly.state).toBe('VERIFIED');
   });
 });
+
+describe('§16.3.4.1 — dowel interface minimum', () => {
+  it('passes a column cage above the 0.005·Ag floor', () => {
+    // 8Ø20 on 400×400: As = 2513 mm² ≥ 0.005·160000 = 800 mm².
+    expect(generateDowels(dowels()).unsupported).toEqual([]);
+  });
+
+  it('names the shortfall when the column cage is below 0.005·Ag', () => {
+    // 4Ø12 on 600×600: As = 452 mm² < 0.005·360000 = 1800 mm². The column's own
+    // design may pass §10.6.1.1 (1 %) while the interface minimum fails.
+    const d = generateDowels(dowels({
+      columnB: 0.60, columnH: 0.60, bars: { count: 4, diameterMm: 12 },
+    }));
+    expect(d.unsupported.length).toBe(1);
+    expect(d.unsupported[0]).toMatch(/16\.3\.4\.1/);
+    expect(d.unsupported[0]).toMatch(/0,005·Ag/);
+  });
+});

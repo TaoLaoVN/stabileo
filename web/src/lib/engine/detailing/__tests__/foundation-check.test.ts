@@ -161,3 +161,43 @@ describe('foundation types that are NOT implemented', () => {
       expect(r.punching).toBeNull();
     });
 });
+
+describe('factored moments — trapezoidal pressure in strength checks', () => {
+  it('integrates the strip with the trapezoid on the heavy side, not the uniform Nu/A', () => {
+    // Same footing, same axial: adding a factored moment must RAISE the one-way
+    // shear demand on the heavy side — the uniform distribution was under-stating it.
+    const uniform = checkOneWayShear(footing(), 200);
+    const r = checkOneWayShear(footing({ factoredMomentB: 125 }), 200);
+    // eB = 125/1250 = 0.1; k = 0.24; qSec = 200·(1+0.24·0.576) = 227.6; qEdge = 248.
+    const expected = (200 * (1 + 0.24 * (2 * 1.97 / 2.5 - 1)) + 200 * 1.24) / 2 * 0.53 * 2.5;
+    expect(r.Vu).toBeCloseTo(expected, 6);
+    expect(r.Vu).toBeGreaterThan(uniform.Vu);
+    expect(r.memo.join(' ')).toMatch(/trapezoidal/);
+  });
+
+  it('computes the column-face moment with the trapezoid, larger than the uniform value', () => {
+    const withMoment = checkFooting(footing({ factoredMomentB: 125 }));
+    const uniform = checkFooting(footing());
+    expect(withMoment.Mu).toBeGreaterThan(uniform.Mu);
+    // Mu = L·c²·(2·qFace + qEdge)/6 = 2.5·1.05²·(2·207.68 + 248)/6.
+    expect(withMoment.Mu).toBeCloseTo(2.5 * 1.05 ** 2 * (2 * 200 * 1.0384 + 200 * 1.24) / 6, 4);
+  });
+
+  it('refuses strength checks when the factored resultant leaves the kern', () => {
+    // eB = 600/1250 = 0.48 > B/6 = 0.4167 — the base lifts under the governing
+    // combination and the linear distribution would under-state the peak.
+    const r = checkFooting(footing({ factoredMomentB: 600 }));
+    expect(r.status).toBe('UNSUPPORTED');
+    expect(r.oneWayShear).toBeNull();
+    expect(r.punching).toBeNull();
+    expect(r.unsupported.join(' ')).toMatch(/fuera del núcleo/);
+  });
+
+  it('leaves the punching deduction at Nu/A even with moment (centred enclosed area)', () => {
+    // The bilinear pressure averages to Nu/A over the centred critical perimeter:
+    // punching demand is unaffected by the factored moment.
+    const uniform = checkFooting(footing());
+    const withMoment = checkFooting(footing({ factoredMomentB: 125 }));
+    expect(withMoment.punching!.utilization).toBeCloseTo(uniform.punching!.utilization, 9);
+  });
+});
