@@ -1,34 +1,203 @@
 <script lang="ts">
-  import { t } from '../../lib/i18n';
-  import { enterApp } from './landing-utils';
+  import { onMount, tick } from 'svelte';
+  import { tPublic as t } from '../../lib/i18n/store.svelte';
+  import { DEMO_EXAMPLES, demoEmbedUrl, editorExampleUrl } from './landing-utils';
+  import Eyebrow from './Eyebrow.svelte';
+  import Shot from './Shot.svelte';
 
-  type Example = { key: string; path: string };
+  /**
+   * The embedded editor, behind an explicit activation lock.
+   *
+   * WHY THE LOCK: an iframe is hit-testable as soon as the pointer is over it,
+   * so a visitor scrolling the page with the cursor across the demo had their
+   * wheel delivered to the embedded application, which read it as camera zoom.
+   * Measured before the fix: at 768, 1024 and 1440 px the landing's scrollTop
+   * did not move at all. A parent document cannot forward wheel events into or
+   * out of a separate browsing context, so the fix is a real state rather than
+   * event plumbing.
+   *
+   * LIFECYCLE: the iframe does not exist until the visitor presses the CTA. No
+   * intersection observer, no prewarm, no second application instance on a page
+   * nobody asked to interact with. Once mounted it STAYS mounted across exit —
+   * see `deactivate` for why — but locked: `inert`, out of the tab order and
+   * `pointer-events: none`, so the page behaves as if it were an image again.
+   */
 
-  const examples: Example[] = [
-    { key: 'landing.demoExCantilever', path: '/app/basic?embed&example=cantilever' },
-    { key: 'landing.demoExPortal', path: '/app/basic?embed&example=portal-frame' },
-    { key: 'landing.demoExTruss', path: '/app/basic?embed&example=truss' },
-    { key: 'landing.demoEx3D', path: '/app/basic?embed&example=3d-portal-frame' },
-  ];
+  type Phase = 'idle' | 'loading' | 'ready' | 'failed';
 
-  let active = $state(0);
-  let iframeLoaded = $state(false);
-  let iframeEl: HTMLIFrameElement | undefined;
+  let phase = $state<Phase>('idle');
+  let active = $state(false);
+  let index = $state(0);
+  /** Bumped to force a clean remount: new element, new listeners, new timers. */
+  let generation = $state(0);
+
+  let sectionEl: HTMLElement | undefined;
+  let frameEl: HTMLIFrameElement | undefined;
+  let ctaEl: HTMLButtonElement | undefined;
   let tabEls: (HTMLButtonElement | undefined)[] = $state([]);
+  let loadTimer: ReturnType<typeof setTimeout> | null = null;
+  let frameDocCleanup: (() => void) | null = null;
+  let panelTimer: ReturnType<typeof setTimeout> | null = null;
 
-  function pickExample(i: number) {
-    if (i === active) return;
-    active = i;
-    iframeLoaded = false;
+  const LOAD_TIMEOUT_MS = 8000;
+  const mounted = $derived(phase !== 'idle');
+
+  onMount(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape' && active) deactivate();
+    };
+    window.addEventListener('keydown', onKey);
+    return () => {
+      window.removeEventListener('keydown', onKey);
+      clearTimers();
+      frameDocCleanup?.();
+    };
+  });
+
+  function clearTimers() {
+    if (loadTimer) { clearTimeout(loadTimer); loadTimer = null; }
+    if (panelTimer) { clearTimeout(panelTimer); panelTimer = null; }
+  }
+
+  /** Scroll container of the landing overlay — the thing that must not jump. */
+  const scroller = () => sectionEl?.closest('.landing') as HTMLElement | null;
+
+  /**
+   * Every state transition below changes what is rendered inside a fixed-height
+   * device, so in principle nothing can move. This pins it anyway: the one
+   * thing a visitor will not forgive is the page jumping under them.
+   */
+  async function keepingScroll(fn: () => void) {
+    const el = scroller();
+    const top = el?.scrollTop ?? 0;
+    fn();
+    await tick();
+    if (el && el.scrollTop !== top) el.scrollTop = top;
+  }
+
+  /** Start (or restart) the frame for the current example. */
+  function loadFrame() {
+    clearTimers();
+    frameDocCleanup?.();
+    frameDocCleanup = null;
+    phase = 'loading';
+    generation += 1;
+    loadTimer = setTimeout(() => {
+      if (phase === 'loading') phase = 'failed';
+    }, LOAD_TIMEOUT_MS);
+  }
+
+  async function activate() {
+    if (active) return;
+    await keepingScroll(() => {
+      active = true;
+      if (phase === 'idle' || phase === 'failed') loadFrame();
+    });
+    await tick();
+    if (phase === 'ready') frameEl?.focus();
   }
 
   /**
-   * Roving-tabindex keyboard support for the example tablist (ARIA APG "Tabs
-   * with Manual Activation" minus the manual part — activation follows focus,
-   * which is what a click already does here).
+   * Exit keeps the frame mounted and locks it rather than unmounting.
+   *
+   * Unmounting would free a whole application instance, but exiting to read the
+   * page and coming back is the common pattern here, and paying a ~1.5 s reload
+   * every time punishes exactly the visitors who engaged. The locked frame is
+   * `inert` with `pointer-events: none`, so it costs nothing in behaviour — only
+   * memory, and only for someone who already chose to use the demo. Swapping to
+   * unmount-on-exit is a one-line change (`phase = 'idle'` here).
    */
+  async function deactivate() {
+    if (!active) return;
+    await keepingScroll(() => { active = false; });
+    ctaEl?.focus();
+  }
+
+  /** Reload the current example from scratch, staying interactive. */
+  function reset() {
+    keepingScroll(() => loadFrame());
+  }
+
+  /** Same as reset, but from the failure state. */
+  function retry() {
+    keepingScroll(() => loadFrame());
+  }
+
+  function pick(i: number) {
+    if (i === index) return;
+    keepingScroll(() => {
+      index = i;
+      // Locked: just change the selection. Nothing is mounted, and choosing an
+      // example is not consent to boot a second copy of the application.
+      if (mounted) loadFrame();
+    });
+  }
+
+  function onFrameLoad() {
+    if (loadTimer) { clearTimeout(loadTimer); loadTimer = null; }
+    phase = 'ready';
+    wireFrameDocument();
+  }
+
+  /**
+   * TEMPORARY COUPLING — tracked as debt, see the report.
+   *
+   * Two tidy-ups inside the embedded document. The frame is same-origin, so
+   * this is ordinary runtime DOM work from the host page: no application source
+   * is modified. Both are guarded so a change inside the app can only make this
+   * a no-op, never an error.
+   *
+   *  1. Escape pressed while focus is inside the frame must reach us; key
+   *     events do not cross the document boundary on their own.
+   *  2. The mobile layout opens with the RESULTS panel expanded, covering about
+   *     a third of the embed and hiding the model. We close it the way a
+   *     visitor would.
+   *
+   * The right fix for (2) is an embed-aware default panel state in the
+   * application, or a postMessage handshake. Both are application-owned.
+   */
+  function wireFrameDocument() {
+    frameDocCleanup?.();
+    frameDocCleanup = null;
+    let doc: Document | null = null;
+    try {
+      doc = frameEl?.contentDocument ?? null;
+    } catch {
+      return; // cross-origin some day: give up quietly
+    }
+    if (!doc) return;
+
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape' && active) deactivate();
+    };
+    doc.addEventListener('keydown', onKey, true);
+    frameDocCleanup = () => doc?.removeEventListener('keydown', onKey, true);
+
+    const closeResultsPanel = () => {
+      try {
+        for (const sel of ['.mrp-panel .mrp-close', '.mrp-panel button[aria-label*="lose"]', '.mrp-panel .close']) {
+          const btn = doc!.querySelector(sel) as HTMLElement | null;
+          if (btn) { btn.click(); return; }
+        }
+      } catch { /* the app moved on; an open panel is not fatal */ }
+    };
+    closeResultsPanel();
+    if (panelTimer) clearTimeout(panelTimer);
+    panelTimer = setTimeout(closeResultsPanel, 900);
+  }
+
+  function onCtaKeydown(e: KeyboardEvent) {
+    // Handled explicitly: with the application mounted behind the landing, a
+    // focused button was observed receiving an un-prevented Enter keydown
+    // without Chromium synthesising the click.
+    if (e.key !== 'Enter' && e.key !== ' ' && e.key !== 'Spacebar') return;
+    e.preventDefault();
+    e.stopPropagation();
+    activate();
+  }
+
   function onTabKeydown(e: KeyboardEvent, i: number) {
-    const last = examples.length - 1;
+    const last = DEMO_EXAMPLES.length - 1;
     let next: number | null = null;
     if (e.key === 'ArrowRight') next = i === last ? 0 : i + 1;
     else if (e.key === 'ArrowLeft') next = i === 0 ? last : i - 1;
@@ -36,72 +205,160 @@
     else if (e.key === 'End') next = last;
     if (next === null) return;
     e.preventDefault();
-    pickExample(next);
+    pick(next);
     tabEls[next]?.focus();
   }
+
+  const statusText = $derived(
+    phase === 'loading' ? t('landing.demoStatusLoading')
+      : phase === 'failed' ? t('landing.demoStatusFailed')
+      : active ? t('landing.demoStatusReady')
+      : '',
+  );
 </script>
 
-<section class="demo-section reveal" id="demo" aria-labelledby="demo-title">
-  <div class="section-inner">
-    <div class="demo-panel">
-      <div class="demo-copy">
-        <span class="tag">{t('landing.interactiveDemo')}</span>
-        <h2 id="demo-title">{t('landing.demoCardTitle')}</h2>
-        <p>{t('landing.demoCardDesc')}</p>
-        <ul>
-          <li>{t('landing.demoPoint1')}</li>
-          <li>{t('landing.demoPoint2')}</li>
-          <li>{t('landing.demoPoint3')}</li>
-        </ul>
-        <div class="demo-actions">
-          <button class="btn-primary" onclick={() => enterApp()}>{t('landing.launchEditor')}</button>
-          <a class="btn-link" href="/demo">{t('landing.tryTour')}</a>
-        </div>
+<section
+  class="sec sec--ink demo reveal"
+  data-section="demo"
+  id="demo"
+  aria-labelledby="demo-title"
+  bind:this={sectionEl}
+>
+  <div class="wrap">
+    <Eyebrow n="05" label={t('landing.ebDemo')} />
+    <div class="demo-head">
+      <div>
+        <h2 id="demo-title" class="display">{t('landing.demoH')}</h2>
+        <p class="lead">{t('landing.demoP')}</p>
       </div>
-      <div class="demo-viewport">
-        <div
-          class="demo-browser"
-          id="demo-panel"
-          role="tabpanel"
-          aria-labelledby="demo-tab-{active}"
-        >
-          <div class="demo-skeleton" class:ready={iframeLoaded} aria-live="polite">
-            {t('landing.demoLoading')}
+      <p class="pill pill-live">{t('landing.demoInteractive')}</p>
+    </div>
+
+    <div class="demo-stage">
+      <!--
+        Capped below the application's own 768 px mobile breakpoint, so the
+        embed renders the real mobile interface at every landing width instead
+        of a desktop layout squeezed into a letterbox. No user-agent spoofing
+        and no new query parameter: the app reads window.innerWidth, and this
+        is its window.
+      -->
+      <div class="demo-device" id="demo-panel" role="tabpanel" aria-labelledby="demo-tab-{index}">
+        <!--
+          Only while there is no live frame. The embedded document's html and
+          body are fully transparent (only .app-container paints), so a poster
+          left mounted underneath shows straight through the running editor.
+        -->
+        {#if phase !== 'ready'}
+          <Shot base="2d-moments" alt={t('landing.demoPosterAlt')} sizes="(max-width: 760px) 94vw, 46vw" class="demo-poster-img" />
+        {/if}
+
+        {#if mounted && phase !== 'failed'}
+          {#key generation}
+            <iframe
+              bind:this={frameEl}
+              src={demoEmbedUrl(DEMO_EXAMPLES[index].id)}
+              title="Stabileo live demo"
+              class="demo-iframe"
+              class:locked={!active}
+              loading="lazy"
+              tabindex={active ? 0 : -1}
+              inert={!active}
+              aria-hidden={!active}
+              onload={onFrameLoad}
+            ></iframe>
+          {/key}
+        {/if}
+
+        {#if phase === 'loading'}
+          <div class="demo-skeleton">{t('landing.demoLoadingNew')}</div>
+        {/if}
+
+        {#if phase === 'failed'}
+          <div class="demo-fallback">
+            <div class="demo-fallback-copy">
+              <p>{t('landing.demoFallback')}</p>
+              <div class="demo-fallback-actions">
+                <button class="btn btn-primary" type="button" onclick={retry}>{t('landing.demoRetry')}</button>
+                <a class="link-arrow" href={editorExampleUrl(DEMO_EXAMPLES[index].id)}>
+                  {t('landing.demoFallbackCta')}
+                </a>
+              </div>
+            </div>
           </div>
-          <iframe
-            bind:this={iframeEl}
-            src={examples[active].path}
-            title="Stabileo live demo"
-            class="demo-iframe"
-            loading="lazy"
-            onload={() => (iframeLoaded = true)}
-          ></iframe>
-        </div>
-        <div class="demo-examples" role="tablist" aria-label={t('landing.demoExamplesLabel')}>
+        {/if}
+
+        {#if !active && phase !== 'failed'}
           <!--
-            The visible label duplicates the tablist's aria-label, and a <span>
-            is not a valid tablist child, so it is hidden from the a11y tree
-            rather than announced twice.
+            The overlay itself is transparent to the pointer: a wheel, a drag or
+            a flick across the poster keeps scrolling the page. Only the CTA
+            inside it activates, and the click that does so lands on the button,
+            so it never reaches the application underneath.
           -->
-          <span class="demo-examples-label" aria-hidden="true">{t('landing.demoExamplesLabel')}</span>
-          {#each examples as ex, i}
+          <div class="demo-lock" aria-hidden={phase === 'loading'}>
             <button
-              bind:this={tabEls[i]}
-              class="demo-chip"
-              class:active={i === active}
-              id="demo-tab-{i}"
-              role="tab"
-              aria-selected={i === active}
-              aria-controls="demo-panel"
-              tabindex={i === active ? 0 : -1}
-              onclick={() => pickExample(i)}
-              onkeydown={(e) => onTabKeydown(e, i)}
+              bind:this={ctaEl}
+              class="demo-cta"
+              type="button"
+              onclick={activate}
+              onkeydown={onCtaKeydown}
+              aria-describedby="demo-lock-hint"
             >
-              {t(ex.key)}
+              {mounted ? t('landing.demoLockedCta') : t('landing.demoStart')}
             </button>
-          {/each}
-        </div>
+            <span class="demo-lock-hint" id="demo-lock-hint">
+              {mounted ? t('landing.demoLockedHint') : t('landing.demoStartHint')}
+            </span>
+          </div>
+        {/if}
       </div>
+
+      <!--
+        Always rendered — reserving the row means activating, resetting or
+        failing cannot shift the page under the visitor's cursor.
+      -->
+      <div class="demo-controls" class:on={active}>
+        <span class="demo-status" role="status" aria-live="polite">{statusText}</span>
+        <span class="demo-control-group">
+          <button
+            class="demo-btn"
+            type="button"
+            onclick={reset}
+            tabindex={active ? 0 : -1}
+            title={t('landing.demoResetTitle')}
+          >{t('landing.demoReset')}</button>
+          <button
+            class="demo-btn demo-btn-exit"
+            type="button"
+            onclick={deactivate}
+            tabindex={active ? 0 : -1}
+          >{t('landing.demoExit')}<kbd>Esc</kbd></button>
+        </span>
+      </div>
+    </div>
+
+    <div class="demo-bar">
+      <div class="demo-tabs" role="tablist" aria-label={t('landing.demoExamplesLbl')}>
+        <span class="demo-tabs-label" aria-hidden="true">{t('landing.demoExamplesLbl')}</span>
+        {#each DEMO_EXAMPLES as ex, i}
+          <button
+            bind:this={tabEls[i]}
+            class="chip"
+            class:active={i === index}
+            id="demo-tab-{i}"
+            role="tab"
+            aria-selected={i === index}
+            aria-controls="demo-panel"
+            tabindex={i === index ? 0 : -1}
+            onclick={() => pick(i)}
+            onkeydown={(e) => onTabKeydown(e, i)}
+          >
+            {t(ex.key)}
+          </button>
+        {/each}
+      </div>
+      <a class="link-arrow" href={editorExampleUrl(DEMO_EXAMPLES[index].id)}>
+        {t('landing.demoOpenFull')}
+      </a>
     </div>
   </div>
 </section>

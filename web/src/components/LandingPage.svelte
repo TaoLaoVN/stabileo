@@ -1,16 +1,18 @@
 <script lang="ts">
   import { onMount } from 'svelte';
+  import { tPublic as t } from '../lib/i18n/store.svelte';
   import LandingNav from './landing/LandingNav.svelte';
   import LandingHero from './landing/LandingHero.svelte';
-  import LandingFeatures from './landing/LandingFeatures.svelte';
-  import LandingAI from './landing/LandingAI.svelte';
-  import LandingDocs from './landing/LandingDocs.svelte';
+  import LandingProblem from './landing/LandingProblem.svelte';
+  import LandingWhat from './landing/LandingWhat.svelte';
+  import LandingRealtime from './landing/LandingRealtime.svelte';
   import LandingDemo from './landing/LandingDemo.svelte';
-  import LandingRoadmap from './landing/LandingRoadmap.svelte';
   import LandingCapabilities from './landing/LandingCapabilities.svelte';
-  import LandingSocialProof from './landing/LandingSocialProof.svelte';
-  import LandingPricing from './landing/LandingPricing.svelte';
-  import LandingChangelog from './landing/LandingChangelog.svelte';
+  import LandingValidation from './landing/LandingValidation.svelte';
+  import LandingCodes from './landing/LandingCodes.svelte';
+  import LandingThesis from './landing/LandingThesis.svelte';
+  import LandingStatus from './landing/LandingStatus.svelte';
+  import LandingDocs from './landing/LandingDocs.svelte';
   import LandingCTA from './landing/LandingCTA.svelte';
   import LandingFooter from './landing/LandingFooter.svelte';
   import { enterApp } from './landing/landing-utils';
@@ -34,7 +36,7 @@
           if (entry.isIntersecting) entry.target.classList.add('visible');
         }
       },
-      { threshold: 0.12, root: landingEl },
+      { threshold: 0.08, root: landingEl },
     );
 
     const motionQuery = window.matchMedia('(prefers-reduced-motion: reduce)');
@@ -67,38 +69,29 @@
 </script>
 
 <svelte:head>
-  <title>Stabileo — Browser-Based Structural Analysis</title>
-  <meta
-    name="description"
-    content="Browser-native 2D and 3D structural analysis. No install, no license. Model, solve, inspect, and share complete engineering output right in the browser."
-  />
-  <meta name="theme-color" content="#0a0a0b" />
+  <title>Stabileo — {t('landing.heroH')}</title>
+  <meta name="description" content={t('landing.heroP')} />
+  <meta name="theme-color" content="#0c1620" />
   <meta property="og:type" content="website" />
-  <meta property="og:title" content="Stabileo — Browser-Based Structural Analysis" />
-  <meta
-    property="og:description"
-    content="Model, solve, inspect, and share structural analysis directly in the browser."
-  />
-  <meta property="og:image" content="/screenshots/3d-industrial.png" />
+  <meta property="og:title" content="Stabileo — {t('landing.heroH')}" />
+  <meta property="og:description" content={t('landing.heroP')} />
   <meta name="twitter:card" content="summary_large_image" />
-  <meta name="twitter:title" content="Stabileo — Browser-Based Structural Analysis" />
-  <meta
-    name="twitter:description"
-    content="Professional-grade 2D and 3D structural analysis directly in the browser, with a structured solver humans and AI can both use."
-  />
-  <meta name="twitter:image" content="/screenshots/3d-industrial.png" />
-  <link rel="preconnect" href="https://fonts.googleapis.com" />
-  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin="anonymous" />
-  <link
-    href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@500;600&family=IBM+Plex+Sans:wght@400;500;600;700&family=Space+Grotesk:wght@500;600;700&display=swap"
-    rel="stylesheet"
-  />
+  <meta name="twitter:title" content="Stabileo — {t('landing.heroH')}" />
+  <meta name="twitter:description" content={t('landing.heroP')} />
+  <!--
+    Fonts are self-hosted from /fonts (see landing.css). The landing no longer
+    contacts fonts.googleapis.com or fonts.gstatic.com. Only the four faces the
+    first screen needs are preloaded; the rest arrive with the stylesheet.
+  -->
+  <link rel="preload" as="font" type="font/woff2" href="/fonts/space-grotesk-700.woff2" crossorigin="anonymous" />
+  <link rel="preload" as="font" type="font/woff2" href="/fonts/ibm-plex-sans-400.woff2" crossorigin="anonymous" />
+  <link rel="preload" as="font" type="font/woff2" href="/fonts/ibm-plex-mono-500.woff2" crossorigin="anonymous" />
 </svelte:head>
 
 <!--
   `.landing` is the scroll container (position: fixed; overflow-y: auto), not the
   document, so without a tabindex a keyboard-only user cannot scroll the page
-  until they happen to Tab onto something inside it. WCAG 2.1.1 / axe
+  until they Tab onto something inside it. WCAG 2.1.1 / axe
   `scrollable-region-focusable`.
 -->
 <!-- svelte-ignore a11y_no_noninteractive_tabindex -->
@@ -107,15 +100,16 @@
 
   <LandingNav />
   <LandingHero {prefersReducedMotion} />
-  <LandingFeatures {prefersReducedMotion} />
-  <LandingAI />
-  <LandingDocs />
+  <LandingProblem />
+  <LandingWhat />
+  <LandingRealtime {prefersReducedMotion} />
   <LandingDemo />
   <LandingCapabilities />
-  <LandingRoadmap {prefersReducedMotion} />
-  <LandingSocialProof />
-  <LandingPricing />
-  <LandingChangelog />
+  <LandingValidation />
+  <LandingCodes />
+  <LandingThesis />
+  <LandingStatus />
+  <LandingDocs />
   <LandingCTA />
   <LandingFooter />
 </div>

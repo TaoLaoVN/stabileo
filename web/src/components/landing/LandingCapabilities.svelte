@@ -1,78 +1,57 @@
 <script lang="ts">
-  import { t } from '../../lib/i18n';
+  import { tPublic as t } from '../../lib/i18n/store.svelte';
+  import Eyebrow from './Eyebrow.svelte';
+  import Shot from './Shot.svelte';
 
-  const depthTiles = [
-    {
-      code: '02',
-      image: '/screenshots/2d-loads.png',
-      tone: 'amber',
-      titleKey: 'landing.capGrid2Title',
-      descKey: 'landing.capGrid2Desc',
-    },
-    {
-      code: '03',
-      image: '/screenshots/3d-section-analysis.png',
-      tone: 'plum',
-      titleKey: 'landing.capGrid3Title',
-      descKey: 'landing.capGrid3Desc',
-    },
-    {
-      code: '04',
-      image: '/screenshots/3d-loads.png',
-      tone: 'ink',
-      titleKey: 'landing.capGrid4Title',
-      descKey: 'landing.capGrid4Desc',
-    },
-    {
-      code: '07',
-      image: '/screenshots/pro-verification.png',
-      tone: 'paper',
-      titleKey: 'landing.capGrid7Title',
-      descKey: 'landing.capGrid7Desc',
-    },
-  ] as const;
+  const columns = [
+    { head: 'landing.capColLinear', items: ['capLin1','capLin2','capLin3','capLin4','capLin5','capLin6','capLin7','capLin8'] },
+    { head: 'landing.capColNonlinear', items: ['capNl1','capNl2','capNl3','capNl4','capNl5','capNl6'] },
+    { head: 'landing.capColElements', items: ['capEl1','capEl2','capEl3','capEl4','capEl5'] },
+    { head: 'landing.capColTime', items: ['capTd1','capTd2','capTd3','capTd4'] },
+  ];
+
+  /**
+   * Only shipped Basic-mode views. Every file here has a producer in
+   * scripts/take-screenshots.ts, and every producer there is consumed here.
+   */
+  const shots = [
+    { base: '2d-moments', alt: 'landing.capAlt2d', title: 'landing.capShot2dTitle', body: 'landing.capShot2dBody' },
+    { base: '3d-industrial', alt: 'landing.capAlt3d', title: 'landing.capShot3dTitle', body: 'landing.capShot3dBody' },
+    { base: '2d-section-analysis', alt: 'landing.capAltStress2d', title: 'landing.capShotStress2dTitle', body: 'landing.capShotStress2dBody' },
+    { base: '3d-section-analysis', alt: 'landing.capAltStress3d', title: 'landing.capShotStress3dTitle', body: 'landing.capShotStress3dBody' },
+  ];
 </script>
 
-<section class="cap-section reveal" aria-labelledby="capabilities-title">
-  <div class="section-inner">
-    <div class="section-head">
-      <span class="tag">{t('landing.coreDepth')}</span>
-      <h2 id="capabilities-title">{t('landing.capabilitiesTitle')}</h2>
-      <p class="section-sub">{t('landing.coreDepthSub')}</p>
+<section class="sec sec--paper caps reveal" data-section="capabilities" id="capabilities" aria-labelledby="capabilities-title">
+  <div class="wrap">
+    <Eyebrow n="06" label={t('landing.ebCapabilities')} />
+    <h2 id="capabilities-title" class="display">{t('landing.capH')}</h2>
+    <p class="lead">{t('landing.capP')}</p>
+
+    <div class="cap-matrix">
+      {#each columns as col}
+        <div class="cap-col">
+          <p class="kicker">{t(col.head)}</p>
+          <ul>
+            {#each col.items as key}
+              <li>{t('landing.' + key)}</li>
+            {/each}
+          </ul>
+        </div>
+      {/each}
     </div>
 
-    <div class="cap-hero">
-      <div class="cap-hero-copy">
-        <span class="tag tag-sm">{t('landing.depthHeroEyebrow')}</span>
-        <h3>{t('landing.depthHeroTitle')}</h3>
-        <p>{t('landing.depthHeroDesc')}</p>
-        <ul>
-          <li>{t('landing.depthHero1')}</li>
-          <li>{t('landing.depthHero2')}</li>
-          <li>{t('landing.depthHero3')}</li>
-          <li>{t('landing.depthHero4')}</li>
-        </ul>
-      </div>
-      <div class="cap-hero-visual">
-        <img class="cap-main-img" src="/screenshots/3d-industrial.png" alt={t('landing.depthHeroTitle')} loading="lazy" />
-        <img class="cap-float cap-float-a" src="/screenshots/3d-section-analysis.png" alt={t('landing.capGrid3Title')} loading="lazy" />
-        <img class="cap-float cap-float-b" src="/screenshots/2d-moments.png" alt={t('landing.capGrid1Title')} loading="lazy" />
-      </div>
-    </div>
-
-    <div class="cap-grid">
-      {#each depthTiles as tile}
-        <article class="cap-tile" data-tone={tile.tone}>
-          <div class="cap-tile-img">
-            <img src={tile.image} alt={t(tile.titleKey)} loading="lazy" />
-          </div>
-          <div class="cap-tile-body">
-            <span class="cap-num">{tile.code}</span>
-            <h4>{t(tile.titleKey)}</h4>
-            <p>{t(tile.descKey)}</p>
+    <div class="card-row cols-2 cap-shots">
+      {#each shots as sh}
+        <article class="card card-media">
+          <Shot base={sh.base} alt={t(sh.alt)} />
+          <div class="card-body">
+            <h3>{t(sh.title)}</h3>
+            <p>{t(sh.body)}</p>
           </div>
         </article>
       {/each}
     </div>
+
   </div>
 </section>

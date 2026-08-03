@@ -1,27 +1,33 @@
 <script lang="ts">
-  import { t } from '../../lib/i18n';
+  import { tPublic as t } from '../../lib/i18n/store.svelte';
   import { REPO_URL, DOCS_HUB_URL, enterApp } from './landing-utils';
+
+  const year = new Date().getFullYear();
 </script>
 
-<footer class="lp-footer">
-  <div class="section-inner footer-inner">
-    <div class="footer-row">
-      <div class="footer-brand">
-        <span class="nav-logo">S</span>
-        <span>Stabileo</span>
+<footer class="sec sec--ink lp-footer">
+  <div class="wrap footer-grid">
+    <div class="footer-brand">
+      <span class="nav-logo" aria-hidden="true">S</span>
+      <div>
+        <p class="footer-name">Stabileo</p>
+        <p class="footer-tagline">{t('landing.footTagline')}</p>
       </div>
-      <nav class="footer-links" aria-label="Footer">
-        <a href={DOCS_HUB_URL} target="_blank" rel="noreferrer">{t('landing.docs')}</a>
-        <a href={REPO_URL} target="_blank" rel="noreferrer">{t('landing.viewOnGithub')}</a>
-        <a href="/demo">{t('landing.tryTour')}</a>
-        <button onclick={() => enterApp()}>{t('landing.launchEditor')}</button>
-      </nav>
     </div>
-    <p class="footer-desc">{t('landing.openSourceDesc')}</p>
-    <p class="footer-copy">&copy; {new Date().getFullYear()} Stabileo. {t('landing.footerRights')}</p>
+
+    <nav class="footer-links" aria-label="Footer">
+      <a href={DOCS_HUB_URL} target="_blank" rel="noreferrer">{t('landing.footDocs')}</a>
+      <a href={REPO_URL} target="_blank" rel="noreferrer">{t('landing.footRepo')}</a>
+      <a href="/demo">{t('landing.footTour')}</a>
+      <button onclick={() => enterApp()}>{t('landing.footLaunch')}</button>
+    </nav>
+  </div>
+
+  <div class="wrap footer-legal">
+    <p>&copy; {year} Stabileo. {t('landing.footRights')}</p>
   </div>
 </footer>
 
 <div class="mobile-sticky">
-  <button class="btn-primary" onclick={() => enterApp()}>{t('landing.launchEditor')}</button>
+  <button class="btn btn-primary" onclick={() => enterApp()}>{t('landing.navOpenEditor')}</button>
 </div>

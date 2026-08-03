@@ -12,9 +12,29 @@
  * server and this script refuses to touch it.
  *
  * Output filenames are the exact asset names the landing consumes (see
- * CAPTURES below). Two consumed assets currently have no producer here — the
- * script reports them at the end instead of silently leaving stale files in
- * place. Do not rename an output without renaming its consumer.
+ * CONSUMED_ASSETS below), and every capture here has a consumer. Do not
+ * rename an output without renaming its consumer.
+ *
+ * These PNGs are the capture SOURCE, not what ships. The landing serves AVIF
+ * with a WebP fallback at two widths (`<base>-800.avif`, `<base>-1600.webp`,
+ * …) via Shot.svelte, and only those derivatives are committed. After running
+ * this script, convert the PNGs and delete them:
+ *
+ *   for f in 2d-moments 2d-section-analysis 3d-industrial 3d-section-analysis; do
+ *     for w in 800 1600; do
+ *       npx --yes sharp-cli -i public/screenshots/$f.png -o public/screenshots \
+ *         resize $w -- avif --quality 52
+ *       npx --yes sharp-cli -i public/screenshots/$f.png -o public/screenshots \
+ *         resize $w -- webp --quality 78
+ *     done
+ *   done
+ *
+ * `npx --yes` is used deliberately: an image encoder is a one-off authoring
+ * tool and must not become a dependency in web/package.json.
+ *
+ * `3d-industrial.png` is also kept as the PNG the site's Open Graph tag points
+ * at (web/index.html), so that one file stays committed alongside its
+ * derivatives.
  */
 import { chromium } from 'playwright';
 
@@ -52,14 +72,10 @@ const OUT = 'public/screenshots';
  * each one. Kept next to the captures so a rename cannot drift again.
  */
 const CONSUMED_ASSETS = [
-  '2d-loads.png',
   '2d-moments.png',
   '2d-section-analysis.png',
-  '3d-loads.png',
   '3d-industrial.png',
   '3d-section-analysis.png',
-  'pro-features.png',
-  'pro-verification.png',
 ] as const;
 
 const captured: string[] = [];
@@ -84,6 +100,9 @@ const CROP = {
   height: VP.height - HEADER_H - STATUS_H,
 };
 
+// NOTE: the event names below are `stabileo-*`. They were `dedaliano-*` until
+// this repair — names that stopped existing at the rebrand, so the captures had
+// silently not been solving or zooming to fit for months.
 function sleep(ms: number) {
   return new Promise((r) => setTimeout(r, ms));
 }
@@ -114,24 +133,6 @@ async function main() {
 
   // ═══ 1. BASIC 2D ═══
 
-  // 1.1 — Portal frame with loads, no results
-  // Show sidebar with structure info for context
-  {
-    const page = await freshPage();
-    await page.evaluate(async () => {
-      const { modelStore, resultsStore, uiStore } = await import('/src/lib/store/index.ts');
-      modelStore.loadExample('portal-frame');
-      resultsStore.clear();
-      uiStore.leftSidebarOpen = false;
-      uiStore.rightSidebarOpen = false;
-      setTimeout(() => window.dispatchEvent(new Event('dedaliano-zoom-to-fit')), 100);
-    });
-    await sleep(1500);
-    await page.screenshot({ path: `${OUT}/2d-loads.png`, clip: CROP });
-    record('2d-loads.png');
-    await page.close();
-  }
-
   // 1.2 — Portal frame solved with moment diagram
   {
     const page = await freshPage();
@@ -141,10 +142,10 @@ async function main() {
       resultsStore.clear();
       uiStore.leftSidebarOpen = true;
       uiStore.rightSidebarOpen = false;
-      setTimeout(() => window.dispatchEvent(new Event('dedaliano-zoom-to-fit')), 100);
+      setTimeout(() => window.dispatchEvent(new Event('stabileo-zoom-to-fit')), 100);
     });
     await sleep(500);
-    await page.evaluate(() => window.dispatchEvent(new Event('dedaliano-solve')));
+    await page.evaluate(() => window.dispatchEvent(new Event('stabileo-solve')));
     await sleep(2000);
     await page.evaluate(async () => {
       const { resultsStore } = await import('/src/lib/store/index.ts');
@@ -165,10 +166,10 @@ async function main() {
       resultsStore.clear();
       uiStore.leftSidebarOpen = false;
       uiStore.rightSidebarOpen = false;
-      setTimeout(() => window.dispatchEvent(new Event('dedaliano-zoom-to-fit')), 100);
+      setTimeout(() => window.dispatchEvent(new Event('stabileo-zoom-to-fit')), 100);
     });
     await sleep(500);
-    await page.evaluate(() => window.dispatchEvent(new Event('dedaliano-solve')));
+    await page.evaluate(() => window.dispatchEvent(new Event('stabileo-solve')));
     await sleep(2000);
     await page.evaluate(async () => {
       const { resultsStore, uiStore, modelStore } = await import('/src/lib/store/index.ts');
@@ -205,28 +206,6 @@ async function main() {
 
   // ═══ 2. BASIC 3D ═══
 
-  // 2.1 — 3D building with loads
-  {
-    const page = await freshPage();
-    await page.evaluate(async () => {
-      const { modelStore, resultsStore, uiStore } = await import('/src/lib/store/index.ts');
-      uiStore.analysisMode = '3d';
-      uiStore.leftSidebarOpen = false;
-      uiStore.rightSidebarOpen = false;
-    });
-    await sleep(1500);
-    await page.evaluate(async () => {
-      const { modelStore, resultsStore } = await import('/src/lib/store/index.ts');
-      modelStore.loadExample('3d-building');
-      resultsStore.clear3D();
-      setTimeout(() => window.dispatchEvent(new Event('dedaliano-zoom-to-fit')), 200);
-    });
-    await sleep(3000);
-    await page.screenshot({ path: `${OUT}/3d-loads.png`, clip: CROP });
-    record('3d-loads.png');
-    await page.close();
-  }
-
   // 2.2 — Nave industrial with stress ratio color map (σ/fy)
   {
     const page = await freshPage();
@@ -241,11 +220,11 @@ async function main() {
       const { modelStore, resultsStore } = await import('/src/lib/store/index.ts');
       modelStore.loadExample('3d-nave-industrial');
       resultsStore.clear3D();
-      setTimeout(() => window.dispatchEvent(new Event('dedaliano-zoom-to-fit')), 200);
+      setTimeout(() => window.dispatchEvent(new Event('stabileo-zoom-to-fit')), 200);
     });
     await sleep(2000);
     // Solve
-    await page.evaluate(() => window.dispatchEvent(new Event('dedaliano-solve')));
+    await page.evaluate(() => window.dispatchEvent(new Event('stabileo-solve')));
     await sleep(5000);
     // Set color map mode with stress ratio σ/fy
     await page.evaluate(async () => {
@@ -268,33 +247,54 @@ async function main() {
   // both deleted). If the landing gains an Education section, add captures
   // here named after whatever assets that section consumes.
 
-  // ═══ 4. PRO ═══
-
-  // 4.1 — PRO example solved with results tab
+  // ═══ 4. 3D SECTION STRESS ═══
+  //
+  // Added because `3d-section-analysis` is consumed by the landing and had no
+  // producer. Same store API as the 2D stress shot — `resultsStore.stressQuery`
+  // takes an optional worldZ and is shared between the 2D and 3D viewports.
   {
     const page = await freshPage();
     await page.evaluate(async () => {
       const { uiStore } = await import('/src/lib/store/index.ts');
-      uiStore.analysisMode = 'pro';
+      uiStore.analysisMode = '3d';
+      uiStore.leftSidebarOpen = false;
+      uiStore.rightSidebarOpen = false;
     });
     await sleep(1500);
-    await page.waitForSelector('.pro-example-btn', { timeout: 5000 }).catch(() => {});
-    const proBtnCount = await page.locator('.pro-example-btn').count();
-    if (proBtnCount > 0) {
-      await page.locator('.pro-example-btn').click();
-      await sleep(3000);
-    }
-    await page.evaluate(() => window.dispatchEvent(new Event('dedaliano-solve')));
-    await sleep(5000);
-    const resultsTab = page.locator('button').filter({ hasText: /result/i });
-    if (await resultsTab.count() > 0) {
-      await resultsTab.first().click();
-      await sleep(500);
-    }
-    await page.evaluate(() => window.dispatchEvent(new Event('dedaliano-zoom-to-fit')));
-    await sleep(1000);
-    await page.screenshot({ path: `${OUT}/pro-features.png`, clip: CROP });
-    record('pro-features.png');
+    await page.evaluate(async () => {
+      const { modelStore, resultsStore } = await import('/src/lib/store/index.ts');
+      modelStore.loadExample('3d-portal-frame');
+      resultsStore.clear3D();
+      setTimeout(() => window.dispatchEvent(new Event('stabileo-zoom-to-fit')), 200);
+    });
+    await sleep(2000);
+    await page.evaluate(() => window.dispatchEvent(new Event('stabileo-solve')));
+    await sleep(4000);
+    await page.evaluate(async () => {
+      const { modelStore, resultsStore, uiStore } = await import('/src/lib/store/index.ts');
+      uiStore.currentTool = 'select';
+      uiStore.selectMode = 'stress';
+      const [first] = [...modelStore.elements.keys()];
+      const elem = modelStore.elements.get(first);
+      if (!elem) return;
+      const nI = modelStore.nodes.get(elem.nodeI);
+      const nJ = modelStore.nodes.get(elem.nodeJ);
+      if (!nI || !nJ) return;
+      resultsStore.stressQuery = {
+        elementId: first,
+        t: 0.5,
+        worldX: (nI.x + nJ.x) / 2,
+        worldY: (nI.y + nJ.y) / 2,
+        worldZ: ((nI.z ?? 0) + (nJ.z ?? 0)) / 2,
+      };
+    });
+    await sleep(2500);
+    await page.evaluate(() => {
+      document.querySelectorAll('.ssp-panel details:not([open])').forEach((d) => ((d as HTMLDetailsElement).open = true));
+    });
+    await sleep(500);
+    await page.screenshot({ path: `${OUT}/3d-section-analysis.png`, clip: CROP });
+    record('3d-section-analysis.png');
     await page.close();
   }
 
