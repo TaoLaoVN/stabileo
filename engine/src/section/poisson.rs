@@ -50,6 +50,8 @@ use serde::{Deserialize, Serialize};
 
 use super::mesh::SectionMesh;
 use crate::linalg::lu::lu_solve;
+use crate::linalg::sparse::CscMatrix;
+use crate::linalg::sparse_chol::sparse_cholesky_solve_full;
 
 /// Boundary condition applied to a mesh boundary loop.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -63,6 +65,25 @@ pub enum LoopBc {
     /// `du/dn` supplied per boundary edge by the caller, indexed by the edge's
     /// position in `SectionMesh::boundary_edges`.
     NeumannPerEdge,
+}
+
+/// How the assembled system is solved.
+///
+/// The production path is sparse. `Dense` exists only so tests can check the
+/// sparse result against a direct factorisation on small meshes.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum SolveStrategy {
+    /// Sparse Cholesky over the free degrees of freedom. Default.
+    Sparse,
+    /// Dense LU. O(n^3) — small reference systems only.
+    Dense,
+}
+
+impl Default for SolveStrategy {
+    fn default() -> Self {
+        SolveStrategy::Sparse
+    }
 }
 
 /// A scalar Poisson problem posed on a section mesh.
@@ -80,10 +101,18 @@ pub struct PoissonProblem<'a> {
     /// null mode of a pure-Neumann problem when the caller prefers pinning to
     /// the zero-mean constraint.
     pub pins: Vec<(usize, f64)>,
-    /// Impose `integral(u) = 0` instead of pinning, via one Lagrange multiplier.
-    /// The physically meaningful choice for a pure-Neumann problem, because it
-    /// does not privilege an arbitrary node.
+    /// Gauge a pure-Neumann problem by `integral(u) = 0`.
+    ///
+    /// The sparse path implements this as pin-then-normalise rather than as a
+    /// Lagrange multiplier: a multiplier makes the system a symmetric INDEFINITE
+    /// saddle point, and Cholesky is only valid for positive definite systems.
+    /// Pinning one node keeps the reduced system SPD, and shifting the result so
+    /// its integral vanishes afterwards lands on exactly the same solution —
+    /// the two differ only by the constant that the gauge removes, and the
+    /// gradients (the physically meaningful output) are identical either way.
     pub zero_mean: bool,
+    /// Solver strategy. Defaults to sparse.
+    pub strategy: SolveStrategy,
 }
 
 impl<'a> PoissonProblem<'a> {
@@ -95,6 +124,7 @@ impl<'a> PoissonProblem<'a> {
             edge_flux: Vec::new(),
             pins: Vec::new(),
             zero_mean: false,
+            strategy: SolveStrategy::Sparse,
         }
     }
 }
@@ -184,11 +214,12 @@ fn element_geometry(mesh: &SectionMesh, t: [usize; 3]) -> ([f64; 3], [f64; 3], f
 
 /// Assemble and solve.
 ///
-/// The system is assembled dense and factored with the existing LU. Section
-/// meshes are small (a few thousand nodes at the refinements the stress field
-/// needs), and a dense factorisation keeps the null-space handling for the
-/// pure-Neumann case straightforward. Swapping in the sparse Cholesky is a
-/// contained change if profiling ever calls for it.
+/// Assembly is element-by-element into COO triplets; the reduced system over
+/// the free degrees of freedom is then solved by sparse Cholesky. The stiffness
+/// of a scalar Poisson problem is symmetric positive definite once at least one
+/// value is prescribed, which is exactly the condition Cholesky needs — see
+/// `PoissonProblem::zero_mean` for why the pure-Neumann gauge is a pin rather
+/// than a Lagrange multiplier.
 pub fn solve_poisson(problem: &PoissonProblem) -> Result<PoissonSolution, String> {
     let mesh = problem.mesh;
     let n = mesh.nodes.len();
@@ -206,10 +237,11 @@ pub fn solve_poisson(problem: &PoissonProblem) -> Result<PoissonSolution, String
         ));
     }
 
-    // ── Stiffness and consistent source vector ────────────────────
-    let dim = if problem.zero_mean { n + 1 } else { n };
-    let mut k = vec![0.0f64; dim * dim];
-    let mut f = vec![0.0f64; dim];
+    // ── Assemble stiffness triplets and the consistent source vector ──
+    let mut rows: Vec<usize> = Vec::with_capacity(mesh.triangles.len() * 9);
+    let mut cols: Vec<usize> = Vec::with_capacity(mesh.triangles.len() * 9);
+    let mut vals: Vec<f64> = Vec::with_capacity(mesh.triangles.len() * 9);
+    let mut f = vec![0.0f64; n];
 
     for (e, &t) in mesh.triangles.iter().enumerate() {
         let (b, c, area) = element_geometry(mesh, t);
@@ -219,7 +251,9 @@ pub fn solve_poisson(problem: &PoissonProblem) -> Result<PoissonSolution, String
         let scale = 1.0 / (4.0 * area);
         for i in 0..3 {
             for j in 0..3 {
-                k[t[i] * dim + t[j]] += scale * (b[i] * b[j] + c[i] * c[j]);
+                rows.push(t[i]);
+                cols.push(t[j]);
+                vals.push(scale * (b[i] * b[j] + c[i] * c[j]));
             }
         }
         let fe = problem.source.get(e).copied().unwrap_or(0.0);
@@ -231,6 +265,7 @@ pub fn solve_poisson(problem: &PoissonProblem) -> Result<PoissonSolution, String
     }
 
     // ── Neumann contributions along boundary edges ────────────────
+    let mut flux_integral = 0.0;
     for (idx, edge) in mesh.boundary_edges.iter().enumerate() {
         let bc = &problem.loop_bcs[edge.loop_id.min(problem.loop_bcs.len() - 1)];
         let g = match bc {
@@ -238,32 +273,18 @@ pub fn solve_poisson(problem: &PoissonProblem) -> Result<PoissonSolution, String
             LoopBc::NeumannPerEdge => *problem.edge_flux.get(idx).unwrap_or(&0.0),
             LoopBc::Dirichlet { .. } => continue,
         };
-        if g == 0.0 {
-            continue;
-        }
         let pa = mesh.nodes[edge.a];
         let pb = mesh.nodes[edge.b];
         let len = ((pb[0] - pa[0]).powi(2) + (pb[1] - pa[1]).powi(2)).sqrt();
+        flux_integral += g * len;
+        if g == 0.0 {
+            continue;
+        }
         f[edge.a] += g * len / 2.0;
         f[edge.b] += g * len / 2.0;
     }
 
-    // ── Zero-mean constraint (one Lagrange multiplier) ────────────
-    if problem.zero_mean {
-        let mut m = vec![0.0f64; n];
-        for &t in &mesh.triangles {
-            let a = mesh.triangle_area(t);
-            for i in 0..3 {
-                m[t[i]] += a / 3.0;
-            }
-        }
-        for i in 0..n {
-            k[i * dim + n] = m[i];
-            k[n * dim + i] = m[i];
-        }
-    }
-
-    // ── Dirichlet elimination ─────────────────────────────────────
+    // ── Prescribed values ─────────────────────────────────────────
     let mut fixed: Vec<Option<f64>> = vec![None; n];
     for (loop_id, bc) in problem.loop_bcs.iter().enumerate() {
         if let LoopBc::Dirichlet { value } = bc {
@@ -280,63 +301,156 @@ pub fn solve_poisson(problem: &PoissonProblem) -> Result<PoissonSolution, String
         fixed[node] = Some(value);
     }
 
-    let k_full = k.clone();
-    let f_full = f.clone();
-    for (i, fx) in fixed.iter().enumerate() {
-        if let Some(v) = fx {
-            for j in 0..dim {
-                if j != i {
-                    f[j] -= k[j * dim + i] * v;
-                }
-                k[i * dim + j] = 0.0;
-                k[j * dim + i] = 0.0;
-            }
-            k[i * dim + i] = 1.0;
-            f[i] = *v;
+    let any_dirichlet = fixed.iter().any(|x| x.is_some());
+    let pure_neumann = !any_dirichlet;
+
+    if pure_neumann {
+        if !problem.zero_mean {
+            return Err(
+                "Pure-Neumann problem with no constraint: the solution is only defined up to a \
+                 constant. Set `zero_mean` or supply a pin."
+                    .into(),
+            );
         }
+        // Compatibility: a pure-Neumann problem is solvable only if the data
+        // balances. Integrating -lap(u) = f over the domain and applying the
+        // divergence theorem gives  integral(f) + boundary_integral(g) = 0.
+        // Violating it means no solution exists, and a solver that returns one
+        // anyway is reporting a fiction.
+        let source_integral: f64 = mesh
+            .triangles
+            .iter()
+            .enumerate()
+            .map(|(e, &t)| problem.source.get(e).copied().unwrap_or(0.0) * mesh.triangle_area(t))
+            .sum();
+        let scale = mesh.area().max(1e-300);
+        let imbalance = (source_integral + flux_integral).abs() / scale;
+        if imbalance > 1e-6 {
+            return Err(format!(
+                "Pure-Neumann data is incompatible: integral(f) + boundary integral(g) = {:.3e} \
+                 per unit area, which must vanish for a solution to exist",
+                imbalance
+            ));
+        }
+        // Gauge by pinning the first node; the mean shift is applied afterwards.
+        fixed[0] = Some(0.0);
     }
 
-    let has_constraint = fixed.iter().any(|x| x.is_some()) || problem.zero_mean;
-    if !has_constraint {
-        return Err(
-            "Pure-Neumann problem with no constraint: the solution is only defined up to a \
-             constant. Set `zero_mean` or supply a pin."
-                .into(),
-        );
-    }
-
-    let mut a = k;
-    let mut rhs = f.clone();
-    let u_all = lu_solve(&mut a, &mut rhs, dim).ok_or("Poisson system is singular")?;
-
-    // ── Residual over the free equations ──────────────────────────
-    let mut residual: f64 = 0.0;
+    // ── Reduced system over the free DOFs ─────────────────────────
+    let mut free_index = vec![usize::MAX; n];
+    let mut free_nodes: Vec<usize> = Vec::with_capacity(n);
     for i in 0..n {
-        if fixed[i].is_some() {
-            continue;
+        if fixed[i].is_none() {
+            free_index[i] = free_nodes.len();
+            free_nodes.push(i);
         }
-        let mut r = -f_full[i];
-        for j in 0..dim {
-            r += k_full[i * dim + j] * u_all[j];
-        }
-        residual = residual.max(r.abs());
+    }
+    let nf = free_nodes.len();
+    if nf == 0 {
+        return Err("Every node is prescribed — nothing to solve".into());
     }
 
-    let u: Vec<f64> = u_all[..n].to_vec();
-    let grad: Vec<[f64; 2]> = mesh
+    let mut rhs: Vec<f64> = free_nodes.iter().map(|&i| f[i]).collect();
+    let mut r_rows: Vec<usize> = Vec::with_capacity(vals.len());
+    let mut r_cols: Vec<usize> = Vec::with_capacity(vals.len());
+    let mut r_vals: Vec<f64> = Vec::with_capacity(vals.len());
+
+    for k in 0..vals.len() {
+        let (i, j, v) = (rows[k], cols[k], vals[k]);
+        match (fixed[i], fixed[j]) {
+            // free-free: keep
+            (None, None) => {
+                r_rows.push(free_index[i]);
+                r_cols.push(free_index[j]);
+                r_vals.push(v);
+            }
+            // free-fixed: move the known contribution to the right-hand side
+            (None, Some(uj)) => rhs[free_index[i]] -= v * uj,
+            // rows of prescribed equations are dropped entirely
+            (Some(_), _) => {}
+        }
+    }
+
+    let u_free = match problem.strategy {
+        SolveStrategy::Sparse => {
+            // CscMatrix stores the LOWER TRIANGLE ONLY for symmetric systems
+            // (see linalg::sparse). The reduced stiffness is symmetric, so the
+            // upper entries are dropped rather than duplicated — passing the
+            // full matrix double-counts every off-diagonal and the
+            // factorisation fails as not positive definite.
+            let (mut lr, mut lc, mut lv) = (Vec::with_capacity(r_vals.len()), Vec::with_capacity(r_vals.len()), Vec::with_capacity(r_vals.len()));
+            for k in 0..r_vals.len() {
+                if r_rows[k] >= r_cols[k] {
+                    lr.push(r_rows[k]);
+                    lc.push(r_cols[k]);
+                    lv.push(r_vals[k]);
+                }
+            }
+            let a = CscMatrix::from_triplets(nf, &lr, &lc, &lv);
+            sparse_cholesky_solve_full(&a, &rhs).ok_or(
+                "Sparse Cholesky failed: the reduced system is not positive definite. \
+                 Check that the mesh is connected and that boundary data is well posed.",
+            )?
+        }
+        SolveStrategy::Dense => {
+            let mut dense = vec![0.0f64; nf * nf];
+            for k in 0..r_vals.len() {
+                dense[r_rows[k] * nf + r_cols[k]] += r_vals[k];
+            }
+            let mut b = rhs.clone();
+            lu_solve(&mut dense, &mut b, nf).ok_or("Dense reference system is singular")?
+        }
+    };
+
+    let mut u = vec![0.0f64; n];
+    for i in 0..n {
+        u[i] = match fixed[i] {
+            Some(v) => v,
+            None => u_free[free_index[i]],
+        };
+    }
+
+    // ── Residual over the free equations, from the original system ──
+    let mut ku = vec![0.0f64; n];
+    for k in 0..vals.len() {
+        ku[rows[k]] += vals[k] * u[cols[k]];
+    }
+    let mut residual: f64 = 0.0;
+    for &i in &free_nodes {
+        residual = residual.max((ku[i] - f[i]).abs());
+    }
+
+    let mut solution = PoissonSolution {
+        u,
+        grad: Vec::new(),
+        residual,
+    };
+
+    // ── Apply the zero-mean gauge ────────────────────────────────
+    if problem.zero_mean {
+        let total = mesh.area();
+        if total > 1e-300 {
+            let shift = solution.integrate(mesh) / total;
+            for v in solution.u.iter_mut() {
+                *v -= shift;
+            }
+        }
+    }
+
+    solution.grad = mesh
         .triangles
         .iter()
         .map(|&t| {
             let (b, c, area) = element_geometry(mesh, t);
             let s = 1.0 / (2.0 * area);
             [
-                s * (b[0] * u[t[0]] + b[1] * u[t[1]] + b[2] * u[t[2]]),
-                s * (c[0] * u[t[0]] + c[1] * u[t[1]] + c[2] * u[t[2]]),
+                s * (b[0] * solution.u[t[0]] + b[1] * solution.u[t[1]] + b[2] * solution.u[t[2]]),
+                s * (c[0] * solution.u[t[0]] + c[1] * solution.u[t[1]] + c[2] * solution.u[t[2]]),
             ]
         })
         .collect();
 
-    Ok(PoissonSolution { u, grad, residual })
+    Ok(solution)
 }
 
 #[cfg(test)]
@@ -353,6 +467,11 @@ mod tests {
     }
     fn rect(y0: f64, z0: f64, y1: f64, z1: f64) -> SectionPolygon {
         poly(&[[y0, z0], [y1, z0], [y1, z1], [y0, z1]])
+    }
+    /// Equal-leg angle — concave, acute corner, narrow legs. The scaling study
+    /// uses it so element growth reflects a real profile, not a trivial square.
+    fn angle(l: f64, t: f64) -> SectionPolygon {
+        poly(&[[0.0, 0.0], [l, 0.0], [l, t], [t, t], [t, l], [0.0, l]])
     }
     fn circle(r: f64, n: usize) -> SectionPolygon {
         poly(&(0..n)
@@ -669,6 +788,117 @@ mod tests {
         for (ga, gb) in sa.grad.iter().zip(sb.grad.iter()) {
             assert!((ga[0] - gb[0]).abs() < 1e-9 && (ga[1] - gb[1]).abs() < 1e-9);
         }
+    }
+
+    // ── Sparse production path ───────────────────────────────────
+
+    #[test]
+    fn sparse_and_dense_agree_on_small_systems() {
+        // Same problem, both strategies. The sparse path is the production one;
+        // the dense LU is kept solely as this reference.
+        for &ma in &[3.0e-2, 1.0e-2] {
+            let mesh = mesh_section(&[rect(0.0, 0.0, 1.0, 1.0)], &MeshParams { max_area: ma, ..Default::default() }).unwrap();
+            let make = |strategy| {
+                let mut p = PoissonProblem::new(&mesh);
+                p.loop_bcs = vec![LoopBc::Dirichlet { value: 0.0 }];
+                p.source = vec![4.0; mesh.triangles.len()];
+                p.strategy = strategy;
+                solve_poisson(&p).unwrap()
+            };
+            let sp = make(SolveStrategy::Sparse);
+            let dn = make(SolveStrategy::Dense);
+            let worst = sp.u.iter().zip(dn.u.iter()).map(|(a, b)| (a - b).abs()).fold(0.0, f64::max);
+            let scale = dn.u.iter().fold(0.0f64, |m, v| m.max(v.abs())).max(1e-12);
+            assert!(worst / scale < 1e-9, "sparse vs dense differ by {:.3e} (relative)", worst / scale);
+            assert!(sp.residual < 1e-9 && dn.residual < 1e-9);
+        }
+    }
+
+    #[test]
+    fn sparse_and_dense_agree_on_a_multiply_connected_domain() {
+        let mesh = mesh_section(
+            &[circle(1.0, 64), void(&circle(0.4, 48).vertices)],
+            &MeshParams { max_area: 2.0e-2, ..Default::default() },
+        )
+        .unwrap();
+        let make = |strategy| {
+            let mut p = PoissonProblem::new(&mesh);
+            p.loop_bcs = vec![LoopBc::Dirichlet { value: 0.0 }, LoopBc::Dirichlet { value: 1.0 }];
+            p.strategy = strategy;
+            solve_poisson(&p).unwrap()
+        };
+        let sp = make(SolveStrategy::Sparse);
+        let dn = make(SolveStrategy::Dense);
+        let worst = sp.u.iter().zip(dn.u.iter()).map(|(a, b)| (a - b).abs()).fold(0.0, f64::max);
+        assert!(worst < 1e-9, "sparse vs dense differ by {worst:.3e}");
+    }
+
+    #[test]
+    fn sparse_path_scales_better_than_cubically() {
+        use std::time::Instant;
+        // Three refinement levels on the angle profile — the geometry with the
+        // narrow legs and the acute corner, so element counts grow realistically.
+        let (l, t) = (0.100, 0.010);
+        let mut rows: Vec<(usize, usize, f64, f64)> = Vec::new();
+
+        for &ma in &[8.0e-6, 2.0e-6, 5.0e-7] {
+            let t0 = Instant::now();
+            let mesh = mesh_section(&[angle(l, t)], &MeshParams { max_area: ma, ..Default::default() }).unwrap();
+            let mesh_ms = t0.elapsed().as_secs_f64() * 1e3;
+
+            let mut p = PoissonProblem::new(&mesh);
+            p.loop_bcs = vec![LoopBc::Dirichlet { value: 0.0 }];
+            p.source = vec![2.0; mesh.triangles.len()];
+
+            let t1 = Instant::now();
+            let sol = solve_poisson(&p).unwrap();
+            let solve_ms = t1.elapsed().as_secs_f64() * 1e3;
+
+            assert!(sol.residual < 1e-6, "residual {} at maxArea={ma}", sol.residual);
+            println!(
+                "  maxArea={:<9.1e} nodes={:<6} tris={:<6} mesh={:>7.1} ms  assemble+factor+solve={:>7.1} ms",
+                ma, mesh.nodes.len(), mesh.triangles.len(), mesh_ms, solve_ms
+            );
+            rows.push((mesh.nodes.len(), mesh.triangles.len(), mesh_ms, solve_ms));
+        }
+
+        // Empirical exponent: t ~ n^k. Dense LU is k = 3. Sparse Cholesky on a
+        // 2D mesh is theoretically ~n^1.5; the bar here is set at 2.5 so the
+        // test measures the asymptotic class rather than machine noise.
+        let (n0, _, _, s0) = rows[0];
+        let (n2, _, _, s2) = rows[rows.len() - 1];
+        let k = (s2.max(1e-3) / s0.max(1e-3)).ln() / ((n2 as f64) / (n0 as f64)).ln();
+        println!("  observed exponent t ~ n^{k:.2} (dense LU would be 3.0)");
+        assert!(k < 2.5, "solve time scales as n^{k:.2} — that is dense-like, not sparse");
+        assert!(n2 > 4 * n0, "the three levels must actually differ in size");
+    }
+
+    #[test]
+    fn rejects_incompatible_pure_neumann_data() {
+        // A pure-Neumann problem is solvable only if integral(f) + boundary
+        // integral(g) vanishes. Here f = 1 with zero flux, so no solution
+        // exists; returning one anyway would be reporting a fiction.
+        let mesh = mesh_section(&[rect(0.0, 0.0, 1.0, 1.0)], &MeshParams { max_area: 2e-2, ..Default::default() }).unwrap();
+        let mut p = PoissonProblem::new(&mesh);
+        p.loop_bcs = vec![LoopBc::Neumann { value: 0.0 }];
+        p.source = vec![1.0; mesh.triangles.len()];
+        p.zero_mean = true;
+        let err = solve_poisson(&p).expect_err("incompatible data must be rejected");
+        assert!(err.contains("incompatible"), "unexpected error: {err}");
+    }
+
+    #[test]
+    fn accepts_compatible_pure_neumann_data() {
+        // f = -2 over a unit square balanced by g = +0.5 on all four edges
+        // (perimeter 4): integral(f) = -2, boundary integral(g) = +2.
+        let mesh = mesh_section(&[rect(0.0, 0.0, 1.0, 1.0)], &MeshParams { max_area: 2e-2, ..Default::default() }).unwrap();
+        let mut p = PoissonProblem::new(&mesh);
+        p.loop_bcs = vec![LoopBc::Neumann { value: 0.5 }];
+        p.source = vec![-2.0; mesh.triangles.len()];
+        p.zero_mean = true;
+        let sol = solve_poisson(&p).unwrap();
+        assert!(sol.residual < 1e-8, "residual {}", sol.residual);
+        assert!(sol.integrate(&mesh).abs() < 1e-9, "gauge not applied");
     }
 
     // ── Input validation ─────────────────────────────────────────
