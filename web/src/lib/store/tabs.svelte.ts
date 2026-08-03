@@ -4,7 +4,7 @@ import { modelStore } from './model.svelte';
 import { uiStore } from './ui.svelte';
 import { resultsStore } from './results.svelte';
 import { historyStore } from './history.svelte';
-import type { ModelSnapshot } from './history.svelte';
+import type { ModelSnapshot, SnapshotKind } from './history.svelte';
 import { dsmStepsStore } from './dsmSteps.svelte';
 import { noteAxisConventionMigrationIfNeeded } from './file';
 import type { DiagramType } from './results.svelte';
@@ -37,6 +37,12 @@ export interface TabState {
   // History stacks
   undoStack: ModelSnapshot[];
   redoStack: ModelSnapshot[];
+  // Parallel to undoStack/redoStack: what kind of transaction produced each entry
+  // ('structural' vs 'reinforcement' — see history.svelte.ts). Optional so any
+  // pre-existing TabState-shaped object without them still restores safely
+  // (historyStore.setStacks defaults missing entries to 'structural').
+  undoKinds?: SnapshotKind[];
+  redoKinds?: SnapshotKind[];
   // === Independent per-tab visualization config ===
   // 2D config
   showGrid: boolean;
@@ -118,6 +124,8 @@ function createTabManager() {
       // History
       undoStack: stacks.undo,
       redoStack: stacks.redo,
+      undoKinds: stacks.undoKinds,
+      redoKinds: stacks.redoKinds,
       // Per-tab visualization config — 2D
       showGrid: uiStore.showGrid,
       gridSize: uiStore.gridSize,
@@ -185,7 +193,7 @@ function createTabManager() {
       uiStore.viewportPresentation3D = state.viewportPresentation3D ?? 'native3d';
 
       // Restore history stacks
-      historyStore.setStacks(state.undoStack, state.redoStack);
+      historyStore.setStacks(state.undoStack, state.redoStack, state.undoKinds, state.redoKinds);
 
       // Restore UI state
       uiStore.currentTool = state.currentTool;

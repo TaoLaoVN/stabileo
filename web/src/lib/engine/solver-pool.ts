@@ -1,25 +1,54 @@
 /**
- * solver-pool.ts — Worker pool for parallel 3D solving.
+ * solver-pool.ts — Worker pool for off-main-thread structural solving.
  *
  * Pre-initializes a pool of Web Workers, each with its own WASM instance.
- * Distributes solve_3d calls across workers for parallel execution.
+ * Serves both single solves (2D and 3D) and parallel 3D case-solving.
+ * Inputs/outputs travel as plain objects (structured clone), never JSON text.
+ *
+ * When Workers are unavailable (e.g. Node/vitest), `solve2DInWorker` /
+ * `solve3DInWorker` throw `PoolUnavailableError` so callers can fall back to
+ * the synchronous main-thread solver.
  */
 
+import { getWasmBytes } from './wasm-solver';
+
+/** Thrown when the pool cannot be used (no Worker support, init failure). */
+export class PoolUnavailableError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'PoolUnavailableError';
+  }
+}
+
+/** Minimal structural type so tests can inject an in-process fake worker. */
+export interface WorkerLike {
+  postMessage(msg: any): void;
+  terminate(): void;
+  onmessage: ((e: MessageEvent) => void) | null;
+  onerror: ((e: any) => void) | null;
+}
+
 interface PendingSolve {
-  resolve: (json: string) => void;
+  resolve: (result: any) => void;
   reject: (err: Error) => void;
 }
 
 interface PoolWorker {
-  worker: Worker;
+  worker: WorkerLike;
   ready: boolean;
   pending: Map<number, PendingSolve>;
 }
 
 let pool: PoolWorker[] = [];
-let wasmBytes: ArrayBuffer | null = null;
 let initPromise: Promise<void> | null = null;
 let nextId = 0;
+
+/** Test seam: inject a factory producing in-process fake workers (null = real Workers). */
+let workerFactory: (() => WorkerLike) | null = null;
+export function setWorkerFactoryForTests(factory: (() => WorkerLike) | null): void {
+  workerFactory = factory;
+  destroyPool();
+}
 
 /** Maximum number of workers to create */
 const DEFAULT_WORKER_COUNT = 4;
@@ -30,24 +59,15 @@ const MAX_WORKERS = Math.min(
   8,
 );
 
-/** Fetch the WASM binary once for sharing with workers. */
-async function fetchWasmBytes(): Promise<ArrayBuffer> {
-  if (wasmBytes) return wasmBytes;
-  // The WASM binary is served alongside the JS glue code
-  // Use the same resolution path as the glue code
-  const wasmUrl = new URL('../wasm/dedaliano_engine_bg.wasm', import.meta.url);
-  const resp = await fetch(wasmUrl);
-  wasmBytes = await resp.arrayBuffer();
-  return wasmBytes;
-}
-
 /** Create a single worker and wait for it to become ready. */
-function createWorker(bytes: ArrayBuffer): Promise<PoolWorker> {
+function createWorker(wasmModule: WebAssembly.Module | null): Promise<PoolWorker> {
   return new Promise((resolve, reject) => {
-    const worker = new Worker(
-      new URL('./solver-worker.ts', import.meta.url),
-      { type: 'module' },
-    );
+    const worker: WorkerLike = workerFactory
+      ? workerFactory()
+      : new Worker(
+        new URL('./solver-worker.ts', import.meta.url),
+        { type: 'module' },
+      );
 
     const pw: PoolWorker = { worker, ready: false, pending: new Map() };
 
@@ -67,7 +87,7 @@ function createWorker(bytes: ArrayBuffer): Promise<PoolWorker> {
         if (p) {
           pw.pending.delete(msg.id);
           if (msg.error) p.reject(new Error(msg.error));
-          else p.resolve(msg.resultJson);
+          else p.resolve(msg.result);
         }
       }
     };
@@ -76,8 +96,9 @@ function createWorker(bytes: ArrayBuffer): Promise<PoolWorker> {
       reject(new Error(`Worker error: ${err.message}`));
     };
 
-    // Send WASM bytes (copy, not transfer, since multiple workers need it)
-    worker.postMessage({ type: 'init', wasmBytes: bytes.slice(0) });
+    // Compiled module is structured-cloneable: no byte copy, no per-worker compile.
+    // (Fake test workers ignore it and share the test's in-process WASM instance.)
+    worker.postMessage({ type: 'init', wasmModule });
   });
 }
 
@@ -89,11 +110,31 @@ export async function initPool(numWorkers?: number): Promise<void> {
   const count = numWorkers ?? MAX_WORKERS;
 
   initPromise = (async () => {
-    const bytes = await fetchWasmBytes();
-    const workers = await Promise.all(
-      Array.from({ length: count }, () => createWorker(bytes)),
-    );
-    pool = workers;
+    try {
+      // Compile once on the main thread (bytes shared with wasm-solver's init,
+      // so a single fetch); workers instantiate clones of the compiled module.
+      // (Fake test workers skip the compile — they share the test's WASM instance.)
+      const wasmModule = workerFactory ? null : await WebAssembly.compile(await getWasmBytes());
+      const settled = await Promise.allSettled(
+        Array.from({ length: count }, () => createWorker(wasmModule)),
+      );
+      const failed = settled.find((s): s is PromiseRejectedResult => s.status === 'rejected');
+      if (failed) {
+        // Terminate the workers that DID start (Promise.all would leak them),
+        // then rethrow into the reset path below.
+        for (const s of settled) {
+          if (s.status === 'fulfilled') s.value.worker.terminate();
+        }
+        throw failed.reason;
+      }
+      pool = settled.map(s => (s as PromiseFulfilledResult<PoolWorker>).value);
+    } catch (err) {
+      // Don't poison the pool: a rejected initPromise would make every later
+      // call re-await the same failure until reload. Reset so the next call
+      // retries.
+      initPromise = null;
+      throw err;
+    }
   })();
 
   return initPromise;
@@ -104,45 +145,69 @@ export function isPoolReady(): boolean {
   return pool.length > 0 && pool.every(w => w.ready);
 }
 
+function workersAvailable(): boolean {
+  return workerFactory !== null || (typeof Worker !== 'undefined' && typeof WebAssembly !== 'undefined');
+}
+
+/** Initialize the pool or throw PoolUnavailableError. */
+async function ensurePool(): Promise<void> {
+  if (!workersAvailable()) {
+    throw new PoolUnavailableError('Web Workers are not available in this environment');
+  }
+  try {
+    await initPool();
+  } catch (err: any) {
+    throw new PoolUnavailableError(err?.message ?? 'Worker pool initialization failed');
+  }
+}
+
+/** Route one solve job to the least-busy worker. */
+function runJob(type: 'solve' | 'solve3d', input: any): Promise<any> {
+  const pw = pool.reduce((a, b) => (a.pending.size <= b.pending.size ? a : b));
+  const msgId = nextId++;
+  return new Promise((resolve, reject) => {
+    pw.pending.set(msgId, { resolve, reject });
+    pw.worker.postMessage({ type, id: msgId, input });
+  });
+}
+
+/**
+ * Solve a single 2D case in a worker.
+ * @param input Plain-object wire form of SolverInput (see input2DToWireObject)
+ * @throws PoolUnavailableError when Workers are unavailable — caller should fall back to the sync solver
+ */
+export async function solve2DInWorker(input: any): Promise<any> {
+  await ensurePool();
+  return runJob('solve', input);
+}
+
+/**
+ * Solve a single 3D case in a worker.
+ * @param input Plain-object wire form of SolverInput3D (see input3DToWireObject)
+ * @throws PoolUnavailableError when Workers are unavailable — caller should fall back to the sync solver
+ */
+export async function solve3DInWorker(input: any): Promise<any> {
+  await ensurePool();
+  return runJob('solve3d', input);
+}
+
 /**
  * Solve multiple 3D cases in parallel across the worker pool.
  *
- * @param cases Array of { id, json } where json is the serialized SolverInput3D
- * @returns Map from id to parsed result JSON string
+ * @param cases Array of { id, input } where input is the plain-object wire form of SolverInput3D
+ * @returns Map from id to the solved result object (structured-cloned from the worker)
  */
 export async function solveParallel(
-  cases: Array<{ id: number; json: string }>,
-): Promise<Map<number, string>> {
-  if (pool.length === 0) {
-    throw new Error('Worker pool not initialized. Call initPool() first.');
-  }
+  cases: Array<{ id: number; input: any }>,
+): Promise<Map<number, any>> {
+  await ensurePool();
 
-  const results = new Map<number, string>();
-
-  // Distribute cases round-robin across workers
-  const promises: Promise<void>[] = [];
-
-  for (let i = 0; i < cases.length; i++) {
-    const workerIdx = i % pool.length;
-    const pw = pool[workerIdx];
-    const { id, json } = cases[i];
-    const msgId = nextId++;
-
-    const promise = new Promise<void>((resolve, reject) => {
-      pw.pending.set(msgId, {
-        resolve: (resultJson: string) => {
-          results.set(id, resultJson);
-          resolve();
-        },
-        reject: (err: Error) => reject(err),
-      });
-      pw.worker.postMessage({ type: 'solve3d', id: msgId, json });
-    });
-
-    promises.push(promise);
-  }
-
-  await Promise.all(promises);
+  const results = new Map<number, any>();
+  await Promise.all(
+    cases.map(({ id, input }) =>
+      runJob('solve3d', input).then(result => { results.set(id, result); }),
+    ),
+  );
   return results;
 }
 

@@ -1,5 +1,5 @@
 use crate::types::*;
-use crate::postprocess::diagrams::compute_diagram_value_at;
+use crate::postprocess::diagrams::{compute_diagram_value_at_sorted, sorted_point_loads};
 use crate::postprocess::diagrams_3d::evaluate_diagram_3d_at;
 use serde::{Deserialize, Serialize};
 
@@ -99,8 +99,16 @@ const N_POINTS: usize = 21;
 
 /// Linearly combine AnalysisResults from multiple load cases.
 pub fn combine_results(input: &CombinationInput) -> Option<AnalysisResults> {
-    let template = input.cases.first()?;
-    let tr = &template.results;
+    let cases: Vec<(usize, &AnalysisResults)> =
+        input.cases.iter().map(|c| (c.case_id, &c.results)).collect();
+    combine_results_refs(&input.factors, &cases)
+}
+
+/// `combine_results` over borrowed case results: `(case_id, &results)` pairs,
+/// avoiding per-combination clones of every case.
+pub fn combine_results_refs(factors: &[CombinationFactor], cases: &[(usize, &AnalysisResults)]) -> Option<AnalysisResults> {
+    let template = cases.first()?;
+    let tr = template.1;
 
     let mut displacements: Vec<Displacement> = tr.displacements.iter()
         .map(|d| Displacement { node_id: d.node_id, ux: 0.0, uz: 0.0, ry: 0.0 })
@@ -119,10 +127,10 @@ pub fn combine_results(input: &CombinationInput) -> Option<AnalysisResults> {
         })
         .collect();
 
-    for cf in &input.factors {
-        let case = input.cases.iter().find(|c| c.case_id == cf.case_id);
+    for cf in factors {
+        let case = cases.iter().find(|c| c.0 == cf.case_id);
         let r = match case {
-            Some(c) => &c.results,
+            Some(c) => c.1,
             None => continue,
         };
         let f = cf.factor;
@@ -215,15 +223,28 @@ pub fn compute_envelope(results: &[AnalysisResults]) -> Option<FullEnvelope> {
             let mut pos_values = Vec::new();
             let mut neg_values = Vec::new();
 
+            // Sort point loads once per element-force record (invariant across
+            // stations) instead of on every diagram evaluation.
+            let sorted_pls: Vec<Option<Vec<PointLoadInfo>>> = results
+                .iter()
+                .map(|res| {
+                    if e_idx >= res.element_forces.len() {
+                        None
+                    } else {
+                        Some(sorted_point_loads(&res.element_forces[e_idx]))
+                    }
+                })
+                .collect();
+
             for j in 0..N_POINTS {
                 let t = j as f64 / (N_POINTS - 1) as f64;
                 t_positions.push(t);
                 let mut max_pos = 0.0f64;
                 let mut max_neg = 0.0f64;
 
-                for res in results {
-                    if e_idx >= res.element_forces.len() { continue; }
-                    let val = compute_diagram_value_at(kind, t, &res.element_forces[e_idx]);
+                for (r_idx, res) in results.iter().enumerate() {
+                    let Some(ref spl) = sorted_pls[r_idx] else { continue; };
+                    let val = compute_diagram_value_at_sorted(kind, t, &res.element_forces[e_idx], spl);
                     if val > max_pos { max_pos = val; }
                     if val < max_neg { max_neg = val; }
                 }
@@ -251,8 +272,16 @@ pub fn compute_envelope(results: &[AnalysisResults]) -> Option<FullEnvelope> {
 
 /// Linearly combine 3D results.
 pub fn combine_results_3d(input: &CombinationInput3D) -> Option<AnalysisResults3D> {
-    let template = input.cases.first()?;
-    let tr = &template.results;
+    let cases: Vec<(usize, &AnalysisResults3D)> =
+        input.cases.iter().map(|c| (c.case_id, &c.results)).collect();
+    combine_results_3d_refs(&input.factors, &cases)
+}
+
+/// `combine_results_3d` over borrowed case results: `(case_id, &results)` pairs,
+/// avoiding per-combination clones of every case.
+pub fn combine_results_3d_refs(factors: &[CombinationFactor], cases: &[(usize, &AnalysisResults3D)]) -> Option<AnalysisResults3D> {
+    let template = cases.first()?;
+    let tr = template.1;
 
     let mut displacements: Vec<Displacement3D> = tr.displacements.iter()
         .map(|d| Displacement3D { node_id: d.node_id, ux: 0.0, uy: 0.0, uz: 0.0, rx: 0.0, ry: 0.0, rz: 0.0, warping: None })
@@ -274,9 +303,9 @@ pub fn combine_results_3d(input: &CombinationInput3D) -> Option<AnalysisResults3
             distributed_loads_z: Vec::new(), point_loads_z: Vec::new(), bimoment_start: None, bimoment_end: None })
         .collect();
 
-    for cf in &input.factors {
-        let case = input.cases.iter().find(|c| c.case_id == cf.case_id);
-        let r = match case { Some(c) => &c.results, None => continue };
+    for cf in factors {
+        let case = cases.iter().find(|c| c.0 == cf.case_id);
+        let r = match case { Some(c) => c.1, None => continue };
         let f = cf.factor;
 
         for (i, d) in r.displacements.iter().enumerate() {

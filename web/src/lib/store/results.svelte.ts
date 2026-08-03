@@ -163,7 +163,18 @@ function createResultsStore() {
   let solveTimings2D = $state<SolveTimings | null>(null);
   let solveTimings3D = $state<SolveTimings | null>(null);
 
+  // Results-publish notification — set externally by store/index.ts so
+  // verificationStore can stamp a solve-generation counter without this store
+  // importing verificationStore (mirrors modelStore's `_onMutation` wiring).
+  let _onResultsPublish: (() => void) | null = null;
+
   return {
+    /** Wired in store/index.ts. Fired on every fresh-solve results publish
+     *  (setResults3D / setCombinationResults3D) so verificationStore can advance
+     *  its solve-generation counter — including a plain re-solve with no
+     *  structural mutation (self-weight / axis-convention toggle). */
+    _setOnResultsPublish(fn: () => void) { _onResultsPublish = fn; },
+
     get results() { return results; },
     /** True when ANY result of any kind is present. Used by the mutation hook
      *  to decide whether an edit must clear stale results. Covers 2D + 3D base,
@@ -635,6 +646,7 @@ function createResultsStore() {
 
     setResults3D(r: AnalysisResults3D, preserveDiagram = false) {
       noteStructuralSolve();
+      _onResultsPublish?.();
       results3D = r;
       singleResults3D = r;
       showReactions = false;
@@ -703,6 +715,7 @@ function createResultsStore() {
 
     setCombinationResults3D(pc: Map<number, AnalysisResults3D>, pco: Map<number, AnalysisResults3D>, env: FullEnvelope3D) {
       noteStructuralSolve();
+      _onResultsPublish?.();
       perCase3D = pc;
       perCombo3D = pco;
       envelope3D = env;

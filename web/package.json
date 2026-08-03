@@ -15,7 +15,8 @@
     "test:e2e:smoke": "playwright test --grep @smoke",
     "test:e2e:slow": "playwright test --grep @slow",
     "test:e2e:install": "playwright install --with-deps chromium",
-    "test:e2e:update-snapshots": "playwright test --update-snapshots"
+    "test:e2e:update-snapshots": "playwright test --update-snapshots",
+    "bench:wasm-boundary": "node scripts/bench-wasm-boundary.mjs"
   },
   "devDependencies": {
     "@playwright/test": "1.60.0",

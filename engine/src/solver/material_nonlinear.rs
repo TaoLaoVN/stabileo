@@ -126,10 +126,29 @@ pub fn solve_nonlinear_material_2d(
             total_nr_iterations += 1;
 
             // Assemble tangent stiffness with current element states (possibly reduced).
-            let k_t = assemble_tangent_stiffness(solver, &dof_num, &states);
+            // This matrix has no u-dependence, so it starts in TRUE global
+            // frame (unrotated) and can be rotated directly.
+            let mut k_t = assemble_tangent_stiffness(solver, &dof_num, &states);
 
-            // Compute internal forces from current displacements.
-            let f_int = compute_global_internal_forces(solver, &dof_num, &u_full, &states);
+            // Elements compute internal force via per-element local-frame
+            // transforms that assume TRUE global nodal displacements —
+            // u_full stores inclined-support DOFs in the rotated (tangent,
+            // normal) basis, so reverse that rotation on a scratch copy
+            // before calling the element-based internal-force routine.
+            let mut u_geom = u_full.clone();
+            for it in &asm.inclined_transforms_2d {
+                assembly::reverse_inclined_transform_2d(&mut u_geom, &it.dofs, &it.r);
+            }
+            let mut f_int = compute_global_internal_forces(solver, &dof_num, &u_geom, &states);
+
+            // Rotate K_T and f_int into the same rotated frame as f_ext
+            // (already rotated by assemble_2d above) so the residual/solve
+            // below stay consistent — without this, the reduced-EI tangent
+            // stiffness would enforce "restrain literal global Z" instead
+            // of "restrain normal to the incline."
+            for it in &asm.inclined_transforms_2d {
+                assembly::apply_inclined_transform_2d(&mut k_t, &mut f_int, n, &it.dofs, &it.r);
+            }
 
             // Residual: R = F_ext - f_int
             let mut residual = vec![0.0; n];
@@ -179,7 +198,19 @@ pub fn solve_nonlinear_material_2d(
             }
 
             // Update element yield states from current internal forces.
-            update_element_states(solver, input, &dof_num, &u_full, &mut states);
+            // update_element_states -> compute_internal_forces_2d assumes
+            // TRUE global nodal displacements for its per-element local-frame
+            // transforms; u_full stores inclined-support DOFs in the rotated
+            // (tangent, normal) support-local frame. Reverse that rotation on
+            // a fresh scratch copy (u_full just changed via delta_u above, so
+            // the u_geom built earlier in this iteration is stale) before
+            // evaluating yield demand — matches the reversal used for f_int
+            // above and for the final build_element_status call.
+            let mut u_geom = u_full.clone();
+            for it in &asm.inclined_transforms_2d {
+                assembly::reverse_inclined_transform_2d(&mut u_geom, &it.dofs, &it.r);
+            }
+            update_element_states(solver, input, &dof_num, &u_geom, &mut states);
         }
 
         if !converged_increment {
@@ -191,34 +222,50 @@ pub fn solve_nonlinear_material_2d(
         load_displacement.push([load_factor, max_disp]);
     }
 
-    // Build final results using the linear solver helpers.
-    let displacements = super::linear::build_displacements_2d(&dof_num, &u_full);
-
     // Compute reactions: R = K * u - F for restrained DOFs.
     // Use the tangent stiffness at final state for reaction computation.
-    let k_final = assemble_tangent_stiffness(solver, &dof_num, &states);
+    // k_final has no u-dependence, so rotate it directly to match f_final's
+    // (already-rotated, from f_total = asm.f.clone()) convention; the dummy
+    // F output of apply_inclined_transform_2d is discarded.
+    let mut k_final = assemble_tangent_stiffness(solver, &dof_num, &states);
+    let mut k_final_f_dummy = vec![0.0; n];
+    for it in &asm.inclined_transforms_2d {
+        assembly::apply_inclined_transform_2d(&mut k_final, &mut k_final_f_dummy, n, &it.dofs, &it.r);
+    }
     let f_final: Vec<f64> = f_total.iter().map(|&f| f).collect(); // load_factor = 1.0 at end
     let mut reactions_vec = vec![0.0; nr];
     for i in 0..nr {
         let row = nf + i;
         let mut ku = 0.0;
         for j in 0..n {
+            // u_full stays in the rotated ("mixed") convention here — matches
+            // k_final's just-applied rotation (K'@u_mixed == R∘f_int_true_global,
+            // the same identity the NR loop relies on).
             ku += k_final[row * n + j] * u_full[j];
         }
         reactions_vec[i] = ku - f_final[row];
     }
 
+    // Reverse inclined transforms to get TRUE global displacements for
+    // reporting — mirrors linear::solve_2d.
+    let mut u_geom = u_full.clone();
+    for it in &asm.inclined_transforms_2d {
+        assembly::reverse_inclined_transform_2d(&mut u_geom, &it.dofs, &it.r);
+    }
+
+    let displacements = super::linear::build_displacements_2d(&dof_num, &u_geom);
+
     let f_r = extract_subvec(&f_final, &rest_idx);
-    let mut reactions = super::linear::build_reactions_2d(
-        solver, &dof_num, &reactions_vec, &f_r, nf, &u_full,
+    let mut reactions = super::linear::build_reactions_2d_inclined(
+        solver, &dof_num, &reactions_vec, &f_r, nf, &u_geom, &asm.inclined_transforms_2d,
     );
     reactions.sort_by_key(|r| r.node_id);
 
-    let mut element_forces = super::linear::compute_internal_forces_2d(solver, &dof_num, &u_full);
+    let mut element_forces = super::linear::compute_internal_forces_2d(solver, &dof_num, &u_geom);
     element_forces.sort_by_key(|ef| ef.element_id);
 
     // Build element plastic status.
-    let element_status = build_element_status(solver, input, &dof_num, &u_full, &states);
+    let element_status = build_element_status(solver, input, &dof_num, &u_geom, &states);
 
     let final_load_factor = if n_increments > 0 { 1.0 } else { 0.0 };
 
@@ -861,8 +908,21 @@ pub fn solve_nonlinear_material_3d(
         for _nr_iter in 0..max_iter {
             total_nr_iterations += 1;
 
-            let k_t = assemble_tangent_stiffness_3d(solver, &dof_num, &states);
-            let f_int = compute_global_internal_forces_3d(solver, &dof_num, &u_full, &states);
+            // See the 2D solver's identical comment: k_t has no u-dependence
+            // (rotate directly); f_int needs TRUE global u for its
+            // per-element local-frame transforms (reverse first, rotate
+            // the result back after).
+            let mut k_t = assemble_tangent_stiffness_3d(solver, &dof_num, &states);
+
+            let mut u_geom = u_full.clone();
+            for it in &asm.inclined_transforms {
+                assembly::reverse_inclined_transform(&mut u_geom, &it.dofs, &it.r);
+            }
+            let mut f_int = compute_global_internal_forces_3d(solver, &dof_num, &u_geom, &states);
+
+            for it in &asm.inclined_transforms {
+                assembly::apply_inclined_transform(&mut k_t, &mut f_int, n, &it.dofs, &it.r);
+            }
 
             let mut residual = vec![0.0; n];
             for i in 0..n {
@@ -894,7 +954,15 @@ pub fn solve_nonlinear_material_3d(
                 u_full[nf + i] = load_factor * u_r[i];
             }
 
-            update_element_states_3d(solver, input, &dof_num, &u_full, &mut states);
+            // See the 2D solver's identical comment: update_element_states_3d
+            // -> compute_internal_forces_3d assumes TRUE global displacements;
+            // reverse the inclined rotation on a fresh scratch copy (u_full
+            // just changed via delta_u above) before evaluating yield demand.
+            let mut u_geom = u_full.clone();
+            for it in &asm.inclined_transforms {
+                assembly::reverse_inclined_transform(&mut u_geom, &it.dofs, &it.r);
+            }
+            update_element_states_3d(solver, input, &dof_num, &u_geom, &mut states);
         }
 
         if !converged_increment {
@@ -905,27 +973,51 @@ pub fn solve_nonlinear_material_3d(
         load_displacement.push([load_factor, max_disp]);
     }
 
-    // Build final results.
-    let displacements = super::linear::build_displacements_3d(&dof_num, &u_full);
-
-    let k_final = assemble_tangent_stiffness_3d(solver, &dof_num, &states);
+    // k_final has no u-dependence — rotate directly (dummy F discarded).
+    let mut k_final = assemble_tangent_stiffness_3d(solver, &dof_num, &states);
+    let mut k_final_f_dummy = vec![0.0; n];
+    for it in &asm.inclined_transforms {
+        assembly::apply_inclined_transform(&mut k_final, &mut k_final_f_dummy, n, &it.dofs, &it.r);
+    }
     let f_final = f_total.clone();
     let mut reactions_vec = vec![0.0; nr];
     for i in 0..nr {
         let row = nf + i;
         let mut ku = 0.0;
         for j in 0..n {
+            // u_full stays in the rotated ("mixed") convention — see the
+            // 2D final-block comment for why this matches k_final's rotation.
             ku += k_final[row * n + j] * u_full[j];
         }
         reactions_vec[i] = ku - f_final[row];
     }
 
-    let reactions = build_reactions_3d_nl(solver, &dof_num, &reactions_vec, nf);
+    // Reverse inclined transforms to get TRUE global displacements for
+    // reporting — mirrors linear::solve_3d.
+    let mut u_geom = u_full.clone();
+    for it in &asm.inclined_transforms {
+        assembly::reverse_inclined_transform(&mut u_geom, &it.dofs, &it.r);
+    }
 
-    let mut element_forces = super::linear::compute_internal_forces_3d(solver, &dof_num, &u_full);
+    // Build final results.
+    let displacements = super::linear::build_displacements_3d(&dof_num, &u_geom);
+
+    // build_reactions_3d_nl (a hand-rolled builder predating inclined-support
+    // support) keys off the per-DOF rx/ry/rz restraint flags, which are all
+    // false for `is_inclined` supports (those use normal_x/y/z instead) — it
+    // would silently report zero reaction at an inclined 3D support. Use the
+    // shared, dof_num-driven (and inclined-aware) builder instead, which
+    // correctly detects restraint via the actual DOF partition.
+    let f_r = extract_subvec(&f_final, &rest_idx);
+    let mut reactions = super::linear::build_reactions_3d_inclined(
+        solver, &dof_num, &reactions_vec, &f_r, nf, &u_geom, &asm.inclined_transforms,
+    );
+    reactions.sort_by_key(|r| r.node_id);
+
+    let mut element_forces = super::linear::compute_internal_forces_3d(solver, &dof_num, &u_geom);
     element_forces.sort_by_key(|ef| ef.element_id);
 
-    let element_status = build_element_status_3d(solver, input, &dof_num, &u_full, &states);
+    let element_status = build_element_status_3d(solver, input, &dof_num, &u_geom, &states);
 
     // Compute constraint forces if constraints are active
     let constraint_forces = if let Some(ref fcs) = cs {
@@ -1349,53 +1441,6 @@ fn compute_max_displacement_3d_nl(dof_num: &DofNumbering, u: &[f64]) -> f64 {
         }
     }
     max_disp
-}
-
-// ---------------------------------------------------------------------------
-// 3D: build reactions from reaction forces.
-// ---------------------------------------------------------------------------
-
-fn build_reactions_3d_nl(
-    solver: &SolverInput3D,
-    dof_num: &DofNumbering,
-    r_vec: &[f64],
-    nf: usize,
-) -> Vec<Reaction3D> {
-    let mut reactions = Vec::new();
-    for sup in solver.supports.values() {
-        let mut rx = 0.0;
-        let mut ry = 0.0;
-        let mut rz = 0.0;
-        let mut mrx = 0.0;
-        let mut mry = 0.0;
-        let mut mrz = 0.0;
-
-        let fields: [(usize, bool, &mut f64); 6] = [
-            (0, sup.rx, &mut rx),
-            (1, sup.ry, &mut ry),
-            (2, sup.rz, &mut rz),
-            (3, sup.rrx, &mut mrx),
-            (4, sup.rry, &mut mry),
-            (5, sup.rrz, &mut mrz),
-        ];
-        for (local_dof, restrained, target) in fields {
-            if restrained {
-                if let Some(&d) = dof_num.map.get(&(sup.node_id, local_dof)) {
-                    if d >= nf {
-                        *target = r_vec[d - nf];
-                    }
-                }
-            }
-        }
-
-        reactions.push(Reaction3D {
-            node_id: sup.node_id,
-            fx: rx, fy: ry, fz: rz, mx: mrx, my: mry, mz: mrz,
-            bimoment: None,
-        });
-    }
-    reactions.sort_by_key(|r| r.node_id);
-    reactions
 }
 
 // ---------------------------------------------------------------------------
