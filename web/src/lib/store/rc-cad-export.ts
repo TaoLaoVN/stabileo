@@ -60,6 +60,35 @@ const fail = (
 ): RcCadExportFailure => ({ ok: false, refusals: [{ code, messageKey, params }] });
 
 /**
+ * A fingerprint of the state every prerequisite refusal is computed against.
+ *
+ * A refusal describes ONE export attempt against ONE state. Held past the moment that state
+ * changes it becomes a false statement: "generate foundation detailing first" stayed on screen
+ * after the user had done exactly that, and only a successful export cleared it.
+ *
+ * The panel keeps this alongside the refusal and discards the refusal when the two stop
+ * matching, which is why it lives here rather than in the component: the conditions above are
+ * this module's, and a caller reimplementing them would drift the moment one is added. The
+ * fields are precisely the ones the gates read — assembly presence and its revisions,
+ * `demandRevision` for staleness, and the verifier identity — so a change to any of them
+ * retires the refusal, while an unchanged state keeps it visible for as long as it is true.
+ */
+export function footingCadPrerequisiteStamp(footingId: number): string {
+  const f = modelStore.model.footings.get(footingId);
+  const assembly = f
+    ? assemblyForFooting(f.id, modelStore.model.detailing?.assemblies ?? [])
+    : undefined;
+  return [
+    f ? '1' : '0',
+    assembly ? '1' : '0',
+    assembly?.detailingRevision ?? -1,
+    assembly?.demandRevision ?? -1,
+    verificationStore.demandRevision,
+    assembly?.provenance.verifierId ?? '',
+  ].join('|');
+}
+
+/**
  * The assembly that carries this footing's transfer cage.
  *
  * Found through the footing's own FAMILY RECORD rather than by scanning bar ids: the record's
@@ -147,6 +176,16 @@ export function buildFootingCadHandoff(
     return fail('STALE_ASSEMBLY', 'footing.cad.refusal.stale', {
       footing: f.name, generated: assembly.demandRevision, current: currentDemand,
     });
+  }
+
+  // A certificate that names no verifier is not a weaker certificate, it is an unsigned one.
+  // Exporting it would publish `certificate.verifierId: ""` inside a document whose revision
+  // stamps read as authoritative — a consumer has no way to tell that from a verifier whose
+  // identity simply failed to serialise. `resolveVerifierId` withholds the identity whenever
+  // no design run issued one, or the bound regulation no longer matches the one that did, so
+  // an empty value here means exactly that and is refused rather than shipped.
+  if (!assembly.provenance.verifierId) {
+    return fail('NO_VERIFIER', 'footing.cad.refusal.noVerifier', { footing: f.name });
   }
 
   const certificate = (assembly.familyCertificates ?? []).find(

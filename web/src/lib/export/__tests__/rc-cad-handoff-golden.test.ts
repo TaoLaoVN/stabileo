@@ -18,6 +18,19 @@
  *   WRITE_MANIFEST=1 npx vitest run src/lib/export/__tests__/rc-cad-handoff-golden.test.ts
  *
  * Review the diff before committing. A change here is a change to the contract.
+ *
+ * ── This file's bytes are NOT the production download's bytes ──
+ *
+ * `runProductionChain` translates through `keyTranslate`, so every `text` field here holds a
+ * raw i18n key and its params. A real export passes the app's `tp` and those same fields hold
+ * localized prose, which makes the two documents semantically identical and byte-different by
+ * construction. Neither is a defect in the other, and locale-dependent display text is not a
+ * byte-comparison boundary: the contract a CAD consumer relies on is the stable part — codes,
+ * message keys, params, ids, geometry, revisions, and certificate provenance.
+ *
+ * `e2e/rc-cad-production-download.spec.ts` is the other half of this pair. It drives the real
+ * controls and asserts that stable part, which is where the empty `certificate.verifierId` was
+ * found: this chain passes a verifier explicitly, so it could never have seen it.
  */
 import { describe, it, expect } from 'vitest';
 import { createHash } from 'node:crypto';

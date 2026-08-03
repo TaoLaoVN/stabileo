@@ -84,6 +84,47 @@ function currentConcreteEdition(): RegulationEdition {
 }
 
 /**
+ * THE authoritative verifier identity, derived from the verification that actually ran.
+ *
+ * Both production detailing commands used to default this to `''` and only the test chain
+ * passed one, so every real user's certificate named no verifier at all. The fix belongs
+ * here rather than in each caller: a certificate's provenance is a property of the run, not
+ * an argument a panel happens to remember to supply, and two UI call sites able to disagree
+ * is the same three-sources-for-one-decision shape `adapter()` was already repaired for.
+ *
+ * It is READ from the issued certificates, never composed from the binding alone. That
+ * distinction is the whole point — the binding says which code is selected, the certificates
+ * say which verifier was executed, and only the second is true of the work:
+ *
+ *   * no completed design run → no identity, and the export refuses;
+ *   * a run that issued no certificate → no identity (nothing was actually verified);
+ *   * a certificate naming a verifier other than the one bound NOW → no identity, because
+ *     rebinding the regulation after the run makes the earlier identity a stale claim.
+ *
+ * Returning `''` is therefore never a silent default. It is the honest "no verifier ran",
+ * and `buildFootingCadHandoff` turns it into a stated refusal rather than an empty field.
+ */
+function resolveVerifierId(): string {
+  const summary = verificationStore.runSummary;
+  if (!summary) return '';
+
+  const boundId = regulationsStore.concreteDesignCode();
+  const expected = boundId ? getDesignCode(boundId)?.provenance().verifierId : undefined;
+  if (!expected) return '';
+
+  let issued = 0;
+  for (const outcome of summary.outcomes.values()) {
+    const id = outcome.certificate?.verifierId;
+    if (!id) continue;
+    // One disagreeing certificate is enough to withhold the identity: the assembly would
+    // otherwise carry a verifier that part of the design was not checked against.
+    if (id !== expected) return '';
+    issued++;
+  }
+  return issued > 0 ? expected : '';
+}
+
+/**
  * Maximum aggregate size as the MATERIALS state it, or null when none of them does.
  *
  * PR16 moved this off the regulation panel and onto the material, where a mix property
@@ -907,7 +948,9 @@ function createDetailingStore() {
           nodes: modelStore.nodes as never,
           elements: modelStore.elements as never,
           edition: currentConcreteEdition(),
-          verifierId: opts.verifierId ?? '',
+          // Explicit argument wins so the golden chain can pin an identity; otherwise the
+          // verification that actually ran supplies it. Never a bare '' default.
+          verifierId: opts.verifierId ?? resolveVerifierId(),
           demandRevision: verificationStore.demandRevision,
           previousRevision: maxPersistedRevision(),
           maxAggregateSizeMm: resolveAggregate(),
@@ -1051,7 +1094,9 @@ function createDetailingStore() {
           maxAggregateSizeMm: resolveAggregate(),
           wallBarDiameterMm: DEFAULT_WALL_BAR_DIA_MM,
           edition: currentConcreteEdition(),
-          verifierId: opts.verifierId ?? '',
+          // Explicit argument wins so the golden chain can pin an identity; otherwise the
+          // verification that actually ran supplies it. Never a bare '' default.
+          verifierId: opts.verifierId ?? resolveVerifierId(),
           demandRevision: verificationStore.demandRevision,
           previousRevision: maxPersistedRevision(),
           seismicRequired: regulationsStore.binding('seismic').adapterId !== null,

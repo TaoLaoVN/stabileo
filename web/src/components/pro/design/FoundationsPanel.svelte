@@ -22,7 +22,9 @@
   import { modelStore } from '../../../lib/store/model.svelte';
   import { validateFooting } from '../../../lib/model/footing';
   import { validateSoilProfile } from '../../../lib/model/geotechnical';
-  import { exportFootingCadHandoff } from '../../../lib/store/rc-cad-export';
+  import {
+    exportFootingCadHandoff, footingCadPrerequisiteStamp,
+  } from '../../../lib/store/rc-cad-export';
 
   const footings = $derived([...modelStore.model.footings.values()].sort((a, b) => a.id - b.id));
   const profiles = $derived(modelStore.model.geotechnical?.profiles ?? []);
@@ -73,8 +75,30 @@
       refusals: ReadonlyArray<{ code: string; messageKey: string; params?: Record<string, unknown> }>;
       /** Developer-facing validator output, shown when the manifest failed its own schema. */
       details: string[];
+      /** The prerequisite state this refusal describes. See `visibleCadResult`. */
+      stamp: string;
     };
   let cadResult = $state<CadOutcome | null>(null);
+
+  /**
+   * The refusal, for as long as it is still true.
+   *
+   * A refusal is a statement about one attempt against one state, so it must not outlive that
+   * state. It used to: exporting before detailing refused correctly, the user then generated
+   * the detailing, and "Generate foundation detailing first" stayed on screen — advice that had
+   * already been followed — until a later successful export happened to replace it.
+   *
+   * Comparing the stamp is narrower than clearing on any store write and narrower than clearing
+   * on navigation: a refusal whose cause is untouched stays visible and keeps saying the same
+   * true thing, and a genuinely new refusal is stamped against the state it was computed
+   * against, so it displays normally. A success replaces `cadResult` outright and needs no
+   * stamp — there is nothing left to go stale.
+   */
+  const visibleCadResult = $derived.by(() => {
+    const r = cadResult;
+    if (!r || r.ok) return r;
+    return footingCadPrerequisiteStamp(r.footingId) === r.stamp ? r : null;
+  });
 
   function runCadExport(footingId: number) {
     // `tp` is passed straight through, so every sentence in the manifest is the app's own
@@ -85,6 +109,9 @@
       : {
         footingId, ok: false, refusals: r.refusals,
         details: [...(r.invalid?.schema ?? []), ...(r.invalid?.semantic ?? [])],
+        // Stamped from the state the refusal was just computed against, not from a snapshot
+        // taken earlier: the export itself is what read that state.
+        stamp: footingCadPrerequisiteStamp(footingId),
       };
   }
 </script>
@@ -273,11 +300,11 @@
           <button data-testid="footing-cad-export-run" onclick={() => runCadExport(f.id)}>
             {t('footing.cad.ui.export')}
           </button>
-          {#if cadResult?.footingId === f.id}
-            {#if cadResult.ok}
+          {#if visibleCadResult?.footingId === f.id}
+            {#if visibleCadResult.ok}
               <p class="ok" data-testid="footing-cad-export-ok">
                 {tp('footing.cad.ui.exported', {
-                  filename: cadResult.filename, bytes: cadResult.byteLength,
+                  filename: visibleCadResult.filename, bytes: visibleCadResult.byteLength,
                 })}
               </p>
             {:else}
@@ -289,13 +316,13 @@
               <div class="failed" data-testid="footing-cad-export-failed">
                 <p>{t('footing.cad.ui.failed')}</p>
                 <ul>
-                  {#each cadResult.refusals as r (r.code)}
+                  {#each visibleCadResult.refusals as r (r.code)}
                     <li>{tp(r.messageKey, r.params ?? {})}</li>
                   {/each}
                 </ul>
-                {#if cadResult.details.length > 0}
+                {#if visibleCadResult.details.length > 0}
                   <ul class="details" data-testid="footing-cad-export-details">
-                    {#each cadResult.details as line (line)}<li><code>{line}</code></li>{/each}
+                    {#each visibleCadResult.details as line (line)}<li><code>{line}</code></li>{/each}
                   </ul>
                 {/if}
               </div>

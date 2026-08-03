@@ -4774,6 +4774,7 @@ const en: Record<string, string> = {
   'footing.cad.refusal.eccentric': 'Footing {footing} has plan eccentricity ({b}, {l}) m. The model documents this as the offset of the footing centroid, while the production dowel geometry uses it as the column centre; with a non-zero value those are different places and choosing one would be a guess.',
   'footing.cad.refusal.pedestal': 'Footing {footing} has a pedestal. A pedestal is a third concrete component with its own interfaces and is not represented in this release.',
   'footing.cad.refusal.noAssembly': 'Footing {footing} has no detailing assembly. Generate foundation detailing first.',
+  'footing.cad.refusal.noVerifier': 'Footing {footing} has no verifier identity. The handoff certificate would name no verifier, which a consumer cannot tell apart from one that was lost in transit. Run the code check and design so the members are verified, and regenerate the detailing; if the project regulation changed after that run, the earlier identity no longer applies and the design must be re-run under the regulation now bound.',
   'footing.cad.refusal.noCage': 'Footing {footing} has no transfer-cage reinforcement in its assembly.',
   'footing.cad.refusal.noDowels': 'Footing {footing} has no column dowels, so there is no transfer cage to export.',
   'footing.cad.refusal.unclassifiedBar': 'Footing {footing}: these bars have no reinforcement family this exporter can state — {bars}. Assigning them to an existing family would misdescribe them.',
