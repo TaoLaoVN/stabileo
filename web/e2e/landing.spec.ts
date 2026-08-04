@@ -464,19 +464,36 @@ test.describe('@landing landing page', () => {
     });
 
     test('the Results panel cleanup runs after every fresh load and never throws', async ({ page }) => {
+      /**
+       * Asserts the OUTCOME, not an instant. The embedded app opens the panel
+       * roughly 1.3 s after the frame loads and the mitigation's retry closes
+       * it by ~2.1 s, so sampling at load time is a race — it caught this test
+       * out when PR16-PR18 shifted the app's render timing.
+       *
+       * The `.mrp-reopen` assertion is the one that matters for the debt: it
+       * proves the panel was really opened and really closed, so the day the
+       * app's markup changes and the mitigation starts silently no-opping, this
+       * fails instead of passing vacuously.
+       */
       const errors: string[] = [];
       page.on('pageerror', (e) => errors.push(String(e)));
+      const app = page.frameLocator('.landing iframe.demo-iframe');
+
       await bootLanding(page);
       await reachDemo(page);
       await activate(page);
-      const panelAfterActivate = await page.frameLocator('.landing iframe.demo-iframe').locator('.mrp-panel').count();
+      await expect
+        .poll(() => app.locator('.mrp-panel').count(), { timeout: 15000, message: 'panel closed after activation' })
+        .toBe(0);
+      await expect(app.locator('.mrp-reopen'), 'the panel was opened and then closed by the mitigation')
+        .toHaveCount(1);
 
       await page.locator('.landing [role="tab"]').nth(1).click();
-      await page.waitForTimeout(6000);
-      const panelAfterSwitch = await page.frameLocator('.landing iframe.demo-iframe').locator('.mrp-panel').count();
+      await expect
+        .poll(() => app.locator('.mrp-panel').count(), { timeout: 15000, message: 'panel closed after an example change' })
+        .toBe(0);
+      await expect(app.locator('.mrp-reopen')).toHaveCount(1);
 
-      expect(panelAfterActivate, 'panel closed after activation').toBe(0);
-      expect(panelAfterSwitch, 'panel closed after an example change').toBe(0);
       expect(errors, `the cleanup must be failure-safe:\n${errors.join('\n')}`).toEqual([]);
     });
 
