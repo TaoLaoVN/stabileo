@@ -324,6 +324,79 @@ describe('CIRSOC 201 Verification', () => {
 
   // ─── New: Doubly Reinforced Flexure ───────────────────────────────
 
+  /**
+   * The PR18-A extension, and the promise attached to it.
+   *
+   * `checkFlexure` gained an optional fourth argument (the bar diameter that sets `d`) and a
+   * new `AsFlexural` output (the strength requirement before any minimum). Both exist so a
+   * footing mat can reuse this stress block while answering to §7.6.1's minimum instead of the
+   * beam minimum — WITHOUT a second flexural engine, and without moving any existing caller's
+   * numbers. This block is what makes the second half of that a fact rather than an intention.
+   */
+  describe('checkFlexure — the optional diameter is default-preserving (A)', () => {
+    const cases: Array<[string, ConcreteDesignParams, number, number]> = [
+      ['beam, moderate moment', beamParams, 50, 0],
+      ['beam, tiny moment (minimum governs)', beamParams, 5, 0],
+      ['beam, negative moment', beamParams, -50, 0],
+      ['beam, doubly reinforced', beamParams, 200, 0],
+      ['beam, section insufficient', beamParams, 500, 0],
+      ['column section with axial', colParams, 40, 300],
+    ];
+
+    it('returns an IDENTICAL result when the option is omitted', () => {
+      for (const [label, params, Mu, Nu] of cases) {
+        const before = checkFlexure(params, Mu, Nu);
+        const after = checkFlexure(params, Mu, Nu, {});
+        expect(after, label).toEqual(before);
+      }
+    });
+
+    it('is identical again when the option restates the assumed Ø16', () => {
+      // The value the check assumed before the option existed. Passing it explicitly must be
+      // the same call, or every existing caller silently moved the day the option landed.
+      for (const [label, params, Mu, Nu] of cases) {
+        const before = checkFlexure(params, Mu, Nu);
+        const explicit = checkFlexure(params, Mu, Nu, { barDiameterMm: 16 });
+        expect(explicit, label).toEqual(before);
+      }
+    });
+
+    it('ignores a nonsensical diameter rather than producing a nonsensical d', () => {
+      for (const bad of [0, -12, Number.NaN]) {
+        expect(checkFlexure(beamParams, 50, 0, { barDiameterMm: bad }))
+          .toEqual(checkFlexure(beamParams, 50));
+      }
+    });
+
+    it('does change d — and only d — when a real diameter is stated', () => {
+      const r16 = checkFlexure(beamParams, 50);
+      const r25 = checkFlexure(beamParams, 50, 0, { barDiameterMm: 25 });
+      // d = h − cover − stirrup − d_b/2 = 0,40 − 0,025 − 0,008 − 0,0125 = 0,3545 m
+      expect(r25.d).toBeCloseTo(0.3545, 12);
+      expect(r16.d).toBeCloseTo(0.359, 12);
+      expect(r25.AsFlexural).toBeGreaterThan(r16.AsFlexural);   // shallower ⇒ more steel
+    });
+
+    it('separates the strength requirement from the minimum', () => {
+      // AsReq is the pair already combined; AsFlexural is the strength half on its own. A
+      // caller whose minimum comes from another clause needs the half, and it needs to be able
+      // to tell which one the section is actually governed by.
+      const governedByMinimum = checkFlexure(beamParams, 5);
+      expect(governedByMinimum.AsFlexural).toBeLessThan(governedByMinimum.AsMin);
+      expect(governedByMinimum.AsReq).toBeCloseTo(governedByMinimum.AsMin, 12);
+
+      const governedByFlexure = checkFlexure(beamParams, 50);
+      expect(governedByFlexure.AsFlexural).toBeGreaterThan(governedByFlexure.AsMin);
+      expect(governedByFlexure.AsReq).toBeCloseTo(governedByFlexure.AsFlexural, 12);
+
+      // The invariant, across every case above.
+      for (const [label, params, Mu, Nu] of cases) {
+        const r = checkFlexure(params, Mu, Nu);
+        expect(r.AsReq, label).toBeCloseTo(Math.max(r.AsFlexural, r.AsMin), 9);
+      }
+    });
+  });
+
   describe('checkFlexure — doubly reinforced', () => {
     it('should produce singly reinforced for moderate moment', () => {
       const result = checkFlexure(beamParams, 50);

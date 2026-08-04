@@ -247,7 +247,7 @@ describe('collision engine', () => {
     // The margin is opt-in and only ever makes the check stricter.
     const r = detectCollisions(
       [straightBar('a', 0, 0), straightBar('b', 0.045, 0)],
-      { placement: 0.010, requiredClear: 0.025, marginalBand: 0.005 },
+      { tolerances: { placement: 0.010, requiredClear: 0.025, marginalBand: 0.005 } },
     );
     expect(r.conflicts).toHaveLength(1);
     expect(r.conflicts[0].clearance).toBeCloseTo(0.015, 4);
@@ -262,8 +262,8 @@ describe('collision engine', () => {
 
   it('subtracts the placement tolerance, so a paper-perfect cage can still fail', () => {
     const bars = [straightBar('a', 0, 0), straightBar('b', 0.048, 0)];
-    const strict = detectCollisions(bars, { ...DEFAULT_TOLERANCES, placement: 0.010 });
-    const naive = detectCollisions(bars, { ...DEFAULT_TOLERANCES, placement: 0 });
+    const strict = detectCollisions(bars, { tolerances: { ...DEFAULT_TOLERANCES, placement: 0.010 } });
+    const naive = detectCollisions(bars, { tolerances: { ...DEFAULT_TOLERANCES, placement: 0 } });
     expect(strict.conflicts.length).toBeGreaterThan(0);
     expect(naive.conflicts).toEqual([]);
   });
@@ -278,8 +278,8 @@ describe('collision engine', () => {
   it('accepts a per-pair required clearance from the code rule', () => {
     const bars = [straightBar('a', 0, 0), straightBar('b', 0.055, 0)];
     // 35 mm surface gap at the zero default. Fine against 25 mm, short against 40 mm.
-    expect(detectCollisions(bars, DEFAULT_TOLERANCES, () => 0.025).conflicts).toEqual([]);
-    expect(detectCollisions(bars, DEFAULT_TOLERANCES, () => 0.040).conflicts).toHaveLength(1);
+    expect(detectCollisions(bars, { tolerances: DEFAULT_TOLERANCES, requiredClearFor: () => 0.025 }).conflicts).toEqual([]);
+    expect(detectCollisions(bars, { tolerances: DEFAULT_TOLERANCES, requiredClearFor: () => 0.040 }).conflicts).toHaveLength(1);
   });
 
   it('reports each pair once, worst first, deterministically', () => {

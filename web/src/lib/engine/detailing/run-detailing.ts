@@ -59,6 +59,7 @@ import { planSplice, transitionExists } from './splice';
 import { classifyPair } from './classify';
 import { detectCollisions } from './collision';
 import { assessConstructibility } from './constructibility';
+import { noFloorFamilies } from './family-record';
 import { envelopeIsComplete } from './coordination-search';
 import { materialiseLaps, lapIndex, lapBetween, type PlannedTransition, type LapInterval } from './lap-materialize';
 import type { EngineMessage } from '../../codes/message';
@@ -1970,6 +1971,16 @@ export function runDetailing(input: RunDetailingInput): RunDetailingResult {
         const v = reverification.get(e);
         return v === 'ok' || v === 'warn';
       }).length,
+      /**
+       * Beam lines and column stacks contain no slabs, walls or footings.
+       *
+       * Stated as three explicit zero requirements rather than omitted. `applicable: 0` is a
+       * MEASUREMENT — "this assembly has no panels" — and it is what makes the gate able to
+       * distinguish it from "panels present, none certified". An omitted field could mean
+       * either, and this gate has already been broken once in each direction by exactly that
+       * ambiguity.
+       */
+      familyRequirements: noFloorFamilies(),
       spacingNotCodeLegal: result.assembly.conflicts
         .filter((c) => c.pairClass === 'sameLayerSpacing'
           || c.pairClass === 'betweenLayerSpacing' || c.pairClass === 'crossMemberSpacing')
@@ -1984,11 +1995,9 @@ export function runDetailing(input: RunDetailingInput): RunDetailingResult {
       // by the margin.
       spacingNotPlacementRobust: spacingMargin <= 0
         ? 0
-        : detectCollisions(
-          result.assembly.bars,
-          DEFAULT_TOLERANCES,
-          undefined,
-          (a, b, surface, ta, tb) => {
+        : detectCollisions(result.assembly.bars, {
+          tolerances: DEFAULT_TOLERANCES,
+          classifyFor: (a, b, surface, ta, tb) => {
             const base = classifyForRun(a, b, surface, ta, tb);
             // Contact classes have no minimum to raise. A lap is meant to touch and a
             // stirrup is meant to grip; adding a margin to zero would report the detail.
@@ -1996,7 +2005,7 @@ export function runDetailing(input: RunDetailingInput): RunDetailingResult {
               ? base
               : { ...base, requiredClear: base.requiredClear + spacingMargin };
           },
-        ).conflicts.filter((c) => c.severity !== 'marginal').length,
+        }).conflicts.filter((c) => c.severity !== 'marginal').length,
       unsupportedRules: result.assembly.unsupported.length + unsupportedRun.length,
       staleAssemblies: 0,
     });

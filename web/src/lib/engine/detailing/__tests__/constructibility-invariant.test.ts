@@ -17,6 +17,7 @@ import {
   CONSTRUCTIBILITY_CONDITIONS,
   type ConstructibilityFacts,
 } from '../constructibility';
+import { noFloorFamilies, tallyRequirement } from '../family-record';
 import { evaluateState } from '../assembly';
 import type { BarPath } from '../../../codes/cirsoc201/bar-geometry';
 import type { BarConflict } from '../collision';
@@ -39,6 +40,10 @@ const PERFECT: ConstructibilityFacts = {
   spacingNotPlacementRobust: 0,
   unsupportedRules: 0,
   staleAssemblies: 0,
+  // A beam/column assembly. Three requirements at `applicable: 0` is the MEASUREMENT that
+  // it contains no panels, walls or footings — not an omission, which is why the field is
+  // required. The family conditions are vacuously satisfied and say so.
+  familyRequirements: noFloorFamilies(),
 };
 
 /**
@@ -65,6 +70,8 @@ const FLAGSHIP: ConstructibilityFacts = {
   spacingNotPlacementRobust: 0,
   unsupportedRules: 0,
   staleAssemblies: 0,
+  // The flagship is a frame. It had no floor families on that date either.
+  familyRequirements: noFloorFamilies(),
 };
 
 describe('the flagship state that was mislabelled', () => {
@@ -108,12 +115,12 @@ describe('the flagship state that was mislabelled', () => {
   });
 });
 
-describe('all thirteen conditions, one at a time', () => {
+describe('all fifteen conditions, one at a time', () => {
   it('the perfect case passes, or the rest of this file proves nothing', () => {
     const a = assessConstructibility(PERFECT);
     expect(a.verdict).toBe('CONSTRUCTIBLE');
     expect(a.blocking).toEqual([]);
-    expect(a.conditions).toHaveLength(13);
+    expect(a.conditions).toHaveLength(15);
   });
 
   const spoil: Record<string, Partial<ConstructibilityFacts>> = {
@@ -126,6 +133,25 @@ describe('all thirteen conditions, one at a time', () => {
     noProhibitedConflicts: { prohibitedConflicts: 1 },
     allMembersReverified: { reverifiedMembers: 247 },
     certificatesMatchGeometry: { certificateHashMatches: 247 },
+    // One applicable footing with NO certificate. The frame counts are untouched, which is
+    // the point: a missing family certificate must block on its own, without borrowing the
+    // frame conditions, or a slab-only floor has no gate at all.
+    allApplicableFamiliesCertified: {
+      familyRequirements: [
+        tallyRequirement('slab', []),
+        tallyRequirement('wall', []),
+        tallyRequirement('footing', ['missing']),
+      ],
+    },
+    // One applicable footing whose certificate EXISTS and describes geometry that has since
+    // moved. Distinct from missing: the remedy is to reissue, not to issue.
+    noStaleFamilyCertificate: {
+      familyRequirements: [
+        tallyRequirement('slab', []),
+        tallyRequirement('wall', []),
+        tallyRequirement('footing', ['geometryMismatch']),
+      ],
+    },
     allSpacingCodeLegal: { spacingNotCodeLegal: 1 },
     allSpacingPlacementRobust: { spacingNotPlacementRobust: 1 },
     noUnsupportedRule: { unsupportedRules: 1 },
@@ -186,7 +212,7 @@ describe('the assembly ladder cannot be climbed without the gate', () => {
     expect(e.blockers).toContain('constructibility.notAssessed');
   });
 
-  it('reaches CONSTRUCTIBLE only when all thirteen pass', () => {
+  it('reaches CONSTRUCTIBLE only when all fifteen pass', () => {
     const e = evaluateState({
       bars, conflicts: clean, unsupported: [],
       membersVerified: true, coordinated: true,

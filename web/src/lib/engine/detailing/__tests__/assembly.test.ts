@@ -15,6 +15,7 @@ import {
   countsAsVerified, deriveMaturity, isProducible, maturityLabelKey, worstMaturity,
 } from '../../../codes/maturity';
 import { clause } from '../../../codes/regulation';
+import { noFloorFamilies } from '../family-record';
 
 const X = { x: 1, y: 0, z: 0 };
 const Z = { x: 0, y: 0, z: 1 };
@@ -192,6 +193,8 @@ describe('earned review state', () => {
       prohibitedConflicts: 0, reverifiedMembers: 1, certificateHashMatches: 1,
       spacingNotCodeLegal: 0, spacingNotPlacementRobust: 0,
       unsupportedRules: 0, staleAssemblies: 0,
+      // A beam line: no panels, walls or footings. Measured, not omitted.
+      familyRequirements: noFloorFamilies(),
     }),
   };
 
@@ -261,7 +264,12 @@ describe('engineer review record', () => {
   it('refuses below CONSTRUCTIBLE', () => {
     const r = applyReview(assembly({ state: 'COORDINATED' }), record);
     expect(r.ok).toBe(false);
-    expect(r.reason).toMatch(/sólo puede revisarse a partir de CONSTRUCTIBLE/);
+    // A KEY and its parameter, not a sentence. This assertion used to match Spanish prose, and
+    // it passed because the refusal really was a Spanish string built inside a pure module —
+    // so an English-locale user was told in Spanish why their review was refused. The state is
+    // a parameter, because the reader needs to know which state blocked them.
+    expect(r.reason?.key).toBe('detailing.review.notConstructible');
+    expect(r.reason?.params).toMatchObject({ state: 'COORDINATED' });
   });
 
   it('refuses without a named engineer', () => {
@@ -272,7 +280,10 @@ describe('engineer review record', () => {
     // A provisional result may be accepted, but only deliberately.
     const r = applyReview(assembly(), record, ['jointShear']);
     expect(r.ok).toBe(false);
-    expect(r.reason).toMatch(/sin aceptación expresa/);
+    expect(r.reason?.key).toBe('detailing.review.provisionalOutstanding');
+    // The outstanding keys travel with the message: a refusal that does not name WHICH
+    // provisional calculation is unacknowledged cannot be acted on.
+    expect(r.reason?.params).toMatchObject({ keys: 'jointShear' });
   });
 
   it('accepts when the reviewer explicitly acknowledges each provisional item', () => {

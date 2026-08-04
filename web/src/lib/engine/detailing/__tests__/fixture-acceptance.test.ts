@@ -104,7 +104,7 @@ describe('rc-design-qa-8 reaches CONSTRUCTIBLE through the production path', () 
     expect(run().assemblies.flatMap((a) => a.conflicts)).toEqual([]);
   });
 
-  it('ALL THIRTEEN conditions pass', () => {
+  it('ALL FIFTEEN conditions pass', () => {
     // Asserted by name rather than by count, so a condition that stopped being evaluated
     // could not pass this by disappearing.
     const expected = [
@@ -113,6 +113,10 @@ describe('rc-design-qa-8 reaches CONSTRUCTIBLE through the production path', () 
       'allRequiredTransversePathsMaterialised',
       'completeEnvelope', 'noProhibitedConflicts', 'noStaleUpstreamRevision',
       'noUnmaterialisedTransitions', 'noUnsupportedRule', 'searchNotTruncated',
+      // A beam/column fixture contains no floor families, so both family conditions are
+      // satisfied by a MEASURED empty requirement. They are asserted here by name because
+      // this fixture is the frame path's proof that adding them did not silently gate it.
+      'allApplicableFamiliesCertified', 'noStaleFamilyCertificate',
     ].sort();
     for (const a of run().assemblies) {
       const conditions = a.constructibility?.conditions ?? [];
