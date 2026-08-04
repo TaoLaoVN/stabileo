@@ -24,9 +24,12 @@ type Membrane = { sigmaXx: number; sigmaYy: number; tauXy: number; mx: number; m
 function combineMembrane(
   factors: ComboFactor[],
   perCase: Map<number, Map<number, Membrane>>,
+  ids?: Set<number>,
 ): Map<number, Membrane> {
-  const ids = new Set<number>();
-  for (const f of factors) { const m = perCase.get(f.caseId); if (m) for (const id of m.keys()) ids.add(id); }
+  if (!ids) {
+    ids = new Set<number>();
+    for (const f of factors) { const m = perCase.get(f.caseId); if (m) for (const id of m.keys()) ids.add(id); }
+  }
   const out = new Map<number, Membrane>();
   for (const id of ids) {
     const acc: Membrane = { sigmaXx: 0, sigmaYy: 0, tauXy: 0, mx: 0, my: 0, mxy: 0 };
@@ -49,14 +52,15 @@ export function combineShellStresses(
   factors: ComboFactor[],
   perCasePlates: Map<number, Map<number, Membrane>>,
   perCaseQuads: Map<number, Map<number, Membrane>>,
+  ids?: { plates: Set<number>; quads: Set<number> },
 ): { plateStresses: PlateStress[]; quadStresses: QuadStress[] } {
   const plates: PlateStress[] = [];
-  for (const [id, m] of combineMembrane(factors, perCasePlates)) {
+  for (const [id, m] of combineMembrane(factors, perCasePlates, ids?.plates)) {
     const pr = principalStresses(m.sigmaXx, m.sigmaYy, m.tauXy);
     plates.push({ elementId: id, sigmaXx: m.sigmaXx, sigmaYy: m.sigmaYy, tauXy: m.tauXy, mx: m.mx, my: m.my, mxy: m.mxy, sigma1: pr.sigma1, sigma2: pr.sigma2, vonMises: vonMisesPlane(m.sigmaXx, m.sigmaYy, m.tauXy) });
   }
   const quads: QuadStress[] = [];
-  for (const [id, m] of combineMembrane(factors, perCaseQuads)) {
+  for (const [id, m] of combineMembrane(factors, perCaseQuads, ids?.quads)) {
     quads.push({ elementId: id, sigmaXx: m.sigmaXx, sigmaYy: m.sigmaYy, tauXy: m.tauXy, mx: m.mx, my: m.my, mxy: m.mxy, vonMises: vonMisesPlane(m.sigmaXx, m.sigmaYy, m.tauXy) });
   }
   return { plateStresses: plates, quadStresses: quads };
@@ -96,10 +100,18 @@ export function enrichComboShellStresses(
   }
   if (!any) return;
 
+  // The id union is constant across combos — build it once instead of inside
+  // every combineMembrane call (was O(combos × cases × shells) of Set churn).
+  const plateIds = new Set<number>();
+  const quadIds = new Set<number>();
+  for (const m of perCasePlates.values()) for (const id of m.keys()) plateIds.add(id);
+  for (const m of perCaseQuads.values()) for (const id of m.keys()) quadIds.add(id);
+  const ids = { plates: plateIds, quads: quadIds };
+
   for (const combo of combinations) {
     const r = perCombo.get(combo.id);
     if (!r) continue;
-    const { plateStresses, quadStresses } = combineShellStresses(combo.factors, perCasePlates, perCaseQuads);
+    const { plateStresses, quadStresses } = combineShellStresses(combo.factors, perCasePlates, perCaseQuads, ids);
     r.plateStresses = plateStresses;
     r.quadStresses = quadStresses;
   }
