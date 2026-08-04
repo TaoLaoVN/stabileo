@@ -598,6 +598,14 @@ export function runFootingDesign(input: RunFootingDesignInput): RunFootingDesign
       // values (reaction mx → footing L axis, my → B axis, unrotated footing).
       factoredMomentB: governing.my,
       factoredMomentL: governing.mx,
+      // The plan offset of the centroid from the node. These moments and reactions are the
+      // SUPPORT's, so they are expressed at the NODE — `reactions` is a nodal quantity and
+      // nothing upstream reduces it to the footing centroid. The `N · e` term
+      // `footing-actions.ts` forms is therefore additional, not a second copy of a moment
+      // already counted: `no-double-counting` in `foundation-check.test.ts` pins that by
+      // showing a footing with zero applied moment still develops exactly `N · e`.
+      eccentricityB: f.eccentricityB,
+      eccentricityL: f.eccentricityL,
       position,
     };
     const check = checkFooting(fi);
@@ -790,14 +798,18 @@ function footingRecord(args: {
   const b = check.bearing;
   const punch = check.punching;
 
-  // The factored net upward pressure the strength checks were run against: N_u / (B·L), the
-  // same expression `checkFooting` uses. Restated here for ONE purpose — measuring the
-  // punching free-body residual against it — and never fed back into a capacity.
+  // The pressure the punching free body actually deducted inside the critical perimeter. READ
+  // OFF THE CHECK, not restated as `N_u/(B·L)`: on a footing whose centroid is offset from its
+  // node the perimeter is centred on the COLUMN, and the mean of the linear field over it is
+  // its value there rather than `N_u/A`. Restating the uniform value would make the residual
+  // report a broken free body for a check that closes exactly — the residual would BECOME the
+  // disagreement it exists to detect. Used for ONE purpose, and never fed back into a capacity.
   const area = args.B * args.L;
   const qFactored = area > 0 ? args.factoredAxial / area : 0;
+  const qDeducted = check.punchingLoadInsidePerimeter;
   const enclosed = punch?.critical.enclosedArea ?? 0;
   const residual = punch && punch.demand.outcome === 'DERIVED' && qFactored > 0
-    ? args.factoredAxial - (punch.demand.Vu + qFactored * enclosed)
+    ? args.factoredAxial - (punch.demand.Vu + qDeducted * enclosed)
     : null;
 
   const bearing: FootingDesignRecord['bearing'] = {

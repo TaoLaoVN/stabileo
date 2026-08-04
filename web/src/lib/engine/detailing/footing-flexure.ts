@@ -84,6 +84,9 @@ import { msg, type EngineMessage } from '../../codes/message';
 import { minClearSpacingInLayer } from '../../codes/cirsoc201/spacing';
 import { crackControlMaxSpacing } from '../../codes/cirsoc201/crack-control';
 import { checkFlexure } from '../codes/argentina/cirsoc201';
+import {
+  MOMENT_ORIENTATIONS, axisPressure, columnOffsetFromCentroid, momentEccentricity,
+} from './footing-actions';
 
 // ─── Clause references ───────────────────────────────────────────
 
@@ -606,7 +609,7 @@ function governingFace(opts: {
   let worstResultantOffset = 0;
   let anyOrientationLifts = false;
 
-  for (const orientation of [1, -1]) {
+  for (const orientation of MOMENT_ORIENTATIONS) {
     const uR = columnOffset + orientation * momentEccentricity;
     if (Math.abs(uR) > Math.abs(worstResultantOffset)) worstResultantOffset = uR;
     // Beyond the kern the base lifts and this distribution stops being valid. Recorded so the
@@ -617,7 +620,10 @@ function governingFace(opts: {
       anyOrientationLifts = true;
       continue;
     }
-    const q = (u: number) => q0 * (1 + (S > 0 ? 12 * uR * u / (S * S) : 0));
+    // The shared authority's field, not a local restatement of it: `foundation-check.ts`
+    // integrates this same function, so the mat is reinforced for the pressure the footing
+    // was checked against.
+    const q = axisPressure(q0, S, uR);
 
     for (const side of ['low', 'high'] as const) {
       const faceU = side === 'low'
@@ -656,12 +662,11 @@ function designDirection(
   // CENTROID from the supported node, so the column centre is at MINUS that offset in centroid
   // coordinates — the same reading `punchingPosition` already uses to measure each face to its
   // own edge.
-  const columnOffset = -geo.spanEccentricity;
-  const momentEccentricity =
-    Math.abs(geo.factoredMoment) / Math.max(factoredAxial, 1e-12);
+  const columnOffset = columnOffsetFromCentroid(geo.spanEccentricity);
+  const momentEcc = momentEccentricity(geo.factoredMoment, factoredAxial);
   const face = governingFace({
     S, W, columnDimension: geo.columnDimension, columnOffset,
-    q0: qFactored, momentEccentricity,
+    q0: qFactored, momentEccentricity: momentEcc,
   });
 
   const cantilever = face.governing?.cantilever ?? 0;
@@ -693,7 +698,7 @@ function designDirection(
     '(13.2.7.1).',
     `Presión factorizada ${qFactored.toFixed(1)} kPa; resultante a ` +
     `${(face.governing?.resultantOffset ?? 0).toFixed(3)} m del centroide ` +
-    `(excentricidad de momento ${momentEccentricity.toFixed(3)} m, envolvente de ambos ` +
+    `(excentricidad de momento ${momentEcc.toFixed(3)} m, envolvente de ambos ` +
     `signos): q_cara ${qFace.toFixed(1)}, q_borde ${qEdge.toFixed(1)} kPa.`,
     `Mu = ${W.toFixed(2)} × ${cantilever.toFixed(3)}² × (2×${qFace.toFixed(1)} + ` +
     `${qEdge.toFixed(1)})/6 = ${Mu.toFixed(1)} kN·m (13.2.6.6).`,
@@ -935,7 +940,7 @@ function designDirection(
     // on the footing centroid — which are different points on a footing with plan
     // eccentricity, and make the two outside zones unequal.
     const bandWidth = shortSide;
-    const columnOffset = -geo.distributionEccentricity;
+    const columnOffset = columnOffsetFromCentroid(geo.distributionEccentricity);
     const lowerWidth = W / 2 + columnOffset - bandWidth / 2;
     const upperWidth = W / 2 - columnOffset - bandWidth / 2;
     const outsideWidth = lowerWidth + upperWidth;

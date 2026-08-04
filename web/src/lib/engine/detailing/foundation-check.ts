@@ -37,6 +37,10 @@ import {
   PHI_SHEAR, checkPunchingShear, sizeEffectFactor, sqrtFcCapped,
   type ColumnPosition, type PunchingCheck,
 } from './punching-shear';
+import {
+  axisPressure, footingCentroidActions, planPressure,
+  type FootingCentroidActions,
+} from './footing-actions';
 
 const R_FOUND = clause('cirsoc-201', '2025', '13.2', 'generalidades de fundaciones');
 const R_ONEWAY = clause('cirsoc-201', '2025', '22.5', 'resistencia a corte en una dirección');
@@ -74,7 +78,40 @@ export interface FootingInput {
    */
   factoredMomentB?: number;
   factoredMomentL?: number;
+  /**
+   * Plan offset of the footing CENTROID from the supported node, m, in local axes.
+   *
+   * The moment `N · e` this creates about the centroid is part of every pressure-dependent
+   * check here — see `footing-actions.ts` for the transformation and for why it was missing.
+   * Optional, defaulting to zero, so a centred footing reads exactly as it did before.
+   */
+  eccentricityB?: number;
+  eccentricityL?: number;
   position?: ColumnPosition;
+}
+
+/**
+ * The one pressure field every check in this module integrates.
+ *
+ * Built once per `checkFooting` call and threaded to each check, so bearing, one-way shear,
+ * punching and flexure cannot end up describing three different footings. `checkBearing` and
+ * `checkOneWayShear` are also reachable on their own — they build their own from the same
+ * function, never a second formula.
+ */
+function serviceActions(f: FootingInput): FootingCentroidActions {
+  return footingCentroidActions({
+    B: f.B, L: f.L, axial: f.serviceAxial,
+    momentB: f.serviceMomentB, momentL: f.serviceMomentL,
+    eccentricityB: f.eccentricityB, eccentricityL: f.eccentricityL,
+  });
+}
+
+function factoredActions(f: FootingInput): FootingCentroidActions {
+  return footingCentroidActions({
+    B: f.B, L: f.L, axial: f.factoredAxial,
+    momentB: f.factoredMomentB, momentL: f.factoredMomentL,
+    eccentricityB: f.eccentricityB, eccentricityL: f.eccentricityL,
+  });
 }
 
 export type CheckStatus = 'OK' | 'FAIL' | 'UNSUPPORTED';
@@ -84,10 +121,29 @@ export interface BearingResult {
   /** Maximum bearing pressure, kPa. */
   qMax: number;
   qMin: number;
-  /** Eccentricity along B and L, m. */
+  /**
+   * Offset of the pressure resultant from the footing CENTROID along B and L, m.
+   *
+   * The TOTAL eccentricity, which is what a bearing check needs: the applied moment's
+   * `M/N` together with the geometric `−e` of the centroid from the node. Previously this
+   * was `M/N` alone, and a deliberately eccentric footing was checked as if it were centred.
+   * The two constituents are reported separately below so the sum is auditable.
+   */
   eB: number;
   eL: number;
-  /** True when the resultant falls outside the middle third and the base partially lifts. */
+  /** The geometric term: column centre from the centroid, m. `−eccentricityB/L`. */
+  geometricOffsetB: number;
+  geometricOffsetL: number;
+  /** The applied-moment term, m — magnitude, enveloped over both orientations. */
+  momentEccentricityB: number;
+  momentEccentricityL: number;
+  /**
+   * True when the base does not keep full contact — `q_min < 0`.
+   *
+   * The biaxial full-contact boundary is the kern RHOMBUS, not the two per-axis limits taken
+   * separately; see `footingCentroidActions`. This flags a strict superset of what the
+   * per-axis test flagged.
+   */
   uplift: boolean;
   utilization: number;
   memo: string[];
@@ -112,34 +168,55 @@ export function checkBearing(f: FootingInput): BearingResult {
 
   if (!(A > 0) || !(N > 0)) {
     return {
-      status: 'UNSUPPORTED', qMax: 0, qMin: 0, eB: 0, eL: 0, uplift: false, utilization: 0,
+      status: 'UNSUPPORTED', qMax: 0, qMin: 0, eB: 0, eL: 0,
+      geometricOffsetB: 0, geometricOffsetL: 0,
+      momentEccentricityB: 0, momentEccentricityL: 0,
+      uplift: false, utilization: 0,
       memo, refs,
       unsupportedReason: 'Dimensiones o carga de servicio no válidas para la verificación de tensiones.',
     };
   }
 
-  const eB = (f.serviceMomentB ?? 0) / N;
-  const eL = (f.serviceMomentL ?? 0) / N;
-  const outsideKern = Math.abs(eB) > f.B / 6 || Math.abs(eL) > f.L / 6;
-
-  const q0 = N / A;
-  const qMax = q0 * (1 + 6 * Math.abs(eB) / f.B + 6 * Math.abs(eL) / f.L);
-  const qMin = q0 * (1 - 6 * Math.abs(eB) / f.B - 6 * Math.abs(eL) / f.L);
+  const act = serviceActions(f);
+  const eB = act.b.worstResultantOffset;
+  const eL = act.l.worstResultantOffset;
+  const { qMax, qMin } = act;
+  const common = {
+    geometricOffsetB: act.b.columnOffset, geometricOffsetL: act.l.columnOffset,
+    momentEccentricityB: act.b.momentEccentricity,
+    momentEccentricityL: act.l.momentEccentricity,
+  };
 
   memo.push(
     `N = ${N.toFixed(1)} kN sobre ${f.B.toFixed(2)} × ${f.L.toFixed(2)} m; ` +
-    `eB = ${eB.toFixed(3)} m, eL = ${eL.toFixed(3)} m.`,
+    `eB = ${eB.toFixed(3)} m, eL = ${eL.toFixed(3)} m.`);
+  // The decomposition is printed whenever the footing is offset, because the sum is the whole
+  // correction: a reader who sees only the total cannot tell an applied moment from a
+  // deliberate plan eccentricity, and only one of the two is theirs to remove.
+  if (act.b.columnOffset !== 0 || act.l.columnOffset !== 0) {
+    memo.push(
+      `Excentricidad respecto del CENTROIDE de la zapata: término geométrico ` +
+      `(N·e por el desplazamiento del centroide respecto del nudo) ` +
+      `${act.b.columnOffset.toFixed(3)} / ${act.l.columnOffset.toFixed(3)} m más el término ` +
+      `del momento aplicado ±${act.b.momentEccentricity.toFixed(3)} / ` +
+      `±${act.l.momentEccentricity.toFixed(3)} m (envolvente de ambos signos).`);
+  }
+  memo.push(
     `qmax = ${qMax.toFixed(1)} kPa, qmin = ${qMin.toFixed(1)} kPa contra ` +
     `qadm = ${f.allowableBearing.toFixed(1)} kPa.`);
 
-  if (outsideKern) {
+  if (!act.fullContact) {
     return {
-      status: 'UNSUPPORTED', qMax, qMin, eB, eL, uplift: true,
+      status: 'UNSUPPORTED', qMax, qMin, eB, eL, ...common, uplift: true,
       utilization: qMax / f.allowableBearing,
       memo: [...memo,
         'La resultante cae fuera del núcleo central: la base se despega parcialmente y la ' +
         'distribución lineal deja de ser válida. El área efectiva reducida no está ' +
-        'implementada; informar qmax lineal subestimaría la presión real. NO VERIFICADO.'],
+        'implementada; informar qmax lineal subestimaría la presión real. NO VERIFICADO.' +
+        (act.axisOutsideKern.b || act.axisOutsideKern.l
+          ? ''
+          : ' Ninguno de los dos ejes excede B/6 ni L/6 por separado: es la combinación ' +
+            'biaxial la que levanta una esquina (qmin < 0).')],
       refs,
       unsupportedReason: 'Resultante fuera del núcleo central (despegue parcial de la base).',
     };
@@ -147,7 +224,7 @@ export function checkBearing(f: FootingInput): BearingResult {
 
   return {
     status: qMax <= f.allowableBearing ? 'OK' : 'FAIL',
-    qMax, qMin, eB, eL, uplift: false,
+    qMax, qMin, eB, eL, ...common, uplift: false,
     utilization: qMax / f.allowableBearing,
     memo, refs,
   };
@@ -160,8 +237,31 @@ export interface OneWayShearResult {
   /** φV_c, kN. */
   phiVc: number;
   utilization: number;
+  /**
+   * Which footing edge the governing strip reaches, in centroid coordinates.
+   *
+   * Both are evaluated. A footing whose column is offset in plan has two unequal cantilevers,
+   * and the longer one is not always the one under the heavier pressure — the applied moment
+   * can put the peak pressure over the SHORT cantilever, and which product is larger is not
+   * decidable in advance. Null when no critical section falls inside the base.
+   */
+  governingSide: 'low' | 'high' | null;
+  /** Cantilever beyond the governing critical section, m. */
+  cantilever: number;
+  /** Factored pressure at that critical section and at its edge, kPa. */
+  qSection: number;
+  qEdge: number;
   memo: string[];
   refs: ClauseRef[];
+}
+
+/** One candidate one-way section: a critical section at d from one column face. */
+interface OneWaySide {
+  side: 'low' | 'high';
+  a: number;
+  qSection: number;
+  qEdge: number;
+  Vu: number;
 }
 
 /**
@@ -171,29 +271,70 @@ export interface OneWayShearResult {
  * upward soil pressure acting on it.
  */
 export function checkOneWayShear(f: FootingInput, qFactored: number): OneWayShearResult {
-  // Cantilever measured from the column face, less d.
-  const a = (f.B - f.columnB) / 2 - f.d;
   const memo: string[] = [];
+  const act = factoredActions(f);
+  const uCol = act.b.columnOffset;
 
-  if (a <= 0) {
+  // Geometry, per side. The cantilever beyond the critical section does NOT depend on the
+  // moment — it is set by where the column sits — so it is computed once and the pressure
+  // diagram is what the envelope varies.
+  const aLow = f.B / 2 + uCol - f.columnB / 2 - f.d;
+  const aHigh = f.B / 2 - uCol - f.columnB / 2 - f.d;
+
+  if (aLow <= 0 && aHigh <= 0) {
     return {
       status: 'OK', Vu: 0, phiVc: Infinity, utilization: 0,
+      governingSide: null, cantilever: 0, qSection: 0, qEdge: 0,
       memo: ['La sección crítica a d de la cara cae fuera de la zapata: el corte en una ' +
              'dirección no gobierna.'],
       refs: [R_ONEWAY],
     };
   }
 
-  // Factored moment makes the pressure trapezoidal: integrate the strip between the
-  // critical section and the HEAVY edge exactly (linear pressure), instead of the
-  // uniform Nu/A — which under-states the strip average on the loaded side. The
-  // other axis's moment averages out over the strip's full width.
-  const eB = Math.abs(f.factoredMomentB ?? 0) / Math.max(f.factoredAxial, 1e-12);
-  const k = 6 * eB / f.B;
-  const xSec = f.B - a;
-  const qSec = qFactored * (1 + k * (2 * xSec / f.B - 1));
-  const qEdge = qFactored * (1 + k);
-  const Vu = (qSec + qEdge) / 2 * a * f.L;
+  /**
+   * The strip beyond the critical section, integrated exactly.
+   *
+   * The pressure is linear, so the exact integral over the strip is the trapezoid
+   * `(q_section + q_edge)/2 · a · L`. Both column faces are tried under both moment
+   * orientations and the largest demand governs.
+   *
+   * What this replaces: one cantilever `(B − columnB)/2 − d`, symmetric, with the heavy edge
+   * ALWAYS placed at +B by an `Math.abs` on the moment. On an eccentric footing the symmetric
+   * cantilever is neither of the two real ones, and forcing the heavy edge to +B picks the
+   * favourable diagram half the time.
+   */
+  let governing: OneWaySide | null = null;
+  for (const uR of act.b.resultantOffsets) {
+    const q = axisPressure(qFactored, f.B, uR);
+    for (const side of ['low', 'high'] as const) {
+      const a = side === 'low' ? aLow : aHigh;
+      if (!(a > 0)) continue;
+      const edgeU = side === 'low' ? -f.B / 2 : f.B / 2;
+      const secU = side === 'low' ? edgeU + a : edgeU - a;
+      const qSection = q(secU);
+      const qEdge = q(edgeU);
+      const Vu = (qSection + qEdge) / 2 * a * f.L;
+      if (governing === null || Vu > governing.Vu) {
+        governing = { side, a, qSection, qEdge, Vu };
+      }
+    }
+  }
+  // Unreachable: at least one side has `a > 0` past the guard above.
+  if (governing === null) {
+    return {
+      status: 'OK', Vu: 0, phiVc: Infinity, utilization: 0,
+      governingSide: null, cantilever: 0, qSection: 0, qEdge: 0,
+      memo: ['La sección crítica a d de la cara cae fuera de la zapata: el corte en una ' +
+             'dirección no gobierna.'],
+      refs: [R_ONEWAY],
+    };
+  }
+
+  const a = governing.a;
+  const qSec = governing.qSection;
+  const qEdge = governing.qEdge;
+  const Vu = governing.Vu;
+  const eB = act.b.momentEccentricity;
   const lambdaS = sizeEffectFactor(f.d);
   // §22.5.5.1 row (c) for Av < Av,min (footings carry no shear reinforcement):
   // Vc = 0,66·λs·λ·(ρw)^⅓·√f'c·bw·d. ρw is floored at the minimum (0,0018) —
@@ -207,8 +348,9 @@ export function checkOneWayShear(f: FootingInput, qFactored: number): OneWayShea
 
   memo.push(
     `Corte en una dirección a d de la cara: a = ${a.toFixed(3)} m, ` +
-    (eB > 1e-9
-      ? `presión trapezoidal por momento factorizado (eB = ${eB.toFixed(3)} m): ` +
+    (eB > 1e-9 || uCol !== 0
+      ? `presión trapezoidal (eB de momento = ${eB.toFixed(3)} m, columna a ` +
+        `${uCol.toFixed(3)} m del centroide, gobierna el lado ${governing.side}): ` +
         `Vu = (q_sección ${qSec.toFixed(1)} + q_borde ${qEdge.toFixed(1)}) / 2 × ${a.toFixed(3)} × ` +
         `${f.L.toFixed(2)} = ${Vu.toFixed(1)} kN.`
       : `Vu = ${qFactored.toFixed(1)} × ${a.toFixed(3)} × ${f.L.toFixed(2)} = ${Vu.toFixed(1)} kN.`),
@@ -218,6 +360,7 @@ export function checkOneWayShear(f: FootingInput, qFactored: number): OneWayShea
   return {
     status: Vu <= phiVc ? 'OK' : 'FAIL',
     Vu, phiVc, utilization: phiVc > 0 ? Vu / phiVc : Infinity,
+    governingSide: governing.side, cantilever: a, qSection: qSec, qEdge,
     memo, refs: [R_ONEWAY],
   };
 }
@@ -229,6 +372,27 @@ export interface FootingCheck {
   punching: PunchingCheck | null;
   /** Factored moment at the column face, kN·m. */
   Mu: number;
+  /**
+   * Which column face the reported `Mu` is taken at, in centroid coordinates.
+   *
+   * Both are evaluated under both moment orientations. Null when the footing produced no
+   * flexural demand at all — an unsupported kind, or a resultant outside the kern.
+   */
+  MuSide: 'low' | 'high' | null;
+  /** Cantilever from that face to its edge, m, and the pressures bounding it, kPa. */
+  MuCantilever: number;
+  MuQFace: number;
+  MuQEdge: number;
+  /**
+   * The soil pressure this check DEDUCTED inside the critical perimeter, kPa.
+   *
+   * Published because the punching free body is measured for closure downstream: the record
+   * computes `N_u − (V_u + q · A_enclosed)` and must use the pressure the check actually
+   * deducted, not a restatement of `N_u/A`. On a centred footing the two are the same number;
+   * on an offset one they are not, and a residual measured against the wrong one would report
+   * a broken free body for a check that closes exactly.
+   */
+  punchingLoadInsidePerimeter: number;
   /** Worst utilization across every check that produced one. */
   worstUtilization: number;
   memo: string[];
@@ -257,10 +421,16 @@ export function checkFooting(f: FootingInput): FootingCheck {
     return {
       status: 'UNSUPPORTED',
       bearing: {
-        status: 'UNSUPPORTED', qMax: 0, qMin: 0, eB: 0, eL: 0, uplift: false,
+        status: 'UNSUPPORTED', qMax: 0, qMin: 0, eB: 0, eL: 0,
+        geometricOffsetB: 0, geometricOffsetL: 0,
+        momentEccentricityB: 0, momentEccentricityL: 0,
+        uplift: false,
         utilization: 0, memo: [], refs: [],
       },
-      oneWayShear: null, punching: null, Mu: 0, worstUtilization: 0,
+      oneWayShear: null, punching: null,
+      Mu: 0, MuSide: null, MuCantilever: 0, MuQFace: 0, MuQEdge: 0,
+      punchingLoadInsidePerimeter: 0,
+      worstUtilization: 0,
       memo: [`${label[f.kind]} no están implementadas. Tratarlas como zapatas aisladas ` +
              'daría un resultado incorrecto con apariencia de correcto.'],
       refs,
@@ -274,23 +444,56 @@ export function checkFooting(f: FootingInput): FootingCheck {
     unsupported.push(bearing.unsupportedReason);
   }
 
-  // Factored net upward pressure for strength checks. With a factored moment the
-  // resultant leaves the kern when |e| > B/6 (or L/6): the base lifts and the linear
-  // distribution under-states the peak — same refusal as the service bearing path.
+  // ── One factored pressure field, for every strength check ──────
+  //
+  // Built from the SAME transformation the bearing check used, at factored level. Beyond the
+  // kern the base lifts and the linear distribution under-states the peak, so the strength
+  // checks are not emitted at all — the same refusal as the service path, and now with the
+  // geometric `N · e` inside the test rather than the applied moment alone. A footing offset
+  // far enough to lift under its own reaction used to pass this gate.
   const A = f.B * f.L;
   const qFactored = A > 0 ? f.factoredAxial / A : 0;
-  const fEB = Math.abs(f.factoredMomentB ?? 0) / Math.max(f.factoredAxial, 1e-12);
-  const fEL = Math.abs(f.factoredMomentL ?? 0) / Math.max(f.factoredAxial, 1e-12);
-  const factoredUplift = fEB > f.B / 6 || fEL > f.L / 6;
+  const fact = factoredActions(f);
+  const factoredUplift = !fact.fullContact;
   if (factoredUplift) {
     unsupported.push(
       `Con la combinación de resistencia gobernante la resultante cae fuera del núcleo ` +
-      `(eB = ${fEB.toFixed(3)} m, eL = ${fEL.toFixed(3)} m): la distribución lineal no vale ` +
-      'y las verificaciones de resistencia no se emiten.');
+      `(eB = ${fact.b.worstResultantOffset.toFixed(3)} m, ` +
+      `eL = ${fact.l.worstResultantOffset.toFixed(3)} m, de los cuales ` +
+      `${fact.b.columnOffset.toFixed(3)} / ${fact.l.columnOffset.toFixed(3)} m son ` +
+      `geométricos): la distribución lineal no vale y las verificaciones de resistencia no ` +
+      'se emiten.');
   }
 
   const oneWayShear = factoredUplift ? null : checkOneWayShear(f, qFactored);
   if (oneWayShear) memo.push(...oneWayShear.memo);
+
+  /**
+   * The soil pressure standing inside the critical perimeter, kPa.
+   *
+   * The mean of a LINEAR field over a region is its value at that region's centroid, and the
+   * critical perimeter is centred on the COLUMN. On a centred footing the column centre is the
+   * footing centroid, where the field equals `q0` exactly — which is why the previous constant
+   * `qFactored` was exact there, moment or no moment, and why it stays bit-identical now.
+   *
+   * On an OFFSET footing the column centre is not the centroid and the mean is not `q0`. The
+   * enveloped value is the SMALLEST over the orientation pairs, because a smaller deduction is
+   * a larger `V_u`: taking the largest would credit the connection with soil relief that the
+   * unfavourable moment sign removes. Floored at zero — a negative deduction would ADD to the
+   * punching demand, which the free body does not support.
+   */
+  const uCol = fact.b.columnOffset;
+  const vCol = fact.l.columnOffset;
+  let insidePerimeter = qFactored;
+  if (uCol !== 0 || vCol !== 0) {
+    let least = Infinity;
+    for (const uR of fact.b.resultantOffsets) {
+      for (const vR of fact.l.resultantOffsets) {
+        least = Math.min(least, planPressure(qFactored, f.B, f.L, uR, vR)(uCol, vCol));
+      }
+    }
+    insidePerimeter = Math.max(0, least);
+  }
 
   const punching = factoredUplift ? null : checkPunchingShear({
     fc: f.fc, columnB: f.columnB, columnH: f.columnH, d: f.d,
@@ -299,34 +502,65 @@ export function checkFooting(f: FootingInput): FootingCheck {
       supportReaction: f.factoredAxial,
       // At a footing the soil pushes UP inside the critical perimeter, and that part of
       // the load never crosses the critical section. Same equilibrium argument as at a
-      // slab-column joint, opposite sign convention. For a CENTRED column the bilinear
-      // pressure from any factored moment averages to exactly Nu/A over the centred
-      // enclosed area, so the uniform value is exact here even with moment.
-      loadInsidePerimeter: qFactored,
+      // slab-column joint, opposite sign convention.
+      loadInsidePerimeter: insidePerimeter,
     },
   });
   if (punching) {
     memo.push(...punching.memo);
+    if (uCol !== 0 || vCol !== 0) {
+      memo.push(
+        `La presión descontada dentro del perímetro crítico se evalúa en el EJE DE LA ` +
+        `COLUMNA (${uCol.toFixed(3)}, ${vCol.toFixed(3)}) m respecto del centroide, no en el ` +
+        `centroide: ${insidePerimeter.toFixed(1)} kPa contra ${qFactored.toFixed(1)} kPa ` +
+        'uniformes (envolvente menos favorable de ambos signos del momento).');
+    }
     if (punching.status === 'UNSUPPORTED' && punching.unsupportedReason) {
       unsupported.push(punching.unsupportedReason);
     }
     refs.push(...punching.refs);
   }
 
-  // Flexure at the column face, §13.2.7 — the cantilever integral with the trapezoidal
-  // pressure (exact for a linear distribution: Mu = L·c²·(2·q_face + q_edge)/6).
-  const cantilever = (f.B - f.columnB) / 2;
+  /**
+   * Flexure at the column face, §13.2.7.1 — the §13.2.6.6 cantilever integral.
+   *
+   * `Mu = L·c²·(2·q_face + q_edge)/6`, exact for a linear pressure. BOTH faces are evaluated
+   * under BOTH moment orientations: the previous version took the symmetric cantilever
+   * `(B − columnB)/2` and forced the heavy edge to +B, so on an offset footing it reported the
+   * moment of a footing that does not exist. The larger of the two real products governs, and
+   * the longer cantilever is not always it.
+   */
   let Mu = 0;
+  let MuSide: 'low' | 'high' | null = null;
+  let MuCantilever = 0;
+  let MuQFace = 0;
+  let MuQEdge = 0;
   if (!factoredUplift) {
-    const xFace = f.B - cantilever;
-    const kB = 6 * fEB / f.B;
-    const qFace = qFactored * (1 + kB * (2 * xFace / f.B - 1));
-    const qEdge = qFactored * (1 + kB);
-    Mu = f.L * cantilever * cantilever * (2 * qFace + qEdge) / 6;
+    const cLow = f.B / 2 + uCol - f.columnB / 2;
+    const cHigh = f.B / 2 - uCol - f.columnB / 2;
+    for (const uR of fact.b.resultantOffsets) {
+      const q = axisPressure(qFactored, f.B, uR);
+      for (const side of ['low', 'high'] as const) {
+        const c = side === 'low' ? cLow : cHigh;
+        if (!(c > 0)) continue;
+        const edgeU = side === 'low' ? -f.B / 2 : f.B / 2;
+        const faceU = side === 'low' ? edgeU + c : edgeU - c;
+        const qFace = q(faceU);
+        const qEdge = q(edgeU);
+        const m = f.L * c * c * (2 * qFace + qEdge) / 6;
+        if (MuSide === null || m > Mu) {
+          Mu = m; MuSide = side; MuCantilever = c; MuQFace = qFace; MuQEdge = qEdge;
+        }
+      }
+    }
   }
   memo.push(
     `Momento en la cara de la columna (13.2.7): Mu = ${Mu.toFixed(1)} kN·m` +
-    (fEB > 1e-9 ? ` (presión trapezoidal, eB = ${fEB.toFixed(3)} m). ` : ' (presión uniforme). ') +
+    (fact.b.momentEccentricity > 1e-9 || uCol !== 0
+      ? ` (presión trapezoidal, eB de momento = ${fact.b.momentEccentricity.toFixed(3)} m, ` +
+        `columna a ${uCol.toFixed(3)} m del centroide, gobierna el lado ` +
+        `${MuSide ?? '—'} con un voladizo de ${MuCantilever.toFixed(3)} m). `
+      : ' (presión uniforme). ') +
     'La armadura de flexión se dimensiona con el verificador de secciones.');
   refs.push(R_FLEX, R_ONEWAY);
 
@@ -340,7 +574,10 @@ export function checkFooting(f: FootingInput): FootingCheck {
 
   return {
     status: anyUnsupported ? 'UNSUPPORTED' : anyFail ? 'FAIL' : 'OK',
-    bearing, oneWayShear, punching, Mu, worstUtilization,
+    bearing, oneWayShear, punching,
+    Mu, MuSide, MuCantilever, MuQFace, MuQEdge,
+    punchingLoadInsidePerimeter: insidePerimeter,
+    worstUtilization,
     memo, refs, unsupported,
   };
 }
