@@ -8,7 +8,8 @@ import es from '../locales/es';
  * runtime and would ship as untranslated text in the app's primary UI language.
  */
 const PREFIXES = ['codes.', 'loads.cirsoc101.', 'loads.cirsoc102.',
-  'regulations.', 'revisions.', 'loadPlan.', 'materials.', 'maturity.', 'detailing.'];
+  'regulations.', 'revisions.', 'loadPlan.', 'materials.', 'maturity.', 'detailing.',
+  'footing.', 'geotechnical.'];
 
 function keysWithPrefix(dict: Record<string, string>): string[] {
   return Object.keys(dict).filter((k) => PREFIXES.some((p) => k.startsWith(p))).sort();

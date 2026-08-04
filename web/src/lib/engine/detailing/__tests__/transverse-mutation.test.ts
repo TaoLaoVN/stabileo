@@ -25,6 +25,7 @@ import { detectCollisions } from '../collision';
 import { rebarHash } from '../../design/rebar-hash';
 import { supersede } from '../document-model';
 import { straightSegment, type BarPath } from '../../../codes/cirsoc201/bar-geometry';
+import { noFloorFamilies } from '../family-record';
 
 let cached: RunDetailingResult | null = null;
 function run(): RunDetailingResult {
@@ -54,6 +55,7 @@ function facts(): ConstructibilityFacts {
     reverifiedMembers: a.elementIds.length, certificateHashMatches: a.elementIds.length,
     spacingNotCodeLegal: 0, spacingNotPlacementRobust: 0,
     unsupportedRules: 0, staleAssemblies: 0,
+    familyRequirements: noFloorFamilies(),
   };
 }
 
@@ -142,8 +144,9 @@ describe('a declared relationship never excuses interpenetration', () => {
 
   it('and the detector reports it end to end, not just the classifier', () => {
     const [t, b] = pair({ enclosesBarIds: ['bar'], restrainsBarIds: ['bar'] });
-    const res = detectCollisions([t, b], undefined, undefined,
-      (x, y, surface, ta, tb) => classifyPair(x, y, ctx, surface, ta, tb));
+    const res = detectCollisions([t, b], {
+      classifyFor: (x, y, surface, ta, tb) => classifyPair(x, y, ctx, surface, ta, tb),
+    });
     expect(res.conflicts.map((c) => c.pairClass)).toEqual(['prohibitedOverlap']);
   });
 });

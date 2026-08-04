@@ -29,14 +29,28 @@
  */
 
 import { msg, round, type EngineMessage } from '../../codes/message';
+import {
+  familyCertificateMissing, familyCertificateStale,
+  type FamilyRequirement,
+} from './family-record';
 
 /**
- * The thirteen conditions, in the order they are evaluated and reported.
+ * The fifteen conditions, in the order they are evaluated and reported.
  *
  * The thirteenth — `allRequiredTransversePathsMaterialised` — was added when the transverse
  * cage became physical. Without it the gate had no way to tell a floor whose stirrups exist
  * from one whose stirrups are still an instruction, and CONSTRUCTIBLE was reachable with no
  * shear steel in the model at all.
+ *
+ * The fourteenth and fifteenth were added when slabs, walls and footings gained real design
+ * records. Before them the gate had exactly ONE certificate instrument —
+ * `certificatesMatchGeometry`, counted over FRAME members — so a slab-only floor faced a
+ * choice between two wrong answers: leave `reverifiedMembers` at zero and never reach
+ * CONSTRUCTIBLE however complete the design, or set the frame flags true and satisfy two
+ * conditions that nothing measured. The second is the false-completeness this whole gate
+ * exists to prevent, and it is now impossible to express: the frame conditions count frame
+ * members, the family conditions count family members, and each is measured against what is
+ * APPLICABLE rather than against a flag a caller could set.
  */
 export const CONSTRUCTIBILITY_CONDITIONS = [
   'completeEnvelope',
@@ -48,6 +62,8 @@ export const CONSTRUCTIBILITY_CONDITIONS = [
   'noProhibitedConflicts',
   'allMembersReverified',
   'certificatesMatchGeometry',
+  'allApplicableFamiliesCertified',
+  'noStaleFamilyCertificate',
   'allSpacingCodeLegal',
   'allSpacingPlacementRobust',
   'noUnsupportedRule',
@@ -121,6 +137,22 @@ export interface ConstructibilityFacts {
   unsupportedRules: number;
   /** Assemblies whose upstream demand revision has moved on. */
   staleAssemblies: number;
+  /**
+   * Certificate evidence for the floor families, one entry per family, ALWAYS present.
+   *
+   * ── Why it is required rather than optional ─────────────────────────
+   *
+   * Because `undefined >= undefined` is false and reads like a failing measurement, and the
+   * inverse — an omitted count treated as satisfied — reads like a passing one. This gate
+   * has already been broken once in each direction: the thirteenth condition compared two
+   * absent numbers and no floor could ever be constructible, and before that an empty
+   * conflict list was taken as the whole of constructibility.
+   *
+   * So a caller must SAY what families apply. A beam line states three requirements with
+   * `applicable: 0`, which is a measurement — "no slabs here" — and is what makes it
+   * distinguishable from "slabs here, none certified". An omitted field could mean either.
+   */
+  familyRequirements: readonly FamilyRequirement[];
 }
 
 export type ConstructibilityVerdict = 'CONSTRUCTIBLE' | 'CONFLICTED' | 'NOT_ESTABLISHED';
@@ -143,7 +175,7 @@ function cond(
 /**
  * Decide whether this detailing may be called constructible.
  *
- * All thirteen or none. There is no partial credit and no "mostly": an engineer reading
+ * All fifteen or none. There is no partial credit and no "mostly": an engineer reading
  * CONSTRUCTIBLE is entitled to assume every one of these was checked.
  *
  * The distinction between the two failure verdicts is about what the engineer does next.
@@ -192,6 +224,46 @@ export function assessConstructibility(f: ConstructibilityFacts): Constructibili
       msg('detailing.constructible.hashes', {
         matching: f.certificateHashMatches, total: f.applicableMembers,
       })),
+    // ── The family certificates ───────────────────────────────────────
+    //
+    // Measured per family against what is APPLICABLE. A floor with slabs and footings and no
+    // walls reports the wall requirement as `applicable: 0` — a measurement, not an
+    // omission — and the shortfall is counted only over families that are actually there.
+    //
+    // These are separate conditions from the frame pair above rather than folded into them,
+    // because a mixed floor must satisfy BOTH and an engineer reading a blocked gate has to
+    // know which kind of evidence is missing. Merging the counts would report "3 of 8
+    // certified" over two incomparable populations.
+    //
+    // This condition counts only the owners with NO certificate. The ones whose certificate
+    // exists and does not apply are the NEXT condition's business, so the two partition the
+    // shortfall and a single stale certificate blocks exactly one of them.
+    cond('allApplicableFamiliesCertified',
+      familyCertificateMissing(f.familyRequirements) === 0,
+      familyCertificateMissing(f.familyRequirements),
+      msg('detailing.constructible.familiesCertified', {
+        certified: f.familyRequirements.reduce((n, r) => n + r.certified, 0),
+        applicable: f.familyRequirements.reduce((n, r) => n + r.applicable, 0),
+        // A NESTED message, not a bare key in a string slot. `params` resolves inside-out, so
+        // this reads as a sentence in both locales; pasting the key would print it verbatim,
+        // which is how `maturity.validated` once leaked into a badge.
+        families: f.familyRequirements.some((r) => r.applicable > 0)
+          ? f.familyRequirements.filter((r) => r.applicable > 0).map((r) => r.family).join(', ')
+          : msg('detailing.constructible.familyNone'),
+      })),
+    // A certificate that EXISTS and does not apply is reported separately from one that is
+    // absent. They have different remedies — reissue versus issue — and the stale case is
+    // the more dangerous of the two, because it is a correct-looking claim about a member
+    // that has since moved.
+    cond('noStaleFamilyCertificate',
+      familyCertificateStale(f.familyRequirements) === 0,
+      familyCertificateStale(f.familyRequirements),
+      msg('detailing.constructible.familiesStale', {
+        stale: f.familyRequirements.reduce((n, r) => n + r.stale, 0),
+        mismatched: f.familyRequirements.reduce((n, r) => n + r.mismatched, 0),
+        failed: f.familyRequirements.reduce((n, r) => n + r.failed, 0),
+        unsupported: f.familyRequirements.reduce((n, r) => n + r.unsupported, 0),
+      })),
     cond('allSpacingCodeLegal', f.spacingNotCodeLegal === 0, f.spacingNotCodeLegal,
       msg('detailing.constructible.codeLegal', { n: f.spacingNotCodeLegal })),
     cond('allSpacingPlacementRobust', f.spacingNotPlacementRobust === 0,
@@ -208,6 +280,12 @@ export function assessConstructibility(f: ConstructibilityFacts): Constructibili
   // A physical clash is a defect in the model. Everything else that blocks the gate is
   // work not yet done, and conflating the two sends the engineer looking for the wrong
   // thing entirely.
+  //
+  // A missing or stale family certificate is deliberately NOT a defect. The geometry may be
+  // entirely correct; what is absent is the act of certifying it, and the remedy is to
+  // reissue rather than to resize. A failing family DESIGN does block the gate, but it does
+  // so through `noUnsupportedRule` and through the record's own status — not by having the
+  // certificate condition impersonate a clash.
   const hasDefect = !conditions.find((c) => c.condition === 'noProhibitedConflicts')!.passed
     || !conditions.find((c) => c.condition === 'allSpacingCodeLegal')!.passed;
 

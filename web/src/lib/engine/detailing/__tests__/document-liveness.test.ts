@@ -137,7 +137,12 @@ describe('the legacy reinforcement may not stand in for coordinated detailing', 
     const s = read(STORE);
     const idx = s.indexOf('buildDocument(');
     expect(idx).toBeGreaterThan(-1);
-    const body = s.slice(idx, idx + 900);
+    // The window only has to contain the guard; its size is incidental to the property being
+    // measured, which is that `buildDocument` REFUSES rather than falling back to the
+    // pre-coordination per-member reinforcement. It was 900 and a doc comment explaining why
+    // the guard reads the persisted store pushed the guard past it — a documentation change
+    // must not be able to fail a gate about behaviour.
+    const body = s.slice(idx, idx + 2500);
     expect(body).toMatch(/assemblies\.length === 0\)\s*return null/);
   });
 

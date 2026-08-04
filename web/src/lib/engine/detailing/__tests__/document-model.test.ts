@@ -203,10 +203,11 @@ describe('one model, so the three outputs cannot drift', () => {
 });
 
 describe('conflict records are actionable', () => {
-  const a: DocumentAssembly = {
-    id: 'L1', label: { key: 'x', params: {} }, state: 'COORDINATED',
-    elementIds: [1, 2], bars: [], layers: [], laps: [], fusions: [],
-    conflicts: [conflict()], maturity: 'VALIDATED', assumptions: [],
+  // Only what `openConflictsOf` reads. It takes a `Pick`, so a fixture asking a question
+  // about conflicts no longer has to invent a source assembly, family records and
+  // certificates to be allowed to ask it.
+  const a: Pick<DocumentAssembly, 'id' | 'conflicts' | 'maturity'> = {
+    id: 'L1', conflicts: [conflict()], maturity: 'VALIDATED',
   };
 
   it('names the members, the bars and the place', () => {

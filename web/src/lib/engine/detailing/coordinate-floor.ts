@@ -225,7 +225,7 @@ export function repairConflicts(
   const trace: string[] = [];
   let working = bars.map((b) => ({ ...b, segments: b.segments.map((s) => ({ ...s })) }));
 
-  let result = detectCollisions(working, tolerances, requiredClearFor, classifyFor);
+  let result = detectCollisions(working, { tolerances, requiredClearFor, classifyFor });
   const initial = result.conflicts.length;
   if (initial === 0) {
     return { bars: working, conflicts: [], attempts, trace: ['Sin conflictos.'] };
@@ -322,7 +322,7 @@ export function repairConflicts(
       }
     }
     working = [...byId.values()].map((b) => ({ ...b, segments: b.segments.map((sg) => ({ ...sg })) }));
-    result = detectCollisions(working, tolerances, requiredClearFor, classifyFor);
+    result = detectCollisions(working, { tolerances, requiredClearFor, classifyFor });
     const cleared = before - result.conflicts.length;
     attempts.push({ rung, cleared, remaining: result.conflicts.length });
     trace.push(

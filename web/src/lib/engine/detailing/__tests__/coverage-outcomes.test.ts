@@ -59,7 +59,7 @@ describe('the 408/373 discrepancy', () => {
     // Nothing compliant is dropped: every VERIFIED member is detailable.
     const verifiedIds = [...summary.outcomes.values()]
       .filter((o) => o.outcome === 'VERIFIED').map((o) => o.elementId).sort((a, b) => a - b);
-    expect(readiness.detailable.map((d) => d.elementId ?? d).sort((a: number, b: number) => a - b))
-      .toEqual(verifiedIds);
+    // `detailable` is a sorted id list, so this is an id-for-id comparison.
+    expect([...readiness.detailable].sort((a, b) => a - b)).toEqual(verifiedIds);
   }, 300_000);
 });
