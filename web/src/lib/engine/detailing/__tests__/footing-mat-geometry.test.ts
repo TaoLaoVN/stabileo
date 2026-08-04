@@ -14,6 +14,7 @@ import {
 import { detectCollisions } from '../collision';
 import { classifyPair } from '../classify';
 import { generateDowels } from '../floor-design';
+import { dowelMatSupportFrom } from '../footing-dowel-cage';
 
 /**
  * The reference footing, chosen so every number below is hand-checkable.
@@ -529,21 +530,34 @@ describe('physical mat — constructibility', () => {
   });
 
   /**
-   * What the mat's existence reveals about the dowels, stated rather than hidden.
+   * The claim the mat made checkable, now measured true.
    *
-   * `generateDowels` notes that a starter whose straight l_d does not fit "remata con gancho a
-   * 90° apoyado sobre la parrilla inferior" — turns 90° RESTING ON the bottom mat. Until this
-   * pass there was no bottom mat to rest on and the claim could not be checked. It is now
-   * checkable and it is false: the hook's horizontal leg sits one bend radius BELOW the tangent
-   * point of the straight leg, which puts it under the whole mat and 20 mm from the soffit
-   * against a 50 mm cover intent.
+   * `generateDowels` noted that a starter whose straight l_d does not fit "remata con gancho a
+   * 90° apoyado sobre la parrilla inferior" — turns 90° RESTING ON the bottom mat. Until the mat
+   * existed there was nothing to rest on and the claim could not be checked; once it existed the
+   * claim was false three ways over: the leg sat one bend radius BELOW the tangent point the
+   * generator was reasoning about, which put it 10 mm under the lower layer with 20 mm of cover
+   * against a declared 50 mm, and all eight hooks turned toward the column centre in one
+   * horizontal plane, so twelve pairs interpenetrated and four had coincident axes.
    *
-   * Pinned rather than repaired. Moving the dowel foot changes dowel geometry — its embedded
-   * length, its §25.4.3.1 hook credit and every fixture that measures it — and that is a change
-   * to the starter design, not to the mat. This test is what stops the finding being lost.
+   * All three are now closed, and the closure is one thing rather than three: the seat is a
+   * measured elevation on the mat layer the leg actually crosses, and the orientation is
+   * searched over the certified bar layout instead of assumed. The counts below — 8 seated,
+   * 0 prohibited — are what replaced the pinned 12.
    */
-  it('exposes, and does not hide, that the dowel hook sits BELOW the mat', () => {
-    const g = gen();
+  it('seats every dowel hook on the mat it crosses, with no prohibited overlap left', () => {
+    const dsg = design();
+    const g = gen(dsg);
+    const mat = dowelMatSupportFrom(g.bars, [
+      {
+        axis: 'X', diameterMm: 16, centreZ: -1.2 + dsg.x.centreElevation,
+        layer: g.lowerLayerAxis === 'X' ? 'LOWER' : 'UPPER',
+      },
+      {
+        axis: 'Y', diameterMm: 16, centreZ: -1.2 + dsg.y.centreElevation,
+        layer: g.lowerLayerAxis === 'Y' ? 'LOWER' : 'UPPER',
+      },
+    ]);
     const d = generateDowels({
       id: 'F1-C3', centre: { x: 0, y: 0 },
       footingTopZ: -1.2 + 0.60, footingThickness: 0.60, footingCover: 0.05,
@@ -551,56 +565,68 @@ describe('physical mat — constructibility', () => {
       bars: { count: 8, diameterMm: 20 },
       ldFooting: 1.527, ldhFooting: 0.45, lapAbove: 1.99,
       elementIds: [3], edition: '2025',
+      bottomMat: mat!, footingPlan: { centroid: { x: 0, y: 0 }, B: 2.5, L: 2.5 },
     });
-    // The straight leg's tangent point: `footingTopZ − min(ld, h − c − 0,05)` = −0,60 − 0,50.
-    const tangentZ = Math.min(...d.bars.map((b) => b.segments[b.segments.length - 1].start.z));
-    expect(tangentZ).toBeCloseTo(-1.2 + 0.10, 12);
-    // The hook leg, one CENTRELINE radius lower: Ø20 longitudinal bends around a 6·d_b = 120 mm
-    // mandrel, so r = (120 + 20)/2 = 70 mm.
-    const hookZ = Math.min(...d.bars.flatMap(
-      (b) => b.segments.flatMap((s) => [s.start.z, s.end.z])));
-    expect(hookZ).toBeCloseTo(-1.2 + 0.10 - 0.07, 12);
 
-    // 20 mm of cover under the hook, against the footing's stated 50 mm.
-    expect(hookZ - 0.010 - (-1.2)).toBeCloseTo(0.020, 12);
+    expect(d.cage.status).toBe('PLACED');
+    expect(d.unsupported).toEqual([]);
+    expect(d.bars).toHaveLength(8);
 
-    // And it is UNDER the lower mat layer, whose bar surface sits exactly one cover up, so the
-    // hook is not resting on anything.
-    const matBottomZ = Math.min(...g.provenance.map((p) => p.start.z - p.diameterMm / 2000));
-    expect(matBottomZ).toBeCloseTo(-1.2 + 0.05, 12);
-    expect(hookZ + 0.010).toBeLessThan(matBottomZ);
+    // The lowest steel in every bar IS its seat: 66 mm above the soffit for a leg carried by
+    // the LOWER layer, 82 mm for one carried by the UPPER, both clear of the 50 mm cover. The
+    // superseded geometry put this at 20 mm.
+    for (const p of d.cage.placements) {
+      // From the emitted path, not from the arithmetic that produced it: the outer surface of
+      // the lowest steel in the bar is exactly the seat.
+      const bar = d.bars.find((b) => b.id === p.id)!;
+      const lowestSurface = Math.min(
+        ...bar.segments.flatMap((s) => [s.start.z, s.end.z])) - 0.010;
+      expect(lowestSurface).toBeCloseTo(p.seatZ, 12);
+      expect(p.seatedOn.length).toBeGreaterThanOrEqual(1);
+    }
+    const covers = [...new Set(d.cage.placements
+      .map((p) => +(p.bottomCover * 1000).toFixed(6)))].sort((a, b) => a - b);
+    expect(covers).toEqual([66, 82]);
+    expect(d.cage.placements.filter((p) => p.seatedOn.length > 0)).toHaveLength(8);
 
-    // The two nonetheless do not share a volume on this footing: the hook passes beneath the
-    // mat rather than through it. So the mat introduces no prohibited overlap of its own.
+    // No hook is under the mat any more: every seat is at or above the lower layer's top face.
+    const lowerTopZ = Math.min(mat!.x.topSurfaceZ, mat!.y.topSurfaceZ);
+    for (const p of d.cage.placements) {
+      expect(p.seatZ).toBeGreaterThanOrEqual(lowerTopZ - 1e-12);
+    }
+
+    // And the twelve interpenetrations are gone — mat/dowel and dowel/dowel alike.
     const matIds = new Set(g.bars.map((b) => b.id));
     const r = detect([...g.bars, ...d.bars], matIds);
     const prohibited = r.conflicts.filter((c) => c.pairClass === 'prohibitedOverlap');
-    expect(prohibited.filter((c) => matIds.has(c.barA) || matIds.has(c.barB))).toEqual([]);
+    expect(prohibited).toEqual([]);
 
     /**
-     * The twelve that DO remain are the pre-existing dowel-hook overlaps, and they are pinned
-     * here so the mat's arrival cannot be read as having introduced or removed them.
+     * What the repaired seat SURFACES, exposed here rather than absorbed.
      *
-     * Eight starters each turn their hook toward the column centre at the same elevation
-     * `tangentZ − r`, so the four corner hooks and the four face hooks sweep through one
-     * horizontal plane and cross each other there. Twelve pairs interpenetrate by 20 mm — one
-     * full Ø20 diameter, i.e. axes exactly coincident at the crossing. That is a starter-cage
-     * defect, it predates this pass, and it belongs to the dowel generator rather than to the
-     * mat: nothing here may quietly absorb it.
+     * Four §25.2.3 clear-spacing shortfalls remain, and they are a different finding from the
+     * twelve interpenetrations this replaces. A corner starter's leg turns along x and is seated
+     * on the UPPER (Y) layer, so it runs PARALLEL to the LOWER layer's X bars 24 mm beneath it
+     * and offset 45,5 mm across — 33,40 mm of clear distance against the 40 mm the article
+     * requires of a pair containing a column bar.
+     *
+     * It cannot be fixed by turning the hook: both ±x orientations put the leg at the same y and
+     * therefore the same distance from the same mat bar, and the search's job is orientation, not
+     * position. Closing it means coordinating the mat's bar spacing with the column's bar
+     * positions, or reading a different clause for a hook leg crossing above a mat — neither of
+     * which is a change this pass is authorised to make. So it is measured and named, and the
+     * floor is honestly NOT constructible until it is answered.
      */
-    expect(prohibited).toHaveLength(12);
-    for (const c of prohibited) {
-      expect(c.barA).toMatch(/dowel/);
-      expect(c.barB).toMatch(/dowel/);
-      // Inside the hook's own elevation band — the arc from the tangent point down to the
-      // horizontal leg — and never in the straight leg above it.
-      expect(c.at.z).toBeGreaterThanOrEqual(-1.17 - 1e-9);
-      expect(c.at.z).toBeLessThanOrEqual(-1.10 + 1e-9);
-      expect(c.clearance).toBeLessThan(0);
+    const spacing = r.conflicts.filter((c) => c.pairClass === 'sameLayerSpacing');
+    expect(spacing).toHaveLength(4);
+    for (const c of spacing) {
+      expect(c.barA).toMatch(/dowel|matX/);
+      expect(c.barB).toMatch(/dowel|matX/);
+      expect(c.clearance).toBeCloseTo(0.0334, 4);
+      expect(c.required).toBeCloseTo(0.040, 6);
+      // A shortfall, not an overlap: there is clear concrete between the two surfaces.
+      expect(c.clearance).toBeGreaterThan(0);
     }
-    // The worst of them is a full Ø20 diameter: two hook legs with coincident axes.
-    expect(Math.min(...prohibited.map((c) => c.clearance))).toBeCloseTo(-0.020, 9);
-    // So the floor is not constructible, and it is not the mat's doing.
     expect(r.constructible).toBe(false);
   });
 

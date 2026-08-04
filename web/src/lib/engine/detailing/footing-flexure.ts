@@ -580,8 +580,27 @@ type LayoutOutcome =
   | {
     ok: true; barCount: number; spacingCentre: number; spacingClear: number;
     asProvided: number;
+    /** True when a bar was added to keep the region's centre line clear. See `layoutRegion`. */
+    centreCleared: boolean;
+    /** True when the centre line still carries a bar because no count could avoid it. */
+    barOnCentre: boolean;
   }
   | { ok: false; reason: 'noPlaceableWidth' | 'minClear' | 'noMaxSpacing' };
+
+/**
+ * Does a uniform distribution of `n` bars put one ON the region's centre line?
+ *
+ * Both layout models are symmetric about the region centre, and both hit the centre for exactly
+ * the same reason: an odd count has a middle bar and the middle bar is the centre.
+ *
+ *   EDGE_ANCHORED   bars at −span/2 + k·(span/(n−1)), k = 0…n−1 → centre at k = (n−1)/2
+ *   TRIBUTARY_PITCH bars at −w/2 + (k+½)·(w/n),       k = 0…n−1 → centre at k = (n−1)/2
+ *
+ * so in both cases the centre is occupied iff `n` is odd.
+ */
+function barLandsOnRegionCentre(n: number): boolean {
+  return n % 2 === 1;
+}
 
 /**
  * Choose an integer bar count for one region.
@@ -596,6 +615,43 @@ type LayoutOutcome =
  *      above. When the floor from (1) and (2) passes that cap there is no admissible layout
  *      at the selected diameter, and this returns a failure instead of quietly changing the
  *      diameter the engineer chose.
+ *
+ * ── And one coordination requirement: keep the centre line clear ────
+ *
+ * `avoidBarOnCentre` asks for a count that leaves the region's own centre line free of steel.
+ * It is not an aesthetic preference and it is not the code speaking; it is a measured
+ * constructibility constraint between this mat and the column above it.
+ *
+ * A column's certified eight-bar cage carries one longitudinal bar CENTRED on each face, so on
+ * a concentric footing four starter dowels stand exactly on the two centre lines. A mat bar on
+ * the same line sits directly beneath one of them, and it removes the only hook orientation
+ * that dowel has: the leg that turns perpendicular to its own face is carried by the crossed
+ * layer, must drop through the layer above, and finds that line already occupied — measured
+ * interpenetration 16,00 mm, one full mat-bar diameter, axes coincident. What is left are the
+ * along-face orientations, whose legs run 1,76 mm from the corner bars' line at the same
+ * elevation, and those clash too.
+ *
+ * Measured on the production footing, 2,00 × 2,00 × 0,50 m with a 400 mm column carrying 8Ø20:
+ *
+ *   9 Ø16 per direction (odd)  → 0 feasible hook arrangements, exhaustive
+ *   10 Ø16 per direction (even) → 496, every hook seated, 135,24 mm between hooks
+ *   11 (odd) → 0     12 (even) → 496
+ *
+ * Parity is the whole of it. So an odd count gets ONE more bar, which costs steel the demand
+ * did not ask for — 18,10 → 20,11 cm² on that footing — and buys a cage that can be built. The
+ * extra bar is reported in the steps rather than folded into the area narrative, because a
+ * reader comparing provided against required is owed the reason for the difference.
+ *
+ * When the §25.2.1 cap will not admit the extra bar the odd count STANDS. Nothing here silently
+ * changes the diameter or drops below the clear-spacing minimum to satisfy a coordination rule,
+ * and the consequence is not hidden either: the dowel cage measures the same conflict and
+ * refuses to emit an unbuildable cage, naming the dowels involved.
+ *
+ * The rule keys on the REGION's centre, not on the column's axis, and those coincide only on a
+ * concentric footing. On one with plan eccentricity the dowels do not stand on the centre line
+ * and this buys nothing — the cage still measures the real geometry and still refuses when it
+ * has to. A rule stated in terms this function can actually see is worth more than one that
+ * pretends to a generality it does not have.
  */
 function layoutRegion(opts: {
   width: number;
@@ -605,6 +661,8 @@ function layoutRegion(opts: {
   cover: number;
   maxSpacing: number;
   minClear: number;
+  /** Keep the region's centre line free of steel when a count exists that does. */
+  avoidBarOnCentre?: boolean;
 }): LayoutOutcome {
   const db = opts.diameterMm / 1000;
   const area = barArea(opts.diameterMm);
@@ -627,14 +685,21 @@ function layoutRegion(opts: {
   // Smallest count whose spacing is within the maximum.
   const nFromSpacing = Math.max(nFloor,
     (edgeAnchored ? 1 : 0) + Math.ceil(span / opts.maxSpacing));
-  const n = Math.max(nFromArea, nFromSpacing);
+  const required = Math.max(nFromArea, nFromSpacing);
 
   // Largest count the minimum clear distance still admits.
   const pitchFloor = opts.minClear + db;
   const nMax = edgeAnchored
     ? Math.floor(span / pitchFloor) + 1
     : Math.floor(span / pitchFloor);
-  if (n > nMax) return { ok: false, reason: 'minClear' };
+  if (required > nMax) return { ok: false, reason: 'minClear' };
+
+  // The coordination bump, LAST, so it can only ever add to a count the three code bounds have
+  // already settled — and only when §25.2.1 still admits the extra bar.
+  const wantsClearCentre = opts.avoidBarOnCentre === true
+    && barLandsOnRegionCentre(required);
+  const centreCleared = wantsClearCentre && required + 1 <= nMax;
+  const n = centreCleared ? required + 1 : required;
 
   const spacingCentre = spacingFor(n);
   return {
@@ -643,6 +708,8 @@ function layoutRegion(opts: {
     spacingCentre,
     spacingClear: spacingCentre - db,
     asProvided: n * area,
+    centreCleared,
+    barOnCentre: barLandsOnRegionCentre(n),
   };
 }
 
@@ -1022,6 +1089,8 @@ function designDirection(
   const addRegion = (
     kind: FootingRegionKind, model: FootingLayoutModel, width: number, centreOffset: number,
     touchesEdge: boolean, share: number, shareGovernedBy: FootingAsGovernedBy | 'DISTRIBUTION',
+    /** See `layoutRegion`: keep the starter dowels' centre line free of mat steel. */
+    avoidBarOnCentre = false,
   ): void => {
     if (!(width > 1e-9)) return;
     /**
@@ -1044,6 +1113,7 @@ function designDirection(
     const laid = layoutRegion({
       width, model, asRequired, diameterMm, cover,
       maxSpacing: governingMax, minClear: clear.minClear,
+      avoidBarOnCentre,
     });
     if (!laid.ok) {
       failures.push(msg('footing.mat.noFeasibleLayout', {
@@ -1055,6 +1125,22 @@ function designDirection(
     // Reported against what the layout actually PROVIDES, not against the requirement: the
     // integer bar count routinely clears a floor the share alone would not, and an advisory
     // about steel that is already there would be noise.
+    // The coordination bump, stated where the count is stated. A reader comparing 20,11 cm²
+    // provided against 18,00 required is owed the reason, and "one extra bar so the starter
+    // hooks have somewhere to turn" is the reason.
+    if (laid.centreCleared) {
+      steps.push(
+        `${kind} (${geo.axis}): ${laid.barCount} barras en lugar de ${laid.barCount - 1} para ` +
+        'dejar libre el eje de la región. Una barra sobre el eje queda justo debajo de la ' +
+        'espera centrada en la cara de la columna y le anula la única orientación de gancho ' +
+        'disponible; con el conteo par la jaula de esperas se puede construir.');
+    } else if (laid.barOnCentre && avoidBarOnCentre) {
+      steps.push(
+        `${kind} (${geo.axis}): el eje de la región queda con una barra (${laid.barCount} ` +
+        'barras) porque la separación libre mínima del artículo 25.2.1 no admite una más. No se ' +
+        'reduce el diámetro ni la separación para evitarlo: si eso impide construir la jaula de ' +
+        'esperas, la jaula lo mide y lo informa.');
+    }
     if (laid.asProvided < policyRegionalMinimum) {
       advisories.push(msg('footing.mat.regionBelowPolicyMinimum', {
         axis: geo.axis, region: kind,
@@ -1075,7 +1161,7 @@ function designDirection(
   if (!isShortDirection) {
     // §13.3.3.2, and §13.3.3.3(a) for the long direction of a rectangular footing: uniform
     // across the FULL width. One region, edge to edge.
-    addRegion('FULL_WIDTH', 'EDGE_ANCHORED', W, 0, true, asGoverning, governedBy);
+    addRegion('FULL_WIDTH', 'EDGE_ANCHORED', W, 0, true, asGoverning, governedBy, true);
     steps.push(
       `Distribución uniforme en todo el ancho ` +
       `(${input.B === input.L ? '13.3.3.2' : '13.3.3.3 (a)'}).`);
@@ -1099,8 +1185,10 @@ function designDirection(
       }));
     } else {
       const g = gammaS as number;
+      // The band is centred on the COLUMN axis, which is exactly where the face-centred
+      // starters stand, so this is the region the rule was written for.
       addRegion('CENTRAL_BAND', 'TRIBUTARY_PITCH', bandWidth, columnOffset, false,
-        g * asGoverning, 'DISTRIBUTION');
+        g * asGoverning, 'DISTRIBUTION', true);
       // The remainder is uniform over the outside ZONES taken together, so each zone carries
       // it in proportion to its own width. On a centred footing the two are equal; on an
       // eccentric one they are not, and splitting the remainder in half would put the wrong

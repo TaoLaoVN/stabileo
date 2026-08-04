@@ -276,11 +276,31 @@ describe('the footing slice reaches its documents', () => {
     expect(html).toMatch(/Certificados de familia/);
     expect(html).toMatch(/<td>flexure<\/td><td class="ok">OK<\/td>/);
     expect(html).toMatch(/<td>anchorage<\/td><td class="ok">OK<\/td>/);
-    // Top reinforcement, named under "No verificado", and the twelve pre-existing dowel-hook
-    // overlaps that keep the floor from being constructible.
+    // Top reinforcement, named under "No verificado". It is what keeps the floor from being
+    // issued now that the steel itself fits — and it is the ONLY thing keeping it, which is a
+    // stronger statement than the one this test used to make.
     expect(html).toMatch(/No verificado/);
     expect(html).toMatch(/armadura superior/i);
-    expect(html).toMatch(/12 superposiciones físicas prohibidas/);
+    /**
+     * The twelve prohibited overlaps are gone, and their absence is asserted rather than
+     * merely no longer asserted.
+     *
+     * They were eight starter hooks turned toward the column centre in one horizontal plane.
+     * The hooks are now seated on the mat layer each leg crosses and their orientations are
+     * searched, so the count is zero.
+     *
+     * The COUNT is asserted, not the phrase's absence: `noProhibitedConflicts` is one of the
+     * thirteen constructibility conditions and its row is printed whether it passes or fails.
+     * Asserting the phrase had gone would have passed just as well against a report that
+     * stopped printing a condition it was still failing.
+     */
+    expect(html).toMatch(/0 superposiciones físicas prohibidas/);
+    const floor = (modelStore.model.detailing?.assemblies ?? [])
+      .find((x) => x.id.startsWith('FLOOR-'))!;
+    expect(floor.conflicts.filter((c) => c.pairClass === 'prohibitedOverlap')).toEqual([]);
+    // And the dowels are drawn: a footing deliverable with no starter bars in it would be the
+    // other way to make the overlap count zero.
+    expect(floor.bars.filter((b) => b.id.includes('dowel'))).toHaveLength(8);
     // The resolved layer order and the real bar elevations travel onto the report.
     expect(html).toMatch(/X_BELOW_Y/);
   });

@@ -27,7 +27,6 @@
 import {
   buildStraightBarWithHooks, type BarPath, type Point3,
 } from '../../codes/cirsoc201/bar-geometry';
-import { seatedLongitudinalHalfExtents } from '../../codes/cirsoc201/transverse-cage';
 import { clause, type ClauseRef, type RegulationEdition } from '../../codes/regulation';
 import { worstMaturity, type Maturity } from '../../codes/maturity';
 import { dedupeMessages, type EngineMessage } from '../../codes/message';
@@ -44,6 +43,11 @@ import {
 } from './assembly';
 import { detectCollisions, type BarConflict, type CollisionTolerances } from './collision';
 import { classifyPair } from './classify';
+import { columnBarPositions } from './generate-column';
+import {
+  placeFootingDowelCage,
+  type DowelCageResult, type DowelFootingPlan, type DowelMatSupport,
+} from './footing-dowel-cage';
 import type { SlabBarLayer, SlabDesignResult } from './slab-design';
 import type { WallDesignResult } from './wall-design';
 import type { FootingCheck } from './foundation-check';
@@ -147,6 +151,18 @@ export interface DowelInput {
   lapAbove: number;
   elementIds: number[];
   edition: RegulationEdition;
+  /**
+   * The physical bottom mat the hooks seat on.
+   *
+   * Optional, and its absence is REPORTED rather than assumed away: a hook with no mat under
+   * it is seated on the cover plane and `footing-dowel-cage.ts` says so. Before this existed
+   * the generator claimed the hook rested on the mat while placing it one bend radius below
+   * the tangent point — 10 mm UNDER the lower layer, with 20 mm of cover against a declared
+   * 50 mm — because there was no mat in the input to measure against.
+   */
+  bottomMat?: DowelMatSupport;
+  /** Footing plan geometry, for containment and side cover. Absent = not checked, and said. */
+  footingPlan?: DowelFootingPlan;
 }
 
 /**
@@ -156,6 +172,19 @@ export interface DowelInput {
  * turns into a 90° hook where the straight development length would run past the
  * footing's bottom mat — which it usually does, because a footing is rarely deep enough
  * for a straight `l_d`.
+ *
+ * ── What this function does and does not decide ─────────────────
+ *
+ * It decides the §16.3.4.1 interface area. The PLAN layout it READS, from
+ * `columnBarPositions` — the same authority the column's own bars come from, so the dowel stems
+ * and the bars they lap with cannot end up at two different coordinates. Where each hook
+ * actually sits, which mat layer carries it and which way it turns is
+ * `footing-dowel-cage.ts`, because that is a
+ * property of the whole cage and of the mat: on the reference footing the four bars along one
+ * column face cannot all turn the same way, and which two must turn onto the other axis
+ * depends on where the mat leaves a gap. This function used to answer it with
+ * `hookNormal: -sign(x)` and produced twelve interpenetrating hooks, four of them with
+ * coincident axes.
  */
 export function generateDowels(input: DowelInput): {
   bars: BarPath[]; refs: ClauseRef[]; notes: string[];
@@ -166,8 +195,9 @@ export function generateDowels(input: DowelInput): {
   positions: Array<{ x: number; y: number }>;
   /** Named limitations that must travel to the certificate (e.g. §16.3.4.1 shortfall). */
   unsupported: string[];
+  /** The seating and orientation evidence, for the record and the UI. */
+  cage: DowelCageResult;
 } {
-  const bars: BarPath[] = [];
   const notes: string[] = [];
   const unsupported: string[] = [];
   const refs = [
@@ -189,83 +219,48 @@ export function generateDowels(input: DowelInput): {
       'la transferencia columna-zapata no satisface el mínimo de interfaz.');
   }
 
-  const available = input.footingThickness - input.footingCover - 0.05;
-  const needsHook = input.ldFooting > available;
-  if (needsHook) {
-    // §25.4.3.1: the 90° hook is credited ONLY when the hooked development length
-    // fits the embedment too. A hook that does not develop is not an anchor —
-    // it is a named shortfall, not an assumption.
-    const ldh = input.ldhFooting;
-    if (ldh === undefined) {
-      unsupported.push(
-        '§25.4.3.1: la longitud de anclaje recta no entra en la zapata y no se pudo ' +
-        'verificar la longitud de anclaje con gancho (ldh no calculada): el remate ' +
-        'a 90° no se acredita.');
-    } else if (ldh > available) {
-      unsupported.push(
-        `§25.4.3.1: la longitud de anclaje con gancho requerida (${(ldh * 1000).toFixed(0)} mm) ` +
-        `excede la altura útil de la zapata (${(available * 1000).toFixed(0)} mm): ` +
-        'ni la barra recta ni el gancho a 90° desarrollan la espera — aumentar el espesor ' +
-        'o reducir el diámetro.');
-    } else {
-      notes.push(
-        `La longitud de anclaje recta requerida (${(input.ldFooting * 1000).toFixed(0)} mm) ` +
-        `excede la altura útil de la zapata (${(available * 1000).toFixed(0)} mm): las barras ` +
-        `de espera rematan con gancho a 90° apoyado sobre la parrilla inferior ` +
-        `(ldh = ${(ldh * 1000).toFixed(0)} mm, verificado contra §25.4.3.1).`);
-    }
-  }
-
-  // Seating comes from the ONE authoritative derivation, not a fourth local copy of it.
+  // A dowel stands where the column bar it splices with stands. Not "at the same kind of
+  // position" — at the SAME position, from the same call, because the two are one lap splice
+  // and a dowel at a coordinate no column bar occupies is a non-contact lap nobody detailed.
   //
-  // This function used to compute `cover + d_s + d_b/2` for all four corners. That is the
-  // contact distance from a STRAIGHT leg, and a corner bar cannot reach it because the
-  // bend is in the way — it seats in the bend, further in. `generate-column` had the same
-  // bug and its corner bars interpenetrated the joint ties by 3,3 mm apiece; here it was
-  // 2,7 mm against the starter ties, and it only became visible once those ties existed.
-  const seated = seatedLongitudinalHalfExtents(
-    input.columnB, input.columnH, input.cover, input.tieDia, input.bars.diameterMm);
-  const positions = [
-    { x: -seated.corner.halfAcross, y: -seated.corner.halfUp },
-    { x: seated.corner.halfAcross, y: -seated.corner.halfUp },
-    { x: seated.corner.halfAcross, y: seated.corner.halfUp },
-    { x: -seated.corner.halfAcross, y: seated.corner.halfUp },
-  ];
-  // Intermediate bars lie against a straight leg, so they use the FACE inset and are not
-  // collinear with the corners. That is what a real cage does.
-  const extra = Math.max(0, input.bars.count - 4);
-  const halfB = seated.face.halfAcross;
-  for (let k = 0; k < extra; k++) {
-    const t = (k + 1) / (extra + 1);
-    positions.push(k % 2 === 0
-      ? { x: -halfB + 2 * halfB * t, y: -seated.face.halfUp }
-      : { x: -halfB + 2 * halfB * t, y: seated.face.halfUp });
-  }
+  // This was a local distribution: four corners, then the intermediates alternated between the
+  // two y faces. It agreed with `liftBarPositions` (which had the same scheme) and with nothing
+  // else — not with `computeColumnLayout`, which is what the verifier certified the section
+  // from. Both now read `columnBarPositions`.
+  const positions = columnBarPositions(
+    input.columnB, input.columnH, input.cover, input.tieDia,
+    input.bars.diameterMm, input.bars.count);
 
-  const embedded = Math.min(input.ldFooting, available);
   const placed = positions.slice(0, Math.min(positions.length, input.bars.count));
-  for (let k = 0; k < placed.length; k++) {
-    const p = placed[k];
-    bars.push(buildStraightBarWithHooks({
-      id: `${input.id}-dowel-${k}`,
-      diameterMm: input.bars.diameterMm, role: 'longitudinal',
-      start: {
-        x: input.centre.x + p.x, y: input.centre.y + p.y,
-        z: input.footingTopZ - embedded,
-      },
-      end: {
-        x: input.centre.x + p.x, y: input.centre.y + p.y,
-        z: input.footingTopZ + input.lapAbove,
-      },
-      axis: { x: 0, y: 0, z: 1 },
-      // The hook turns toward the column centre so it sits over the bottom mat.
-      hookNormal: { x: -Math.sign(p.x) || 1, y: 0, z: 0 },
-      startHook: needsHook ? 90 : undefined,
-      ownerElementIds: input.elementIds, edition: input.edition,
-    }));
-  }
 
-  return { bars, refs, notes, positions: placed, unsupported };
+  /**
+   * The seat and the orientation, from the cage module.
+   *
+   * `soffitZ` is derived rather than passed because `DowelInput` already carries both the top
+   * elevation and the thickness, and a third field stating the same elevation is a field that
+   * can disagree with the other two.
+   */
+  const cage = placeFootingDowelCage({
+    id: input.id,
+    centre: input.centre,
+    soffitZ: input.footingTopZ - input.footingThickness,
+    footingTopZ: input.footingTopZ,
+    cover: input.footingCover,
+    diameterMm: input.bars.diameterMm,
+    positions: placed,
+    lapAbove: input.lapAbove,
+    ldFooting: input.ldFooting,
+    ldhFooting: input.ldhFooting ?? null,
+    elementIds: input.elementIds,
+    edition: input.edition,
+    mat: input.bottomMat ?? null,
+    footingPlan: input.footingPlan ?? null,
+  });
+  notes.push(...cage.notes);
+  unsupported.push(...cage.failures);
+  refs.push(...cage.refs);
+
+  return { bars: cage.bars, refs, notes, positions: placed, unsupported, cage };
 }
 
 // ─── Floor assembly ──────────────────────────────────────────────
@@ -477,6 +472,32 @@ export function buildFloorAssembly(input: FloorAssemblyInput): FloorAssemblyResu
     for (const u of f.check.unsupported) {
       unsupported.push({
         key: 'foundation', scope: { elementIds: f.elementIds }, message: u, refs: f.check.refs,
+      });
+    }
+    /**
+     * The RECORD's unsupported conditions, which were never reaching this list.
+     *
+     * `run-footing-design` states the intent where it raises them: "una condición no soportada
+     * limita el estado de revisión del conjunto, así que una zapata cuya armadura superior no
+     * se consideró no puede emitirse". `evaluateState` implements exactly that — a non-empty
+     * `unsupported` withholds CONSTRUCTIBLE even when every bar fits. The wiring between the two
+     * was missing, and while the starter hooks were interpenetrating nobody could tell: the
+     * twelve physical conflicts were capping the state on their own. With the cage repaired the
+     * assembly went straight to CONSTRUCTIBLE on a footing whose top reinforcement has still
+     * never been evaluated, which is the claim this condition exists to prevent.
+     *
+     * ONE condition per footing, naming the keys and pointing at the record. The translated
+     * sentences live on the record and reach the report through `translate(m.key, m.params)`;
+     * restating them here would put the same text in two places and let them drift.
+     */
+    if (f.record?.family === 'footing' && f.record.unsupported.length > 0) {
+      unsupported.push({
+        key: 'foundation', scope: { elementIds: f.elementIds },
+        message:
+          `La fundación ${f.id} tiene ${f.record.unsupported.length} condición(es) no ` +
+          `verificada(s) en su registro: ${f.record.unsupported.map((m) => m.key).join(', ')}. ` +
+          'El detalle está en el certificado de familia de la fundación.',
+        refs: f.check.refs,
       });
     }
     requirements.push(footingTransverseRequirement(

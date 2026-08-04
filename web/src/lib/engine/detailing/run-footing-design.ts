@@ -56,6 +56,9 @@ import { checkFooting, type FootingCheck, type FootingInput } from './foundation
 import type { ColumnPosition } from './punching-shear';
 import type { DowelInput } from './floor-design';
 import {
+  deepestStarterSeat, dowelMatSupportFrom, starterNeedsHook,
+} from './footing-dowel-cage';
+import {
   familyHash, familyRecordId,
   type FamilyCheckOutcome, type FamilyRecordDraft, type FamilyRevisionVector,
   type FootingDemandSnapshot, type FootingDesignRecord, type FootingGeometrySnapshot,
@@ -747,6 +750,27 @@ export function runFootingDesign(input: RunFootingDesignInput): RunFootingDesign
       ? starterHookedDevelopment(column.bars.diameterMm, input)
       : null;
     const dowelsPresent = Boolean(column.bars && starter);
+    /**
+     * The steel the hooks bear on, so "apoyado sobre la parrilla inferior" is a measurement
+     * instead of a claim.
+     *
+     * Built from the GENERATED mat and its resolved layer order — the bars, their diameters and
+     * their real elevations — rather than from the footing's nominal cover. Null when either
+     * direction is missing or no bars were produced; the cage module then seats the hooks on
+     * the cover plane and reports that nothing physical was verified.
+     */
+    const dowelMat = dowelMatSupportFrom(matGeometry.bars, [
+      {
+        axis: 'X', diameterMm: mat.x.diameterMm,
+        centreZ: placement.soffitZ + mat.x.centreElevation,
+        layer: matGeometry.lowerLayerAxis === 'X' ? 'LOWER' : 'UPPER',
+      },
+      {
+        axis: 'Y', diameterMm: mat.y.diameterMm,
+        centreZ: placement.soffitZ + mat.y.centreElevation,
+        layer: matGeometry.lowerLayerAxis === 'Y' ? 'LOWER' : 'UPPER',
+      },
+    ]);
     const entryDraft: FootingAssemblyEntry['record'] = footingRecord({
       check, mat, matGeometry, matAnchorage, perimeter, position, d,
       B: f.B, L: f.L,
@@ -758,10 +782,13 @@ export function runFootingDesign(input: RunFootingDesignInput): RunFootingDesign
           diameterMm: column.bars.diameterMm,
           ldFooting: starter.ldM,
           lapAbove: CLASS_B_LAP_FACTOR * starter.ldM,
-          // The same test `generateDowels` applies: a straight l_d that does not fit inside
-          // the footing's useful height turns 90° over the bottom mat. Recorded here so the
-          // document states it without asking the bar generator a second time.
-          hooked: starter.ldM > f.thickness - f.cover - 0.05,
+          // The SAME authority the cage uses, not a second reading of it: the straight l_d has
+          // to fit above the deepest seat a starter foot can reach. This used to be
+          // `thickness − cover − 50 mm`, a proxy for "the mat is in the way" written before
+          // there was a mat, and it could disagree with the geometry the generator produced.
+          hooked: starterNeedsHook(
+            starter.ldM, placement.soffitZ + f.thickness,
+            deepestStarterSeat(dowelMat, placement.soffitZ, f.cover)),
         }
         : null,
       draft: draftRecord,
@@ -801,6 +828,9 @@ export function runFootingDesign(input: RunFootingDesignInput): RunFootingDesign
             lapAbove: CLASS_B_LAP_FACTOR * starter.ldM,
             elementIds,
             edition: input.edition,
+            bottomMat: dowelMat ?? undefined,
+            // Containment and side cover are checked against the real plan, not assumed.
+            footingPlan: { centroid: placement.centroid, B: f.B, L: f.L },
           },
         }
         : {}),

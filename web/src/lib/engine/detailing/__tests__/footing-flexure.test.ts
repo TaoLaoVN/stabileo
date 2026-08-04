@@ -185,10 +185,28 @@ describe('footing bottom mat — hand-checked numerical fixture', () => {
 
     expect(r.x.regions).toHaveLength(1);
     const reg = r.x.regions[0];
-    expect(reg.barCount).toBe(9);
-    expect(reg.spacingCentre * 1000).toBeCloseTo(235.5, 3);
-    expect(reg.spacingClear * 1000).toBeCloseTo(219.5, 3);
-    expect(cm2(reg.asProvided)).toBeCloseTo(18.096, 3);
+    /**
+     * TEN bars, not the nine the three code bounds ask for.
+     *
+     * The area needs ceil(18,00/2,011) = 9 and the 255 mm §24.3.2 limit over the 1,884 m
+     * placeable span needs 1 + ceil(7,39) = 9, so the code settles on nine — and nine is odd,
+     * which puts a bar exactly on each centre line. That is where the column's face-centred
+     * starter dowels stand, and a mat bar under one of them removes its only feasible hook
+     * orientation: measured, the whole eight-hook cage drops to ZERO feasible arrangements.
+     * With ten it has 496. So the layout takes one bar it does not need for strength, and
+     * `spacingCentre` follows from ten rather than nine: 1,884/9 = 209,333 mm.
+     *
+     * The extra bar is why 20,106 cm² is provided against 18,000 required. See `layoutRegion`.
+     */
+    expect(reg.barCount).toBe(10);
+    expect(reg.spacingCentre * 1000).toBeCloseTo(209.333, 3);
+    expect(reg.spacingClear * 1000).toBeCloseTo(193.333, 3);
+    expect(cm2(reg.asProvided)).toBeCloseTo(20.106, 3);
+    // Still inside both bounds it has to respect: the maximum spacing and §25.2.1.
+    expect(reg.spacingCentre).toBeLessThanOrEqual(r.x.spacing.governingMax + 1e-12);
+    expect(reg.spacingClear).toBeGreaterThanOrEqual(r.x.spacing.minClear - 1e-12);
+    // And the reason is stated, not left for a reader to infer from an unexplained count.
+    expect(r.x.steps.join(' ')).toMatch(/10 barras en lugar de 9 para dejar libre el eje/);
   });
 
   it('reports the punching depth separately from the two flexural depths', () => {
@@ -725,11 +743,18 @@ describe('bar count and spacing (J, K, L)', () => {
      * A lightly loaded 0,30 m footing: 0,0018 × 2,00 × 0,300 = 10,80 cm² takes ceil(5,37) = 6
      * bars of Ø16, while the 255 mm §24.3.2 limit over the 1,884 m placeable span needs
      * 1 + ceil(7,39) = 9. The area is satisfied three bars before the spacing is.
+     *
+     * Nine is then odd, so the centre-line rule takes it to ten — a separate bound from a
+     * separate concern, applied AFTER the code's three and only ever upward. The point of this
+     * test is the spacing floor overtaking the area floor, and that is asserted on the spacing
+     * floor itself rather than on the delivered count, so the two rules stay distinguishable.
      */
     const r = designFootingMat(square({ thickness: 0.3, factoredAxial: 300 }));
     const needed = Math.ceil(r.x.asGoverning / barArea(16));
     expect(needed).toBe(6);
-    expect(r.x.regions[0].barCount).toBe(9);
+    const span = 2.0 - 2 * 0.05 - 0.016;
+    expect(1 + Math.ceil(span / r.x.spacing.governingMax)).toBe(9);
+    expect(r.x.regions[0].barCount).toBe(10);
     expect(r.x.regions[0].spacingCentre).toBeLessThanOrEqual(r.x.spacing.governingMax + 1e-12);
   });
 });
@@ -989,18 +1014,23 @@ describe('the resolved physical layer order', () => {
     // bar count does not move with depth at all. Giving the deeper layer to Y therefore buys a
     // whole bar, and giving it to X buys nothing:
     //
-    //   X_BELOW_Y: dY = 0,426 → Y needs 9 bars → 74,34 kg total
-    //   Y_BELOW_X: dY = 0,442 → Y needs 8 bars → 69,76 kg total
+    //   X_BELOW_Y: dY = 0,426 → Y needs 9 bars → 81,13 kg total
+    //   Y_BELOW_X: dY = 0,442 → Y needs 8 bars → 71,97 kg total
     //
     // This is exactly the case the "bigger moment lower" rule of thumb gets right and the
     // "bigger BAR lower" one gets wrong, and it is why AUTO designs both rather than reasoning.
+    //
+    // Both masses carry one extra bar in the X direction's CENTRAL_BAND, which the centre-line
+    // rule takes from 9 to 10 (see `layoutRegion`). It lands on both candidate orders equally,
+    // so it shifts the two numbers without touching the comparison they exist to settle — the
+    // Y direction's own count is 8 either way, already even, and does not move.
     const r = designFootingMat(rectangular());
     const [xBelow, yBelow] = r.layerOrder.evaluated;
     expect(xBelow.feasible).toBe(true);
     expect(yBelow.feasible).toBe(true);
     expect(yBelow.providedSteelMassKg).toBeLessThan(xBelow.providedSteelMassKg);
-    expect(xBelow.providedSteelMassKg).toBeCloseTo(74.34, 1);
-    expect(yBelow.providedSteelMassKg).toBeCloseTo(69.76, 1);
+    expect(xBelow.providedSteelMassKg).toBeCloseTo(81.13, 1);
+    expect(yBelow.providedSteelMassKg).toBeCloseTo(71.97, 1);
 
     expect(r.layerOrder.resolved).toBe('Y_BELOW_X');
     expect(r.layerOrder.rationale).toBe('LESS_PROVIDED_STEEL');

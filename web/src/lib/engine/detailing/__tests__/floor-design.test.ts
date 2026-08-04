@@ -145,7 +145,10 @@ describe('column starters and foundation dowels', () => {
 
   it('leaves the bottom straight when there is room', () => {
     const shallow = generateDowels(dowels({ ldFooting: 0.20 }));
-    expect(shallow.notes).toEqual([]);
+    // No HOOK note, which is the claim. The notes are no longer empty and should not be: this
+    // fixture supplies neither a physical mat nor the footing's plan, and the cage now states
+    // both absences instead of seating the hooks against an unverified assumption.
+    expect(shallow.notes.join(' ')).not.toMatch(/gancho a 90/);
     expect(shallow.bars[0].startTreatment.kind).toBe('straight');
   });
 
@@ -693,16 +696,24 @@ describe('§25.4.3.1 — hooked development of dowels', () => {
     // Straight ld does not fit (1.2 > 0.50 available) but ldh = 0.45 does.
     const d = generateDowels(dowels({ ldFooting: 1.2, ldhFooting: 0.45 }));
     expect(d.unsupported).toEqual([]);
-    expect(d.notes.join(' ')).toMatch(/verificado contra §25\.4\.3\.1/);
+    // The note now states ldh against a MEASURED embedment to the outside of the bend, so it
+    // carries both numbers and the clause rather than the bare phrase it used to.
+    expect(d.notes.join(' ')).toMatch(/ldh = 450 mm verificado contra un empotramiento medido/);
+    expect(d.notes.join(' ')).toMatch(/§25\.4\.3\.1/);
     expect(d.bars[0].segments.length).toBeGreaterThan(0);
   });
 
   it('refuses to credit the hook when ldh does NOT fit, and names the shortfall', () => {
-    // Straight ld does not fit and neither does ldh (0.60 > 0.50 available).
+    // Straight ld does not fit and neither does ldh (0.60 > 0.55 available).
     const d = generateDowels(dowels({ ldFooting: 1.2, ldhFooting: 0.60 }));
+    // ONE finding, not one per dowel: no orientation of any starter develops, which is a
+    // property of the footing's thickness and is stated once.
     expect(d.unsupported.length).toBe(1);
     expect(d.unsupported[0]).toMatch(/25\.4\.3\.1/);
-    expect(d.unsupported[0]).toMatch(/excede la altura útil/);
+    // "Altura útil" was the superseded proxy (`thickness − cover − 50 mm`). The embedment is
+    // now measured to the deepest seat a foot can actually reach, and the message says so.
+    expect(d.unsupported[0]).toMatch(/excede el empotramiento disponible/);
+    expect(d.unsupported[0]).toMatch(/550 mm/);
   });
 
   it('fails closed when ldh was never computed', () => {
