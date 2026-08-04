@@ -2631,6 +2631,12 @@ pub fn assemble_load_vector_3d_sparse(
         input.plates.values().map(|p| (p.id, p)).collect();
     let quad_map: std::collections::HashMap<usize, &SolverQuadElement> =
         input.quads.values().map(|q| (q.id, q)).collect();
+    let quad9_map: std::collections::HashMap<usize, &crate::types::SolverQuad9Element> =
+        input.quad9s.values().map(|q| (q.id, q)).collect();
+    let solid_shell_map: std::collections::HashMap<usize, &crate::types::SolverSolidShellElement> =
+        input.solid_shells.values().map(|s| (s.id, s)).collect();
+    let curved_shell_map: std::collections::HashMap<usize, &crate::types::SolverCurvedShellElement> =
+        input.curved_shells.values().map(|s| (s.id, s)).collect();
 
     // Frame/truss element loads (FEF + thermal)
     assemble_frame_loads_3d(input, loads, dof_num, &mut f_global);
@@ -2739,7 +2745,7 @@ pub fn assemble_load_vector_3d_sparse(
         }
         // Quad9 (MITC9) load dispatch — sparse path
         if let SolverLoad3D::Quad9Pressure(pl) = load {
-            if let Some(q9) = input.quad9s.values().find(|q| q.id == pl.element_id) {
+            if let Some(q9) = quad9_map.get(&pl.element_id) {
                 let coords = quad9_coords(&node_map, q9);
                 let f_p = crate::element::quad9::quad9_pressure_load(&coords, pl.pressure);
                 let dofs = dof_num.quad9_element_dofs(&q9.nodes);
@@ -2749,7 +2755,7 @@ pub fn assemble_load_vector_3d_sparse(
             }
         }
         if let SolverLoad3D::Quad9Thermal(tl) = load {
-            if let Some(q9) = input.quad9s.values().find(|q| q.id == tl.element_id) {
+            if let Some(q9) = quad9_map.get(&tl.element_id) {
                 let mat = mat_map[&q9.material_id];
                 let e = mat.e * 1000.0;
                 let nu = mat.nu;
@@ -2765,7 +2771,7 @@ pub fn assemble_load_vector_3d_sparse(
             }
         }
         if let SolverLoad3D::Quad9SelfWeight(sw) = load {
-            if let Some(q9) = input.quad9s.values().find(|q| q.id == sw.element_id) {
+            if let Some(q9) = quad9_map.get(&sw.element_id) {
                 let coords = quad9_coords(&node_map, q9);
                 let f_sw_local = crate::element::quad9::quad9_self_weight_load(
                     &coords, sw.density, q9.thickness, sw.gx, sw.gy, sw.gz,
@@ -2779,7 +2785,7 @@ pub fn assemble_load_vector_3d_sparse(
             }
         }
         if let SolverLoad3D::Quad9Edge(el) = load {
-            if let Some(q9) = input.quad9s.values().find(|q| q.id == el.element_id) {
+            if let Some(q9) = quad9_map.get(&el.element_id) {
                 let coords = quad9_coords(&node_map, q9);
                 let f_edge = crate::element::quad9::quad9_edge_load(&coords, el.edge, el.qn, el.qt);
                 let dofs = dof_num.quad9_element_dofs(&q9.nodes);
@@ -2790,7 +2796,7 @@ pub fn assemble_load_vector_3d_sparse(
         }
         // Solid-shell load dispatch — sparse path
         if let SolverLoad3D::SolidShellPressure(pl) = load {
-            if let Some(ss) = input.solid_shells.values().find(|s| s.id == pl.element_id) {
+            if let Some(ss) = solid_shell_map.get(&pl.element_id) {
                 let coords = solid_shell_coords(&node_map, ss);
                 let f_p = crate::element::solid_shell::solid_shell_pressure_load(&coords, pl.pressure);
                 let dofs = dof_num.solid_shell_element_dofs(&ss.nodes);
@@ -2800,7 +2806,7 @@ pub fn assemble_load_vector_3d_sparse(
             }
         }
         if let SolverLoad3D::SolidShellSelfWeight(sw) = load {
-            if let Some(ss) = input.solid_shells.values().find(|s| s.id == sw.element_id) {
+            if let Some(ss) = solid_shell_map.get(&sw.element_id) {
                 let coords = solid_shell_coords(&node_map, ss);
                 let f_sw = crate::element::solid_shell::solid_shell_self_weight_load(
                     &coords, sw.density, sw.gx, sw.gy, sw.gz,
@@ -2813,7 +2819,7 @@ pub fn assemble_load_vector_3d_sparse(
         }
         // Curved shell loads (sparse path)
         if let SolverLoad3D::CurvedShellPressure(pl) = load {
-            if let Some(cs) = input.curved_shells.values().find(|s| s.id == pl.element_id) {
+            if let Some(cs) = curved_shell_map.get(&pl.element_id) {
                 let coords = curved_shell_coords(&node_map, cs);
                 let dirs = cs.normals.unwrap_or_else(|| crate::element::curved_shell::compute_element_directors(&coords));
                 let f_p = crate::element::curved_shell::curved_shell_pressure_load(&coords, &dirs, cs.thickness, pl.pressure);
@@ -2824,7 +2830,7 @@ pub fn assemble_load_vector_3d_sparse(
             }
         }
         if let SolverLoad3D::CurvedShellThermal(tl) = load {
-            if let Some(cs) = input.curved_shells.values().find(|s| s.id == tl.element_id) {
+            if let Some(cs) = curved_shell_map.get(&tl.element_id) {
                 let mat = mat_map[&cs.material_id];
                 let e = mat.e * 1000.0;
                 let nu = mat.nu;
@@ -2841,7 +2847,7 @@ pub fn assemble_load_vector_3d_sparse(
             }
         }
         if let SolverLoad3D::CurvedShellSelfWeight(sw) = load {
-            if let Some(cs) = input.curved_shells.values().find(|s| s.id == sw.element_id) {
+            if let Some(cs) = curved_shell_map.get(&sw.element_id) {
                 let coords = curved_shell_coords(&node_map, cs);
                 let dirs = cs.normals.unwrap_or_else(|| crate::element::curved_shell::compute_element_directors(&coords));
                 let f_sw = crate::element::curved_shell::curved_shell_self_weight_load(
@@ -2854,7 +2860,7 @@ pub fn assemble_load_vector_3d_sparse(
             }
         }
         if let SolverLoad3D::CurvedShellEdge(el) = load {
-            if let Some(cs) = input.curved_shells.values().find(|s| s.id == el.element_id) {
+            if let Some(cs) = curved_shell_map.get(&el.element_id) {
                 let coords = curved_shell_coords(&node_map, cs);
                 let dirs = cs.normals.unwrap_or_else(|| crate::element::curved_shell::compute_element_directors(&coords));
                 let f_e = crate::element::curved_shell::curved_shell_edge_load(

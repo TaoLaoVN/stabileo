@@ -3054,6 +3054,21 @@ pub(crate) fn compute_internal_forces_2d_with_loads(
     let sec_map: std::collections::HashMap<usize, &SolverSection> =
         input.sections.values().map(|s| (s.id, s)).collect();
 
+    // Index loads per element once — the per-element `for load in loads` rescans
+    // below made this O(E·L) per call, O(modes·E·L) in spectral solves.
+    let empty_loads: Vec<&SolverLoad> = Vec::new();
+    let mut loads_by_elem: std::collections::HashMap<usize, Vec<&SolverLoad>> =
+        std::collections::HashMap::new();
+    for load in loads {
+        let eid = match load {
+            SolverLoad::Distributed(l) => l.element_id,
+            SolverLoad::PointOnElement(l) => l.element_id,
+            SolverLoad::Thermal(l) => l.element_id,
+            SolverLoad::Nodal(_) => continue,
+        };
+        loads_by_elem.entry(eid).or_default().push(load);
+    }
+
     for elem in input.elements.values() {
         let node_i = node_map[&elem.node_i];
         let node_j = node_map[&elem.node_j];
@@ -3081,7 +3096,7 @@ pub(crate) fn compute_internal_forces_2d_with_loads(
             let mut n_axial = e * sec.a / l * delta;
 
             // Subtract thermal FEF for truss: f = K*u - FEF (matches 3D truss path)
-            for load in loads {
+            for load in loads_by_elem.get(&elem.id).unwrap_or(&empty_loads) {
                 if let SolverLoad::Thermal(tl) = load {
                     if tl.element_id == elem.id {
                         let alpha = 12e-6;
@@ -3137,7 +3152,7 @@ pub(crate) fn compute_internal_forces_2d_with_loads(
             let mut point_loads_info = Vec::new();
             let mut dist_loads_info = Vec::new();
 
-            for load in loads {
+            for load in loads_by_elem.get(&elem.id).unwrap_or(&empty_loads) {
                 match load {
                     SolverLoad::Distributed(dl) if dl.element_id == elem.id => {
                         let a = dl.a.unwrap_or(0.0);
@@ -3247,6 +3262,21 @@ pub(crate) fn compute_internal_forces_3d_with_loads(
     let sec_map: std::collections::HashMap<usize, &SolverSection3D> =
         input.sections.values().map(|s| (s.id, s)).collect();
 
+    // Index loads per element once — the per-element `for load in loads` rescans
+    // below made this O(E·L) per call, O(modes·E·L) in spectral solves.
+    let empty_loads: Vec<&SolverLoad3D> = Vec::new();
+    let mut loads_by_elem: std::collections::HashMap<usize, Vec<&SolverLoad3D>> =
+        std::collections::HashMap::new();
+    for load in loads {
+        let eid = match load {
+            SolverLoad3D::Distributed(l) => l.element_id,
+            SolverLoad3D::PointOnElement(l) => l.element_id,
+            SolverLoad3D::Thermal(l) => l.element_id,
+            _ => continue, // nodal / shell-surface loads don't apply to frame/truss elements
+        };
+        loads_by_elem.entry(eid).or_default().push(load);
+    }
+
     for elem in input.elements.values() {
         let node_i = node_map[&elem.node_i];
         let node_j = node_map[&elem.node_j];
@@ -3276,7 +3306,7 @@ pub(crate) fn compute_internal_forces_3d_with_loads(
             // f_local_axial = EA/L * delta - (-EAαΔT) = EA/L * delta + EAαΔT
             // n = -f_local_axial (sign convention) → n = -(EA/L * delta + EAαΔT)
             // Equivalently: subtract EAαΔT from n_axial before the sign convention is applied
-            for load in loads {
+            for load in loads_by_elem.get(&elem.id).unwrap_or(&empty_loads) {
                 if let SolverLoad3D::Thermal(tl) = load {
                     if tl.element_id == elem.id {
                         let alpha = 12e-6;
@@ -3400,7 +3430,7 @@ pub(crate) fn compute_internal_forces_3d_with_loads(
         let mut pt_loads_y = Vec::new();
         let mut pt_loads_z = Vec::new();
 
-        for load in loads {
+        for load in loads_by_elem.get(&elem.id).unwrap_or(&empty_loads) {
             match load {
                 SolverLoad3D::Distributed(dl) if dl.element_id == elem.id => {
                     let a_param = dl.a.unwrap_or(0.0);
