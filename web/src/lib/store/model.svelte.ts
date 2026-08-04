@@ -1,6 +1,9 @@
 import {
   defaultCodeSettings, migrateCodeSettings, type ProjectCodeSettings,
 } from '../codes/project-code-settings';
+import {
+  emptyDetailingStore, migrateDetailingStore, type DetailingStore,
+} from '../engine/detailing/assembly';
 // Model store - manages the structural model
 import type { KinematicResult } from '../engine/kinematic-2d';
 import type { SolverInput, FullEnvelope, AnalysisResults } from '../engine/types';
@@ -45,6 +48,22 @@ export interface Material {
    * assumption on every subsequent open instead of baking 20 mm in permanently.
    */
   maxAggregateSizeMm?: number | null;
+  /**
+   * Additional transverse bar-spacing margin above the regulatory minimum, mm.
+   *
+   * A PROJECT decision, not a code one. CIRSOC's minimum clear spacing IS the construction
+   * requirement and prescribes nothing further between parallel bars, so the default is
+   * zero and the app never implies otherwise. An engineer raises it to get a more
+   * conservative cage.
+   *
+   * Lives beside the aggregate size for the same reason that does: both are properties of
+   * how the concrete gets placed, not of the regulation. `null` and `0` mean the same
+   * thing here — no margin — but `null` records that the project never stated one.
+   *
+   * §26.6.2.1 cover and effective-depth tolerances are mandatory, prescribed, and entirely
+   * separate from this.
+   */
+  spacingMarginMm?: number | null;
   /** Placed by shotcrete, which caps d_agg at 13 mm (§26.4.2.1(a)(13)). */
   shotcrete?: boolean;
 }
@@ -523,6 +542,22 @@ export interface StructureModel {
   regulations?: StoredRegulations;
   /** The revision vector every downstream result is stamped against. */
   revisions?: RevisionVector;
+  /**
+   * Coordinated detailing assemblies.
+   *
+   * Persisted with the model for the same reason codeSettings is: a coordinated floor
+   * that has to be regenerated on every open is not a deliverable, and the engineer's
+   * review record has to survive a save/load cycle or it is not a record.
+   */
+  detailing?: DetailingStore;
+  /**
+   * Run detailing automatically after a successful design run. Default ON (undefined is
+   * treated as on), so a user who verifies a floor gets its bars without a second command.
+   * Persisted with the model because it is a project decision, not a browser preference.
+   */
+  detailingAuto?: boolean;
+  /** Project-level opt-out from bent-up (cranked) bars. */
+  detailingBentUpOptOut?: boolean;
 }
 
 export type { AnalysisResults };
@@ -578,6 +613,7 @@ function createModelStore() {
     connectors: new Map(),
     localAxisConvention: 'zUpStrongAxis',
     codeSettings: defaultCodeSettings(),
+    detailing: emptyDetailingStore(),
   });
 
   let lastKinematicResult = $state<KinematicResult | null>(null);
@@ -985,6 +1021,9 @@ function createModelStore() {
         codeSettings: snap.codeSettings
           ? (JSON.parse(JSON.stringify(snap.codeSettings)) as ProjectCodeSettings)
           : defaultCodeSettings(),
+        detailing: snap.detailing
+          ? (JSON.parse(JSON.stringify(snap.detailing)) as DetailingStore)
+          : emptyDetailingStore(),
       };
       if (snap.provenance) {
         result.provenance = {
@@ -1095,6 +1134,7 @@ function createModelStore() {
       // Migration is deliberate, not a fallback: a project with no settings is stamped
       // CIRSOC 201-2005, the edition its stored results were actually checked against.
       model.codeSettings = migrateCodeSettings(s.codeSettings).settings;
+      model.detailing = migrateDetailingStore(s.detailing).store;
     },
 
     /** Explicit user action: clear the CAD-draft "unreviewed" tag. */
@@ -1642,6 +1682,7 @@ function createModelStore() {
       // A new model is a new project: it adopts the edition in force, not whatever the
       // previously open project happened to be designed to.
       model.codeSettings = defaultCodeSettings();
+      model.detailing = emptyDetailingStore();
       // Reset materials/sections to defaults
       model.materials = new Map([[1, { ...defaultMaterial }]]);
       model.sections = new Map([[1, { ...defaultSection }]]);

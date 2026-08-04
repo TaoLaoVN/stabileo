@@ -17,6 +17,7 @@
  */
 
 import type { ElementForces3D } from './types-3d';
+import { seatedLongitudinalHalfExtents } from '../codes/cirsoc201/transverse-cage';
 import type { AnalysisResults3D } from './types-3d';
 import type { ProvidedReinforcement, RebarGroup, RebarLayer, StirrupDef, BeamRegions, BeamContinuity, LongBarGroup, ColumnReinforcement } from '../store/model.svelte';
 import type { Node, Element, Section, Support } from '../store/model.svelte';
@@ -958,18 +959,31 @@ export function computeColumnLayout(
   const resolved = resolveColumnReinf(colReinf, { count, diameter });
   if (!resolved) return { bars: [], totalArea: 0, b, h, issues: [], constructible: true };
 
-  const stirDia_m = stirrupDia / 1000;
-  const envelope = cover + stirDia_m;
   const bars: BarInstance[] = [];
 
-  const cornerR = resolved.cornerDia / 2000;
   const faceR = resolved.faceDia / 2000;
+  /** Inner face of the transverse steel — what the cover check measures against. */
+  const envelope = cover + stirrupDia / 1000;
+
+  // ── Where the bars sit, from the one shared derivation ──
+  //
+  // This used to be `cover + d_stirrup + d_b/2` for every bar, corner and face alike. That is
+  // the contact distance from a STRAIGHT leg and it is right for an intermediate face bar. It
+  // is wrong at a corner: the bend cuts the corner off, so a bar pushed that far in lands
+  // INSIDE the arc. Measured on `rc-design-qa-8`, every column corner bar interpenetrated the
+  // joint tie above it, and three other modules had each re-derived the same wrong expression.
+  //
+  // Corner and face bars are therefore not collinear, by a bit over 2 mm on a Ø8 tie. That is
+  // the cage, not an approximation of it.
+  const seatCorner = seatedLongitudinalHalfExtents(
+    b, h, cover, stirrupDia, resolved.cornerDia);
+  const seatFace = seatedLongitudinalHalfExtents(b, h, cover, stirrupDia, resolved.faceDia);
 
   // Corner positions
-  const xMin = envelope + cornerR;
-  const xMax = b - envelope - cornerR;
-  const yMin = envelope + cornerR;
-  const yMax = h - envelope - cornerR;
+  const xMin = b / 2 - seatCorner.corner.halfAcross;
+  const xMax = b / 2 + seatCorner.corner.halfAcross;
+  const yMin = h / 2 - seatCorner.corner.halfUp;
+  const yMax = h / 2 + seatCorner.corner.halfUp;
 
   let idx = 0;
   // 4 corner bars
@@ -979,10 +993,10 @@ export function computeColumnLayout(
   }
 
   // Face bars (adjusted for possibly different diameter)
-  const fxMin = envelope + faceR;
-  const fxMax = b - envelope - faceR;
-  const fyMin = envelope + faceR;
-  const fyMax = h - envelope - faceR;
+  const fxMin = b / 2 - seatFace.face.halfAcross;
+  const fxMax = b / 2 + seatFace.face.halfAcross;
+  const fyMin = h / 2 - seatFace.face.halfUp;
+  const fyMax = h / 2 + seatFace.face.halfUp;
 
   function placeFaceBars(n: number, x1: number, y1: number, x2: number, y2: number) {
     for (let i = 0; i < n; i++) {
@@ -1712,9 +1726,20 @@ export function verifyProvidedReinforcement(
      * Defaults to `DEFAULT_SPACING_RULE` — the edition IN FORCE, not the legacy one.
      */
     spacingRule?: SpacingRule;
+    /**
+     * The member's FINAL physical geometry, when coordination has moved its steel.
+     *
+     * Applied to the layer centroids only. Section dimensions, true cover, transverse fit
+     * and anchorage geometry are the member and do not change because a bar was raised.
+     *
+     * `depthTolerance` is Table 26.6.2.1(a)'s unfavourable band on d, which applies whether
+     * or not anything moved.
+     */
+    finalGeometry?: { bottomRaise?: number; topLower?: number; depthTolerance?: number };
   },
 ): ProvidedRebarResult {
   const spacingRule = options?.spacingRule ?? DEFAULT_SPACING_RULE;
+  const finalGeometry = options?.finalGeometry;
   const emptyResult = (status: ProvidedRebarResult['overallStatus']): ProvidedRebarResult => ({
     elementId, elementType, hasProvided: !!provided, checks: [], overallStatus: status,
     worstUtilization: 0, checkedAxes: [], strengthCheckCount: 0,
@@ -1797,9 +1822,26 @@ export function verifyProvidedReinforcement(
     const topEndLayers = resolveLayers(reg?.topEndLayers, reg?.topEnd ?? provided.top);
 
     // ── Compute d and d' from ACTUAL layer centroids (never an assumed Ø16) ──
-    const bottomCentroid = layerCentroid(bottomLayers, section.cover, section.stirrupDia);
-    const topStartCentroid = layerCentroid(topStartLayers, section.cover, section.stirrupDia);
-    const topEndCentroid = layerCentroid(topEndLayers, section.cover, section.stirrupDia);
+    // ── Final physical geometry ──────────────────────────────────
+    //
+    // Coordination moves steel: a joint-layer rank raises bottom bars and lowers top ones,
+    // and Table 26.6.2.1(a) puts an unfavourable tolerance on the effective depth whether or
+    // not anything moved. Both are applied HERE, to the layer centroids, because that is the
+    // only quantity that actually changes.
+    //
+    // The earlier approach inflated `cover` to get the same arithmetic. It produced the
+    // right `d` and quietly falsified everything else that reads cover — the transverse fit
+    // check, anchorage geometry, and the cover checks themselves. Section b, h and true
+    // cover are the member; only the bar positions moved.
+    const adj = finalGeometry;
+    const bottomShift = (adj?.bottomRaise ?? 0) + (adj?.depthTolerance ?? 0);
+    const topShift = (adj?.topLower ?? 0) + (adj?.depthTolerance ?? 0);
+    const bottomCentroid =
+      layerCentroid(bottomLayers, section.cover, section.stirrupDia) + bottomShift;
+    const topStartCentroid =
+      layerCentroid(topStartLayers, section.cover, section.stirrupDia) + topShift;
+    const topEndCentroid =
+      layerCentroid(topEndLayers, section.cover, section.stirrupDia) + topShift;
 
     const dBottom = section.h - bottomCentroid;
     const dTopStart = section.h - topStartCentroid;

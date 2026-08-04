@@ -133,7 +133,79 @@ function createVerificationStore() {
     return result;
   }
 
+  /**
+   * Re-verify one member at the effective depth its FINAL geometry actually has.
+   *
+   * Coordination moves steel. A joint-layer raise costs lever arm directly, and Table
+   * 26.6.2.1(a)'s unfavourable tolerance on d applies whether or not anything moved. A
+   * certificate issued against the pre-coordination arrangement describes geometry that no
+   * longer exists, so the authoritative check is run again here against the real one.
+   *
+   * The depth loss is applied to the LAYER CENTROIDS, which is the only quantity that
+   * actually changed. Inflating the cover produced the same `d` and quietly falsified
+   * everything else that reads cover — the transverse fit check, anchorage geometry, and
+   * the cover checks themselves. The section and its true cover are the member; only the
+   * bars moved within it.
+   */
+  function reverifyAtFinalDepth(
+    elementId: number,
+    loss: { bottomRaise: number; topLower: number; depthTolerance: number },
+    /**
+     * Reinforcement to check, when it is not (yet) the model's.
+     *
+     * The design–detailing feedback loop proposes replacement steel and needs it re-verified
+     * BEFORE anything is persisted — if it were written first, a repair that turned out not
+     * to work would already have overwritten the engineer's model. Absent, the model's own
+     * reinforcement is used, which is what every other caller wants.
+     */
+    reinforcement?: ProvidedReinforcement,
+  ): 'ok' | 'warn' | 'fail' {
+    const ctx = contexts.get(elementId);
+    const reinf = reinforcement ?? reinforcementProvider?.(elementId);
+    if (!ctx || !reinf) return 'fail';
+    // Same source as every other design decision: the project's `concrete` role.
+    const codeId = regulationsStore.concreteDesignCode();
+    const adapter = codeId ? getDesignCode(codeId) : undefined;
+    if (!adapter) return 'fail';
+    const total = Math.max(0, loss.bottomRaise) + Math.max(0, loss.topLower)
+      + Math.max(0, loss.depthTolerance);
+    const atFinal = total < 1e-9 ? ctx : {
+      ...ctx,
+      // Each face carries its own movement; the tolerance applies to both because it
+      // applies to d itself.
+      finalGeometry: {
+        bottomRaise: Math.max(0, loss.bottomRaise),
+        topLower: Math.max(0, loss.topLower),
+        depthTolerance: Math.max(0, loss.depthTolerance),
+      },
+    };
+    const result = adapter.verify(atFinal, reinf);
+    if (!result) return 'fail';
+    return result.overallStatus === 'fail'
+      ? 'fail'
+      : result.overallStatus === 'warn' ? 'warn' : 'ok';
+  }
+
+  /** The reinforcement currently attached to a member, for hashing and for documents. */
+  function reinforcementFor(elementId: number): ProvidedReinforcement | undefined {
+    return reinforcementProvider?.(elementId) ?? undefined;
+  }
+
+  /**
+   * The rebar hash the cached certificate was issued against.
+   *
+   * Empty when nothing has been verified. A document compares this with the hash of the
+   * reinforcement actually in the model; disagreement means the certificate describes
+   * geometry that no longer exists, which is worse than having no certificate at all.
+   */
+  function certifiedHashFor(elementId: number): string {
+    return providedCache.get(elementId)?.key.split('|')[0] ?? '';
+  }
+
   return {
+    reverifyAtFinalDepth,
+    reinforcementFor,
+    certifiedHashFor,
     // ── Legacy accessors (backward compat) ──
     get concrete() { return concreteVerifs; },
     get steel() { return steelVerifs; },

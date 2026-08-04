@@ -1,5 +1,6 @@
 import type { StoredRegulations } from '../codes/roles';
 import type { RevisionVector } from '../codes/revisions';
+import type { DetailingStore } from '../engine/detailing/assembly';
 import type { ProjectCodeSettings } from '../codes/project-code-settings';
 // Undo/Redo history store using full model snapshots
 import { modelStore } from './model.svelte';
@@ -49,6 +50,8 @@ export interface ModelSnapshot {
   regulations?: StoredRegulations;
   /** Revision vector every downstream result is stamped against. */
   revisions?: RevisionVector;
+  /** Coordinated detailing assemblies. Absent on models saved before PR17. */
+  detailing?: DetailingStore;
 }
 
 const MAX_HISTORY = 50;

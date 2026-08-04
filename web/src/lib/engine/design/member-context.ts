@@ -62,6 +62,15 @@ export interface ContextModelData {
 }
 
 export interface MemberContext {
+  /**
+   * The member's FINAL physical geometry, when coordination has moved its steel.
+   *
+   * Absent during design, present during post-coordination re-verification. It adjusts the
+   * layer centroids — and therefore the effective depths — without touching the section,
+   * the true cover, the transverse fit or the anchorage geometry, none of which change
+   * because a bar moved within the section.
+   */
+  finalGeometry?: { bottomRaise?: number; topLower?: number; depthTolerance?: number };
   elementId: number;
   elementType: 'beam' | 'column' | 'wall';
   /** Member length (m). */

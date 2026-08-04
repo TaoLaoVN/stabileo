@@ -63,11 +63,13 @@ describe('no independent design-code state survives', () => {
     for (const rel of [
       'lib/store/verification.svelte.ts',
       'lib/store/design-run.svelte.ts',
+      'lib/store/detailing.svelte.ts',
       'components/pro/design/BatchEditDialog.svelte',
     ]) {
       const src = read(rel);
       expect(src, `${rel} still reads a toolbar adapter`)
         .not.toMatch(/getDesignCode\(\s*verificationStore\.activeCodeId\s*\)/);
+      expect(src, `${rel} reads a bare activeCodeId`).not.toMatch(/[^.]\bactiveCodeId\b/);
       expect(src, `${rel} does not consult Project Regulations`)
         .toContain('concreteDesignCode()');
     }
