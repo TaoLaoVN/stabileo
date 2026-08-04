@@ -1,6 +1,7 @@
 // Model store - manages the structural model
 import type { KinematicResult } from '../engine/kinematic-2d';
 import { restoreSections } from '../section/migration';
+import { resolveSectionState } from '../section/state';
 import type { SolverInput, FullEnvelope, AnalysisResults } from '../engine/types';
 import type { SolverInput3D, AnalysisResults3D, FullEnvelope3D, Constraint3D, ConnectorElement } from '../engine/types-3d';
 export type { ConnectorElement };
@@ -2457,7 +2458,19 @@ function createModelStore() {
       if (!_undoBatching) _pushUndo?.();
       const sec = model.sections.get(id);
       if (!sec) return;
-      const updated: Section = { ...sec, ...data, id };
+
+      // Derived properties of a geometry-backed section are OUTPUTS of its
+      // polygons. Letting them be set independently is how geometry and
+      // properties came to contradict each other in the first place, so the
+      // guard lives here rather than in one table component: no call site can
+      // bypass it. Geometry and rotation stay editable, and changing either
+      // regenerates the derived values atomically below.
+      let patch = data;
+      if (sec.canonical?.kind === 'geometry-backed') {
+        const { a: _a, iy: _iy, iz: _iz, j: _j, ...rest } = data;
+        patch = rest;
+      }
+      const updated: Section = { ...sec, ...patch, id };
       // Auto-calculate A, Iy, Iz, J from b×h ONLY for manual edits (no shape specified)
       if (data.shape === undefined) {
         const b = data.b ?? sec.b;
@@ -2475,6 +2488,12 @@ function createModelStore() {
           }
         }
       }
+      // Geometry changed, so the derived state must be regenerated in the same
+      // step. Doing it here keeps geometry and properties atomically
+      // consistent: there is no window in which a section carries new
+      // dimensions and stale canonical values.
+      updated.canonical = resolveSectionState(updated);
+
       const m = new Map(model.sections);
       m.set(id, updated);
       model.sections = m;

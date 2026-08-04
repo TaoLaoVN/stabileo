@@ -251,3 +251,56 @@ describe('resolution is idempotent and serialization-stable', () => {
     expect(again.digest).toBe(st.digest);
   });
 });
+
+// ─── Derived properties cannot be edited into contradiction ────────
+
+describe('geometry-backed derived properties are read-only', () => {
+  it('an attempt to set A/Iy/Iz/J on a geometry-backed section is ignored', async () => {
+    const { modelStore } = await import('../../store/model.svelte');
+    modelStore.clear();
+    const id = modelStore.addSection({
+      name: 'IPE 300', a: 53.8e-4, iy: 8356e-8, iz: 604e-8,
+    });
+    // The store resolves canonical state on update; force a first resolve.
+    modelStore.updateSection(id, { name: 'IPE 300' });
+    const before = modelStore.sections.get(id)!;
+    expect(before.canonical?.kind).toBe('geometry-backed');
+    const a0 = before.a, iy0 = before.iy;
+
+    modelStore.updateSection(id, { a: 999, iy: 888, iz: 777, j: 666 });
+    const after = modelStore.sections.get(id)!;
+    expect(after.a).toBe(a0);
+    expect(after.iy).toBe(iy0);
+    expect(after.a).not.toBe(999);
+    modelStore.clear();
+  });
+
+  it('a properties-only section keeps its declared-property editing', async () => {
+    const { modelStore } = await import('../../store/model.svelte');
+    modelStore.clear();
+    const id = modelStore.addSection({ name: 'UPN 200', a: 32.2e-4, iy: 1910e-8, iz: 148e-8 });
+    modelStore.updateSection(id, { name: 'UPN 200' });
+    expect(modelStore.sections.get(id)!.canonical?.kind).toBe('properties-only');
+    modelStore.updateSection(id, { a: 0.005 });
+    expect(modelStore.sections.get(id)!.a).toBe(0.005);
+    modelStore.clear();
+  });
+
+  it('editing geometry regenerates derived state atomically', async () => {
+    const { modelStore } = await import('../../store/model.svelte');
+    modelStore.clear();
+    const id = modelStore.addSection({ name: 'Rect', shape: 'rect', b: 0.2, h: 0.4, a: 0.08, iz: 2.6667e-4 });
+    modelStore.updateSection(id, { shape: 'rect' });
+    const first = modelStore.sections.get(id)!.canonical!;
+    if (first.kind !== 'geometry-backed') throw new Error('geometry-backed');
+
+    modelStore.updateSection(id, { h: 0.5 });
+    const second = modelStore.sections.get(id)!.canonical!;
+    if (second.kind !== 'geometry-backed') throw new Error('geometry-backed');
+    // New geometry, new digest, and the derived area followed the dimensions
+    // with no window in which the two disagreed.
+    expect(second.digest).not.toBe(first.digest);
+    expect(second.a).toBeCloseTo(0.2 * 0.5, 12);
+    modelStore.clear();
+  });
+});
