@@ -33,13 +33,18 @@ function combineMembrane(
   const out = new Map<number, Membrane>();
   for (const id of ids) {
     const acc: Membrane = { sigmaXx: 0, sigmaYy: 0, tauXy: 0, mx: 0, my: 0, mxy: 0 };
+    let contributed = false;
     for (const f of factors) {
       const s = perCase.get(f.caseId)?.get(id);
       if (!s) continue;
+      contributed = true;
       acc.sigmaXx += f.factor * s.sigmaXx; acc.sigmaYy += f.factor * s.sigmaYy; acc.tauXy += f.factor * s.tauXy;
       acc.mx += f.factor * s.mx; acc.my += f.factor * s.my; acc.mxy += f.factor * s.mxy;
     }
-    out.set(id, acc);
+    // Only include ids present in at least one of THIS combo's cases — with a
+    // precomputed global union, absent ids would otherwise be written as zeros
+    // (phantom zero-stress entries in the combo output).
+    if (contributed) out.set(id, acc);
   }
   return out;
 }
