@@ -51,7 +51,15 @@
   function rows(dir: FootingDirectionDesign): Array<[string, string]> {
     return [
       [t('footing.ui.matMu'), dir.Mu.toFixed(1)],
+      [t('footing.ui.matCantilever'), tp('footing.ui.matCantileverValue', {
+        cantilever: dir.cantilever.toFixed(3), side: dir.governingSide ?? '—',
+      })],
       [t('footing.ui.matD'), dir.d.toFixed(4)],
+      // Both layer depths, so the conservative envelope is visible as a choice rather than
+      // looking like the only depth there is.
+      [t('footing.ui.matLayerEnvelope'), tp('footing.ui.matLayerEnvelopeValue', {
+        lower: dir.dIfLowerLayer.toFixed(4), upper: dir.dIfUpperLayer.toFixed(4),
+      })],
       [t('footing.ui.matBars'), tp('footing.ui.matBarsValue', {
         count: dir.barCount, diameter: dir.diameterMm,
       })],
@@ -132,6 +140,28 @@
     <p class="pending" data-testid="footing-mat-top-not-evaluated">
       {t('footing.ui.matTopNotEvaluated')}
     </p>
+    <!--
+      Two more things "designed" does NOT mean. Each is its own sentence, because a reader who
+      sees one badge saying DESIGNED will otherwise assume all of it was checked.
+    -->
+    <p class="pending" data-testid="footing-mat-layer-order-pending">
+      {t('footing.ui.matLayerOrderPending')}
+    </p>
+    <p class="pending" data-testid="footing-mat-anchorage-pending">
+      {t('footing.ui.matAnchoragePending')}
+    </p>
+
+    {#if m.advisories.length > 0}
+      <!-- Policy notes, kept apart from failures: these designs ARE code-compliant. -->
+      <details data-testid="footing-mat-advisories">
+        <summary>{tp('footing.ui.matAdvisories', { n: m.advisories.length })}</summary>
+        <ul class="advisories">
+          {#each m.advisories as a (a.key + JSON.stringify(a.params ?? {}))}
+            <li>{tp(a.key, a.params ?? {})}</li>
+          {/each}
+        </ul>
+      </details>
+    {/if}
 
     <details data-testid="footing-mat-clauses">
       <summary>{t('footing.ui.matClauses')}</summary>

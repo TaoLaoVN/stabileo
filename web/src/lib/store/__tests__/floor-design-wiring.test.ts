@@ -482,7 +482,22 @@ describe('punching F_direct — what beams deliver into the joint', () => {
     // The same joint with NO delivery would carry the full step less q·A:
     // removing the beam must raise Vu by exactly the deducted 50.
     const vuWithBeam = joint.Vu;
-    modelStore.deleteEntities([], [beam], []);
+    /**
+     * `deleteEntities` takes ONE object argument.
+     *
+     * This read `deleteEntities([], [beam], [])` — the obsolete positional signature. An empty
+     * array has no `.elements`, so the call deleted NOTHING and the beam stayed in the model.
+     * The assertions below still passed, for the wrong reason: the second results publish simply
+     * omits the beam's element forces, so the collector saw no delivery at a joint whose beam
+     * was still there. What the test claimed to prove — that removing the delivery raises V_u by
+     * exactly the deducted 50 — was never exercised.
+     *
+     * `tsc` reported it (TS2554) and the baseline never covered it, so `npm run typecheck` was
+     * red on this one error at every commit.
+     */
+    modelStore.deleteEntities({ elements: [beam] });
+    // The deletion is asserted, not assumed: a silently-ignored argument is how this got here.
+    expect(modelStore.model.elements.has(beam)).toBe(false);
     const res2 = (scale: number) => ({
       displacements: [], reactions: [],
       quadStresses: [{ elementId: quad, sigmaXx: 0, sigmaYy: 0, tauXy: 0, mx: 40, my: 30, mxy: 8, vonMises: 0 }],
@@ -500,6 +515,10 @@ describe('punching F_direct — what beams deliver into the joint', () => {
     const joint2 = slab2.punching.find((p) => p.nodeId === top[0])!;
     expect(joint2.contributions![0].directlyDelivered).toBeCloseTo(0, 6);
     expect(joint2.Vu - vuWithBeam).toBeCloseTo(50, 6);
+    // And the beam is not merely force-less but gone, so `directlyDelivered: 0` is the absence
+    // of a member rather than the absence of its results.
+    expect(modelStore.model.elements.has(beam)).toBe(false);
+    expect([...modelStore.model.elements.keys()].sort()).toEqual([...columns].sort());
   });
 });
 

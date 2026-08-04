@@ -233,9 +233,17 @@ test.describe('@smoke foundations — the visible workflow', () => {
       await expect(page.getByTestId(`footing-mat-${axis}-regions`)).toBeVisible();
     }
 
-    // The two honest statuses, on screen and not inferable only from an absence.
+    // The four honest statuses, on screen and not inferable only from an absence. "DESIGNED"
+    // must not be readable as covering geometry, top steel, the layer order or the anchorage.
     await expect(page.getByTestId('footing-mat-geometry-pending')).toBeVisible();
     await expect(page.getByTestId('footing-mat-top-not-evaluated')).toBeVisible();
+    await expect(page.getByTestId('footing-mat-layer-order-pending')).toBeVisible();
+    await expect(page.getByTestId('footing-mat-anchorage-pending')).toBeVisible();
+
+    // Both layer depths, so the conservative envelope reads as a choice rather than as the
+    // only depth there is.
+    await expect(page.getByTestId('footing-mat-X'))
+      .toContainText(/d if lower \/ upper|d si inferior \/ superior/i);
 
     // The clause chain is citable from the panel.
     const clauses = page.getByTestId('footing-mat-clauses');

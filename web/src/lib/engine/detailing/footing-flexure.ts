@@ -182,8 +182,19 @@ export interface FootingMatRegion {
    * and that identity is checkable here and nowhere else.
    */
   distributionShare: number;
-  /** Steel the region must provide, m² — `max(distributionShare, §7.6.1 on this region)`. */
+  /** Steel the region must provide, m². Equal to `distributionShare`: see `addRegion`. */
   asRequired: number;
+  /**
+   * `0,0018 A_g` evaluated on THIS region's strip, m² — a Stabileo policy figure, not a
+   * requirement of the enacted text.
+   *
+   * §7.6.1 imposes its minimum on the direction's reinforcement and §13.3.3.3 then distributes
+   * the total; neither clause, and neither commentary, imposes it again region by region. The
+   * number is reported so a detailer who wants that extra conservatism can see it, and an
+   * advisory names any region whose provided steel falls under it. It is NOT added to
+   * `asRequired`, because a design must not present a house preference as a code requirement.
+   */
+  policyRegionalMinimum: number;
   /** Steel the integer bar count actually provides, m². Never below `asRequired`. */
   asProvided: number;
   barCount: number;
@@ -213,8 +224,14 @@ export interface FootingSpacingLimits {
   governingMaxClause: string;
   /** §25.2.1 minimum clear distance, m. */
   minClear: number;
-  /** `c_c` used for §24.3.2, m — see the layer-order assumption in `designFootingMat`. */
-  crackControlCover: number;
+  /**
+   * `c_c` used for §24.3.2, m — the CLEAR COVER.
+   *
+   * §24.3.2 measures it to the bar SURFACE and C 24.3.2 restricts it to the reinforcement
+   * closest to the tension face, so this is `cover` and it does not depend on which direction
+   * ends up in the lower layer.
+   */
+  clearCoverToTensionFace: number;
   refs: ClauseRef[];
 }
 
@@ -224,16 +241,35 @@ export interface FootingDirectionDesign {
   barsParallelTo: 'B' | 'L';
   /** The dimension they are distributed across, m. */
   distributionWidth: number;
-  /** Cantilever from the §13.2.7.1 critical section to the edge, m. */
+  /**
+   * Which of the two column faces governed, in centroid coordinates.
+   *
+   * Both are evaluated: a footing whose column is offset in plan has two unequal cantilevers,
+   * and the longer one is not always the one under the heavier pressure. Null only when the
+   * direction was not evaluated.
+   */
+  governingSide: 'low' | 'high' | null;
+  /** Cantilever from the GOVERNING §13.2.7.1 critical section to its edge, m. */
   cantilever: number;
-  /** Factored soil pressure at the critical section and at the heavy edge, kPa. */
+  /** Factored soil pressure at that critical section and at its edge, kPa. */
   qFace: number;
   qEdge: number;
   /** Factored moment at the critical section, kN·m. */
   Mu: number;
   diameterMm: number;
-  /** Flexural effective depth for THIS direction, m: h − cover − d_b/2. */
+  /**
+   * The effective depth this direction is DESIGNED at, m.
+   *
+   * Equal to `dIfUpperLayer`: PR18-A does not establish which mat sits lower, so both
+   * directions take the shallower of the two possibilities. See `FootingMatDesign.layerOrder`.
+   */
   d: number;
+  /** `h − cover − d_b/2`, m — this direction's depth if it is the LOWER layer. */
+  dIfLowerLayer: number;
+  /** `h − cover − d_b,other − d_b/2`, m — its depth if it is the UPPER layer. */
+  dIfUpperLayer: number;
+  /** Which of the two `d` values the design used, and why it is that one. */
+  layerRole: 'ENVELOPE_UPPER_LAYER';
   /** Steel required by flexural strength, m². */
   asFlexural: number;
   /** Steel required by §7.6.1 over the full distribution width, m². */
@@ -258,6 +294,14 @@ export interface FootingDirectionDesign {
   status: FootingMatDirectionStatus;
   /** Why the direction is not DESIGNED. Empty when it is. */
   failures: EngineMessage[];
+  /**
+   * Observations that do NOT make the design non-compliant.
+   *
+   * Kept apart from `failures` because they are a different kind of statement: a region under
+   * the Stabileo regional-minimum policy is code-compliant, and filing that next to a real
+   * failure would train a reader to dismiss both.
+   */
+  advisories: EngineMessage[];
   steps: string[];
   refs: ClauseRef[];
 }
@@ -266,6 +310,25 @@ export interface FootingDirectionDesign {
 export type FootingMatGeometryStatus = 'REQUIRED_NOT_MODELED';
 /** No authoritative calculation shows top steel unnecessary, so it is not evaluated. */
 export type FootingTopReinforcementStatus = 'NOT_EVALUATED';
+/**
+ * Which mat sits in the lower layer.
+ *
+ * NOT_ESTABLISHED for the whole of PR18-A. No clause prescribes it — §13.2.8 and §25.4 govern
+ * anchorage, §13.3.3 governs distribution, and neither says which perpendicular mat goes down
+ * — so it is a bar-placement decision, and PR18-A places no bars. Both directions are therefore
+ * designed at the shallower (upper-layer) depth, which is the conservative envelope; PR18-B can
+ * fix the order and recover the deeper direction's capacity.
+ */
+export type FootingLayerOrderStatus = 'NOT_ESTABLISHED';
+/**
+ * Anchorage.
+ *
+ * `developmentLength` reports l_d for the selected bar from the authoritative clause module, and
+ * that is a property of the bar. Whether the bar ACHIEVES it — the available length from the
+ * §13.2.7.1 critical section, hooks, the §13.2.8.4 cases — is a question about geometry that
+ * does not exist yet, so no anchorage verification is claimed at this stage.
+ */
+export type FootingAnchorageStatus = 'NOT_GEOMETRICALLY_VERIFIED';
 
 export interface FootingMatDesign {
   x: FootingDirectionDesign;
@@ -279,12 +342,22 @@ export interface FootingMatDesign {
    * the difference is intentional rather than a disagreement.
    */
   punchingD: number;
-  /** DESIGNED only when BOTH directions are. */
+  /**
+   * DESIGNED only when BOTH directions are, and it means exactly one thing: the flexural
+   * demand was evaluated and a reinforcement schedule satisfying every governing check was
+   * found. It does NOT mean the anchorage was verified, the layer order was resolved, or any
+   * physical clash was checked — those are the three statuses immediately below, and each says
+   * so on its own.
+   */
   status: FootingMatDirectionStatus;
   geometry: FootingMatGeometryStatus;
   topReinforcement: FootingTopReinforcementStatus;
+  layerOrder: FootingLayerOrderStatus;
+  anchorage: FootingAnchorageStatus;
   assumptions: EngineMessage[];
   failures: EngineMessage[];
+  /** Policy observations from both directions. Compliant designs can carry these. */
+  advisories: EngineMessage[];
   refs: ClauseRef[];
 }
 
@@ -358,15 +431,22 @@ function distinctRefs(refs: readonly ClauseRef[]): ClauseRef[] {
 /**
  * Flexural effective depth of one mat direction, m.
  *
- * `h − cover − d_b/2` is the depth of THAT direction's bars, exactly. It is not the averaged
- * `h − cover − d_b` the punching check uses: that average stands in for two layers with one
- * number, which is the right compromise for a check that has a single `d`, and the wrong one
- * for a design that resolves the directions separately.
+ * ── Why the third argument exists ──────────────────────────────
+ *
+ * Two perpendicular mats cannot occupy one elevation. One direction sits on the cover and the
+ * other sits ON TOP of it, so their effective depths differ by a full bar diameter and only
+ * one of them is `h − cover − d_b/2`. `barsBelowMm` is the steel stacked underneath this
+ * direction: zero for the lower layer, the other direction's diameter for the upper one.
+ *
+ * The first version of this module used the LOWER-layer depth for both directions while
+ * simultaneously using the UPPER-layer cover for both crack-control checks. Each value was
+ * defensible on its own and the combination described a footing that cannot be built: the
+ * favourable depth of the bottom layer with the penalised cover of the layer above it.
  */
 export function footingFlexuralDepth(
-  thickness: number, cover: number, diameterMm: number,
+  thickness: number, cover: number, diameterMm: number, barsBelowMm = 0,
 ): number {
-  return Math.max(0, thickness - cover - diameterMm / 2000);
+  return Math.max(0, thickness - cover - barsBelowMm / 1000 - diameterMm / 2000);
 }
 
 // ─── Layout ──────────────────────────────────────────────────────
@@ -454,8 +534,108 @@ interface DirectionGeometry {
   distributionWidth: number;
   /** Factored moment producing eccentricity along `spanDimension`, kN·m. */
   factoredMoment: number;
+  /** Plan offset of the centroid from the column along the SPAN axis, m. */
+  spanEccentricity: number;
   /** Plan offset of the centroid from the column along the DISTRIBUTION axis, m. */
   distributionEccentricity: number;
+}
+
+/** One candidate critical section: a column face, under one pressure diagram. */
+interface FaceDemand {
+  /** Which footing edge this cantilever reaches, in centroid coordinates. */
+  side: 'low' | 'high';
+  cantilever: number;
+  qFace: number;
+  qEdge: number;
+  Mu: number;
+  /** Offset of the pressure resultant from the footing centroid, m. */
+  resultantOffset: number;
+}
+
+/**
+ * The governing critical section on one axis.
+ *
+ * ── What this replaces, and why ────────────────────────────────
+ *
+ * The first version took ONE cantilever, `(S − columnDimension)/2`, which is the symmetric
+ * value. `eccentricityB`/`eccentricityL` are not load eccentricities — `model/footing.ts`
+ * defines them as the plan offset of the footing CENTROID from the supported node, and
+ * `punchingPosition` already measures each column face to its own footing edge with them. So
+ * the column really is off centre, the two cantilevers really are unequal, and the symmetric
+ * value UNDER-states the longer one. A note about that is not good enough: it is the side that
+ * governs.
+ *
+ * ── The envelope ───────────────────────────────────────────────
+ *
+ * Two things move independently, so both faces are evaluated under both:
+ *
+ *   * the GEOMETRIC offset of the column, whose direction is known;
+ *   * the applied moment, whose sign is NOT usable here. The demand arrives as a reaction
+ *     moment on global axes and the shared authority already discards its sign
+ *     (`Math.abs`), because resolving a reaction-moment sign onto a footing-local axis is
+ *     a separate piece of work this module must not guess at.
+ *
+ * So the moment is applied in both orientations and the worst of the four combinations
+ * governs. That is sign-agnostic and cannot under-state the demand; the cost is that a footing
+ * is occasionally designed for a diagram the real sign would not produce.
+ *
+ * The pressure is the same linear distribution the shared authority integrates,
+ * `q(u) = q0 (1 + 12 u_R u / S²)`, written about the centroid so an off-centre resultant is
+ * expressible at all. At `u = ±S/2` it reduces to `q0 (1 ± 6 e/S)` — the `1 ± k` form
+ * `checkFooting` uses — so a centred column reproduces that result exactly.
+ */
+function governingFace(opts: {
+  S: number;
+  W: number;
+  columnDimension: number;
+  /** Column centre measured from the footing centroid along this axis, m. */
+  columnOffset: number;
+  q0: number;
+  /** Load-eccentricity magnitude from the factored moment, m. */
+  momentEccentricity: number;
+}): {
+  governing: FaceDemand | null;
+  worstResultantOffset: number;
+  kernLimit: number;
+  /** True when EITHER orientation puts the resultant outside the kern. */
+  anyOrientationLifts: boolean;
+} {
+  const { S, W, columnDimension, columnOffset, q0, momentEccentricity } = opts;
+  const kernLimit = S / 6;
+  let governing: FaceDemand | null = null;
+  let worstResultantOffset = 0;
+  let anyOrientationLifts = false;
+
+  for (const orientation of [1, -1]) {
+    const uR = columnOffset + orientation * momentEccentricity;
+    if (Math.abs(uR) > Math.abs(worstResultantOffset)) worstResultantOffset = uR;
+    // Beyond the kern the base lifts and this distribution stops being valid. Recorded so the
+    // caller can refuse: skipping this orientation and designing on the other one would be
+    // picking the favourable moment sign by omission, which is the whole thing the sign-agnostic
+    // envelope exists to avoid.
+    if (Math.abs(uR) > kernLimit) {
+      anyOrientationLifts = true;
+      continue;
+    }
+    const q = (u: number) => q0 * (1 + (S > 0 ? 12 * uR * u / (S * S) : 0));
+
+    for (const side of ['low', 'high'] as const) {
+      const faceU = side === 'low'
+        ? columnOffset - columnDimension / 2
+        : columnOffset + columnDimension / 2;
+      const edgeU = side === 'low' ? -S / 2 : S / 2;
+      const cantilever = side === 'low' ? faceU - edgeU : edgeU - faceU;
+      if (!(cantilever > 0)) continue;
+      const qFace = q(faceU);
+      const qEdge = q(edgeU);
+      // Exactly the trapezoid the shared authority integrates, on this side's own cantilever.
+      const Mu = W * cantilever * cantilever * (2 * qFace + qEdge) / 6;
+      if (governing === null || Mu > governing.Mu) {
+        governing = { side, cantilever, qFace, qEdge, Mu, resultantOffset: uR };
+      }
+    }
+  }
+  return { governing, worstResultantOffset, kernLimit, anyOrientationLifts };
 }
 
 function designDirection(
@@ -463,40 +643,63 @@ function designDirection(
 ): FootingDirectionDesign {
   const steps: string[] = [];
   const failures: EngineMessage[] = [];
+  const advisories: EngineMessage[] = [];
   const refs: ClauseRef[] = [R_TWO_WAY, R_MOMENT_PLANE, R_CRITICAL];
 
   const { thickness, cover, factoredAxial } = input;
   const W = geo.distributionWidth;
   const S = geo.spanDimension;
-  const cantilever = (S - geo.columnDimension) / 2;
   const area = input.B * input.L;
   const qFactored = area > 0 ? factoredAxial / area : 0;
 
-  // The exact trapezoid `checkFooting` integrates, applied independently on this axis. The
-  // load eccentricity is the FACTORED moment over the factored axial, and x is measured from
-  // the light edge, so `xFace` is the critical section on the HEAVY side — the one that
-  // governs. Nothing here invents a pressure: same expression, same sign rule, one axis over.
-  const e = Math.abs(geo.factoredMoment) / Math.max(factoredAxial, 1e-12);
-  const k = S > 0 ? 6 * e / S : 0;
-  const xFace = S - cantilever;
-  const qFace = qFactored * (1 + k * (2 * xFace / S - 1));
-  const qEdge = qFactored * (1 + k);
-  const Mu = cantilever > 0 ? W * cantilever * cantilever * (2 * qFace + qEdge) / 6 : 0;
+  // The column sits where the model puts it. `eccentricityB`/`eccentricityL` offset the footing
+  // CENTROID from the supported node, so the column centre is at MINUS that offset in centroid
+  // coordinates — the same reading `punchingPosition` already uses to measure each face to its
+  // own edge.
+  const columnOffset = -geo.spanEccentricity;
+  const momentEccentricity =
+    Math.abs(geo.factoredMoment) / Math.max(factoredAxial, 1e-12);
+  const face = governingFace({
+    S, W, columnDimension: geo.columnDimension, columnOffset,
+    q0: qFactored, momentEccentricity,
+  });
 
-  const d = footingFlexuralDepth(thickness, cover, diameterMm);
+  const cantilever = face.governing?.cantilever ?? 0;
+  const qFace = face.governing?.qFace ?? 0;
+  const qEdge = face.governing?.qEdge ?? 0;
+  const Mu = face.governing?.Mu ?? 0;
+
+  // ── The two physical layers ──────────────────────────────────
+  //
+  // Perpendicular bars cannot share an elevation, so this direction is either the lower layer
+  // or the upper one. Which it is, is a bar-placement decision no clause makes and PR18-A does
+  // not model — see `FootingMatDesign.layerOrder`. Both depths are computed and the design uses
+  // the SHALLOWER (upper-layer) one for both directions: that is the conservative envelope, and
+  // it is stated rather than left to be inferred.
+  const otherDiameterMm = geo.axis === 'X'
+    ? input.preferences.bottomMatDiameterYmm
+    : input.preferences.bottomMatDiameterXmm;
+  const dIfLowerLayer = footingFlexuralDepth(thickness, cover, diameterMm, 0);
+  const dIfUpperLayer = footingFlexuralDepth(thickness, cover, diameterMm, otherDiameterMm);
+  const d = dIfUpperLayer;
 
   steps.push(
-    `Dirección ${geo.axis}: barras paralelas a ${geo.barsParallelTo}, voladizo ` +
-    `${cantilever.toFixed(3)} m desde la cara de la columna (13.2.7.1), repartidas en ` +
-    `${W.toFixed(2)} m.`,
-    `Presión factorizada ${qFactored.toFixed(1)} kPa` +
-    (e > 1e-9
-      ? `, trapecio por excentricidad de carga e = ${e.toFixed(3)} m: q_cara ` +
-        `${qFace.toFixed(1)}, q_borde ${qEdge.toFixed(1)} kPa.`
-      : ' uniforme.'),
+    `Dirección ${geo.axis}: barras paralelas a ${geo.barsParallelTo}, repartidas en ` +
+    `${W.toFixed(2)} m sobre una luz de ${S.toFixed(2)} m.`,
+    `Columna a ${columnOffset.toFixed(3)} m del centroide: voladizos ` +
+    `${(S / 2 + columnOffset - geo.columnDimension / 2).toFixed(3)} y ` +
+    `${(S / 2 - columnOffset - geo.columnDimension / 2).toFixed(3)} m. ` +
+    `Gobierna el lado ${face.governing?.side ?? '—'} con ${cantilever.toFixed(3)} m ` +
+    '(13.2.7.1).',
+    `Presión factorizada ${qFactored.toFixed(1)} kPa; resultante a ` +
+    `${(face.governing?.resultantOffset ?? 0).toFixed(3)} m del centroide ` +
+    `(excentricidad de momento ${momentEccentricity.toFixed(3)} m, envolvente de ambos ` +
+    `signos): q_cara ${qFace.toFixed(1)}, q_borde ${qEdge.toFixed(1)} kPa.`,
     `Mu = ${W.toFixed(2)} × ${cantilever.toFixed(3)}² × (2×${qFace.toFixed(1)} + ` +
     `${qEdge.toFixed(1)})/6 = ${Mu.toFixed(1)} kN·m (13.2.6.6).`,
-    `d = ${thickness.toFixed(3)} − ${cover.toFixed(3)} − Ø${diameterMm}/2 = ${d.toFixed(4)} m.`);
+    `Altura útil: capa inferior daría ${dIfLowerLayer.toFixed(4)} m, capa superior ` +
+    `${dIfUpperLayer.toFixed(4)} m (Ø${otherDiameterMm} debajo). Se dimensiona con ` +
+    `${d.toFixed(4)} m — la envolvente conservadora.`);
 
   // ── Contact validity ─────────────────────────────────────────
   //
@@ -507,23 +710,30 @@ function designDirection(
   // call on its own.
   const notEvaluated = (m: EngineMessage): FootingDirectionDesign => ({
     axis: geo.axis, barsParallelTo: geo.barsParallelTo, distributionWidth: W,
-    cantilever, qFace, qEdge, Mu, diameterMm, d,
+    governingSide: face.governing?.side ?? null,
+    cantilever, qFace, qEdge, Mu, diameterMm,
+    d, dIfLowerLayer, dIfUpperLayer, layerRole: 'ENVELOPE_UPPER_LAYER',
     asFlexural: 0, asMinimum: 0, asGoverning: 0,
     governedBy: 'MINIMUM', governingClause: R_AS_MIN.clause,
     spacing: {
       generalMax: 0, crackControlMax: 0, governingMax: 0, governingMaxClause: R_MAX_SPACING.clause,
-      minClear: 0, crackControlCover: 0, refs: [],
+      minClear: 0, clearCoverToTensionFace: cover, refs: [],
     },
     distribution: 'UNIFORM_FULL_WIDTH', beta: null, gammaS: null,
     regions: [], asProvided: 0, barCount: 0,
     meetsMinimumDepth: d >= MIN_BOTTOM_MAT_DEPTH_M,
     developmentLength: null,
-    status: 'NOT_EVALUATED', failures: [m], steps, refs,
+    status: 'NOT_EVALUATED', failures: [m], advisories: [], steps, refs,
   });
 
-  if (e > S / 6) {
+  // The envelope refuses if EITHER moment orientation lifts the base. The sign of the applied
+  // moment is not usable here, so a footing that lifts under one of the two possible diagrams
+  // is not designed under the other: that would be choosing the favourable sign by omission.
+  if (face.anyOrientationLifts || face.governing === null) {
     return notEvaluated(msg('footing.mat.upliftNotEvaluated', {
-      axis: geo.axis, e: +e.toFixed(3), limit: +(S / 6).toFixed(3),
+      axis: geo.axis,
+      e: +Math.abs(face.worstResultantOffset).toFixed(3),
+      limit: +face.kernLimit.toFixed(3),
     }));
   }
   if (!(W > 0) || !(cantilever > 0) || !(qFactored > 0)) {
@@ -536,10 +746,27 @@ function designDirection(
   // authority, driven with the mat strip as its section: b = the distribution width, h = the
   // footing thickness, no stirrup, and the diameter the engineer selected — so its internal
   // `d` is this direction's flexural depth and not the assumed Ø16 one.
+  //
+  // `stirrupDia` carries the OTHER direction's mat. `checkFlexure` computes its own depth as
+  // `h − cover − stirrupDia/1000 − d_b/2000`, and in a footing the steel sitting between the
+  // cover and this bar is the perpendicular mat, playing exactly the role a stirrup plays in a
+  // beam. Passing it makes the depth `checkFlexure` DESIGNS at identical to `d` above.
+  //
+  // Getting this wrong is not cosmetic and it is not hypothetical: an earlier revision of this
+  // module reported the upper-layer `d` while leaving `stirrupDia: 0`, so the reported depth and
+  // the designed depth differed by a bar diameter and the steel was under-computed. The φMn
+  // closure in `footing-flexure.test.ts` is what caught it — a test that had recomputed the
+  // module's own quadratic would have agreed with the mistake.
   const flex = checkFlexure(
-    { fc: input.fc, fy: input.fy, cover, b: W, h: thickness, stirrupDia: 0 },
+    { fc: input.fc, fy: input.fy, cover, b: W, h: thickness, stirrupDia: otherDiameterMm },
     Mu, 0, { barDiameterMm: diameterMm },
   );
+  // The two must agree by construction. If a future edit to either expression breaks that, this
+  // throws in development instead of silently designing at a depth nobody reported.
+  if (Math.abs(flex.d - d) > 1e-9) {
+    throw new Error(
+      `footing mat: designed depth ${flex.d} disagrees with reported depth ${d}`);
+  }
   const asFlexural = Math.max(0, flex.AsFlexural) * 1e-4;   // cm² → m²
 
   // A footing mat is singly reinforced. Compression steel in a pad footing means the section
@@ -578,17 +805,31 @@ function designDirection(
 
   // ── Spacing limits ───────────────────────────────────────────
   const generalMax = Math.min(3 * thickness, MAX_SPACING_CAP_M);
-  // `c_c` is the distance from the BAR SURFACE to the tension face, so for the upper of the
-  // two bottom layers it is the cover plus the other direction's diameter. Which direction
-  // ends up on top is a bar-placement decision PR18-B makes, so both are checked as if they
-  // were the upper layer: that is the smaller permitted spacing, and being wrong the other way
-  // would permit bars further apart than the clause allows.
-  const otherDiameterMm = geo.axis === 'X'
-    ? input.preferences.bottomMatDiameterYmm
-    : input.preferences.bottomMatDiameterXmm;
-  const crackControlCover = cover + otherDiameterMm / 1000;
+  /**
+   * `c_c` for §24.3.2 is the CLEAR COVER, and it is order-independent.
+   *
+   * The enacted clause defines it as "la menor distancia desde la SUPERFICIE de la armadura
+   * conformada […] a la cara traccionada", and C 24.3.2 narrows what it applies to: "solamente
+   * la armadura de tracción más cercana a la cara traccionada necesita ser considerada para
+   * seleccionar el valor de cc". §7.7.2.2 routes the same way — "la armadura adherente más
+   * cercana a la cara en tracción".
+   *
+   * So the clause targets the LOWER layer, whose bar surface sits exactly one clear cover from
+   * the tension face. Whichever of the two directions ends up lower, that number is the same
+   * `cover`, which is why this needs no layer order.
+   *
+   * The first version used `cover + d_b,other` here — the upper layer's distance. That is not
+   * the cc §24.3.2 defines for the bar it limits, and it happened to be MORE restrictive
+   * (215 mm against 255 mm on the reference footing), so the error was conservative rather
+   * than unsafe. It was still the wrong number attributed to the clause.
+   *
+   * The resulting limit is applied to BOTH directions. The lower layer must satisfy it and this
+   * stage does not know which direction that is; imposing it on the upper layer as well is an
+   * extra requirement the clause does not make of it, in the safe direction.
+   */
+  const clearCoverToTensionFace = cover;
   const crack = crackControlMaxSpacing(input.edition, {
-    fy: input.fy, clearCoverToTensionFace: crackControlCover,
+    fy: input.fy, clearCoverToTensionFace,
   });
   const clear = minClearSpacingInLayer(input.edition, {
     barDiameterMm: diameterMm, maxAggregateSizeMm: input.maxAggregateSizeMm,
@@ -600,14 +841,15 @@ function designDirection(
     governingMax,
     governingMaxClause: crack.maxSpacing < generalMax ? '24.3.2' : R_MAX_SPACING.clause,
     minClear: clear.minClear,
-    crackControlCover,
+    clearCoverToTensionFace,
     refs: [R_MAX_SPACING, R_CRACK_ROUTE, ...crack.refs, R_MIN_SPACING, ...clear.refs],
   };
   refs.push(...spacing.refs);
   steps.push(
     `Separación máxima: 7.7.2.3 → menor entre 3h = ${(3 * thickness * 1000).toFixed(0)} mm y ` +
-    `300 mm = ${(generalMax * 1000).toFixed(0)} mm; 24.3.2 con cc = ` +
-    `${(crackControlCover * 1000).toFixed(0)} mm y fs = ${crack.fs.toFixed(0)} MPa → ` +
+    `300 mm = ${(generalMax * 1000).toFixed(0)} mm; 24.3.2 con cc = recubrimiento libre ` +
+    `${(clearCoverToTensionFace * 1000).toFixed(0)} mm (capa más cercana a la cara ` +
+    `traccionada) y fs = ${crack.fs.toFixed(0)} MPa → ` +
     `${(crack.maxSpacing * 1000).toFixed(0)} mm. Gobierna ` +
     `${(governingMax * 1000).toFixed(0)} mm (${spacing.governingMaxClause}).`,
     `Separación libre mínima (25.2.1) = ${(clear.minClear * 1000).toFixed(1)} mm.`);
@@ -633,12 +875,23 @@ function designDirection(
     touchesEdge: boolean, share: number, shareGovernedBy: FootingAsGovernedBy | 'DISTRIBUTION',
   ): void => {
     if (!(width > 1e-9)) return;
-    // §7.6.1 is a minimum AREA, so it applies to the strip a region covers and not only to
-    // the direction's total. Without this the outside zones of a minimum-governed rectangular
-    // footing come out below 0,0018 A_g exactly where the band took steel from them.
-    const regionMin = FOOTING_AS_MIN_RATIO * width * thickness;
-    const asRequired = Math.max(share, regionMin);
-    const governed = asRequired > share ? 'MINIMUM' : shareGovernedBy;
+    /**
+     * The region gets what the CODE allocates to it, and nothing added on top.
+     *
+     * The first version took `max(share, 0,0018·A_g,region)` and reported the floor as §7.6.1.
+     * That floor is not in the enacted text. §7.6.1 states one requirement — "debe colocarse un
+     * área mínima de armadura a flexión, As,min, de 0,0018 Ag" — on the reinforcement of the
+     * direction, and §13.3.3.3 then prescribes how "la armadura total" is distributed, with
+     * no regional minimum anywhere in either clause or in C 13.3.3.3. Applying 0,0018 A_g again
+     * per region is a Stabileo conservative preference, and presenting it as the code's
+     * requirement is exactly the kind of claim this module exists not to make.
+     *
+     * So AUTO_CODE_COMPLIANT follows the code: total minimum, then the γs distribution. The
+     * policy value is still COMPUTED and reported, as an advisory identified as policy, because
+     * a detailer may well want it — but it does not silently become the delivered design.
+     */
+    const asRequired = share;
+    const policyRegionalMinimum = FOOTING_AS_MIN_RATIO * width * thickness;
     const laid = layoutRegion({
       width, model, asRequired, diameterMm, cover,
       maxSpacing: governingMax, minClear: clear.minClear,
@@ -650,12 +903,23 @@ function designDirection(
       }));
       return;
     }
+    // Reported against what the layout actually PROVIDES, not against the requirement: the
+    // integer bar count routinely clears a floor the share alone would not, and an advisory
+    // about steel that is already there would be noise.
+    if (laid.asProvided < policyRegionalMinimum) {
+      advisories.push(msg('footing.mat.regionBelowPolicyMinimum', {
+        axis: geo.axis, region: kind,
+        provided: +(laid.asProvided * 1e4).toFixed(2),
+        policy: +(policyRegionalMinimum * 1e4).toFixed(2),
+      }));
+    }
     regions.push({
       kind, layoutModel: model, width, centreOffset, touchesEdge,
       distributionShare: share,
-      asRequired, asProvided: laid.asProvided, barCount: laid.barCount,
+      asRequired, policyRegionalMinimum,
+      asProvided: laid.asProvided, barCount: laid.barCount,
       spacingCentre: laid.spacingCentre, spacingClear: laid.spacingClear,
-      governedBy: governed,
+      governedBy: shareGovernedBy,
     });
   };
 
@@ -733,13 +997,17 @@ function designDirection(
 
   return {
     axis: geo.axis, barsParallelTo: geo.barsParallelTo, distributionWidth: W,
-    cantilever, qFace, qEdge, Mu, diameterMm, d,
+    governingSide: face.governing.side,
+    cantilever, qFace, qEdge, Mu, diameterMm,
+    d, dIfLowerLayer, dIfUpperLayer, layerRole: 'ENVELOPE_UPPER_LAYER',
     asFlexural, asMinimum, asGoverning, governedBy, governingClause,
     spacing, distribution, beta, gammaS, regions, asProvided, barCount,
     meetsMinimumDepth,
     developmentLength: development,
-    status: failures.length > 0 ? 'DESIGN_FAILED' : 'DESIGNED',
-    failures, steps, refs,
+    // A direction with no region is a direction with no layout — `addRegion` records the
+    // failure and returns, so an empty region list cannot read as DESIGNED.
+    status: failures.length > 0 || regions.length === 0 ? 'DESIGN_FAILED' : 'DESIGNED',
+    failures, advisories, steps, refs,
   };
 }
 
@@ -762,6 +1030,7 @@ export function designFootingMat(input: FootingMatDesignInput): FootingMatDesign
     spanDimension: input.B, columnDimension: input.columnB,
     distributionWidth: input.L,
     factoredMoment: input.factoredMomentB,
+    spanEccentricity: input.eccentricityB,
     distributionEccentricity: input.eccentricityL,
   }, dX);
 
@@ -770,11 +1039,16 @@ export function designFootingMat(input: FootingMatDesignInput): FootingMatDesign
     spanDimension: input.L, columnDimension: input.columnH,
     distributionWidth: input.B,
     factoredMoment: input.factoredMomentL,
+    spanEccentricity: input.eccentricityL,
     distributionEccentricity: input.eccentricityB,
   }, dY);
 
-  // The averaged two-layer depth the punching and one-way-shear checks keep using. Stated
-  // with the mat so the three depths are readable together.
+  // The averaged two-layer depth the punching and one-way-shear checks keep using — the legacy
+  // convention, `h − cover − d_b`, unchanged, with `d_b` the mean of the two selected diameters
+  // so a project on the 16/16 default gets the previous number to the bit. It is deliberately
+  // NOT recomputed as the exact mean of the two layer depths: that expression depends on which
+  // direction is lower, and PR18-A does not establish it. Stated beside the two flexural depths
+  // so all three are readable together instead of one standing in for the others.
   const punchingD = Math.max(0, input.thickness - input.cover - (dX + dY) / 2000);
 
   const assumptions: EngineMessage[] = [
@@ -782,19 +1056,21 @@ export function designFootingMat(input: FootingMatDesignInput): FootingMatDesign
       dx: +x.d.toFixed(4), dy: +y.d.toFixed(4), punching: +punchingD.toFixed(4),
       bx: dX, by: dY,
     }),
-    msg('footing.assumption.crackControlLayerOrder', {
-      ccx: +(x.spacing.crackControlCover * 1000).toFixed(0),
-      ccy: +(y.spacing.crackControlCover * 1000).toFixed(0),
+    // The layer envelope, stated for every footing rather than only when the diameters differ:
+    // the two mats are stacked whatever their diameters are, and the depth being conservative
+    // is a property of the design, not of an unusual input.
+    msg('footing.assumption.layerEnvelope', {
+      lowx: +x.dIfLowerLayer.toFixed(4), upx: +x.dIfUpperLayer.toFixed(4),
+      lowy: +y.dIfLowerLayer.toFixed(4), upy: +y.dIfUpperLayer.toFixed(4),
+      cc: +(input.cover * 1000).toFixed(0),
     }),
   ];
-  // The cantilever is measured symmetrically about the column, which is the convention
-  // `checkFooting` integrates and the one this module reuses verbatim. On a footing with plan
-  // eccentricity the two real cantilevers differ, and the longer one carries more moment than
-  // the symmetric value states. That is a limitation of the shared integral rather than of
-  // this design, and it is named rather than left for a reader to discover.
-  if (Math.abs(input.eccentricityB) > 1e-9 || Math.abs(input.eccentricityL) > 1e-9) {
-    assumptions.push(msg('footing.assumption.symmetricCantilever', {
-      eb: +input.eccentricityB.toFixed(3), el: +input.eccentricityL.toFixed(3),
+  // The applied moment's sign is not usable on a footing-local axis, so both orientations are
+  // enveloped. Named because it can make a footing carry a diagram the real sign would not
+  // produce — conservative, and not free.
+  if (Math.abs(input.factoredMomentB) > 1e-9 || Math.abs(input.factoredMomentL) > 1e-9) {
+    assumptions.push(msg('footing.assumption.momentOrientationEnvelope', {
+      mb: +input.factoredMomentB.toFixed(1), ml: +input.factoredMomentL.toFixed(1),
     }));
   }
 
@@ -807,12 +1083,17 @@ export function designFootingMat(input: FootingMatDesignInput): FootingMatDesign
 
   return {
     x, y, punchingD, status,
-    // PR18-A designs the mat and models none of it. Both of these are types with one
-    // inhabitant, so no edit to this function can quietly promote either.
+    // PR18-A designs the mat and models none of it. Four types with one inhabitant each, so no
+    // edit to this function can quietly promote any of them: the geometry is not modelled, the
+    // top steel is not evaluated, the layer order is not established, and the anchorage is not
+    // geometrically verified. DESIGNED above means the flexural schedule, and only that.
     geometry: 'REQUIRED_NOT_MODELED',
     topReinforcement: 'NOT_EVALUATED',
+    layerOrder: 'NOT_ESTABLISHED',
+    anchorage: 'NOT_GEOMETRICALLY_VERIFIED',
     assumptions,
     failures: [...x.failures, ...y.failures],
+    advisories: [...x.advisories, ...y.advisories],
     refs: distinctRefs([...x.refs, ...y.refs]),
   };
 }

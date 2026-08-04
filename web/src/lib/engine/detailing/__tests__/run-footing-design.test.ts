@@ -194,8 +194,8 @@ describe('the bottom-mat design on the production path', () => {
     const region = run().outcomes[0].record.flexure!.bottomMat!.x.regions[0];
     expect(Object.keys(region).sort()).toEqual([
       'asProvided', 'asRequired', 'barCount', 'centreOffset', 'distributionShare',
-      'governedBy', 'kind', 'layoutModel', 'spacingCentre', 'spacingClear', 'touchesEdge',
-      'width',
+      'governedBy', 'kind', 'layoutModel', 'policyRegionalMinimum', 'spacingCentre',
+      'spacingClear', 'touchesEdge', 'width',
     ]);
   });
 

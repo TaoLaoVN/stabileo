@@ -28,7 +28,7 @@ function wasmStubPlugin(): Plugin {
 const NOT_VITEST = ['**/node_modules/**', '**/dist/**', 'e2e/**'];
 
 /**
- * Tests that shell out to a real `vite build`.
+ * Tests that shell out to a real build or to another project script.
  *
  * These run in their own SERIAL pass rather than inside the general pool — see
  * `scripts/test-all.mjs` for the measurements behind that. Listed explicitly rather than
@@ -38,7 +38,13 @@ const NOT_VITEST = ['**/node_modules/**', '**/dist/**', 'e2e/**'];
  *
  * `harness-architecture.test.ts` fails if a test spawns a build without being listed here.
  */
-const PRODUCTION_BUILD_TESTS = ['src/lib/utils/__tests__/e2e-hook-gating.test.ts'];
+const PRODUCTION_BUILD_TESTS = [
+  'src/lib/utils/__tests__/e2e-hook-gating.test.ts',
+  // Runs `scripts/typecheck.mjs` itself, to prove the gate cannot report a green it has not
+  // earned. It spawns a Node process rather than a vite build, but it is the same reason for
+  // being here: a process-spawning test does not belong in the parallel pool.
+  'src/lib/engine/__tests__/typecheck-gate.test.ts',
+];
 
 
 export default defineConfig({
