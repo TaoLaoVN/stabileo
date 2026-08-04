@@ -35,6 +35,7 @@ const GUARDED_PATHS = [
   'src/lib/engine/kinematic-2d.ts',
   'src/lib/engine/solve-diagnostics.ts',
   'src/lib/geometry/coordinate-system.ts',
+  'src/lib/section/',
 ];
 
 const isGuarded = (file) => GUARDED_PATHS.some((p) => file.startsWith(p));

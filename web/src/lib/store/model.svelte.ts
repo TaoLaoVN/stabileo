@@ -47,6 +47,17 @@ export interface Section {
   iy?: number;  // m⁴ — moment of inertia about Y-axis (horizontal) (3D only)
   j?: number;   // m⁴ — torsional constant Saint-Venant (3D only)
   rotation?: number;  // degrees — rotation of section profile around bar axis (0-360)
+  /**
+   * Explicit canonical outline, in metres, section coordinates.
+   *
+   * When present this IS the section's geometry — it wins over `shape` and
+   * over any catalogue lookup, and nothing is inferred from the name. Absent
+   * means the geometry comes from `shape` plus dimensions, or the section is
+   * properties-only. See `lib/section/canonical.ts`.
+   */
+  polygon?: Array<[number, number]>;
+  /** Holes in `polygon`, same units and frame. */
+  holes?: Array<Array<[number, number]>>;
 }
 
 /** Which relative translation a 2D sliding joint releases at an element end.

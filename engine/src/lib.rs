@@ -747,6 +747,184 @@ pub fn analyze_section(json: &str) -> Result<String, JsValue> {
         .map_err(|e| JsValue::from_str(&format!("Serialize error: {}", e)))
 }
 
+// ==================== Canonical Section Geometry ====================
+//
+// Wire convention: JSON strings in, JSON strings out, matching the existing
+// `analyze_section` export. These are cold paths called once per section
+// change, not per solve, so the JsValue boundary used by `solve_2d`/`solve_3d`
+// would buy nothing and would split the section API across two conventions.
+//
+// Every export is versioned through the payload it returns and validates its
+// inputs before use, so a malformed request produces an actionable message
+// rather than a panic across the boundary.
+
+/// Build canonical geometry for a parametric or catalogue section.
+///
+/// Request: `{ "kind": "...", ...dimensions }`. Every builder REQUIRES each
+/// dimension it needs; nothing is inferred from a name and no thickness is
+/// invented, which is what makes the missing-dimension defect unrepresentable
+/// rather than merely unlikely.
+#[wasm_bindgen]
+pub fn build_section_geometry(json: &str) -> Result<String, JsValue> {
+    use section::catalogue as cat;
+
+    #[derive(serde::Deserialize)]
+    #[serde(rename_all = "camelCase", rename_all_fields = "camelCase", tag = "kind", deny_unknown_fields)]
+    enum Request {
+        Rect { b: f64, h: f64 },
+        Circle { d: f64, #[serde(default)] arc_segments: Option<usize> },
+        Chs { d: f64, t: f64, #[serde(default)] arc_segments: Option<usize> },
+        #[serde(rename = "iSection")]
+        ISection {
+            h: f64, b: f64, tw: f64, tf: f64,
+            #[serde(default)] root_radius: f64,
+            #[serde(default)] arc_segments: Option<usize>,
+            #[serde(default)] profile_id: Option<String>,
+            #[serde(default)] standard: Option<String>,
+        },
+        Tee { h: f64, b: f64, tw: f64, tf: f64 },
+        Angle { h: f64, b: f64, t: f64 },
+        Channel { h: f64, b: f64, tw: f64, tf: f64 },
+        Rhs { b: f64, h: f64, t: f64 },
+        Custom { outer: Vec<[f64; 2]>, #[serde(default)] holes: Vec<Vec<[f64; 2]>> },
+    }
+
+    let req: Request = serde_json::from_str(json)
+        .map_err(|e| JsValue::from_str(&format!("Parse error: {e}")))?;
+    let segs = |o: Option<usize>| o.unwrap_or(cat::DEFAULT_ARC_SEGMENTS);
+
+    let geometry = match req {
+        Request::Rect { b, h } => cat::rectangle(b, h),
+        Request::Circle { d, arc_segments } => cat::solid_circle(d, segs(arc_segments)),
+        Request::Chs { d, t, arc_segments } => cat::circular_hollow(d, t, segs(arc_segments)),
+        Request::ISection { h, b, tw, tf, root_radius, arc_segments, profile_id, standard } => {
+            let source = match profile_id {
+                Some(id) => cat::GeometrySource::Catalogue {
+                    profile_id: id,
+                    standard: standard.unwrap_or_else(|| "EN 10365".into()),
+                },
+                None => cat::GeometrySource::Parametric { shape: "i".into() },
+            };
+            cat::i_section(h, b, tw, tf, root_radius, segs(arc_segments), source)
+        }
+        Request::Tee { h, b, tw, tf } => cat::tee_section(h, b, tw, tf),
+        Request::Angle { h, b, t } => cat::angle_section(h, b, t),
+        Request::Channel { h, b, tw, tf } => cat::channel_section(h, b, tw, tf),
+        Request::Rhs { b, h, t } => cat::rectangular_hollow(b, h, t),
+        Request::Custom { outer, holes } => cat::custom(outer, holes),
+    }
+    .map_err(|e| JsValue::from_str(&e))?;
+
+    #[derive(serde::Serialize)]
+    #[serde(rename_all = "camelCase")]
+    struct Response {
+        geometry: cat::CanonicalGeometry,
+        digest: String,
+        properties: section::SectionProperties,
+    }
+
+    let properties = section::analyze_section(&section::SectionInput {
+        polygons: geometry.polygons.clone(),
+        modular_ratios: Default::default(),
+    })
+    .map_err(|e| JsValue::from_str(&e))?;
+
+    serde_json::to_string(&Response { digest: geometry.digest(), geometry, properties })
+        .map_err(|e| JsValue::from_str(&format!("Serialize error: {e}")))
+}
+
+/// Axial and unsymmetrical-bending stress over canonical geometry.
+///
+/// Uses the complete centroidal inertia tensor including `Iyz`, so angles,
+/// channels and arbitrary asymmetric polygons are handled correctly rather
+/// than being treated as if their geometric axes were principal.
+///
+/// The response echoes the geometry digest so a caller can prove the drawing
+/// and the numbers came from the same section.
+#[wasm_bindgen]
+pub fn analyze_section_bending(json: &str) -> Result<String, JsValue> {
+    use section::bending::{analyze_bending, SectionForces};
+    use section::catalogue::CanonicalGeometry;
+
+    #[derive(serde::Deserialize)]
+    #[serde(rename_all = "camelCase")]
+    struct Request {
+        geometry: CanonicalGeometry,
+        #[serde(default)]
+        n: f64,
+        #[serde(default)]
+        my: f64,
+        #[serde(default)]
+        mz: f64,
+        /// When set, `my`/`mz` are element-local and are rotated into section
+        /// coordinates by the geometry's own rotation.
+        #[serde(default)]
+        forces_are_local: bool,
+    }
+
+    let req: Request = serde_json::from_str(json)
+        .map_err(|e| JsValue::from_str(&format!("Parse error: {e}")))?;
+
+    let forces = if req.forces_are_local {
+        SectionForces::from_local(req.n, req.my, req.mz, req.geometry.rotation)
+    } else {
+        SectionForces { n: req.n, my: req.my, mz: req.mz }
+    };
+
+    let result = analyze_bending(&req.geometry.polygons, forces)
+        .map_err(|e| JsValue::from_str(&e))?;
+
+    #[derive(serde::Serialize)]
+    #[serde(rename_all = "camelCase")]
+    struct Response {
+        #[serde(flatten)]
+        result: section::bending::BendingResult,
+        digest: String,
+        geometry_version: u32,
+    }
+
+    serde_json::to_string(&Response {
+        digest: req.geometry.digest(),
+        geometry_version: req.geometry.version,
+        result,
+    })
+    .map_err(|e| JsValue::from_str(&format!("Serialize error: {e}")))
+}
+
+/// Digest, version and provenance of a canonical geometry.
+///
+/// Exists so the drawing layer can assert it is rendering the same section the
+/// numerical path analysed, without recomputing the geometry itself.
+#[wasm_bindgen]
+pub fn section_geometry_digest(json: &str) -> Result<String, JsValue> {
+    use section::catalogue::CanonicalGeometry;
+    let g: CanonicalGeometry = serde_json::from_str(json)
+        .map_err(|e| JsValue::from_str(&format!("Parse error: {e}")))?;
+
+    #[derive(serde::Serialize)]
+    #[serde(rename_all = "camelCase")]
+    struct Response {
+        digest: String,
+        version: u32,
+        arc_segments: usize,
+        rotation: f64,
+        source: section::catalogue::GeometrySource,
+        solid_count: usize,
+        hole_count: usize,
+    }
+
+    serde_json::to_string(&Response {
+        digest: g.digest(),
+        version: g.version,
+        arc_segments: g.arc_segments,
+        rotation: g.rotation,
+        solid_count: g.polygons.iter().filter(|p| !p.is_void).count(),
+        hole_count: g.polygons.iter().filter(|p| p.is_void).count(),
+        source: g.source,
+    })
+    .map_err(|e| JsValue::from_str(&format!("Serialize error: {e}")))
+}
+
 // ==================== Steel Design Check ====================
 
 /// Check steel members per AISC 360 (LRFD). JSON: SteelCheckInput
