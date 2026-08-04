@@ -221,10 +221,17 @@ test.describe('@landing landing page', () => {
     const isActive = (page: Page) =>
       page.locator('.landing .demo-controls').evaluate((el) => el.classList.contains('on'));
 
-    async function activate(page: Page, settleMs = 6000) {
+    /**
+     * Activate and wait for the frame to actually finish loading, rather than
+     * for a fixed number of milliseconds. The skeleton is rendered only while
+     * `phase === 'loading'`, so its disappearance is the real ready signal —
+     * fixed waits were tight enough to flake when the whole suite ran serially
+     * and every test was booting a second application instance.
+     */
+    async function activate(page: Page) {
       await page.locator('.landing .demo-cta').click();
       await expect.poll(() => isActive(page)).toBe(true);
-      await page.waitForTimeout(settleMs);
+      await expect(page.locator('.landing .demo-skeleton')).toHaveCount(0, { timeout: 45000 });
     }
     async function wheelOverDemo(page: Page, dy = 380) {
       const box = (await page.locator('.landing .demo-device').boundingBox())!;
@@ -297,11 +304,16 @@ test.describe('@landing landing page', () => {
       await reachDemo(page);
       await activate(page);
 
-      // Count every pointer event the embedded document sees from now on.
+      // Count real user input the embedded document sees from now on.
+      // `isTrusted` is the discriminator that matters: the landing's own
+      // Results-panel mitigation calls btn.click() inside this document, and
+      // that synthetic click is not what this test is about.
       await page.frameLocator('.landing iframe.demo-iframe').locator('body').evaluate(() => {
         (window as unknown as { __hits: number }).__hits = 0;
         for (const type of ['pointerdown', 'mousedown', 'click']) {
-          document.addEventListener(type, () => { (window as unknown as { __hits: number }).__hits++; }, true);
+          document.addEventListener(type, (e) => {
+            if (e.isTrusted) (window as unknown as { __hits: number }).__hits++;
+          }, true);
         }
       });
 
@@ -480,9 +492,10 @@ test.describe('@landing landing page', () => {
     test('the embed uses the application mobile layout at every width', async ({ browser }) => {
       // The app switches at window.innerWidth < 768 (ui.svelte.ts). The device
       // is capped below that: real mobile UI, no user-agent spoofing, no new
-      // query parameter.
-      for (const width of [768, 1024, 1440]) {
-        const ctx = await browser.newContext({ viewport: { width, height: 900 } });
+      // query parameter. Checked at every QA width, including the two phone
+      // sizes where the frame only mounts after an explicit tap.
+      for (const [width, height] of [[360, 780], [390, 844], [768, 1024], [1024, 768], [1440, 900]]) {
+        const ctx = await browser.newContext({ viewport: { width, height } });
         const page = await ctx.newPage();
         await bootLanding(page);
         await reachDemo(page);
@@ -492,6 +505,123 @@ test.describe('@landing landing page', () => {
           .locator('body')
           .evaluate(() => window.innerWidth);
         expect(inner, `embed viewport at ${width}px`).toBeLessThan(768);
+        // …and the desktop chrome that goes with the wider layout never appears.
+        await expect(
+          page.frameLocator('.landing iframe.demo-iframe').locator('.sidebar-toggle-btn'),
+          `desktop sidebar toggles at ${width}px`,
+        ).toHaveCount(0);
+        await ctx.close();
+      }
+    });
+
+    /**
+     * The embed is capped below 768 px, so on a wide page it is necessarily
+     * narrower than the column. It used to sit inside a second bordered box
+     * that stretched the full width — 238 px of empty frame each side at 1440,
+     * the device only 60 % of it. These pin the composition that replaced it.
+     */
+    test('the demo stage has no empty framed gutter around the device', async ({ browser }) => {
+      for (const width of [768, 1024, 1440]) {
+        const ctx = await browser.newContext({ viewport: { width, height: 900 } });
+        const page = await ctx.newPage();
+        await bootLanding(page);
+        await reachDemo(page);
+        await activate(page);
+
+        const m = await page.evaluate(() => {
+          const stage = document.querySelector('.landing .demo-stage') as HTMLElement;
+          const dev = document.querySelector('.landing .demo-device') as HTMLElement;
+          const cs = getComputedStyle(stage);
+          const used = [...stage.children].reduce((a, c) => a + c.getBoundingClientRect().width, 0);
+          const cols = cs.gridTemplateColumns.split(' ').filter(Boolean).length;
+          const gap = parseFloat(cs.columnGap) || 0;
+          return {
+            stageW: stage.getBoundingClientRect().width,
+            devW: dev.getBoundingClientRect().width,
+            unused: stage.getBoundingClientRect().width - used - (cols > 1 ? gap : 0),
+            borderW: parseFloat(cs.borderTopWidth) || 0,
+            padding: parseFloat(cs.paddingLeft) || 0,
+          };
+        });
+
+        // The stage is layout only: one frame in this section, not two.
+        expect(m.borderW, `stage border at ${width}px`).toBe(0);
+        expect(m.padding, `stage padding at ${width}px`).toBe(0);
+        // Nothing of consequence left over horizontally.
+        expect(m.unused, `unused stage width at ${width}px`).toBeLessThanOrEqual(4);
+      }
+    });
+
+    test('the activation overlay lines up with the frame it covers', async ({ browser }) => {
+      for (const width of [390, 1024, 1440]) {
+        const ctx = await browser.newContext({ viewport: { width, height: 900 } });
+        const page = await ctx.newPage();
+        await bootLanding(page);
+        await reachDemo(page);
+        const d = await page.evaluate(() => {
+          const dev = document.querySelector('.landing .demo-device')!.getBoundingClientRect();
+          const lock = document.querySelector('.landing .demo-lock')!.getBoundingClientRect();
+          return { dx: lock.x - dev.x, dy: lock.y - dev.y, dw: lock.width - dev.width, dh: lock.height - dev.height };
+        });
+        // Inside the device's 1 px border on every edge, nothing more.
+        for (const [k, v] of Object.entries(d)) {
+          expect(Math.abs(v), `overlay ${k} at ${width}px`).toBeLessThanOrEqual(2);
+        }
+        await ctx.close();
+      }
+    });
+
+    test('the embed is rendered at native size, never transform-scaled', async ({ page }) => {
+      // Scaling a sub-768 viewport up would blur the canvas and shift pointer
+      // coordinates inside the transformed hit area. If a transform ever
+      // appears here, the interaction guarantees below stop holding.
+      await bootLanding(page);
+      await reachDemo(page);
+      await activate(page);
+      const transforms = await page.evaluate(() => {
+        const out: string[] = [];
+        let el: HTMLElement | null = document.querySelector('.landing iframe.demo-iframe');
+        while (el && !el.classList.contains('demo')) {
+          out.push(getComputedStyle(el).transform);
+          el = el.parentElement;
+        }
+        return out;
+      });
+      for (const t of transforms) expect(['none', 'matrix(1, 0, 0, 1, 0, 0)']).toContain(t);
+
+      // Pointer coordinates land where they look: the app sees the click at
+      // the same place the host page aimed it.
+      const box = (await page.locator('.landing .demo-device').boundingBox())!;
+      await page.frameLocator('.landing iframe.demo-iframe').locator('body').evaluate(() => {
+        (window as unknown as { __pt: { x: number; y: number } | null }).__pt = null;
+        document.addEventListener('pointerdown', (e) => {
+          (window as unknown as { __pt: { x: number; y: number } }).__pt = { x: e.clientX, y: e.clientY };
+        }, true);
+      });
+      const aimX = Math.round(box.x + box.width * 0.5);
+      const aimY = Math.round(box.y + box.height * 0.6);
+      await page.mouse.click(aimX, aimY);
+      await page.waitForTimeout(300);
+      const seen = await page.frameLocator('.landing iframe.demo-iframe').locator('body')
+        .evaluate(() => (window as unknown as { __pt: { x: number; y: number } | null }).__pt);
+      expect(seen, 'the app must receive the click').not.toBeNull();
+      expect(Math.abs(seen!.x - (aimX - box.x)), 'pointer x offset').toBeLessThanOrEqual(3);
+      expect(Math.abs(seen!.y - (aimY - box.y)), 'pointer y offset').toBeLessThanOrEqual(3);
+    });
+
+    test('no horizontal overflow at any QA width, locked or active', async ({ browser }) => {
+      for (const [width, height] of [[360, 780], [390, 844], [768, 1024], [1024, 768], [1440, 900]]) {
+        const ctx = await browser.newContext({ viewport: { width, height } });
+        const page = await ctx.newPage();
+        await bootLanding(page);
+        await reachDemo(page);
+        const over = () => page.evaluate(() => {
+          const l = document.querySelector('.landing') as HTMLElement;
+          return Math.max(0, l.scrollWidth - window.innerWidth);
+        });
+        expect(await over(), `locked at ${width}px`).toBeLessThanOrEqual(1);
+        await activate(page);
+        expect(await over(), `active at ${width}px`).toBeLessThanOrEqual(1);
         await ctx.close();
       }
     });
@@ -519,6 +649,108 @@ test.describe('@landing landing page', () => {
       await expect(cont).toHaveAttribute('href', '/app/basic?example=cantilever');
       await page.locator('.landing [role="tab"]').nth(2).click();
       await expect(cont).toHaveAttribute('href', '/app/basic?example=truss');
+    });
+
+    /**
+     * The guided alternative. /demo is an existing route that redirects into
+     * Basic mode and starts the 14-step tour; the landing only links to it.
+     */
+    test('the guided-tour CTA reads correctly in both languages', async ({ page }) => {
+      await bootLanding(page);
+      await reachDemo(page);
+      const cta = page.locator('.landing .demo-tour-btn');
+      await expect(cta).toHaveText('Learn the basics');
+      await expect(page.locator('.landing .demo-tour-copy')).toHaveText('Take a guided tour of Basic mode.');
+
+      await page.locator('.landing select.nav-lang').selectOption('es');
+      await expect(cta).toHaveText('Aprendé lo básico');
+      await expect(page.locator('.landing .demo-tour-copy'))
+        .toHaveText('Hacé un recorrido guiado por el modo Básico.');
+    });
+
+    test('the guided-tour CTA is a same-tab anchor to /demo', async ({ page }) => {
+      await bootLanding(page);
+      await reachDemo(page);
+      const cta = page.locator('.landing .demo-tour-btn');
+      await expect(cta).toHaveAttribute('href', '/demo');
+      // No target: a guided tour that steals a tab is a worse guided tour.
+      expect(await cta.getAttribute('target')).toBeNull();
+      expect(await cta.evaluate((el) => el.tagName)).toBe('A');
+    });
+
+    test('the guided-tour CTA launches Basic mode with the tour running', async ({ page }) => {
+      await bootLanding(page);
+      await reachDemo(page);
+      const pagesBefore = page.context().pages().length;
+
+      await page.locator('.landing .demo-tour-btn').click();
+
+      await expect(page).toHaveURL(/\/app\/basic/);
+      await expect(page.locator('.tour-card')).toBeVisible({ timeout: 15000 });
+      await expect(page.locator('.tour-counter')).toHaveText('1 / 14');
+      await expect(page.locator('.landing')).toHaveCount(0);
+      expect(page.context().pages().length, 'must not open a new tab').toBe(pagesBefore);
+    });
+
+    test('the guided-tour CTA does not mount the live demo first', async ({ page }) => {
+      await bootLanding(page);
+      await reachDemo(page);
+      await expect(page.locator('.landing iframe.demo-iframe')).toHaveCount(0);
+      await page.locator('.landing .demo-tour-btn').hover();
+      await page.waitForTimeout(500);
+      // Hovering or reaching the CTA must not boot a second application.
+      await expect(page.locator('.landing iframe.demo-iframe')).toHaveCount(0);
+      expect(await isActive(page)).toBe(false);
+    });
+
+    test('the CTA hierarchy sits beside the demo on wide screens and below it on mobile', async ({ browser }) => {
+      for (const [width, height, expected] of [[390, 844, 'below'], [768, 1024, 'below'], [1440, 900, 'beside']] as const) {
+        const ctx = await browser.newContext({ viewport: { width, height } });
+        const page = await ctx.newPage();
+        await bootLanding(page);
+        await reachDemo(page);
+        const g = await page.evaluate(() => {
+          const dev = document.querySelector('.landing .demo-device')!.getBoundingClientRect();
+          const btn = document.querySelector('.landing .demo-tour-btn')!.getBoundingClientRect();
+          const link = document.querySelector('.landing .demo-bar a.link-arrow')!.getBoundingClientRect();
+          const l = document.querySelector('.landing') as HTMLElement;
+          return {
+            beside: btn.left >= dev.right - 2,
+            below: btn.top >= dev.bottom - 2,
+            height: btn.height,
+            groupedWithEditorLink: Math.abs(btn.top - link.bottom) < 160,
+            overflow: Math.max(0, l.scrollWidth - window.innerWidth),
+          };
+        });
+        expect(g[expected], `tour CTA ${expected} the demo at ${width}px`).toBe(true);
+        // Comfortable touch target, everywhere.
+        expect(g.height, `touch target at ${width}px`).toBeGreaterThanOrEqual(44);
+        expect(g.overflow, `overflow at ${width}px`).toBeLessThanOrEqual(1);
+        if (expected === 'below') {
+          expect(g.groupedWithEditorLink, 'grouped with the editor link on mobile').toBe(true);
+        }
+        await ctx.close();
+      }
+    });
+
+    test('the three demo actions keep their distinct weights and all still work', async ({ page }) => {
+      await bootLanding(page);
+      await reachDemo(page);
+
+      // Exactly one filled/primary button in the section: the activation CTA.
+      const primaries = await page.locator('.landing [data-section="demo"] .demo-cta, .landing [data-section="demo"] .btn-primary').count();
+      expect(primaries, 'one primary action only').toBe(1);
+      // The tour is the secondary (outlined) one, the editor link is quiet.
+      await expect(page.locator('.landing .demo-tour-btn')).toHaveClass(/btn-ghost/);
+      await expect(page.locator('.landing .demo-bar a.link-arrow')).toBeVisible();
+
+      // Activation still works and the editor link still tracks the selection.
+      await activate(page);
+      await expect(page.locator('.landing iframe.demo-iframe')).toHaveCount(1);
+      await page.locator('.landing [role="tab"]').nth(2).click();
+      await expect(page.locator('.landing .demo-bar a.link-arrow'))
+        .toHaveAttribute('href', '/app/basic?example=truss');
+      expect(await isActive(page)).toBe(true);
     });
 
     test('the Spanish demo copy is complete', async ({ page }) => {

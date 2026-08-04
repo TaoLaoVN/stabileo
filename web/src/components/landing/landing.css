@@ -814,13 +814,24 @@
   flex: none;
 }
 
-/* The stage centres the device-width frame and gives it a ground. */
+/*
+   Layout only — no border, no background, no padding. The device carries the
+   single frame in this section; an outer bordered box around it read as a
+   window inside a window and left 238 px of empty gutter at 1440.
+*/
 .landing .demo-stage {
   display: grid;
-  place-items: center;
-  padding: clamp(0.75rem, 2vw, 1.75rem);
-  border: 1px solid var(--hair);
-  background: var(--card);
+  grid-template-columns: minmax(0, 720px) minmax(260px, 1fr);
+  align-items: start;
+  gap: clamp(1.25rem, 2.5vw, 2.25rem);
+  margin-top: 1.5rem;
+}
+
+.landing .demo-aside {
+  display: flex;
+  flex-direction: column;
+  gap: 1.25rem;
+  min-width: 0;
 }
 
 /*
@@ -832,7 +843,9 @@
 .landing .demo-device {
   position: relative;
   width: min(100%, 720px);
-  height: clamp(380px, 56vh, 560px);
+  /* Taller than before: with the gutters gone the section can afford it, and
+     a bigger viewport is what makes the embed read as the primary object. */
+  height: clamp(420px, 66vh, 660px);
   overflow: hidden;
   background: var(--lp-ink);
   border: 1px solid var(--card-hair);
@@ -931,8 +944,8 @@
 
 /* ── control row: always present, so nothing shifts when it lights up ── */
 .landing .demo-controls {
-  width: min(100%, 720px);
-  margin-top: 0.55rem;
+  width: 100%;
+  margin-top: 0;
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -1002,6 +1015,27 @@
   padding: 0 0.24rem;
 }
 
+/* Guided-tour CTA: secondary weight, comfortable touch target. */
+.landing .demo-tour {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.6rem;
+  padding-top: 1rem;
+  border-top: 1px solid var(--hair);
+}
+
+.landing .demo-tour-copy {
+  margin: 0;
+  color: var(--fg-2);
+  font-size: 0.92rem;
+  max-width: 34ch;
+}
+
+.landing .demo-tour-btn {
+  min-height: 44px;
+}
+
 .landing .demo-fallback {
   position: absolute;
   inset: 0;
@@ -1031,11 +1065,10 @@
 
 .landing .demo-bar {
   display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 1rem 1.5rem;
-  flex-wrap: wrap;
-  margin-top: 1.1rem;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.9rem;
+  margin-top: 0;
 }
 
 .landing .demo-tabs {
@@ -1487,6 +1520,26 @@
   .landing .analogies { grid-template-columns: 1fr; gap: 1.25rem; }
   .landing .hero-grid { grid-template-columns: 1fr; }
   .landing .rt-grid { grid-template-columns: 1fr; }
+}
+
+@media (max-width: 1199px) {
+  /*
+     Below 1200 there is not room for a 720 px embed and a useful aside side by
+     side — splitting there only shrinks the embed. Stack instead; with the
+     outer border gone there is no empty framed box either way.
+  */
+  .landing .demo-stage { grid-template-columns: minmax(0, 1fr); gap: 0.9rem; justify-items: start; }
+  .landing .demo-aside { gap: 0.9rem; width: 100%; }
+  .landing .demo-bar {
+    flex-direction: row;
+    align-items: center;
+    justify-content: space-between;
+    flex-wrap: wrap;
+    gap: 0.75rem 1.5rem;
+  }
+  /* Below the demo and its controls, grouped with the editor link. */
+  .landing .demo-tour { width: 100%; }
+  .landing .demo-tour-btn { width: 100%; justify-content: center; }
 }
 
 @media (max-width: 900px) {

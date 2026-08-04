@@ -234,6 +234,14 @@
       <p class="pill pill-live">{t('landing.demoInteractive')}</p>
     </div>
 
+    <!--
+      Two columns on wide viewports. The embed is capped below the
+      application's 768 px breakpoint, so on a 1440 px page it used to sit as a
+      720 px device marooned inside a 1196 px bordered box — 238 px of empty
+      frame on each side, and two nested borders. The device now keeps its
+      native size and is the primary object, and the width that used to be
+      empty gutter carries the examples, the status line and the controls.
+    -->
     <div class="demo-stage">
       <!--
         Capped below the application's own 768 px mobile breakpoint, so the
@@ -312,6 +320,7 @@
         {/if}
       </div>
 
+      <div class="demo-aside">
       <!--
         Always rendered — reserving the row means activating, resetting or
         failing cannot shift the page under the visitor's cursor.
@@ -334,9 +343,8 @@
           >{t('landing.demoExit')}<kbd>Esc</kbd></button>
         </span>
       </div>
-    </div>
 
-    <div class="demo-bar">
+      <div class="demo-bar">
       <div class="demo-tabs" role="tablist" aria-label={t('landing.demoExamplesLbl')}>
         <span class="demo-tabs-label" aria-hidden="true">{t('landing.demoExamplesLbl')}</span>
         {#each DEMO_EXAMPLES as ex, i}
@@ -356,9 +364,24 @@
           </button>
         {/each}
       </div>
-      <a class="link-arrow" href={editorExampleUrl(DEMO_EXAMPLES[index].id)}>
-        {t('landing.demoOpenFull')}
-      </a>
+        <a class="link-arrow" href={editorExampleUrl(DEMO_EXAMPLES[index].id)}>
+          {t('landing.demoOpenFull')}
+        </a>
+      </div>
+
+      <!--
+        The guided alternative for someone who would rather be shown than poke.
+        A plain anchor to the existing /demo route in the same tab — that route
+        already redirects into Basic mode and starts the 14-step tour, so there
+        is nothing to invent here. Deliberately the secondary weight: the
+        activation CTA on the device stays primary and the editor link stays
+        quiet, so the section never shows three competing buttons.
+      -->
+      <div class="demo-tour">
+        <p class="demo-tour-copy">{t('landing.demoTourCopy')}</p>
+        <a class="btn btn-ghost demo-tour-btn" href="/demo">{t('landing.demoTourCta')}</a>
+      </div>
+      </div>
     </div>
   </div>
 </section>

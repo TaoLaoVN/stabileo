@@ -4187,5 +4187,7 @@ const es: Record<string, string> = {
   'landing.demoStatusLoading': 'Cargando el editor',
   'landing.demoStatusReady': 'Interactivo — la demo recibe la rueda. Esc se la devuelve.',
   'landing.demoStatusFailed': 'El editor no cargó',
+  'landing.demoTourCta': 'Aprendé lo básico',
+  'landing.demoTourCopy': 'Hacé un recorrido guiado por el modo Básico.',
 };
 export default es;
