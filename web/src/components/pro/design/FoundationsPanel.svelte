@@ -20,7 +20,9 @@
    */
   import { t, tp } from '../../../lib/i18n';
   import { modelStore } from '../../../lib/store/model.svelte';
-  import { validateFooting, SUPPORTED_MAT_DIAMETERS_MM } from '../../../lib/model/footing';
+  import {
+    validateFooting, FOOTING_LAYER_ORDER_PREFERENCES, SUPPORTED_MAT_DIAMETERS_MM,
+  } from '../../../lib/model/footing';
   import { validateSoilProfile } from '../../../lib/model/geotechnical';
   import FootingMatPanel from './FootingMatPanel.svelte';
 
@@ -285,6 +287,28 @@
                 })}>
           {#each SUPPORTED_MAT_DIAMETERS_MM as d (d)}
             <option value={d} selected={mat.bottomMatDiameterYmm === d}>Ø{d}</option>
+          {/each}
+        </select>
+      </label>
+      <!--
+        Which perpendicular mat physically goes down.
+
+        A real design decision with a real cost — the lower layer is worth a full bar diameter
+        of effective depth — and no clause makes it: §13.3.3 governs distribution, §13.2.8 and
+        §25.4 govern anchorage, and neither says which mat goes first. So it is the engineer's,
+        and AUTO is an instruction to evaluate BOTH arrangements completely and select by a
+        stated rule rather than an absence of one.
+      -->
+      <label>{t('footing.ui.matLayerOrder')}
+        <select data-testid="footing-mat-layer-order"
+                onchange={(e) => modelStore.setFootingMatPreferences({
+                  bottomMatLayerOrder:
+                    e.currentTarget.value as (typeof FOOTING_LAYER_ORDER_PREFERENCES)[number],
+                })}>
+          {#each FOOTING_LAYER_ORDER_PREFERENCES as o (o)}
+            <option value={o} selected={mat.bottomMatLayerOrder === o}>
+              {t(`footing.ui.matLayerOrder.${o}`)}
+            </option>
           {/each}
         </select>
       </label>

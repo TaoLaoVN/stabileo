@@ -38,7 +38,10 @@ import {
   type CertificateFreshness, type FamilyCertificate, type FamilyRecordDraft,
   type FamilyRequirement, type FloorFamily, type FloorFamilyDesignRecord,
 } from './family-record';
-import { assignMarks, evaluateState, type DetailingAssembly, type UnsupportedCondition } from './assembly';
+import {
+  assignMarks, evaluateState, nextDetailingRevision,
+  type DetailingAssembly, type UnsupportedCondition,
+} from './assembly';
 import { detectCollisions, type BarConflict, type CollisionTolerances } from './collision';
 import { classifyPair } from './classify';
 import type { SlabBarLayer, SlabDesignResult } from './slab-design';
@@ -294,6 +297,19 @@ export interface FloorAssemblyInput {
   footings: Array<{
     id: string; check: FootingCheck; elementIds: number[]; dowels?: DowelInput;
     /**
+     * The physical bottom-mat bars, already generated from the design authority.
+     *
+     * Passed in rather than built here, unlike the dowels. A dowel is a function of the column
+     * and the footing, which this function has; a mat is a function of the DESIGN — its
+     * regions, counts, spacings and resolved layer elevations — which lives in the footing
+     * pass. See `FootingAssemblyEntry.matBars`.
+     *
+     * Optional so the unit tests that exercise dowel generation in isolation keep compiling;
+     * absent means the footing contributed no mat, which is the truth about a footing whose
+     * geometry could not be modelled.
+     */
+    matBars?: BarPath[];
+    /**
      * The footing's design evidence, complete except for its steel.
      *
      * Optional only so that the unit tests that exercise bar generation in isolation can
@@ -466,6 +482,36 @@ export function buildFloorAssembly(input: FloorAssemblyInput): FloorAssemblyResu
     requirements.push(footingTransverseRequirement(
       f.id, f.elementIds, f.check, input.edition));
 
+    // ── The physical bottom mat ─────────────────────────────────
+    //
+    // FIRST, before the dowels, so the whole-floor collision pass sees the mat the dowel feet
+    // and hooks land on. Order does not change the result — `detectCollisions` is symmetric —
+    // but it does decide which bars are already in the list when the trace is written, and a
+    // trace that names the dowels before the steel they bear on reads backwards.
+    if (f.matBars && f.matBars.length > 0) {
+      bars.push(...f.matBars);
+      ownBars.push(...f.matBars);
+      trace.push(`Fundación ${f.id}: ${f.matBars.length} barra(s) de parrilla inferior.`);
+    } else if (f.record?.family === 'footing'
+      && f.record.flexure?.bottomMat?.status === 'DESIGNED') {
+      // Said out loud, exactly as a wall with no geometry is. A footing whose mat was DESIGNED
+      // and not modelled is the state a reader is most likely to mistake for done, and the
+      // record's own status already says so — but the ASSEMBLY must say it too, or a floor
+      // drawing with no footing steel in it has nothing attached explaining the absence.
+      //
+      // The test is on the DESIGN, not on the record's existence. A footing that never reached
+      // a mat design has nothing missing here: its flexure row already carries the reason, and
+      // a second condition would cap the assembly's state for a fact already stated.
+      unsupported.push({
+        key: 'foundation', scope: { elementIds: f.elementIds },
+        message:
+          `La fundación ${f.id} no aportó armadura física de parrilla inferior: su ` +
+          'dimensionamiento existe y su geometría no. Ver el estado del registro de la ' +
+          'fundación para el motivo exacto.',
+        refs: f.check.refs,
+      });
+    }
+
     if (f.dowels) {
       const d = generateDowels(f.dowels);
       bars.push(...d.bars);
@@ -530,6 +576,19 @@ export function buildFloorAssembly(input: FloorAssemblyInput): FloorAssemblyResu
     pending.push({ draft, bars: [] });
   }
 
+  /**
+   * The footing mat bars, by id.
+   *
+   * A footing's elements are declared as COLUMNS above, because its dowels are column bars and
+   * §25.2.3 governs them. The bottom mat shares that element id and answers to §25.2.1 through
+   * §13.3.3.1 → §7.7.2.1, so the element map cannot decide between them and the bar itself has
+   * to. Collected from the entries' own `matBars` rather than inferred from an id pattern: the
+   * generator knows which bars it produced, and pattern-matching a string is how that knowledge
+   * gets re-derived and eventually wrong.
+   */
+  const matBarIds = new Set(
+    input.footings.flatMap((f) => (f.matBars ?? []).map((b) => b.id)));
+
   // ── Whole-floor collision check, through the AUTHORITATIVE classifier ────────
   //
   // This pass used to express its own physics with a pair of callbacks: `requiredClearFor`
@@ -557,6 +616,7 @@ export function buildFloorAssembly(input: FloorAssemblyInput): FloorAssemblyResu
     edition: input.edition,
     maxAggregateSizeMm: input.maxAggregateSizeMm,
     memberKindOf: (id) => memberKinds.get(id),
+    barKindOf: (bar) => (matBarIds.has(bar.id) ? 'footing' : undefined),
   }, surface, ta, tb);
 
   const collision = detectCollisions(bars, {
@@ -568,6 +628,31 @@ export function buildFloorAssembly(input: FloorAssemblyInput): FloorAssemblyResu
     `${conflicts.length} conflicto(s), ${collision.barPairsTested} par(es) evaluado(s).`);
 
   const marks = assignMarks(bars, 'F');
+
+  /**
+   * The bottom mat's schedule rows and per-bar provenance gain their marks.
+   *
+   * Here and not in the footing pass, because a mark groups identical FABRICATED items and
+   * only this function sees every family's steel: a footing mat bar and a slab bar of the same
+   * diameter, length and shape are one mark to a bender, and a mark minted per footing would
+   * collide with the assembly's own numbering. The provenance carries `mark: null` until this
+   * point, which is the honest intermediate state rather than a placeholder string.
+   *
+   * Read OFF `marks` rather than re-derived, so a schedule row and the mark a bar carries
+   * cannot disagree — the same rule the dowel bar ids follow.
+   */
+  const markOfBar = new Map<string, string>();
+  for (const m of marks) for (const id of m.barIds) markOfBar.set(id, m.mark);
+  for (const f of input.footings) {
+    const geom = f.record?.family === 'footing' ? f.record.bottomMatGeometry : null;
+    if (!geom) continue;
+    for (const p of geom.provenance) p.mark = markOfBar.get(p.id) ?? null;
+    for (const row of geom.schedule) {
+      row.marks = [...new Set(
+        row.barIds.map((id) => markOfBar.get(id)).filter((x): x is string => !!x),
+      )].sort();
+    }
+  }
 
   // ── Certify each family record against the cage it actually produced ──────────
   //
@@ -747,7 +832,7 @@ export function buildFloorAssembly(input: FloorAssemblyInput): FloorAssemblyResu
       // when nothing was recorded, so "no families in this assembly" stays distinguishable
       // from "families designed, none recorded".
       ...(families.length > 0 ? { families, familyCertificates } : {}),
-      detailingRevision: (input.previousRevision ?? 0) + 1,
+      detailingRevision: nextDetailingRevision(input.previousRevision),
       demandRevision: input.demandRevision,
       state: evaluation.state,
       maturity: worstMaturity(maturities),

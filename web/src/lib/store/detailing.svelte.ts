@@ -711,6 +711,37 @@ function lockedMemberIds(): ReadonlySet<number> {
  * "what revision is this project on", and it is the persisted model — which is also what a
  * reopened project carries.
  */
+/**
+ * What a footing run was made FROM, as one comparable string.
+ *
+ * ── The failure this exists to prevent ─────────────────────────
+ *
+ * `supersedeDocuments()` retires the DOCUMENT when a foundation input changes, and it leaves
+ * `lastFootingRun` alone. That was harmless while the run held numbers: a superseded schedule
+ * on screen next to a retired document is a visible inconsistency the user can read.
+ *
+ * It stops being harmless now that the run holds BARS. Change the layer-order preference and
+ * the panel would go on drawing the previous mat — real bar positions, real elevations, real
+ * marks — with nothing saying they belong to a design the project no longer specifies. Stale
+ * geometry presented as current is the one failure the whole revision graph exists to prevent.
+ *
+ * So the run records its inputs and the panel compares. It does NOT re-run: regeneration stays
+ * an explicit command, because a panel that silently redesigned a footing on every keystroke
+ * would be making the engineer's decision for them.
+ *
+ * The mat preferences and every footing's own revision, and nothing else — those are exactly
+ * the inputs `runFootingDesign` reads that a user can change without re-solving. A change to
+ * the ANALYSIS moves the demand revision instead, and the certificate's own freshness catches
+ * that on a different axis.
+ */
+function footingRunFingerprint(): string {
+  const prefs = modelStore.footingMatPreferences();
+  const footings = [...modelStore.model.footings.values()]
+    .sort((a, b) => a.id - b.id)
+    .map((f) => `${f.id}:${f.revision}`);
+  return JSON.stringify({ prefs, footings });
+}
+
 function maxPersistedRevision(): number {
   let r = 0;
   for (const a of modelStore.model.detailing?.assemblies ?? []) {
@@ -752,6 +783,8 @@ function createDetailingStore() {
   let lastRun = $state<RunDetailingResult | null>(null);
   let lastFloorRun = $state<RunFloorDesignResult | null>(null);
   let lastFootingRun = $state<RunFootingDesignResult | null>(null);
+  /** The inputs `lastFootingRun` was produced from. See `footingRunFingerprint`. */
+  let lastFootingRunFingerprint = $state<string | null>(null);
   let currentDocument = $state<DocumentModel | null>(null);
   let supersededDocs = $state<DocumentModel[]>([]);
   /** Monotonic per project. Bumped on supersession, never reused. */
@@ -1063,8 +1096,16 @@ function createDetailingStore() {
           // The same single-element stack the DocumentModel states, so a record and the
           // document built from it cannot disagree about which regulation was applied.
           regulationIds: [CONCRETE_REGULATION_ID],
+          // The revision the physical mat bars belong to. The SAME number `runFloorDesign`
+          // passes to `buildFloorAssembly` as `previousRevision`, so a bar and the assembly
+          // holding it cannot end up one revision apart — both add 1 through
+          // `nextDetailingRevision`.
+          previousDetailingRevision: maxPersistedRevision(),
         });
         lastFootingRun = footingRun;
+        // What this run was made FROM, so the panel can tell a current result from a
+        // superseded one. See `footingRunStale`.
+        lastFootingRunFingerprint = footingRunFingerprint();
         const result = runFloorDesign({
           nodes: modelStore.model.nodes as never,
           shells: collectShells(),
@@ -1146,6 +1187,19 @@ function createDetailingStore() {
      * about its soil, its reaction and its column.
      */
     get lastFootingRun(): RunFootingDesignResult | null { return lastFootingRun; },
+
+    /**
+     * True when `lastFootingRun` describes a footing design the project no longer specifies.
+     *
+     * The Foundations panel must not present a superseded mat as current — see
+     * `footingRunFingerprint`. `false` with no run at all, because "there is nothing" and
+     * "there is something out of date" are different statements and the panel says each
+     * differently.
+     */
+    get footingRunStale(): boolean {
+      if (lastFootingRun === null || lastFootingRunFingerprint === null) return false;
+      return lastFootingRunFingerprint !== footingRunFingerprint();
+    },
 
     /** Footings that could not be checked, with the reason — the gate, as data for the UI. */
     get footingsNotVerified(): Array<{ name: string; reasons: EngineMessage[] }> {
@@ -1353,6 +1407,10 @@ function createDetailingStore() {
       selectedId = null;
       conflictIndex = 0;
       lastError = null;
+      // The footing run and its fingerprint go together. Clearing one and keeping the other
+      // would leave a run that compares as fresh against a project it was never made from.
+      lastFootingRun = null;
+      lastFootingRunFingerprint = null;
     },
   };
 }

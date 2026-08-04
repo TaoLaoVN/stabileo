@@ -295,6 +295,11 @@ function footingRecordFixture(): FamilyRecordDraft<FootingDesignRecord> {
       status: 'OK', position: 'interior', truncatedSides: 0,
       Vu: 700, phiVc: 1500, utilization: 0.47, equilibriumResidual: 0,
     },
+    // Null for the same reason `bottomMat` is: this fixture exercises assembly, and a physical
+    // mat invented here would assert geometry this test never generated. The footing entry
+    // below passes no `matBars` either, so the pair is consistent.
+    bottomMatGeometry: null,
+    bottomMatAnchorage: null,
     dowels: null,
     starterTies: null,
   };

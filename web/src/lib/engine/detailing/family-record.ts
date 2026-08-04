@@ -48,6 +48,8 @@ import type { BarPath } from '../../codes/cirsoc201/bar-geometry';
 import { stableHash } from '../design/canonical-hash';
 import type { CheckStatus } from './foundation-check';
 import type { FootingMatDesign } from './footing-flexure';
+import type { FootingMatGeometry } from './footing-mat-geometry';
+import type { FootingMatAnchorage } from './footing-mat-anchorage';
 import type { ColumnPosition } from './punching-shear';
 
 export const FAMILY_RECORD_SCHEMA_VERSION = 1;
@@ -312,12 +314,18 @@ export interface FootingDesignRecord extends FamilyRecordCommon {
   /**
    * Factored moment at the column face (§13.2.7.1), and the bottom-mat design it drives.
    *
-   * `status` stays UNSUPPORTED through PR18-A even though `bottomMat` is now a complete
-   * numerical design, and that is not a leftover. A footing whose mat exists only as numbers
-   * has no bars in the model, the schedule or the export, so there is nothing to verify the
-   * demand against and OK would be a capacity claim nobody computed. `bottomMat.geometry`
-   * says REQUIRED_NOT_MODELED, and the two fields together are the honest statement:
-   * designed, not yet modelled, therefore not verified.
+   * ── What `status` means now, and what it meant before ────────
+   *
+   * Through PR18-A it was UNSUPPORTED unconditionally, even beside a complete numerical
+   * design, and that was correct: a mat that existed only as numbers had no bars in the model,
+   * the schedule or the export, so there was nothing to verify the demand against and OK
+   * would have been a capacity claim nobody computed.
+   *
+   * `bottomMatGeometry` is what changed. When it reports MODELED the bars exist, they
+   * reconcile with the schedule, and the flexural demand HAS reinforcement to be verified
+   * against — so OK becomes a statement that can be true. It still says nothing about
+   * anchorage, punching moment transfer or top steel; each of those is its own status, and
+   * they are separate precisely so that this one becoming OK cannot carry the others with it.
    */
   flexure: {
     status: CheckStatus;
@@ -327,6 +335,22 @@ export interface FootingDesignRecord extends FamilyRecordCommon {
     /** Null when the mat could not be designed at all; its own statuses say why. */
     bottomMat: FootingMatDesign | null;
   } | null;
+  /**
+   * The PHYSICAL bottom mat: bars, provenance, schedule and reconciliation findings.
+   *
+   * Null when the footing never got as far as a mat design. Present-but-NOT_MODELED when the
+   * design exists and geometry could not be produced from it, which is a different statement
+   * and has a different remedy.
+   */
+  bottomMatGeometry: FootingMatGeometry | null;
+  /**
+   * Development of the physical mat bars, measured from their generated endpoints.
+   *
+   * Separate from `flexure` because it is a separate requirement: a mat can provide every
+   * square centimetre §7.6.1 and §13.3.3 ask for and still fail to develop it, and reporting
+   * the two as one status would hide whichever of them passed.
+   */
+  bottomMatAnchorage: FootingMatAnchorage | null;
   oneWayShear: { status: CheckStatus; Vu: number; phiVc: number; utilization: number } | null;
   punching: {
     status: CheckStatus;

@@ -158,40 +158,58 @@ describe('the bottom-mat design on the production path', () => {
     expect(o.mat!.y.Mu).toBeGreaterThan(0);
   });
 
-  it('keeps flexure UNSUPPORTED because no mat geometry is modelled (R, S)', () => {
-    const o = run().outcomes[0];
-    // The design exists…
+  it('verifies flexure once the physical mat exists and reconciles (R, S)', () => {
+    // PR18-A kept this UNSUPPORTED unconditionally and said why: there were no bars to verify
+    // the demand against. There are now, so OK is a statement that can be true — and it is
+    // reached by the GEOMETRY existing, not by a decision to stop reporting the limitation.
+    const o = run({ footings: [footing({ B: 2.5, L: 2.5 })] }).outcomes[0];
     expect(o.record.flexure!.bottomMat!.status).toBe('DESIGNED');
-    // …and the check it feeds is still not verified, with the reason naming which of the
-    // three situations this is.
-    expect(o.record.flexure!.status).toBe('UNSUPPORTED');
+    expect(o.matGeometry!.status).toBe('MODELED');
+    expect(o.record.flexure!.status).toBe('OK');
     const flexureCheck = o.record.checks.find((c) => c.key === 'flexure')!;
-    expect(flexureCheck.status).toBe('UNSUPPORTED');
-    expect(keysOf(flexureCheck.unsupported))
-      .toEqual(['footing.record.flexureDesignedNotModeled']);
-    // The record therefore cannot roll up as verified.
-    expect(o.record.status).not.toBe('OK');
+    expect(flexureCheck.status).toBe('OK');
+    // The blanket designed-not-modelled limitation is GONE, not merely demoted.
+    expect(keysOf(flexureCheck.unsupported)).toEqual([]);
   });
 
-  it('reports geometry as REQUIRED_NOT_MODELED and top steel as NOT_EVALUATED (R)', () => {
-    const mat = run().outcomes[0].mat!;
-    expect(mat.geometry).toBe('REQUIRED_NOT_MODELED');
-    expect(mat.topReinforcement).toBe('NOT_EVALUATED');
+  it('still refuses flexure when no layer order could be resolved', () => {
+    // The narrow case the designed-not-modelled message now means: a complete design with no
+    // physical arrangement to draw it at. A 0,20 m footing at Ø16 leaves d under §13.3.1.2's
+    // 150 mm in both arrangements, so neither is admissible.
+    const o = run({ footings: [footing({ thickness: 0.20 })] }).outcomes[0];
+    expect(o.mat!.layerOrder.status).toBe('NOT_ESTABLISHED');
+    expect(o.matGeometry!.status).toBe('NOT_MODELED');
+    expect(keysOf(o.matGeometry!.notModeled)).toContain('footing.geometry.noLayerOrder');
+    expect(o.record.flexure!.status).not.toBe('OK');
   });
 
-  it('generates NO physical bars for the mat (S)', () => {
-    // PR18-B's job. The dowels are the only footing steel that exists, and they are column
-    // starters rather than mat bars, so the assembly entry must carry nothing else.
-    //
-    // Asserted as the EXACT key set rather than by probing for names a future mat generator
-    // might not use. `not.toHaveProperty('bars')` passes for a field called `matBars`; an exact
-    // set fails the moment anything at all is added, which is what this gate is for.
-    const entry = run().entriesByLevel.get(-1.2)![0];
-    expect(Object.keys(entry).sort()).toEqual(['check', 'dowels', 'elementIds', 'id', 'record']);
+  it('reports the DESIGN as modelling nothing, and top steel as NOT_EVALUATED (R)', () => {
+    const o = run({ footings: [footing({ B: 2.5, L: 2.5 })] }).outcomes[0];
+    // `designFootingMat` still models no geometry, and its own field still says so. That is
+    // not a leftover: the statement is about that function, and the physical mat is produced
+    // by a different one whose status is carried separately.
+    expect(o.mat!.geometry).toBe('REQUIRED_NOT_MODELED');
+    expect(o.mat!.topReinforcement).toBe('NOT_EVALUATED');
+    // Top steel is reported on the footing as an unsupported CONDITION — visible, and blocking
+    // issuance — rather than as a failed check that would drag the bottom mat down with it.
+    expect(keysOf(o.unsupported))
+      .toContain('footing.record.topReinforcementNotEvaluated');
+    expect(o.record.checks.map((c) => c.key)).not.toContain('topReinforcement');
+  });
 
-    // Same for a distribution region: numbers and geometry, and no bar identities. `dowels`
-    // above carries `barIds: []` precisely because `completeFamilyRecord` fills it later —
-    // there is no equivalent field here, because there is no mat cage to fill it from.
+  it('carries the physical mat on the assembly entry (S)', () => {
+    // Asserted as the EXACT key set, the same gate PR18-A used to prove the absence, now
+    // proving what replaced it: one new field and nothing else.
+    const entry = run({ footings: [footing({ B: 2.5, L: 2.5 })] })
+      .entriesByLevel.get(-1.2)![0];
+    expect(Object.keys(entry).sort())
+      .toEqual(['check', 'dowels', 'elementIds', 'id', 'matBars', 'record']);
+    expect(entry.matBars.length).toBeGreaterThan(0);
+
+    // The DESIGN's region shape is unchanged: it still carries numbers and no bar identities,
+    // because bar identity belongs to the geometry layer and not to the schedule that asked
+    // for it. A region that had grown a `barIds` field would mean the design had started
+    // owning geometry.
     const region = run().outcomes[0].record.flexure!.bottomMat!.x.regions[0];
     expect(Object.keys(region).sort()).toEqual([
       'asProvided', 'asRequired', 'barCount', 'centreOffset', 'distributionShare',

@@ -41,6 +41,15 @@ import {
 } from '../../model/footing';
 import { designFootingMat, type FootingMatDesign } from './footing-flexure';
 import {
+  generateFootingMat, type FootingMatGeometry, type FootingMatPlacement,
+} from './footing-mat-geometry';
+import {
+  verifyFootingMatAnchorage, type FootingMatAnchorage,
+} from './footing-mat-anchorage';
+import { nextDetailingRevision } from './assembly';
+import { minClearSpacingInLayer } from '../../codes/cirsoc201/spacing';
+import type { BarPath } from '../../codes/cirsoc201/bar-geometry';
+import {
   findProfile, geotechnicalAssumptions, type ProjectGeotechnical,
 } from '../../model/geotechnical';
 import { checkFooting, type FootingCheck, type FootingInput } from './foundation-check';
@@ -141,6 +150,15 @@ export interface RunFootingDesignInput {
   revisions: Omit<FamilyRevisionVector, 'entity'>;
   /** Regulation ids in force, so a record states its stack and not only its edition. */
   regulationIds: readonly string[];
+  /**
+   * The detailing revision this run supersedes, so a generated bar can state which revision
+   * it belongs to.
+   *
+   * Optional, defaulting through `nextDetailingRevision` to revision 1 — the same value
+   * `buildFloorAssembly` gives an assembly with no predecessor, and through the same function
+   * so the bar and the assembly holding it cannot end up one apart.
+   */
+  previousDetailingRevision?: number;
 }
 
 /** What `buildFloorAssembly` consumes for one footing. */
@@ -149,6 +167,20 @@ export interface FootingAssemblyEntry {
   check: FootingCheck;
   elementIds: number[];
   dowels?: DowelInput;
+  /**
+   * The PHYSICAL bottom mat, ready to join the assembly.
+   *
+   * Generated here rather than in `buildFloorAssembly`, unlike the dowels. The dowels are a
+   * function of the column and the footing and nothing else, so the assembly can build them
+   * from a `DowelInput`. The mat is a function of the DESIGN — its regions, counts, spacings
+   * and resolved layer elevations — and the design lives here. Passing the design across so
+   * the assembly could re-place it would put the one authority on one side of the boundary and
+   * its consumer on the other, and the record would be sealed before its own geometry existed.
+   *
+   * Empty (not absent) when no mat could be modelled: the geometry object on the record says
+   * which of the reasons it was.
+   */
+  matBars: BarPath[];
   /**
    * The design evidence, complete except for the bars it has not generated yet.
    *
@@ -171,6 +203,15 @@ export interface FootingDesignOutcome {
    * design a mat for, and emitting a mat with zeroes in it would be a design against no load.
    */
   mat: FootingMatDesign | null;
+  /**
+   * The physical mat, and its anchorage. Null exactly when `mat` is.
+   *
+   * Surfaced on the outcome as well as on the record because the Foundations panel reads
+   * outcomes, and a panel that had to open a record to learn whether bars exist would be
+   * reading the evidence to answer a question about the model.
+   */
+  matGeometry: FootingMatGeometry | null;
+  matAnchorage: FootingMatAnchorage | null;
   entry: FootingAssemblyEntry | null;
   /** Elevation the footing is attributed to — the underside. */
   level: number;
@@ -323,7 +364,8 @@ export function runFootingDesign(input: RunFootingDesignInput): RunFootingDesign
     const draftRecord = (
       checks: FamilyCheckOutcome[],
       results: Pick<FootingDesignRecord,
-        'bearing' | 'flexure' | 'oneWayShear' | 'punching' | 'dowels' | 'starterTies'>,
+        'bearing' | 'flexure' | 'oneWayShear' | 'punching' | 'bottomMatGeometry'
+        | 'bottomMatAnchorage' | 'dowels' | 'starterTies'>,
       refs: readonly ClauseRef[],
     ): FamilyRecordDraft<FootingDesignRecord> => {
       const geom = geometry();
@@ -391,6 +433,7 @@ export function runFootingDesign(input: RunFootingDesignInput): RunFootingDesign
       }],
       {
         bearing: null, flexure: null, oneWayShear: null, punching: null,
+        bottomMatGeometry: null, bottomMatAnchorage: null,
         dowels: null, starterTies: null,
       },
       [],
@@ -399,7 +442,8 @@ export function runFootingDesign(input: RunFootingDesignInput): RunFootingDesign
     const fail = (governing: string | null = null, key = 'footing.design'): void => {
       const record = failRecord(key);
       outcomes.push({
-        footingId: f.id, name: f.name, check: null, mat: null, entry: null, level,
+        footingId: f.id, name: f.name, check: null, mat: null,
+        matGeometry: null, matAnchorage: null, entry: null, level,
         governingCombination: governing, unsupported, assumptions,
         record,
       });
@@ -641,6 +685,61 @@ export function runFootingDesign(input: RunFootingDesignInput): RunFootingDesign
     unsupported.push(...mat.failures);
 
     const elementIds = [column.elementId];
+
+    // ── The physical mat ────────────────────────────────────────
+    //
+    // The footing CENTROID in model coordinates. `eccentricityB`/`eccentricityL` are the plan
+    // offset of the centroid FROM the node, so the centroid is `node + eccentricity` and the
+    // column stands at `−eccentricity` in centroid coordinates — the one reading
+    // `footing-actions.ts` establishes and every consumer here shares.
+    const node = input.nodes.get(f.nodeId)!;
+    const placement: FootingMatPlacement = {
+      footingId: `F${f.id}`,
+      centroid: { x: node.x + f.eccentricityB, y: node.y + f.eccentricityL },
+      soffitZ: f.foundingElevation,
+      B: f.B, L: f.L, thickness: f.thickness, cover: f.cover,
+      elementIds,
+      designRevision: f.revision,
+      detailingRevision: nextDetailingRevision(input.previousDetailingRevision),
+      sourceScheduleRef: familyRecordId('footing', `F${f.id}`),
+    };
+    // The §25.2.1 minimum the DESIGN laid each direction out to, per direction because it
+    // depends on the bar diameter. Read from the same authority the design read rather than
+    // from the design's own reported number, so the placement check and the layout decision
+    // are answering to one clause implementation instead of to each other.
+    const matGeometry = generateFootingMat(placement, mat, {
+      x: minClearSpacingInLayer(input.edition, {
+        barDiameterMm: input.matPreferences.bottomMatDiameterXmm,
+        maxAggregateSizeMm: input.maxAggregateSizeMm,
+      }).minClear,
+      y: minClearSpacingInLayer(input.edition, {
+        barDiameterMm: input.matPreferences.bottomMatDiameterYmm,
+        maxAggregateSizeMm: input.maxAggregateSizeMm,
+      }).minClear,
+    });
+    const matAnchorage = verifyFootingMatAnchorage({
+      place: placement, design: mat, geometry: matGeometry,
+      columnB: column.b, columnH: column.h,
+      eccentricityB: f.eccentricityB, eccentricityL: f.eccentricityL,
+      fc: input.fc, fy: input.fy, edition: input.edition,
+    });
+    // Every geometry finding and every anchorage shortfall is a named condition on the
+    // footing. They are NOT folded into the mat design's failures: the design is compliant in
+    // both of those cases and saying otherwise would send the engineer to change a schedule
+    // that is correct.
+    unsupported.push(...matGeometry.notModeled);
+    unsupported.push(...matGeometry.findings.filter((x) => x.blocking).map((x) => x.message));
+    unsupported.push(...matAnchorage.failures);
+    // Top reinforcement, stated on every footing that reaches a mat.
+    //
+    // Reported as an unsupported CONDITION rather than as a failed check, and the distinction
+    // is deliberate. No clause was violated and no capacity was over-claimed — nobody has
+    // evaluated whether this footing needs top steel — so it must not turn the bottom mat's
+    // verification into an UNSUPPORTED one. It must equally not be silent: an unsupported
+    // condition caps the assembly's review state, so a footing whose top steel was never
+    // considered cannot be issued.
+    unsupported.push(msg('footing.record.topReinforcementNotEvaluated', { footing: f.name }));
+    trace.push(...matGeometry.steps);
     const starter = column.bars
       ? starterDevelopment(column.bars.diameterMm, input)
       : null;
@@ -649,7 +748,7 @@ export function runFootingDesign(input: RunFootingDesignInput): RunFootingDesign
       : null;
     const dowelsPresent = Boolean(column.bars && starter);
     const entryDraft: FootingAssemblyEntry['record'] = footingRecord({
-      check, mat, perimeter, position, d,
+      check, mat, matGeometry, matAnchorage, perimeter, position, d,
       B: f.B, L: f.L,
       factoredAxial,
       allowableBearing, governing,
@@ -671,6 +770,7 @@ export function runFootingDesign(input: RunFootingDesignInput): RunFootingDesign
       id: `F${f.id}`,
       check,
       elementIds,
+      matBars: matGeometry.bars,
       record: entryDraft,
       ...(column.bars && starter && hooked
         ? {
@@ -710,7 +810,7 @@ export function runFootingDesign(input: RunFootingDesignInput): RunFootingDesign
     }
 
     outcomes.push({
-      footingId: f.id, name: f.name, check, mat, entry, level,
+      footingId: f.id, name: f.name, check, mat, matGeometry, matAnchorage, entry, level,
       governingCombination: governing.combinationName,
       unsupported, assumptions,
       record: entryDraft,
@@ -774,6 +874,9 @@ function footingRecord(args: {
   check: FootingCheck;
   /** The designed bottom mat. Copied onto the record; nothing about it is recomputed. */
   mat: FootingMatDesign | null;
+  /** The physical mat and its anchorage. Copied, never recomputed, for the same reason. */
+  matGeometry: FootingMatGeometry | null;
+  matAnchorage: FootingMatAnchorage | null;
   perimeter: { truncatedSides: number };
   position: ColumnPosition;
   d: number;
@@ -789,7 +892,8 @@ function footingRecord(args: {
   draft: (
     checks: FamilyCheckOutcome[],
     results: Pick<FootingDesignRecord,
-      'bearing' | 'flexure' | 'oneWayShear' | 'punching' | 'dowels' | 'starterTies'>,
+      'bearing' | 'flexure' | 'oneWayShear' | 'punching' | 'bottomMatGeometry'
+      | 'bottomMatAnchorage' | 'dowels' | 'starterTies'>,
     refs: readonly ClauseRef[],
   ) => FamilyRecordDraft<FootingDesignRecord>;
 }): FamilyRecordDraft<FootingDesignRecord> {
@@ -816,16 +920,37 @@ function footingRecord(args: {
     status: b.status, qMax: b.qMax, qMin: b.qMin, eB: b.eB, eL: b.eL,
     uplift: b.uplift, allowable: args.allowableBearing, utilization: b.utilization,
   };
+  /**
+   * The flexural verdict, now that steel can exist.
+   *
+   * ── The three states, and why each is the one it is ──────────
+   *
+   * FAIL         the design itself failed — no admissible layout at the selected diameter, a
+   *              section needing compression steel, a §13.3.3.3 band that does not fit. That
+   *              is a verdict about the footing and the remedy is to change the footing.
+   * UNSUPPORTED  the design is sound and there is nothing to verify it against: no mat was
+   *              designed, or one was and its geometry could not be produced or does not
+   *              reconcile with the schedule. Not a failure — an absence.
+   * OK           the mat is DESIGNED, its bars exist, and every bar reconciles with the
+   *              schedule that asked for it. Only then does the demand have reinforcement to
+   *              be verified against.
+   *
+   * Anchorage is deliberately NOT part of this. A mat that provides every square centimetre
+   * §7.6.1 and §13.3.3 require and fails to develop it has passed one requirement and failed
+   * another, and it carries its own check row below so both are readable.
+   */
+  const geometryModeled = args.matGeometry?.status === 'MODELED';
+  const flexureStatus: FootingCheck['status'] =
+    args.mat === null || args.mat.status === 'NOT_EVALUATED'
+      ? 'UNSUPPORTED'
+      : args.mat.status === 'DESIGN_FAILED'
+        ? 'FAIL'
+        : geometryModeled ? 'OK' : 'UNSUPPORTED';
   const flexure: FootingDesignRecord['flexure'] = {
-    // The demand is real (§13.2.7.1 cantilever integral, trapezoid included) and, since
-    // PR18-A, so is the design: `bottomMat` carries the required steel, the bar count and the
-    // spacings for both directions. The status is STILL UNSUPPORTED, because no bottom-mat
-    // steel exists in the model to verify the demand against. OK would be a capacity claim
-    // nobody computed — the certificate would lie by omission, only now with numbers next to
-    // it, which is worse. `bottomMat.geometry` is REQUIRED_NOT_MODELED and says so in one word.
-    status: 'UNSUPPORTED', Mu: check.Mu, criticalSection: 0,
+    status: flexureStatus, Mu: check.Mu, criticalSection: 0,
     bottomMat: args.mat,
   };
+  const anchorage = args.matAnchorage;
   const oneWayShear: FootingDesignRecord['oneWayShear'] = check.oneWayShear
     ? {
       status: check.oneWayShear.status,
@@ -860,23 +985,64 @@ function footingRecord(args: {
         ? [msg('footing.record.bearingUnsupported')] : [],
     },
     {
-      key: 'flexure', status: 'UNSUPPORTED', utilization: null,
+      key: 'flexure', status: flexureStatus, utilization: null,
       governingCombination: combo,
       // The clauses the design was actually resolved against, so the certificate cites the
       // chain (§13.3.3, §7.6.1, §7.7.2.x, §24.3.2, §25.2.1) rather than an empty list.
-      refs: args.mat?.refs ?? [],
-      // Three DIFFERENT reasons, because they call for three different actions. "No mat was
-      // designed" is a missing input; "designed, not drawn" is the PR18-B backlog; "the design
-      // failed" is a footing the engineer has to change. One message for all three would send
-      // every reader to the wrong remedy for two of them.
-      unsupported: [
+      refs: [...(args.mat?.refs ?? []), ...(args.matGeometry?.refs ?? [])],
+      /**
+       * FOUR different reasons, because they call for four different actions.
+       *
+       * "No mat was designed" is a missing input. "The design failed" is a footing the
+       * engineer has to change. "Designed, not modelled" was the PR18-A backlog and now means
+       * something narrower and rarer: the design is complete and no order could be resolved,
+       * so there is no elevation to draw at. "Does not reconcile" is new and is the one a
+       * reader must not confuse with the others — the bars were placed and they disagree with
+       * the schedule, which is a geometry defect and not a missing feature.
+       *
+       * The list is EMPTY when the mat is modelled and reconciled. That is what removes the
+       * blanket designed-not-modelled limitation, and it is removed by the geometry existing
+       * rather than by a decision to stop saying it.
+       */
+      unsupported: flexureStatus === 'OK' ? [] : [
         args.mat === null || args.mat.status === 'NOT_EVALUATED'
           ? msg('footing.record.flexureNoSteel')
           : args.mat.status === 'DESIGN_FAILED'
             ? msg('footing.record.flexureDesignFailed')
-            : msg('footing.record.flexureDesignedNotModeled'),
+            : args.matGeometry?.status === 'RECONCILIATION_FAILED'
+              ? msg('footing.record.flexureGeometryNotReconciled', {
+                findings: args.matGeometry.findings.filter((x) => x.blocking).length,
+              })
+              : msg('footing.record.flexureDesignedNotModeled'),
       ],
     },
+    /**
+     * Anchorage, as its own row.
+     *
+     * Emitted only when a mat design exists at all, because a footing with no mat has no mat
+     * anchorage to report and an UNSUPPORTED row would be a second way of saying the same
+     * thing the flexure row already says.
+     */
+    ...(args.mat !== null && anchorage
+      ? [{
+        key: 'anchorage',
+        status: (anchorage.outcome === 'VERIFIED' ? 'OK'
+          : anchorage.outcome === 'FAILED' ? 'FAIL' : 'UNSUPPORTED') as FootingCheck['status'],
+        // A development length is not a demand/capacity ratio, and the app's utilisation
+        // convention is demand over capacity. `required/available` is exactly that, so it is
+        // reported as one — and a value above 1 is the shortfall.
+        utilization: anchorage.x && anchorage.y
+          ? Math.max(
+            anchorage.x.available > 0 ? anchorage.x.requiredLd / anchorage.x.available : Infinity,
+            anchorage.y.available > 0 ? anchorage.y.requiredLd / anchorage.y.available : Infinity,
+          )
+          : null,
+        governingCombination: combo,
+        refs: anchorage.refs,
+        unsupported: anchorage.outcome === 'NOT_EVALUATED'
+          ? [msg('footing.record.anchorageNotEvaluated')] : [],
+      } satisfies FamilyCheckOutcome]
+      : []),
     ...(oneWayShear
       ? [{
         key: 'oneWayShear', status: oneWayShear.status, utilization: oneWayShear.utilization,
@@ -897,6 +1063,11 @@ function footingRecord(args: {
     checks,
     {
       bearing, flexure, oneWayShear, punching,
+      // The physical mat and its anchorage, copied. The MARKS inside the schedule are filled
+      // by the assembly pass, for the same reason the dowel bar ids are: marks group identical
+      // fabricated items across every family and only the assembly sees all of them.
+      bottomMatGeometry: args.matGeometry,
+      bottomMatAnchorage: args.matAnchorage,
       // Bar ids are filled by `completeFamilyRecord`, which is the only place that has the
       // generated cage. The counts and lengths are the DESIGN, and they belong here.
       dowels: args.dowels ? { ...args.dowels, barIds: [] } : null,

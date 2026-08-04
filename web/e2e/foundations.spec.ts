@@ -205,9 +205,61 @@ test.describe('@smoke foundations — the visible workflow', () => {
     // The spacing policy is stated too, so the project records that its spacings came from the
     // code rather than from a hand entry.
     await expect(page.getByTestId('footing-mat-spacing-policy')).toHaveValue('AUTO_CODE_COMPLIANT');
+
+    // ── PR18-B: which perpendicular mat goes down ───────────────
+    //
+    // A real decision worth a full bar diameter of effective depth, that no clause makes. It is
+    // therefore the engineer's, and it is a control rather than an assumption — with AUTO as a
+    // stated delegation rather than as an absence.
+    const order = page.getByTestId('footing-mat-layer-order');
+    await expect(order).toBeVisible();
+    await expect(order).toHaveValue('AUTO');
+    for (const v of ['X_BELOW_Y', 'Y_BELOW_X', 'AUTO']) {
+      await order.selectOption(v);
+      await expect(order).toHaveValue(v);
+    }
   });
 
-  test('F-I the designed mat is shown, and says its geometry is not modelled', async ({ pro: page }) => {
+  /**
+   * Changing the order must not leave the previous mat on screen as though it were current.
+   *
+   * Real bar positions, real elevations and real marks belonging to a design the project no
+   * longer specifies is the one failure the whole revision graph exists to prevent — and it only
+   * became possible in PR18-B, because until the run held BARS a superseded schedule beside a
+   * retired document was a visible inconsistency a reader could reason about.
+   */
+  test('F-J changing the layer order supersedes the physical mat on screen', async ({ pro: page }) => {
+    await loadModel(page, QA);
+    await solveModel(page);
+    await computeDemands(page);
+    await openFoundations(page);
+    await addStatedSoil(page);
+    await addFooting(page);
+    await dimensionFooting(page);
+    await attachColumnAndSoil(page);
+    await page.getByTestId('floor-design-run').click();
+
+    await expect(page.getByTestId('footing-mat-geometry-status')).toBeVisible();
+    await expect(page.getByTestId('footing-mat-superseded')).toHaveCount(0);
+
+    await page.getByTestId('footing-mat-layer-order').selectOption('Y_BELOW_X');
+
+    // Superseded, and the old geometry is no longer presented at all.
+    await expect(page.getByTestId('footing-mat-superseded')).toBeVisible();
+    await expect(page.getByTestId('footing-mat-schedule')).toHaveCount(0);
+    await expect(page.getByTestId('footing-mat-geometry-status')).toHaveCount(0);
+    // It is NOT regenerated automatically: the remedy is the explicit command, named.
+    await expect(page.getByTestId('footing-mat-superseded'))
+      .toContainText(/re-run|volver a ejecutar/i);
+
+    // Running it again produces the newly requested arrangement.
+    await page.getByTestId('floor-design-run').click();
+    await expect(page.getByTestId('footing-mat-superseded')).toHaveCount(0);
+    await expect(page.getByTestId('footing-mat-layer-order-resolved'))
+      .toContainText(/Y below X|Y debajo de X/i);
+  });
+
+  test('F-I the designed mat is shown, and so is the PHYSICAL mat it produced', async ({ pro: page }) => {
     await loadModel(page, QA);
     await solveModel(page);
     await computeDemands(page);
@@ -233,17 +285,59 @@ test.describe('@smoke foundations — the visible workflow', () => {
       await expect(page.getByTestId(`footing-mat-${axis}-regions`)).toBeVisible();
     }
 
-    // The four honest statuses, on screen and not inferable only from an absence. "DESIGNED"
-    // must not be readable as covering geometry, top steel, the layer order or the anchorage.
-    await expect(page.getByTestId('footing-mat-geometry-pending')).toBeVisible();
-    await expect(page.getByTestId('footing-mat-top-not-evaluated')).toBeVisible();
-    await expect(page.getByTestId('footing-mat-layer-order-pending')).toBeVisible();
-    await expect(page.getByTestId('footing-mat-anchorage-pending')).toBeVisible();
+    // What DESIGNED does and does not mean, once, in a sentence — and then answered by the
+    // statuses below rather than repeated as a flat claim. PR18-A printed four such claims;
+    // three of them (geometry, layer order, anchorage) are now false, so they are gone and
+    // their real statuses stand in their place.
+    await expect(page.getByTestId('footing-mat-designed-means')).toBeVisible();
+    await expect(page.getByTestId('footing-mat-geometry-pending')).toHaveCount(0);
+    await expect(page.getByTestId('footing-mat-layer-order-pending')).toHaveCount(0);
+    await expect(page.getByTestId('footing-mat-anchorage-pending')).toHaveCount(0);
 
     // Both layer depths, so the conservative envelope reads as a choice rather than as the
     // only depth there is.
     await expect(page.getByTestId('footing-mat-X'))
       .toContainText(/d if lower \/ upper|d si inferior \/ superior/i);
+
+    // ── The physical mat ────────────────────────────────────────
+    const physical = page.getByTestId('footing-mat-physical');
+    await expect(physical).toBeVisible();
+    // The resolved layer order, WHY it was resolved that way, and what the other arrangement
+    // would have cost — an automatic selection whose reason is invisible is unreviewable.
+    await expect(page.getByTestId('footing-mat-layer-order-resolved'))
+      .toContainText(/below|debajo/i);
+    await expect(page.getByTestId('footing-mat-layer-order-reason')).not.toBeEmpty();
+    const arrangements = page.getByTestId('footing-mat-arrangements');
+    await expect(arrangements).toBeVisible();
+    await expect(arrangements.locator('tbody tr')).toHaveCount(2);
+
+    // Geometry MODELLED, with real elevations and a schedule that reconciles with the bars.
+    await expect(page.getByTestId('footing-mat-geometry-status'))
+      .toContainText(/modelled|modelada/i);
+    await expect(page.getByTestId('footing-mat-elevations')).toBeVisible();
+    await expect(page.getByTestId('footing-mat-schedule')).toBeVisible();
+    await expect(page.getByTestId('footing-mat-reconciliation'))
+      .toContainText(/reconcile|reconcilian/i);
+    // Marks, so the schedule row names the same steel a bender receives.
+    await expect(page.getByTestId('footing-mat-schedule')).toContainText(/F\d+/);
+
+    // Anchorage, measured from the generated endpoints, per direction and per side.
+    await expect(page.getByTestId('footing-mat-anchorage-status')).toBeVisible();
+    for (const axis of ['X', 'Y'] as const) {
+      const a = page.getByTestId(`footing-mat-anchorage-${axis}`);
+      await expect(a).toBeVisible();
+      await expect(a).toContainText(/ld required|ld requerida/i);
+      await expect(a).toContainText(/low|bajo/i);
+    }
+
+    // The limitations that survive, still prominent. Top steel was never evaluated, and it must
+    // not be inferable only from its absence.
+    await expect(page.getByTestId('footing-mat-top-not-evaluated-physical')).toBeVisible();
+
+    // The physical-geometry memo is citable.
+    const steps = page.getByTestId('footing-mat-geometry-steps');
+    await steps.locator('summary').click();
+    await expect(steps).toContainText(/25\.2\.1/);
 
     // The clause chain is citable from the panel.
     const clauses = page.getByTestId('footing-mat-clauses');
