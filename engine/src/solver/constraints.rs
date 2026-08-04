@@ -894,6 +894,11 @@ pub fn solve_constrained_2d(input: &ConstrainedInput) -> Result<AnalysisResults,
         }
     }
 
+    // NaN/Inf guard, matching the unconstrained paths. `cholesky_solve` reports success on
+    // any pivot > 1e-15 without inspecting the solved values, so a blown-up reduced system
+    // can reach here as finite-looking `Some(..)`. Nothing downstream re-checks.
+    super::linear::assert_finite_3d(&u_f)?;
+
     // Build full displacement vector
     let mut u_full = vec![0.0; n];
     for i in 0..nf { u_full[i] = u_f[i]; }
@@ -1164,6 +1169,11 @@ pub fn solve_constrained_3d(input: &ConstrainedInput3D) -> Result<AnalysisResult
             u_f[i] += u_p[i];
         }
     }
+
+    // NaN/Inf guard, matching the unconstrained paths. `cholesky_solve` reports success on
+    // any pivot > 1e-15 without inspecting the solved values, so a blown-up reduced system
+    // can reach here as finite-looking `Some(..)`. Nothing downstream re-checks.
+    super::linear::assert_finite_3d(&u_f)?;
 
     let mut u_full = vec![0.0; n];
     for i in 0..nf { u_full[i] = u_f[i]; }
