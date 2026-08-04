@@ -460,3 +460,117 @@ describe('eccentric footings — the N·e correction', () => {
     expect(JSON.stringify(run())).toBe(JSON.stringify(run()));
   });
 });
+
+/**
+ * The unbalanced moment at the column–footing connection.
+ *
+ * ── The defect these pin ───────────────────────────────────────
+ *
+ * `checkFooting` called `checkPunchingShear` with a demand carrying the support reaction and
+ * the enclosed pressure and NOTHING about the moment. So `M_sc` was `hypot(0, 0)` for every
+ * footing the app has ever checked, the §8.4.4.2 refusal inside the punching engine was
+ * unreachable, and a footing whose flexural steel was being sized for a 125 kN·m factored
+ * moment was reported as a direct-shear punching PASS.
+ *
+ * Every expectation below is derived here from the free body, not read back off the module.
+ */
+describe('punching moment transfer', () => {
+  /** `∫∫ q·s dA` over the enclosed rectangle, from the field, integrated independently. */
+  const enclosedMoment = (
+    q0: number, S: number, uR: number, span: number, width: number,
+  ): number => {
+    // Midpoint rule on a fine grid over the enclosed rectangle, about its own centre. A
+    // NUMERICAL integral on purpose: it agrees with the closed form only if the closed form
+    // is the integral of the same field, which is the property under test.
+    const n = 400;
+    let sum = 0;
+    for (let i = 0; i < n; i++) {
+      const s = -span / 2 + (i + 0.5) * (span / n);
+      // The `v` direction integrates to `width` for the constant and `s`-linear terms and to
+      // zero for the `v`-linear one, so one dimension suffices for this axis's first moment.
+      sum += q0 * (1 + 12 * uR * s / (S * S)) * s * (span / n) * width;
+    }
+    return sum;
+  };
+
+  it('leaves a centred footing with no applied moment numerically unchanged', () => {
+    const r = checkFooting(footing());
+    expect(r.punching!.momentTransfer.status).toBe('NONE');
+    expect(r.punching!.momentTransfer.Msc).toBe(0);
+    expect(r.punching!.status).toBe('OK');
+    expect(r.status).toBe('OK');
+  });
+
+  it('reaches checkPunchingShear with the free-body moment when one is applied', () => {
+    const f = footing({ factoredMomentB: 125 });
+    const r = checkFooting(f);
+    const mt = r.punching!.momentTransfer;
+
+    // Independently: q0 = 1250/6.25 = 200 kPa; the enclosed rectangle is
+    // (0.40 + 0.52) = 0.92 m square; u_R = ±125/1250 = ±0.10 m about a centred column.
+    const q0 = 1250 / (2.5 * 2.5);
+    const worst = Math.max(
+      ...[1, -1].map((o) => Math.abs(
+        o * 125 - enclosedMoment(q0, 2.5, o * 0.1, 0.92, 0.92))),
+    );
+    expect(mt.MscY).toBeCloseTo(worst, 4);
+    expect(mt.Msc).toBeCloseTo(worst, 4);
+    // The column axis is the enclosed centre, so the soil relieves rather than adds: the
+    // section carries LESS than the column delivers.
+    expect(mt.Msc).toBeLessThan(125);
+    expect(mt.Msc).toBeGreaterThan(0.9 * 125);
+  });
+
+  it('cannot produce an OK punching result once the moment is significant', () => {
+    const r = checkFooting(footing({ factoredMomentB: 125 }));
+    expect(r.punching!.momentTransfer.status)
+      .toBe('UNSUPPORTED_MOMENT_TRANSFER_NOT_EVALUATED');
+    expect(r.punching!.momentTransfer.significant).toBe(true);
+    expect(r.punching!.status).toBe('UNSUPPORTED');
+    // The whole footing, not only the punching row: a footing whose punching could not be
+    // verified is not a verified footing.
+    expect(r.status).toBe('UNSUPPORTED');
+    expect(r.unsupported.join(' ')).toMatch(/8\.4\.4\.2/);
+    // The direct-shear numbers survive for the report; what is refused is the VERDICT.
+    expect(r.punching!.utilization).toBeGreaterThan(0);
+  });
+
+  it('reports the moment a plan eccentricity alone transfers, and names the tolerance', () => {
+    // NO applied moment. The pressure under the column is still non-uniform, so its resultant
+    // misses the column axis and the critical section carries a moment. The applied-moment
+    // term alone would report zero for exactly the footings that are deliberately eccentric.
+    const f = footing({ eccentricityB: 0.30 });
+    const r = checkFooting(f);
+    const mt = r.punching!.momentTransfer;
+    const q0 = 1250 / (2.5 * 2.5);
+    // Column at u = −0.30 in centroid coordinates; with no applied moment both orientations
+    // coincide, so u_R = −0.30.
+    const expected = Math.abs(enclosedMoment(q0, 2.5, -0.30, 0.92, 0.92));
+    expect(mt.MscY).toBeCloseTo(expected, 4);
+    expect(mt.MscY).toBeGreaterThan(0);
+    // Below the stated 2 % of V_u·d on this footing, so direct shear still governs — and the
+    // memo says so rather than presenting a tolerance as an exact zero.
+    expect(mt.status).toBe('NEGLIGIBLE');
+    expect(r.punching!.memo.join(' ')).toMatch(/umbral de significancia/);
+    expect(r.punching!.status).toBe('OK');
+  });
+
+  it('refuses to form the moment on a truncated perimeter instead of assuming zero', () => {
+    for (const position of ['edge', 'corner'] as const) {
+      const r = checkFooting(footing({ position }));
+      expect(r.punching!.momentTransfer.status).toBe('UNSUPPORTED_MOMENT_NOT_FORMED');
+      expect(r.punching!.momentTransfer.notFormedReason).toMatch(/truncado/);
+      expect(r.punching!.status).toBe('UNSUPPORTED');
+      expect(r.status).toBe('UNSUPPORTED');
+    }
+  });
+
+  it('prints the applied and relief terms separately, because the relief is not derivable', () => {
+    const memo = checkFooting(footing({ factoredMomentB: 125 })).memo.join(' ');
+    expect(memo).toMatch(/Momento no balanceado en la conexión/);
+    expect(memo).toMatch(/alivio de la presión encerrada/);
+    // The axial force is explicitly stated not to contribute, so a reader does not have to
+    // wonder whether it was forgotten.
+    expect(memo).toMatch(/La fuerza axial no aporta momento/);
+  });
+});

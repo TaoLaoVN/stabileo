@@ -38,8 +38,8 @@ import {
   type ColumnPosition, type PunchingCheck,
 } from './punching-shear';
 import {
-  axisPressure, footingCentroidActions, planPressure,
-  type FootingCentroidActions,
+  axisPressure, footingCentroidActions, footingUnbalancedMoment, planPressure,
+  type FootingCentroidActions, type FootingUnbalancedMoment,
 } from './footing-actions';
 
 const R_FOUND = clause('cirsoc-201', '2025', '13.2', 'generalidades de fundaciones');
@@ -495,19 +495,88 @@ export function checkFooting(f: FootingInput): FootingCheck {
     insidePerimeter = Math.max(0, least);
   }
 
+  /**
+   * The unbalanced moment the connection transfers, formed by the same free body.
+   *
+   * ── What was here before ─────────────────────────────────────
+   *
+   * Nothing. This call site passed `supportReaction` and `loadInsidePerimeter` and no moment
+   * at all, so `checkPunchingShear` measured `M_sc = hypot(0, 0)` for every footing this app
+   * has ever checked — including the ones whose flexural steel was being sized for a factored
+   * moment fifty lines below. The §8.4.4.2 refusal inside that function was correct and
+   * unreachable: the footing path never gave it a moment to refuse.
+   *
+   * ── Why the perimeter position decides whether it can be formed ──
+   *
+   * `footingUnbalancedMoment` takes moments about the centre of the enclosed region, and that
+   * is the column axis only while the perimeter closes on all four sides. A TRUNCATED
+   * perimeter (edge, corner) encloses a region whose centre has moved, so the axial force
+   * starts contributing a moment of its own and the enclosed rectangle is no longer centred
+   * on the column — two corrections this pass does not implement.
+   *
+   * Guessing is not an option here: the whole point of the exercise is that an unformed
+   * moment must not read as zero. So the truncated case is declared unformed by name, which
+   * `checkPunchingShear` turns into UNSUPPORTED. An edge or corner footing was already
+   * carrying a truncated-perimeter assumption; it now also carries an honest statement that
+   * its moment transfer was not evaluated.
+   */
+  const position = f.position ?? 'interior';
+  let unbalanced: FootingUnbalancedMoment | null = null;
+  if (position === 'interior') {
+    unbalanced = footingUnbalancedMoment({
+      B: f.B, L: f.L, q0: qFactored, axial: f.factoredAxial,
+      momentB: f.factoredMomentB, momentL: f.factoredMomentL,
+      eccentricityB: f.eccentricityB, eccentricityL: f.eccentricityL,
+      // The enclosed rectangle of an untruncated perimeter: `(c + d) × (c + d)`, straight
+      // sides per §22.6.4.1.1 — the same region `criticalSection` reports the area of.
+      enclosedSpanB: f.columnB + f.d,
+      enclosedSpanL: f.columnH + f.d,
+    });
+  }
+
   const punching = factoredUplift ? null : checkPunchingShear({
     fc: f.fc, columnB: f.columnB, columnH: f.columnH, d: f.d,
-    position: f.position ?? 'interior',
+    position,
     demand: {
       supportReaction: f.factoredAxial,
       // At a footing the soil pushes UP inside the critical perimeter, and that part of
       // the load never crosses the critical section. Same equilibrium argument as at a
       // slab-column joint, opposite sign convention.
       loadInsidePerimeter: insidePerimeter,
+      // Axis mapping, stated once: a moment ABOUT the L axis produces the eccentricity ALONG
+      // B, so the footing's B-axis quantity is the punching engine's `unbalancedMomentY` and
+      // the L-axis quantity is its `unbalancedMomentX`. Only the resultant magnitude reaches
+      // the significance test, so the mapping cannot change the verdict — it is stated so the
+      // memo and the record name the right axis.
+      ...(unbalanced
+        ? {
+          unbalancedMomentY: unbalanced.b.Msc,
+          unbalancedMomentX: unbalanced.l.Msc,
+        }
+        : {
+          momentTransferNotFormed:
+            `el perímetro crítico está truncado (columna de ${position === 'edge' ? 'borde' : 'esquina'}), ` +
+            'de modo que la región encerrada no está centrada en el eje de la columna y el ' +
+            'planteo de equilibrio implementado no es aplicable.',
+        }),
     },
   });
   if (punching) {
     memo.push(...punching.memo);
+    if (unbalanced) {
+      // The free body is printed whenever it produced anything, because the RELIEF term is
+      // the part a reader cannot reproduce from the applied moment alone — and on a footing
+      // with plan eccentricity and no applied moment it is the entire unbalanced moment.
+      memo.push(
+        `Momento no balanceado en la conexión, por equilibrio del bloque interior al ` +
+        `perímetro crítico y respecto de su centro: eje B → aplicado ` +
+        `${unbalanced.b.applied.toFixed(1)} kN·m menos el alivio de la presión encerrada ` +
+        `${unbalanced.b.relief.toFixed(1)} kN·m = ${unbalanced.b.Msc.toFixed(1)} kN·m; eje L → ` +
+        `${unbalanced.l.applied.toFixed(1)} − ${unbalanced.l.relief.toFixed(1)} = ` +
+        `${unbalanced.l.Msc.toFixed(1)} kN·m (envolvente de ambos signos del momento ` +
+        'aplicado). La fuerza axial no aporta momento: actúa sobre el eje de la columna, que ' +
+        'es el centro de la región encerrada mientras el perímetro no esté truncado.');
+    }
     if (uCol !== 0 || vCol !== 0) {
       memo.push(
         `La presión descontada dentro del perímetro crítico se evalúa en el EJE DE LA ` +

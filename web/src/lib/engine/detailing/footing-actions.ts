@@ -286,3 +286,158 @@ export function planPressure(
       + (L > 0 ? 12 * vR * v / (L * L) : 0)
     );
 }
+
+// ─── The unbalanced moment at the column–footing connection ──────
+
+/**
+ * First moment of the enclosed soil pressure about the enclosed region's own centre, kN·m.
+ *
+ * ── The integral, exactly ──────────────────────────────────────
+ *
+ * The region is the `enclosedSpan × enclosedWidth` rectangle bounded by the critical
+ * perimeter, centred on the COLUMN axis. Substituting `u = u_col + s` into the SAME bilinear
+ * field `planPressure` returns,
+ *
+ *     ∫∫ q(u,v) · s dA
+ *       = q0 · (12 u_R / B²) · ∫∫ s² dA        (every other term integrates to zero over s)
+ *       = q0 · (12 u_R / B²) · (span³ · width / 12)
+ *       = q0 · u_R · span³ · width / B²
+ *
+ * The constant part of `q` and the cross term in `v` both vanish because `∫ s dA = 0` over a
+ * region centred on `u_col`; that is also why the result does not depend on `u_col` itself.
+ * Exact for a linear field, not a quadrature — and it is the same field every other check
+ * integrates, so the relief credited here is the relief the pressure actually delivers.
+ */
+function enclosedPressureMoment(
+  q0: number, S: number, resultantOffset: number,
+  enclosedSpan: number, enclosedWidth: number,
+): number {
+  if (!(S > 0)) return 0;
+  return q0 * resultantOffset * enclosedSpan ** 3 * enclosedWidth / (S * S);
+}
+
+/** One axis of the transferred unbalanced moment. */
+export interface AxisUnbalancedMoment {
+  /** Magnitude of the moment the critical section must carry, kN·m — the envelope. */
+  Msc: number;
+  /**
+   * The applied moment, kN·m, magnitude — what the column delivers at the connection.
+   *
+   * Sign-unresolved, exactly as everywhere else in this module: it arrives as a reaction
+   * moment on GLOBAL axes and mapping its sign onto a footing-local axis is work this
+   * codebase has not done.
+   */
+  applied: number;
+  /**
+   * The soil relief the enclosed pressure provides, kN·m, at the governing orientation.
+   *
+   * Signed relative to `applied` in the orientation that governed, so `Msc` is
+   * `|applied ∓ relief|` and a reader can see which of the two it was.
+   */
+  relief: number;
+  /** Which moment orientation produced `Msc`. */
+  orientation: 1 | -1;
+}
+
+export interface FootingUnbalancedMoment {
+  b: AxisUnbalancedMoment;
+  l: AxisUnbalancedMoment;
+}
+
+/**
+ * The unbalanced moment transferred at a column–footing connection, by free-body equilibrium.
+ *
+ * ── What is being solved, and about which point ────────────────
+ *
+ * The free body is the block of footing INSIDE the critical perimeter. Three things act on it:
+ *
+ *   * the column, delivering its axial force AT the column axis and its moment;
+ *   * the soil, pushing up over the enclosed area with a pressure that is NOT uniform once
+ *     the resultant is off centre;
+ *   * the critical section, delivering the shear `V_u` and the unbalanced moment `M_sc`.
+ *
+ * Moments are taken about the centre of the enclosed region, which for an UNTRUNCATED
+ * perimeter is the column axis itself — so the axial force contributes nothing, and
+ * equilibrium on one axis reads
+ *
+ *     M_sc = M_applied − ∫∫ q · s dA
+ *
+ * This is the same free body `derivePunchingDemand` already solves for the force: "the
+ * unbalanced moment M_sc transferred to the connection is likewise the step in the column end
+ * moments across the joint", stated in that module's own header. Forming it here is that
+ * statement carried out, not a new method — and it is emphatically NOT the §8.4.4.2 eccentric
+ * shear calculation, which is the separate question of what `M_sc` then does to the shear
+ * stress distribution around the perimeter. That remains unimplemented.
+ *
+ * ── Why the enclosed pressure relieves, and why it is not ignored ──
+ *
+ * Part of the applied moment is balanced by the soil standing directly under the column, so
+ * the section carries less than the column delivers. For a centred column the relief is
+ * `M_applied · span³·width/(B³·L)` — about 3 % on a reference footing, small but real.
+ *
+ * The case it is NOT small in is the one with NO applied moment at all. A footing whose
+ * centroid is offset from its column carries a non-uniform pressure under that column, whose
+ * resultant does not pass through the column axis, so the critical section carries a moment
+ * that the applied-moment term alone reports as zero. Omitting the term would let exactly
+ * those footings — the deliberately eccentric ones — read as pure direct shear.
+ *
+ * ── The envelope ───────────────────────────────────────────────
+ *
+ * The applied moment's sign is not usable (see this module's header), and it enters the relief
+ * term too, through `u_R`. So both orientations are formed and the LARGER magnitude governs.
+ * That cannot under-state the moment, and it costs nothing when the applied moment is zero:
+ * the two orientations then coincide.
+ *
+ * `enclosedSpanB × enclosedSpanL` are the plan dimensions of the region the critical
+ * perimeter encloses, which the caller reads off `criticalSection`. This function is valid
+ * only for a perimeter centred on the column axis; a TRUNCATED perimeter encloses a region
+ * whose centre is elsewhere, the axial force then contributes, and the caller must refuse
+ * rather than call this.
+ */
+export function footingUnbalancedMoment(input: {
+  /** Plan dimensions, m. */
+  B: number;
+  L: number;
+  /** Uniform-equivalent factored pressure `N/(B·L)`, kPa. */
+  q0: number;
+  axial: number;
+  /** Applied moments at the NODE, kN·m, in this module's eccentricity convention. */
+  momentB?: number;
+  momentL?: number;
+  /** Plan offset of the footing centroid from the node, m. */
+  eccentricityB?: number;
+  eccentricityL?: number;
+  /** Plan dimensions of the region the critical perimeter encloses, m. */
+  enclosedSpanB: number;
+  enclosedSpanL: number;
+}): FootingUnbalancedMoment {
+  const axis = (
+    S: number, moment: number, eccentricity: number,
+    enclosedSpan: number, enclosedWidth: number,
+  ): AxisUnbalancedMoment => {
+    const columnOffset = columnOffsetFromCentroid(eccentricity);
+    const applied = Math.abs(moment);
+    const mEcc = momentEccentricity(moment, input.axial);
+    let best: AxisUnbalancedMoment | null = null;
+    for (const o of MOMENT_ORIENTATIONS) {
+      const resultantOffset = columnOffset + o * mEcc;
+      const relief = enclosedPressureMoment(
+        input.q0, S, resultantOffset, enclosedSpan, enclosedWidth);
+      const Msc = Math.abs(o * applied - relief);
+      if (best === null || Msc > best.Msc) {
+        best = { Msc, applied, relief: o * relief, orientation: o };
+      }
+    }
+    return best as AxisUnbalancedMoment;
+  };
+
+  return {
+    // `enclosedSpanB` is the dimension the moment bends ACROSS on this axis, and
+    // `enclosedSpanL` the one it is distributed over — the same span/width split every
+    // per-axis quantity in the footing code uses.
+    b: axis(input.B, input.momentB ?? 0, input.eccentricityB ?? 0,
+      input.enclosedSpanB, input.enclosedSpanL),
+    l: axis(input.L, input.momentL ?? 0, input.eccentricityL ?? 0,
+      input.enclosedSpanL, input.enclosedSpanB),
+  };
+}
