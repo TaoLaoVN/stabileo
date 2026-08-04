@@ -287,7 +287,9 @@ function footingRecordFixture(): FamilyRecordDraft<FootingDesignRecord> {
       status: 'OK', qMax: 96, qMin: 96, eB: 0, eL: 0, uplift: false,
       allowable: 250, utilization: 0.38,
     },
-    flexure: { status: 'OK', Mu: 120, criticalSection: 0 },
+    // `bottomMat: null` and not a designed mat: this fixture exercises assembly, and a
+    // record whose mat was invented here would be asserting a design this test never ran.
+    flexure: { status: 'OK', Mu: 120, criticalSection: 0, bottomMat: null },
     oneWayShear: { status: 'OK', Vu: 90, phiVc: 400, utilization: 0.23 },
     punching: {
       status: 'OK', position: 'interior', truncatedSides: 0,

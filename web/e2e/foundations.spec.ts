@@ -183,6 +183,68 @@ test.describe('@smoke foundations — the visible workflow', () => {
    * which is stronger and non-flaky.
    */
 
+  /**
+   * PR18-A: the bottom mat is a preference the user can see and change, and a design they can
+   * read. Both go through the real controls — the whole point is that the Ø16 which used to be
+   * a private store constant is now on screen.
+   */
+  test('F-H the bottom-mat diameters are visible and editable', async ({ pro: page }) => {
+    await loadModel(page, QA);
+    await openFoundations(page);
+
+    const prefs = page.getByTestId('footing-mat-prefs');
+    await expect(prefs).toBeVisible();
+    const x = page.getByTestId('footing-mat-dia-x');
+    const y = page.getByTestId('footing-mat-dia-y');
+    // The migration default, on screen rather than buried in a module.
+    await expect(x).toHaveValue('16');
+    await expect(y).toHaveValue('16');
+    // And it is a control, not a caption.
+    await x.selectOption('20');
+    await expect(x).toHaveValue('20');
+    // The spacing policy is stated too, so the project records that its spacings came from the
+    // code rather than from a hand entry.
+    await expect(page.getByTestId('footing-mat-spacing-policy')).toHaveValue('AUTO_CODE_COMPLIANT');
+  });
+
+  test('F-I the designed mat is shown, and says its geometry is not modelled', async ({ pro: page }) => {
+    await loadModel(page, QA);
+    await solveModel(page);
+    await computeDemands(page);
+    await openFoundations(page);
+    await addStatedSoil(page);
+    await addFooting(page);
+    await dimensionFooting(page);
+    await attachColumnAndSoil(page);
+
+    // Before the run there is nothing to show, and the panel says so instead of showing zeroes.
+    await expect(page.getByTestId('footing-mat-no-run')).toBeVisible();
+
+    await page.getByTestId('floor-design-run').click();
+
+    // Both directions, each with its own numbers.
+    for (const axis of ['X', 'Y'] as const) {
+      const dir = page.getByTestId(`footing-mat-${axis}`);
+      await expect(dir).toBeVisible();
+      await expect(page.getByTestId(`footing-mat-${axis}-status`)).toContainText(/designed|dimensionada/i);
+      // The two As figures a reviewer needs in order to know which requirement governs.
+      await expect(dir).toContainText(/As flexure|As flexión/i);
+      await expect(dir).toContainText(/As minimum|As mínima/i);
+      await expect(page.getByTestId(`footing-mat-${axis}-regions`)).toBeVisible();
+    }
+
+    // The two honest statuses, on screen and not inferable only from an absence.
+    await expect(page.getByTestId('footing-mat-geometry-pending')).toBeVisible();
+    await expect(page.getByTestId('footing-mat-top-not-evaluated')).toBeVisible();
+
+    // The clause chain is citable from the panel.
+    const clauses = page.getByTestId('footing-mat-clauses');
+    await clauses.locator('summary').click();
+    for (const c of ['13.3.3.2', '7.6.1', '7.7.2.3', '24.3.2', '25.2.1']) {
+      await expect(clauses).toContainText(c);
+    }
+  });
+
   test('F-G the panel offers no second regulation selector', async ({ pro: page }) => {
     await loadModel(page, QA);
     await openFoundations(page);

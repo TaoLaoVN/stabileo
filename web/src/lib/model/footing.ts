@@ -37,6 +37,7 @@
 
 import { msg, type EngineMessage } from '../codes/message';
 import type { FootingKind } from '../engine/detailing/foundation-check';
+import { REBAR_DB } from '../engine/codes/argentina/cirsoc201';
 
 export const FOOTING_SCHEMA_VERSION = 1;
 
@@ -147,6 +148,101 @@ export function newFooting(
     soilProfileId: opts.soilProfileId,
     revision: 1,
   };
+}
+
+// ─── Bottom-mat preferences ──────────────────────────────────────
+//
+// A PROJECT decision, like the detailing defaults and unlike the plan dimensions: one bottom
+// mat convention covers every footing on the job, and asking for the diameter footing by
+// footing would be asking the same question N times.
+//
+// What this replaces is the point. The mat diameter was `DEFAULT_FOOTING_BAR_DIA_MM = 16`,
+// a module constant inside the detailing store that no user could see or change, feeding the
+// effective depth of every footing check in the project. A number that decides an outcome and
+// cannot be inspected is indistinguishable, from the outside, from a designed result — which
+// is the one thing this codebase's foundation work is built not to do.
+
+/** The bottom-mat diameter a project gets when it has never stated one, mm. */
+export const DEFAULT_BOTTOM_MAT_DIAMETER_MM = 16;
+
+/**
+ * How the bar spacing is arrived at.
+ *
+ * One inhabitant today, and it is a value rather than an implied default so the project
+ * RECORDS that its spacings were derived from the code rather than entered by hand. A future
+ * explicit-spacing mode is then a new member of this union, not a reinterpretation of an
+ * absent field.
+ */
+export type FootingMatSpacingPolicy = 'AUTO_CODE_COMPLIANT';
+
+export interface FootingMatPreferences {
+  /** Diameter of the bars running parallel to B, mm. */
+  bottomMatDiameterXmm: number;
+  /** Diameter of the bars running parallel to L, mm. */
+  bottomMatDiameterYmm: number;
+  bottomMatSpacingPolicy: FootingMatSpacingPolicy;
+}
+
+/**
+ * Diameters a bottom mat may be specified in, mm.
+ *
+ * Taken from `REBAR_DB` — the project's one bar catalogue, shared with the beam, column and
+ * slab editors — rather than written out again here. A second list is how the Foundations
+ * panel comes to offer a diameter the rest of the app cannot detail. Ø6 and Ø8 are excluded
+ * for the same reason `selectRebar` excludes them from longitudinal steel: they are tie and
+ * mesh sizes, not mat bars.
+ */
+export const SUPPORTED_MAT_DIAMETERS_MM: readonly number[] =
+  REBAR_DB.filter((r) => r.diameter >= 10).map((r) => r.diameter);
+
+export function defaultFootingMatPreferences(): FootingMatPreferences {
+  return {
+    bottomMatDiameterXmm: DEFAULT_BOTTOM_MAT_DIAMETER_MM,
+    bottomMatDiameterYmm: DEFAULT_BOTTOM_MAT_DIAMETER_MM,
+    bottomMatSpacingPolicy: 'AUTO_CODE_COMPLIANT',
+  };
+}
+
+/**
+ * Read any persisted shape, including none.
+ *
+ * A project saved before these fields existed loads at 16 mm / 16 mm / AUTO_CODE_COMPLIANT,
+ * which is EXACTLY what the invisible constant was doing for it — so reopening such a project
+ * reproduces its previous numbers rather than silently redesigning it under a new default.
+ * That is why the migration default is not free to be "better".
+ *
+ * An unsupported diameter is snapped to the default with a notice rather than accepted: a
+ * hand-edited `.ded` or share URL carrying Ø7 would otherwise reach the design and produce a
+ * mat nobody can buy.
+ */
+export function migrateFootingMatPreferences(
+  raw: unknown,
+): { preferences: FootingMatPreferences; notices: EngineMessage[] } {
+  const notices: EngineMessage[] = [];
+  const preferences = defaultFootingMatPreferences();
+  if (!raw || typeof raw !== 'object') return { preferences, notices };
+  const e = raw as Record<string, unknown>;
+
+  const diameter = (v: unknown, axis: 'X' | 'Y'): number => {
+    if (typeof v !== 'number' || !Number.isFinite(v)) return DEFAULT_BOTTOM_MAT_DIAMETER_MM;
+    if (!SUPPORTED_MAT_DIAMETERS_MM.includes(v)) {
+      notices.push(msg('footing.migration.matDiameterUnsupported', {
+        axis, value: v, fallback: DEFAULT_BOTTOM_MAT_DIAMETER_MM,
+      }));
+      return DEFAULT_BOTTOM_MAT_DIAMETER_MM;
+    }
+    return v;
+  };
+
+  preferences.bottomMatDiameterXmm = diameter(e.bottomMatDiameterXmm, 'X');
+  preferences.bottomMatDiameterYmm = diameter(e.bottomMatDiameterYmm, 'Y');
+  if (e.bottomMatSpacingPolicy !== undefined
+    && e.bottomMatSpacingPolicy !== 'AUTO_CODE_COMPLIANT') {
+    notices.push(msg('footing.migration.matPolicyUnknown', {
+      value: String(e.bottomMatSpacingPolicy),
+    }));
+  }
+  return { preferences, notices };
 }
 
 /**

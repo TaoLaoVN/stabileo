@@ -47,6 +47,7 @@ import type { EngineMessage } from '../../codes/message';
 import type { BarPath } from '../../codes/cirsoc201/bar-geometry';
 import { stableHash } from '../design/canonical-hash';
 import type { CheckStatus } from './foundation-check';
+import type { FootingMatDesign } from './footing-flexure';
 import type { ColumnPosition } from './punching-shear';
 
 export const FAMILY_RECORD_SCHEMA_VERSION = 1;
@@ -308,8 +309,24 @@ export interface FootingDesignRecord extends FamilyRecordCommon {
     allowable: number;
     utilization: number;
   } | null;
-  /** Factored moment at the column face, §13.2.7. */
-  flexure: { status: CheckStatus; Mu: number; criticalSection: number } | null;
+  /**
+   * Factored moment at the column face (§13.2.7.1), and the bottom-mat design it drives.
+   *
+   * `status` stays UNSUPPORTED through PR18-A even though `bottomMat` is now a complete
+   * numerical design, and that is not a leftover. A footing whose mat exists only as numbers
+   * has no bars in the model, the schedule or the export, so there is nothing to verify the
+   * demand against and OK would be a capacity claim nobody computed. `bottomMat.geometry`
+   * says REQUIRED_NOT_MODELED, and the two fields together are the honest statement:
+   * designed, not yet modelled, therefore not verified.
+   */
+  flexure: {
+    status: CheckStatus;
+    /** The §13.2.7.1 moment about the B axis, kN·m — the same number `FootingCheck.Mu` is. */
+    Mu: number;
+    criticalSection: number;
+    /** Null when the mat could not be designed at all; its own statuses say why. */
+    bottomMat: FootingMatDesign | null;
+  } | null;
   oneWayShear: { status: CheckStatus; Vu: number; phiVc: number; utilization: number } | null;
   punching: {
     status: CheckStatus;

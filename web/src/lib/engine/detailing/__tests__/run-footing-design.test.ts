@@ -55,13 +55,26 @@ const reactions = (over: Partial<NodeReactions> = {}): NodeReactions => ({
  */
 const REVISIONS = { analysis: 6, loads: 4, regulation: 2 };
 
+/**
+ * The project's bottom-mat preferences, at the migration default.
+ *
+ * Ø16 both ways is what the private `DEFAULT_FOOTING_BAR_DIA_MM` constant used to supply, so
+ * every existing expectation in this file is still being asserted against the same effective
+ * depth it was written for.
+ */
+const MAT_PREFS = {
+  bottomMatDiameterXmm: 16,
+  bottomMatDiameterYmm: 16,
+  bottomMatSpacingPolicy: 'AUTO_CODE_COMPLIANT',
+} as const;
+
 const run = (over: Partial<RunFootingDesignInput> = {}) => runFootingDesign({
   footings: [footing()],
   geotechnical: geo(),
   nodes: new Map([[10, { x: 0, y: 0, z: -1.2 }]]),
   columns: new Map([[3, column()]]),
   reactions: new Map([[10, reactions()]]),
-  fc: 25, fy: 420, edition: '2025', barDiameterMm: 16,
+  fc: 25, fy: 420, edition: '2025', matPreferences: MAT_PREFS, maxAggregateSizeMm: 20,
   revisions: REVISIONS, regulationIds: ['cirsoc-201'],
   ...over,
 });
@@ -100,18 +113,133 @@ describe('runFootingDesign — the production path', () => {
     const rx = new Map([[10, reactions()], [11, reactions()]]);
     const forward = runFootingDesign({
       footings: two, geotechnical: geo(), nodes, columns: new Map([[3, column()]]),
-      reactions: rx, fc: 25, fy: 420, edition: '2025', barDiameterMm: 16,
+      reactions: rx, fc: 25, fy: 420, edition: '2025', matPreferences: MAT_PREFS, maxAggregateSizeMm: 20,
       revisions: REVISIONS, regulationIds: ['cirsoc-201'],
     });
     const reversed = runFootingDesign({
       footings: [...two].reverse(), geotechnical: geo(), nodes,
       columns: new Map([[3, column()]]),
-      reactions: rx, fc: 25, fy: 420, edition: '2025', barDiameterMm: 16,
+      reactions: rx, fc: 25, fy: 420, edition: '2025', matPreferences: MAT_PREFS, maxAggregateSizeMm: 20,
       revisions: REVISIONS, regulationIds: ['cirsoc-201'],
     });
     expect(reversed.outcomes.map((o) => o.footingId)).toEqual(forward.outcomes.map((o) => o.footingId));
     expect(reversed.entriesByLevel.get(-1.2)!.map((e) => e.id))
       .toEqual(forward.entriesByLevel.get(-1.2)!.map((e) => e.id));
+  });
+});
+
+/**
+ * PR18-A: the production path now designs the bottom mat, and must be honest about what it
+ * has NOT done. Every assertion here is about the seam between the two.
+ */
+describe('the bottom-mat design on the production path', () => {
+  it('designs both directions of a checked footing', () => {
+    const o = run().outcomes[0];
+    expect(o.mat).not.toBeNull();
+    expect(o.mat!.status).toBe('DESIGNED');
+    expect(o.mat!.x.barCount).toBeGreaterThan(0);
+    expect(o.mat!.y.barCount).toBeGreaterThan(0);
+  });
+
+  it('reproduces `check.Mu` EXACTLY in direction X', () => {
+    // Same cantilever, same distribution width, same trapezoid — direction X is the moment
+    // `checkFooting` has always reported, and the record carries one number for it, not two.
+    // If these ever diverge the project holds two answers about the same footing.
+    const o = run().outcomes[0];
+    expect(o.mat!.x.Mu).toBeCloseTo(o.check!.Mu, 12);
+    expect(o.record.flexure!.Mu).toBeCloseTo(o.mat!.x.Mu, 12);
+  });
+
+  it('adds the direction Y demand the check never had', () => {
+    // A square footing makes them equal, so the point is made on a rectangular one.
+    const o = run({ footings: [footing({ B: 1.5, L: 3.0 })] }).outcomes[0];
+    expect(o.mat!.y.Mu).not.toBeCloseTo(o.check!.Mu, 1);
+    expect(o.mat!.y.Mu).toBeGreaterThan(0);
+  });
+
+  it('keeps flexure UNSUPPORTED because no mat geometry is modelled (R, S)', () => {
+    const o = run().outcomes[0];
+    // The design exists…
+    expect(o.record.flexure!.bottomMat!.status).toBe('DESIGNED');
+    // …and the check it feeds is still not verified, with the reason naming which of the
+    // three situations this is.
+    expect(o.record.flexure!.status).toBe('UNSUPPORTED');
+    const flexureCheck = o.record.checks.find((c) => c.key === 'flexure')!;
+    expect(flexureCheck.status).toBe('UNSUPPORTED');
+    expect(keysOf(flexureCheck.unsupported))
+      .toEqual(['footing.record.flexureDesignedNotModeled']);
+    // The record therefore cannot roll up as verified.
+    expect(o.record.status).not.toBe('OK');
+  });
+
+  it('reports geometry as REQUIRED_NOT_MODELED and top steel as NOT_EVALUATED (R)', () => {
+    const mat = run().outcomes[0].mat!;
+    expect(mat.geometry).toBe('REQUIRED_NOT_MODELED');
+    expect(mat.topReinforcement).toBe('NOT_EVALUATED');
+  });
+
+  it('generates NO physical bars for the mat (S)', () => {
+    // PR18-B's job. The dowels are the only footing steel that exists, and they are column
+    // starters rather than mat bars, so the assembly entry must carry nothing else.
+    //
+    // Asserted as the EXACT key set rather than by probing for names a future mat generator
+    // might not use. `not.toHaveProperty('bars')` passes for a field called `matBars`; an exact
+    // set fails the moment anything at all is added, which is what this gate is for.
+    const entry = run().entriesByLevel.get(-1.2)![0];
+    expect(Object.keys(entry).sort()).toEqual(['check', 'dowels', 'elementIds', 'id', 'record']);
+
+    // Same for a distribution region: numbers and geometry, and no bar identities. `dowels`
+    // above carries `barIds: []` precisely because `completeFamilyRecord` fills it later —
+    // there is no equivalent field here, because there is no mat cage to fill it from.
+    const region = run().outcomes[0].record.flexure!.bottomMat!.x.regions[0];
+    expect(Object.keys(region).sort()).toEqual([
+      'asProvided', 'asRequired', 'barCount', 'centreOffset', 'distributionShare',
+      'governedBy', 'kind', 'layoutModel', 'spacingCentre', 'spacingClear', 'touchesEdge',
+      'width',
+    ]);
+  });
+
+  it('states the two flexural depths and the separate punching depth', () => {
+    const o = run().outcomes[0];
+    const mat = o.mat!;
+    // The punching check keeps the averaged two-layer depth it always used…
+    expect(o.check!.punching!.critical.d).toBeCloseTo(mat.punchingD, 12);
+    // …and it is NOT either flexural depth.
+    expect(mat.punchingD).not.toBeCloseTo(mat.x.d, 4);
+    expect(keysOf(o.assumptions)).toContain('footing.assumption.flexuralDepths');
+  });
+
+  it('keeps punching and shear bit-identical at the 16/16 default', () => {
+    // The averaged depth is now taken at the mean of the two selected diameters, which is
+    // exactly the previous single value whenever they are equal. A project on the default must
+    // therefore see no change at all in the checks PR18-A did not touch.
+    const o = run().outcomes[0];
+    expect(o.check!.punching!.critical.d).toBeCloseTo(0.5 - 0.05 - 0.016, 12);
+    expect(o.check!.oneWayShear!.Vu).toBeGreaterThan(0);
+  });
+
+  it('changes the material hash when a mat diameter changes', () => {
+    // Editing the mat is editing the design inputs, so a stored certificate must not survive
+    // it. The hash is what makes that automatic instead of remembered.
+    const base = run().outcomes[0].record;
+    const changed = run({
+      matPreferences: { ...MAT_PREFS, bottomMatDiameterXmm: 20 },
+    }).outcomes[0].record;
+    expect(changed.materialHash).not.toBe(base.materialHash);
+    expect(changed.inputHash).not.toBe(base.inputHash);
+    expect(changed.resultHash).not.toBe(base.resultHash);
+  });
+
+  it('surfaces a mat design failure as a named condition on the footing', () => {
+    // A footing too thin for its bars: §13.3.1.2's 150 mm least effective depth.
+    const o = run({ footings: [footing({ thickness: 0.1 })] }).outcomes[0];
+    if (o.mat) {
+      expect(o.mat.status).not.toBe('DESIGNED');
+      expect(keysOf(o.unsupported).some((k) => k.startsWith('footing.mat.'))).toBe(true);
+    } else {
+      // Rejected earlier by the geometry gate, which is also an acceptable refusal.
+      expect(o.check).toBeNull();
+    }
   });
 });
 
@@ -228,7 +356,7 @@ describe('honest reporting of what a result does and does not cover', () => {
       nodes: new Map([[10, { x: 0, y: 0, z: -1.2 }], [11, { x: 5, y: 0, z: -1.2 }]]),
       columns: new Map([[3, column()]]),
       reactions: new Map([[10, reactions()], [11, reactions()]]),
-      fc: 25, fy: 420, edition: '2025', barDiameterMm: 16,
+      fc: 25, fy: 420, edition: '2025', matPreferences: MAT_PREFS, maxAggregateSizeMm: 20,
       revisions: REVISIONS, regulationIds: ['cirsoc-201'],
     });
     expect(r.outcomes.find((o) => o.footingId === 1)!.check).toBeNull();

@@ -37,8 +37,9 @@ import type { ClauseRef, RegulationEdition } from '../../codes/regulation';
 import type { Maturity } from '../../codes/maturity';
 import { deriveDevelopment, deriveHookedDevelopment, type DevelopmentResult, type HookedDevelopmentResult } from '../../codes/cirsoc201/anchorage';
 import {
-  footingEffectiveDepth, validateFooting, type Footing,
+  footingEffectiveDepth, validateFooting, type Footing, type FootingMatPreferences,
 } from '../../model/footing';
+import { designFootingMat, type FootingMatDesign } from './footing-flexure';
 import {
   findProfile, geotechnicalAssumptions, type ProjectGeotechnical,
 } from '../../model/geotechnical';
@@ -106,8 +107,27 @@ export interface RunFootingDesignInput {
   /** Reinforcement yield strength, MPa. */
   fy: number;
   edition: RegulationEdition;
-  /** Bottom-mat bar diameter, mm — sets the effective depth. */
-  barDiameterMm: number;
+  /**
+   * The project's bottom-mat preferences — the diameters that set the effective depths.
+   *
+   * This replaces a `barDiameterMm: number` that the store filled from a private
+   * `DEFAULT_FOOTING_BAR_DIA_MM = 16` constant. That number set the effective depth of every
+   * footing check in the project and no user could see it, let alone change it, which made it
+   * indistinguishable from a designed result. It is now a persisted, visible, editable project
+   * preference, and it is stated as one.
+   *
+   * The two diameters are separate because the two mat directions are: each direction's bars
+   * sit at their own depth and are designed at it.
+   */
+  matPreferences: FootingMatPreferences;
+  /**
+   * Maximum nominal coarse-aggregate size, mm — §25.2.1's `(4/3) d_agg` term.
+   *
+   * Required rather than defaulted. The store already resolves it from the materials in use,
+   * and quietly assuming 20 mm here would put a second, invisible aggregate size in the
+   * project next to the provenanced one the reports quote.
+   */
+  maxAggregateSizeMm: number;
   /**
    * The upstream revisions this run is reading.
    *
@@ -144,6 +164,13 @@ export interface FootingDesignOutcome {
   name: string;
   /** Null when the footing could not be checked. `unsupported` says why. */
   check: FootingCheck | null;
+  /**
+   * The two-direction bottom-mat design, when the footing got far enough to have one.
+   *
+   * Null exactly when `check` is null: a footing with no soil or no reaction has no demand to
+   * design a mat for, and emitting a mat with zeroes in it would be a design against no load.
+   */
+  mat: FootingMatDesign | null;
   entry: FootingAssemblyEntry | null;
   /** Elevation the footing is attributed to — the underside. */
   level: number;
@@ -258,7 +285,16 @@ export function runFootingDesign(input: RunFootingDesignInput): RunFootingDesign
     // and therefore out of the certificate tally.
     let ground: GroundSnapshot | null = null;
     let demand: FootingDemandSnapshot | null = null;
-    let effectiveDepth = footingEffectiveDepth(f, input.barDiameterMm);
+    let mat: FootingMatDesign | null = null;
+    // The punching and one-way-shear depth, unchanged in convention: the AVERAGED two-layer
+    // mat depth `h − cover − d_b`. With the two directions now carrying their own diameters,
+    // the `d_b` that average is taken at is the mean of the two — which is exactly the previous
+    // number whenever both are the same, so a project that keeps the 16/16 default gets
+    // bit-identical shear and punching results. What the flexural design uses is a different,
+    // per-direction depth, and the two are reported side by side rather than reconciled.
+    const punchingBarDiameterMm =
+      (input.matPreferences.bottomMatDiameterXmm + input.matPreferences.bottomMatDiameterYmm) / 2;
+    let effectiveDepth = footingEffectiveDepth(f, punchingBarDiameterMm);
     if (!Number.isFinite(effectiveDepth)) effectiveDepth = 0;
 
     const geometry = (): FootingGeometrySnapshot => ({
@@ -291,9 +327,14 @@ export function runFootingDesign(input: RunFootingDesignInput): RunFootingDesign
       refs: readonly ClauseRef[],
     ): FamilyRecordDraft<FootingDesignRecord> => {
       const geom = geometry();
+      // The mat preferences are INSIDE the material hash, so editing either diameter changes
+      // the hash and voids the certificate. They decide the effective depth, the required
+      // steel, the bar count and the spacing; a certificate that survived a change to them
+      // would be certifying a mat the project no longer specifies.
       const materialHash = familyHash({
         fc: input.fc, fy: input.fy, cover: f.cover,
-        barDiameterMm: input.barDiameterMm,
+        matPreferences: input.matPreferences,
+        maxAggregateSizeMm: input.maxAggregateSizeMm,
         concreteMaterialId: f.concreteMaterialId, rebarMaterialId: f.rebarMaterialId,
       });
       const geometryHash = familyHash(geom);
@@ -358,7 +399,7 @@ export function runFootingDesign(input: RunFootingDesignInput): RunFootingDesign
     const fail = (governing: string | null = null, key = 'footing.design'): void => {
       const record = failRecord(key);
       outcomes.push({
-        footingId: f.id, name: f.name, check: null, entry: null, level,
+        footingId: f.id, name: f.name, check: null, mat: null, entry: null, level,
         governingCombination: governing, unsupported, assumptions,
         record,
       });
@@ -519,7 +560,7 @@ export function runFootingDesign(input: RunFootingDesignInput): RunFootingDesign
       continue;
     }
     assumptions.push(msg('footing.assumption.averageMatDepth', {
-      footing: f.name, d: +d.toFixed(3), bar: input.barDiameterMm,
+      footing: f.name, d: +d.toFixed(3), bar: punchingBarDiameterMm,
     }));
 
     const perimeter = punchingPosition(f, column, d);
@@ -561,6 +602,36 @@ export function runFootingDesign(input: RunFootingDesignInput): RunFootingDesign
     };
     const check = checkFooting(fi);
 
+    // ── The bottom mat ──────────────────────────────────────────
+    //
+    // Designed from the SAME inputs the check was run against, so the demand the design
+    // answers is the demand the check reports and not a second reading of the model. Direction
+    // X reproduces `check.Mu` exactly — same cantilever, same distribution width, same
+    // trapezoid — which is what makes the pair auditable; direction Y is the one the check
+    // never had.
+    mat = designFootingMat({
+      B: f.B, L: f.L,
+      thickness: f.thickness, cover: f.cover,
+      columnB: column.b, columnH: column.h,
+      eccentricityB: f.eccentricityB, eccentricityL: f.eccentricityL,
+      fc: input.fc, fy: input.fy,
+      factoredAxial,
+      factoredMomentB: governing.my,
+      factoredMomentL: governing.mx,
+      maxAggregateSizeMm: input.maxAggregateSizeMm,
+      edition: input.edition,
+      preferences: input.matPreferences,
+      // Anchorage lengths come from the authoritative clause implementation, never from a
+      // second formula. Reported only: §13.2.8's critical sections are geometry, and PR18-A
+      // models none.
+      developmentLengthFor: (diameterMm) => starterDevelopment(diameterMm, input).ldM,
+    });
+    assumptions.push(...mat.assumptions);
+    // A mat that could not be designed is a named condition on the footing, not a silent
+    // absence — the whole point of the status split is that "designed" and "drawn" are
+    // separately visible, and so is "not designed".
+    unsupported.push(...mat.failures);
+
     const elementIds = [column.elementId];
     const starter = column.bars
       ? starterDevelopment(column.bars.diameterMm, input)
@@ -570,7 +641,7 @@ export function runFootingDesign(input: RunFootingDesignInput): RunFootingDesign
       : null;
     const dowelsPresent = Boolean(column.bars && starter);
     const entryDraft: FootingAssemblyEntry['record'] = footingRecord({
-      check, perimeter, position, d,
+      check, mat, perimeter, position, d,
       B: f.B, L: f.L,
       factoredAxial,
       allowableBearing, governing,
@@ -631,7 +702,7 @@ export function runFootingDesign(input: RunFootingDesignInput): RunFootingDesign
     }
 
     outcomes.push({
-      footingId: f.id, name: f.name, check, entry, level,
+      footingId: f.id, name: f.name, check, mat, entry, level,
       governingCombination: governing.combinationName,
       unsupported, assumptions,
       record: entryDraft,
@@ -693,6 +764,8 @@ function groundSnapshot(p: SoilProfile): GroundSnapshot {
  */
 function footingRecord(args: {
   check: FootingCheck;
+  /** The designed bottom mat. Copied onto the record; nothing about it is recomputed. */
+  mat: FootingMatDesign | null;
   perimeter: { truncatedSides: number };
   position: ColumnPosition;
   d: number;
@@ -732,10 +805,14 @@ function footingRecord(args: {
     uplift: b.uplift, allowable: args.allowableBearing, utilization: b.utilization,
   };
   const flexure: FootingDesignRecord['flexure'] = {
-    // The demand is real (§13.2.7 cantilever integral, trapezoid included), but no
-    // bottom-mat steel exists in the model to verify it against. OK would be a
-    // capacity claim nobody computed — the certificate lies by omission.
+    // The demand is real (§13.2.7.1 cantilever integral, trapezoid included) and, since
+    // PR18-A, so is the design: `bottomMat` carries the required steel, the bar count and the
+    // spacings for both directions. The status is STILL UNSUPPORTED, because no bottom-mat
+    // steel exists in the model to verify the demand against. OK would be a capacity claim
+    // nobody computed — the certificate would lie by omission, only now with numbers next to
+    // it, which is worse. `bottomMat.geometry` is REQUIRED_NOT_MODELED and says so in one word.
     status: 'UNSUPPORTED', Mu: check.Mu, criticalSection: 0,
+    bottomMat: args.mat,
   };
   const oneWayShear: FootingDesignRecord['oneWayShear'] = check.oneWayShear
     ? {
@@ -772,8 +849,21 @@ function footingRecord(args: {
     },
     {
       key: 'flexure', status: 'UNSUPPORTED', utilization: null,
-      governingCombination: combo, refs: [],
-      unsupported: [msg('footing.record.flexureNoSteel')],
+      governingCombination: combo,
+      // The clauses the design was actually resolved against, so the certificate cites the
+      // chain (§13.3.3, §7.6.1, §7.7.2.x, §24.3.2, §25.2.1) rather than an empty list.
+      refs: args.mat?.refs ?? [],
+      // Three DIFFERENT reasons, because they call for three different actions. "No mat was
+      // designed" is a missing input; "designed, not drawn" is the PR18-B backlog; "the design
+      // failed" is a footing the engineer has to change. One message for all three would send
+      // every reader to the wrong remedy for two of them.
+      unsupported: [
+        args.mat === null || args.mat.status === 'NOT_EVALUATED'
+          ? msg('footing.record.flexureNoSteel')
+          : args.mat.status === 'DESIGN_FAILED'
+            ? msg('footing.record.flexureDesignFailed')
+            : msg('footing.record.flexureDesignedNotModeled'),
+      ],
     },
     ...(oneWayShear
       ? [{

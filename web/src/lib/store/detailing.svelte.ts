@@ -126,15 +126,13 @@ function resolveSpacingMargin(): number {
  */
 const DEFAULT_WALL_BAR_DIA_MM = 12;
 
-/**
- * Bottom-mat bar diameter for a footing, mm.
- *
- * Same posture as the wall curtain above: a starting size that sets the effective depth,
- * which the check then reports on — not a designed result. Ø16 is the ordinary bottom mat for
- * a pad footing. The assumption is stated per footing
- * (`footing.assumption.averageMatDepth`), so a reader can see what `d` came from.
- */
-const DEFAULT_FOOTING_BAR_DIA_MM = 16;
+// The footing bottom-mat diameter used to live here, as
+// `const DEFAULT_FOOTING_BAR_DIA_MM = 16`. It set the effective depth of every footing check
+// in the project and no user could see it or change it, which made a private module constant
+// indistinguishable — from outside — from a designed result. It is now a persisted project
+// preference on the model (`footingMatPreferences`), visible and editable in the Foundations
+// panel, and the design states which of the two directions each diameter belongs to. See
+// `model/footing.ts`.
 
 /**
  * The concrete regulation this project's RC work is resolved against.
@@ -1041,7 +1039,13 @@ function createDetailingStore() {
           fc: props.fc,
           fy: props.fy,
           edition: currentConcreteEdition(),
-          barDiameterMm: DEFAULT_FOOTING_BAR_DIA_MM,
+          // The project's own stated mat, resolved through the model so an older project
+          // without the field reads as the 16/16 default it was already designed to.
+          matPreferences: modelStore.footingMatPreferences(),
+          // The same provenanced aggregate size the shells and the reports use. One value per
+          // run, from `resolveAggregate()`, rather than a second assumption inside the footing
+          // path.
+          maxAggregateSizeMm: resolveAggregate(),
           // The revision vector the records and certificates are stamped with. Read from the
           // authoritative stores rather than defaulted: a certificate whose vector was
           // invented cannot detect its own staleness, and PR18 already found one instance of

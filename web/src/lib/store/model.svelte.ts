@@ -6,7 +6,10 @@ import {
 } from '../engine/detailing/assembly';
 import { migrateRegulations, type StoredRegulations } from '../codes/roles';
 import type { RevisionVector } from '../codes/revisions';
-import { migrateFootings, newFooting, type Footing } from '../model/footing';
+import {
+  defaultFootingMatPreferences, migrateFootingMatPreferences, migrateFootings, newFooting,
+  type Footing, type FootingMatPreferences,
+} from '../model/footing';
 import { DEFAULT_COVER } from '../engine/design/member-context';
 import {
   emptyGeotechnical, migrateGeotechnical, newSoilProfile,
@@ -536,6 +539,15 @@ export interface StructureModel {
    * into an EMPTY set, never a seeded stratum.
    */
   geotechnical?: ProjectGeotechnical;
+  /**
+   * Bottom-mat design preferences shared by every footing on the project.
+   *
+   * Absent on models saved before PR18-A. `migrateFootingMatPreferences` turns that into
+   * 16 mm / 16 mm / AUTO_CODE_COMPLIANT — the values the invisible store constant was already
+   * applying to those projects — so reopening one reproduces its numbers instead of
+   * redesigning it under a new default.
+   */
+  footingMatPreferences?: FootingMatPreferences;
   /** Where the model came from (e.g. CAD-derived draft) and review status.
    *  Absent for hand-built models. */
   provenance?: ModelProvenance;
@@ -639,6 +651,11 @@ function createModelStore() {
     footings: new Map(),
     // A new project has no strata, not one invented stratum. See migrateGeotechnical.
     geotechnical: emptyGeotechnical(),
+    // Unlike the strata, the mat convention DOES get a starting value, and it is a preference
+    // rather than a result: Ø16 both ways, spacing derived from the code. It is visible and
+    // editable in the Foundations panel, which is the whole difference from the module
+    // constant it replaces.
+    footingMatPreferences: defaultFootingMatPreferences(),
     localAxisConvention: 'zUpStrongAxis',
     codeSettings: defaultCodeSettings(),
     detailing: emptyDetailingStore(),
@@ -1003,12 +1020,21 @@ function createModelStore() {
       const afterFootings = JSON.stringify([...nextFootings.entries()]);
       const beforeGround = JSON.stringify(model.geotechnical ?? null);
       const afterGround = JSON.stringify(s.geotechnical ?? null);
-      if (beforeFootings === afterFootings && beforeGround === afterGround) return;
+      // The mat preferences travel on this channel too, because they are edited through it:
+      // `setFootingMatPreferences` pushes a foundation entry, so leaving them out here would
+      // make that edit the one foundation change Ctrl+Z does nothing to — the same defect
+      // that tagging footing edits as 'reinforcement' produced for the footings themselves.
+      const nextPrefs = migrateFootingMatPreferences(s.footingMatPreferences).preferences;
+      const beforePrefs = JSON.stringify(model.footingMatPreferences ?? null);
+      const afterPrefs = JSON.stringify(nextPrefs);
+      if (beforeFootings === afterFootings && beforeGround === afterGround
+        && beforePrefs === afterPrefs) return;
 
       model.footings = nextFootings;
       model.geotechnical = s.geotechnical
         ? (JSON.parse(JSON.stringify(s.geotechnical)) as typeof model.geotechnical)
         : undefined;
+      model.footingMatPreferences = nextPrefs;
       _onFoundationChange?.();
     },
 
@@ -1149,6 +1175,10 @@ function createModelStore() {
         geotechnical: snap.geotechnical
           ? (JSON.parse(JSON.stringify(snap.geotechnical)) as ProjectGeotechnical)
           : emptyGeotechnical(),
+        // Emitted always, for the same reason as `geotechnical` above: `restore(snapshot())`
+        // has to be a no-op, and a preference that vanished on save would take the project
+        // back to the default mat on every open.
+        footingMatPreferences: { ...(snap.footingMatPreferences ?? defaultFootingMatPreferences()) },
       };
       if (snap.provenance) {
         result.provenance = {
@@ -1292,6 +1322,12 @@ function createModelStore() {
       // foundation. An absent geotechnical set becomes EMPTY, never a seeded stratum.
       model.footings = migrateFootings(s.footings, { cover: DEFAULT_COVER }).footings;
       model.geotechnical = migrateGeotechnical(s.geotechnical).geotechnical;
+      // An absent field is a project saved before mat preferences existed, and it loads at the
+      // 16/16/AUTO values the invisible constant was already applying to it. `undefined` is
+      // therefore NOT preserved here: there is no "no preference" state for a mat whose
+      // diameter every footing check in the project already depends on.
+      model.footingMatPreferences =
+        migrateFootingMatPreferences(s.footingMatPreferences).preferences;
       nextId.footing = s.nextId.footing
         ?? (Math.max(0, ...model.footings.keys()) + 1);
       nextId.soilProfile = s.nextId.soilProfile
@@ -1796,6 +1832,41 @@ function createModelStore() {
       return [...model.footings.values()].filter((f) => f.nodeId === nodeId);
     },
 
+    /**
+     * The project's bottom-mat preferences, never undefined.
+     *
+     * Resolved here rather than at each of the several call sites, so nothing has to decide
+     * again what an absent field means. A project that has never stated one reads as
+     * 16/16/AUTO, which is what its footings were already designed to.
+     */
+    footingMatPreferences(): FootingMatPreferences {
+      return model.footingMatPreferences ?? defaultFootingMatPreferences();
+    },
+
+    /**
+     * Edit the bottom-mat preferences.
+     *
+     * Goes through the FOUNDATION channel, exactly like a footing edit and for the same two
+     * reasons. It must be undoable, and it must NOT clear the structural analysis: the mat
+     * diameter changes the effective depth a footing is designed at, it does not change the
+     * stiffness that produced the reaction, and discarding the solve here would leave every
+     * footing reporting "no reaction" the next time the design ran.
+     *
+     * It DOES fire `_onFoundationChange`, because a different mat is a different design: the
+     * flexural depth, the required steel, the bar count and the spacing all move, so the
+     * footing detailing and every document built from it are superseded.
+     */
+    setFootingMatPreferences(next: Partial<FootingMatPreferences>): void {
+      const current = model.footingMatPreferences ?? defaultFootingMatPreferences();
+      const merged: FootingMatPreferences = { ...current, ...next };
+      // No history entry and no supersession for a write that changes nothing — a document
+      // retired by a no-op edit teaches the user to ignore supersession.
+      if (JSON.stringify(merged) === JSON.stringify(current)) return;
+      if (!_undoBatching) _pushUndoFoundation?.();
+      model.footingMatPreferences = merged;
+      _onFoundationChange?.();
+    },
+
     // ─── Geotechnical CRUD ──────────────────────────────────
     //
     // The ground is a PROJECT entity, not a footing field, so it is edited here and
@@ -2026,6 +2097,9 @@ function createModelStore() {
       // A new project has no strata. Carrying the previous project's soil over would be
       // founding this building on someone else's borehole.
       model.geotechnical = emptyGeotechnical();
+      // Same reasoning one line up, applied to the mat: a new project starts from the stated
+      // default and not from the diameter the previous project's engineer chose.
+      model.footingMatPreferences = defaultFootingMatPreferences();
       // A new model is a new project: it adopts the edition in force, not whatever the
       // previously open project happened to be designed to.
       model.codeSettings = defaultCodeSettings();
