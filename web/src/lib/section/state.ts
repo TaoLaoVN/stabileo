@@ -31,6 +31,7 @@ import type { Section } from '../store/model.svelte';
 import { resolveCanonicalSection, type PropertiesOnlyReason } from './canonical';
 import type { CanonicalGeometry } from '../engine/wasm-solver';
 import { isSolverReady } from '../engine/wasm-solver';
+import { CANONICAL_STATE_VERSION } from './version';
 
 /** Where a torsional constant came from. Never inferred, never fabricated. */
 export type TorsionProvenance =
@@ -164,7 +165,9 @@ export function resolveSectionState(sec: Section): SectionState {
   );
   return {
     kind: 'geometry-backed',
-    version: resolved.geometry.version,
+    // The persisted-state version, not the geometry wire version: this is what
+    // `migration.ts` checks when deciding whether it can interpret a file.
+    version: CANONICAL_STATE_VERSION,
     digest: resolved.digest,
     geometry: resolved.geometry,
     a: p.a,

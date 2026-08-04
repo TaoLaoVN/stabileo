@@ -1,5 +1,6 @@
 // Model store - manages the structural model
 import type { KinematicResult } from '../engine/kinematic-2d';
+import { restoreSections } from '../section/migration';
 import type { SolverInput, FullEnvelope, AnalysisResults } from '../engine/types';
 import type { SolverInput3D, AnalysisResults3D, FullEnvelope3D, Constraint3D, ConnectorElement } from '../engine/types-3d';
 export type { ConnectorElement };
@@ -930,7 +931,17 @@ function createModelStore() {
         name: snap.name,
         nodes: Array.from(snap.nodes.entries()) as ModelSnapshot['nodes'],
         materials: Array.from(snap.materials.entries()) as ModelSnapshot['materials'],
-        sections: Array.from(snap.sections.entries()) as ModelSnapshot['sections'],
+        // `canonical` is a DERIVED cache keyed by the section's own dimensions,
+        // not model data. Keeping it out of snapshots keeps the undo stack and
+        // the saved file small, makes save/open inherently idempotent, and
+        // means a restored model always re-derives and re-verifies rather than
+        // trusting whatever a file happened to contain. See section/migration.
+        sections: Array.from(snap.sections.entries()).map(
+          ([k, v]) => {
+            const { canonical: _drop, ...rest } = v as Section;
+            return [k, rest];
+          },
+        ) as ModelSnapshot['sections'],
         elements: Array.from(snap.elements.entries()).map(([k, v]) => [k, {
           ...v,
           releaseI: { ...(v.releaseI ?? NO_RELEASE) },
@@ -980,7 +991,15 @@ function createModelStore() {
       if (s.name) model.name = s.name;
       model.nodes = new Map(s.nodes.map(([k, v]) => [k, { ...v }]));
       model.materials = new Map(s.materials.map(([k, v]) => [k, { ...v }]));
-      model.sections = new Map(s.sections.map(([k, v]) => [k, { ...v } as Section]));
+      // Canonical section state is re-derived from each section's own
+      // dimensions rather than trusted as stored: a saved digest is a claim to
+      // be checked, and solver preparation reads these values synchronously,
+      // so a stale one would become wrong numbers with no later chance to
+      // notice. `restoreSections` also deep-copies, so a restored model never
+      // shares polygon arrays with the snapshot it came from.
+      model.sections = restoreSections(
+        new Map(s.sections.map(([k, v]) => [k, { ...v } as Section])),
+      ).sections;
       model.elements = new Map(s.elements.map(([k, v]) => [k, {
         ...v,
         releaseI: { ...(v.releaseI ?? NO_RELEASE) },
