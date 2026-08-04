@@ -7,9 +7,32 @@
     { k: 'landing.whatK2', title: 'landing.whatT2', body: 'landing.whatB2' },
     { k: 'landing.whatK3', title: 'landing.whatT3', body: 'landing.whatB3' },
   ];
+
+  /**
+   * The map of the product, given once and early.
+   *
+   * Stabileo AI is introduced here rather than being sprung on the visitor in
+   * the generator/verifier section further down: by the time they read the
+   * detailed AI argument they should already know it is a developing layer over
+   * the same engine, not a second opinion about mechanics. Every row carries a
+   * status badge, and the two `dev` rows are the same badge the status table
+   * uses, so nothing here can read as shipped by accident.
+   */
+  const modes = [
+    { id: 'basic', tone: 'today', badge: 'landing.badgeToday', name: 'landing.modeBasicName', body: 'landing.modeBasicLine' },
+    { id: 'edu', tone: 'dev', badge: 'landing.badgeDev', name: 'landing.modeEduName', body: 'landing.modeEduLine' },
+    { id: 'pro', tone: 'dev', badge: 'landing.badgeDev', name: 'landing.modeProName', body: 'landing.modeProLine' },
+    { id: 'ai', tone: 'dev', badge: 'landing.badgeDev', name: 'landing.modeAiName', body: 'landing.modeAiLine' },
+  ];
 </script>
 
-<section class="sec sec--paper what reveal" data-section="what" id="what" aria-labelledby="what-title">
+<!--
+  Ink, not paper. Adding the Basic section put three consecutive paper
+  sections between the hero and the demo (problem, what, basic), which read as
+  one undifferentiated light stretch and lost the deck's alternation. Flipping
+  this one restores it without touching either neighbour.
+-->
+<section class="sec sec--ink what reveal" data-section="what" id="what" aria-labelledby="what-title">
   <div class="wrap">
     <Eyebrow n="03" label={t('landing.ebWhat')} />
     <h2 id="what-title" class="display">{t('landing.whatH')}</h2>
@@ -22,6 +45,21 @@
           <p>{t(c.body)}</p>
         </article>
       {/each}
+    </div>
+
+    <p class="what-access">{t('landing.whatAccess')}</p>
+
+    <div class="modes" aria-labelledby="modes-title">
+      <h3 id="modes-title" class="modes-title">{t('landing.modesTitle')}</h3>
+      <ul class="mode-list">
+        {#each modes as m}
+          <li class="mode-row" data-mode={m.id}>
+            <span class="badge badge-{m.tone}">{t(m.badge)}</span>
+            <p class="mode-name">{t(m.name)}</p>
+            <p class="mode-body">{t(m.body)}</p>
+          </li>
+        {/each}
+      </ul>
     </div>
   </div>
 </section>

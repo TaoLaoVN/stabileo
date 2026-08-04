@@ -94,7 +94,19 @@
       if (phase === 'idle' || phase === 'failed') loadFrame();
     });
     await tick();
-    if (phase === 'ready') frameEl?.focus();
+    /*
+     * `preventScroll`, or focusing the frame undoes the scroll preservation
+     * immediately above it.
+     *
+     * The frame is taller than most viewports, so when activation happens with
+     * part of it off-screen the default focus() scrolls it into view — a 120 to
+     * 1000 px jump under the visitor, depending on where the section sat. That
+     * was latent for as long as the demo happened to be fully visible at the
+     * moment of the click, and a content change that moved the section down was
+     * enough to expose it. The focus itself is required: the frame must hold the
+     * keyboard as well as the wheel once the lock is released.
+     */
+    if (phase === 'ready') frameEl?.focus({ preventScroll: true });
   }
 
   /**
@@ -110,7 +122,8 @@
   async function deactivate() {
     if (!active) return;
     await keepingScroll(() => { active = false; });
-    ctaEl?.focus();
+    // Same reason as activation: return focus without moving the page.
+    ctaEl?.focus({ preventScroll: true });
   }
 
   /** Reload the current example from scratch, staying interactive. */
@@ -206,7 +219,8 @@
     if (next === null) return;
     e.preventDefault();
     pick(next);
-    tabEls[next]?.focus();
+    // Roving tabindex: move focus between example tabs without scrolling the page.
+    tabEls[next]?.focus({ preventScroll: true });
   }
 
   const statusText = $derived(
@@ -231,8 +245,19 @@
         <h2 id="demo-title" class="display">{t('landing.demoH')}</h2>
         <p class="lead">{t('landing.demoP')}</p>
       </div>
-      <p class="pill pill-live">{t('landing.demoInteractive')}</p>
+      <!--
+        Two pills, and the Basic one is not decoration. The embed loads
+        /app/basic?embed, so what the visitor touches is Basic mode and nothing
+        else. Without saying so, a reader who has just been told PRO does
+        finite elements and CIRSOC design will reasonably assume this window is
+        that product.
+      -->
+      <div class="demo-pills">
+        <p class="pill pill-basic">{t('landing.demoBasicPill')}</p>
+        <p class="pill pill-live">{t('landing.demoInteractive')}</p>
+      </div>
     </div>
+    <p class="demo-scope">{t('landing.demoScopeNote')}</p>
 
     <!--
       Two columns on wide viewports. The embed is capped below the

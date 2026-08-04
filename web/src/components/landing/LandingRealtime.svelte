@@ -17,7 +17,7 @@
 <section class="sec sec--ink realtime reveal" data-section="realtime" id="realtime" aria-labelledby="realtime-title">
   <div class="wrap rt-grid">
     <div>
-      <Eyebrow n="04" label={t('landing.ebRealtime')} />
+      <Eyebrow n="06" label={t('landing.ebRealtime')} />
       <h2 id="realtime-title" class="display">{t('landing.rtH')}</h2>
       <p class="lead">{t('landing.rtP')}</p>
       <ul class="tick-list">

@@ -18,16 +18,27 @@ import { test, expect, type Page } from '@playwright/test';
  *   npx playwright test --grep @landing
  */
 
-/** Sections `LandingPage.svelte` composes, in DOM order (deck-aligned order). */
+/**
+ * Sections `LandingPage.svelte` composes, in DOM order.
+ *
+ * The order encodes the narrative rule the content pass exists to enforce: the
+ * visitor meets `basic` and its `demo` before `education`, `pro` or `thesis`,
+ * so the product's present state lands before any future capability. A
+ * reordering that puts a developing mode ahead of the working one should fail
+ * here and be argued for deliberately.
+ */
 const SECTIONS = [
   'hero',
   'problem',
   'what',
-  'realtime',
+  'basic',
   'demo',
+  'realtime',
   'capabilities',
   'validation',
   'codes',
+  'education',
+  'pro',
   'thesis',
   'status',
   'docs',
@@ -143,7 +154,9 @@ test.describe('@landing landing page', () => {
     await page.locator('.landing select.nav-lang').selectOption('es');
 
     await expect(h1).toHaveText('Análisis estructural, en una pestaña del navegador.');
-    await expect(page.locator('.landing #status-title')).toHaveText('Qué está disponible hoy — y qué no.');
+    // A comma, not an em-dash: the decorative dashes were removed from the
+    // Spanish copy because they made it read as machine output.
+    await expect(page.locator('.landing #status-title')).toHaveText('Qué está disponible hoy, y qué no.');
 
     expect(await page.evaluate(() => localStorage.getItem('stabileo-lang'))).toBe('es');
     expect(await page.evaluate(() => localStorage.getItem('stabileo-lang-manual'))).toBe('1');
@@ -213,9 +226,45 @@ test.describe('@landing landing page', () => {
   test.describe('live demo', () => {
     const scrollTop = (page: Page) => page.evaluate(() => document.querySelector('.landing')!.scrollTop);
 
+    /**
+     * Wait until the landing has actually stopped scrolling.
+     *
+     * `.landing` sets `scroll-behavior: smooth`, so `scrollIntoView()` animates
+     * for well over a second on a long page. A fixed wait samples the middle of
+     * that animation, and the travel still to come then shows up as whatever
+     * happens next — which is how "activation moved the page by 115 px" was
+     * reported when activation had not moved it at all. Growing the page above
+     * the demo lengthened the animation and turned a latent race into a
+     * failure.
+     */
+    async function scrollSettled(page: Page) {
+      /*
+       * The initial wait is not padding: a smooth scroll is queued for the next
+       * frame, so sampling the instant `scrollIntoView` returns reads the
+       * position it has not left yet. Two equal samples then say "settled"
+       * while 646 px of animation is still to come, and that travel gets
+       * attributed to whatever the test does next.
+       *
+       * Three consecutive equal samples, not one comparison, because the
+       * animation can momentarily flatten near its ease-out.
+       */
+      await page.waitForTimeout(150);
+      let stable = 0;
+      let last = Number.NaN;
+      const deadline = Date.now() + 10000;
+      while (Date.now() < deadline) {
+        const now = await scrollTop(page);
+        stable = now === last ? stable + 1 : 0;
+        if (stable >= 3) return;
+        last = now;
+        await page.waitForTimeout(100);
+      }
+      throw new Error('the landing never stopped scrolling');
+    }
+
     async function reachDemo(page: Page) {
       await page.evaluate(() => document.querySelector('.landing [data-section="demo"]')!.scrollIntoView());
-      await page.waitForTimeout(700);
+      await scrollSettled(page);
     }
     /** True only when the control row is really lit, i.e. the demo is active. */
     const isActive = (page: Page) =>
@@ -233,9 +282,35 @@ test.describe('@landing landing page', () => {
       await expect.poll(() => isActive(page)).toBe(true);
       await expect(page.locator('.landing .demo-skeleton')).toHaveCount(0, { timeout: 45000 });
     }
+    /**
+     * Wheel over the device, aiming at its VISIBLE centre.
+     *
+     * The device is taller than most viewports, so its geometric centre is
+     * frequently off-screen — and a wheel event dispatched below the viewport
+     * bottom lands on nothing, which reads as "the wheel was swallowed" when
+     * nothing swallowed it.
+     */
+    /**
+     * Put the device on screen and let the scroll settle.
+     *
+     * Callers capture the pre-wheel scroll position themselves, so this has to
+     * run BEFORE that capture — hence a separate step rather than a guard
+     * inside `wheelOverDemo`. `reachDemo` aligns the section, not the device,
+     * and the device sits far enough down the section that it can be wholly
+     * below the fold on a short viewport.
+     */
+    async function showDevice(page: Page) {
+      await page.locator('.landing .demo-device').scrollIntoViewIfNeeded();
+      await scrollSettled(page);
+    }
+
     async function wheelOverDemo(page: Page, dy = 380) {
       const box = (await page.locator('.landing .demo-device').boundingBox())!;
-      await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+      const vh = page.viewportSize()!.height;
+      const top = Math.max(box.y, 0);
+      const bottom = Math.min(box.y + box.height, vh);
+      expect(bottom - top, 'enough of the device is on screen to wheel over').toBeGreaterThan(80);
+      await page.mouse.move(box.x + box.width / 2, (top + bottom) / 2);
       await page.mouse.wheel(0, dy);
       await page.waitForTimeout(400);
     }
@@ -243,7 +318,7 @@ test.describe('@landing landing page', () => {
      *  scroll-into-view cannot be mistaken for the component moving the page. */
     async function settle(page: Page, sel: string) {
       await page.locator(sel).scrollIntoViewIfNeeded();
-      await page.waitForTimeout(250);
+      await scrollSettled(page);
     }
 
     test('no iframe exists before activation, at any width', async ({ browser }) => {
@@ -263,6 +338,8 @@ test.describe('@landing landing page', () => {
     test('wheeling and dragging over the poster scrolls the page and never activates', async ({ page }) => {
       await bootLanding(page);
       await reachDemo(page);
+
+      await showDevice(page);
 
       const before = await scrollTop(page);
       await wheelOverDemo(page);
@@ -353,6 +430,8 @@ test.describe('@landing landing page', () => {
       await page.keyboard.press('Escape');
       await expect(page.locator('.landing .demo-cta')).toBeVisible();
       expect(await page.evaluate(() => document.activeElement?.className ?? '')).toContain('demo-cta');
+
+      await showDevice(page);
 
       const before = await scrollTop(page);
       await wheelOverDemo(page);
@@ -615,8 +694,21 @@ test.describe('@landing landing page', () => {
           (window as unknown as { __pt: { x: number; y: number } }).__pt = { x: e.clientX, y: e.clientY };
         }, true);
       });
+      /*
+       * Aim at the device's VISIBLE centre, clamped to the viewport.
+       * `box.y + height * 0.6` used to be on screen; adding the Basic-mode
+       * scope line above the stage pushed the device down far enough that the
+       * point fell below the viewport bottom, where `elementFromPoint` returns
+       * null and the click reaches nothing. That failed as "the app must
+       * receive the click", which reads like a broken embed rather than a
+       * probe aimed off-screen.
+       */
+      const vh = page.viewportSize()!.height;
+      const visTop = Math.max(box.y, 0);
+      const visBottom = Math.min(box.y + box.height, vh);
+      expect(visBottom - visTop, 'enough of the device is on screen to click').toBeGreaterThan(80);
       const aimX = Math.round(box.x + box.width * 0.5);
-      const aimY = Math.round(box.y + box.height * 0.6);
+      const aimY = Math.round(visTop + (visBottom - visTop) * 0.5);
       await page.mouse.click(aimX, aimY);
       await page.waitForTimeout(300);
       const seen = await page.frameLocator('.landing iframe.demo-iframe').locator('body')
@@ -818,7 +910,7 @@ test.describe('@landing landing page', () => {
       await page.locator('.landing [data-section="validation"]').scrollIntoViewIfNeeded();
       const nums = page.locator('.landing .stat-num');
       await expect(nums.nth(0), `tests counter at ${width}x${height}`).toHaveText('5,655', { timeout: 8000 });
-      await expect(nums.nth(1), `examples counter at ${width}x${height}`).toHaveText('54', { timeout: 8000 });
+      await expect(nums.nth(1), `examples counter at ${width}x${height}`).toHaveText('55', { timeout: 8000 });
       await ctx.close();
     }
   });
@@ -831,9 +923,22 @@ test.describe('@landing landing page', () => {
     await expect(hero).toHaveCount(1);
     const loadX = () =>
       page.locator('.landing .hero-figure .tf-load').evaluate((g) => g.getAttribute('transform'));
+    /*
+     * Poll for movement rather than sampling once after a fixed delay.
+     *
+     * The sweep is driven by requestAnimationFrame, so a fixed 1200 ms window
+     * asserts a frame rate, not a behaviour: with several workers competing for
+     * CPU and video capture running, rAF can miss the whole window and the
+     * transform is byte-identical — a green animation reported as broken. The
+     * claim under test is "it moves at all", so wait for exactly that.
+     */
     const first = await loadX();
-    await page.waitForTimeout(1200);
-    expect(await loadX(), 'the hero load must actually move').not.toBe(first);
+    await expect
+      .poll(async () => (await loadX()) !== first, {
+        message: 'the hero load must actually move',
+        timeout: 15000,
+      })
+      .toBe(true);
 
     // Real-time: three still frames, not the same animation again.
     await page.locator('.landing [data-section="realtime"]').scrollIntoViewIfNeeded();
@@ -947,6 +1052,490 @@ test.describe('@landing landing page', () => {
   });
 
   /**
+   * The product narrative.
+   *
+   * These tests guard claims rather than layout. Each one exists because the
+   * page previously said something the repository does not support, or said it
+   * in an order that let a visitor mistake a developing layer for a shipped
+   * one. They should fail when the copy over-claims again, which is the only
+   * failure mode that matters here.
+   */
+  test.describe('product narrative', () => {
+    const sectionText = (page: Page, section: string) =>
+      page.locator(`.landing [data-section="${section}"]`).innerText();
+
+    test('the hero positions the platform and its three modes, not live re-solving', async ({ page }) => {
+      await bootLanding(page);
+
+      // The lead is also the meta description, so it carries the positioning.
+      const lead = await page.locator('.landing .hero-copy .lead').innerText();
+      expect(lead).toMatch(/free and open/i);
+      expect(lead).toMatch(/Basic/);
+      expect(lead).toMatch(/Education/);
+      expect(lead).toMatch(/PRO/);
+
+      // The old positioning claimed the solver re-runs on every edit as the
+      // headline. That belongs to the realtime section now, not the hero.
+      expect(lead).not.toMatch(/on every edit/i);
+
+      const modes = page.locator('.landing .hero-modes li');
+      await expect(modes).toHaveCount(3);
+      const names = await page.locator('.landing .hero-mode-name').allInnerTexts();
+      expect(names).toEqual(['Basic', 'Education', 'PRO']);
+
+      // Each mode carries its own status, so the hero cannot read as three-ready.
+      const states = await page.locator('.landing .hero-mode-st').allInnerTexts();
+      expect(states[0]).toMatch(/available today/i);
+      expect(states[1]).toMatch(/in development/i);
+      expect(states[2]).toMatch(/in development/i);
+    });
+
+    test('Basic mode has its own section, with the four screenshots and their descriptions', async ({ page }) => {
+      await bootLanding(page);
+
+      const basic = page.locator('.landing [data-section="basic"]');
+      await basic.scrollIntoViewIfNeeded();
+
+      await expect(basic.locator('.badge-today')).toHaveCount(1);
+
+      // The four images moved here from the solver-capabilities section, where
+      // they were read as evidence for capabilities Basic cannot reach.
+      const cards = basic.locator('.card-media');
+      await expect(cards).toHaveCount(4);
+      for (const stem of ['2d-moments', '3d-industrial', '2d-section-analysis', '3d-section-analysis']) {
+        await expect(basic.locator(`img[src*="${stem}"]`)).toHaveCount(1);
+      }
+      // Each image keeps a real description, not a bare caption.
+      for (let i = 0; i < 4; i++) {
+        const card = cards.nth(i);
+        await expect(card.locator('h3')).not.toBeEmpty();
+        expect((await card.locator('.card-body p').innerText()).length).toBeGreaterThan(40);
+        await expect(card.locator('img')).toHaveAttribute('alt', /.{20,}/);
+      }
+      // And they are gone from where they used to be.
+      await expect(page.locator('.landing [data-section="capabilities"] .card-media')).toHaveCount(0);
+
+      const text = await sectionText(page, 'basic');
+      expect(text).toMatch(/2D and 3D/i);
+      expect(text).toMatch(/not PRO/i);
+    });
+
+    test('the live demo is explicitly Basic mode', async ({ page }) => {
+      await bootLanding(page);
+
+      const demo = page.locator('.landing [data-section="demo"]');
+      await demo.scrollIntoViewIfNeeded();
+
+      await expect(demo.locator('.pill-basic')).toHaveText(/basic mode/i);
+      const text = await sectionText(page, 'demo');
+      expect(text).toMatch(/Basic mode/);
+      // It must disclaim the other two rather than merely omitting them.
+      expect(text).toMatch(/PRO and Education are separate/i);
+
+      // The embed really is the Basic route, so the claim is not just copy.
+      await page.locator('.landing .demo-cta').click();
+      await expect(page.locator('.landing iframe.demo-iframe')).toHaveAttribute('src', /\/app\/basic\?embed/);
+    });
+
+    test('Education is labelled in development and does not claim teacher tooling', async ({ page }) => {
+      await bootLanding(page);
+
+      const edu = page.locator('.landing [data-section="education"]');
+      await edu.scrollIntoViewIfNeeded();
+      await expect(edu.locator('.badge-dev')).toHaveText(/in development/i);
+
+      const text = await sectionText(page, 'education');
+      // What exists today.
+      expect(text).toMatch(/predefined exercises/i);
+      expect(text).toMatch(/tolerance/i);
+      // What must be marked as intent, and disclaimed outright.
+      expect(text).toMatch(/no assignment authoring, no submissions, no grade records/i);
+      expect(text).not.toMatch(/teachers can (now|already)/i);
+      // The free-for-education commitment is phrased as intent, not as a live offer.
+      expect(text).toMatch(/intended to stay free for educational use/i);
+    });
+
+    test('PRO separates what it does now from what it does not', async ({ page }) => {
+      await bootLanding(page);
+
+      const pro = page.locator('.landing [data-section="pro"]');
+      await pro.scrollIntoViewIfNeeded();
+      await expect(pro.locator('.badge-dev')).toHaveText(/in development/i);
+
+      const cols = pro.locator('.split-col');
+      await expect(cols).toHaveCount(2);
+      expect(await cols.nth(0).innerText()).toMatch(/usable now/i);
+      expect(await cols.nth(1).innerText()).toMatch(/in development/i);
+
+      const now = await cols.nth(0).innerText();
+      expect(now).toMatch(/finite[- ]element/i);
+      expect(now).toMatch(/CIRSOC 201/);
+
+      /*
+       * The END STATE of the detailing pipeline stays on the future side.
+       * Partial drawing and schedule support does live in the `now` column —
+       * see the dedicated coverage test below — so these assertions name the
+       * whole-structure outputs specifically rather than the words "drawings"
+       * and "schedules", which now legitimately appear on both sides.
+       */
+      const next = await cols.nth(1).innerText();
+      expect(next).toMatch(/full floor-plan drawings/i);
+      expect(next).toMatch(/complete structural plans and schedules/i);
+
+      const text = await sectionText(page, 'pro');
+      expect(text).toMatch(/pilot work/i);
+      // "production-ready" may appear ONLY as a future item, never as a claim.
+      expect(next).toMatch(/production[- ]ready/i);
+      expect(await cols.nth(0).innerText()).not.toMatch(/production[- ]ready/i);
+    });
+
+    /**
+     * The design/detailing boundary, guarded in both directions.
+     *
+     * The families the merge made reachable (slabs, walls, pad footings) and the
+     * drawing and schedule output for five element families are acknowledged —
+     * under-claiming is its own dishonesty. But each acknowledgement must carry
+     * the provisional qualifier, and the structure-wide end state must stay in
+     * the future column. This test fails if either half drifts.
+     */
+    test('design and detailing coverage is acknowledged without claiming the end state', async ({ page }) => {
+      await bootLanding(page);
+      const pro = page.locator('.landing [data-section="pro"]');
+      await pro.scrollIntoViewIfNeeded();
+      const now = await pro.locator('.split-col').nth(0).innerText();
+      const next = await pro.locator('.split-col').nth(1).innerText();
+
+      // Reachable today: the three families the merge wired up, named as provisional.
+      expect(now).toMatch(/slabs/i);
+      expect(now).toMatch(/walls/i);
+      expect(now).toMatch(/footings/i);
+      expect(now).toMatch(/provisional/i);
+
+      // Drawings and schedules exist, and the scope is stated as element families.
+      expect(now).toMatch(/drawings/i);
+      expect(now).toMatch(/DXF/);
+      expect(now).toMatch(/SVG/);
+      expect(now).toMatch(/XLSX/);
+      expect(now).toMatch(/schedule/i);
+      // Not "all drawings": the count of families is explicit.
+      expect(now).toMatch(/five element families/i);
+
+      // The end state stays future, and is not implied by the partial support.
+      expect(next).toMatch(/structure[- ]wide/i);
+      expect(next).toMatch(/full floor[- ]plan/i);
+      expect(next).toMatch(/every supported family/i);
+      expect(next).toMatch(/Diaphragms/i);
+
+      // The `now` column must never claim the whole-building outputs.
+      expect(now).not.toMatch(/complete (set of )?structural (plans|documents)/i);
+      expect(now).not.toMatch(/structure[- ]wide/i);
+      expect(now).not.toMatch(/whole (floor|building)/i);
+
+      // And the honest note names the gap rather than leaving it to inference.
+      const text = await sectionText(page, 'pro');
+      expect(text).toMatch(/not yet a complete set of structural documents/i);
+
+      // The source note records WHY these statuses read the way they do.
+      expect(text).toMatch(/maturity model/i);
+      expect(text).toMatch(/independent external benchmark/i);
+      expect(text).toMatch(/more conservative of the two/i);
+    });
+
+    test('CIRSOC 201 states the provisional families and still excludes diaphragms', async ({ page }) => {
+      await bootLanding(page);
+      const codes = page.locator('.landing [data-section="codes"]');
+      await codes.scrollIntoViewIfNeeded();
+      const row = codes.locator('.cirsoc-row[data-code="CIRSOC 201"]');
+      const text = await row.innerText();
+
+      // Slabs, walls and footings are designed — the first pass wrongly said they were not.
+      expect(text).toMatch(/slabs, walls and pad footings are designed/i);
+      expect(text).toMatch(/provisional/i);
+      // The reason they are not "validated" is stated, not just the label.
+      expect(text).toMatch(/no independent external benchmark/i);
+      // The genuine exclusions survive.
+      expect(text).toMatch(/diaphragms are not designed/i);
+      expect(text).toMatch(/element by element/i);
+      // And it must not read as full RC coverage.
+      expect(text).not.toMatch(/fully (supported|compliant)/i);
+    });
+
+    test('the status table keeps drawings and schedules in the partial tier', async ({ page }) => {
+      await bootLanding(page);
+      const status = page.locator('.landing [data-section="status"]');
+      await status.scrollIntoViewIfNeeded();
+
+      const partial = await status.locator('.status-group').nth(1).innerText();
+      const today = await status.locator('.status-group').nth(0).innerText();
+
+      expect(partial).toMatch(/drawings and bar schedules/i);
+      expect(partial).toMatch(/full-floor plans are not/i);
+      expect(partial).toMatch(/labelled provisional/i);
+      // They must NOT be promoted into the "available today" group, which is
+      // reserved for capabilities with no qualifier attached.
+      expect(today).not.toMatch(/bar schedules/i);
+      expect(today).not.toMatch(/drawings/i);
+    });
+
+    test('the CIRSOC statuses are not overstated', async ({ page }) => {
+      await bootLanding(page);
+
+      const codes = page.locator('.landing [data-section="codes"]');
+      await codes.scrollIntoViewIfNeeded();
+
+      const row = (code: string) => codes.locator(`.cirsoc-row[data-code="${code}"]`);
+      for (const code of ['CIRSOC 101', 'CIRSOC 102', 'CIRSOC 201', 'CIRSOC 301', 'INPRES-CIRSOC 103']) {
+        await expect(row(code), `${code} has a row`).toHaveCount(1);
+        await expect(row(code).locator('.badge'), `${code} carries a status badge`).toHaveCount(1);
+      }
+
+      // Only load generation to 101 is unqualified. Everything else is
+      // partial or in development, per the repository's own capability model.
+      await expect(row('CIRSOC 101').locator('.badge-today')).toHaveCount(1);
+      await expect(row('CIRSOC 102').locator('.badge-partial')).toHaveCount(1);
+      await expect(row('CIRSOC 201').locator('.badge-partial')).toHaveCount(1);
+      await expect(row('CIRSOC 301').locator('.badge-partial')).toHaveCount(1);
+      await expect(row('INPRES-CIRSOC 103').locator('.badge-dev')).toHaveCount(1);
+
+      // 103: no seismic workflow, and the coefficient is an input.
+      const seismic = await row('INPRES-CIRSOC 103').innerText();
+      expect(seismic).toMatch(/entered by you, not derived/i);
+      expect(seismic).toMatch(/not implemented/i);
+
+      // 301: checking only, no design.
+      expect(await row('CIRSOC 301').innerText()).toMatch(/checking only/i);
+
+      // Every row states a limit; a row with no limitation is an over-claim.
+      const limits = await codes.locator('.cirsoc-limit').allInnerTexts();
+      expect(limits).toHaveLength(5);
+      for (const l of limits) expect(l.trim().length).toBeGreaterThan(30);
+
+      // The six distinct claims are kept apart in writing.
+      const text = await sectionText(page, 'codes');
+      expect(text).toMatch(/does not make that code fully supported/i);
+      // The eight international codes are checkers only.
+      expect(text).toMatch(/member checking/i);
+    });
+
+    test('Stabileo AI is introduced before the detailed AI section', async ({ page }) => {
+      await bootLanding(page);
+
+      const intro = page.locator('.landing .mode-row[data-mode="ai"]');
+      await expect(intro).toHaveCount(1);
+      await expect(intro.locator('.badge-dev')).toHaveCount(1);
+
+      const introText = await intro.innerText();
+      expect(introText).toMatch(/Stabileo AI/);
+      expect(introText).toMatch(/same engine/i);
+      expect(introText).toMatch(/not a second, unverified source/i);
+
+      // Introduced in `what` (03), detailed in `thesis` (12).
+      const [introTop, detailTop] = await page.evaluate(() => [
+        (document.querySelector('.landing .mode-row[data-mode="ai"]') as HTMLElement).offsetTop,
+        (document.querySelector('.landing [data-section="thesis"]') as HTMLElement).offsetTop,
+      ]);
+      expect(introTop).toBeLessThan(detailTop);
+
+      // The intro must not invite a visitor to try something that is not there.
+      expect(introText).toMatch(/not available to try yet/i);
+
+      /*
+       * The detailed section states where the agent layer actually runs, and
+       * that the public deployment exposes no backend for it. `client.ts`
+       * defaults VITE_AI_BACKEND_URL to http://localhost:3001 and the Pages
+       * workflow never sets it, so there is genuinely nothing to reach.
+       */
+      const thesis = await sectionText(page, 'thesis');
+      expect(thesis).toMatch(/development and testing/i);
+      expect(thesis).toMatch(/does not ship that service/i);
+      expect(thesis).toMatch(/nothing here for a visitor to try today/i);
+      expect(thesis).toMatch(/not a production service/i);
+      expect(thesis).toMatch(/it certifies nothing/i);
+
+      /*
+       * Its intended role stays framed by the solver's truth. "same engine" is
+       * the INTRO's wording (asserted above); the detailed section makes the
+       * same point through the generator/verifier split, so assert that rather
+       * than expecting the intro's phrasing to be repeated verbatim.
+       */
+      expect(thesis).toMatch(/source of truth/i);
+      expect(thesis).toMatch(/deterministic solver/i);
+
+      /*
+       * No control invites the visitor to USE the agent layer, because there is
+       * no backend for it to reach. Scoped to invitation verbs rather than the
+       * word "AI": the docs card "AI modelling workflow" is a link to a
+       * repository document explaining the boundary, which is exactly the kind
+       * of honest AI mention the page should keep.
+       */
+      const aiCtas = await page.locator('.landing button, .landing a').evaluateAll((els) =>
+        els
+          .map((e) => (e.textContent ?? '').replace(/\s+/g, ' ').trim())
+          .filter((s) =>
+            /\b(try|use|launch|start|run)\s+(the\s+)?(stabileo\s+)?(ai|agent|assistant)\b/i.test(s)
+            || /\b(chat|talk)\s+(with|to)\b/i.test(s)
+            || /\bask\s+(the\s+)?(ai|stabileo)\b/i.test(s)),
+      );
+      expect(aiCtas, 'no control offers the agent layer for use').toEqual([]);
+    });
+
+    test('the status table uses four tiers and keeps hosted services on the roadmap', async ({ page }) => {
+      await bootLanding(page);
+
+      const status = page.locator('.landing [data-section="status"]');
+      await status.scrollIntoViewIfNeeded();
+
+      await expect(status.locator('.status-group')).toHaveCount(4);
+      for (const tone of ['today', 'partial', 'dev', 'roadmap']) {
+        await expect(status.locator(`.badge-${tone}`)).toHaveCount(1);
+      }
+
+      // Every listed capability sits inside a badged group — nothing unlabelled.
+      const items = await status.locator('.status-list li').count();
+      expect(items).toBeGreaterThan(15);
+
+      const roadmap = await status.locator('.status-group').nth(3).innerText();
+      for (const service of ['Remote solving', 'credits', 'Cloud workspace']) {
+        expect(roadmap).toContain(service);
+      }
+      expect(await status.innerText()).toMatch(/do not exist yet/i);
+    });
+
+    test('no unsupported superlative, autonomy, certification or adoption claim appears', async ({ page }) => {
+      await bootLanding(page);
+
+      // Read the whole page, including the sections that only reveal on scroll.
+      const body = (await page.locator('.landing').innerText()).replace(/\s+/g, ' ');
+
+      // No "first" claim about the product. Scoped to a product noun on
+      // purpose: "load at the first panel point" and "your first ten minutes"
+      // are ordinary engineering prose, and a blanket /the first/ ban would
+      // forbid them and teach the next author to work around the test.
+      expect(body).not.toMatch(
+        /\b(the|world'?s|argentina'?s|latin\s+america'?s)\s+first\s+(\w+[- ]){0,3}(platform|software|tool|application|app|solver|product|suite|program)\b/i,
+      );
+      expect(body).not.toMatch(/\bfirst\s+(ever|and only)\b/i);
+      expect(body).not.toMatch(/\bthe\s+only\s+(platform|software|tool|solver)\b/i);
+      // No autonomy or certification claim for the agent layer.
+      expect(body).not.toMatch(/\bfully autonomous\b/i);
+      expect(body).not.toMatch(/\b(certified|certifies)\s+(by|design|structures?)\b/i);
+      expect(body).not.toMatch(/\bcode[- ]certified\b/i);
+      /*
+       * No production-readiness CLAIM. The phrase itself is allowed to appear,
+       * because "production-ready export of complete structural plans" is a
+       * named roadmap item and naming the goal is how the page stays honest
+       * about not having reached it. What is banned is the assertive form, and
+       * the scoped tests above prove it never sits in a "usable now" column.
+       */
+      expect(body).not.toMatch(/\b(is|are|now|already)\s+production[- ]ready\b/i);
+      expect(body).not.toMatch(/\bproduction[- ]ready\s+(service|product|platform|today)\b/i);
+      // No user or customer counts, which nothing in the repository supports.
+      expect(body).not.toMatch(/\b\d[\d.,]*\s*(\+\s*)?(users|engineers|firms|customers|students|universities|downloads)\b/i);
+      /*
+       * No price for Stabileo. Currency-and-figure only: the Problem section
+       * describes what the incumbent tools cost ("one seat runs into the
+       * thousands per year"), which is the point of that section, so banning
+       * "per seat" or "per year" outright would forbid honest prose about
+       * someone else's pricing rather than catch a price for this product.
+       */
+      expect(body).not.toMatch(/\$\s?\d/);
+      expect(body).not.toMatch(/\bUSD\s?\d/);
+      expect(body).not.toMatch(/\b\d+\s*(USD|ARS|EUR)\s*\/\s*(seat|month|mo|year|yr)\b/i);
+      // And no pricing-plan furniture, which is what the retired table had.
+      expect(body).not.toMatch(/\b(free tier|pro plan|per[- ]seat pricing|subscribe now|start free trial)\b/i);
+
+      // The numbers that DO appear keep their provenance.
+      const validation = await sectionText(page, 'validation');
+      expect(validation).toContain('5,655');
+      expect(validation).toMatch(/measured at 6c3369d6/);
+      expect(validation).toMatch(/22–89×/);
+      expect(validation).toMatch(/against Stabileo’s own dense path/);
+
+      /*
+       * The example count is read off the shipped fixture index, so it drifts
+       * whenever a fixture is added — merging the CIRSOC load-code work took it
+       * from 54 to 55 while every surrounding sentence still said 54. Asserting
+       * the rendered figure against the source of truth means the next drift
+       * fails here instead of shipping.
+       */
+      const stats = page.locator('.landing [data-section="validation"] .stat');
+      const examples = stats.filter({ hasText: /example models/i });
+      await expect(examples.locator('.stat-num')).toHaveText('55');
+      await expect(examples).toContainText('37 in the examples menu');
+    });
+
+    test('the same product status is communicated in Spanish', async ({ page }) => {
+      await bootLanding(page, { locale: 'es' });
+
+      const body = (await page.locator('.landing').innerText()).replace(/\s+/g, ' ');
+
+      // The three modes and their states.
+      expect(body).toMatch(/Básico/);
+      expect(body).toMatch(/Disponible hoy/i);
+      expect(body).toMatch(/En desarrollo/i);
+      // Same disclaimers as English.
+      // Case-insensitive: the pill is uppercased by CSS, so innerText reports it that way.
+      expect(body).toMatch(/100% modo Básico/i);
+      expect(body).toMatch(/no hay creación de tareas/i);
+      expect(body).toMatch(/no es un servicio de producción/i);
+      expect(body).toMatch(/nada que un visitante pueda probar hoy/i);
+      expect(body).toMatch(/trabajo piloto/i);
+      // The corrected design/detailing scope reads the same in Spanish.
+      expect(body).toMatch(/las losas, los tabiques y las zapatas también se diseñan/i);
+      expect(body).toMatch(/provisorios/i);
+      expect(body).toMatch(/cinco familias de elementos/i);
+      expect(body).toMatch(/los diafragmas no se diseñan/i);
+      // Same badge tiers.
+      for (const tone of ['today', 'partial', 'dev', 'roadmap']) {
+        expect(await page.locator(`.landing [data-section="status"] .badge-${tone}`).count()).toBe(1);
+      }
+      // No price in Spanish either.
+      // As in English: a currency figure, not prose about what the incumbents cost.
+      expect(body).not.toMatch(/\$\s?\d/);
+      expect(body).not.toMatch(/\b\d+\s*(USD|ARS)\s*\/\s*(mes|año|puesto)\b/i);
+    });
+
+    test('the corrected Spanish wording is the wording that ships', async ({ page }) => {
+      await bootLanding(page, { locale: 'es' });
+      const body = (await page.locator('.landing').innerText()).replace(/\s+/g, ' ');
+
+      // Each of these was a specific defect: a calque, a wrong term, or a
+      // decorative em-dash that made the copy read as machine output.
+      expect(body).toMatch(/Durante décadas, el cálculo estructural dependió de software/);
+      expect(body).toContain('Miles de USD');
+      expect(body).toMatch(/El ingeniero debe firmar algo que no puede inspeccionar/);
+      expect(body).toContain('postesado');
+      expect(body).not.toContain('postensado');
+      // "Fluencia" alone means yielding; creep is "fluencia lenta".
+      expect(body).toContain('Fluencia lenta');
+      // "llave de licencia" is a calque of "licence key".
+      expect(body).not.toMatch(/llaves? de licencia/i);
+      expect(body).not.toMatch(/— todo en una pestaña/);
+      // Voseo, consistently: the page says movés, cambiás, elegí — so apretés.
+      expect(body).not.toMatch(/que aprietes/);
+    });
+
+    test('both public locales render every landing key they reference', async ({ page }) => {
+      for (const locale of ['en', 'es']) {
+        await bootLanding(page, { locale });
+        // Scroll the whole page so every lazily-revealed section renders.
+        await page.evaluate(async () => {
+          const el = document.querySelector('.landing')!;
+          for (let y = 0; y < el.scrollHeight; y += 600) {
+            el.scrollTop = y;
+            await new Promise((r) => requestAnimationFrame(r));
+          }
+        });
+        const body = await page.locator('.landing').innerText();
+        // An unresolved key renders as its own id, which is the failure to catch.
+        const raw = body.match(/landing\.[A-Za-z0-9]+/g) ?? [];
+        expect(raw, `${locale} renders no raw translation keys`).toEqual([]);
+        expect(body).not.toMatch(/\bundefined\b/);
+      }
+    });
+  });
+
+  /**
    * The landing is client-rendered, so index.html is the only metadata a
    * crawler that does not run JavaScript ever sees. It must be correct on its
    * own, and hydration must refine it in place rather than append a second,
@@ -1049,7 +1638,10 @@ test.describe('@landing landing page', () => {
       expect(one(h, 'og:title')).toBe(h.title);
       expect(one(h, 'og:locale')).toBe('es_AR');
       expect(one(h, 'og:locale:alternate')).toBe('en_US');
-      expect(one(h, 'description')).toMatch(/El solver corre en cada edición/);
+      // The description is the hero lead, which now carries the positioning:
+      // a free, open platform with three modes, rather than live re-solving.
+      expect(one(h, 'description')).toMatch(/plataforma gratuita y abierta/);
+      expect(one(h, 'description')).toMatch(/Básico.*Educativo.*PRO/);
       expect(one(h, 'twitter:description')).toBe(one(h, 'description'));
       // The canonical and the social image do not vary by locale.
       expect(h.canonicals).toEqual(['https://stabileo.com/']);

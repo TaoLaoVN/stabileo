@@ -6,10 +6,13 @@
   import LandingProblem from './landing/LandingProblem.svelte';
   import LandingWhat from './landing/LandingWhat.svelte';
   import LandingRealtime from './landing/LandingRealtime.svelte';
+  import LandingBasic from './landing/LandingBasic.svelte';
   import LandingDemo from './landing/LandingDemo.svelte';
   import LandingCapabilities from './landing/LandingCapabilities.svelte';
   import LandingValidation from './landing/LandingValidation.svelte';
   import LandingCodes from './landing/LandingCodes.svelte';
+  import LandingEducation from './landing/LandingEducation.svelte';
+  import LandingPro from './landing/LandingPro.svelte';
   import LandingThesis from './landing/LandingThesis.svelte';
   import LandingStatus from './landing/LandingStatus.svelte';
   import LandingDocs from './landing/LandingDocs.svelte';
@@ -89,11 +92,34 @@
   });
 
   onMount(() => {
+    /**
+     * Safety net for the reveal animation.
+     *
+     * `.reveal` starts transparent and is only painted once the observer adds
+     * `.visible`, so a single missed callback does not degrade the animation —
+     * it hides an entire section permanently, and the page looks like it has a
+     * hole in it. That is far too much damage for a decorative effect.
+     *
+     * This runs on every scroll (the handler already exists) and reveals
+     * anything whose top has passed the bottom of the scroll container,
+     * regardless of whether the observer ever fired for it. The observer still
+     * does the work in the normal case; this only guarantees the floor.
+     */
+    const revealPassed = () => {
+      const el = landingEl;
+      if (!el) return;
+      const limit = el.getBoundingClientRect().bottom;
+      for (const node of el.querySelectorAll('.reveal:not(.visible)')) {
+        if (node.getBoundingClientRect().top < limit) node.classList.add('visible');
+      }
+    };
+
     const onScroll = () => {
       const el = landingEl;
       if (!el) return;
       const denom = Math.max(1, el.scrollHeight - el.clientHeight);
       scrollPct = (el.scrollTop / denom) * 100;
+      revealPassed();
     };
 
     const observer = new IntersectionObserver(
@@ -164,15 +190,27 @@
 <div class="landing" bind:this={landingEl} tabindex="0">
   <div class="scroll-progress" style="width:{scrollPct}%" aria-hidden="true"></div>
 
+  <!--
+    Narrative order: what it is, why it matters, what works today, proof, then
+    the developing layers, then the vision, then the honest status table.
+
+    The visitor meets Basic (04) and its live demo (05) before Education (10),
+    PRO (11) or Stabileo AI (12), so the present state of the product is
+    established before any future capability is described. Real-time solving
+    (06) sits after the demo as a differentiator rather than the opening pitch.
+  -->
   <LandingNav />
   <LandingHero {prefersReducedMotion} />
   <LandingProblem />
   <LandingWhat />
-  <LandingRealtime {prefersReducedMotion} />
+  <LandingBasic />
   <LandingDemo />
+  <LandingRealtime {prefersReducedMotion} />
   <LandingCapabilities />
   <LandingValidation />
   <LandingCodes />
+  <LandingEducation />
+  <LandingPro />
   <LandingThesis />
   <LandingStatus />
   <LandingDocs />

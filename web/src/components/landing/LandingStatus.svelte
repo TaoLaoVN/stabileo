@@ -19,7 +19,13 @@
       badge: 'landing.badgePartial',
       tone: 'partial',
       title: 'landing.stGroupPartial',
-      items: ['stPa1', 'stPa2'],
+      items: ['stPa1', 'stPa2', 'stPa5', 'stPa3', 'stPa4'],
+    },
+    {
+      badge: 'landing.badgeDev',
+      tone: 'dev',
+      title: 'landing.stGroupDev',
+      items: ['stD1', 'stD2', 'stD3', 'stD4'],
     },
     {
       badge: 'landing.badgeRoadmap',
@@ -32,7 +38,7 @@
 
 <section class="sec sec--paper status reveal" data-section="status" id="status" aria-labelledby="status-title">
   <div class="wrap">
-    <Eyebrow n="10" label={t('landing.ebStatus')} />
+    <Eyebrow n="13" label={t('landing.ebStatus')} />
     <h2 id="status-title" class="display">{t('landing.stH')}</h2>
     <p class="lead">{t('landing.stP')}</p>
 
@@ -55,6 +61,7 @@
     <div class="access">
       <h3>{t('landing.accessT')}</h3>
       <p>{t('landing.accessB')}</p>
+      <p>{t('landing.accessEdu')}</p>
       <p class="access-note">{t('landing.accessNote')}</p>
     </div>
   </div>

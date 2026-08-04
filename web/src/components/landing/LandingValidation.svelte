@@ -5,16 +5,22 @@
   import Eyebrow from './Eyebrow.svelte';
 
   /**
-   * Every number here is traceable to the repository at this branch's base
-   * commit, 6c3369d6:
+   * Both numbers are measurements with a stated provenance, not estimates.
    *
    *   ENGINE_TESTS  `cd engine && cargo test`, summed over every target whose
-   *                 name does not match /reference/ — 5655 passing, 0 failures.
-   *                 The 1192 reference-formula self-checks in
-   *                 engine/tests/reference/ are counted separately by design
-   *                 and are deliberately NOT added in.
-   *   EXAMPLES      src/lib/templates/fixture-index.ts — 54 registered
+   *                 name does not match /reference/ — 5655 passing, 0 failures,
+   *                 measured at 6c3369d6 on 2026-08-01. The 1192
+   *                 reference-formula self-checks in engine/tests/reference/
+   *                 are counted separately by design and are deliberately NOT
+   *                 added in. This stays a point-in-time figure with its commit
+   *                 named in the hint, rather than a number that drifts
+   *                 silently as the suite grows.
+   *   EXAMPLES      src/lib/templates/fixture-index.ts — 55 registered
    *                 fixtures, of which 37 appear in the Basic examples menu.
+   *                 It was 54 until the CIRSOC load-code work merged and added
+   *                 `frame-cirsoc-dl`; a re-count against the merged tree is
+   *                 what caught it. Recount with:
+   *                   grep -cE "^\s*'[^']+': \(\) => import" fixture-index.ts
    *
    * These are rendered statically. They were briefly animated with a count-up:
    * that added an IntersectionObserver whose only failure mode was rendering a
@@ -22,7 +28,7 @@
    * and count it back up. Evidence should not have a loading state.
    */
   const ENGINE_TESTS = 5655;
-  const EXAMPLES = 54;
+  const EXAMPLES = 55;
 
   const validatedAgainst = ['NAFEMS', 'ANSYS', 'Code_Aster', 'SAP2000', 'OpenSees'];
 
@@ -37,7 +43,7 @@
 
 <section class="sec sec--ink validation reveal" data-section="validation" id="validation" aria-labelledby="validation-title">
   <div class="wrap">
-    <Eyebrow n="07" label={t('landing.ebValidation')} />
+    <Eyebrow n="08" label={t('landing.ebValidation')} />
     <h2 id="validation-title" class="display">{t('landing.valH')}</h2>
     <p class="lead">{t('landing.valP')}</p>
 

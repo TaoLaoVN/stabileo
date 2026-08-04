@@ -20,6 +20,19 @@
         <button class="btn btn-ghost btn-lg" onclick={() => scrollToId('demo')}>{t('landing.heroCtaSecondary')}</button>
       </div>
 
+      <!--
+        The three modes, named in the first screen.
+        The hero used to lead on live re-solving, which is a real
+        differentiator but answers "how does it feel?" before the visitor knows
+        what the product is or which parts of it exist. Re-solving now appears
+        as its own section further down; positioning belongs here.
+      -->
+      <ul class="hero-modes">
+        <li><span class="hero-mode-name">{t('landing.heroModeBasic')}</span><span class="hero-mode-st hero-mode-st-today">{t('landing.heroModeBasicSt')}</span></li>
+        <li><span class="hero-mode-name">{t('landing.heroModeEdu')}</span><span class="hero-mode-st">{t('landing.heroModeEduSt')}</span></li>
+        <li><span class="hero-mode-name">{t('landing.heroModePro')}</span><span class="hero-mode-st">{t('landing.heroModeProSt')}</span></li>
+      </ul>
+
       <dl class="hero-meta">
         <div><dt>{t('landing.heroMetaA')}</dt></div>
         <div><dt>{t('landing.heroMetaB')}</dt></div>

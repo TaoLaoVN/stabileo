@@ -8,11 +8,12 @@
   const LOCALE_NAMES: Record<string, string> = { en: 'English', es: 'Español' };
 
   const links = [
+    { id: 'basic', key: 'landing.navBasic' },
     { id: 'demo', key: 'landing.navDemo' },
-    { id: 'capabilities', key: 'landing.navCapabilities' },
-    { id: 'validation', key: 'landing.navValidation' },
+    { id: 'codes', key: 'landing.navCodes' },
+    { id: 'education', key: 'landing.navEducation' },
+    { id: 'pro', key: 'landing.navPro' },
     { id: 'status', key: 'landing.navStatus' },
-    { id: 'docs', key: 'landing.navDocs' },
   ];
 
   $effect(() => {
