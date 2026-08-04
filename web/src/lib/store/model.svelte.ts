@@ -58,6 +58,16 @@ export interface Section {
   polygon?: Array<[number, number]>;
   /** Holes in `polygon`, same units and frame. */
   holes?: Array<Array<[number, number]>>;
+  /**
+   * Solver-ready canonical state, resolved at the edges (create, edit,
+   * catalogue selection, migration, load) and read synchronously by
+   * `buildSolverInput`.
+   *
+   * Resolving inside solver preparation would make that path async or risk
+   * publishing unverified numbers, so it is cached here with a `digest` that
+   * identifies the exact geometry it came from. See `lib/section/state.ts`.
+   */
+  canonical?: import('../section/state').SectionState;
 }
 
 /** Which relative translation a 2D sliding joint releases at an element end.

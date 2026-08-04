@@ -2,6 +2,7 @@
 // Each function takes a ModelData parameter instead of accessing reactive store state.
 
 import { solve as solveStructure, solve3D as solve3DEngine, analyzeKinematics, combineResults, combineResults3D, computeEnvelope, computeEnvelope3D, solveMultiCase2D, solveMultiCase3D, input2DToWireObject, input3DToWireObject } from './wasm-solver';
+import { solverProperties } from '../section/state';
 import type { SolverInput, FullEnvelope, AnalysisResults } from './types';
 import { computeLocalAxes3D } from './local-axes-3d';
 import type { SolverInput3D, SolverLoad3D, AnalysisResults3D, FullEnvelope3D, Constraint3D } from './types-3d';
@@ -101,8 +102,13 @@ function getElemAngleAtNode(nodeId: number, nodes: Map<number, Node>, elements: 
  *    I_eff = Iy·cos²α + Iz·sin²α
  *  This is exported so Viewport.svelte can reuse it for deformed-shape rendering. */
 export function effectiveBendingInertia(sec: Section): number {
-  const Iy = sec.iy ?? sec.iz;  // about Y horizontal (strong for IPN)
-  const Iz = sec.iz;             // about Z vertical (weak for IPN)
+  // A geometry-backed section reports the inertia its canonical polygons
+  // actually have; a properties-only section keeps what it declared. This is
+  // the single point both the 2D wire and the projected 3D wire read, so
+  // making it canonical-aware here keeps them consistent by construction.
+  const props = solverProperties(sec);
+  const Iy = props.source === 'canonical' ? props.iy : (sec.iy ?? sec.iz);  // about Y horizontal
+  const Iz = props.source === 'canonical' ? props.iz : sec.iz;              // about Z vertical
   const alpha = (sec.rotation ?? 0) * Math.PI / 180;
   if (Math.abs(alpha) < 1e-10) return Iy;  // fast path: no rotation
   return Iy * Math.cos(alpha) ** 2 + Iz * Math.sin(alpha) ** 2;
@@ -603,7 +609,7 @@ function prepareSolve2D(
     nodes: new Map(Array.from(model.nodes.entries()).map(([id, n]) => [id, { id: n.id, x: n.x, z: n.y }])),
     materials: new Map(Array.from(model.materials.entries()).map(([id, m]) => [id, { id: m.id, e: m.e, nu: m.nu }])),
     // 2D solver uses the effective bending inertia (accounts for section rotation via Mohr)
-    sections: new Map(Array.from(model.sections.entries()).map(([id, s]) => [id, { id: s.id, a: s.a, iz: effectiveBendingInertia(s) }])),
+    sections: new Map(Array.from(model.sections.entries()).map(([id, s]) => [id, { id: s.id, a: solverProperties(s).a, iz: effectiveBendingInertia(s) }])),
     elements: new Map(Array.from(model.elements.entries()).map(([id, e]) => [id, {
       id: e.id, type: e.type, nodeI: e.nodeI, nodeJ: e.nodeJ,
       materialId: e.materialId, sectionId: e.sectionId,
@@ -909,7 +915,7 @@ export function buildSolverInput2D(model: ModelData, includeSelfWeight = false):
     nodes: new Map(Array.from(model.nodes.entries()).map(([id, n]) => [id, { id: n.id, x: n.x, z: n.y }])),
     materials: new Map(Array.from(model.materials.entries()).map(([id, m]) => [id, { id: m.id, e: m.e, nu: m.nu }])),
     // 2D solver uses the effective bending inertia (accounts for section rotation via Mohr)
-    sections: new Map(Array.from(model.sections.entries()).map(([id, s]) => [id, { id: s.id, a: s.a, iz: effectiveBendingInertia(s) }])),
+    sections: new Map(Array.from(model.sections.entries()).map(([id, s]) => [id, { id: s.id, a: solverProperties(s).a, iz: effectiveBendingInertia(s) }])),
     elements: new Map(Array.from(model.elements.entries()).map(([id, e]) => [id, {
       id: e.id, type: e.type, nodeI: e.nodeI, nodeJ: e.nodeJ,
       materialId: e.materialId, sectionId: e.sectionId,
@@ -1367,22 +1373,40 @@ export function buildSolverInput3D(
       if (project2DToXZ) {
         const inPlaneIy = effectiveBendingInertia(s);
         const outOfPlaneIz = s.iy ?? s.iz;
+        const props = solverProperties(s);
         return [id, {
-          id: s.id, name: s.name, a: s.a,
+          id: s.id, name: s.name, a: props.a,
           iy: inPlaneIy,
-          iz: outOfPlaneIz,
-          j: s.j ?? outOfPlaneIz * 0.001,
+          iz: props.source === 'canonical' ? props.iz : outOfPlaneIz,
+          // `J` is NEVER taken from the polygon engine: it computes Routh's
+          // approximation, which is exact only for a circle or ellipse and
+          // measured 56.9 % low on a rectangle and 37.0 % high on an
+          // I-section. `solverProperties` returns an exact analytical value
+          // for circle/CHS, otherwise the authoritative or legacy one, and
+          // `null` when none exists. The `* 0.001` placeholder below is the
+          // pre-existing fabrication, retained only so 3D models without any
+          // J keep solving; it is tagged `unavailable` in the provenance so
+          // it is visible rather than silent, and Checkpoint 2C replaces it
+          // with a validated Saint-Venant constant.
+          j: props.j ?? s.j ?? outOfPlaneIz * 0.001,
         }];
       }
       // s.iy = about Y-axis (horizontal), s.iz = about Z-axis (vertical)
       // Solver convention: iy controls bending about Y (w, θy DOFs), iz controls bending about Z (v, θz DOFs)
-      const aboutY = s.iy ?? (s.b && s.h ? (s.b * s.h ** 3) / 12 : s.iz);  // Iy: about Y horizontal
-      const aboutZ = s.iz;  // Iz: about Z vertical
+      // A geometry-backed section reports the inertia its canonical polygons
+      // actually have; a properties-only section keeps what it declared.
+      const props = solverProperties(s);
+      const aboutY = props.source === 'canonical'
+        ? props.iy
+        : (s.iy ?? (s.b && s.h ? (s.b * s.h ** 3) / 12 : s.iz));  // Iy: about Y horizontal
+      const aboutZ = props.source === 'canonical' ? props.iz : s.iz;  // Iz: about Z vertical
       return [id, {
-        id: s.id, name: s.name, a: s.a,
+        id: s.id, name: s.name, a: props.a,
         iy: aboutY,   // solver iy = Iy (about Y horizontal) → controls Z-displacement bending (w, θy)
         iz: aboutZ,   // solver iz = Iz (about Z vertical) → controls Y-displacement bending (v, θz)
-        j: s.j ?? aboutY * 0.001,
+        // See the note on the projected branch above: J never comes from the
+        // polygon engine's Routh approximation.
+        j: props.j ?? s.j ?? aboutY * 0.001,
       }];
     })),
     elements: new Map(Array.from(model.elements.entries()).map(([id, e]) => {
