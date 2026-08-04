@@ -14,6 +14,9 @@
 // so one command is one undo step, results survive, and no structural solve fires.
 
 import { modelStore } from './model.svelte';
+import { regulationsStore } from './regulations.svelte';
+import type { RegulationEdition } from '../codes/regulation';
+import { detailingStore } from './detailing.svelte';
 import { resultsStore } from './results.svelte';
 import { verificationStore } from './verification.svelte';
 import { computeStationDemands, runCirsocDesign } from '../engine/verification-service';
@@ -56,8 +59,24 @@ function createDesignRunStore() {
   /** Members whose provisional (failing) candidate was retained for review. */
   let provisionalIds = $state<Set<number>>(new Set());
 
-  function adapter(id: DesignCodeId = verificationStore.activeCodeId) {
-    return getDesignCode(id);
+  /**
+   * The design adapter, from the project's `concrete` role binding and nowhere else.
+   *
+   * This used to default to `verificationStore.activeCodeId` — a dropdown beside the Design
+   * commands — and then silently rewrite it when the legacy `codeSettings.concreteEdition`
+   * said '2005'. Three sources for one decision, able to disagree. Project Regulations is
+   * the only one now; when it has not bound a usable concrete code this returns null and the
+   * caller gates rather than picking a default.
+   */
+  function adapter() {
+    const id = regulationsStore.concreteDesignCode();
+    return id ? getDesignCode(id) : undefined;
+  }
+
+  /** The bound concrete edition, narrowed to the editions this engine implements. */
+  function concreteEdition(): RegulationEdition | undefined {
+    const e = regulationsStore.binding('concrete').edition;
+    return e === '2005' || e === '2025' ? e : undefined;
   }
 
   /** 1. Compute demands: station forces → member contexts (+ orientation check). */
@@ -83,6 +102,11 @@ function createDesignRunStore() {
         orientationSuspect: orient.suspect,
         analysisRevision: verificationStore.analysisRevision,
         demandRevision: verificationStore.demandRevision + 1,
+        // The project decides which edition governs and what the aggregate size is.
+        // Without this the design would silently run under the built-in default rather
+        // than under what the project states it is designed to.
+        codeEdition: concreteEdition(),
+        concrete: modelStore.model.codeSettings?.concrete,
         solveGeneration: verificationStore.solveGeneration,
       });
       verificationStore.setDemandData(contexts, orient.issues);
@@ -200,6 +224,11 @@ function createDesignRunStore() {
       for (const id of written) { auto.add(id); manual.delete(id); }
       autoDesigned = auto;
       manualOverrides = manual;
+
+      // A user who has just verified a floor wants its bars. Detailing runs automatically
+      // unless the project has opted out — the explicit Generate command stays either way,
+      // so the automatic path is a convenience, never the only way in.
+      if (detailingStore.autoGenerate) detailingStore.generate();
     }
   }
 

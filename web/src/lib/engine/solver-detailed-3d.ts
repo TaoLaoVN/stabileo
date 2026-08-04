@@ -24,18 +24,32 @@ import { computeLocalAxes3D } from './local-axes-3d';
 
 // ─── Inlined stiffness/transformation primitives (pedagogical tool) ──
 
+/** Per-axis end-release flags for a 3D frame element (mirrors the WASM `Hinge3D`). */
+export interface Rel3D {
+  my: boolean;
+  mz: boolean;
+  t: boolean;
+}
+
 function frameLocalStiffness3D(
   E: number, G: number, A: number, Iy: number, Iz: number, J: number, L: number,
-  hingeStart: boolean, hingeEnd: boolean,
+  relI: Rel3D, relJ: Rel3D,
 ): Float64Array {
   const n = 12;
   const k = new Float64Array(n * n);
   const EA_L = E * A / L;
-  const GJ_L = G * J / L;
   k[0*n+0] = EA_L; k[0*n+6] = -EA_L; k[6*n+0] = -EA_L; k[6*n+6] = EA_L;
-  k[3*n+3] = GJ_L; k[3*n+9] = -GJ_L; k[9*n+3] = -GJ_L; k[9*n+9] = GJ_L;
-  // Strong-axis bending: v, θz (DOFs 1,5,7,11)
+  // Torsion: released entirely (both ends decoupled) if EITHER end's T is
+  // released — there is no partial condensation for a single relative-twist
+  // DOF the way there is for bending (which still keeps shear/moment terms
+  // at the far end via the transverse DOF).
+  if (!relI.t && !relJ.t) {
+    const GJ_L = G * J / L;
+    k[3*n+3] = GJ_L; k[3*n+9] = -GJ_L; k[9*n+3] = -GJ_L; k[9*n+9] = GJ_L;
+  }
+  // Strong-axis bending (Iz): v, θz (DOFs 1,5,7,11) — condensed by mz flags.
   {
+    const hingeStart = relI.mz, hingeEnd = relJ.mz;
     const EI = E * Iz, EI_L = EI/L, EI_L2 = EI_L/L, EI_L3 = EI_L2/L;
     if (!hingeStart && !hingeEnd) {
       k[1*n+1]=12*EI_L3; k[1*n+5]=6*EI_L2; k[1*n+7]=-12*EI_L3; k[1*n+11]=6*EI_L2;
@@ -52,8 +66,9 @@ function frameLocalStiffness3D(
       k[7*n+1]=-3*EI_L3; k[7*n+5]=-3*EI_L2; k[7*n+7]=3*EI_L3;
     }
   }
-  // Weak-axis bending: w, θy (DOFs 2,4,8,10)
+  // Weak-axis bending (Iy): w, θy (DOFs 2,4,8,10) — condensed by my flags.
   {
+    const hingeStart = relI.my, hingeEnd = relJ.my;
     const EI = E * Iy, EI_L = EI/L, EI_L2 = EI_L/L, EI_L3 = EI_L2/L;
     if (!hingeStart && !hingeEnd) {
       k[2*n+2]=12*EI_L3; k[2*n+4]=-6*EI_L2; k[2*n+8]=-12*EI_L3; k[2*n+10]=-6*EI_L2;
@@ -101,6 +116,14 @@ function frameTransformationMatrix3D(
 
 function dofKey(nodeId: number, localDof: number): string {
   return `${nodeId}:${localDof}`;
+}
+
+/** Build the per-axis release flags for an element's I/J ends (see Rel3D). */
+function relI3D(elem: { releaseMyStart: boolean; releaseMzStart: boolean; releaseTStart: boolean }): Rel3D {
+  return { my: elem.releaseMyStart, mz: elem.releaseMzStart, t: elem.releaseTStart };
+}
+function relJ3D(elem: { releaseMyEnd: boolean; releaseMzEnd: boolean; releaseTEnd: boolean }): Rel3D {
+  return { my: elem.releaseMyEnd, mz: elem.releaseMzEnd, t: elem.releaseTEnd };
 }
 
 /**
@@ -212,6 +235,13 @@ function partialDistributedFEF(qI: number, qJ: number, a: number, b: number, L: 
   return [Vi, Mi, Vj, Mj];
 }
 
+/**
+ * Adjust fixed-end forces for a released bending plane. `hingeStart`/`hingeEnd`
+ * must already be the flag for THIS plane — local-y loads (bending about z,
+ * strong axis / Iz) are adjusted by the element's `mz` flags; local-z loads
+ * (bending about y, weak axis / Iy) are adjusted by the `my` flags. Callers
+ * pick the right flag pair per plane; this function itself is plane-agnostic.
+ */
 function adjustFEFForHinges(
   vi: number, mi: number, vj: number, mj: number,
   L: number, hingeStart: boolean, hingeEnd: boolean,
@@ -355,7 +385,7 @@ export function solveDetailed3D(input: SolverInput3D): DSMStepData {
 
     if (elem.type === 'frame') {
       const nDof = 12;
-      const kLocal = frameLocalStiffness3D(E_kNm2, G_kNm2, sec.a, sec.iy, sec.iz, sec.j, L, (elem.releaseMyStart || elem.releaseMzStart), (elem.releaseMyEnd || elem.releaseMzEnd));
+      const kLocal = frameLocalStiffness3D(E_kNm2, G_kNm2, sec.a, sec.iy, sec.iz, sec.j, L, relI3D(elem), relJ3D(elem));
       const T = frameTransformationMatrix3D(axes.ex, axes.ey, axes.ez);
       const kGlobal = transformMatrix(kLocal, T, nDof);
       const dofs = elementDofs(elem.nodeI, elem.nodeJ);
@@ -606,7 +636,7 @@ export function solveDetailed3D(input: SolverInput3D): DSMStepData {
       }
 
       // F_local_raw = K_local * u_local
-      const kL = frameLocalStiffness3D(E_kNm2, G_kNm2, sec.a, sec.iy, sec.iz, sec.j, L, (elem.releaseMyStart || elem.releaseMzStart), (elem.releaseMyEnd || elem.releaseMzEnd));
+      const kL = frameLocalStiffness3D(E_kNm2, G_kNm2, sec.a, sec.iy, sec.iz, sec.j, L, relI3D(elem), relJ3D(elem));
       const fRaw = new Float64Array(12);
       for (let i = 0; i < 12; i++) {
         let sum = 0;
@@ -629,7 +659,7 @@ export function solveDetailed3D(input: SolverInput3D): DSMStepData {
           } else {
             [vi0, mi0, vj0, mj0] = partialDistributedFEF(dl.qYI, dl.qYJ, a, b, L);
           }
-          const [vi, mi, vj, mj] = adjustFEFForHinges(vi0, mi0, vj0, mj0, L, (elem.releaseMyStart || elem.releaseMzStart), (elem.releaseMyEnd || elem.releaseMzEnd));
+          const [vi, mi, vj, mj] = adjustFEFForHinges(vi0, mi0, vj0, mj0, L, elem.releaseMzStart, elem.releaseMzEnd);
           fef[1] += vi; fef[5] += mi; fef[7] += vj; fef[11] += mj;
         }
 
@@ -641,7 +671,7 @@ export function solveDetailed3D(input: SolverInput3D): DSMStepData {
           } else {
             [vi0, mi0, vj0, mj0] = partialDistributedFEF(dl.qZI, dl.qZJ, a, b, L);
           }
-          const [vi, mi, vj, mj] = adjustFEFForHinges(vi0, mi0, vj0, mj0, L, (elem.releaseMyStart || elem.releaseMzStart), (elem.releaseMyEnd || elem.releaseMzEnd));
+          const [vi, mi, vj, mj] = adjustFEFForHinges(vi0, mi0, vj0, mj0, L, elem.releaseMyStart, elem.releaseMyEnd);
           // Sign inversion for My (theta_y = -dw/dx)
           fef[2] += vi; fef[4] += -mi; fef[8] += vj; fef[10] += -mj;
         }
@@ -650,12 +680,12 @@ export function solveDetailed3D(input: SolverInput3D): DSMStepData {
       for (const pl of pointLoads) {
         if (Math.abs(pl.py) > 1e-15) {
           const [vi0, mi0, vj0, mj0] = pointFEF(pl.py, pl.a, L);
-          const [vi, mi, vj, mj] = adjustFEFForHinges(vi0, mi0, vj0, mj0, L, (elem.releaseMyStart || elem.releaseMzStart), (elem.releaseMyEnd || elem.releaseMzEnd));
+          const [vi, mi, vj, mj] = adjustFEFForHinges(vi0, mi0, vj0, mj0, L, elem.releaseMzStart, elem.releaseMzEnd);
           fef[1] += vi; fef[5] += mi; fef[7] += vj; fef[11] += mj;
         }
         if (Math.abs(pl.pz) > 1e-15) {
           const [vi0, mi0, vj0, mj0] = pointFEF(pl.pz, pl.a, L);
-          const [vi, mi, vj, mj] = adjustFEFForHinges(vi0, mi0, vj0, mj0, L, (elem.releaseMyStart || elem.releaseMzStart), (elem.releaseMyEnd || elem.releaseMzEnd));
+          const [vi, mi, vj, mj] = adjustFEFForHinges(vi0, mi0, vj0, mj0, L, elem.releaseMyStart, elem.releaseMyEnd);
           fef[2] += vi; fef[4] += -mi; fef[8] += vj; fef[10] += -mj;
         }
       }
@@ -770,7 +800,7 @@ function assembleDistLoadDetailed(
     } else {
       [vi0, mi0, vj0, mj0] = partialDistributedFEF(load.qYI, load.qYJ, a, b, L);
     }
-    const [vi, mi, vj, mj] = adjustFEFForHinges(vi0, mi0, vj0, mj0, L, (elem.releaseMyStart || elem.releaseMzStart), (elem.releaseMyEnd || elem.releaseMzEnd));
+    const [vi, mi, vj, mj] = adjustFEFForHinges(vi0, mi0, vj0, mj0, L, elem.releaseMzStart, elem.releaseMzEnd);
     fLocal[1] = vi; fLocal[5] = mi; fLocal[7] = vj; fLocal[11] = mj;
   }
 
@@ -782,7 +812,7 @@ function assembleDistLoadDetailed(
     } else {
       [vi0, mi0, vj0, mj0] = partialDistributedFEF(load.qZI, load.qZJ, a, b, L);
     }
-    const [vi, mi, vj, mj] = adjustFEFForHinges(vi0, mi0, vj0, mj0, L, (elem.releaseMyStart || elem.releaseMzStart), (elem.releaseMyEnd || elem.releaseMzEnd));
+    const [vi, mi, vj, mj] = adjustFEFForHinges(vi0, mi0, vj0, mj0, L, elem.releaseMyStart, elem.releaseMyEnd);
     fLocal[2] = vi; fLocal[4] = -mi; fLocal[8] = vj; fLocal[10] = -mj;
   }
 
@@ -845,14 +875,14 @@ function assemblePointLoadDetailed(
   // Y component
   if (Math.abs(load.py) > 1e-15) {
     const [vi0, mi0, vj0, mj0] = pointFEF(load.py, load.a, L);
-    const [vi, mi, vj, mj] = adjustFEFForHinges(vi0, mi0, vj0, mj0, L, (elem.releaseMyStart || elem.releaseMzStart), (elem.releaseMyEnd || elem.releaseMzEnd));
+    const [vi, mi, vj, mj] = adjustFEFForHinges(vi0, mi0, vj0, mj0, L, elem.releaseMzStart, elem.releaseMzEnd);
     fLocal[1] += vi; fLocal[5] += mi; fLocal[7] += vj; fLocal[11] += mj;
   }
 
   // Z component
   if (Math.abs(load.pz) > 1e-15) {
     const [vi0, mi0, vj0, mj0] = pointFEF(load.pz, load.a, L);
-    const [vi, mi, vj, mj] = adjustFEFForHinges(vi0, mi0, vj0, mj0, L, (elem.releaseMyStart || elem.releaseMzStart), (elem.releaseMyEnd || elem.releaseMzEnd));
+    const [vi, mi, vj, mj] = adjustFEFForHinges(vi0, mi0, vj0, mj0, L, elem.releaseMyStart, elem.releaseMyEnd);
     fLocal[2] += vi; fLocal[4] += -mi; fLocal[8] += vj; fLocal[10] += -mj;
   }
 

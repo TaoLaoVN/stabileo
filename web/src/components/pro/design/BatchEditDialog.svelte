@@ -15,6 +15,7 @@
   } from '../../../lib/engine/design/rebar-batch';
   import { getDesignCode } from '../../../lib/engine/design/code-adapter';
   import { verificationStore } from '../../../lib/store';
+  import { regulationsStore } from '../../../lib/store/regulations.svelte';
   import { designRunStore } from '../../../lib/store/design-run.svelte';
   import { getReinforcement, commitManualBatch } from '../../../lib/store/rebar-edit';
   import OutcomeBadge from './OutcomeBadge.svelte';
@@ -72,9 +73,15 @@
 
   const hasPatch = $derived(Object.keys(patch).length > 0);
 
+  /** The project's concrete design code — the same source the Design commands use. */
+  function concreteAdapter() {
+    const id = regulationsStore.concreteDesignCode();
+    return id ? getDesignCode(id) : undefined;
+  }
+
   const plan = $derived.by((): BatchPlan | null => {
     void verificationStore.providedRevision;
-    const adapter = getDesignCode(verificationStore.activeCodeId);
+    const adapter = concreteAdapter();
     if (!adapter || !hasPatch) return null;
     return planBatchEdit(
       adapter, selection, verificationStore.contexts, getReinforcement, patch,
@@ -103,7 +110,7 @@
     if (!plan || !canApply) return;
     // Recompute over the FULL selection so members beyond the preview cap are
     // included: the cap limits display only, never the operation.
-    const adapter = getDesignCode(verificationStore.activeCodeId);
+    const adapter = concreteAdapter();
     if (!adapter) return;
     const full = planBatchEdit(
       adapter, selection, verificationStore.contexts, getReinforcement, patch,

@@ -2544,9 +2544,9 @@ pub(crate) fn validate_input_2d(input: &SolverInput) -> Result<(), String> {
         let finite = match load {
             SolverLoad::Nodal(l) => l.fx.is_finite() && l.fz.is_finite() && l.my.is_finite(),
             SolverLoad::Distributed(l) => l.q_i.is_finite() && l.q_j.is_finite()
-                && l.a.map_or(true, |v| v.is_finite()) && l.b.map_or(true, |v| v.is_finite()),
+                && l.a.is_none_or(|v| v.is_finite()) && l.b.is_none_or(|v| v.is_finite()),
             SolverLoad::PointOnElement(l) => l.a.is_finite() && l.p.is_finite()
-                && l.px.map_or(true, |v| v.is_finite()) && l.my.map_or(true, |v| v.is_finite()),
+                && l.px.is_none_or(|v| v.is_finite()) && l.my.is_none_or(|v| v.is_finite()),
             SolverLoad::Thermal(l) => l.dt_uniform.is_finite() && l.dt_gradient.is_finite(),
         };
         if !finite {
@@ -2740,10 +2740,10 @@ pub(crate) fn validate_input_3d(input: &SolverInput3D) -> Result<(), String> {
         let finite = match load {
             SolverLoad3D::Nodal(l) => l.fx.is_finite() && l.fy.is_finite() && l.fz.is_finite()
                 && l.mx.is_finite() && l.my.is_finite() && l.mz.is_finite()
-                && l.bw.map_or(true, |v| v.is_finite()),
+                && l.bw.is_none_or(|v| v.is_finite()),
             SolverLoad3D::Distributed(l) => l.q_yi.is_finite() && l.q_yj.is_finite()
                 && l.q_zi.is_finite() && l.q_zj.is_finite()
-                && l.a.map_or(true, |v| v.is_finite()) && l.b.map_or(true, |v| v.is_finite()),
+                && l.a.is_none_or(|v| v.is_finite()) && l.b.is_none_or(|v| v.is_finite()),
             SolverLoad3D::PointOnElement(l) => l.a.is_finite() && l.py.is_finite() && l.pz.is_finite(),
             SolverLoad3D::Thermal(l) => l.dt_uniform.is_finite()
                 && l.dt_gradient_y.is_finite() && l.dt_gradient_z.is_finite(),

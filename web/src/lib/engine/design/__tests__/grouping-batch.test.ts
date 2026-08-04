@@ -126,11 +126,13 @@ describe('attribute and connectivity grouping', () => {
 });
 
 describe('orientation diagnostic', () => {
+  // Sweeps every corrected fixture through the full design path. It is seconds of real work,
+  // not a hang, and the 5 s default was cutting it off once collision sampling got finer.
   it('finds nothing on the corrected fixtures', () => {
     expect(solvedQa.orientationSuspect.size).toBe(0);
     const solvedFrame = solveFixture(frame);
     expect(solvedFrame.orientationSuspect.size).toBe(0);
-  });
+  }, 120_000);
 
   it('catches gravity authored in the horizontal local component', () => {
     // Re-introduce the original defect: put the Y-beams' load back into qY.
@@ -255,8 +257,12 @@ describe('batch edit — preview, compatibility, validation', () => {
   });
 
   it('reports preview truncation instead of silently dropping rows', () => {
-    const many = [...solveFixture(frame).contexts.keys()];
+    // ONE solve, reused. This solved the same fixture twice and threw the first result
+    // away, which made the test cost ~5,3 s under full-suite load against the default 5 s
+    // timeout — green in isolation at 1,6 s and intermittently red in a full run. Same
+    // assertions, half the work; no timeout was raised to hide it.
     const solvedFrame = solveFixture(frame);
+    const many = [...solvedFrame.contexts.keys()];
     const plan = planBatchEdit(cirsoc201Adapter, many, solvedFrame.contexts, () => undefined,
       { bottomSpan: { count: 4, diameter: 20 } });
     expect(plan.previewTotal).toBe(many.length);

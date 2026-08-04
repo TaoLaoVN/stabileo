@@ -59,8 +59,29 @@ function getInitialLocale(): string {
 let _locale = $state<string>(getInitialLocale());
 
 export function t(key: string): string {
-	const dict = dicts[_locale] ?? dicts.en;
+	return tAt(key, _locale);
+}
+
+/**
+ * Translate at an explicit locale, without touching the active one.
+ *
+ * Report and export writers need this: a user may want a Spanish PDF while reading an
+ * English UI, and flipping `_locale` to achieve that would persist to localStorage and
+ * re-render the whole app mid-export.
+ */
+export function tAt(key: string, locale: string): string {
+	const dict = dicts[locale] ?? dicts.en;
 	return (dict as any)[key] ?? (dicts.en as any)[key] ?? key;
+}
+
+/** Every locale the app ships. Used by the locale-parity gate. */
+export function shippedLocales(): string[] {
+	return Object.keys(dicts);
+}
+
+/** A locale's raw dictionary. Gate use only. */
+export function dictFor(locale: string): Record<string, string> {
+	return (dicts[locale] ?? {}) as Record<string, string>;
 }
 
 /**

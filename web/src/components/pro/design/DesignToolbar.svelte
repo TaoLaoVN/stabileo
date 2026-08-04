@@ -9,7 +9,10 @@
   import { t, tp } from '../../../lib/i18n';
   import { verificationStore } from '../../../lib/store';
   import { designRunStore } from '../../../lib/store/design-run.svelte';
-  import { listDesignCodes, type DesignCodeId } from '../../../lib/engine/design/code-adapter';
+  import { regulationsStore } from '../../../lib/store/regulations.svelte';
+  import { te } from '../../../lib/i18n/engine-text';
+  import { bindingLabel } from '../../../lib/codes/roles';
+  import { detailingStore } from '../../../lib/store/detailing.svelte';
   import OutcomeBadge from './OutcomeBadge.svelte';
 
   interface Props {
@@ -32,30 +35,83 @@
     onDesignAll, onReviewChanges, onRevertEdits, onShowOrientation,
   }: Props = $props();
 
-  const codes = listDesignCodes();
   let autoMenuOpen = $state(false);
+
+  /**
+   * The concrete design code in force, and why it might not be.
+   *
+   * There is no selector here any more. This bar used to carry a dropdown listing the whole
+   * adapter registry — which showed "CIRSOC 201" twice, because the 2025 and 2005 adapters
+   * share a display name, and offered the 2005 edition whose official text is not supplied
+   * with this app. Worse, it wrote its own state: the code check, the candidate search and
+   * detailing read it, while Project Regulations bound a `concrete` role that reached only
+   * part of detailing. The two could disagree.
+   *
+   * Project Regulations is the one selector. This is a read-out of what it chose.
+   */
+  const concreteBinding = $derived(regulationsStore.binding('concrete'));
+  const concreteProblem = $derived(regulationsStore.concreteDesignProblem());
+  const concreteReady = $derived(regulationsStore.concreteDesignCode() !== null);
+  // `bindingLabel` is the same labeller Project Regulations uses, so the read-out and the
+  // selector can never print the regulation differently.
+  const concreteLabel = $derived(te(bindingLabel(concreteBinding)));
+
+  /** Open the Project Regulations disclosure and put the caret in it. */
+  function openRegulations() {
+    const panel = document.querySelector('[data-testid="code-settings-disclosure"]');
+    if (panel instanceof HTMLDetailsElement) panel.open = true;
+    document.querySelector('[data-testid="project-regulations"]')
+      ?.scrollIntoView({ block: 'nearest' });
+    (document.querySelector('[data-testid="project-regulations"] select') as HTMLElement | null)
+      ?.focus();
+  }
 
   const counts = $derived(verificationStore.providedSummary);
   const run = $derived(verificationStore.runSummary);
   const busy = $derived(designRunStore.running);
-  const canDesign = $derived(hasResults && hasCombinations && !busy);
+  // No usable concrete code means no design. Gating beats defaulting: silently falling back
+  // to CIRSOC would verify a project against rules it never chose.
+  const canDesign = $derived(hasResults && hasCombinations && !busy && concreteReady);
   const orientCount = $derived(verificationStore.orientationSuspectCount);
   const provisionalCount = $derived(designRunStore.provisionalIds.size);
 
-  function selectCode(e: Event) {
-    verificationStore.setActiveCode((e.currentTarget as HTMLSelectElement).value as DesignCodeId);
+  // ── Detailing ──
+  // The audit's headline finding was that the detailing engines had no production caller.
+  // This is it: a visible command, enabled exactly when the prerequisites hold, and when
+  // it is not, saying which members are in the way and how many.
+  const detailingReady = $derived(detailingStore.readiness);
+  const hasDetailing = $derived(detailingStore.assemblies.length > 0);
+  const detailingBusy = $derived(detailingStore.generating);
+
+  /** Precise prerequisites, so a disabled button is never a dead end. */
+  const detailingBlockers = $derived(
+    detailingReady.prerequisites.map((p) => tp(p.key, { n: p.count,
+      ids: p.elementIds.slice(0, 6).join(', ') })).join(' '),
+  );
+
+  function generateDetailing() {
+    detailingStore.generate();
   }
+
+
 </script>
 
 <div class="toolbar" data-testid="design-toolbar">
   <div class="cmd-row">
-    <select class="code-select" data-testid="code-select"
-            value={verificationStore.activeCodeId} onchange={selectCode}
-            aria-label={t('design.cmd.codeCheck')}>
-      {#each codes as c (c.id)}
-        <option value={c.id}>{c.name}{c.capabilities.candidateGeneration ? '' : ' — ' + t('design.counts.unsupported')}</option>
-      {/each}
-    </select>
+    <!-- A read-out, not a selector. The regulation is chosen in Project Regulations. -->
+    <span class="code-indicator" data-testid="active-concrete-code"
+          class:unbound={!concreteReady}>
+      <span class="code-role">{t('design.code.role')}</span>
+      <span class="code-name">{concreteLabel}</span>
+    </span>
+
+    {#if !concreteReady && concreteProblem}
+      <span class="code-gate" role="alert" data-testid="concrete-code-gate">
+        {te(concreteProblem)}
+        <button class="code-gate-link" data-testid="goto-project-regulations"
+                onclick={openRegulations}>{t('design.code.openRegulations')}</button>
+      </span>
+    {/if}
 
     <button class="cmd" data-testid="cmd-compute-demands" onclick={onComputeDemands}
             disabled={!hasResults || busy}>{t('design.cmd.computeDemands')}</button>
@@ -84,12 +140,35 @@
     <button class="cmd cmd-all" data-testid="cmd-design-all" onclick={onDesignAll}
             disabled={!canDesign}>{t('design.cmd.designAll')}</button>
 
+    <button class="cmd cmd-detailing" data-testid="cmd-generate-detailing"
+            onclick={generateDetailing}
+            disabled={!detailingReady.ready || detailingBusy || busy}
+            title={detailingReady.ready ? '' : detailingBlockers}>
+      {detailingBusy
+        ? t('detailing.cmd.generating')
+        : hasDetailing ? t('detailing.cmd.regenerate') : t('detailing.cmd.generate')}
+    </button>
+
     {#if busy}
       <button class="cmd cmd-cancel" data-testid="cmd-cancel" onclick={() => designRunStore.cancel()}>
         {t('design.cmd.cancel')}
       </button>
     {/if}
   </div>
+
+  <!-- Why the command is unavailable, in the open, with counts. -->
+  {#if !detailingReady.ready && detailingBlockers}
+    <p class="detailing-blockers" data-testid="detailing-prerequisites">
+      {detailingBlockers}
+    </p>
+  {/if}
+
+  <label class="detailing-auto" data-testid="detailing-auto-label">
+    <input type="checkbox" data-testid="detailing-auto"
+           checked={detailingStore.autoGenerate}
+           onchange={(e) => detailingStore.setAutoGenerate(e.currentTarget.checked)} />
+    {t('detailing.cmd.autoAfterDesign')}
+  </label>
 
   {#if busy && designRunStore.progress}
     {@const p = designRunStore.progress}
@@ -196,8 +275,22 @@
   .toolbar { display: flex; flex-direction: column; gap: 6px; padding: 8px 12px;
     background: #0a1a30; border-bottom: 1px solid #1a4a7a; flex-shrink: 0; }
   .cmd-row { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
-  .code-select { padding: 4px 8px; background: #0f3460; border: 1px solid #1a4a7a;
-    border-radius: 4px; color: #eee; font-size: 0.75rem; }
+  .code-indicator {
+    display: inline-flex; align-items: baseline; gap: 6px;
+    padding: 4px 8px; border: 1px solid #1a4a7a; border-radius: 4px;
+    background: #0d2440; font-size: 0.78rem; white-space: nowrap;
+  }
+  .code-indicator.unbound { border-color: #7a4a1a; background: #33210d; }
+  .code-role { opacity: 0.7; }
+  .code-gate {
+    display: inline-flex; align-items: center; gap: 6px;
+    font-size: 0.78rem; color: #ffb870;
+  }
+  .code-gate-link {
+    background: none; border: none; padding: 0; color: #7ec4ff;
+    text-decoration: underline; cursor: pointer; font-size: inherit;
+  }
+  .code-name { font-weight: 600; }
   .cmd { padding: 4px 10px; background: #14304f; border: 1px solid #2a5a8a;
     border-radius: 4px; color: #dde; font-size: 0.75rem; font-weight: 600; cursor: pointer; }
   .cmd:hover:not(:disabled) { background: #1e4a78; }
@@ -221,6 +314,9 @@
   .progress-fill { height: 100%; background: #4ecdc4; transition: width 0.15s linear; }
   .progress-text { font-size: 0.7rem; color: #9ab; font-family: monospace; }
 
+  .cmd-detailing { background: #1e4570; }
+  .detailing-blockers { margin: 0.3rem 0 0; font-size: 0.76rem; opacity: 0.85; }
+  .detailing-auto { display: inline-flex; gap: 0.3rem; align-items: center; font-size: 0.76rem; margin-top: 0.3rem; }
   .counts { display: flex; gap: 9px; flex-wrap: wrap; font-size: 0.72rem; font-family: monospace; }
   .count { color: #aab; }
   .count-sep { color: #445; }

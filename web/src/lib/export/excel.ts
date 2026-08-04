@@ -30,8 +30,28 @@ import {
 interface ExcelExportOptions {
   filename?: string;
   includeResults?: boolean;
+  /**
+   * Extra sheets to append, as arrays of arrays.
+   *
+   * The detailing bar schedule arrives this way: it is rendered from the DocumentModel by
+   * `renderSchedule` and appended here rather than rebuilt, so the workbook the user
+   * downloads contains the same numbers as the report and the drawings.
+   */
+  extraSheets?: ReadonlyArray<{ name: string; rows: (string | number)[][] }>;
+  /**
+   * Skip the standard model sheets and write only `extraSheets`.
+   *
+   * A bar schedule is a fabrication document; padding it with node coordinates and
+   * reaction tables makes it harder to use, not more complete.
+   */
+  onlyExtras?: boolean;
 }
 
+export const releaseLabel = (r?: { my: boolean; mz: boolean; t: boolean }): string => {
+  if (!r) return '';
+  const parts = [r.my && 'My', r.mz && 'Mz', r.t && 'T'].filter(Boolean);
+  return parts.join('+');
+};
 
 function createSummarySheet(): XLSX.WorkSheet {
   const is3D = isMode3D(uiStore.analysisMode);
@@ -127,7 +147,7 @@ function createElementsSheet(): XLSX.WorkSheet {
     t('excel.section'), 'A (m²)', 'Iy (m⁴)',
   ];
   if (is3D) headers.push('Iz (m⁴)', 'J (m⁴)');
-  headers.push(t('excel.hingeI'), t('excel.hingeJ'));
+  headers.push(t('excel.releaseI'), t('excel.releaseJ'));
 
   if (hasResults && is3D) {
     headers.push(
@@ -163,7 +183,7 @@ function createElementsSheet(): XLSX.WorkSheet {
       sec?.name ?? '-', sec?.a ?? 0, sec?.iy ?? sec?.iz ?? 0,
     ];
     if (is3D) row.push(sec?.iz ?? 0, sec?.j ?? 0);
-    row.push(elem.releaseI?.mz === true ? t('excel.yes') : t('excel.no'), elem.releaseJ?.mz === true ? t('excel.yes') : t('excel.no'));
+    row.push(releaseLabel(elem.releaseI), releaseLabel(elem.releaseJ));
 
     if (hasResults && is3D && r3d) {
       const f = r3d.elementForces.find(f => f.elementId === elem.id);
@@ -367,6 +387,8 @@ export function exportToExcel(options: ExcelExportOptions = {}): void {
   const {
     filename = 'analisis-estructural.xlsx',
     includeResults = true,
+    extraSheets = [],
+    onlyExtras = false,
   } = options;
 
   const is3D = isMode3D(uiStore.analysisMode);
@@ -374,16 +396,24 @@ export function exportToExcel(options: ExcelExportOptions = {}): void {
 
   const wb = XLSX.utils.book_new();
 
-  XLSX.utils.book_append_sheet(wb, createSummarySheet(), t('excel.sheetSummary'));
-  XLSX.utils.book_append_sheet(wb, createElementsSheet(), t('excel.sheetElements'));
-  XLSX.utils.book_append_sheet(wb, createNodesSheet(), t('excel.sheetNodes'));
+  if (!onlyExtras) {
+    XLSX.utils.book_append_sheet(wb, createSummarySheet(), t('excel.sheetSummary'));
+    XLSX.utils.book_append_sheet(wb, createElementsSheet(), t('excel.sheetElements'));
+    XLSX.utils.book_append_sheet(wb, createNodesSheet(), t('excel.sheetNodes'));
 
-  if (includeResults && hasResults) {
-    XLSX.utils.book_append_sheet(wb, createReactionsSheet(), t('excel.sheetReactions'));
+    if (includeResults && hasResults) {
+      XLSX.utils.book_append_sheet(wb, createReactionsSheet(), t('excel.sheetReactions'));
+    }
+
+    XLSX.utils.book_append_sheet(wb, createMaterialsSheet(), t('excel.sheetMaterials'));
+    XLSX.utils.book_append_sheet(wb, createSectionsSheet(), t('excel.sheetSections'));
   }
 
-  XLSX.utils.book_append_sheet(wb, createMaterialsSheet(), t('excel.sheetMaterials'));
-  XLSX.utils.book_append_sheet(wb, createSectionsSheet(), t('excel.sheetSections'));
+  for (const extra of extraSheets) {
+    XLSX.utils.book_append_sheet(
+      wb, XLSX.utils.aoa_to_sheet(extra.rows as (string | number)[][]),
+      extra.name.slice(0, 31));
+  }
 
   XLSX.writeFile(wb, filename);
 }

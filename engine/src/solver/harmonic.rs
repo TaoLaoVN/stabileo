@@ -475,9 +475,7 @@ pub fn solve_complex_system(
     }
 
     // RHS: [F, 0]
-    for i in 0..n {
-        rhs[i] = f[i];
-    }
+    rhs[..n].copy_from_slice(&f[..n]);
 
     let result = lu_solve(&mut a, &mut rhs, n2)
         .ok_or_else(|| "Complex system solve failed".to_string())?;

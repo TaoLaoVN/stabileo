@@ -13,48 +13,20 @@
  */
 
 import type { ProvidedReinforcement } from '../../store/model.svelte';
+import { canonicalJson, fnv1a } from './canonical-hash';
 
-/** Quantisation: 4 decimals is finer than any physically meaningful rebar value
- *  (spacing in m to 0.1 mm) while absorbing IEEE-754 accumulation noise. */
-function q(n: number | undefined): string {
-  if (n === undefined || n === null || !Number.isFinite(n)) return '_';
-  // Normalise -0 to 0 and strip trailing zeros for a compact stable form.
-  const v = Math.round(n * 1e4) / 1e4;
-  return (v === 0 ? 0 : v).toString();
-}
-
-function canonicalise(value: unknown): unknown {
-  if (value === null || value === undefined) return null;
-  if (typeof value === 'number') return q(value);
-  if (typeof value === 'boolean' || typeof value === 'string') return value;
-  if (Array.isArray(value)) return value.map(canonicalise);
-  if (typeof value === 'object') {
-    const src = value as Record<string, unknown>;
-    const out: Record<string, unknown> = {};
-    for (const k of Object.keys(src).sort()) {
-      const v = src[k];
-      if (v === undefined) continue; // absent and explicit-undefined must hash alike
-      out[k] = canonicalise(v);
-    }
-    return out;
-  }
-  return String(value);
-}
-
-/** Canonical JSON form — deterministic, key-sorted, float-quantised. */
+/**
+ * Canonical JSON form — deterministic, key-sorted, float-quantised.
+ *
+ * The canonicalisation itself lives in `canonical-hash.ts`: PR18's floor families need the
+ * same certificate-binding guarantee for footing geometry, ground profiles and physical bar
+ * assemblies, and a second copy of this machinery is how two parts of one project come to
+ * disagree about whether the same object changed. `'none'` for an absent reinforcement is
+ * the one rebar-specific rule and stays here.
+ */
 export function canonicalRebarJson(reinf: ProvidedReinforcement | undefined): string {
   if (!reinf) return 'none';
-  return JSON.stringify(canonicalise(reinf));
-}
-
-/** FNV-1a 32-bit, rendered base36. Fast, allocation-free, no crypto dependency. */
-function fnv1a(str: string): string {
-  let h = 0x811c9dc5;
-  for (let i = 0; i < str.length; i++) {
-    h ^= str.charCodeAt(i);
-    h = Math.imul(h, 0x01000193);
-  }
-  return (h >>> 0).toString(36);
+  return canonicalJson(reinf);
 }
 
 /**

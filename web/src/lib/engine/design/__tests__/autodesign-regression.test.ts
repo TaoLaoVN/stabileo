@@ -161,6 +161,12 @@ describe('honest refusal when the model is broken', () => {
         basis: 'no-demand' as const, secondaryRatio: 0,
       },
       slenderDeltaNs: 1, orientationSuspect: false,
+      // This test is about MISSING COMBINATIONS, so the edition must be a supported one.
+      // Without it the context would trip the capability gate first (an unknown edition
+      // fails closed, by design) and report UNSUPPORTED — an honest refusal, but not the
+      // one under test. The production path always sets this; only hand-built contexts can
+      // omit it.
+      codeEdition: '2025' as const,
       analysisRevision: 1, demandRevision: 0, solveGeneration: 1,
       blocking: ['missingCombinations' as const, 'missingDemand' as const],
       modelData: fm.data,
