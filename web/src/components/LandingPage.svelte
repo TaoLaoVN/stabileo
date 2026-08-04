@@ -1,6 +1,6 @@
 <script lang="ts">
   import { onMount } from 'svelte';
-  import { tPublic as t } from '../lib/i18n/store.svelte';
+  import { tPublic as t, publicI18n } from '../lib/i18n/store.svelte';
   import LandingNav from './landing/LandingNav.svelte';
   import LandingHero from './landing/LandingHero.svelte';
   import LandingProblem from './landing/LandingProblem.svelte';
@@ -21,6 +21,72 @@
   let landingEl: HTMLDivElement;
   let scrollPct = $state(0);
   let prefersReducedMotion = $state(false);
+
+  /**
+   * Reactive metadata, applied by mutating the static tags in index.html
+   * rather than appending a second set through `svelte:head`.
+   *
+   * The landing is client-rendered, so index.html holds the English metadata a
+   * non-JS crawler sees and this only refines it for a real browser: the
+   * Spanish landing gets Spanish title, description and og:locale. The
+   * originals are captured once and restored when the landing unmounts, so
+   * entering the application never leaves landing copy behind.
+   */
+  const META_TAGS = [
+    ['meta[name="description"]', 'content'],
+    ['meta[property="og:title"]', 'content'],
+    ['meta[property="og:description"]', 'content'],
+    ['meta[property="og:locale"]', 'content'],
+    ['meta[property="og:locale:alternate"]', 'content'],
+    ['meta[name="twitter:title"]', 'content'],
+    ['meta[name="twitter:description"]', 'content'],
+  ] as const;
+
+  let originalMeta: { title: string; lang: string; tags: (string | null)[] } | null = null;
+
+  function captureMetadata() {
+    if (originalMeta) return;
+    originalMeta = {
+      title: document.title,
+      lang: document.documentElement.lang,
+      tags: META_TAGS.map(([sel, attr]) => document.querySelector(sel)?.getAttribute(attr) ?? null),
+    };
+  }
+
+  function setMeta(selector: string, value: string) {
+    document.querySelector(selector)?.setAttribute('content', value);
+  }
+
+  function syncMetadata() {
+    const locale = publicI18n.locale;
+    const title = `Stabileo — ${t('landing.heroH')}`;
+    const description = t('landing.heroP');
+    document.title = title;
+    document.documentElement.lang = locale;
+    setMeta('meta[name="description"]', description);
+    setMeta('meta[property="og:title"]', title);
+    setMeta('meta[property="og:description"]', description);
+    setMeta('meta[property="og:locale"]', locale === 'es' ? 'es_AR' : 'en_US');
+    setMeta('meta[property="og:locale:alternate"]', locale === 'es' ? 'en_US' : 'es_AR');
+    setMeta('meta[name="twitter:title"]', title);
+    setMeta('meta[name="twitter:description"]', description);
+  }
+
+  function restoreMetadata() {
+    if (!originalMeta) return;
+    document.title = originalMeta.title;
+    document.documentElement.lang = originalMeta.lang;
+    META_TAGS.forEach(([sel, attr], i) => {
+      const v = originalMeta!.tags[i];
+      if (v !== null) document.querySelector(sel)?.setAttribute(attr, v);
+    });
+  }
+
+  $effect(() => {
+    captureMetadata();
+    syncMetadata();
+    return restoreMetadata;
+  });
 
   onMount(() => {
     const onScroll = () => {
@@ -69,15 +135,15 @@
 </script>
 
 <svelte:head>
-  <title>Stabileo — {t('landing.heroH')}</title>
-  <meta name="description" content={t('landing.heroP')} />
-  <meta name="theme-color" content="#0c1620" />
-  <meta property="og:type" content="website" />
-  <meta property="og:title" content="Stabileo — {t('landing.heroH')}" />
-  <meta property="og:description" content={t('landing.heroP')} />
-  <meta name="twitter:card" content="summary_large_image" />
-  <meta name="twitter:title" content="Stabileo — {t('landing.heroH')}" />
-  <meta name="twitter:description" content={t('landing.heroP')} />
+  <!--
+    No title/description/OG/Twitter tags here on purpose. `svelte:head` APPENDS
+    to the document, and index.html already carries a full static set for
+    crawlers that never run this code — emitting them again produced five
+    <title> elements and eight duplicated metas whose English values
+    contradicted each other. The reactive metadata is applied by rewriting the
+    static tags in place (see `syncMetadata` in the script above), which keeps
+    exactly one of each and lets the Spanish landing correct them.
+  -->
   <!--
     Fonts are self-hosted from /fonts (see landing.css). The landing no longer
     contacts fonts.googleapis.com or fonts.gstatic.com. Only the four faces the

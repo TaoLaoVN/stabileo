@@ -929,6 +929,169 @@ test.describe('@landing landing page', () => {
     await expect(validation).not.toContainText('1117');
   });
 
+  /**
+   * The landing is client-rendered, so index.html is the only metadata a
+   * crawler that does not run JavaScript ever sees. It must be correct on its
+   * own, and hydration must refine it in place rather than append a second,
+   * contradictory set — which is what it used to do.
+   */
+  test.describe('metadata', () => {
+    const SOCIAL = 'https://stabileo.com/og/stabileo-social.png';
+    const EN_TITLE = 'Stabileo — Structural analysis, in a browser tab.';
+
+    function readHead(page: Page) {
+      return page.evaluate(() => {
+        const byKey: Record<string, string[]> = {};
+        for (const m of document.querySelectorAll('meta[name], meta[property]')) {
+          const k = m.getAttribute('name') ?? m.getAttribute('property')!;
+          (byKey[k] ??= []).push(m.getAttribute('content') ?? '');
+        }
+        return {
+          title: document.title,
+          headTitles: document.querySelectorAll('head > title').length,
+          lang: document.documentElement.lang,
+          canonicals: [...document.querySelectorAll('link[rel="canonical"]')].map((l) => l.getAttribute('href')),
+          meta: byKey,
+        };
+      });
+    }
+    const one = (h: Awaited<ReturnType<typeof readHead>>, k: string) => {
+      expect(h.meta[k], `${k} must exist exactly once`).toHaveLength(1);
+      return h.meta[k][0];
+    };
+
+    test('a crawler with no JavaScript gets a complete, correct English head', async ({ browser }) => {
+      const ctx = await browser.newContext({ javaScriptEnabled: false });
+      const page = await ctx.newPage();
+      await page.goto('/');
+      const h = await readHead(page);
+
+      expect(h.headTitles).toBe(1);
+      expect(h.title).toBe(EN_TITLE);
+      expect(h.lang).toBe('en');
+      expect(h.canonicals).toEqual(['https://stabileo.com/']);
+
+      expect(one(h, 'description')).toMatch(/free and open-source/i);
+      expect(one(h, 'theme-color')).toBe('#0c1620');
+      expect(one(h, 'og:type')).toBe('website');
+      expect(one(h, 'og:url')).toBe('https://stabileo.com/');
+      expect(one(h, 'og:site_name')).toBe('Stabileo');
+      expect(one(h, 'og:locale')).toBe('en_US');
+      expect(one(h, 'og:locale:alternate')).toBe('es_AR');
+      expect(one(h, 'og:title')).toBe(EN_TITLE);
+      expect(one(h, 'twitter:card')).toBe('summary_large_image');
+      expect(one(h, 'twitter:title')).toBe(EN_TITLE);
+
+      // Absolute URL: crawlers do not reliably resolve a relative og:image.
+      expect(one(h, 'og:image')).toBe(SOCIAL);
+      expect(one(h, 'twitter:image')).toBe(SOCIAL);
+      expect(one(h, 'og:image:type')).toBe('image/png');
+      expect(one(h, 'og:image:width')).toBe('1200');
+      expect(one(h, 'og:image:height')).toBe('630');
+      expect(one(h, 'og:image:alt').length).toBeGreaterThan(30);
+      expect(one(h, 'twitter:image:alt').length).toBeGreaterThan(30);
+      await ctx.close();
+    });
+
+    test('the legacy screenshot is no longer referenced as a social image', async ({ browser }) => {
+      const ctx = await browser.newContext({ javaScriptEnabled: false });
+      const page = await ctx.newPage();
+      await page.goto('/');
+      const html = await page.content();
+      expect(html).not.toContain('3d-industrial.png');
+      await ctx.close();
+    });
+
+    test('hydration refines the head in place, with no duplicates', async ({ page }) => {
+      await bootLanding(page);
+      const h = await readHead(page);
+
+      expect(h.headTitles, 'exactly one <title> in the head').toBe(1);
+      // Every social key appears exactly once — `one()` throws otherwise.
+      for (const k of ['description', 'theme-color', 'og:type', 'og:title', 'og:description',
+        'og:image', 'og:locale', 'twitter:card', 'twitter:title', 'twitter:description', 'twitter:image']) {
+        one(h, k);
+      }
+      expect(h.canonicals).toEqual(['https://stabileo.com/']);
+      expect(h.title).toBe(EN_TITLE);
+      expect(one(h, 'og:title')).toBe(EN_TITLE);
+      // The description sharpens to the live hero copy.
+      expect(one(h, 'og:description')).toBe(one(h, 'description'));
+      expect(one(h, 'og:image')).toBe(SOCIAL);
+    });
+
+    test('the Spanish landing carries Spanish metadata', async ({ page }) => {
+      await bootLanding(page);
+      await page.locator('.landing select.nav-lang').selectOption('es');
+      await expect(page.locator('.landing h1')).toHaveText('Análisis estructural, en una pestaña del navegador.');
+      const h = await readHead(page);
+
+      expect(h.headTitles).toBe(1);
+      expect(h.lang).toBe('es');
+      expect(h.title).toBe('Stabileo — Análisis estructural, en una pestaña del navegador.');
+      expect(one(h, 'og:title')).toBe(h.title);
+      expect(one(h, 'og:locale')).toBe('es_AR');
+      expect(one(h, 'og:locale:alternate')).toBe('en_US');
+      expect(one(h, 'description')).toMatch(/El solver corre en cada edición/);
+      expect(one(h, 'twitter:description')).toBe(one(h, 'description'));
+      // The canonical and the social image do not vary by locale.
+      expect(h.canonicals).toEqual(['https://stabileo.com/']);
+      expect(one(h, 'og:image')).toBe(SOCIAL);
+    });
+
+    test('a Spanish browser gets Spanish metadata without touching the switcher', async ({ browser }) => {
+      const ctx = await browser.newContext({ locale: 'es-AR' });
+      const page = await ctx.newPage();
+      await bootLanding(page, { manual: false });
+      const h = await readHead(page);
+      expect(h.lang).toBe('es');
+      expect(h.title).toMatch(/Análisis estructural/);
+      expect(h.headTitles).toBe(1);
+      await ctx.close();
+    });
+
+    test('entering the application leaves no landing copy behind', async ({ page }) => {
+      await bootLanding(page);
+      await page.locator('.landing select.nav-lang').selectOption('es');
+      await page.waitForTimeout(300);
+      await page.locator('.landing .hero-ctas .btn-primary').click();
+      await expect(page.locator('.landing')).toHaveCount(0);
+
+      const h = await readHead(page);
+      expect(h.headTitles).toBe(1);
+      expect(h.title, 'restored to the static English title').toBe(EN_TITLE);
+      expect(h.lang).toBe('en');
+      expect(one(h, 'og:locale')).toBe('en_US');
+      expect(one(h, 'description')).toMatch(/free and open-source/i);
+    });
+
+    test('the social card exists, resolves, and is a 1200x630 PNG', async ({ page }) => {
+      const res = await page.request.get('/og/stabileo-social.png');
+      expect(res.status(), 'social card must be served').toBe(200);
+      expect(res.headers()['content-type']).toContain('image/png');
+
+      const body = await res.body();
+      // PNG signature, then IHDR width/height as big-endian uint32.
+      expect([...body.subarray(0, 8)]).toEqual([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
+      expect(body.readUInt32BE(16)).toBe(1200);
+      expect(body.readUInt32BE(20)).toBe(630);
+      // Comfortably inside every platform's social-card size limit.
+      expect(body.length).toBeLessThan(1_000_000);
+    });
+
+    test('deep links and the landing overlay still behave', async ({ page }) => {
+      // The 404.html -> /?route= recovery and the overlay are untouched by this
+      // pass; this is the guard that says so.
+      await bootLanding(page);
+      await expect(page.locator('.landing')).toBeVisible();
+      await expect(page.locator('.app-container.hidden-behind-landing')).toHaveCount(1);
+
+      await page.goto('/app/basic');
+      await expect(page.locator('.landing')).toHaveCount(0);
+      await expect(page.locator('.app-container')).toBeVisible();
+    });
+  });
+
   test('every landing image resolves', async ({ page }) => {
     await bootLanding(page);
     await page.locator('.landing [data-section="cta"]').scrollIntoViewIfNeeded();

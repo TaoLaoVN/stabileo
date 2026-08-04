@@ -32,9 +32,11 @@
  * `npx --yes` is used deliberately: an image encoder is a one-off authoring
  * tool and must not become a dependency in web/package.json.
  *
- * `3d-industrial.png` is also kept as the PNG the site's Open Graph tag points
- * at (web/index.html), so that one file stays committed alongside its
- * derivatives.
+ * No PNG is committed any more. `3d-industrial.png` used to be kept because
+ * index.html's Open Graph tag pointed at it; the social card is now a
+ * purpose-built 1200x630 image at public/og/stabileo-social.png (see
+ * scripts/make-og-card.ts), so every PNG here is a capture source to be
+ * converted and deleted.
  */
 import { chromium } from 'playwright';
 
