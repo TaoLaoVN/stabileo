@@ -24,8 +24,9 @@ import type {
 } from './outcome';
 import type { ObjectiveSpec } from './objective';
 import type { AdviceDemands } from './section-advice';
+import type { CapabilityMatrix } from '../../codes/capability';
 
-export type DesignCodeId = 'cirsoc' | 'aci-aisc' | 'eurocode' | 'nds' | 'masonry' | 'cfs';
+export type DesignCodeId = 'cirsoc' | 'cirsoc-2005' | 'aci-aisc' | 'eurocode' | 'nds' | 'masonry' | 'cfs';
 
 export interface CodeCapabilities {
   beams: {
@@ -88,6 +89,12 @@ export interface DesignCodeAdapter {
   readonly version: string;
   readonly utilizationConvention: typeof UTILIZATION_CONVENTION;
   readonly capabilities: CodeCapabilities;
+  /**
+   * Five-facet capability declaration — THE authority on what the code supports.
+   * `capabilities` above is the older coarse view kept for existing UI call sites; where
+   * the two disagree, this one is correct.
+   */
+  readonly capabilityMatrix: CapabilityMatrix;
 
   requiredDemands(): DemandRequirement;
   validateInputs(ctx: MemberContext): InputValidation;

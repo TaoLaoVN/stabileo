@@ -69,8 +69,16 @@ export function hook<T>(page: Page, fn: (h: TestHooks) => T): Promise<T> {
   return page.evaluate(fn as never, undefined as never) as never;
 }
 
-export const test = base.extend<{ pro: Page }>({
-  pro: async ({ page }, use) => {
+/**
+ * A PRO page booted in an explicit locale.
+ *
+ * Default `en`, so every existing spec keeps its stable English assertions. A spec that
+ * needs Spanish sets `test.use({ appLocale: 'es' })` — which is how the bilingual journeys
+ * prove that engine output is translated rather than pasted.
+ */
+export const test = base.extend<{ pro: Page; appLocale: string }>({
+  appLocale: ['en', { option: true }],
+  pro: async ({ page, appLocale }, use) => {
     const consoleErrors: string[] = [];
     const pageErrors: string[] = [];
     page.on('console', (m) => {
@@ -82,15 +90,15 @@ export const test = base.extend<{ pro: Page }>({
     });
     page.on('pageerror', (e) => pageErrors.push(String(e)));
 
-    await page.addInitScript(() => {
+    await page.addInitScript((loc) => {
       try {
         localStorage.clear();
         // Force a stable locale: the RC surface is localised, so assertions on
         // English text would otherwise depend on the browser's language.
-        localStorage.setItem('stabileo-lang', 'en');
+        localStorage.setItem('stabileo-lang', loc);
         localStorage.setItem('stabileo-lang-manual', '1');
       } catch { /* private mode */ }
-    });
+    }, appLocale);
 
     await page.goto(PRO_URL);
     // Hooks exist ⇒ the app booted with ?e2e=1.

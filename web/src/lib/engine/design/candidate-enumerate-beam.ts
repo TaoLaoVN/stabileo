@@ -20,7 +20,7 @@
 
 import { REBAR_DB } from '../codes/argentina/cirsoc201';
 import type { ProvidedReinforcement, RebarLayer, StirrupDef } from '../../store/model.svelte';
-import { layerCentroid, maxStirrupSpacing } from '../station-design-forces';
+import { layerCentroid, transverseSpacingFor } from '../station-design-forces';
 import type { MemberContext } from './member-context';
 import { STANDARD_LONG_DIAS, STANDARD_STIRRUP_DIAS, SPACING_GRID, computeCandidateCost } from './objective';
 import type { Candidate, CandidateFeedback, CandidateGenerator } from './candidate-generator';
@@ -111,19 +111,30 @@ function distributeRows(n: number, rows: number, perRow: number, dia: number): R
   return remaining === 0 ? layers : null;
 }
 
-/** Ordered stirrup options: least steel first, escalating to tighter/heavier. */
+/**
+ * Ordered stirrup options: least steel first, escalating to tighter/heavier.
+ *
+ * Both columns of Table 9.7.6.2.2 are honoured HERE, at generation time. The along-length
+ * limit bounds the widest spacing enumerated; the across-width limit bounds the SMALLEST
+ * leg count enumerated. Generating 2-leg options for a member the table requires 3 legs on
+ * would hand the verifier a set of candidates it must reject wholesale, and the search
+ * would report SEARCH_EXHAUSTED on a member that is perfectly buildable with a crosstie.
+ * That class of generator/verifier disagreement is what the shared evaluator prevents.
+ */
 export function buildStirrupOptions(ctx: MemberContext, Vu: number): StirrupDef[] {
   const { bFlex: b, hFlex: h } = ctx.axes;
   const { cover, stirrupDia } = ctx.material;
   const d = h - cover - stirrupDia / 1000 - 0.008;
-  const sMax = maxStirrupSpacing(Vu, b, d, ctx.material.fc);
   const out: StirrupDef[] = [];
   for (const dia of STANDARD_STIRRUP_DIAS) {
-    for (let legs = 2; legs <= BEAM_LIMITS.maxLegs; legs += 1) {
+    // The table's across-width limit depends on the stirrup diameter (it sets the leg
+    // centre), so the limits are evaluated per diameter rather than once per member.
+    const table = transverseSpacingFor(Vu, b, d, ctx.material.fc, cover, dia, ctx.codeEdition);
+    const top = Math.floor(table.alongMax / SPACING_GRID) * SPACING_GRID;
+    for (let legs = table.requiredLegs; legs <= BEAM_LIMITS.maxLegs; legs += 1) {
       // A wide member needs more legs; a narrow one cannot host them.
       const perRow = maxBarsPerRow(b, cover, dia, dia);
       if (legs > 2 && perRow < legs) continue;
-      const top = Math.floor(sMax / SPACING_GRID) * SPACING_GRID;
       for (let s = top; s >= BEAM_LIMITS.minSpacing - 1e-9; s -= SPACING_GRID) {
         out.push({ diameter: dia, legs, spacing: +s.toFixed(4) });
       }

@@ -2993,6 +2993,8 @@ const pt: Translations = {
   // ─── PR15: RC Design surface ───────────────────────────────────────────
   'design.cmd.computeDemands': 'Calcular solicitações',
   'design.cmd.codeCheck': 'Executar verificação normativa',
+  'design.code.role': 'Norma de concreto:',
+  'design.code.openRegulations': 'Abrir Regulamentos do projeto',
   'design.cmd.autoDesign': 'Dimensionamento automático',
   'design.cmd.autoDesignSelected': 'Dimensionar selecionados',
   'design.cmd.autoDesignUndesigned': 'Dimensionar todos os não dimensionados',

@@ -2992,6 +2992,8 @@ const hi: Translations = {
   // ─── PR15: RC Design surface ───────────────────────────────────────────
   'design.cmd.computeDemands': 'डिज़ाइन बल गणना करें',
   'design.cmd.codeCheck': 'कोड जाँच चलाएँ',
+  'design.code.role': 'कंक्रीट कोड:',
+  'design.code.openRegulations': 'परियोजना विनियम खोलें',
   'design.cmd.autoDesign': 'स्वतः डिज़ाइन',
   'design.cmd.autoDesignSelected': 'चयनित को स्वतः डिज़ाइन करें',
   'design.cmd.autoDesignUndesigned': 'सभी अ-डिज़ाइन किए अवयवों को स्वतः डिज़ाइन करें',

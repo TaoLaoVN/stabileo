@@ -140,6 +140,15 @@ export interface MemberDesignOutcome {
   /** Present ONLY when outcome === 'VERIFIED'. */
   certificate?: DesignCertificate;
   /**
+   * Certificate issued against the member's FINAL, coordinated geometry.
+   *
+   * Present only after the design–detailing feedback loop has repaired this member. It
+   * carries `finalGeometryHash` so the geometry it describes is stated rather than assumed:
+   * a certificate from nominal geometry and one from final geometry are different claims,
+   * and the thirteen-condition gate is not allowed to mistake the first for the second.
+   */
+  finalGeometryCertificate?: DesignCertificate & { finalGeometryHash: string };
+  /**
    * Best failing candidate (O3). Clearly provisional: never certified, never
    * counted as passing, always listed in the review UI.
    */

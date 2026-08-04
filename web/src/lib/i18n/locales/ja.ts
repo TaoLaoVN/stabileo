@@ -2948,6 +2948,8 @@ const ja: Translations = {
   // ─── PR15: RC Design surface ───────────────────────────────────────────
   'design.cmd.computeDemands': '設計応力を計算',
   'design.cmd.codeCheck': '規準照査を実行',
+  'design.code.role': 'コンクリート規準:',
+  'design.code.openRegulations': 'プロジェクト規準を開く',
   'design.cmd.autoDesign': '自動設計',
   'design.cmd.autoDesignSelected': '選択部材を自動設計',
   'design.cmd.autoDesignUndesigned': '未設計の部材をすべて自動設計',

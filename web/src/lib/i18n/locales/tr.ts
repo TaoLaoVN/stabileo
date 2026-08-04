@@ -2992,6 +2992,8 @@ const tr: Translations = {
   // ─── PR15: RC Design surface ───────────────────────────────────────────
   'design.cmd.computeDemands': 'Talepleri hesapla',
   'design.cmd.codeCheck': 'Yönetmelik kontrolü çalıştır',
+  'design.code.role': 'Beton yönetmeliği:',
+  'design.code.openRegulations': 'Proje yönetmeliklerini aç',
   'design.cmd.autoDesign': 'Otomatik tasarım',
   'design.cmd.autoDesignSelected': 'Seçilenleri otomatik tasarla',
   'design.cmd.autoDesignUndesigned': 'Tasarlanmamış tüm elemanları otomatik tasarla',

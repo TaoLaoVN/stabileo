@@ -1,8 +1,14 @@
+import type { StoredRegulations } from '../codes/roles';
+import type { RevisionVector } from '../codes/revisions';
+import type { DetailingStore } from '../engine/detailing/assembly';
+import type { ProjectCodeSettings } from '../codes/project-code-settings';
 // Undo/Redo history store using full model snapshots
 import { modelStore } from './model.svelte';
 import type { Release, ProvidedReinforcement } from './model.svelte';
 import type { Element3DMetadata } from '../model/element-3d-metadata';
 import type { ModelProvenance } from '../model/provenance';
+import type { Footing, FootingMatPreferences } from '../model/footing';
+import type { ProjectGeotechnical } from '../model/geotechnical';
 
 export interface ModelSnapshot {
   name?: string;
@@ -38,7 +44,28 @@ export interface ModelSnapshot {
   constraints?: Array<{ type: string; [key: string]: unknown }>;
   /** Joint/spring/bearing primitives. Each entry is [id, ConnectorElement-shaped object]. */
   connectors?: Array<[number, { id: number; nodeI: number; nodeJ: number; kAxial?: number; kShear?: number; kMoment?: number; kShearZ?: number; kBendY?: number; kBendZ?: number }]>;
-  nextId: { node: number; material: number; section: number; element: number; support: number; load: number; loadCase?: number; combination?: number; plate?: number; quad?: number; connector?: number };
+  /** Isolated spread footings. Each entry is [id, Footing]. Absent before foundations. */
+  footings?: Array<[number, Footing]>;
+  /** Project ground conditions, referenced by footings rather than copied into them. */
+  geotechnical?: ProjectGeotechnical;
+  /**
+   * Bottom-mat design preferences. Absent on snapshots taken before PR18-A, which
+   * `migrateFootingMatPreferences` reads as 16 mm / 16 mm / AUTO_CODE_COMPLIANT.
+   *
+   * On the FOUNDATION channel: `restoreFoundationOnly` restores it, because
+   * `setFootingMatPreferences` is what pushes the entry.
+   */
+  footingMatPreferences?: FootingMatPreferences;
+  nextId: { node: number; material: number; section: number; element: number; support: number; load: number; loadCase?: number; combination?: number; plate?: number; quad?: number; connector?: number; footing?: number; soilProfile?: number };
+  /** Jurisdiction, adopted regulation editions and concrete data. Absent on
+   *  models saved before this existed — see migrateCodeSettings. */
+  codeSettings?: ProjectCodeSettings;
+  /** Code-neutral regulation stack. */
+  regulations?: StoredRegulations;
+  /** Revision vector every downstream result is stamped against. */
+  revisions?: RevisionVector;
+  /** Coordinated detailing assemblies. Absent on models saved before PR17. */
+  detailing?: DetailingStore;
 }
 
 const MAX_HISTORY = 50;
@@ -55,7 +82,7 @@ const MAX_HISTORY = 50;
  *    provided-rebar verification is dropped. Results/demand data/revisions
  *    survive untouched.
  */
-export type SnapshotKind = 'structural' | 'reinforcement';
+export type SnapshotKind = 'structural' | 'reinforcement' | 'foundation';
 
 function createHistoryStore() {
   let undoStack = $state<ModelSnapshot[]>([]);
@@ -110,6 +137,8 @@ function createHistoryStore() {
       redoKinds.push(kind);
       if (kind === 'reinforcement') {
         modelStore.restoreReinforcementOnly(prev);
+      } else if (kind === 'foundation') {
+        modelStore.restoreFoundationOnly(prev);
       } else {
         modelStore.restore(prev);
       }
@@ -124,6 +153,8 @@ function createHistoryStore() {
       undoKinds.push(kind);
       if (kind === 'reinforcement') {
         modelStore.restoreReinforcementOnly(next);
+      } else if (kind === 'foundation') {
+        modelStore.restoreFoundationOnly(next);
       } else {
         modelStore.restore(next);
       }

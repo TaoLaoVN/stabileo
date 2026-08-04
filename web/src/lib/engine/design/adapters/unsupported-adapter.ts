@@ -20,6 +20,7 @@ import type { ProvidedReinforcement } from '../../../store/model.svelte';
 import type { MemberContext } from '../member-context';
 import { DEFAULT_OBJECTIVE, type ObjectiveSpec } from '../objective';
 import { UTILIZATION_CONVENTION, type LimitingConstraint, type SectionRecommendation } from '../outcome';
+import { emptyMatrix, type CapabilityMatrix } from '../../../codes/capability';
 import {
   registerDesignCode,
   type CodeCapabilities, type CodeProvenance, type DemandRequirement,
@@ -36,11 +37,16 @@ const NO_CAPABILITIES: CodeCapabilities = {
   sectionRecommendation: false,
 };
 
+const NO_MATRIX: CapabilityMatrix = Object.freeze(emptyMatrix()) as CapabilityMatrix;
+
 function makeUnsupported(id: DesignCodeId, name: string, version: string): DesignCodeAdapter {
   return {
     id, name, version,
     utilizationConvention: UTILIZATION_CONVENTION,
     capabilities: NO_CAPABILITIES,
+    // Every facet false for every capability: this adapter exists precisely to say
+    // "this code is not implemented" without pretending otherwise.
+    capabilityMatrix: NO_MATRIX,
 
     requiredDemands(): DemandRequirement {
       return { needsCombinations: true, minCombinations: 1, categories: [] };

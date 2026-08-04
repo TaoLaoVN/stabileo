@@ -28,6 +28,7 @@
  */
 
 import { modelStore, verificationStore, uiStore, historyStore } from '../store';
+import { detailingStore } from '../store/detailing.svelte';
 import { designRunStore } from '../store/design-run.svelte';
 import { isSolverReady } from '../engine/wasm-solver';
 import { getStructuralSolveCount } from './solve-counter';
@@ -80,6 +81,14 @@ export interface StabileoTestHooks {
   undoCount(): number;
   /** Non-background pixel count of the main canvas — a blank-render sanity check. */
   canvasInkRatio(): number;
+  /** Project regulation settings, as persisted. Read-only. */
+  codeSettings(): unknown;
+  /** Verifier id on an element's certificate — carries the edition it was produced under. */
+  certificateVerifierId(elementId: number): string | null;
+  /** Coordinated detailing assemblies, as persisted. Read-only. */
+  detailingAssemblies(): unknown;
+  /** Bar-schedule totals for the selected assembly. */
+  detailingSchedule(): unknown;
 }
 
 /**
@@ -92,6 +101,10 @@ export interface StabileoTestActions {
   solve(): Promise<void>;
   /** Activate the RC Design tab (the table only exists while it is selected). */
   openDesignTab(): void;
+  seedDetailing(assemblies: unknown): void;
+  selectAssembly(id: string): void;
+  reviewAssembly(record: unknown): boolean;
+  toggleBarLock(barId: string): void;
   computeDemands(): unknown;
   codeCheck(): unknown;
   autoDesign(ids: number[]): unknown;
@@ -176,8 +189,24 @@ export function installE2EHooks(): void {
     orientationSuspectCount: () => verificationStore.orientationSuspectCount,
     undoCount: () => historyStore.undoCount,
     canvasInkRatio,
+    codeSettings: () => JSON.parse(JSON.stringify(modelStore.model.codeSettings ?? null)),
+    certificateVerifierId: (id: number) =>
+      verificationStore.outcomeFor(id)?.certificate?.verifierId ?? null,
+    detailingAssemblies: () =>
+      JSON.parse(JSON.stringify(modelStore.model.detailing?.assemblies ?? [])),
+    detailingSchedule: () => JSON.parse(JSON.stringify(detailingStore.schedule ?? null)),
   };
   const actions: StabileoTestActions = {
+    /** Seed a coordinated assembly — the same shape the pipeline writes. */
+    seedDetailing: (assemblies: unknown) => {
+      modelStore.model.detailing = {
+        version: 1, assemblies: assemblies as never,
+      };
+    },
+    selectAssembly: (id: string) => { detailingStore.select(id); },
+    reviewAssembly: (record: unknown) =>
+      detailingStore.review(record as never),
+    toggleBarLock: (barId: string) => { detailingStore.toggleLock(barId); },
     loadExample: async (name: string) => { await modelStore.loadExample(name); },
     solve: async () => { await runGlobalSolve(); },
     openDesignTab: () => { uiStore.proActiveTab = 'design'; },

@@ -5,6 +5,7 @@
 // Units: kN, m, MPa, cm² (for reinforcement areas)
 
 import type { SolverDiagnostic } from '../../types';
+import { transverseSpacingLimits } from '../../../codes/cirsoc201/transverse-spacing';
 
 // ─── Rebar Database ─────────────────────────────────────────────
 
@@ -44,8 +45,21 @@ export interface FlexureResult {
   Mu: number;          // design moment (kN·m)
   d: number;           // effective depth (m)
   a: number;           // stress block depth (m)
-  AsReq: number;       // required steel area (cm²)
-  AsMin: number;       // minimum steel area (cm²)
+  AsReq: number;       // required steel area (cm²) — already max(AsFlexural, AsMin)
+  /**
+   * Steel required by FLEXURAL STRENGTH alone, cm² — before any minimum is applied.
+   *
+   * `AsReq` above is `max(AsFlexural, AsMin)`, and `AsMin` here is the BEAM minimum
+   * (§9.6.1.2's `max(0,25·√f'c/f_y, 1,4/f_y)·b_w·d`). A member whose minimum comes from a
+   * different clause — a footing mat takes §7.6.1's `0,0018·A_g` — cannot use either of
+   * those two numbers and needs the strength requirement on its own. Without this field the
+   * only way to get it was to re-derive the stress block, i.e. to write a second flexural
+   * engine, which is how one project comes to hold two answers about the same section.
+   *
+   * Added as an OUTPUT only: no existing caller's numbers change.
+   */
+  AsFlexural: number;
+  AsMin: number;       // minimum steel area (cm²) — the BEAM minimum, see AsFlexural
   AsMax: number;       // maximum steel area (cm²)
   AsProv: number;      // provided steel area (cm²)
   bars: string;        // e.g. "4 Ø16"
@@ -246,12 +260,31 @@ function selectRebar(AsReq: number): { count: number; dia: number; area: number;
 
 // ─── Flexure Check (CIRSOC 201 §10.2-10.3) ─────────────────────
 
-export function checkFlexure(params: ConcreteDesignParams, Mu: number, Nu: number = 0): FlexureResult {
+/** Bar diameter this check assumes for `d` when the caller states none, mm. */
+export const ASSUMED_FLEXURE_BAR_DIA_MM = 16;
+
+export interface FlexureOptions {
+  /**
+   * Bar diameter the tension steel will actually be, mm — sets `d`.
+   *
+   * Omitted, the check keeps assuming Ø16, so every existing caller is numerically
+   * IDENTICAL (pinned by a regression test). Stated, it lets a caller that has already
+   * chosen its bar — a footing mat whose diameter is a persisted project preference — get
+   * the effective depth of the section it is really going to build, instead of designing
+   * for a depth that belongs to a different bar.
+   */
+  barDiameterMm?: number;
+}
+
+export function checkFlexure(
+  params: ConcreteDesignParams, Mu: number, Nu: number = 0, opts: FlexureOptions = {},
+): FlexureResult {
   const { fc, fy, cover, b, h, stirrupDia } = params;
   const steps: string[] = [];
 
-  // Assume Ø16 for initial effective depth calculation
-  const assumedBarDia = 16;
+  const assumedBarDia = opts.barDiameterMm !== undefined && opts.barDiameterMm > 0
+    ? opts.barDiameterMm
+    : ASSUMED_FLEXURE_BAR_DIA_MM;
   const d = effectiveDepth(h, cover, stirrupDia, assumedBarDia);
   const dPrime = cover + (stirrupDia / 1000) + 0.008; // d' for compression steel
   steps.push(`d = ${(d * 100).toFixed(1)} cm, d' = ${(dPrime * 100).toFixed(1)} cm`);
@@ -401,6 +434,11 @@ export function checkFlexure(params: ConcreteDesignParams, Mu: number, Nu: numbe
     steps.push(`A's,req = ${AsCompReq.toFixed(2)} cm²`);
   }
 
+  // The strength requirement on its own, kept before the minimum swallows it. See
+  // `FlexureResult.AsFlexural`: a member whose minimum comes from another clause needs this
+  // number, and re-deriving it elsewhere would be a second flexural engine.
+  const AsFlexural = AsReq;
+
   // Apply minimum
   const AsDesign = Math.max(AsReq, AsMin);
   const AsMax = isDoubly ? AsDesign * 1.5 : AsMaxSingly; // relax max for doubly reinforced
@@ -477,6 +515,7 @@ export function checkFlexure(params: ConcreteDesignParams, Mu: number, Nu: numbe
   return {
     Mu: MuAbs, d, a: aFinal,
     AsReq: AsDesign,
+    AsFlexural,
     AsMin, AsMax,
     AsProv: rebar.area,
     bars: rebar.label,
@@ -547,26 +586,22 @@ export function checkShear(params: ConcreteDesignParams, Vu: number, Nu: number 
 
   const AvOverSDesign = Math.max(AvOverS, AvOverSMinCm2m);
 
-  // Select stirrups: 2-leg stirrups of given diameter
   const stirrupBar = REBAR_DB.find(r => r.diameter === stirrupDia) ?? REBAR_DB[1]; // default Ø8
-  const legs = 2;
+
+  // Table 9.7.6.2.2, through THE one evaluator. This function used to carry its own copy of
+  // the rule — with the same invented `0.8·d` branch and the same 300 mm row-1 cap as the
+  // (now removed) `maxStirrupSpacing`. Two implementations of one table is how they drifted
+  // apart; there is now exactly one, and it supplies the LEG COUNT as well as the spacing.
+  // The leg count used to be a hardcoded 2, which silently ignored the across-width column.
+  const table = transverseSpacingLimits('2025', {
+    VsRequired: VsReq, bw: b, d, fc, cover, stirrupDiaMm: stirrupBar.diameter,
+  });
+  const legs = table.requiredLegs;
   const AvLeg = legs * stirrupBar.area; // cm² per stirrup set
 
   // Spacing = Av / (Av/s)
   let spacing = AvOverSDesign > 0 ? AvLeg / AvOverSDesign : d; // m
-  // Max spacing per shear zone (CIRSOC 201):
-  // Zone 1 (Vu ≤ φVc): s ≤ min(0.8d, 30cm)
-  // Zone 2 (Vs ≤ (1/3)√f'c·bw·d): s ≤ min(d/2, 30cm)
-  // Zone 3 ((1/3) < Vs ≤ (2/3)√f'c·bw·d): s ≤ min(d/4, 20cm)
-  const VsThird = (1 / 3) * Math.sqrt(fc) * (b * 1000) * (d * 1000) / 1000; // kN
-  let maxSpacing: number;
-  if (VsReq <= 0) {
-    maxSpacing = Math.min(0.8 * d, 0.3); // Zone 1
-  } else if (VsReq <= VsThird) {
-    maxSpacing = Math.min(d / 2, 0.3); // Zone 2
-  } else {
-    maxSpacing = Math.min(d / 4, 0.2); // Zone 3
-  }
+  const maxSpacing = table.alongMax;
   spacing = Math.min(spacing, maxSpacing);
   // Round down to nearest 2.5cm
   spacing = Math.floor(spacing * 40) / 40;

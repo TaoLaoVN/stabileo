@@ -2981,6 +2981,8 @@ const zh: Translations = {
   // ─── PR15: RC Design surface ───────────────────────────────────────────
   'design.cmd.computeDemands': '计算设计内力',
   'design.cmd.codeCheck': '执行规范校核',
+  'design.code.role': '混凝土规范:',
+  'design.code.openRegulations': '打开项目规范',
   'design.cmd.autoDesign': '自动设计',
   'design.cmd.autoDesignSelected': '自动设计所选构件',
   'design.cmd.autoDesignUndesigned': '自动设计所有未设计构件',

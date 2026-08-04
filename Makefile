@@ -41,7 +41,7 @@ test-backend:
 	cargo test -p dedaliano-backend
 
 test-web:
-	cd web && npm install && npx vitest run
+	cd web && npm install && npm test
 
 ## Measure the engine test inventory published in docs/BENCHMARKS.md.
 ## Engine-coupled = every target except `reference`, whose tests recompute
