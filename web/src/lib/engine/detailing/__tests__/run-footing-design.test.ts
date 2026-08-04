@@ -66,6 +66,7 @@ const MAT_PREFS = {
   bottomMatDiameterXmm: 16,
   bottomMatDiameterYmm: 16,
   bottomMatSpacingPolicy: 'AUTO_CODE_COMPLIANT',
+  bottomMatLayerOrder: 'AUTO',
 } as const;
 
 const run = (over: Partial<RunFootingDesignInput> = {}) => runFootingDesign({
