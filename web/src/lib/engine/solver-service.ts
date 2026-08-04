@@ -307,6 +307,9 @@ interface Solve2DPreparation {
   input: SolverInput;
   slidingHelperIds: Set<number>;
   modelNodeIds: Set<number>;
+  /** Wire key computed once during preparation — reused as the solve-cache key
+   *  by the async path (avoids re-stringifying the wire). */
+  wireKey: string;
 }
 
 /**
@@ -435,8 +438,9 @@ function prepareSolve2D(
     const startNode = connectedNodes.values().next().value!;
     const queue = [startNode];
     visited.add(startNode);
-    while (queue.length > 0) {
-      const cur = queue.shift()!;
+    // Index-based queue: shift() would make the walk O(n²) in node moves.
+    for (let qi = 0; qi < queue.length; qi++) {
+      const cur = queue[qi];
       for (const nb of adj.get(cur)!) {
         if (!visited.has(nb)) {
           visited.add(nb);
@@ -619,15 +623,30 @@ function prepareSolve2D(
     connectors: model.connectors,
   };
 
-  // Kinematic analysis
-  try {
-    const kinematic = analyzeKinematics(input);
-    if (onKinematic) onKinematic(kinematic);
-    if (!kinematic.isSolvable) {
-      return kinematic.diagnosis;
+  // Kinematic analysis — memoized on the wire key. A full WASM round trip per
+  // solve (serialize → analyze → parse) is by far the most expensive part of
+  // validation, and the async path calls prepare on every edit even when the
+  // solve itself is memoized. The wire key is also reused by the caller as the
+  // solve-cache key, so it is computed once.
+  const wireKey = `2d:${JSON.stringify(input2DToWireObject(input))}`;
+  const cachedKin = kinematicCacheGet(wireKey);
+  if (cachedKin !== undefined) {
+    if (onKinematic) onKinematic(cachedKin);
+    if (cachedKin && !cachedKin.isSolvable) {
+      return cachedKin.diagnosis;
     }
-  } catch {
-    if (onKinematic) onKinematic(null);
+  } else {
+    try {
+      const kinematic = analyzeKinematics(input);
+      kinematicCacheSet(wireKey, kinematic);
+      if (onKinematic) onKinematic(kinematic);
+      if (!kinematic.isSolvable) {
+        return kinematic.diagnosis;
+      }
+    } catch {
+      kinematicCacheSet(wireKey, null);
+      if (onKinematic) onKinematic(null);
+    }
   }
 
   // Basic 2D sliding joints: ephemerally expand each translational release into
@@ -640,7 +659,7 @@ function prepareSolve2D(
     ? expandSlidingJoints2D(input, model.elements)
     : new Set<number>();
 
-  return { input, slidingHelperIds, modelNodeIds: new Set(model.nodes.keys()) };
+  return { input, slidingHelperIds, modelNodeIds: new Set(model.nodes.keys()), wireKey };
 }
 
 /** Prune ephemeral sliding-joint helper-node results (no-op without sliders). */
@@ -673,6 +692,26 @@ export function validateAndSolve2D(
 
 // ─── Solve-result memoization (LRU) ─────────────────────────────
 
+const KINEMATIC_CACHE_MAX = 12;
+const kinematicCache = new Map<string, KinematicResult | null>();
+
+function kinematicCacheGet(key: string): KinematicResult | null | undefined {
+  const value = kinematicCache.get(key);
+  if (value !== undefined) {
+    kinematicCache.delete(key);
+    kinematicCache.set(key, value);
+  }
+  return value;
+}
+
+function kinematicCacheSet(key: string, value: KinematicResult | null): void {
+  kinematicCache.delete(key);
+  kinematicCache.set(key, value);
+  if (kinematicCache.size > KINEMATIC_CACHE_MAX) {
+    kinematicCache.delete(kinematicCache.keys().next().value!);
+  }
+}
+
 /**
  * Small LRU over finalized solve results, keyed by the serialized wire input.
  * The wire already encodes every analysis-relevant option: includeSelfWeight
@@ -704,6 +743,7 @@ function solveCacheSet(key: string, value: AnalysisResults | AnalysisResults3D):
 /** Test hook: clear the solve-result memoization cache. */
 export function clearSolveResultCache(): void {
   solveResultCache.clear();
+  kinematicCache.clear();
 }
 
 /** Test hook: current number of memoized solve results. */
@@ -725,8 +765,7 @@ export async function validateAndSolve2DAsync(
   const prep = prepareSolve2D(model, includeSelfWeight, onKinematic);
   if (prep === null || typeof prep === 'string') return prep;
 
-  const wire = input2DToWireObject(prep.input);
-  const cacheKey = `2d:${JSON.stringify(wire)}`;
+  const cacheKey = prep.wireKey;
   const cached = solveCacheGet(cacheKey);
   if (cached) {
     console.log(`Estructura resuelta (caché) — ${model.nodes.size} nodos, ${model.elements.size} elementos`);
@@ -737,7 +776,7 @@ export async function validateAndSolve2DAsync(
     const t0 = performance.now();
     let results: AnalysisResults;
     try {
-      results = await solve2DInWorker(wire);
+      results = await solve2DInWorker(input2DToWireObject(prep.input));
     } catch (e) {
       if (!(e instanceof PoolUnavailableError)) throw e;
       results = solveStructure(prep.input);
@@ -1625,8 +1664,9 @@ function prepareSolve3D(model: ModelData, includeSelfWeight = false, leftHand = 
   const startNode = connectedNodes.values().next().value!;
   const queue = [startNode];
   visited.add(startNode);
-  while (queue.length > 0) {
-    const cur = queue.shift()!;
+  // Index-based queue: shift() would make the walk O(n²) in node moves.
+  for (let qi = 0; qi < queue.length; qi++) {
+    const cur = queue[qi];
     for (const nb of adj.get(cur)!) {
       if (!visited.has(nb)) { visited.add(nb); queue.push(nb); }
     }
