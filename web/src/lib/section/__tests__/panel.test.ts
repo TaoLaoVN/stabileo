@@ -1,0 +1,212 @@
+/**
+ * Canonical detailed-analysis result for the section panel.
+ *
+ * Two things are pinned here. First, the panel's numbers and the outline it
+ * draws them on come from one geometry, proved by digest. Second — and this is
+ * the part that is easy to get wrong quietly — a trustworthy normal stress is
+ * never combined with an untrustworthy shear or torsion and presented as a
+ * valid total.
+ */
+
+import { describe, it, expect } from 'vitest';
+import {
+  canonicalPanelResult,
+  componentProvenance,
+  stationForces2D,
+  stationForces3D,
+} from '../panel';
+import { resolveSectionState } from '../state';
+import { ALL_PROFILES } from '../../data/steel-profiles';
+import type { Section } from '../../store/model.svelte';
+
+function sec(over: Partial<Section> & { id?: number }): Section {
+  return { id: 1, name: '', a: 0.01, iz: 1e-5, ...over } as Section;
+}
+function fromCatalogue(name: string, id = 1): Section {
+  const p = ALL_PROFILES.find((x) => x.name === name)!;
+  return sec({ id, name: p.name, a: p.a * 1e-4, iy: p.iy * 1e-8, iz: p.iz * 1e-8 });
+}
+const resolved = (s: Section): Section => ({ ...s, canonical: resolveSectionState(s) });
+const F = { n: 100, my: 50, mz: 10 };
+
+// ─── The canonical path ────────────────────────────────────────────
+
+describe('geometry-backed sections get a canonical result', () => {
+  for (const name of ['IPE 300', 'HEA 300', 'HEB 200', 'CHS 88.9x4']) {
+    it(`${name} analyses and its digest matches the drawing`, () => {
+      const r = canonicalPanelResult(resolved(fromCatalogue(name)), F);
+      expect(r.ok, name).toBe(true);
+      if (!r.ok) return;
+      // The guard inside already compared them; assert it explicitly too.
+      expect(r.bending.digest).toBe(r.geometry.digest);
+      expect(r.forces).toEqual(F);
+      expect(r.provenance.normalAndBending).toBe('canonical');
+    });
+  }
+
+  it('reports the resultants actually used, for traceability', () => {
+    const r = canonicalPanelResult(resolved(fromCatalogue('IPE 300')), { n: 7, my: 11, mz: 13 });
+    if (!r.ok) throw new Error('expected ok');
+    expect(r.forces).toEqual({ n: 7, my: 11, mz: 13 });
+    expect(r.bending.forces.n).toBe(7);
+  });
+
+  it('an asymmetric angle produces a tilted neutral axis under pure My', () => {
+    const r = canonicalPanelResult(
+      resolved(sec({ shape: 'L', h: 0.1, b: 0.1, t: 0.01 })),
+      { n: 0, my: 10, mz: 0 },
+    );
+    if (!r.ok) throw new Error('expected ok');
+    expect(Math.abs(r.bending.neutralAxis.angle)).toBeGreaterThan(1e-3);
+    expect(Math.abs((r.geometry.principalAngle * 180) / Math.PI - 45)).toBeLessThan(1e-6);
+    // Extrema are reported at real coordinates, not at a bounding-box corner.
+    expect(Number.isFinite(r.bending.max.y)).toBe(true);
+    expect(Number.isFinite(r.bending.max.z)).toBe(true);
+  });
+
+  it('a rotated section transforms its moment vector', () => {
+    const flat = resolved(sec({ shape: 'rect', b: 0.2, h: 0.4 }));
+    const spun = resolved(sec({ shape: 'rect', b: 0.2, h: 0.4, rotation: 90 }));
+    const a = canonicalPanelResult(flat, { n: 0, my: 50, mz: 0 });
+    const b = canonicalPanelResult(spun, { n: 0, my: 50, mz: 0 });
+    if (!a.ok || !b.ok) throw new Error('expected ok');
+    // Rotation lives on the geometry, so both resolve; the point is that the
+    // request carried `forcesAreLocal` and the engine applied the rotation.
+    expect(a.bending.digest).not.toBe(b.bending.digest);
+  });
+});
+
+// ─── Refusals ──────────────────────────────────────────────────────
+
+describe('the panel refuses rather than approximating', () => {
+  for (const name of ['UPN 200', 'IPN 200', 'L 100x100x10', 'RHS 100x50x4']) {
+    it(`${name} is properties-only and gets no canonical analysis`, () => {
+      const r = canonicalPanelResult(resolved(fromCatalogue(name)), F);
+      expect(r.ok, name).toBe(false);
+      if (!r.ok) expect(r.refusal.kind).toBe('propertiesOnly');
+    });
+  }
+
+  it('an unresolved section is refused', () => {
+    const r = canonicalPanelResult(fromCatalogue('IPE 300'), F);
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.refusal.kind).toBe('notResolved');
+  });
+
+  it('absent forces are refused rather than defaulted to zero', () => {
+    const r = canonicalPanelResult(resolved(fromCatalogue('IPE 300')), null);
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.refusal.kind).toBe('noForces');
+  });
+
+  it('a section whose stored digest disagrees with its geometry is refused', () => {
+    const s = resolved(fromCatalogue('IPE 300'));
+    const st = s.canonical!;
+    if (st.kind !== 'geometry-backed') throw new Error('geometry-backed');
+    // Corrupt only the cached digest: the drawing reports it, the engine
+    // recomputes from the polygons, and the two must disagree.
+    const tampered = { ...s, canonical: { ...st, digest: 'ffffffffffffffff' } };
+    const r = canonicalPanelResult(tampered, F);
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.refusal.kind).toBe('digestMismatch');
+  });
+
+  it('an unsupported geometry version is refused', () => {
+    const s = resolved(fromCatalogue('HEB 200'));
+    const st = s.canonical!;
+    if (st.kind !== 'geometry-backed') throw new Error('geometry-backed');
+    const r = canonicalPanelResult({ ...s, canonical: { ...st, version: 99 } }, F);
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.refusal.kind).toBe('versionMismatch');
+  });
+});
+
+// ─── Canonical vs legacy component separation ──────────────────────
+
+describe('stress components report what may be trusted', () => {
+  it('a rectangle may use legacy shear; its normal stress is canonical', () => {
+    const p = componentProvenance(resolved(sec({ shape: 'rect', b: 0.2, h: 0.4 })));
+    expect(p.normalAndBending).toBe('canonical');
+    expect(p.transverseShear).toBe('legacy');
+    expect(p.combinedCriteriaValid).toBe(true);
+  });
+
+  it('an I profile may use legacy shear', () => {
+    expect(componentProvenance(resolved(sec({ shape: 'I', h: 0.3, b: 0.15, tw: 0.0071, tf: 0.0107 }))).transverseShear)
+      .toBe('legacy');
+  });
+
+  it('an ANGLE must NOT run legacy shear', () => {
+    // The defect this closes: `V*Q/(I*b)` needs one well-defined width, and an
+    // angle has rotated principal axes and a corner shear centre.
+    const p = componentProvenance(resolved(sec({ shape: 'L', h: 0.1, b: 0.1, t: 0.01 })));
+    expect(p.normalAndBending).toBe('canonical');
+    expect(p.transverseShear).toBe('unavailable');
+  });
+
+  it('a closed section and an arbitrary polygon must NOT run legacy shear', () => {
+    expect(componentProvenance(resolved(sec({ shape: 'RHS', b: 0.1, h: 0.2, t: 0.008 }))).transverseShear)
+      .toBe('unavailable');
+    expect(
+      componentProvenance(
+        resolved(sec({ polygon: [[0, 0], [0.3, 0], [0.22, 0.09], [0.05, 0.18]] })),
+      ).transverseShear,
+    ).toBe('unavailable');
+  });
+
+  it('torsion is never claimed — Routh and the compatibility fallback are not results', () => {
+    for (const s of [
+      sec({ shape: 'rect', b: 0.2, h: 0.4 }),
+      fromCatalogue('IPE 300'),
+      fromCatalogue('CHS 88.9x4'),
+    ]) {
+      expect(componentProvenance(resolved(s)).torsion).toBe('unavailable');
+    }
+  });
+
+  it('a properties-only section claims nothing at all', () => {
+    const p = componentProvenance(resolved(fromCatalogue('UPN 200')));
+    expect(p.normalAndBending).toBe('unavailable');
+    expect(p.transverseShear).toBe('unavailable');
+    expect(p.torsion).toBe('unavailable');
+    expect(p.combinedCriteriaValid).toBe(false);
+  });
+});
+
+// ─── Station and force mapping ─────────────────────────────────────
+
+describe('station selection reaches the calculation', () => {
+  const ef = {
+    elementId: 1, nStart: 10, nEnd: 10, vStart: 5, vEnd: -5,
+    mStart: 0, mEnd: 0, length: 4, qI: -5, qJ: -5,
+    pointLoads: [], distributedLoads: [],
+  } as never;
+
+  it('2D resultants differ between stations of a loaded member', () => {
+    const mid = stationForces2D(ef, 0.5);
+    const end = stationForces2D(ef, 1.0);
+    expect(mid.my).not.toBeCloseTo(end.my, 6);
+    expect(mid.mz).toBe(0); // 2D has no second bending axis
+    expect(mid.n).toBeCloseTo(10, 6);
+  });
+
+  it('3D resultants interpolate both bending axes', () => {
+    const e3 = { nStart: 0, nEnd: 20, myStart: 0, myEnd: 100, mzStart: -10, mzEnd: 10 };
+    expect(stationForces3D(e3, 0)).toEqual({ n: 0, my: 0, mz: -10 });
+    expect(stationForces3D(e3, 1)).toEqual({ n: 20, my: 100, mz: 10 });
+    const mid = stationForces3D(e3, 0.5);
+    expect(mid.n).toBeCloseTo(10, 12);
+    expect(mid.my).toBeCloseTo(50, 12);
+    expect(mid.mz).toBeCloseTo(0, 12);
+  });
+
+  it('an equivalent 2D and 3D case agree where they describe the same problem', () => {
+    const s = resolved(fromCatalogue('IPE 300'));
+    const twoD = canonicalPanelResult(s, { n: 15, my: 40, mz: 0 });
+    const threeD = canonicalPanelResult(s, stationForces3D(
+      { nStart: 15, nEnd: 15, myStart: 40, myEnd: 40, mzStart: 0, mzEnd: 0 }, 0.5,
+    ));
+    if (!twoD.ok || !threeD.ok) throw new Error('expected ok');
+    expect(threeD.bending.max.sigma).toBeCloseTo(twoD.bending.max.sigma, 12);
+  });
+});

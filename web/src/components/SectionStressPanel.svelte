@@ -1,6 +1,8 @@
 <script lang="ts">
   import { modelStore, resultsStore, uiStore, tourStore } from '../lib/store';
   import { t } from '../lib/i18n';
+  import { supportsDetailedAnalysis } from '../lib/section/drawing';
+  import { canonicalPanelResult, stationForces2D, stationForces3D } from '../lib/section/panel';
   import {
     analyzeSectionStress,
     suggestCriticalSections,
@@ -58,14 +60,50 @@
   /** 2D section with rotation → show biaxial decomposition (quasi-3D visualization) */
   const isRotated2D = $derived(!is3D && (querySec?.rotation ?? 0) !== 0);
 
-  // ── Check for amorphous section (no shape → no stress analysis) ──
+  // ── Detailed geometry availability ──────────────────────────────
+  //
+  // A detailed stress field requires an exact outline. Previously this asked
+  // only whether the section had a `shape` string, which let a rolled profile
+  // through on the strength of its NAME while its true dimensions were
+  // reconstructed by guesswork. It now asks the canonical layer, so a section
+  // qualifies only if its geometry is actually known. The existing warning
+  // surface below is reused unchanged — the answer got stricter, not the UI.
   const isAmorphous = $derived.by((): boolean => {
     if (!query) return false;
     const elem = modelStore.elements.get(query.elementId);
     if (!elem) return false;
     const sec = modelStore.sections.get(elem.sectionId);
-    return !!sec && !sec.shape;
+    if (!sec) return false;
+    return !supportsDetailedAnalysis(sec);
   });
+
+  /**
+   * Canonical axial + bending for the selected element and station.
+   *
+   * The numbers here and the outline `CrossSectionDrawing` renders come from
+   * one geometry, and `canonicalPanelResult` refuses if their digests or
+   * schema versions disagree rather than letting the two describe different
+   * sections.
+   */
+  const canonical = $derived.by(() => {
+    if (!query) return null;
+    const elem = modelStore.elements.get(query.elementId);
+    if (!elem) return null;
+    const sec = modelStore.sections.get(elem.sectionId);
+    if (!sec || !supportsDetailedAnalysis(sec)) return null;
+
+    if (is3D) {
+      const ef = resultsStore.getElementForces3D(query.elementId);
+      if (!ef) return null;
+      return canonicalPanelResult(sec, stationForces3D(ef as never, query.t));
+    }
+    const ef = resultsStore.getElementForces(query.elementId);
+    if (!ef) return null;
+    return canonicalPanelResult(sec, stationForces2D(ef, query.t));
+  });
+
+  /** Canonical drawing geometry, or null when the section is refused. */
+  const canonicalGeometry = $derived(canonical?.ok ? canonical.geometry : null);
 
   // ── 2D analysis (skip if section is rotated → uses biaxial path instead) ──
   const analysis2D = $derived.by((): SectionStressResult | null => {
@@ -456,6 +494,7 @@
 
       <!-- Cross section drawing -->
       <CrossSectionDrawing
+        {canonicalGeometry}
         bind:showCrossSection
         bind:showSigma
         bind:showShearOnDrawing

@@ -102,8 +102,22 @@ export function inferSectionShape(sec: Section): SectionShape {
 
 // ─── Geometry resolution ──────────────────────────────────────────────
 
-/** Resolve full section geometry, falling back to profile catalog if needed */
-export function resolveSectionGeometry(sec: Section): ResolvedSection {
+/**
+ * LEGACY geometry reconstruction — properties-only compatibility ONLY.
+ *
+ * Infers a shape from the profile NAME and invents thicknesses when they are
+ * missing (`tw = 0.05 b`, `tf = 0.06 h`), which measured a 40 % error in the
+ * shear stress of an I-profile. It is retained solely so a properties-only
+ * section loaded from an old file still renders its legacy shear/torsion view
+ * in the narrow domain where that was validated.
+ *
+ * It must NEVER be used for a geometry-backed section: canonical geometry
+ * comes from `lib/section/canonical.ts` and is proved identical to the drawing
+ * by digest. A regression test asserts no canonical consumer imports this.
+ *
+ * @deprecated Use `resolveCanonicalSection` / `resolveDrawingGeometry`.
+ */
+export function resolveSectionGeometryLegacy(sec: Section): ResolvedSection {
   const shape = inferSectionShape(sec);
 
   // Try to get tw/tf/t from section first
@@ -712,7 +726,7 @@ export function analyzeSectionStress(
   const V = computeDiagramValueAt('shear', t, ef);
   const M = computeDiagramValueAt('moment', t, ef);
 
-  const resolved = resolveSectionGeometry(sec);
+  const resolved = resolveSectionGeometryLegacy(sec);
   const y = yFiber ?? resolved.h / 2;
   const distribution = computeStressDistribution(N, V, M, resolved);
   const sigmaAtY = normalStress(N, M, resolved.a, resolved.iy, y);

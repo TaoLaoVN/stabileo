@@ -16,6 +16,17 @@
   import { fmt, stressColor } from './fmt';
 
   interface Props {
+    /**
+     * Canonical outline the numerical path analysed, centroid-relative.
+     *
+     * Present only for a geometry-backed section. When it is present the
+     * drawing renders THESE polygons — the same ones the stress field was
+     * computed on — instead of reconstructing an outline of its own, which is
+     * what allowed a renamed profile to draw one shape and compute another.
+     * `null` means the section is properties-only and the panel has already
+     * refused detailed analysis upstream.
+     */
+    canonicalGeometry?: import('../../lib/section/drawing').DrawingGeometry | null;
     showCrossSection: boolean;
     showSigma: boolean;
     showShearOnDrawing: boolean;
@@ -43,6 +54,7 @@
   }
 
   let {
+    canonicalGeometry = null,
     showCrossSection = $bindable(),
     showSigma = $bindable(),
     showShearOnDrawing = $bindable(),
@@ -70,6 +82,21 @@
   }: Props = $props();
 
   // SVG helper
+  /**
+   * SVG path for the canonical outline, holes included.
+   *
+   * Solids and holes are emitted as separate subpaths so the browser's
+   * even-odd fill rule punches the bore out of a tube rather than painting
+   * over it. Coordinates arrive centroid-relative and in the exact
+   * discretization the numerical path used, so the outline and the stress
+   * overlay drawn on it cannot disagree.
+   */
+  function canonicalPath(g: import('../../lib/section/drawing').DrawingGeometry): string {
+    const ring = (poly: Array<[number, number]>) =>
+      poly.map(([y, z], i) => `${i === 0 ? 'M' : 'L'}${y} ${z}`).join(' ') + ' Z';
+    return [...g.solids, ...g.holes].map(ring).join(' ');
+  }
+
   function sectionPathFromResolved(rs: { shape: SectionShape; h: number; b: number; tw: number; tf: number; t: number; tl?: number }): string {
     return crossSectionPath({
       shape: rs.shape,
@@ -147,7 +174,7 @@
       <g transform="rotate({sectionRotation})">
       <!-- Section outline -->
       <path
-        d={sectionPathFromResolved(resolved)}
+        d={canonicalGeometry ? canonicalPath(canonicalGeometry) : sectionPathFromResolved(resolved)}
         fill="none"
         stroke="#4ecdc4"
         stroke-width="1.5"

@@ -31,6 +31,7 @@ import type { SteelProfile } from '../data/steel-profiles';
 import { ALL_PROFILES } from '../data/steel-profiles';
 import {
   buildSectionGeometry,
+  sectionGeometryDigest,
   type CanonicalGeometryResponse,
 } from '../engine/wasm-solver';
 
@@ -117,14 +118,25 @@ const propertiesOnly = (
  * digest or results. A test pins that.
  */
 export function resolveCanonicalSection(sec: Section): ResolvedSection {
-  const backed = (r: CanonicalGeometryResponse, profileId?: string): GeometryBackedSection => ({
-    state: 'geometry-backed',
-    sectionId: sec.id,
-    profileId,
-    geometry: r.geometry,
-    digest: r.digest,
-    properties: r.properties,
-  });
+  const backed = (r: CanonicalGeometryResponse, profileId?: string): GeometryBackedSection => {
+    // Section rotation is part of the geometry's identity, not a view setting:
+    // it changes which moment component the section sees and therefore the
+    // stress field. Carrying it here means the digest covers it, so a rotated
+    // and an unrotated section can never be mistaken for each other, and the
+    // engine can map element-local moments into the section's own frame.
+    const rotationRad = ((sec.rotation ?? 0) * Math.PI) / 180;
+    const geometry = rotationRad === 0 ? r.geometry : { ...r.geometry, rotation: rotationRad };
+    return {
+      state: 'geometry-backed',
+      sectionId: sec.id,
+      profileId,
+      geometry,
+      // The digest must describe the geometry actually carried, so it is
+      // recomputed whenever rotation changes it.
+      digest: rotationRad === 0 ? r.digest : sectionGeometryDigest(geometry).digest,
+      properties: r.properties,
+    };
+  };
 
   // ── Explicit custom geometry always wins ──────────────────────
   if (sec.polygon && sec.polygon.length >= 3) {
