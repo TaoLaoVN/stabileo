@@ -19,6 +19,7 @@
    * control with no explanation.
    */
   import { t, tp } from '../../../lib/i18n';
+  import { identifyMessages } from '../../../lib/codes/message';
   import { modelStore } from '../../../lib/store/model.svelte';
   import {
     validateFooting, FOOTING_LAYER_ORDER_PREFERENCES, SUPPORTED_MAT_DIAMETERS_MM,
@@ -288,8 +289,10 @@
         {#each [validateFooting(f)] as issues (f.id)}
           {#if issues.length > 0}
             <ul class="issues" data-testid="footing-issues">
-              {#each issues as i (i.message.key + i.message.params?.axis)}
-                <li class={i.severity}>{tp(i.message.key, i.message.params ?? {})}</li>
+              {#each identifyMessages(issues.map((i) => i.message)) as m, ix (m.id)}
+                <li class={issues[ix].severity}>
+                  {tp(m.message.key, m.message.params ?? {})}
+                </li>
               {/each}
             </ul>
           {/if}
@@ -327,8 +330,12 @@
               <div class="failed" data-testid="footing-cad-export-failed">
                 <p>{t('footing.cad.ui.failed')}</p>
                 <ul>
-                  {#each visibleCadResult.refusals as r (r.code)}
-                    <li>{tp(r.messageKey, r.params ?? {})}</li>
+                  {#each identifyMessages(
+                    visibleCadResult.refusals.map(
+                      (r) => ({ key: r.messageKey, params: r.params }),
+                    ),
+                  ) as r (r.id)}
+                    <li>{tp(r.message.key, r.message.params ?? {})}</li>
                   {/each}
                 </ul>
                 {#if visibleCadResult.details.length > 0}
@@ -517,8 +524,10 @@
             {#each [validateSoilProfile(p)] as issues (p.id)}
               {#if issues.length > 0}
                 <ul class="issues" data-testid={`soil-${p.id}-issues`}>
-                  {#each issues as i (i.message.key)}
-                    <li class={i.severity}>{tp(i.message.key, i.message.params ?? {})}</li>
+                  {#each identifyMessages(issues.map((i) => i.message)) as m, ix (m.id)}
+                    <li class={issues[ix].severity}>
+                      {tp(m.message.key, m.message.params ?? {})}
+                    </li>
                   {/each}
                 </ul>
               {/if}
