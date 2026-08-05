@@ -910,7 +910,11 @@
     uiStore.renderMode3D;
     modelStore.plates;
     modelStore.quads;
-    modelStore.modelVersion;
+    // Geometry refs (Maps are replaced on structural edits), NOT modelVersion —
+    // that bumps on load/material edits too and was recoloring + rebuilding the
+    // heatmap on every keystroke while a color map was active.
+    modelStore.nodes;
+    modelStore.elements;
     // Also react to verification store changes for 'verification' color map.
     // `.design` and `.providedRevision` were missing: a baseline-only or
     // reinforcement-only change left the overlay painted with the previous state.

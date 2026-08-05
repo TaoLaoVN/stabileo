@@ -42,13 +42,20 @@ function projectFlag(): boolean {
 export const DIAGRAM_3D_TYPES: Set<string> = new Set(['momentY', 'momentZ', 'shearY', 'shearZ', 'axial', 'torsion']);
 
 /** Build a node map projected to scene coordinates (handles 2D→XZ swap for embedded models). */
+let projectedNodesCache: { key: string; map: Map<number, { id: number; x: number; y: number; z?: number }> } | null = null;
+
 function getProjectedNodes(): Map<number, { id: number; x: number; y: number; z?: number }> {
   const project2D = projectFlag();
+  // Node coords only change with modelVersion — one rebuild per edit total,
+  // not one per animation frame / per results publish.
+  const key = `${modelStore.modelVersion}|${project2D}`;
+  if (projectedNodesCache?.key === key) return projectedNodesCache.map;
   const projected = new Map<number, { id: number; x: number; y: number; z?: number }>();
   for (const [id, n] of modelStore.nodes) {
     const p = projectNodeToScene(n, project2D);
     projected.set(id, { id, x: p.x, y: p.y, z: p.z });
   }
+  projectedNodesCache = { key, map: projected };
   return projected;
 }
 
