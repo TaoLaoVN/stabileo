@@ -123,3 +123,37 @@ fn ordinary_magnitudes_still_solve_in_both_dimensions() {
         assert!(!any_non_finite_2d(&r2.unwrap()), "2D non-finite at {load:e}");
     }
 }
+
+/// `cholesky_decompose` must not report success on a matrix containing NaN.
+///
+/// Its guard is `if sum <= 1e-15 { return false }`. Every comparison against NaN is
+/// false, so a NaN pivot skips the rejection, `sqrt(NaN)` is stored as the diagonal and
+/// the routine returns `true` — "successful (A is SPD)" per its own doc comment, for a
+/// matrix that is not a number, let alone symmetric positive definite. `lu_apply` already
+/// screens its result for NaN/Inf; this brings the Cholesky path in line.
+#[test]
+fn cholesky_rejects_non_finite_input() {
+    use dedaliano_engine::linalg::cholesky::{cholesky_decompose, cholesky_solve};
+
+    let mut diag_nan = vec![f64::NAN, 0.0, 0.0, 1.0];
+    assert!(
+        !cholesky_decompose(&mut diag_nan, 2),
+        "a NaN on the diagonal must be rejected, not reported as SPD",
+    );
+
+    let mut off_diag_nan = vec![1.0, f64::NAN, f64::NAN, 1.0];
+    assert!(
+        !cholesky_decompose(&mut off_diag_nan, 2),
+        "a NaN off the diagonal must be rejected once it reaches a pivot",
+    );
+
+    let mut solve_nan = vec![f64::NAN, 0.0, 0.0, 1.0];
+    assert!(
+        cholesky_solve(&mut solve_nan, &[1.0, 1.0], 2).is_none(),
+        "cholesky_solve must return None rather than Some([NaN, ..])",
+    );
+
+    // A genuinely SPD matrix still factorizes.
+    let mut spd = vec![4.0, 1.0, 1.0, 3.0];
+    assert!(cholesky_decompose(&mut spd, 2), "SPD matrix must still succeed");
+}
