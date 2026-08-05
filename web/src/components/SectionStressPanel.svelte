@@ -78,6 +78,29 @@
   });
 
   /**
+   * Why detailed analysis is unavailable, and for which profile.
+   *
+   * A rolled IPN or UPN is NOT an amorphous section — it is a precisely
+   * defined profile whose fillet radii and flange taper we do not yet hold.
+   * Calling it "amorfa (sin forma geométrica definida)" told the user
+   * something false about their model and read as a bug. The two cases now
+   * get different wording: genuinely shapeless sections keep the original
+   * message, known profiles get one that names the actual limitation.
+   */
+  const unavailableReason = $derived.by((): { kind: 'amorphous' | 'noGeometryData'; name: string } | null => {
+    if (!query) return null;
+    const elem = modelStore.elements.get(query.elementId);
+    if (!elem) return null;
+    const sec = modelStore.sections.get(elem.sectionId);
+    if (!sec || supportsDetailedAnalysis(sec)) return null;
+    const st = sec.canonical;
+    const dataGap =
+      st?.kind === 'properties-only' &&
+      st.reason.kind !== 'noGeometry';
+    return { kind: dataGap ? 'noGeometryData' : 'amorphous', name: sec.name || '—' };
+  });
+
+  /**
    * Canonical axial + bending for the selected element and station.
    *
    * The numbers here and the outline `CrossSectionDrawing` renders come from
@@ -577,9 +600,15 @@
     </div>
     <div class="ssp-amorph-msg">
       <span class="ssp-amorph-icon">⚠</span>
-      <p>{@html t('stress.amorphMsg1')}</p>
-      <p>{t('stress.amorphMsg2')}</p>
-      <p>{t('stress.amorphMsg3')}</p>
+      {#if unavailableReason?.kind === 'noGeometryData'}
+        <p>{@html t('stress.noGeomMsg1').replace('{name}', unavailableReason.name)}</p>
+        <p>{t('stress.noGeomMsg2')}</p>
+        <p>{t('stress.noGeomMsg3')}</p>
+      {:else}
+        <p>{@html t('stress.amorphMsg1')}</p>
+        <p>{t('stress.amorphMsg2')}</p>
+        <p>{t('stress.amorphMsg3')}</p>
+      {/if}
     </div>
   </div>
 {/if}

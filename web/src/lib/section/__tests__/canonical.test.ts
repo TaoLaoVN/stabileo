@@ -288,3 +288,39 @@ describe('custom geometry is canonical by definition', () => {
     expect(rel(r.properties.a, 0.01)).toBeLessThan(1e-12);
   });
 });
+
+// ─── The refusal must say something true ───────────────────────────
+
+/**
+ * A user opened a model carrying an IPN 300 and was told the section was
+ * "amorfa (sin forma geométrica definida)". An IPN 300 is neither: it is a
+ * fully standardised rolled profile whose flange taper and fillet radii we do
+ * not hold. The refusal reason is what the panel selects its wording from, so
+ * the distinction is pinned here rather than left to the component.
+ */
+describe('a properties-only refusal distinguishes a data gap from a shapeless section', () => {
+  const dataGap: Array<[string, string]> = [
+    ['IPN 300', 'missingTaperAndRadii'],
+    ['UPN 200', 'missingTaperAndRadii'],
+    ['L 100x100x10', 'missingRootRadius'],
+    ['RHS 100x50x4', 'missingCornerRadii'],
+  ];
+
+  for (const [name, kind] of dataGap) {
+    it(`${name} reports ${kind}, never noGeometry`, () => {
+      const r = resolveCanonicalSection(fromCatalogue(name));
+      expect(r.state).toBe('properties-only');
+      if (r.state !== 'properties-only') return;
+      expect(r.reason.kind).toBe(kind);
+      // The panel keys the "amorphous" wording off this exact value.
+      expect(r.reason.kind).not.toBe('noGeometry');
+    });
+  }
+
+  it('only a section with no shape and no polygon is genuinely shapeless', () => {
+    const r = resolveCanonicalSection({ id: 9, name: 'Losa equivalente', a: 0.01, iz: 1e-5 } as Section);
+    expect(r.state).toBe('properties-only');
+    if (r.state !== 'properties-only') return;
+    expect(r.reason.kind).toBe('noGeometry');
+  });
+});
