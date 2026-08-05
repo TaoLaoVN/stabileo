@@ -129,7 +129,7 @@ describe('digest identity is enforced, and the guard can actually fail', () => {
 // ─── Properties-only sections are refused, never schematised ───────
 
 describe('properties-only sections get no detailed drawing', () => {
-  for (const name of ['UPN 200', 'IPN 200', 'L 100x100x10', 'RHS 100x50x4']) {
+  for (const name of ['RHS 100x50x4', 'RHS 60x40x3', 'RHS 80x40x3', 'RHS 120x60x4']) {
     it(`${name} is refused with its structured reason`, () => {
       const s = resolved(fromCatalogue(name));
       expect(supportsDetailedAnalysis(s)).toBe(false);

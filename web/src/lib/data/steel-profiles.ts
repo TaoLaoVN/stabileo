@@ -18,13 +18,38 @@
 // 3-significant-figure rounding of the published tables. See
 // engine/src/section/catalogue.rs.
 //
-// NOT yet available, so these families stay properties-only:
-//   IPN (21), UPN (12)  - need root radius, toe radius AND flange taper
-//   L   (10)            - need root and toe radii
-//   RHS (12)            - eurocodepy's single `r` does not reproduce the
-//                         published properties (A +0.7..+1.9 %, Iy up to
-//                         +9.0 %); EN 10219 specifies outer and inner corner
-//                         radii independently and both are needed.
+// ─── Tapered rolled families (IPN, UPN) ────────────────────────────
+// These carry no radius column because they need none: DIN 1025-1 and -5 fix
+// the flange slope and both radii as rules on the profile's own dimensions
+// (IPN: 14 %, r1 = tw, r2 = 0.6 tw, tf quoted at b/4; UPN: 8 %, r1 = tf,
+// r2 = 0.5 tf, tf quoted at b/2 from the web's outer face). The rules live in
+// engine/src/section/catalogue.rs, where the built outline is integrated and
+// checked against the published A, Iy and Iz of all 33 profiles - data that
+// plays no part in building it. Worst disagreement 0.44 %, i.e. table rounding.
+//
+// ─── Equal-leg angles (L): root radii AND corrected inertias ───────
+// Root radii are the EN 10056-1 tabulated values, toe radius r2 = r1/2.
+//
+// All ten `iy`/`iz` were 7.2-9.7 % HIGHER than a SHARP-cornered angle of the
+// same legs and thickness can possibly have - and rolled fillets lower Ix
+// slightly rather than raising it, so no angle with these dimensions has the
+// listed inertia. The error was unconservative: it overstated stiffness and
+// understated deflection and stress wherever an angle was used. Replaced with
+// the EN 10056-1 values, which agree with the integrated canonical outline to
+// better than 0.5 % (previous value in brackets):
+//   L 30x30x3      1.41  (was 1.60)      L 80x80x8      72.2  (was  80.0)
+//   L 40x40x4      4.47  (was 5.05)      L 90x90x9     116    (was 127)
+//   L 50x50x5     11.0   (was 12.2)      L 100x100x10  177    (was 193)
+//   L 60x60x6     22.8   (was 25.3)      L 120x120x12  368    (was 400)
+//   L 70x70x7     42.4   (was 46.8)      L 150x150x15  898    (was 985)
+//
+// NOT yet available, so this family alone stays properties-only:
+//   RHS (12)            - EN 10219-2 specifies the outer corner radius as a
+//                         RANGE (1.6t-2.4t for t <= 6 mm), not a value, so the
+//                         outline is genuinely underdetermined. Assuming 2t
+//                         misses the published A by up to 3.0 % and Iy by 6.3 %,
+//                         scattered in sign - no single rule fits. Needs the
+//                         manufacturer's own corner radii.
 //
 // ─── CHS inertia corrections ───────────────────────────────────────
 // A circular hollow section is fully defined by its outer diameter and wall
@@ -187,16 +212,16 @@ const UPN: SteelProfile[] = [
 
 // L profiles (Equal-leg angles)
 const L: SteelProfile[] = [
-  { family: 'L', name: 'L 30x30x3',  h: 30,  b: 30,  a: 1.74,  iy: 1.60,   iz: 1.60,   weight: 1.36, t: 3 },
-  { family: 'L', name: 'L 40x40x4',  h: 40,  b: 40,  a: 3.08,  iy: 5.05,   iz: 5.05,   weight: 2.42, t: 4 },
-  { family: 'L', name: 'L 50x50x5',  h: 50,  b: 50,  a: 4.80,  iy: 12.2,   iz: 12.2,   weight: 3.77, t: 5 },
-  { family: 'L', name: 'L 60x60x6',  h: 60,  b: 60,  a: 6.91,  iy: 25.3,   iz: 25.3,   weight: 5.42, t: 6 },
-  { family: 'L', name: 'L 70x70x7',  h: 70,  b: 70,  a: 9.40,  iy: 46.8,   iz: 46.8,   weight: 7.38, t: 7 },
-  { family: 'L', name: 'L 80x80x8',  h: 80,  b: 80,  a: 12.3,  iy: 80.0,   iz: 80.0,   weight: 9.63, t: 8 },
-  { family: 'L', name: 'L 90x90x9',  h: 90,  b: 90,  a: 15.5,  iy: 127,    iz: 127,    weight: 12.2, t: 9 },
-  { family: 'L', name: 'L 100x100x10', h: 100, b: 100, a: 19.2, iy: 193,   iz: 193,    weight: 15.0, t: 10 },
-  { family: 'L', name: 'L 120x120x12', h: 120, b: 120, a: 27.5, iy: 400,   iz: 400,    weight: 21.6, t: 12 },
-  { family: 'L', name: 'L 150x150x15', h: 150, b: 150, a: 43.0, iy: 985,   iz: 985,    weight: 33.8, t: 15 },
+  { family: 'L', name: 'L 30x30x3',  h: 30,  b: 30,  a: 1.74,  iy: 1.41,   iz: 1.41,   weight: 1.36, t: 3, r: 5 },
+  { family: 'L', name: 'L 40x40x4',  h: 40,  b: 40,  a: 3.08,  iy: 4.47,   iz: 4.47,   weight: 2.42, t: 4, r: 6 },
+  { family: 'L', name: 'L 50x50x5',  h: 50,  b: 50,  a: 4.80,  iy: 11.0,   iz: 11.0,   weight: 3.77, t: 5, r: 7 },
+  { family: 'L', name: 'L 60x60x6',  h: 60,  b: 60,  a: 6.91,  iy: 22.8,   iz: 22.8,   weight: 5.42, t: 6, r: 8 },
+  { family: 'L', name: 'L 70x70x7',  h: 70,  b: 70,  a: 9.40,  iy: 42.4,   iz: 42.4,   weight: 7.38, t: 7, r: 9 },
+  { family: 'L', name: 'L 80x80x8',  h: 80,  b: 80,  a: 12.3,  iy: 72.2,   iz: 72.2,   weight: 9.63, t: 8, r: 10 },
+  { family: 'L', name: 'L 90x90x9',  h: 90,  b: 90,  a: 15.5,  iy: 116,    iz: 116,    weight: 12.2, t: 9, r: 11 },
+  { family: 'L', name: 'L 100x100x10', h: 100, b: 100, a: 19.2, iy: 177,   iz: 177,    weight: 15.0, t: 10, r: 12 },
+  { family: 'L', name: 'L 120x120x12', h: 120, b: 120, a: 27.5, iy: 368,   iz: 368,    weight: 21.6, t: 12, r: 13 },
+  { family: 'L', name: 'L 150x150x15', h: 150, b: 150, a: 43.0, iy: 898,   iz: 898,    weight: 33.8, t: 15, r: 16 },
 ];
 
 // RHS profiles (Rectangular Hollow Sections)

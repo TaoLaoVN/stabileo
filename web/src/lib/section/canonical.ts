@@ -35,8 +35,15 @@ import {
   type CanonicalGeometryResponse,
 } from '../engine/wasm-solver';
 
-/** Families whose canonical geometry is fully determined by data we hold. */
-const GEOMETRY_BACKED_FAMILIES = new Set(['IPE', 'HEA', 'HEB', 'CHS']);
+/**
+ * Families whose canonical geometry is fully determined by data we hold.
+ *
+ * IPN and UPN joined this set without any new table: DIN 1025-1 and -5 define
+ * their flange taper and both radii as rules on dimensions already here. L
+ * joined it with the EN 10056-1 root radii. RHS is the one family still out,
+ * because EN 10219-2 gives its corner radius as a range rather than a value.
+ */
+const GEOMETRY_BACKED_FAMILIES = new Set(['IPE', 'HEA', 'HEB', 'CHS', 'IPN', 'UPN', 'L']);
 
 /**
  * Why a section could not be expressed as canonical geometry.
@@ -78,11 +85,6 @@ export type ResolvedSection = GeometryBackedSection | PropertiesOnlySection;
  */
 function rolledReason(family: string): PropertiesOnlyReason {
   switch (family) {
-    case 'IPN':
-    case 'UPN':
-      return { kind: 'missingTaperAndRadii', family };
-    case 'L':
-      return { kind: 'missingRootRadius', family };
     case 'RHS':
       return { kind: 'missingCornerRadii', family };
     default:
@@ -152,6 +154,50 @@ export function resolveCanonicalSection(sec: Section): ResolvedSection {
   if (profile) {
     if (!GEOMETRY_BACKED_FAMILIES.has(profile.family)) {
       return propertiesOnly(sec, rolledReason(profile.family), profile.name);
+    }
+    // IPN / UPN — the standard's own rules supply the taper and both radii, so
+    // the published web and flange thicknesses are all the outline needs.
+    if (profile.family === 'IPN' || profile.family === 'UPN') {
+      const missing: string[] = [];
+      if (profile.tw == null) missing.push('tw');
+      if (profile.tf == null) missing.push('tf');
+      if (missing.length > 0) {
+        return propertiesOnly(sec, { kind: 'missingDimensions', missing }, profile.name);
+      }
+      return backed(
+        buildSectionGeometry({
+          kind: profile.family === 'IPN' ? 'ipn' : 'upn',
+          h: mm(profile.h),
+          b: mm(profile.b),
+          tw: mm(profile.tw!),
+          tf: mm(profile.tf!),
+          profileId: profile.name,
+          standard: profile.family === 'IPN' ? 'DIN 1025-1' : 'DIN 1025-5',
+        }),
+        profile.name,
+      );
+    }
+    // L — EN 10056-1 tabulates the root radius; the toe radius is half of it.
+    if (profile.family === 'L') {
+      const missing: string[] = [];
+      if (profile.t == null) missing.push('t');
+      if (profile.r == null) missing.push('r');
+      if (missing.length > 0) {
+        return propertiesOnly(sec, { kind: 'missingDimensions', missing }, profile.name);
+      }
+      return backed(
+        buildSectionGeometry({
+          kind: 'angle',
+          h: mm(profile.h),
+          b: mm(profile.b),
+          t: mm(profile.t!),
+          rootRadius: mm(profile.r!),
+          toeRadius: mm(profile.r! / 2),
+          profileId: profile.name,
+          standard: 'EN 10056-1',
+        }),
+        profile.name,
+      );
     }
     if (profile.family === 'CHS') {
       // A tube needs only outer diameter and wall thickness — no fillet or

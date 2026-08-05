@@ -48,25 +48,25 @@ describe('a section added through the normal path is immediately analysable', ()
     if (r.ok) expect(r.bending.digest).toBe(r.geometry.digest);
   });
 
-  it('the default section resolves — and is properties-only, because it is an IPN', () => {
-    // `modelStore.clear()` restores the built-in default, which ships as
-    // IPN 300. IPN needs a flange taper and two radii that no reusable source
-    // provides, so it is legitimately properties-only and the detailed panel
-    // will refuse it. That is correct behaviour, NOT the reported defect —
-    // but it does mean a brand-new model refuses Section Analysis until the
-    // user picks another profile, which is a product decision to revisit.
+  it('the default section resolves to real geometry, so the panel works out of the box', () => {
+    // `modelStore.clear()` restores the built-in default, an IPN 300. This
+    // used to be the one profile a brand-new model could not analyse, which is
+    // how a user first hit the refusal: open the app, ask for Section
+    // Analysis, get told the section was amorphous. The default is unchanged;
+    // what changed is that IPN now has geometry, so the out-of-the-box path
+    // works rather than dead-ending.
     const first = [...modelStore.sections.values()][0];
     expect(first).toBeDefined();
     expect(first.name).toContain('IPN');
     modelStore.refreshCanonicalSections();
     const refreshed = [...modelStore.sections.values()][0];
     expect(refreshed.canonical).toBeDefined();
-    expect(refreshed.canonical!.kind).toBe('properties-only');
-    expect(supportsDetailedAnalysis(refreshed)).toBe(false);
+    expect(refreshed.canonical!.kind).toBe('geometry-backed');
+    expect(supportsDetailedAnalysis(refreshed)).toBe(true);
   });
 
   it('properties-only families still refuse, for the right reason', () => {
-    for (const name of ['UPN 200', 'IPN 200', 'L 100x100x10', 'RHS 100x50x4']) {
+    for (const name of ['RHS 100x50x4', 'RHS 60x40x3', 'RHS 80x40x3', 'RHS 120x60x4']) {
       const id = modelStore.addSection(cat(name));
       const sec = modelStore.sections.get(id)!;
       expect(sec.canonical!.kind, name).toBe('properties-only');

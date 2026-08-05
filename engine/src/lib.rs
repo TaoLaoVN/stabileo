@@ -782,8 +782,29 @@ pub fn build_section_geometry(json: &str) -> Result<String, JsValue> {
             #[serde(default)] profile_id: Option<String>,
             #[serde(default)] standard: Option<String>,
         },
+        /// IPN — tapered flanges, radii per DIN 1025-1's own rules.
+        Ipn {
+            h: f64, b: f64, tw: f64, tf: f64,
+            #[serde(default)] arc_segments: Option<usize>,
+            #[serde(default)] profile_id: Option<String>,
+            #[serde(default)] standard: Option<String>,
+        },
+        /// UPN — tapered flanges, radii per DIN 1025-5's own rules.
+        Upn {
+            h: f64, b: f64, tw: f64, tf: f64,
+            #[serde(default)] arc_segments: Option<usize>,
+            #[serde(default)] profile_id: Option<String>,
+            #[serde(default)] standard: Option<String>,
+        },
         Tee { h: f64, b: f64, tw: f64, tf: f64 },
-        Angle { h: f64, b: f64, t: f64 },
+        Angle {
+            h: f64, b: f64, t: f64,
+            #[serde(default)] root_radius: f64,
+            #[serde(default)] toe_radius: f64,
+            #[serde(default)] arc_segments: Option<usize>,
+            #[serde(default)] profile_id: Option<String>,
+            #[serde(default)] standard: Option<String>,
+        },
         Channel { h: f64, b: f64, tw: f64, tf: f64 },
         Rhs { b: f64, h: f64, t: f64 },
         Custom { outer: Vec<[f64; 2]>, #[serde(default)] holes: Vec<Vec<[f64; 2]>> },
@@ -792,6 +813,18 @@ pub fn build_section_geometry(json: &str) -> Result<String, JsValue> {
     let req: Request = serde_json::from_str(json)
         .map_err(|e| JsValue::from_str(&format!("Parse error: {e}")))?;
     let segs = |o: Option<usize>| o.unwrap_or(cat::DEFAULT_ARC_SEGMENTS);
+    // A `profileId` is what makes an outline a catalogue profile rather than a
+    // shape the user drew; the standard travels with it so provenance survives
+    // into the digest.
+    let catalogue_source = |id: Option<String>, std_: Option<String>, default_std: &str, shape: &str| {
+        match id {
+            Some(profile_id) => cat::GeometrySource::Catalogue {
+                profile_id,
+                standard: std_.unwrap_or_else(|| default_std.into()),
+            },
+            None => cat::GeometrySource::Parametric { shape: shape.into() },
+        }
+    };
 
     let geometry = match req {
         Request::Rect { b, h } => cat::rectangle(b, h),
@@ -807,8 +840,19 @@ pub fn build_section_geometry(json: &str) -> Result<String, JsValue> {
             };
             cat::i_section(h, b, tw, tf, root_radius, segs(arc_segments), source)
         }
+        Request::Ipn { h, b, tw, tf, arc_segments, profile_id, standard } => {
+            cat::ipn_section(h, b, tw, tf, segs(arc_segments),
+                catalogue_source(profile_id, standard, "DIN 1025-1", "ipn"))
+        }
+        Request::Upn { h, b, tw, tf, arc_segments, profile_id, standard } => {
+            cat::upn_section(h, b, tw, tf, segs(arc_segments),
+                catalogue_source(profile_id, standard, "DIN 1025-5", "upn"))
+        }
         Request::Tee { h, b, tw, tf } => cat::tee_section(h, b, tw, tf),
-        Request::Angle { h, b, t } => cat::angle_section(h, b, t),
+        Request::Angle { h, b, t, root_radius, toe_radius, arc_segments, profile_id, standard } => {
+            cat::angle_section_filleted(h, b, t, root_radius, toe_radius, segs(arc_segments),
+                catalogue_source(profile_id, standard, "EN 10056-1", "angle"))
+        }
         Request::Channel { h, b, tw, tf } => cat::channel_section(h, b, tw, tf),
         Request::Rhs { b, h, t } => cat::rectangular_hollow(b, h, t),
         Request::Custom { outer, holes } => cat::custom(outer, holes),

@@ -110,9 +110,9 @@ describe('CHS resolves to the exact annulus', () => {
 
 describe('incomplete rolled families stay properties-only', () => {
   const EXPECTED: Array<[string, number, string]> = [
-    ['IPN', 21, 'missingTaperAndRadii'],
-    ['UPN', 12, 'missingTaperAndRadii'],
-    ['L', 10, 'missingRootRadius'],
+    // RHS is the last family out, and for a reason that no amount of care
+    // fixes: EN 10219-2 gives the outer corner radius as a RANGE, so the
+    // outline is underdetermined rather than merely undocumented.
     ['RHS', 12, 'missingCornerRadii'],
   ];
 
@@ -300,10 +300,8 @@ describe('custom geometry is canonical by definition', () => {
  */
 describe('a properties-only refusal distinguishes a data gap from a shapeless section', () => {
   const dataGap: Array<[string, string]> = [
-    ['IPN 300', 'missingTaperAndRadii'],
-    ['UPN 200', 'missingTaperAndRadii'],
-    ['L 100x100x10', 'missingRootRadius'],
     ['RHS 100x50x4', 'missingCornerRadii'],
+    ['RHS 60x40x3', 'missingCornerRadii'],
   ];
 
   for (const [name, kind] of dataGap) {
@@ -322,5 +320,59 @@ describe('a properties-only refusal distinguishes a data gap from a shapeless se
     expect(r.state).toBe('properties-only');
     if (r.state !== 'properties-only') return;
     expect(r.reason.kind).toBe('noGeometry');
+  });
+});
+
+// ─── Tapered rolled families are geometry-backed, and provably so ──
+
+/**
+ * The point of building an outline from DIN's rules rather than a radius table
+ * is that the result is checkable: integrating it must return the published A,
+ * Iy and Iz, none of which took any part in constructing it. Rust pins this per
+ * profile; this pins that the WEB path — name lookup, unit conversion, request
+ * shape, engine call — delivers the same thing, which is where a silently
+ * dropped field or a millimetre/metre slip would show up instead.
+ */
+describe('IPN, UPN and L are geometry-backed and reproduce their published properties', () => {
+  for (const family of ['IPN', 'UPN', 'L'] as const) {
+    it(`every ${family} builds an outline that integrates to its catalogue row`, () => {
+      const profiles = ALL_PROFILES.filter((p) => p.family === family);
+      expect(profiles.length).toBeGreaterThan(0);
+      for (const p of profiles) {
+        const r = resolveCanonicalSection(fromCatalogue(p.name));
+        expect(r.state, p.name).toBe('geometry-backed');
+        if (r.state !== 'geometry-backed') continue;
+        // Catalogue units are cm² and cm⁴; canonical geometry is in metres.
+        expect(rel(r.properties.a * 1e4, p.a), `${p.name} A`).toBeLessThan(0.01);
+        expect(rel(r.properties.iy * 1e8, p.iy), `${p.name} Iy`).toBeLessThan(0.01);
+        expect(rel(r.properties.iz * 1e8, p.iz), `${p.name} Iz`).toBeLessThan(0.01);
+      }
+    });
+  }
+
+  it('records the standard each outline was built to, not just that it is a catalogue shape', () => {
+    const byName = (n: string) => backed(resolveCanonicalSection(fromCatalogue(n)));
+    expect(JSON.stringify(byName('IPN 300').geometry.source)).toContain('DIN 1025-1');
+    expect(JSON.stringify(byName('UPN 200').geometry.source)).toContain('DIN 1025-5');
+    expect(JSON.stringify(byName('L 100x100x10').geometry.source)).toContain('EN 10056-1');
+  });
+
+  it('an IPN has a tapered flange — it is not silently built as a parallel-flange IPE', () => {
+    // If the taper were dropped, the outline would still close and still look
+    // like an I; only the numbers would be wrong. Compare the flange thickness
+    // near the web against the thickness at the tip.
+    const g = backed(resolveCanonicalSection(fromCatalogue('IPN 300'))).geometry;
+    const pts = g.polygons[0].vertices as Array<[number, number]>;
+    const top = pts.filter(([, v]) => v > 0);
+    const nearWeb = top.filter(([w]) => Math.abs(w) < 0.02 && Math.abs(w) > 0.006);
+    const nearTip = top.filter(([w]) => Math.abs(w) > 0.055);
+    const lowest = (a: Array<[number, number]>) => Math.min(...a.map(([, v]) => v));
+    // Thickness measured down from the flat top face at +h/2.
+    expect(0.15 - lowest(nearWeb)).toBeGreaterThan(0.15 - lowest(nearTip));
+  });
+
+  it('an equal-leg angle keeps its 45° principal axis after filleting', () => {
+    const r = backed(resolveCanonicalSection(fromCatalogue('L 100x100x10')));
+    expect(Math.abs(Math.abs((r.properties.thetaP * 180) / Math.PI) - 45)).toBeLessThan(0.5);
   });
 });

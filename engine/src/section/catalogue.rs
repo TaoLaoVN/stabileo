@@ -345,6 +345,195 @@ pub fn rectangular_hollow(b: f64, h: f64, t: f64) -> Result<CanonicalGeometry, S
     ))
 }
 
+// ─── Tapered rolled profiles (DIN 1025) ────────────────────────────
+//
+// IPN and UPN do not have parallel flanges. The flange thins towards its tip
+// along a fixed slope, meets the web through a root fillet, and is rounded off
+// at the toe. All three are specified by the standard itself as *rules* on the
+// profile's own dimensions, not as an extra table:
+//
+//   DIN 1025-1 (IPN):  slope 14 %, r_root = tw,  r_toe = 0.6 * tw,
+//                      tf quoted at b/4 from the axis of symmetry
+//   DIN 1025-5 (UPN):  slope  8 %, r_root = tf,  r_toe = 0.5 * tf,
+//                      tf quoted at b/2 from the web's outer face
+//
+// Because these are rules rather than recalled numbers, they are falsifiable:
+// building the outline and integrating it must reproduce the *published* A, Iy
+// and Iz, which are independent of everything above. It does — see the tests at
+// the bottom of this file, over the whole catalogue. That is the evidence the
+// geometry is right, and it is why these families no longer need to sit as
+// properties-only for want of "authoritative radii".
+
+/// Fillets and inner face of one tapered flange, walked from the flange tip
+/// inwards to the web.
+///
+/// Coordinates are `[horizontal, vertical]`, the web face is at `w_web` with
+/// material to its left, the tip is at `w_tip`, and the flange's inner face is
+/// the line `v = m*w + c`. Returns the run between the two flat surfaces: the
+/// caller supplies the flat outer face and the web line.
+fn tapered_flange_run(
+    w_web: f64, w_tip: f64, m: f64, c: f64, r_root: f64, r_toe: f64, n: usize,
+) -> Vec<[f64; 2]> {
+    let pi = std::f64::consts::PI;
+    let k = (1.0 + m * m).sqrt();
+    let mut v = Vec::new();
+
+    // Toe: convex rounding of the corner between the tip face and the inner
+    // face, so its centre sits inside the material.
+    if r_toe > 0.0 {
+        let cw = w_tip - r_toe;
+        let cv = m * cw + c + r_toe * k;
+        v.extend(arc_points(cw, cv, r_toe, 0.0, -(pi / 2.0 - m.atan()), n));
+    } else {
+        v.push([w_tip, m * w_tip + c]);
+    }
+
+    // Root: concave fillet filling the corner between the inner face and the
+    // web, so its centre sits in the void.
+    if r_root > 0.0 {
+        let cw = w_web + r_root;
+        let cv = m * cw + c - r_root * k;
+        v.extend(arc_points(cw, cv, r_root, pi / 2.0 + m.atan(), pi, n));
+    } else {
+        v.push([w_web, m * w_web + c]);
+    }
+    v
+}
+
+/// Mirror a quadrant/half outline, dropping the vertex that would repeat.
+fn mirrored(run: &[[f64; 2]], flip_w: bool, flip_v: bool, reverse: bool) -> Vec<[f64; 2]> {
+    let sw = if flip_w { -1.0 } else { 1.0 };
+    let sv = if flip_v { -1.0 } else { 1.0 };
+    let mut v: Vec<[f64; 2]> = run.iter().map(|p| [sw * p[0], sv * p[1]]).collect();
+    if reverse {
+        v.reverse();
+    }
+    v
+}
+
+/// IPN, per DIN 1025-1. `tf` is the published flange thickness, quoted at b/4.
+///
+/// Doubly symmetric, so one quadrant is built and mirrored three times; the
+/// mirror is exact, which keeps `Iyz` at zero to machine precision instead of
+/// leaving a spurious product of inertia from independently-built quadrants.
+pub fn ipn_section(
+    h: f64, b: f64, tw: f64, tf: f64, arc_segments: usize, source: GeometrySource,
+) -> Result<CanonicalGeometry, String> {
+    let h = require_positive("h", h)?;
+    let b = require_positive("b", b)?;
+    let tw = require_positive("tw", tw)?;
+    let tf = require_positive("tf", tf)?;
+    if 2.0 * tf >= h {
+        return Err("flange thickness leaves no web".into());
+    }
+    if tw >= b {
+        return Err("web is wider than the flange".into());
+    }
+    let (hh, hb, tb) = (h / 2.0, b / 2.0, tw / 2.0);
+    let (m, r_root, r_toe) = (0.14, tw, 0.6 * tw);
+    let c = hh - tf - m * (b / 4.0);
+    if m * tb + c <= 0.0 {
+        return Err("flange taper leaves no web between the flanges".into());
+    }
+    let n = arc_segments.max(1);
+
+    // Upper-right quadrant: centreline of the top face, out to the tip, then
+    // down and in to the web at mid-height.
+    let mut q: Vec<[f64; 2]> = vec![[0.0, hh], [hb, hh]];
+    q.extend(tapered_flange_run(tb, hb, m, c, r_root, r_toe, n));
+    q.push([tb, 0.0]);
+
+    let mut v = q.clone();
+    v.extend_from_slice(&mirrored(&q, false, true, true)[1..]);   // lower right
+    v.extend_from_slice(&mirrored(&q, true, true, false)[1..]);   // lower left
+    let last = mirrored(&q, true, false, true);
+    v.extend_from_slice(&last[1..last.len() - 1]);                // upper left
+
+    Ok(CanonicalGeometry::new(vec![solid(v)], source, arc_segments))
+}
+
+/// UPN, per DIN 1025-5. `tf` is the published flange thickness, quoted at b/2
+/// from the web's outer face, which sits at the horizontal origin.
+pub fn upn_section(
+    h: f64, b: f64, tw: f64, tf: f64, arc_segments: usize, source: GeometrySource,
+) -> Result<CanonicalGeometry, String> {
+    let h = require_positive("h", h)?;
+    let b = require_positive("b", b)?;
+    let tw = require_positive("tw", tw)?;
+    let tf = require_positive("tf", tf)?;
+    if 2.0 * tf >= h {
+        return Err("flange thickness leaves no web".into());
+    }
+    if tw >= b {
+        return Err("web is thicker than the flange is wide".into());
+    }
+    let hh = h / 2.0;
+    let (m, r_root, r_toe) = (0.08, tf, 0.5 * tf);
+    let c = hh - tf - m * (b / 2.0);
+    if m * tw + c <= 0.0 {
+        return Err("flange taper leaves no web between the flanges".into());
+    }
+    let n = arc_segments.max(1);
+
+    let mut top: Vec<[f64; 2]> = vec![[0.0, hh], [b, hh]];
+    top.extend(tapered_flange_run(tw, b, m, c, r_root, r_toe, n));
+    top.push([tw, 0.0]);
+
+    let mut v = top.clone();
+    v.extend_from_slice(&mirrored(&top, false, true, true)[1..]);
+
+    Ok(CanonicalGeometry::new(vec![solid(v)], source, arc_segments))
+}
+
+/// Equal- or unequal-leg angle with the rolled fillets, corner at the origin.
+///
+/// EN 10056-1 tabulates the root radius per size and sets the toe radius at
+/// half of it. A sharp angle is the `r_root = r_toe = 0` case, which is what a
+/// user-declared parametric angle is.
+pub fn angle_section_filleted(
+    h: f64, b: f64, t: f64, r_root: f64, r_toe: f64, arc_segments: usize, source: GeometrySource,
+) -> Result<CanonicalGeometry, String> {
+    let h = require_positive("h", h)?;
+    let b = require_positive("b", b)?;
+    let t = require_positive("t", t)?;
+    if t >= h || t >= b {
+        return Err("leg thickness must be smaller than both legs".into());
+    }
+    for (name, r) in [("root radius", r_root), ("toe radius", r_toe)] {
+        if !r.is_finite() || r < 0.0 {
+            return Err(format!("{name} must be finite and non-negative (got {r})"));
+        }
+    }
+    let r1 = r_root.min(h - t).min(b - t);
+    let r2 = r_toe.min(t).min((h - t - r1).max(0.0)).min((b - t - r1).max(0.0));
+    let pi = std::f64::consts::PI;
+    let n = arc_segments.max(1);
+
+    let mut v: Vec<[f64; 2]> = vec![[0.0, 0.0], [b, 0.0]];
+    // Horizontal leg's toe, then the root fillet, then the vertical leg's toe.
+    if r2 > 0.0 {
+        v.push([b, t - r2]);
+        v.extend(arc_points(b - r2, t - r2, r2, 0.0, pi / 2.0, n));
+    } else {
+        v.push([b, t]);
+    }
+    if r1 > 0.0 {
+        v.push([t + r1, t]);
+        v.extend(arc_points(t + r1, t + r1, r1, -pi / 2.0, -pi, n));
+    } else {
+        v.push([t, t]);
+    }
+    if r2 > 0.0 {
+        v.push([t, h - r2]);
+        v.extend(arc_points(t - r2, h - r2, r2, 0.0, pi / 2.0, n));
+    } else {
+        v.push([t, h]);
+    }
+    v.push([0.0, h]);
+
+    Ok(CanonicalGeometry::new(vec![solid(v)], source, arc_segments))
+}
+
 /// Custom outline with optional holes, supplied by the caller.
 pub fn custom(outer: Vec<[f64; 2]>, holes: Vec<Vec<[f64; 2]>>) -> Result<CanonicalGeometry, String> {
     if outer.len() < 3 {
@@ -579,5 +768,167 @@ mod tests {
         // Double round-trip too, so the format is a fixed point.
         let twice: CanonicalGeometry = serde_json::from_str(&serde_json::to_string(&back).unwrap()).unwrap();
         assert_eq!(twice.digest(), g.digest());
+    }
+}
+
+#[cfg(test)]
+mod rolled_profile_validation {
+    use super::*;
+    use crate::section::{analyze_section, SectionInput};
+
+    /// Integrate a built outline and return (A, Iy, Iz) in catalogue units:
+    /// cm² and cm⁴, from millimetre input.
+    fn props(g: &CanonicalGeometry) -> (f64, f64, f64) {
+        let p = analyze_section(&SectionInput {
+            polygons: g.polygons.clone(),
+            modular_ratios: Default::default(),
+        })
+        .expect("section integrates");
+        (p.a / 100.0, p.iy / 1e4, p.iz / 1e4)
+    }
+
+    fn src() -> GeometrySource {
+        GeometrySource::Parametric { shape: "test".into() }
+    }
+
+    /// The published tables carry three significant figures, so a correct
+    /// outline can only be expected to agree to a few tenths of a percent.
+    /// Anything larger is a geometry error, not rounding.
+    const TOL: f64 = 0.6;
+
+    fn check(name: &str, got: (f64, f64, f64), want: (f64, f64, f64)) {
+        for (label, g, w) in [("A", got.0, want.0), ("Iy", got.1, want.1), ("Iz", got.2, want.2)] {
+            let err = (g / w - 1.0) * 100.0;
+            assert!(
+                err.abs() < TOL,
+                "{name} {label}: built {g:.4} vs published {w:.4} ({err:+.2} %) — \
+                 the outline does not reproduce the published property"
+            );
+        }
+    }
+
+    /// DIN 1025-1. Columns: h, b, tw, tf, A, Iy, Iz.
+    const IPN: &[(&str, f64, f64, f64, f64, f64, f64, f64)] = &[
+        ("IPN 80", 80.0, 42.0, 3.9, 5.9, 7.57, 77.8, 6.29),
+        ("IPN 100", 100.0, 50.0, 4.5, 6.8, 10.6, 171.0, 12.2),
+        ("IPN 120", 120.0, 58.0, 5.1, 7.7, 14.2, 328.0, 21.5),
+        ("IPN 140", 140.0, 66.0, 5.7, 8.6, 18.2, 573.0, 35.2),
+        ("IPN 160", 160.0, 74.0, 6.3, 9.5, 22.8, 935.0, 54.7),
+        ("IPN 180", 180.0, 82.0, 6.9, 10.4, 27.9, 1450.0, 81.3),
+        ("IPN 200", 200.0, 90.0, 7.5, 11.3, 33.4, 2140.0, 117.0),
+        ("IPN 220", 220.0, 98.0, 8.1, 12.2, 39.5, 3060.0, 162.0),
+        ("IPN 240", 240.0, 106.0, 8.7, 13.1, 46.1, 4250.0, 221.0),
+        ("IPN 260", 260.0, 113.0, 9.4, 14.1, 53.3, 5740.0, 288.0),
+        ("IPN 280", 280.0, 119.0, 10.1, 15.2, 61.0, 7590.0, 364.0),
+        ("IPN 300", 300.0, 125.0, 10.8, 16.2, 69.0, 9800.0, 451.0),
+        ("IPN 320", 320.0, 131.0, 11.5, 17.3, 77.7, 12510.0, 555.0),
+        ("IPN 340", 340.0, 137.0, 12.2, 18.3, 86.7, 15700.0, 674.0),
+        ("IPN 360", 360.0, 143.0, 13.0, 19.5, 97.0, 19610.0, 818.0),
+        ("IPN 380", 380.0, 149.0, 13.7, 20.5, 107.0, 24010.0, 975.0),
+        ("IPN 400", 400.0, 155.0, 14.4, 21.6, 118.0, 29210.0, 1160.0),
+        ("IPN 450", 450.0, 170.0, 16.2, 24.3, 147.0, 45850.0, 1730.0),
+        ("IPN 500", 500.0, 185.0, 18.0, 27.0, 179.0, 68740.0, 2480.0),
+        ("IPN 550", 550.0, 200.0, 19.0, 30.0, 212.0, 99180.0, 3490.0),
+        ("IPN 600", 600.0, 215.0, 21.6, 32.4, 254.0, 139000.0, 4670.0),
+    ];
+
+    /// DIN 1025-5. Columns: h, b, tw, tf, A, Iy, Iz.
+    const UPN: &[(&str, f64, f64, f64, f64, f64, f64, f64)] = &[
+        ("UPN 80", 80.0, 45.0, 6.0, 8.0, 11.0, 106.0, 19.4),
+        ("UPN 100", 100.0, 50.0, 6.0, 8.5, 13.5, 206.0, 29.3),
+        ("UPN 120", 120.0, 55.0, 7.0, 9.0, 17.0, 364.0, 43.2),
+        ("UPN 140", 140.0, 60.0, 7.0, 10.0, 20.4, 605.0, 62.7),
+        ("UPN 160", 160.0, 65.0, 7.5, 10.5, 24.0, 925.0, 85.3),
+        ("UPN 180", 180.0, 70.0, 8.0, 11.0, 28.0, 1350.0, 114.0),
+        ("UPN 200", 200.0, 75.0, 8.5, 11.5, 32.2, 1910.0, 148.0),
+        ("UPN 220", 220.0, 80.0, 9.0, 12.5, 37.4, 2690.0, 197.0),
+        ("UPN 240", 240.0, 85.0, 9.5, 13.0, 42.3, 3600.0, 248.0),
+        ("UPN 260", 260.0, 90.0, 10.0, 14.0, 48.3, 4820.0, 317.0),
+        ("UPN 280", 280.0, 95.0, 10.0, 15.0, 53.3, 6280.0, 399.0),
+        ("UPN 300", 300.0, 100.0, 10.0, 16.0, 58.8, 8030.0, 495.0),
+    ];
+
+    /// EN 10056-1 equal angles. Columns: leg, t, root radius, A, Iy.
+    /// `Iy` here is about the axis parallel to a leg, through the centroid.
+    const ANGLES: &[(&str, f64, f64, f64, f64, f64)] = &[
+        ("L 30x30x3", 30.0, 3.0, 5.0, 1.74, 1.40),
+        ("L 40x40x4", 40.0, 4.0, 6.0, 3.08, 4.47),
+        ("L 50x50x5", 50.0, 5.0, 7.0, 4.80, 11.0),
+        ("L 60x60x6", 60.0, 6.0, 8.0, 6.91, 22.8),
+        ("L 70x70x7", 70.0, 7.0, 9.0, 9.40, 42.4),
+        ("L 80x80x8", 80.0, 8.0, 10.0, 12.3, 72.2),
+        ("L 90x90x9", 90.0, 9.0, 11.0, 15.5, 116.0),
+        ("L 100x100x10", 100.0, 10.0, 12.0, 19.2, 177.0),
+        ("L 120x120x12", 120.0, 12.0, 13.0, 27.5, 368.0),
+        ("L 150x150x15", 150.0, 15.0, 16.0, 43.0, 898.0),
+    ];
+
+    #[test]
+    fn every_ipn_reproduces_its_published_properties() {
+        for &(name, h, b, tw, tf, a, iy, iz) in IPN {
+            let g = ipn_section(h, b, tw, tf, 8, src()).expect(name);
+            check(name, props(&g), (a, iy, iz));
+        }
+    }
+
+    #[test]
+    fn every_upn_reproduces_its_published_properties() {
+        for &(name, h, b, tw, tf, a, iy, iz) in UPN {
+            let g = upn_section(h, b, tw, tf, 8, src()).expect(name);
+            check(name, props(&g), (a, iy, iz));
+        }
+    }
+
+    #[test]
+    fn every_equal_angle_reproduces_its_published_area_and_inertia() {
+        for &(name, leg, t, r1, a, iy) in ANGLES {
+            let g = angle_section_filleted(leg, leg, t, r1, r1 / 2.0, 8, src()).expect(name);
+            let (ga, giy, giz) = props(&g);
+            check(name, (ga, giy, giz), (a, iy, iy)); // equal legs: Iy == Iz
+        }
+    }
+
+    #[test]
+    fn a_doubly_symmetric_ipn_has_no_product_of_inertia() {
+        // The mirror construction is what guarantees this; an outline assembled
+        // from four independently-built quadrants would leave a small spurious
+        // Iyz that tilts every neutral axis.
+        let g = ipn_section(300.0, 125.0, 10.8, 16.2, 8, src()).unwrap();
+        let p = analyze_section(&SectionInput {
+            polygons: g.polygons.clone(),
+            modular_ratios: Default::default(),
+        })
+        .unwrap();
+        assert!(p.iyz.abs() < 1e-9 * p.iy, "Iyz = {} is not zero", p.iyz);
+    }
+
+    #[test]
+    fn a_channel_is_asymmetric_about_the_web_but_symmetric_about_mid_height() {
+        let g = upn_section(200.0, 75.0, 8.5, 11.5, 8, src()).unwrap();
+        let p = analyze_section(&SectionInput {
+            polygons: g.polygons.clone(),
+            modular_ratios: Default::default(),
+        })
+        .unwrap();
+        // Mirror symmetry about the horizontal axis kills Iyz exactly.
+        assert!(p.iyz.abs() < 1e-9 * p.iy);
+        // The published centroid sits 20.1 mm from the web's outer face.
+        assert!((p.yc - 20.1).abs() < 0.4, "centroid at {}", p.yc);
+    }
+
+    #[test]
+    fn a_zero_radius_angle_is_the_sharp_outline() {
+        let sharp = angle_section_filleted(100.0, 100.0, 10.0, 0.0, 0.0, 8, src()).unwrap();
+        let legacy = angle_section(100.0, 100.0, 10.0).unwrap();
+        let (a1, _, _) = props(&sharp);
+        let (a2, _, _) = props(&legacy);
+        assert!((a1 - a2).abs() < 1e-9, "{a1} vs {a2}");
+    }
+
+    #[test]
+    fn a_taper_that_would_close_the_web_is_refused() {
+        // A flange thick enough that the taper eats the whole half-height must
+        // be an error, not a self-intersecting outline.
+        assert!(ipn_section(40.0, 400.0, 4.0, 19.0, 8, src()).is_err());
     }
 }

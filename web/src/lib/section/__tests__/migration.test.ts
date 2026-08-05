@@ -46,8 +46,8 @@ describe('legacy files without canonical state', () => {
     expect(Math.abs(st.iy * 1e8 - 11.59) / 11.59).toBeLessThan(5e-3);
   });
 
-  it('a legacy IPN/UPN/L/RHS section stays properties-only and still solves', () => {
-    for (const name of ['IPN 200', 'UPN 200', 'L 100x100x10', 'RHS 100x50x4']) {
+  it('a legacy RHS section stays properties-only and still solves', () => {
+    for (const name of ['RHS 100x50x4', 'RHS 60x40x3', 'RHS 80x40x3', 'RHS 120x60x4']) {
       const { section, outcome } = restoreSectionState(legacy(name));
       expect(outcome.kind, name).toBe('propertiesOnly');
       const st = section.canonical!;
@@ -185,7 +185,7 @@ describe('save / open is a fixed point', () => {
   it('restoring a whole model returns a fresh Map with no shared arrays', () => {
     const input = new Map<number, Section>([
       [1, legacy('IPE 300', 1)],
-      [2, legacy('UPN 200', 2)],
+      [2, legacy('RHS 100x50x4', 2)],
     ]);
     const { sections, outcomes } = restoreSections(input);
     expect(sections).not.toBe(input);

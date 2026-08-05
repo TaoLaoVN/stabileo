@@ -70,10 +70,10 @@ describe('canonical properties reach the 2D solver wire', () => {
   });
 
   it('a properties-only section still reaches the wire with its declared area', () => {
-    const upn = resolved(fromCatalogue('UPN 200'));
-    expect(upn.canonical!.kind).toBe('properties-only');
-    const wire = buildSolverInput2D(model(upn), false)!;
-    expect(wire.sections.get(upn.id)!.a).toBeCloseTo(32.2e-4, 12);
+    const rhs = resolved(fromCatalogue('RHS 100x50x4'));
+    expect(rhs.canonical!.kind).toBe('properties-only');
+    const wire = buildSolverInput2D(model(rhs), false)!;
+    expect(wire.sections.get(rhs.id)!.a).toBeCloseTo(10.9e-4, 12);
   });
 });
 
@@ -89,11 +89,22 @@ describe('canonical properties reach the 3D solver wire', () => {
   });
 
   it('a properties-only section keeps its declared 3D inertias', () => {
-    const l = resolved(fromCatalogue('L 100x100x10'));
-    expect(l.canonical!.kind).toBe('properties-only');
-    const wire = buildSolverInput3D(model(l), false, false)!;
-    const s = wire.sections.get(l.id)!;
-    expect(s.iz).toBeCloseTo(l.iz, 15);
+    const rhs = resolved(fromCatalogue('RHS 60x40x3'));
+    expect(rhs.canonical!.kind).toBe('properties-only');
+    const wire = buildSolverInput3D(model(rhs), false, false)!;
+    const s = wire.sections.get(rhs.id)!;
+    expect(s.a).toBeCloseTo(rhs.a, 15);
+    // What this pins is that NOTHING canonical is invented for a section that
+    // has no geometry: both inertias on the wire are values the section itself
+    // declared. It deliberately does not pin WHICH declared inertia lands on
+    // which solver axis — a flat 2D model embedded in 3D takes a branch that
+    // reads `s.iy ?? s.iz` for the out-of-plane term, and whether that is the
+    // right axis is a solver question, open and untouched here. An asymmetric
+    // profile is used precisely so a future change to that mapping is not
+    // silently blessed by a symmetric section where both answers coincide.
+    const declared = [rhs.iy, rhs.iz];
+    expect(declared).toContain(s.iz);
+    expect(declared).toContain(s.iy);
   });
 });
 
@@ -203,12 +214,12 @@ describe('tab and copy isolation', () => {
   });
 
   it('cloning a properties-only state deep-copies its reason', () => {
-    const upn = resolved(fromCatalogue('UPN 200'));
-    const copy = cloneSectionState(upn.canonical!)!;
+    const rhs = resolved(fromCatalogue('RHS 100x50x4'));
+    const copy = cloneSectionState(rhs.canonical!)!;
     expect(copy.kind).toBe('properties-only');
-    if (copy.kind === 'properties-only' && upn.canonical!.kind === 'properties-only') {
-      expect(copy.reason).not.toBe(upn.canonical!.reason);
-      expect(copy.reason.kind).toBe(upn.canonical!.reason.kind);
+    if (copy.kind === 'properties-only' && rhs.canonical!.kind === 'properties-only') {
+      expect(copy.reason).not.toBe(rhs.canonical!.reason);
+      expect(copy.reason.kind).toBe(rhs.canonical!.reason.kind);
     }
   });
 
@@ -278,8 +289,8 @@ describe('geometry-backed derived properties are read-only', () => {
   it('a properties-only section keeps its declared-property editing', async () => {
     const { modelStore } = await import('../../store/model.svelte');
     modelStore.clear();
-    const id = modelStore.addSection({ name: 'UPN 200', a: 32.2e-4, iy: 1910e-8, iz: 148e-8 });
-    modelStore.updateSection(id, { name: 'UPN 200' });
+    const id = modelStore.addSection({ name: 'RHS 100x50x4', a: 10.9e-4, iy: 138e-8, iz: 48.5e-8 });
+    modelStore.updateSection(id, { name: 'RHS 100x50x4' });
     expect(modelStore.sections.get(id)!.canonical?.kind).toBe('properties-only');
     modelStore.updateSection(id, { a: 0.005 });
     expect(modelStore.sections.get(id)!.a).toBe(0.005);

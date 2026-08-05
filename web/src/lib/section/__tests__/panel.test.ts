@@ -79,7 +79,7 @@ describe('geometry-backed sections get a canonical result', () => {
 // ─── Refusals ──────────────────────────────────────────────────────
 
 describe('the panel refuses rather than approximating', () => {
-  for (const name of ['UPN 200', 'IPN 200', 'L 100x100x10', 'RHS 100x50x4']) {
+  for (const name of ['RHS 100x50x4', 'RHS 60x40x3', 'RHS 80x40x3', 'RHS 120x60x4']) {
     it(`${name} is properties-only and gets no canonical analysis`, () => {
       const r = canonicalPanelResult(resolved(fromCatalogue(name)), F);
       expect(r.ok, name).toBe(false);
@@ -165,7 +165,7 @@ describe('stress components report what may be trusted', () => {
   });
 
   it('a properties-only section claims nothing at all', () => {
-    const p = componentProvenance(resolved(fromCatalogue('UPN 200')));
+    const p = componentProvenance(resolved(fromCatalogue('RHS 100x50x4')));
     expect(p.normalAndBending).toBe('unavailable');
     expect(p.transverseShear).toBe('unavailable');
     expect(p.torsion).toBe('unavailable');
