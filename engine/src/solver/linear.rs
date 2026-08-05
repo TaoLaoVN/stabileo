@@ -1136,6 +1136,25 @@ impl PreparedStatic2D<'_> {
     }
 }
 
+/// Reject a solved displacement vector that is not finite.
+///
+/// A factorization can report success and still produce Inf/NaN:
+/// `cholesky_decompose` rejects only a pivot `<= 1e-15` and never inspects the solved
+/// values, so a pivot that squeaks past the floor can still overflow the substitutions.
+/// The 2D paths have checked this since `ffbea0686`; this is the same rule for 3D.
+///
+/// It has to be caught here rather than downstream: the JS wrapper guards solver INPUT,
+/// not output, and `postprocess::combinations` performs no finiteness checks at all —
+/// `compute_envelope` seeds its running max from `results.first()` and advances it with
+/// `>`, and every IEEE-754 comparison against NaN is false, so a NaN would never be
+/// replaced and would silently poison that field of the envelope.
+pub(crate) fn assert_finite_3d(u: &[f64]) -> Result<(), String> {
+    if u.iter().any(|v| v.is_nan() || v.is_infinite()) {
+        return Err("Singular stiffness matrix — structure is a mechanism".to_string());
+    }
+    Ok(())
+}
+
 /// Solve a 3D linear static analysis.
 pub fn solve_3d(input: &SolverInput3D) -> Result<AnalysisResults3D, String> {
     // Auto-delegate to constrained solver when constraints are present
@@ -1658,6 +1677,14 @@ impl PreparedStatic3D {
             FactorizedKff::SparseCholesky(_) => unreachable!("dense path holds dense factors"),
         };
 
+        // NaN/Inf guard: numerical blow-up means singular matrix.
+        // Matches the 2D paths. A factorization can report success and still yield
+        // non-finite values — `cholesky_decompose` only rejects a pivot <= 1e-15, it never
+        // inspects the solved values — and nothing downstream re-checks: the JS wrapper
+        // guards solver INPUT, and `postprocess::combinations` has no finiteness handling,
+        // so a NaN here would silently poison a combination or an envelope.
+        assert_finite_3d(&u_f)?;
+
         let mut solver_diags = p.solver_diags_base.clone();
         solver_diags.push(SolverDiagnostic {
             category: "solver_path".into(),
@@ -1921,6 +1948,10 @@ impl PreparedStatic3D {
             (u_fb, s_us, r_us)
         };
 
+        // NaN/Inf guard — see `solve_loads_dense`. Placed after the branch so it covers
+        // both the sparse Cholesky result and the dense LU fallback.
+        assert_finite_3d(&u_f)?;
+
         // Build full displacement vector
         let mut u_full = vec![0.0; n];
         u_full[..nf].copy_from_slice(&u_f);
@@ -2132,6 +2163,8 @@ impl PreparedStatic3D {
         let t0 = now_micros();
         let u_fb = lu_apply(&p.lu, &p.piv, &f_work, nf)
             .ok_or_else(|| "Singular stiffness matrix — structure is a mechanism".to_string())?;
+        // NaN/Inf guard — see `solve_loads_dense`.
+        assert_finite_3d(&u_fb)?;
         let dense_fb_us = p.dense_fb_us + now_micros().saturating_sub(t0);
 
         let total_us = (p.assembly_us + p.conditioning_us + p.symbolic_us + p.numeric_us)
