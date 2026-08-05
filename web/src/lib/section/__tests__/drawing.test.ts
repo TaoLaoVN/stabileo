@@ -165,3 +165,96 @@ describe('the drawing does not depend on the display name', () => {
     expect(rb.geometry.solids[0]).toEqual(ra.geometry.solids[0]);
   });
 });
+
+// ─── The drawn path must live in the SVG's frame ───────────────────
+
+describe('canonical geometry maps into the drawing frame', () => {
+  /**
+   * Mirror of `canonicalPath` in CrossSectionDrawing.svelte.
+   *
+   * Reported defect: the section outline was invisible while the stress plot
+   * rendered fine. The canonical polygons are centroid-relative METRES with z
+   * up; the SVG works in a scaled, y-down frame (`80 / max(h, b)`). Emitting
+   * raw metres drew a correct outline ~0.3 units wide on a ~160-unit canvas.
+   *
+   * Duplicated here deliberately: the component cannot be imported without a
+   * DOM, and the property that matters — the outline lands in the same box as
+   * every other overlay — is what must never regress.
+   */
+  function canonicalPath(g: { solids: Array<Array<[number, number]>>; holes: Array<Array<[number, number]>>; bbox: [number, number, number, number] }): string {
+    const [yMin, zMin, yMax, zMax] = g.bbox;
+    const sc = 80 / Math.max(Math.max(yMax - yMin, 1e-12), Math.max(zMax - zMin, 1e-12));
+    const ring = (poly: Array<[number, number]>) =>
+      poly.map(([y, z], i) => `${i === 0 ? 'M' : 'L'}${(y * sc).toFixed(3)} ${(-z * sc).toFixed(3)}`).join(' ') + ' Z';
+    return [...g.solids, ...g.holes].map(ring).join(' ');
+  }
+
+  const coords = (d: string) =>
+    [...d.matchAll(/[ML](-?[\d.]+) (-?[\d.]+)/g)].map((m) => [parseFloat(m[1]), parseFloat(m[2])] as const);
+
+  it('an IPE outline fills the same box the other overlays use', () => {
+    const r = resolveDrawingGeometry(resolved(fromCatalogue('IPE 300')));
+    if (!r.ok) throw new Error('setup');
+    const pts = coords(canonicalPath(r.geometry));
+    const ext = Math.max(...pts.flatMap(([x, y]) => [Math.abs(x), Math.abs(y)]));
+    // Sibling overlays scale so the section spans 80 units. Anything near
+    // 0.15 is the raw-metres bug; the viewBox is -90..90, so that is the
+    // ceiling.
+    expect(ext).toBeGreaterThan(20);
+    expect(ext).toBeLessThan(90);
+  });
+
+  it('the vertical axis is flipped for SVG', () => {
+    // Canonical z points up; SVG y grows downward. A tee's flange sits at the
+    // top of the section, so its extreme z must come out NEGATIVE in the path.
+    const r = resolveDrawingGeometry(resolved(sec({ shape: 'T', h: 0.3, b: 0.3, tw: 0.1, tf: 0.15 })));
+    if (!r.ok) throw new Error('setup');
+    const topZ = Math.max(...r.geometry.solids[0].map(([, z]) => z));
+    expect(topZ).toBeGreaterThan(0);
+    const pts = coords(canonicalPath(r.geometry));
+    expect(Math.min(...pts.map(([, y]) => y))).toBeLessThan(0);
+  });
+
+  it('a CHS emits two subpaths so the bore is punched out', () => {
+    const r = resolveDrawingGeometry(resolved(fromCatalogue('CHS 88.9x4')));
+    if (!r.ok) throw new Error('setup');
+    const d = canonicalPath(r.geometry);
+    expect((d.match(/M/g) ?? []).length).toBe(2);
+    const ext = Math.max(...coords(d).flatMap(([x, y]) => [Math.abs(x), Math.abs(y)]));
+    expect(ext).toBeGreaterThan(20);
+    expect(ext).toBeLessThan(90);
+  });
+
+  it('every geometry-backed family lands in the frame', () => {
+    for (const s of [
+      fromCatalogue('HEA 300'),
+      fromCatalogue('HEB 200'),
+      sec({ shape: 'L', h: 0.1, b: 0.1, t: 0.01 }),
+      sec({ shape: 'rect', b: 0.2, h: 0.4 }),
+    ]) {
+      const r = resolveDrawingGeometry(resolved(s));
+      if (!r.ok) throw new Error(`setup ${s.name} ${s.shape}`);
+      const ext = Math.max(...coords(canonicalPath(r.geometry)).flatMap(([x, y]) => [Math.abs(x), Math.abs(y)]));
+      expect(ext, `${s.name || s.shape}`).toBeGreaterThan(20);
+      // An asymmetric section is centred on its CENTROID, not its bounding
+      // box, so its far side legitimately reaches past 40 — an equal-leg
+      // angle gets to ~57. The viewBox is -90..90, which accommodates it.
+      expect(ext, `${s.name || s.shape}`).toBeLessThan(90);
+    }
+  });
+
+  it('uses the same scale convention as the sibling overlays', () => {
+    // Overlays scale by `80 / max(h, b)`. The outline must agree or the stress
+    // plot would sit on a differently sized shape. For a doubly symmetric
+    // profile the two frames coincide exactly.
+    const r = resolveDrawingGeometry(resolved(fromCatalogue('IPE 300')));
+    if (!r.ok) throw new Error('setup');
+    const pts = coords(canonicalPath(r.geometry));
+    const halfDepth = Math.max(...pts.map(([, y]) => Math.abs(y)));
+    const halfWidth = Math.max(...pts.map(([x]) => Math.abs(x)));
+    // IPE 300: 300 mm deep, 150 wide -> depth fills the 80-unit span (+/-40),
+    // width is half of that.
+    expect(halfDepth).toBeCloseTo(40, 1);
+    expect(halfWidth).toBeCloseTo(20, 1);
+  });
+});

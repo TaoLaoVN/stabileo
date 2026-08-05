@@ -85,15 +85,26 @@
   /**
    * SVG path for the canonical outline, holes included.
    *
-   * Solids and holes are emitted as separate subpaths so the browser's
-   * even-odd fill rule punches the bore out of a tube rather than painting
-   * over it. Coordinates arrive centroid-relative and in the exact
-   * discretization the numerical path used, so the outline and the stress
-   * overlay drawn on it cannot disagree.
+   * Canonical geometry arrives centroid-relative, in METRES, with z pointing
+   * up — the frame the numerical path works in. This SVG works in the scaled,
+   * y-down frame every other overlay here uses (`sc = 80 / max(h, b)`, so the
+   * section fills a ±40 box). Emitting the raw metres drew a correct outline
+   * roughly 0.3 units wide inside a ~160-unit canvas: present, sub-pixel, and
+   * invisible next to a stress plot that was scaled properly.
+   *
+   * So the same two transforms every sibling applies are applied here:
+   * multiply by `sc`, and negate z because SVG y grows downward.
+   *
+   * Solids and holes stay separate subpaths so the even-odd fill rule punches
+   * a tube's bore out rather than painting over it.
    */
   function canonicalPath(g: import('../../lib/section/drawing').DrawingGeometry): string {
+    const [yMin, zMin, yMax, zMax] = g.bbox;
+    const width = Math.max(yMax - yMin, 1e-12);
+    const height = Math.max(zMax - zMin, 1e-12);
+    const sc = 80 / Math.max(width, height);
     const ring = (poly: Array<[number, number]>) =>
-      poly.map(([y, z], i) => `${i === 0 ? 'M' : 'L'}${y} ${z}`).join(' ') + ' Z';
+      poly.map(([y, z], i) => `${i === 0 ? 'M' : 'L'}${(y * sc).toFixed(3)} ${(-z * sc).toFixed(3)}`).join(' ') + ' Z';
     return [...g.solids, ...g.holes].map(ring).join(' ');
   }
 
