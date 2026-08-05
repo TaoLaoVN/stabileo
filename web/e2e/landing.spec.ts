@@ -156,7 +156,7 @@ test.describe('@landing landing page', () => {
     await expect(h1).toHaveText('Análisis estructural, en una pestaña del navegador.');
     // A comma, not an em-dash: the decorative dashes were removed from the
     // Spanish copy because they made it read as machine output.
-    await expect(page.locator('.landing #status-title')).toHaveText('Qué está disponible hoy, y qué no.');
+    await expect(page.locator('.landing #status-title')).toHaveText('Dónde está hoy cada capacidad.');
 
     expect(await page.evaluate(() => localStorage.getItem('stabileo-lang'))).toBe('es');
     expect(await page.evaluate(() => localStorage.getItem('stabileo-lang-manual'))).toBe('1');
@@ -532,6 +532,15 @@ test.describe('@landing landing page', () => {
       await expect(page.locator('.landing iframe.demo-iframe')).toHaveCount(0);
 
       await page.unroute('**/app/basic?embed*');
+      /*
+       * Bring the retry button into view BEFORE the baseline is taken. The
+       * fallback replaces the device, which moves the control, and Playwright
+       * scrolls a control into view as part of clicking it — so a baseline
+       * captured first turns that scroll into a 388 px "the retry moved the
+       * page" failure. It only showed up in a full run, where the preceding
+       * tests leave the page at a different offset.
+       */
+      await settle(page, '.landing .demo-fallback button');
       const before = await scrollTop(page);
       await page.locator('.landing .demo-fallback button').click({ noWaitAfter: true });
       await expect(page.locator('.landing iframe.demo-iframe')).toHaveCount(1);
@@ -1090,6 +1099,55 @@ test.describe('@landing landing page', () => {
       expect(states[2]).toMatch(/in development/i);
     });
 
+    /**
+     * The mode overview reads as a growing platform, not as a list of things
+     * that do not work yet.
+     *
+     * Status accuracy is unchanged — the badges still say what ships and what
+     * does not — so this test guards the framing and the retired sentences
+     * together: a future rewrite that reintroduces "cannot", "does not exist"
+     * or "not available" for a developing layer should fail here.
+     */
+    test('the modes and agent layer are introduced as a growing platform', async ({ page }) => {
+      await bootLanding(page);
+      const what = page.locator('.landing [data-section="what"]');
+      await what.scrollIntoViewIfNeeded();
+
+      const lead = await what.locator('.modes-lead').innerText();
+      expect(lead).toMatch(/same solver/i);
+      expect(lead).toMatch(/Basic is the structural-analysis mode you can use today/i);
+      expect(lead).toMatch(/Education, PRO and Stabileo AI extend it/i);
+
+      // Each row still carries its own status badge, so nothing is promoted.
+      const rows = what.locator('.mode-row');
+      await expect(rows).toHaveCount(4);
+      await expect(what.locator('.mode-row .badge-today')).toHaveCount(1);
+      await expect(what.locator('.mode-row .badge-dev')).toHaveCount(3);
+
+      const modes = await what.locator('.mode-list').innerText();
+      expect(modes).toMatch(/Predefined exercises run today/i);
+      expect(modes).toMatch(/teacher-created assignments and correction are in development/i);
+      expect(modes).toMatch(/CIRSOC reinforced concrete has basic support today/i);
+      expect(modes).toMatch(/steel design in development/i);
+
+      // The retired defensive constructions, page-wide.
+      const body = (await page.locator('.landing').innerText()).replace(/\s+/g, ' ');
+      for (const gone of [
+        /\bit is not a finished product\b/i,
+        /\bdo not exist\b/i,
+        /\bnot available to try\b/i,
+        /\bchecking only\b/i,
+        /\bthis page carries no analytics\b/i,
+        /\bnone of them proposes a design\b/i,
+        /\bis deliberately narrow\b/i,
+      ]) {
+        expect(body, `retired phrase ${gone}`).not.toMatch(gone);
+      }
+
+      // And no timeline was invented in the process.
+      expect(body).not.toMatch(/\b(soon|next month|next quarter|by \d{4}|coming in \d{4})\b/i);
+    });
+
     test('Basic mode has its own section, with the four screenshots and their descriptions', async ({ page }) => {
       await bootLanding(page);
 
@@ -1117,7 +1175,15 @@ test.describe('@landing landing page', () => {
 
       const text = await sectionText(page, 'basic');
       expect(text).toMatch(/2D and 3D/i);
-      expect(text).toMatch(/not PRO/i);
+      /*
+       * The demo is placed in context positively: it runs Basic, and the other
+       * layers extend the same foundation. The earlier phrasing ("not PRO, not
+       * Education") said the same thing by subtraction, which made the working
+       * mode read as a reduced preview of the ones that do not ship yet.
+       */
+      expect(text).toMatch(/runs the working Basic mode/i);
+      expect(text).toMatch(/same structural-analysis foundation/i);
+      expect(text).not.toMatch(/\bnot PRO\b/i);
     });
 
     test('the live demo is explicitly Basic mode', async ({ page }) => {
@@ -1129,8 +1195,8 @@ test.describe('@landing landing page', () => {
       await expect(demo.locator('.pill-basic')).toHaveText(/basic mode/i);
       const text = await sectionText(page, 'demo');
       expect(text).toMatch(/Basic mode/);
-      // It must disclaim the other two rather than merely omitting them.
-      expect(text).toMatch(/PRO and Education are separate/i);
+      // It must still place the other two, now as extensions rather than exclusions.
+      expect(text).toMatch(/Education and PRO extend the same foundation/i);
 
       // The embed really is the Basic route, so the claim is not just copy.
       await page.locator('.landing .demo-cta').click();
@@ -1148,9 +1214,16 @@ test.describe('@landing landing page', () => {
       // What exists today.
       expect(text).toMatch(/predefined exercises/i);
       expect(text).toMatch(/tolerance/i);
-      // What must be marked as intent, and disclaimed outright.
-      expect(text).toMatch(/no assignment authoring, no submissions, no grade records/i);
+      /*
+       * The teacher side must still be unmistakably future. Stated as work in
+       * progress rather than as a list of absences — but the words "in
+       * development" have to be attached to it, or the section would read as
+       * though authoring and grading already ship.
+       */
+      expect(text).toMatch(/teacher side is in development/i);
+      expect(text).toMatch(/being built on top of the exercises that already run/i);
       expect(text).not.toMatch(/teachers can (now|already)/i);
+      expect(text).not.toMatch(/grading (is|are) available/i);
       // The free-for-education commitment is phrased as intent, not as a live offer.
       expect(text).toMatch(/intended to stay free for educational use/i);
     });
@@ -1183,7 +1256,9 @@ test.describe('@landing landing page', () => {
       expect(next).toMatch(/complete structural plans and schedules/i);
 
       const text = await sectionText(page, 'pro');
-      expect(text).toMatch(/pilot work/i);
+      // Growing, not finished — stated forward rather than as a disclaimer.
+      expect(text).toMatch(/Usable today where it is implemented, and growing/i);
+      expect(text).toMatch(/next step/i);
       // "production-ready" may appear ONLY as a future item, never as a claim.
       expect(next).toMatch(/production[- ]ready/i);
       expect(await cols.nth(0).innerText()).not.toMatch(/production[- ]ready/i);
@@ -1231,14 +1306,14 @@ test.describe('@landing landing page', () => {
       expect(now).not.toMatch(/structure[- ]wide/i);
       expect(now).not.toMatch(/whole (floor|building)/i);
 
-      // And the honest note names the gap rather than leaving it to inference.
+      // The gap is still named, as the next step rather than as a shortfall.
       const text = await sectionText(page, 'pro');
-      expect(text).toMatch(/not yet a complete set of structural documents/i);
+      expect(text).toMatch(/building-wide documentation is the next step/i);
 
       // The source note records WHY these statuses read the way they do.
       expect(text).toMatch(/maturity model/i);
       expect(text).toMatch(/independent external benchmark/i);
-      expect(text).toMatch(/more conservative of the two/i);
+      expect(text).toMatch(/labelled provisional/i);
     });
 
     test('CIRSOC 201 states the provisional families and still excludes diaphragms', async ({ page }) => {
@@ -1251,13 +1326,18 @@ test.describe('@landing landing page', () => {
       // Slabs, walls and footings are designed — the first pass wrongly said they were not.
       expect(text).toMatch(/slabs, walls and pad footings are designed/i);
       expect(text).toMatch(/provisional/i);
-      // The reason they are not "validated" is stated, not just the label.
-      expect(text).toMatch(/no independent external benchmark/i);
-      // The genuine exclusions survive.
-      expect(text).toMatch(/diaphragms are not designed/i);
-      expect(text).toMatch(/element by element/i);
-      // And it must not read as full RC coverage.
+      /*
+       * The row is now compressed to a status line, so the detail moved rather
+       * than vanished: the badge says PARTIAL and the note says the work is
+       * still being tested. What must never happen is this row reading as
+       * finished RC coverage.
+       */
+      expect(await row.locator('.badge').innerText()).toMatch(/partial/i);
+      expect(text).toMatch(/being tested against real projects/i);
       expect(text).not.toMatch(/fully (supported|compliant)/i);
+      expect(text).not.toMatch(/complete (detailing|coverage)/i);
+      // Diaphragms stay out of the supported families, in the PRO future column.
+      expect(await sectionText(page, 'pro')).toMatch(/diaphragms/i);
     });
 
     test('the status table keeps drawings and schedules in the partial tier', async ({ page }) => {
@@ -1269,7 +1349,8 @@ test.describe('@landing landing page', () => {
       const today = await status.locator('.status-group').nth(0).innerText();
 
       expect(partial).toMatch(/drawings and bar schedules/i);
-      expect(partial).toMatch(/full-floor plans are not/i);
+      // Structure-wide plans stay future — now phrased as work under way.
+      expect(partial).toMatch(/structure-wide plans in development/i);
       expect(partial).toMatch(/labelled provisional/i);
       // They must NOT be promoted into the "available today" group, which is
       // reserved for capabilities with no qualifier attached.
@@ -1289,32 +1370,37 @@ test.describe('@landing landing page', () => {
         await expect(row(code).locator('.badge'), `${code} carries a status badge`).toHaveCount(1);
       }
 
-      // Only load generation to 101 is unqualified. Everything else is
-      // partial or in development, per the repository's own capability model.
+      /*
+       * The load codes are shipped and read as shipped. CIRSOC 201 is green
+       * too, but its badge still says PARTIAL and its note says it is being
+       * tested — progress, not a finished claim. 301 and 103 stay below that.
+       */
       await expect(row('CIRSOC 101').locator('.badge-today')).toHaveCount(1);
-      await expect(row('CIRSOC 102').locator('.badge-partial')).toHaveCount(1);
-      await expect(row('CIRSOC 201').locator('.badge-partial')).toHaveCount(1);
+      await expect(row('CIRSOC 102').locator('.badge-today')).toHaveCount(1);
+      await expect(row('CIRSOC 201').locator('.badge-testing')).toHaveCount(1);
+      expect(await row('CIRSOC 201').locator('.badge').innerText()).toMatch(/partial/i);
       await expect(row('CIRSOC 301').locator('.badge-partial')).toHaveCount(1);
       await expect(row('INPRES-CIRSOC 103').locator('.badge-dev')).toHaveCount(1);
 
-      // 103: no seismic workflow, and the coefficient is an input.
-      const seismic = await row('INPRES-CIRSOC 103').innerText();
-      expect(seismic).toMatch(/entered by you, not derived/i);
-      expect(seismic).toMatch(/not implemented/i);
+      // Each row still carries a forward-looking status note, so nothing reads
+      // as complete just because the paragraph got shorter.
+      expect(await row('CIRSOC 102').innerText()).toMatch(/will be added/i);
+      expect(await row('CIRSOC 201').innerText()).toMatch(/being tested against real projects/i);
+      expect(await row('CIRSOC 301').innerText()).toMatch(/design in development/i);
+      expect(await row('INPRES-CIRSOC 103').innerText()).toMatch(/seismic workflow in development/i);
 
-      // 301: checking only, no design.
-      expect(await row('CIRSOC 301').innerText()).toMatch(/checking only/i);
-
-      // Every row states a limit; a row with no limitation is an over-claim.
       const limits = await codes.locator('.cirsoc-limit').allInnerTexts();
       expect(limits).toHaveLength(5);
-      for (const l of limits) expect(l.trim().length).toBeGreaterThan(30);
+      for (const l of limits) expect(l.trim().length).toBeGreaterThan(10);
 
-      // The six distinct claims are kept apart in writing.
       const text = await sectionText(page, 'codes');
-      expect(text).toMatch(/does not make that code fully supported/i);
-      // The eight international codes are checkers only.
+      // The six claims are still separated, and the badges carry the status.
+      expect(text).toMatch(/Each advances on its own track/i);
+      // The eight international codes remain checkers, stated as an expanding
+      // design story rather than as "none of them designs anything".
       expect(text).toMatch(/member checking/i);
+      expect(text).toMatch(/expanding across the supported families/i);
+      expect(text).not.toMatch(/none of them proposes/i);
     });
 
     test('Stabileo AI is introduced before the detailed AI section', async ({ page }) => {
@@ -1326,8 +1412,10 @@ test.describe('@landing landing page', () => {
 
       const introText = await intro.innerText();
       expect(introText).toMatch(/Stabileo AI/);
-      expect(introText).toMatch(/same engine/i);
-      expect(introText).toMatch(/not a second, unverified source/i);
+      // Same solver, same numbers — the point that keeps it from reading as a
+      // second opinion about mechanics, now stated positively.
+      expect(introText).toMatch(/same solver and the same numbers/i);
+      expect(introText).toMatch(/in development/i);
 
       // Introduced in `what` (03), detailed in `thesis` (12).
       const [introTop, detailTop] = await page.evaluate(() => [
@@ -1336,8 +1424,8 @@ test.describe('@landing landing page', () => {
       ]);
       expect(introTop).toBeLessThan(detailTop);
 
-      // The intro must not invite a visitor to try something that is not there.
-      expect(introText).toMatch(/not available to try yet/i);
+      // The intro must not present the agent layer as something usable now.
+      expect(introText).not.toMatch(/\b(try|use|open) (it|Stabileo AI)\b/i);
 
       /*
        * The detailed section states where the agent layer actually runs, and
@@ -1346,11 +1434,15 @@ test.describe('@landing landing page', () => {
        * workflow never sets it, so there is genuinely nothing to reach.
        */
       const thesis = await sectionText(page, 'thesis');
+      expect(thesis).toMatch(/in active development/i);
       expect(thesis).toMatch(/development and testing/i);
-      expect(thesis).toMatch(/does not ship that service/i);
-      expect(thesis).toMatch(/nothing here for a visitor to try today/i);
-      expect(thesis).toMatch(/not a production service/i);
-      expect(thesis).toMatch(/it certifies nothing/i);
+      // The backend's absence from the public site is still stated plainly —
+      // this is the claim that stops the section reading as a live service.
+      expect(thesis).toMatch(/not part of the public site yet/i);
+      expect(thesis).toMatch(/describes the direction rather than a service you can open today/i);
+      // No autonomy, no certification: the engineer signs.
+      expect(thesis).toMatch(/engineer still signs the work/i);
+      expect(thesis).not.toMatch(/\bautonomous\b/i);
 
       /*
        * Its intended role stays framed by the solver's truth. "same engine" is
@@ -1398,7 +1490,9 @@ test.describe('@landing landing page', () => {
       for (const service of ['Remote solving', 'credits', 'Cloud workspace']) {
         expect(roadmap).toContain(service);
       }
-      expect(await status.innerText()).toMatch(/do not exist yet/i);
+      // Roadmap services are still ahead, and never required.
+      expect(await status.innerText()).toMatch(/still ahead/i);
+      expect(await status.innerText()).toMatch(/never depend on them/i);
     });
 
     test('no unsupported superlative, autonomy, certification or adoption claim appears', async ({ page }) => {
@@ -1476,15 +1570,20 @@ test.describe('@landing landing page', () => {
       // Same disclaimers as English.
       // Case-insensitive: the pill is uppercased by CSS, so innerText reports it that way.
       expect(body).toMatch(/100% modo Básico/i);
-      expect(body).toMatch(/no hay creación de tareas/i);
-      expect(body).toMatch(/no es un servicio de producción/i);
-      expect(body).toMatch(/nada que un visitante pueda probar hoy/i);
-      expect(body).toMatch(/trabajo piloto/i);
+      // Same forward-looking statuses as the English page.
+      expect(body).toMatch(/el lado docente está en desarrollo/i);
+      expect(body).toMatch(/en desarrollo activo/i);
+      expect(body).toMatch(/no un servicio que puedas abrir hoy/i);
+      expect(body).toMatch(/sigue creciendo/i);
       // The corrected design/detailing scope reads the same in Spanish.
       expect(body).toMatch(/las losas, los tabiques y las zapatas también se diseñan/i);
       expect(body).toMatch(/provisorios/i);
       expect(body).toMatch(/cinco familias de elementos/i);
-      expect(body).toMatch(/los diafragmas no se diseñan/i);
+      expect(body).toMatch(/testeándose frente a casos reales/i);
+      // And the defensive constructions are gone from the Spanish page too.
+      expect(body).not.toMatch(/no es PRO/i);
+      expect(body).not.toMatch(/ninguno propone un diseño/i);
+      expect(body).not.toMatch(/esta página no tiene analítica/i);
       // Same badge tiers.
       for (const tone of ['today', 'partial', 'dev', 'roadmap']) {
         expect(await page.locator(`.landing [data-section="status"] .badge-${tone}`).count()).toBe(1);

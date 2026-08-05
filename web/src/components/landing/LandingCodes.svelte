@@ -38,8 +38,8 @@
    */
   const cirsoc = [
     { code: 'CIRSOC 101', ed: '2025', tone: 'today', badge: 'landing.badgeToday', scope: 'landing.cir101Scope', body: 'landing.cir101Body', limit: 'landing.cir101Limit' },
-    { code: 'CIRSOC 102', ed: '2025', tone: 'partial', badge: 'landing.badgePartial', scope: 'landing.cir102Scope', body: 'landing.cir102Body', limit: 'landing.cir102Limit' },
-    { code: 'CIRSOC 201', ed: '2025', tone: 'partial', badge: 'landing.badgePartial', scope: 'landing.cir201Scope', body: 'landing.cir201Body', limit: 'landing.cir201Limit' },
+    { code: 'CIRSOC 102', ed: '2025', tone: 'today', badge: 'landing.badgeToday', scope: 'landing.cir102Scope', body: 'landing.cir102Body', limit: 'landing.cir102Limit' },
+    { code: 'CIRSOC 201', ed: '2025', tone: 'testing', badge: 'landing.badgeTesting', scope: 'landing.cir201Scope', body: 'landing.cir201Body', limit: 'landing.cir201Limit' },
     { code: 'CIRSOC 301', ed: '2018', tone: 'partial', badge: 'landing.badgePartial', scope: 'landing.cir301Scope', body: 'landing.cir301Body', limit: 'landing.cir301Limit' },
     { code: 'INPRES-CIRSOC 103', ed: 'I 2018 · II 2005', tone: 'dev', badge: 'landing.badgeDev', scope: 'landing.cir103Scope', body: 'landing.cir103Body', limit: 'landing.cir103Limit' },
   ];

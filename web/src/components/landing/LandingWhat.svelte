@@ -51,6 +51,7 @@
 
     <div class="modes" aria-labelledby="modes-title">
       <h3 id="modes-title" class="modes-title">{t('landing.modesTitle')}</h3>
+      <p class="modes-lead">{t('landing.modesLead')}</p>
       <ul class="mode-list">
         {#each modes as m}
           <li class="mode-row" data-mode={m.id}>

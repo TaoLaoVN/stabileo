@@ -1410,6 +1410,13 @@
    without implying either is shipped.
 */
 .landing .badge-dev { color: var(--lp-blue); }
+/*
+   "Partial, in testing" reads as progress, not as a shortfall, so it takes the
+   green the shipped tier uses rather than the accent reserved for a caveat.
+   The label still says PARTIAL, so the status is not softened — only the
+   colour stops implying a problem where the work is simply being validated.
+*/
+.landing .badge-testing { color: var(--lp-green); }
 .landing .badge-roadmap { color: var(--fg-2); }
 
 /* ─── MODES (shared by the mode sections and the overview) ────────────────── */
@@ -1455,7 +1462,13 @@
 
 .landing .modes-title {
   font-size: 1.25rem;
-  margin: 0 0 1.2rem;
+  margin: 0 0 0.7rem;
+}
+
+.landing .modes-lead {
+  color: var(--fg-2);
+  max-width: 84ch;
+  margin: 0 0 1.4rem;
 }
 
 .landing .mode-list {

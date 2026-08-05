@@ -33,7 +33,7 @@
    * edited here — that is the owning workstream's call.
    */
   const now = ['proNow1', 'proNow2', 'proNow3', 'proNow4', 'proNow5', 'proNow6', 'proNow7', 'proNow8'];
-  const next = ['proNext1', 'proNext2', 'proNext3', 'proNext4', 'proNext5', 'proNext6'];
+  const next = ['proNext1', 'proNext2', 'proNext3', 'proNext4', 'proNext5', 'proNext6', 'proNext7'];
 </script>
 
 <section class="sec sec--paper pro reveal" data-section="pro" id="pro" aria-labelledby="pro-title">
