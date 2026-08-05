@@ -514,6 +514,7 @@ export function checkSlabJointPunching(input: SlabPunchingInput): SlabPunchingRe
 
   const contributions: SlabPunchingContribution[] = [];
   const failedResidual: SlabPunchingContribution[] = [];
+  const reversedUplift: SlabPunchingContribution[] = [];
 
   // Sorted so the governing pick and the reported name cannot depend on collection order.
   const ordered = [...joint.forces].sort((a, b) => a.combinationId - b.combinationId);
@@ -521,7 +522,8 @@ export function checkSlabJointPunching(input: SlabPunchingInput): SlabPunchingRe
   for (const f of ordered) {
     const below = f.axialBelow ?? 0;
     const above = f.axialAbove ?? 0;
-    const axialStep = Math.abs(below - above);
+    const signedStep = below - above;
+    const axialStep = Math.abs(signedStep);
     const deducted = f.directlyDelivered + insideLoad;
     const vuRaw = axialStep - deducted;
 
@@ -543,6 +545,17 @@ export function checkSlabJointPunching(input: SlabPunchingInput): SlabPunchingRe
       residualDenominator: denominator,
     };
 
+    if (f.axialBelow != null && f.axialAbove != null && signedStep < -FORCE_FLOOR) {
+      // UPLIFT at the joint: the column above pulls up more than the column below
+      // pushes down. Punching then acts in the REVERSE direction — a different
+      // mechanism, with the tension face inverted, that this check does not
+      // verify. |below − above| would silently mask the direction and certify a
+      // downward check on an upward failure mode. (A MISSING leg is not uplift:
+      // at a roof or bottom-storey joint the absent side simply carries nothing.)
+      reversedUplift.push(contribution);
+      continue;
+    }
+
     if (Math.abs(residual) / denominator > RESIDUAL_TOL) {
       // V_u would have been a negative number floored at zero: a passing check produced by
       // arithmetic. Kept, so the report can name the combination and the shortfall, but never
@@ -554,6 +567,18 @@ export function checkSlabJointPunching(input: SlabPunchingInput): SlabPunchingRe
   }
 
   if (contributions.length === 0) {
+    if (reversedUplift.length > 0) {
+      const worst = reversedUplift.reduce((m, c) =>
+        (c.axialStep > m.axialStep ? c : m), reversedUplift[0]);
+      const result = unsupportedResult(input, [
+        msg('detailing.slabPunching.upliftNotEstablished', {
+          panel: panelId, node: joint.nodeId, column: joint.columnElementId,
+          combination: worst.combinationName,
+          step: +worst.axialStep.toFixed(2),
+        }),
+      ]);
+      return { ...result, contributions: [...reversedUplift, ...failedResidual], assumptions };
+    }
     const worst = failedResidual.reduce<SlabPunchingContribution | null>(
       (m, c) => (m === null || Math.abs(c.equilibriumResidual) > Math.abs(m.equilibriumResidual)
         ? c : m), null);
@@ -569,6 +594,14 @@ export function checkSlabJointPunching(input: SlabPunchingInput): SlabPunchingRe
     // The failed combinations travel with the result: a residual nobody can see is a
     // limitation the reader is asked to take on trust.
     return { ...result, contributions: failedResidual, assumptions };
+  }
+
+  if (reversedUplift.length > 0) {
+    unsupported.push(msg('detailing.slabPunching.someCombinationsUplift', {
+      panel: panelId, node: joint.nodeId,
+      count: reversedUplift.length, total: ordered.length,
+      combinations: reversedUplift.map((c) => c.combinationName).join(', '),
+    }));
   }
 
   if (failedResidual.length > 0) {

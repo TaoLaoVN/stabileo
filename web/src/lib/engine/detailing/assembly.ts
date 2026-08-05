@@ -66,6 +66,19 @@ export function reviewRank(s: ReviewState): number {
   return REVIEW_STATES.indexOf(s);
 }
 
+/**
+ * The revision a regeneration produces, from the one it supersedes.
+ *
+ * One line, and it is a shared function because it now has TWO callers. `buildFloorAssembly`
+ * stamps the assembly with it, and the footing pass stamps each physical mat bar's provenance
+ * with it before the assembly exists — so a bar can say which revision it belongs to. Two
+ * copies of `previous + 1` in two modules is exactly how a bar comes to claim a revision one
+ * off from the assembly holding it.
+ */
+export function nextDetailingRevision(previous?: number): number {
+  return (previous ?? 0) + 1;
+}
+
 /** A human decision, recorded. Never produced by the app on its own. */
 export interface ReviewRecord {
   /** Free text: the person who reviewed it. The app does not authenticate this. */

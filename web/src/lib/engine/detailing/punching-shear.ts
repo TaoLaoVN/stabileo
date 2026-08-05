@@ -118,17 +118,24 @@ export function criticalSection(
   const hy = h + d;
 
   let bo: number;
+  let enclosedArea: number;
   switch (position) {
     case 'interior':
       bo = 2 * (bx + hy);
+      enclosedArea = bx * hy;
       break;
     case 'edge':
-      // Three sides: the perimeter is truncated at the free edge.
+      // Three sides: the perimeter is truncated at the free edge. The load standing
+      // INSIDE the perimeter is truncated with it — the d/2 strip past the free edge
+      // stands on air, and deducting it would under-state V_u (unconservative).
       bo = 2 * bx + hy;
+      enclosedArea = (bx - d / 2) * hy;
       notes.push('Columna de borde: el perímetro crítico se trunca en el borde libre (tres lados).');
       break;
     case 'corner':
       bo = bx + hy;
+      // Two free edges: the enclosed area loses the d/2 strip on BOTH sides.
+      enclosedArea = (bx - d / 2) * (hy - d / 2);
       notes.push('Columna de esquina: el perímetro crítico se trunca en dos bordes libres (dos lados).');
       break;
   }
@@ -140,7 +147,7 @@ export function criticalSection(
     bo,
     beta: short > 0 ? long / short : 1,
     d,
-    enclosedArea: bx * hy,
+    enclosedArea,
     refs: [R_CRIT],
     notes,
   };
@@ -174,6 +181,20 @@ export interface PunchingDemandInput {
   unbalancedMomentX?: number;
   /** Step in column end moment about y across the connection, kN·m. */
   unbalancedMomentY?: number;
+  /**
+   * Set when the caller KNOWS an unbalanced moment reaches this connection and could not
+   * form it.
+   *
+   * The distinction between this and `unbalancedMomentX = 0` is the whole point. Zero is a
+   * measurement: nothing is transferred, and direct shear is the entire demand. An absent
+   * value that the caller never computed is not a measurement, and treating the two the same
+   * is how a footing with an applied moment came to be reported as a direct-shear pass — the
+   * refusal below was already written and simply never reached, because nothing upstream
+   * supplied the moment it tests.
+   *
+   * A connection in this state is UNSUPPORTED, with this string as the reason.
+   */
+  momentTransferNotFormed?: string;
 }
 
 export type DemandOutcome = 'DERIVED' | 'UNAVAILABLE';
@@ -302,6 +323,47 @@ export function punchingResistance(
 
 export type PunchingStatus = 'OK' | 'FAIL' | 'UNSUPPORTED';
 
+/**
+ * What happened to the unbalanced moment at this connection.
+ *
+ * Four states, and they are four because they call for four different readings. The two
+ * UNSUPPORTED members are named so a consumer can distinguish "the moment is there and this
+ * app cannot check what it does" from "nobody formed the moment" — the first is a capability
+ * gap with a known remedy (§8.4.4.2), the second is a wiring gap, and reporting them as one
+ * string would send a reader to the wrong one half the time.
+ */
+export type MomentTransferStatus =
+  /** Nothing is transferred. The direct-shear check IS the punching check. */
+  | 'NONE'
+  /**
+   * A moment is transferred and it is below the stated significance threshold.
+   *
+   * A tolerance, named as one: `momentTolerance · V_u · d`. It exists because an exactly-zero
+   * moment is a modelling idealisation and a check that refused at 1e-12 kN·m would refuse
+   * every real footing. It is NOT a claim that §8.4.4.2 was satisfied.
+   */
+  | 'NEGLIGIBLE'
+  /** Transferred, significant, and §8.4.4.2 is not implemented. */
+  | 'UNSUPPORTED_MOMENT_TRANSFER_NOT_EVALUATED'
+  /** The caller could not form the moment at all — see `momentTransferNotFormed`. */
+  | 'UNSUPPORTED_MOMENT_NOT_FORMED';
+
+export interface PunchingMomentTransfer {
+  status: MomentTransferStatus;
+  /** Components about the two plan axes, kN·m, magnitudes. */
+  MscX: number;
+  MscY: number;
+  /** Resultant magnitude `√(Msc_x² + Msc_y²)`, kN·m. */
+  Msc: number;
+  /** The significance threshold `tol · V_u · d` this was compared against, kN·m. */
+  threshold: number;
+  /** True when `Msc` exceeded `threshold`. */
+  significant: boolean;
+  /** Why the moment could not be formed, when that is the status. */
+  notFormedReason?: string;
+  refs: ClauseRef[];
+}
+
 export interface PunchingCheck {
   status: PunchingStatus;
   /** Applied shear stress v_u, MPa. */
@@ -313,12 +375,23 @@ export interface PunchingCheck {
   demand: PunchingDemand;
   resistance: PunchingResistance | null;
   critical: CriticalSection;
+  /**
+   * The unbalanced moment, and what was done about it.
+   *
+   * Always present, including when nothing is transferred, so a consumer never has to read
+   * absence as zero. `status` here is the thing that decides whether `status` above may be OK.
+   */
+  momentTransfer: PunchingMomentTransfer;
   /** Full memo lines for the certificate. */
   memo: string[];
   refs: ClauseRef[];
   /** Present when status is UNSUPPORTED. */
   unsupportedReason?: string;
 }
+
+/** §8.4.4.2 — the eccentric-shear moment transfer this module does not implement. */
+const R_MOMENT_TRANSFER = clause('cirsoc-201', '2025', '8.4.4.2',
+  'transferencia de momento por corte excéntrico');
 
 /**
  * Direct two-way shear check, without moment transfer.
@@ -328,6 +401,19 @@ export interface PunchingCheck {
  * approximately right would produce a check that passes connections that fail. When an
  * unbalanced moment is present the result is downgraded to UNSUPPORTED rather than
  * reported as a direct-shear pass.
+ *
+ * ── The refusal that was never reached ─────────────────────────
+ *
+ * That downgrade has been written since this module was first committed, and until now no
+ * caller could trigger it. `checkFooting` passed a demand carrying `supportReaction` and
+ * `loadInsidePerimeter` and NOTHING about the moment, so `M_sc` was `hypot(0, 0)` for every
+ * footing in the project — including a footing designed for a 125 kN·m factored moment, whose
+ * flexural steel was sized for that moment three functions away. The check was honest about
+ * what it does; the wiring made it moot.
+ *
+ * So the moment is now a REQUIRED part of the conversation rather than an optional one: a
+ * caller that does not know the moment says so with `momentTransferNotFormed`, and that is
+ * also UNSUPPORTED. There is no longer an input under which an unchecked moment reads as zero.
  */
 export function checkPunchingShear(opts: {
   fc: number;
@@ -345,12 +431,28 @@ export function checkPunchingShear(opts: {
   const critical = criticalSection(opts.columnB, opts.columnH, opts.d, opts.position, opts.shape);
   const demand = derivePunchingDemand(opts.demand, critical);
   const memo: string[] = [...critical.notes];
+  const mscX = Math.abs(opts.demand.unbalancedMomentX ?? 0);
+  const mscY = Math.abs(opts.demand.unbalancedMomentY ?? 0);
+  const notFormed = opts.demand.momentTransferNotFormed;
 
   if (demand.outcome === 'UNAVAILABLE') {
     return {
       status: 'UNSUPPORTED',
       vu: 0, phiVc: 0, utilization: 0,
       demand, resistance: null, critical,
+      // With no transferred force there is no `V_u · d` to measure a moment against, so the
+      // moment is reported as unformed rather than as zero — the force is what is missing,
+      // and inventing a threshold of zero would make any moment look significant for the
+      // wrong reason.
+      momentTransfer: {
+        status: 'UNSUPPORTED_MOMENT_NOT_FORMED',
+        MscX: mscX, MscY: mscY, Msc: Math.hypot(mscX, mscY),
+        threshold: 0, significant: false,
+        notFormedReason: notFormed
+          ?? 'No hay fuerza transferida, de modo que no hay demanda contra la cual medir el ' +
+             'momento no balanceado.',
+        refs: [R_MOMENT_TRANSFER],
+      },
       memo: [...memo, demand.unavailableReason ?? ''],
       refs: [R_CRIT],
       unsupportedReason: demand.unavailableReason,
@@ -380,19 +482,55 @@ export function checkPunchingShear(opts: {
 
   // Moment transfer: refuse rather than approximate.
   const tol = opts.momentTolerance ?? 0.02;
-  const momentSignificant = demand.Msc > tol * Math.max(demand.Vu * opts.d, 1e-9);
+  const threshold = tol * Math.max(demand.Vu * opts.d, 1e-9);
+  const momentSignificant = demand.Msc > threshold;
+
+  /**
+   * The caller could not form the moment. That is UNSUPPORTED regardless of the magnitude
+   * it happened to pass, and it is tested BEFORE significance: a caller that says "there is
+   * a moment here and I cannot form it" has not given a number for the threshold to judge.
+   */
+  if (notFormed !== undefined) {
+    return {
+      status: 'UNSUPPORTED',
+      vu, phiVc, utilization,
+      demand, resistance, critical,
+      momentTransfer: {
+        status: 'UNSUPPORTED_MOMENT_NOT_FORMED',
+        MscX: mscX, MscY: mscY, Msc: demand.Msc,
+        threshold, significant: momentSignificant,
+        notFormedReason: notFormed,
+        refs: [R_MOMENT_TRANSFER],
+      },
+      memo: [...memo,
+        `El momento no balanceado transferido al nudo no pudo plantearse: ${notFormed} ` +
+        'Verificar sólo el corte directo daría por aprobado un nudo cuyo momento nadie ' +
+        'evaluó. Punzonado NO VERIFICADO en este nudo.'],
+      refs: [...critical.refs, ...resistance.refs, R_PHI, R_MOMENT_TRANSFER],
+      unsupportedReason:
+        `No se pudo plantear la transferencia de momento no balanceado: ${notFormed}`,
+    };
+  }
+
   if (momentSignificant) {
     return {
       status: 'UNSUPPORTED',
       vu, phiVc, utilization,
       demand, resistance, critical,
+      momentTransfer: {
+        status: 'UNSUPPORTED_MOMENT_TRANSFER_NOT_EVALUATED',
+        MscX: mscX, MscY: mscY, Msc: demand.Msc,
+        threshold, significant: true,
+        refs: [R_MOMENT_TRANSFER],
+      },
       memo: [...memo,
-        `Momento no balanceado Msc = ${demand.Msc.toFixed(1)} kN·m transferido al nudo. ` +
+        `Momento no balanceado Msc = ${demand.Msc.toFixed(1)} kN·m transferido al nudo ` +
+        `(componentes ${mscX.toFixed(1)} y ${mscY.toFixed(1)} kN·m), contra un umbral de ` +
+        `significancia de ${threshold.toFixed(1)} kN·m. ` +
         'La transferencia de momento por corte excéntrico (artículo 8.4.4.2) no está ' +
         'implementada, y verificar sólo el corte directo daría por aprobado un nudo que ' +
         'puede no serlo. Punzonado NO VERIFICADO en este nudo.'],
-      refs: [...critical.refs, ...resistance.refs, R_PHI,
-        clause('cirsoc-201', '2025', '8.4.4.2', 'transferencia de momento por corte excéntrico')],
+      refs: [...critical.refs, ...resistance.refs, R_PHI, R_MOMENT_TRANSFER],
       unsupportedReason:
         'Transferencia de momento no balanceado no implementada (artículo 8.4.4.2).',
     };
@@ -403,11 +541,25 @@ export function checkPunchingShear(opts: {
       'Nota: no se descontó la carga dentro del perímetro crítico, por lo que la ' +
       'verificación es conservadora.');
   }
+  if (demand.Msc > 0) {
+    // A moment below the threshold is still a moment, and the tolerance that let it past is
+    // named. Silence here would present a tolerance as an exact zero.
+    memo.push(
+      `Momento no balanceado Msc = ${demand.Msc.toFixed(3)} kN·m, por debajo del umbral de ` +
+      `significancia ${threshold.toFixed(3)} kN·m (${(tol * 100).toFixed(0)} % de Vu·d): ` +
+      'gobierna el corte directo. No es una verificación del artículo 8.4.4.2.');
+  }
 
   return {
     status: utilization <= 1.0 ? 'OK' : 'FAIL',
     vu, phiVc, utilization,
     demand, resistance, critical,
+    momentTransfer: {
+      status: demand.Msc > 0 ? 'NEGLIGIBLE' : 'NONE',
+      MscX: mscX, MscY: mscY, Msc: demand.Msc,
+      threshold, significant: false,
+      refs: demand.Msc > 0 ? [R_MOMENT_TRANSFER] : [],
+    },
     memo,
     refs: [...critical.refs, ...resistance.refs, R_PHI],
   };

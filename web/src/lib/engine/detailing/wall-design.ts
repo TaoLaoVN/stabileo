@@ -136,7 +136,9 @@ export function checkWallInPlaneShear(opts: {
   // Vc for a wall, the simple lower-bound form: 0,17 λ √f'c A_cv.
   const vc = 0.17 * lambda * root * acv * 1000;
   const vs = opts.rhoT * opts.fy * acv * 1000;
-  const vnLimit = 0.83 * root * acv * 1000;
+  // §11.5.4.2: Vn is capped at 0,66·√f'c·Acv. (0,83 was the CIRSOC 201-2005
+  // value, reduced in the 2025 edition because Acv grew from h·d to h·ℓw.)
+  const vnLimit = 0.66 * root * acv * 1000;
   const vn = Math.min(vc + vs, vnLimit);
   const phiVn = PHI_WALL_SHEAR * vn;
   const atLimit = vc + vs >= vnLimit - 1e-9;
@@ -148,16 +150,16 @@ export function checkWallInPlaneShear(opts: {
     atLimit,
     memo:
       `Acv = ${opts.length.toFixed(2)} × ${opts.thickness.toFixed(3)} = ${acv.toFixed(3)} m². ` +
-      `Vn = mín(Vc + Vs, 0,83√f´c·Acv) = mín(${((vc + vs) / 1).toFixed(0)}; ` +
+      `Vn = mín(Vc + Vs, 0,66√f´c·Acv) = mín(${((vc + vs) / 1).toFixed(0)}; ` +
       `${vnLimit.toFixed(0)}) = ${vn.toFixed(0)} kN; φVn = ${phiVn.toFixed(0)} kN contra ` +
       `Vu = ${opts.vu.toFixed(0)} kN.` +
       (atLimit
-        ? ' La sección está en el techo de 11.5.4.6: por encima de ese valor el tabique ' +
+        ? ' La sección está en el techo de 11.5.4.2: por encima de ese valor el tabique ' +
           'falla por aplastamiento del alma y agregar armadura horizontal no ayuda.'
         : ''),
     refs: [
       clause('cirsoc-201', opts.edition, '11.5.4', 'esfuerzo de corte en el plano del tabique'),
-      clause('cirsoc-201', opts.edition, '11.5.4.6', 'límite superior de Vn'),
+      clause('cirsoc-201', opts.edition, '11.5.4.2', 'límite superior de Vn'),
     ],
   };
 }

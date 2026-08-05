@@ -34,12 +34,13 @@
  */
 import { describe, it, expect } from 'vitest';
 import { createHash } from 'node:crypto';
-import { existsSync, readFileSync, writeFileSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { buildFootingCadHandoff } from '../../store/rc-cad-export';
 import { validateRcCadHandoff } from '../rc-cad-handoff-validate';
 import { rcCadHandoffFilename } from '../rc-cad-handoff';
 import type { RcCadHandoffV1 } from '../rc-cad-handoff-types';
+import { dispatchHandoffVersion } from '../rc-cad-handoff-v2-types';
 import { runProductionChain, fixtureText, keyTranslate } from './rc-cad-chain';
 
 const GOLDEN = fileURLToPath(
@@ -54,22 +55,44 @@ const REPORTED = {
 
 const sha256 = (s: string) => createHash('sha256').update(s, 'utf8').digest('hex');
 
-describe('the golden RcCadHandoffV1 manifest', () => {
-  it('the production chain reproduces the committed bytes exactly', async () => {
+describe('the frozen RcCadHandoffV1 manifest', () => {
+  /**
+   * FROZEN, and no longer rebuilt from the live chain.
+   *
+   * V1 declares two reinforcement families and the live chain now produces five: PR18 made the
+   * footing's bottom mat physical steel, so the current assembly is not a V1 subject and V1's
+   * builder refuses it by name — `INPUT_NOT_V1_COMPATIBLE`. Regenerating this golden is therefore
+   * impossible, which is precisely what "frozen" has to mean for a shipped interchange contract:
+   * the bytes are the artifact, and their regression is a CONSUMER-side one.
+   *
+   * So these bars are still parsed, dispatched, schema-validated and semantically validated —
+   * everything a consumer with an old V1 document on disk does — and nothing rebuilds them. The
+   * live chain's coverage moved to `rc-cad-handoff-v2-golden.test.ts`.
+   */
+  it('is committed, unchanged, and still refused by the live V1 builder', async () => {
+    expect(existsSync(GOLDEN), 'the golden manifest must be committed').toBe(true);
+
+    // The live chain no longer produces a V1 subject, and V1 says so rather than describing mat
+    // bars as column dowels or dropping them. This is the assertion that makes the freeze real:
+    // if V1 ever silently accepted this input again, the refusal would be gone and so would the
+    // guarantee that a V1 document means what V1 says it means.
     await runProductionChain();
     const out = buildFootingCadHandoff(1, keyTranslate);
-    expect(out.ok, 'the export must succeed').toBe(true);
-    if (!out.ok) return;
-
-    if (process.env.WRITE_MANIFEST) writeFileSync(GOLDEN, out.json, 'utf8');
-    expect(existsSync(GOLDEN), 'the golden manifest must be committed').toBe(true);
-    expect(out.json, 'produced manifest vs committed golden').toBe(readFileSync(GOLDEN, 'utf8'));
-
-    // A first export in a clean process. If this number moves, the counter state moved with it,
-    // and the golden would no longer be a sample anyone could reproduce.
-    expect(out.handoff.revisions.demand).toBe(2);
-    expect(out.filename).toBe('rc-cad-handoff-Z1-det3-dem2.json');
+    expect(out.ok, 'V1 must refuse the coordinated assembly').toBe(false);
+    if (out.ok) return;
+    expect(out.refusals.map((r) => r.code)).toContain('INPUT_NOT_V1_COMPATIBLE');
+    const refusal = out.refusals.find((r) => r.code === 'INPUT_NOT_V1_COMPATIBLE')!;
+    expect(refusal.messageKey).toBe('footing.cad.refusal.incompatibleWithV1');
+    // Named families, so the remedy is obvious: export V2.
+    expect(String(refusal.params!.families)).toBe(
+      'footingBottomMatX, footingBottomMatY, starterCrosstie');
+    expect(refusal.params!.bars).toBe(32);
   }, 180_000);
+
+  it('dispatches as V1, so an old document on disk still reaches the V1 reader', () => {
+    const golden = JSON.parse(readFileSync(GOLDEN, 'utf8'));
+    expect(dispatchHandoffVersion(golden)).toEqual({ ok: true, version: 1 });
+  });
 
   it('the committed golden is valid on both layers', () => {
     const golden = JSON.parse(readFileSync(GOLDEN, 'utf8')) as RcCadHandoffV1;

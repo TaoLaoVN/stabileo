@@ -10,14 +10,14 @@ import { describe, it, expect, beforeEach } from 'vitest';
 import { modelStore } from '../model.svelte';
 import { detailingStore } from '../detailing.svelte';
 import { verificationStore } from '../verification.svelte';
-import { buildFootingCadHandoff, assemblyForFooting } from '../rc-cad-export';
+import { buildFootingCadHandoffV2, assemblyForFooting } from '../rc-cad-export';
 import { runProductionChain, keyTranslate } from '../../export/__tests__/rc-cad-chain';
 
 const FOOTING_ID = 1;
 
 /** The refusal codes from an attempt that must fail. */
 function refuse(footingId = FOOTING_ID): string[] {
-  const out = buildFootingCadHandoff(footingId, keyTranslate);
+  const out = buildFootingCadHandoffV2(footingId, keyTranslate);
   expect(out.ok, 'the export was expected to refuse').toBe(false);
   return out.ok ? [] : out.refusals.map((r) => r.code);
 }
@@ -58,7 +58,7 @@ describe('a stale assembly', () => {
   it('refuses when the bars were generated against demands that have since moved', async () => {
     await runProductionChain();
     // Sanity: it exports before the demand moves.
-    expect(buildFootingCadHandoff(FOOTING_ID, keyTranslate).ok).toBe(true);
+    expect(buildFootingCadHandoffV2(FOOTING_ID, keyTranslate).ok).toBe(true);
 
     // Move the demand revision the way a real regulation change does. The assembly and its bars
     // are untouched, which is exactly the dangerous state: it still looks complete.
@@ -73,7 +73,7 @@ describe('a stale assembly', () => {
     await runProductionChain();
     const assembly = assemblyForFooting(FOOTING_ID, modelStore.model.detailing?.assemblies ?? [])!;
     verificationStore.invalidateForCodeChange();
-    const out = buildFootingCadHandoff(FOOTING_ID, keyTranslate);
+    const out = buildFootingCadHandoffV2(FOOTING_ID, keyTranslate);
     expect(out.ok).toBe(false);
     if (out.ok) return;
     expect(out.refusals[0].params).toEqual({
@@ -154,10 +154,10 @@ describe('data that cannot determine the connection', () => {
 describe('a successful export', () => {
   it('reports the filename and the byte length of what it wrote', async () => {
     await runProductionChain();
-    const out = buildFootingCadHandoff(FOOTING_ID, keyTranslate);
+    const out = buildFootingCadHandoffV2(FOOTING_ID, keyTranslate);
     expect(out.ok).toBe(true);
     if (!out.ok) return;
-    expect(out.filename).toMatch(/^rc-cad-handoff-Z1-det\d+-dem\d+\.json$/);
+    expect(out.filename).toMatch(/^rc-cad-handoff-v2-Z1-det\d+-dem\d+\.json$/);
     // Bytes, not characters: the reported size must match the file on disk.
     expect(out.byteLength).toBe(new TextEncoder().encode(out.json).length);
     expect(JSON.parse(out.json)).toEqual(JSON.parse(JSON.stringify(out.handoff)));

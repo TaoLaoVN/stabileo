@@ -36,6 +36,12 @@ import {
   type CadSourceColumn, type CadTranslate, type RcCadHandoffRefusal,
 } from '../export/rc-cad-handoff';
 import { validateRcCadHandoff } from '../export/rc-cad-handoff-validate';
+import {
+  buildRcCadHandoffV2, rcCadHandoffV2Filename, serializeRcCadHandoffV2,
+} from '../export/rc-cad-handoff-v2';
+import { validateRcCadHandoffV2 } from '../export/rc-cad-handoff-v2-validate';
+import type { RcCadHandoffV2 } from '../export/rc-cad-handoff-v2-types';
+import type { RcCadHandoffSource } from '../export/rc-cad-handoff';
 import type { CadNote, RcCadHandoffV1 } from '../export/rc-cad-handoff-types';
 
 export interface RcCadExportSuccess {
@@ -54,6 +60,22 @@ export interface RcCadExportFailure {
 }
 
 export type RcCadExportResult = RcCadExportSuccess | RcCadExportFailure;
+
+export interface RcCadExportV2Success {
+  ok: true;
+  handoff: RcCadHandoffV2;
+  json: string;
+  filename: string;
+  byteLength: number;
+}
+
+/**
+ * The production result type.
+ *
+ * `RcCadExportResult` stays bound to V1 so the historical path keeps its exact type; a union of
+ * the two documents would push a version check into every consumer of either.
+ */
+export type RcCadExportV2Result = RcCadExportV2Success | RcCadExportFailure;
 
 const fail = (
   code: string, messageKey: string, params?: Record<string, unknown>,
@@ -149,9 +171,16 @@ function productionNotes(
  * Nothing is written to disk here — the caller decides whether to offer the download, so a
  * test can assert on the bytes without a browser.
  */
-export function buildFootingCadHandoff(
+/**
+ * Everything both builders need, gathered once.
+ *
+ * Extracted when V2 arrived. The alternative was a second copy of ten prerequisite gates and the
+ * source literal, and the gates are precisely the part that must not drift: a V2 export that
+ * skipped the staleness check or the verifier check would publish exactly what V1 refuses to.
+ */
+function collectCadSource(
   footingId: number, translate: CadTranslate,
-): RcCadExportResult {
+): { ok: true; source: RcCadHandoffSource } | RcCadExportFailure {
   const f = modelStore.model.footings.get(footingId);
   if (!f) return fail('FOOTING_NOT_FOUND', 'footing.cad.refusal.footingNotFound', { id: footingId });
 
@@ -194,7 +223,7 @@ export function buildFootingCadHandoff(
     (r) => r.family === 'footing' && r.ownerId === `F${f.id}`);
   const aggregate = detailingStore.aggregate;
 
-  const result = buildRcCadHandoff({
+  const source: RcCadHandoffSource = {
     footing: f,
     node: { x: node.x, y: node.y, ...(node.z !== undefined ? { z: node.z } : {}) },
     column: collectColumn(f),
@@ -228,23 +257,43 @@ export function buildFootingCadHandoff(
       .filter((u) => (u.scope.elementIds ?? []).includes(f.columnElementId ?? -1)
         || (u.scope.elementIds ?? []).length === 0)
       .map((u) => ({ messageKey: u.key, text: u.message })),
-  }, translate);
+  };
+  return { ok: true, source };
+}
 
+/** A validation failure, shaped the same way for either version. */
+const invalidManifest = (
+  schema: Array<{ path: string; message: string }>,
+  semantic: Array<{ rule: string; message: string }>,
+): RcCadExportFailure => ({
+  ok: false,
+  refusals: [{ code: 'INVALID_MANIFEST', messageKey: 'footing.cad.refusal.invalid', params: {
+    schema: schema.length, semantic: semantic.length,
+  } }],
+  invalid: {
+    schema: schema.map((v) => `${v.path}: ${v.message}`),
+    semantic: semantic.map((v) => `${v.rule}: ${v.message}`),
+  },
+});
+
+/**
+ * Build a V1 document. HISTORICAL path.
+ *
+ * Retained so V1 stays buildable and its refusals stay reachable, not because production uses it:
+ * V1 declares two families and the live chain now produces five, so this refuses live input rather
+ * than describing mat bars as column dowels. `buildFootingCadHandoffV2` is the production builder.
+ */
+export function buildFootingCadHandoff(
+  footingId: number, translate: CadTranslate,
+): RcCadExportResult {
+  const collected = collectCadSource(footingId, translate);
+  if (!collected.ok) return collected;
+
+  const result = buildRcCadHandoff(collected.source, translate);
   if (!result.ok) return { ok: false, refusals: result.refusals };
 
   const validation = validateRcCadHandoff(result.handoff);
-  if (!validation.ok) {
-    return {
-      ok: false,
-      refusals: [{ code: 'INVALID_MANIFEST', messageKey: 'footing.cad.refusal.invalid', params: {
-        schema: validation.schema.length, semantic: validation.semantic.length,
-      } }],
-      invalid: {
-        schema: validation.schema.map((v) => `${v.path}: ${v.message}`),
-        semantic: validation.semantic.map((v) => `${v.rule}: ${v.message}`),
-      },
-    };
-  }
+  if (!validation.ok) return invalidManifest(validation.schema, validation.semantic);
 
   const json = serializeRcCadHandoff(result.handoff);
   return {
@@ -258,11 +307,39 @@ export function buildFootingCadHandoff(
   };
 }
 
-/** Produce and download. Returns the same result so the UI can report the outcome either way. */
+/** Build the V2 document. The production path. */
+export function buildFootingCadHandoffV2(
+  footingId: number, translate: CadTranslate,
+): RcCadExportV2Result {
+  const collected = collectCadSource(footingId, translate);
+  if (!collected.ok) return collected;
+
+  const result = buildRcCadHandoffV2(collected.source, translate);
+  if (!result.ok) return { ok: false, refusals: result.refusals };
+
+  const validation = validateRcCadHandoffV2(result.handoff);
+  if (!validation.ok) return invalidManifest(validation.schema, validation.semantic);
+
+  const json = serializeRcCadHandoffV2(result.handoff);
+  return {
+    ok: true,
+    handoff: result.handoff,
+    json,
+    filename: rcCadHandoffV2Filename(result.handoff),
+    byteLength: new TextEncoder().encode(json).length,
+  };
+}
+
+/**
+ * Produce and download. Returns the same result so the UI can report the outcome either way.
+ *
+ * Emits V2. The live chain produces the coordinated assembly — mats, dowels, ties and crossties —
+ * and V1 cannot describe it; a footing whose bottom mat is physical steel is a V2 subject.
+ */
 export function exportFootingCadHandoff(
   footingId: number, translate: CadTranslate,
-): RcCadExportResult {
-  const result = buildFootingCadHandoff(footingId, translate);
+): RcCadExportV2Result {
+  const result = buildFootingCadHandoffV2(footingId, translate);
   if (result.ok) downloadText(result.json, result.filename, 'application/json');
   return result;
 }

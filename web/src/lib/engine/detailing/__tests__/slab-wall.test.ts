@@ -199,6 +199,16 @@ describe('slab one-way shear', () => {
     const b = checkSlabOneWayShear({ qu: 20, span: 5, d: 0.17, fc: 25 });
     expect(b.vu).toBeCloseTo(2 * a.vu, 9);
   });
+
+  it('computes Vc per Table 22.5.5.1 row (c) — the no-shear-reinforcement row', () => {
+    // Row (c) for Av < Av,min: 0,66·λs·λ·(ρw)^⅓·√f'c·bw·d, ρw at the 0,0018
+    // floor. Pre-fix this used row (a)'s 0,17 form — ~2× the (c) value,
+    // unconservative (0,17 is for members WITH minimum shear reinforcement).
+    const r = checkSlabOneWayShear({ qu: 10, span: 5, d: 0.17, fc: 25 });
+    const lambdaS = Math.min(1, Math.sqrt(2 / (1 + 0.004 * 170)));
+    const expectedVc = 0.66 * lambdaS * Math.cbrt(0.0018) * 5 * 0.17 * 1000;
+    expect(r.phiVc).toBeCloseTo(0.75 * expectedVc, 6);
+  });
 });
 
 // ─── Panel design ────────────────────────────────────────────────
@@ -311,8 +321,8 @@ describe('wall in-plane shear', () => {
     expect(checkWallInPlaneShear({ ...base, vu: 200 }).ok).toBe(true);
   });
 
-  it('recognises the §11.5.4.6 ceiling, where more steel does not help', () => {
-    // Above 0,83 √f'c A_cv the wall fails by web crushing.
+  it('recognises the §11.5.4.2 ceiling, where more steel does not help', () => {
+    // Above 0,66 √f'c A_cv the wall fails by web crushing (0,83 was the 2005 value).
     const heavy = checkWallInPlaneShear({ ...base, rhoT: 0.02, vu: 100 });
     expect(heavy.atLimit).toBe(true);
     expect(heavy.phiVn).toBeCloseTo(0.75 * heavy.vnLimit, 6);

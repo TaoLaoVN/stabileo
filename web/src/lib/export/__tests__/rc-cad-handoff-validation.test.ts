@@ -14,36 +14,37 @@
  *   5. the three claims that would make the manifest dishonest.
  */
 import { describe, it, expect, beforeAll } from 'vitest';
-import { buildFootingCadHandoff } from '../../store/rc-cad-export';
+import { buildFootingCadHandoffV2 } from '../../store/rc-cad-export';
 import {
-  validateRcCadHandoff, validateRcCadHandoffSchema, validateRcCadHandoffSemantics,
-  RC_CAD_HANDOFF_SCHEMA_DOC,
-} from '../rc-cad-handoff-validate';
+  validateRcCadHandoffV2, validateRcCadHandoffV2Schema, validateRcCadHandoffV2Semantics,
+  RC_CAD_HANDOFF_V2_SCHEMA_DOC,
+} from '../rc-cad-handoff-v2-validate';
 import { assertSupportedSchema, validateAgainstSchema } from '../json-schema-subset';
-import type { RcCadHandoffV1 } from '../rc-cad-handoff-types';
+import { validateRcCadHandoffSemantics } from '../rc-cad-handoff-semantics';
+import type { RcCadHandoffV2 } from '../rc-cad-handoff-v2-types';
 import { runProductionChain, keyTranslate } from './rc-cad-chain';
 
-let valid: RcCadHandoffV1;
+let valid: RcCadHandoffV2;
 
 beforeAll(async () => {
   await runProductionChain();
-  const out = buildFootingCadHandoff(1, keyTranslate);
+  const out = buildFootingCadHandoffV2(1, keyTranslate);
   if (!out.ok) throw new Error(`export refused: ${JSON.stringify(out.refusals)}`);
   valid = out.handoff;
 }, 180_000);
 
 /** A deep clone with one mutation applied, so no case can leak into another. */
-function mutate(fn: (d: RcCadHandoffV1) => void): RcCadHandoffV1 {
-  const copy = JSON.parse(JSON.stringify(valid)) as RcCadHandoffV1;
+function mutate(fn: (d: RcCadHandoffV2) => void): RcCadHandoffV2 {
+  const copy = JSON.parse(JSON.stringify(valid)) as RcCadHandoffV2;
   fn(copy);
   return copy;
 }
 
-const semanticRules = (d: unknown) => validateRcCadHandoffSemantics(d).map((v) => v.rule);
+const semanticRules = (d: unknown) => validateRcCadHandoffV2Semantics(d).map((v) => v.rule);
 
 describe('the schema validator refuses to under-enforce', () => {
   it('accepts the shipped schema, so every keyword in it is actually checked', () => {
-    expect(() => assertSupportedSchema(RC_CAD_HANDOFF_SCHEMA_DOC)).not.toThrow();
+    expect(() => assertSupportedSchema(RC_CAD_HANDOFF_V2_SCHEMA_DOC)).not.toThrow();
   });
 
   it('throws on a keyword it does not implement rather than ignoring it', () => {
@@ -79,62 +80,65 @@ describe('the schema validator refuses to under-enforce', () => {
       const c = d.checks.find((x) => x.evaluationStatus === 'NOT_EVALUATED')!;
       delete c.notEvaluatedReason;
     });
-    const paths = validateRcCadHandoffSchema(bad).map((v) => v.message);
+    const paths = validateRcCadHandoffV2Schema(bad).map((v) => v.message);
     expect(paths.some((m) => m.includes('notEvaluatedReason'))).toBe(true);
   });
 });
 
 describe('schema rejection', () => {
   it('rejects a wrong schema name or version', () => {
-    expect(validateRcCadHandoffSchema(mutate((d) => {
-      (d as { schema: string }).schema = 'RcCadHandoffV2';
+    // A V2 document claiming V1's name, or V1's version. Both are refused: the two fields are
+    // checked independently, so a mismatch cannot be resolved by trusting whichever the reader
+    // happened to read first.
+    expect(validateRcCadHandoffV2Schema(mutate((d) => {
+      (d as { schema: string }).schema = 'RcCadHandoffV1';
     })).length).toBeGreaterThan(0);
-    expect(validateRcCadHandoffSchema(mutate((d) => {
-      (d as { schemaVersion: number }).schemaVersion = 2;
+    expect(validateRcCadHandoffV2Schema(mutate((d) => {
+      (d as { schemaVersion: number }).schemaVersion = 1;
     })).length).toBeGreaterThan(0);
   });
 
   it('rejects an unknown property, so a typo is never silently carried', () => {
-    const v = validateRcCadHandoffSchema(mutate((d) => {
+    const v = validateRcCadHandoffV2Schema(mutate((d) => {
       (d.subject as unknown as Record<string, unknown>).enitityId = 7;
     }));
     expect(v.some((x) => x.message.includes('unexpected property "enitityId"'))).toBe(true);
   });
 
   it('rejects a missing required block', () => {
-    const v = validateRcCadHandoffSchema(mutate((d) => {
-      delete (d as Partial<RcCadHandoffV1>).assembly;
+    const v = validateRcCadHandoffV2Schema(mutate((d) => {
+      delete (d as Partial<RcCadHandoffV2>).assembly;
     }));
     expect(v.some((x) => x.message.includes('"assembly"'))).toBe(true);
   });
 
   it('rejects imperial or unstated units and a Y-up frame', () => {
-    expect(validateRcCadHandoffSchema(mutate((d) => {
+    expect(validateRcCadHandoffV2Schema(mutate((d) => {
       (d.units as unknown as Record<string, unknown>).length = 'ft';
     })).length).toBeGreaterThan(0);
-    expect(validateRcCadHandoffSchema(mutate((d) => {
+    expect(validateRcCadHandoffV2Schema(mutate((d) => {
       (d.coordinateSystem as unknown as Record<string, unknown>).up = 'Y';
     })).length).toBeGreaterThan(0);
   });
 
   it('rejects a non-positive bar diameter or box dimension', () => {
-    expect(validateRcCadHandoffSchema(mutate((d) => {
+    expect(validateRcCadHandoffV2Schema(mutate((d) => {
       d.reinforcement.bars[0].diameterMm = 0;
     })).length).toBeGreaterThan(0);
-    expect(validateRcCadHandoffSchema(mutate((d) => {
+    expect(validateRcCadHandoffV2Schema(mutate((d) => {
       d.concrete.bodies[0].shape.height = -0.5;
     })).length).toBeGreaterThan(0);
   });
 
   it('rejects an unsupported-condition code that is not a stable identifier', () => {
-    const v = validateRcCadHandoffSchema(mutate((d) => {
+    const v = validateRcCadHandoffV2Schema(mutate((d) => {
       d.unsupported[0].code = 'not a code';
     }));
     expect(v.some((x) => x.message.includes('pattern'))).toBe(true);
   });
 
   it('rejects an interface that is not declared internal', () => {
-    expect(validateRcCadHandoffSchema(mutate((d) => {
+    expect(validateRcCadHandoffV2Schema(mutate((d) => {
       (d.concrete.interfaces[0] as unknown as Record<string, unknown>).exposure = 'exposed';
     })).length).toBeGreaterThan(0);
   });
@@ -186,8 +190,14 @@ describe('semantic rejection — identity and references', () => {
   });
 
   it('rejects a finding naming a bar that is not in the document', () => {
+    // The CLEAR-SPACING check, not the collision one: V2's collision check has zero findings —
+    // the starter hooks no longer interpenetrate — so there is nothing there to mutate. The four
+    // mat/starter spacing findings are the ones that exist, and they are exactly the findings V1
+    // could not carry, because one bar of each pair was outside its scope.
     expect(semanticRules(mutate((d) => {
-      d.checks[0].findings![0].barIdA = 'bar:ghost';
+      const spacing = d.checks.find((c) => c.checkKind === 'barClearSpacing')!;
+      expect(spacing.findings!.length).toBe(4);
+      spacing.findings![0].barIdA = 'bar:ghost';
     }))).toContain('resolve.finding.bar');
   });
 
@@ -283,20 +293,65 @@ describe('semantic rejection — geometry', () => {
 });
 
 describe('semantic rejection — the dishonest claims', () => {
-  it('rejects a complete-footing-reinforcement claim while the mats are unmodelled', () => {
-    // The single claim this whole POC exists not to make.
-    expect(semanticRules(mutate((d) => {
-      d.assembly.completeness = 'completeFootingReinforcement';
-    }))).toContain('completeness.contradiction');
+  /**
+   * The two completeness rules are V1's and are tested against V1.
+   *
+   * They are not dead: an old V1 document on disk still goes through them. They are simply
+   * UNREACHABLE from a V2 document, because V2's completeness enum has no
+   * `completeFootingReinforcement` member and its assembly kind is never `footingTransferCage` —
+   * which is why V2's own rules below check the V2 equivalents instead. Asserting them here
+   * against a V1-shaped literal keeps the V1 coverage the freeze promised.
+   */
+  it('rejects a V1 complete-footing-reinforcement claim while the mats are unmodelled', () => {
+    const v1Doc = {
+      assembly: {
+        kind: 'footingTransferCage',
+        completeness: 'completeFootingReinforcement',
+        descriptionKey: 'k', families: [],
+      },
+      unsupported: [{ code: 'FOOTING_MAT_GEOMETRY_NOT_MODELED', text: 'x' }],
+      reinforcement: { bars: [], marks: [] },
+      concrete: { bodies: [], interfaces: [] },
+      requirements: { cover: [], clearSpacing: [] },
+      checks: [],
+    };
+    expect(validateRcCadHandoffSemantics(v1Doc).map((v) => v.rule))
+      .toContain('completeness.contradiction');
   });
 
-  it('rejects a transfer cage that omits the mat condition', () => {
-    // Dropping the condition and keeping `partialConnectionOnly` would still read, to anyone
-    // who did not know the schema, as the footing's whole reinforcement.
+  it('V2 refuses the equivalent claim through its own rules', () => {
+    // The V2 shape of the same dishonesty: saying the mats are here while carrying none.
     expect(semanticRules(mutate((d) => {
-      d.unsupported = d.unsupported.filter(
-        (n) => n.code !== 'FOOTING_MAT_GEOMETRY_NOT_MODELED');
-    }))).toContain('completeness.missingCondition');
+      d.assembly.families = d.assembly.families.filter((fam) => !fam.kind.startsWith('footing'));
+      d.reinforcement.bars = d.reinforcement.bars.filter(
+        (b) => !d.assembly.families.every((fam) => !fam.barIds.includes(b.id)));
+    }))).toContain('assembly.completenessClaimsMats');
+  });
+
+  it('rejects a V1 transfer cage that omits the mat condition', () => {
+    // Also V1's rule, and also unreachable from V2: it fires on `kind === footingTransferCage`,
+    // which V2 never is. Dropping the condition and keeping `partialConnectionOnly` would still
+    // read, to anyone who did not know the schema, as the footing's whole reinforcement.
+    const v1Doc = {
+      assembly: {
+        kind: 'footingTransferCage', completeness: 'partialConnectionOnly',
+        descriptionKey: 'k', families: [],
+      },
+      unsupported: [],
+      reinforcement: { bars: [], marks: [] },
+      concrete: { bodies: [], interfaces: [] },
+      requirements: { cover: [], clearSpacing: [] },
+      checks: [],
+    };
+    expect(validateRcCadHandoffSemantics(v1Doc).map((v) => v.rule))
+      .toContain('completeness.missingCondition');
+  });
+
+  it('V2 refuses a mat-modelled status with no mat families to back it', () => {
+    // The V2 equivalent: the statuses claim MODELED while nothing carries the bars.
+    expect(semanticRules(mutate((d) => {
+      d.assembly.families = d.assembly.families.filter((fam) => !fam.kind.startsWith('footing'));
+    }))).toContain('statuses.matModeledWithoutFamilies');
   });
 
   it('rejects a footing cover requirement applied to the column stub', () => {
@@ -364,16 +419,17 @@ describe('semantic rejection — the dishonest claims', () => {
 
 describe('the combined gate', () => {
   it('reports ok only when both layers are clean', () => {
-    expect(validateRcCadHandoff(valid).ok).toBe(true);
-    const broken = validateRcCadHandoff(mutate((d) => {
-      d.assembly.completeness = 'completeFootingReinforcement';
+    expect(validateRcCadHandoffV2(valid).ok).toBe(true);
+    const broken = validateRcCadHandoffV2(mutate((d) => {
+      // A V2-reachable contradiction: the verdict says buildable while blockers are named.
+      d.statuses.constructible = true;
     }));
     expect(broken.ok).toBe(false);
     expect(broken.semantic.length).toBeGreaterThan(0);
   });
 
   it('survives a document that is not an object at all', () => {
-    expect(validateRcCadHandoffSemantics(null).map((v) => v.rule)).toContain('document.object');
-    expect(validateRcCadHandoffSchema('nope').length).toBeGreaterThan(0);
+    expect(validateRcCadHandoffV2Semantics(null).map((v) => v.rule)).toContain('document.object');
+    expect(validateRcCadHandoffV2Schema('nope').length).toBeGreaterThan(0);
   });
 });

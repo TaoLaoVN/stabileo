@@ -432,3 +432,183 @@ describe('detailingStore.generateFloors — the production command', () => {
     expect(rec.certificate.revisions).toEqual(rec.revisions);
   });
 });
+
+describe('punching F_direct — what beams deliver into the joint', () => {
+  it('deducts the beam delivery with the element-on-node sign, never adds it', () => {
+    const { quad, top, columns } = buildSlabModel();
+    modelStore.addSurfaceLoad3D(quad, 12, 1);
+    // A beam framing into the corner joint at top[0], running out in +x.
+    const far = modelStore.addNode(10, 0, 3);
+    const beam = modelStore.addElement(top[0], far, 'frame');
+
+    const beamF = (scale: number): ElementForces3D => ({
+      elementId: beam, length: 10,
+      nStart: 0, nEnd: 0, vyStart: 0, vyEnd: 0,
+      // The column holds the gravity-loaded beam UP with 50 kN at the joint end;
+      // the solver reports that node-on-element force as vzStart = +50. The beam
+      // pushes the column DOWN with the same 50 — the delivery to deduct.
+      vzStart: 50 * scale, vzEnd: 0,
+      mxStart: 0, mxEnd: 0, myStart: 0, myEnd: 0, mzStart: 0, mzEnd: 0,
+      releaseMyStart: false, releaseMyEnd: false,
+      releaseMzStart: false, releaseMzEnd: false,
+      releaseTStart: false, releaseTEnd: false,
+    } as ElementForces3D);
+
+    const publish = () => {
+      const combos = modelStore.model.combinations;
+      const res = (scale: number) => ({
+        displacements: [], reactions: [],
+        quadStresses: [{ elementId: quad, sigmaXx: 0, sigmaYy: 0, tauXy: 0, mx: 40, my: 30, mxy: 8, vonMises: 0 }],
+        elementForces: [...columns.map((c) => columnForces(c, -220 * scale)), beamF(scale)],
+      }) as never;
+      resultsStore.setCombinationResults3D(
+        new Map(modelStore.model.loadCases.map((c) => [c.id, res(1)])),
+        new Map(combos.map((c, i) => [c.id, res(1 - i * 0.1)])),
+        {} as never,
+      );
+    };
+
+    publish();
+    const a = detailingStore.generateFloors()!.assemblies[0];
+    const slab = a.families!.find((f) => f.family === 'slab')!;
+    if (slab.family !== 'slab') throw new Error('narrowing');
+    const joint = slab.punching.find((p) => p.nodeId === top[0])!;
+
+    // Pre-fix this read −50 (the node-on-element vector) and V_u was inflated
+    // by twice the shear — the failure the collector exists to prevent.
+    expect(joint.contributions![0].directlyDelivered).toBeCloseTo(50, 6);
+    expect(Math.abs(joint.equilibriumResidual!)).toBeLessThan(1e-6);
+
+    // The same joint with NO delivery would carry the full step less q·A:
+    // removing the beam must raise Vu by exactly the deducted 50.
+    const vuWithBeam = joint.Vu;
+    /**
+     * `deleteEntities` takes ONE object argument.
+     *
+     * This read `deleteEntities([], [beam], [])` — the obsolete positional signature. An empty
+     * array has no `.elements`, so the call deleted NOTHING and the beam stayed in the model.
+     * The assertions below still passed, for the wrong reason: the second results publish simply
+     * omits the beam's element forces, so the collector saw no delivery at a joint whose beam
+     * was still there. What the test claimed to prove — that removing the delivery raises V_u by
+     * exactly the deducted 50 — was never exercised.
+     *
+     * `tsc` reported it (TS2554) and the baseline never covered it, so `npm run typecheck` was
+     * red on this one error at every commit.
+     */
+    modelStore.deleteEntities({ elements: [beam] });
+    // The deletion is asserted, not assumed: a silently-ignored argument is how this got here.
+    expect(modelStore.model.elements.has(beam)).toBe(false);
+    const res2 = (scale: number) => ({
+      displacements: [], reactions: [],
+      quadStresses: [{ elementId: quad, sigmaXx: 0, sigmaYy: 0, tauXy: 0, mx: 40, my: 30, mxy: 8, vonMises: 0 }],
+      elementForces: columns.map((c) => columnForces(c, -220 * scale)),
+    }) as never;
+    const combos = modelStore.model.combinations;
+    resultsStore.setCombinationResults3D(
+      new Map(modelStore.model.loadCases.map((c) => [c.id, res2(1)])),
+      new Map(combos.map((c, i) => [c.id, res2(1 - i * 0.1)])),
+      {} as never,
+    );
+    const a2 = detailingStore.generateFloors()!.assemblies[0];
+    const slab2 = a2.families!.find((f) => f.family === 'slab')!;
+    if (slab2.family !== 'slab') throw new Error('narrowing');
+    const joint2 = slab2.punching.find((p) => p.nodeId === top[0])!;
+    expect(joint2.contributions![0].directlyDelivered).toBeCloseTo(0, 6);
+    expect(joint2.Vu - vuWithBeam).toBeCloseTo(50, 6);
+    // And the beam is not merely force-less but gone, so `directlyDelivered: 0` is the absence
+    // of a member rather than the absence of its results.
+    expect(modelStore.model.elements.has(beam)).toBe(false);
+    expect([...modelStore.model.elements.keys()].sort()).toEqual([...columns].sort());
+  });
+});
+
+describe('punching joint transfer — modelling-direction invariance and factored nodal loads', () => {
+  it('sums the unbalanced moment in GLOBAL axes: mixed modelling directions cannot cancel wrongly', () => {
+    // Below leg modelled top→base carrying 10 kN·m, above leg base→top carrying 4,
+    // both about the same global axis. The joint transfer is 14. The old
+    // below/above keying read −10 + 4 = −6: mixed directions cancelled wrongly,
+    // understating the moment the §8.4.4.2 refusal turns on.
+    modelStore.clear();
+    const z0 = modelStore.addNode(0, 0, 0);
+    const z3 = modelStore.addNode(0, 0, 3);
+    const z6 = modelStore.addNode(0, 0, 6);
+    const z0b = modelStore.addNode(5, 0, 0);
+    const z3b = modelStore.addNode(5, 0, 3);
+    const z0c = modelStore.addNode(5, 5, 0);
+    const z3c = modelStore.addNode(5, 5, 3);
+    const z0d = modelStore.addNode(0, 5, 0);
+    const z3d = modelStore.addNode(0, 5, 3);
+    for (const n of [z0, z0b, z0c, z0d]) modelStore.addSupport(n, 'fixed3d');
+    // Below legs — the one at z3 modelled DOWNWARD (top→base).
+    const belowMixed = modelStore.addElement(z3, z0, 'frame');
+    const below2 = modelStore.addElement(z0b, z3b, 'frame');
+    const below3 = modelStore.addElement(z0c, z3c, 'frame');
+    const below4 = modelStore.addElement(z0d, z3d, 'frame');
+    const above = modelStore.addElement(z3, z6, 'frame');
+    const columns = [belowMixed, below2, below3, below4, above];
+    const sectionId = modelStore.addSection({ name: '40×40', a: 0.16, iz: 0.00213, b: 0.4, h: 0.4 });
+    for (const c of columns) modelStore.updateElementSection(c, sectionId);
+    const material = [...modelStore.model.materials.keys()][0];
+    const quad = modelStore.addQuad([z3, z3b, z3c, z3d], material, 0.20);
+    modelStore.addSurfaceLoad3D(quad, 12, 1);
+
+    const colF = (elementId: number, axialTension: number, myStart: number): ElementForces3D => ({
+      ...columnForces(elementId, axialTension),
+      myStart,
+    } as ElementForces3D);
+    const combos = modelStore.model.combinations;
+    const res = (scale: number) => ({
+      displacements: [], reactions: [],
+      quadStresses: [{ elementId: quad, sigmaXx: 0, sigmaYy: 0, tauXy: 0, mx: 40, my: 30, mxy: 8, vonMises: 0 }],
+      elementForces: [
+        // Below: element→joint = −myStart (end 'start' at the joint) → myStart = −10.
+        colF(belowMixed, -220 * scale, -10 * scale),
+        colF(below2, -220 * scale, 0),
+        colF(below3, -220 * scale, 0),
+        colF(below4, -220 * scale, 0),
+        // Above: element→joint vector = −myStart·ey_up = (0,+4,0) → myStart = +4.
+        colF(above, -100 * scale, 4 * scale),
+      ],
+    }) as never;
+    resultsStore.setCombinationResults3D(
+      new Map(modelStore.model.loadCases.map((c) => [c.id, res(1)])),
+      new Map(combos.map((c, i) => [c.id, res(1 - i * 0.1)])),
+      {} as never,
+    );
+
+    const a = detailingStore.generateFloors()!.assemblies[0];
+    const slab = a.families!.find((f) => f.family === 'slab')!;
+    if (slab.family !== 'slab') throw new Error('narrowing');
+    const joint = slab.punching.find((p) => p.nodeId === z3)!;
+    expect(joint.contributions![0].unbalancedMoment).toBeCloseTo(14, 6);
+  });
+
+  it('applies the combination factor to nodal loads at the joint — never the raw value', () => {
+    const { quad, top, columns } = buildSlabModel();
+    modelStore.addSurfaceLoad3D(quad, 12, 1);
+    // 10 kN live load at the corner joint: 1.2D+1.6L sees 16, 1.4D sees 0.
+    modelStore.addNodalLoad3D(top[0], 0, 0, -10, 0, 0, 0, 2);
+    const combos = modelStore.model.combinations;
+    const res = (scale: number) => ({
+      displacements: [], reactions: [],
+      quadStresses: [{ elementId: quad, sigmaXx: 0, sigmaYy: 0, tauXy: 0, mx: 40, my: 30, mxy: 8, vonMises: 0 }],
+      elementForces: columns.map((c) => columnForces(c, -220 * scale)),
+    }) as never;
+    resultsStore.setCombinationResults3D(
+      new Map(modelStore.model.loadCases.map((c) => [c.id, res(1)])),
+      new Map(combos.map((c, i) => [c.id, res(1 - i * 0.1)])),
+      {} as never,
+    );
+
+    const a = detailingStore.generateFloors()!.assemblies[0];
+    const slab = a.families!.find((f) => f.family === 'slab')!;
+    if (slab.family !== 'slab') throw new Error('narrowing');
+    const joint = slab.punching.find((p) => p.nodeId === top[0])!;
+    const byCombo = new Map(joint.contributions!.map((c) => [c.combinationId, c]));
+    // Sorted by combinationId: 1 = 1.2D+1.6L, 2 = 1.4D, 3 = 1.2D+L+1.6W, 4 = 1.2D+L+E.
+    expect(byCombo.get(1)!.directlyDelivered).toBeCloseTo(1.6 * 10, 6);
+    expect(byCombo.get(2)!.directlyDelivered).toBeCloseTo(0, 9);
+    expect(byCombo.get(3)!.directlyDelivered).toBeCloseTo(1.0 * 10, 6);
+    expect(byCombo.get(4)!.directlyDelivered).toBeCloseTo(1.0 * 10, 6);
+  });
+});

@@ -38,18 +38,40 @@ const ERROR_LINE = /^(.+?)\((\d+),(\d+)\): error (TS\d+): (.*)$/
 // different defects on the same construct in the same file.
 const signatureOf = (e) => `${e.file}\u0000${e.code}\u0000${e.message}`
 
+// The compiler, resolved EXPLICITLY inside this project.
+//
+// This used to run `npx tsc`. In a worktree with no `node_modules`, `npx` cannot find a local
+// tsc, prints "This is not the tsc command you are looking for" and exits ZERO — so
+// `execFileSync` did not throw, `runTsc` returned an empty string, and the gate reported
+// "0 errors reported, no new type errors" while having typechecked nothing at all. Every fresh
+// worktree got a green typecheck it had not earned.
+//
+// Resolving the binary and running it under this Node removes the shim, and the absence of the
+// compiler becomes the loud failure it should always have been.
+// The env override exists so the false-green failure mode itself is testable — see
+// `scripts-typecheck-gate.test.ts`.
+const TSC = process.env.STABILEO_TYPECHECK_TSC
+	?? join(webRoot, 'node_modules', 'typescript', 'bin', 'tsc')
+
+/** @returns {{ output: string, crashed: boolean }} */
 function runTsc() {
+	if (!existsSync(TSC)) {
+		console.error(`typecheck: no TypeScript compiler at ${TSC}.`)
+		console.error('typecheck: dependencies are not installed — run `npm ci` in web/.')
+		console.error('typecheck: refusing to report 0 errors without having run tsc.')
+		process.exit(2)
+	}
 	try {
-		execFileSync('npx', ['tsc', '-p', 'tsconfig.json', '--noEmit'], {
+		execFileSync(process.execPath, [TSC, '-p', 'tsconfig.json', '--noEmit'], {
 			cwd: webRoot,
 			encoding: 'utf8',
 			stdio: ['ignore', 'pipe', 'pipe'],
 		})
-		return ''
+		return { output: '', crashed: false }
 	} catch (err) {
 		// tsc exits non-zero whenever it reports anything; that is the normal path.
 		if (err.stdout === undefined && err.stderr === undefined) throw err
-		return `${err.stdout ?? ''}${err.stderr ?? ''}`
+		return { output: `${err.stdout ?? ''}${err.stderr ?? ''}`, crashed: true }
 	}
 }
 
@@ -79,9 +101,18 @@ function tally(errors) {
 	return counts
 }
 
-const output = runTsc()
+const { output, crashed } = runTsc()
 const errors = parse(output)
 const counts = tally(errors)
+
+// A non-zero exit with nothing this parser recognises is tsc FAILING, not tsc finding nothing:
+// an unreadable tsconfig, an unsupported flag, an out-of-memory kill. Treating that as "0 errors"
+// is the same false green the missing-compiler branch above closes, one step further in.
+if (crashed && errors.length === 0) {
+	console.error('typecheck: tsc exited non-zero and reported no parseable diagnostics.')
+	console.error(output.trim() || '(no output)')
+	process.exit(2)
+}
 
 if (refresh) {
 	const entries = [...counts.entries()]

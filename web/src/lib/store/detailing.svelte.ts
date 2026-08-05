@@ -48,6 +48,7 @@ import type { ElementForces3D } from '../engine/types-3d';
 // The app's own member classifier, shared with `member-context.ts`. Punching applicability
 // must not depend on the design run having populated `verificationStore.contexts`.
 import { classifyElement } from '../engine/codes/argentina/cirsoc201';
+import { computeLocalAxes3D } from '../engine/local-axes-3d';
 import { DEFAULT_COVER, DEFAULT_REBAR_FY } from '../engine/design/member-context';
 import {
   runFootingDesign,
@@ -175,15 +176,13 @@ function resolveSpacingMargin(): number {
  */
 const DEFAULT_WALL_BAR_DIA_MM = 12;
 
-/**
- * Bottom-mat bar diameter for a footing, mm.
- *
- * Same posture as the wall curtain above: a starting size that sets the effective depth,
- * which the check then reports on — not a designed result. Ø16 is the ordinary bottom mat for
- * a pad footing. The assumption is stated per footing
- * (`footing.assumption.averageMatDepth`), so a reader can see what `d` came from.
- */
-const DEFAULT_FOOTING_BAR_DIA_MM = 16;
+// The footing bottom-mat diameter used to live here, as
+// `const DEFAULT_FOOTING_BAR_DIA_MM = 16`. It set the effective depth of every footing check
+// in the project and no user could see it or change it, which made a private module constant
+// indistinguishable — from outside — from a designed result. It is now a persisted project
+// preference on the model (`footingMatPreferences`), visible and editable in the Foundations
+// panel, and the design states which of the two directions each diameter belongs to. See
+// `model/footing.ts`.
 
 /**
  * The concrete regulation this project's RC work is resolved against.
@@ -497,7 +496,7 @@ function collectSlabColumns(): Map<number, SlabColumnJoint> {
    * direction that matters: less is deducted, so V_u is larger.
    */
   const directlyDelivered = (
-    nodeId: number, forces: ReadonlyMap<number, ElementForces3D>,
+    nodeId: number, forces: ReadonlyMap<number, ElementForces3D>, setId: number,
   ): number => {
     let sum = 0;
     for (const o of others.get(nodeId) ?? []) {
@@ -524,9 +523,14 @@ function collectSlabColumns(): Map<number, SlabColumnJoint> {
       const [n, vy, vz] = o.end === 'start'
         ? [f.nStart, f.vyStart, f.vzStart]
         : [f.nEnd, f.vyEnd, f.vzEnd];
-      // Force the ELEMENT exerts on the NODE, in local axes, per the app's end-force
-      // convention: (−n, vy, vz) at the I end and (n, −vy, −vz) at the J end.
-      const [ln, lvy, lvz] = o.end === 'start' ? [-n, vy, vz] : [n, -vy, -vz];
+      // Force the ELEMENT exerts on the NODE, in local axes. The solver's raw
+      // f_local = K·u − Fef is the force the NODE exerts on the ELEMENT, reported
+      // as (n_start, vy_start, vz_start) = (−f_i_n, +f_i_vy, +f_i_vz) at I and
+      // (n_end, vy_end, vz_end) = (+f_j_n, −f_j_vy, −f_j_vz) at J. Inverting:
+      // element→node is (n, −vy, −vz) at the I end and (−n, vy, vz) at the J end.
+      // (The inverse mapping was previously used — the node-on-element vector —
+      // which inverted every beam-end shear delivered into the joint.)
+      const [ln, lvy, lvz] = o.end === 'start' ? [n, -vy, -vz] : [-n, vy, vz];
       // Local y is horizontal for the default frame, so it contributes nothing vertical.
       void lvy;
       const globalZ = ln * exz + lvz * ezz;
@@ -534,12 +538,21 @@ function collectSlabColumns(): Map<number, SlabColumnJoint> {
       sum += -globalZ;
     }
     // A load applied at the joint node itself also arrives inside the perimeter. Downward is
-    // negative global Z, so it is negated to become a downward-positive delivery.
+    // negative global Z, so it is negated to become a downward-positive delivery. The delivery
+    // must carry the COMBINATION's factors: the set's element forces are factored per case,
+    // so an unfactored raw load would mix magnitudes from two different worlds. The single
+    // active result set (setId 0) is unfactored by construction — the raw value IS right there.
     for (const load of modelStore.model.loads) {
-      if (load.type !== 'nodal') continue;
-      const d = load.data as { nodeId: number; fz?: number };
+      if (load.type !== 'nodal' && load.type !== 'nodal3d') continue;
+      const d = load.data as { nodeId: number; fz?: number; caseId?: number };
       if (d.nodeId !== nodeId) continue;
-      sum += -(d.fz ?? 0);
+      if (setId === 0) {
+        sum += -(d.fz ?? 0);
+        continue;
+      }
+      const combo = modelStore.model.combinations.find((c) => c.id === setId);
+      const factor = combo?.factors.find((fc) => fc.caseId === (d.caseId ?? 1))?.factor ?? 0;
+      sum += factor * -(d.fz ?? 0);
     }
     return sum;
   };
@@ -552,14 +565,29 @@ function collectSlabColumns(): Map<number, SlabColumnJoint> {
     let my = 0;
     for (const leg of legsHere) {
       const f = forces.get(leg.elementId);
-      if (!f) continue;
-      const [m1, m2] = leg.end === 'start' ? [f.myStart, f.mzStart] : [f.myEnd, f.mzEnd];
-      // A column's local y and z lie in the horizontal plane, so its two bending moments ARE
-      // the two horizontal moments the joint transfers. The column below and the column above
-      // enter with opposite signs, which is what makes this a step rather than a sum.
-      const s = leg.below ? 1 : -1;
-      mx += s * (typeof m1 === 'number' ? m1 : 0);
-      my += s * (typeof m2 === 'number' ? m2 : 0);
+      const el = modelStore.model.elements.get(leg.elementId);
+      if (!f || !el) continue;
+      const ni = modelStore.model.nodes.get(el.nodeI);
+      const nj = modelStore.model.nodes.get(el.nodeJ);
+      if (!ni || !nj) continue;
+      // Moment the ELEMENT exerts on the JOINT: the I-end fields are NOT inverted
+      // (m_start = f_i), the J-end fields ARE (m_end = −f_j), so element→joint is
+      // −reported at I and +reported at J. The local components must then be
+      // projected to global with the element's OWN frame — a column modelled
+      // top→base has ey flipped relative to the same column modelled base→top,
+      // so reading local my/mz without projecting gives the moment of a
+      // different building depending on how each member was drawn.
+      const axes = computeLocalAxes3D(
+        { id: ni.id, x: ni.x, y: ni.y, z: ni.z ?? 0 },
+        { id: nj.id, x: nj.x, y: nj.y, z: nj.z ?? 0 },
+      );
+      const [mmx, mmy, mmz] = leg.end === 'start'
+        ? [-f.mxStart, -f.myStart, -f.mzStart]
+        : [f.mxEnd, f.myEnd, f.mzEnd];
+      // M = mmx·ex + mmy·ey + mmz·ez — keep the two horizontal (joint-transfer)
+      // components. For a vertical column ex is vertical and drops out here.
+      mx += mmx * axes.ex[0] + mmy * axes.ey[0] + mmz * axes.ez[0];
+      my += mmx * axes.ex[1] + mmy * axes.ey[1] + mmz * axes.ez[1];
     }
     return { x: mx, y: my };
   };
@@ -589,7 +617,7 @@ function collectSlabColumns(): Map<number, SlabColumnJoint> {
         combinationName: set.name,
         axialBelow: ab,
         axialAbove: aa,
-        directlyDelivered: directlyDelivered(nodeId, set.forces),
+        directlyDelivered: directlyDelivered(nodeId, set.forces, set.id),
         unbalancedMomentX: m.x,
         unbalancedMomentY: m.y,
       });
@@ -733,6 +761,37 @@ function lockedMemberIds(): ReadonlySet<number> {
  * "what revision is this project on", and it is the persisted model — which is also what a
  * reopened project carries.
  */
+/**
+ * What a footing run was made FROM, as one comparable string.
+ *
+ * ── The failure this exists to prevent ─────────────────────────
+ *
+ * `supersedeDocuments()` retires the DOCUMENT when a foundation input changes, and it leaves
+ * `lastFootingRun` alone. That was harmless while the run held numbers: a superseded schedule
+ * on screen next to a retired document is a visible inconsistency the user can read.
+ *
+ * It stops being harmless now that the run holds BARS. Change the layer-order preference and
+ * the panel would go on drawing the previous mat — real bar positions, real elevations, real
+ * marks — with nothing saying they belong to a design the project no longer specifies. Stale
+ * geometry presented as current is the one failure the whole revision graph exists to prevent.
+ *
+ * So the run records its inputs and the panel compares. It does NOT re-run: regeneration stays
+ * an explicit command, because a panel that silently redesigned a footing on every keystroke
+ * would be making the engineer's decision for them.
+ *
+ * The mat preferences and every footing's own revision, and nothing else — those are exactly
+ * the inputs `runFootingDesign` reads that a user can change without re-solving. A change to
+ * the ANALYSIS moves the demand revision instead, and the certificate's own freshness catches
+ * that on a different axis.
+ */
+function footingRunFingerprint(): string {
+  const prefs = modelStore.footingMatPreferences();
+  const footings = [...modelStore.model.footings.values()]
+    .sort((a, b) => a.id - b.id)
+    .map((f) => `${f.id}:${f.revision}`);
+  return JSON.stringify({ prefs, footings });
+}
+
 function maxPersistedRevision(): number {
   let r = 0;
   for (const a of modelStore.model.detailing?.assemblies ?? []) {
@@ -774,6 +833,8 @@ function createDetailingStore() {
   let lastRun = $state<RunDetailingResult | null>(null);
   let lastFloorRun = $state<RunFloorDesignResult | null>(null);
   let lastFootingRun = $state<RunFootingDesignResult | null>(null);
+  /** The inputs `lastFootingRun` was produced from. See `footingRunFingerprint`. */
+  let lastFootingRunFingerprint = $state<string | null>(null);
   let currentDocument = $state<DocumentModel | null>(null);
   let supersededDocs = $state<DocumentModel[]>([]);
   /** Monotonic per project. Bumped on supersession, never reused. */
@@ -1063,7 +1124,13 @@ function createDetailingStore() {
           fc: props.fc,
           fy: props.fy,
           edition: currentConcreteEdition(),
-          barDiameterMm: DEFAULT_FOOTING_BAR_DIA_MM,
+          // The project's own stated mat, resolved through the model so an older project
+          // without the field reads as the 16/16 default it was already designed to.
+          matPreferences: modelStore.footingMatPreferences(),
+          // The same provenanced aggregate size the shells and the reports use. One value per
+          // run, from `resolveAggregate()`, rather than a second assumption inside the footing
+          // path.
+          maxAggregateSizeMm: resolveAggregate(),
           // The revision vector the records and certificates are stamped with. Read from the
           // authoritative stores rather than defaulted: a certificate whose vector was
           // invented cannot detect its own staleness, and PR18 already found one instance of
@@ -1081,8 +1148,16 @@ function createDetailingStore() {
           // The same single-element stack the DocumentModel states, so a record and the
           // document built from it cannot disagree about which regulation was applied.
           regulationIds: [CONCRETE_REGULATION_ID],
+          // The revision the physical mat bars belong to. The SAME number `runFloorDesign`
+          // passes to `buildFloorAssembly` as `previousRevision`, so a bar and the assembly
+          // holding it cannot end up one revision apart — both add 1 through
+          // `nextDetailingRevision`.
+          previousDetailingRevision: maxPersistedRevision(),
         });
         lastFootingRun = footingRun;
+        // What this run was made FROM, so the panel can tell a current result from a
+        // superseded one. See `footingRunStale`.
+        lastFootingRunFingerprint = footingRunFingerprint();
         const result = runFloorDesign({
           nodes: modelStore.model.nodes as never,
           shells: collectShells(),
@@ -1177,6 +1252,19 @@ function createDetailingStore() {
     get aggregate(): { maxAggregateSizeMm: number; assumed: boolean } {
       const stated = statedAggregate();
       return { maxAggregateSizeMm: stated ?? DAGG_ASSUMED_MM, assumed: stated === null };
+    },
+
+    /**
+     * True when `lastFootingRun` describes a footing design the project no longer specifies.
+     *
+     * The Foundations panel must not present a superseded mat as current — see
+     * `footingRunFingerprint`. `false` with no run at all, because "there is nothing" and
+     * "there is something out of date" are different statements and the panel says each
+     * differently.
+     */
+    get footingRunStale(): boolean {
+      if (lastFootingRun === null || lastFootingRunFingerprint === null) return false;
+      return lastFootingRunFingerprint !== footingRunFingerprint();
     },
 
     /** Footings that could not be checked, with the reason — the gate, as data for the UI. */
@@ -1385,6 +1473,10 @@ function createDetailingStore() {
       selectedId = null;
       conflictIndex = 0;
       lastError = null;
+      // The footing run and its fingerprint go together. Clearing one and keeping the other
+      // would leave a run that compares as fresh against a project it was never made from.
+      lastFootingRun = null;
+      lastFootingRunFingerprint = null;
     },
   };
 }

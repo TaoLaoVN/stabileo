@@ -54,7 +54,7 @@ function dowels(over: Partial<DowelInput> = {}): DowelInput {
     footingThickness: 0.60, footingCover: 0.05,
     columnB: 0.40, columnH: 0.40, cover: 0.025, tieDia: 8,
     bars: { count: 8, diameterMm: 20 },
-    ldFooting: 0.40, lapAbove: 1.0, elementIds: [1], edition: '2025',
+    ldFooting: 0.40, ldhFooting: 0.45, lapAbove: 1.0, elementIds: [1], edition: '2025',
     ...over,
   };
 }
@@ -145,7 +145,10 @@ describe('column starters and foundation dowels', () => {
 
   it('leaves the bottom straight when there is room', () => {
     const shallow = generateDowels(dowels({ ldFooting: 0.20 }));
-    expect(shallow.notes).toEqual([]);
+    // No HOOK note, which is the claim. The notes are no longer empty and should not be: this
+    // fixture supplies neither a physical mat nor the footing's plan, and the cage now states
+    // both absences instead of seating the hooks against an unverified assumption.
+    expect(shallow.notes.join(' ')).not.toMatch(/gancho a 90/);
     expect(shallow.bars[0].startTreatment.kind).toBe('straight');
   });
 
@@ -287,12 +290,19 @@ function footingRecordFixture(): FamilyRecordDraft<FootingDesignRecord> {
       status: 'OK', qMax: 96, qMin: 96, eB: 0, eL: 0, uplift: false,
       allowable: 250, utilization: 0.38,
     },
-    flexure: { status: 'OK', Mu: 120, criticalSection: 0 },
+    // `bottomMat: null` and not a designed mat: this fixture exercises assembly, and a
+    // record whose mat was invented here would be asserting a design this test never ran.
+    flexure: { status: 'OK', Mu: 120, criticalSection: 0, bottomMat: null },
     oneWayShear: { status: 'OK', Vu: 90, phiVc: 400, utilization: 0.23 },
     punching: {
       status: 'OK', position: 'interior', truncatedSides: 0,
       Vu: 700, phiVc: 1500, utilization: 0.47, equilibriumResidual: 0,
     },
+    // Null for the same reason `bottomMat` is: this fixture exercises assembly, and a physical
+    // mat invented here would assert geometry this test never generated. The footing entry
+    // below passes no `matBars` either, so the pair is consistent.
+    bottomMatGeometry: null,
+    bottomMatAnchorage: null,
     dowels: null,
     starterTies: null,
   };
@@ -660,5 +670,55 @@ describe('whole-floor assembly, continued', () => {
     const r = buildFloorAssembly(floor({ slabs: [], walls: [], footings: [] }));
     expect(r.assembly.bars).toEqual([]);
     expect(r.assembly.state).toBe('VERIFIED');
+  });
+});
+
+describe('§16.3.4.1 — dowel interface minimum', () => {
+  it('passes a column cage above the 0.005·Ag floor', () => {
+    // 8Ø20 on 400×400: As = 2513 mm² ≥ 0.005·160000 = 800 mm².
+    expect(generateDowels(dowels()).unsupported).toEqual([]);
+  });
+
+  it('names the shortfall when the column cage is below 0.005·Ag', () => {
+    // 4Ø12 on 600×600: As = 452 mm² < 0.005·360000 = 1800 mm². The column's own
+    // design may pass §10.6.1.1 (1 %) while the interface minimum fails.
+    const d = generateDowels(dowels({
+      columnB: 0.60, columnH: 0.60, bars: { count: 4, diameterMm: 12 },
+    }));
+    expect(d.unsupported.length).toBe(1);
+    expect(d.unsupported[0]).toMatch(/16\.3\.4\.1/);
+    expect(d.unsupported[0]).toMatch(/0,005·Ag/);
+  });
+});
+
+describe('§25.4.3.1 — hooked development of dowels', () => {
+  it('credits the 90° hook when ldh fits the embedment, and says it was verified', () => {
+    // Straight ld does not fit (1.2 > 0.50 available) but ldh = 0.45 does.
+    const d = generateDowels(dowels({ ldFooting: 1.2, ldhFooting: 0.45 }));
+    expect(d.unsupported).toEqual([]);
+    // The note now states ldh against a MEASURED embedment to the outside of the bend, so it
+    // carries both numbers and the clause rather than the bare phrase it used to.
+    expect(d.notes.join(' ')).toMatch(/ldh = 450 mm verificado contra un empotramiento medido/);
+    expect(d.notes.join(' ')).toMatch(/§25\.4\.3\.1/);
+    expect(d.bars[0].segments.length).toBeGreaterThan(0);
+  });
+
+  it('refuses to credit the hook when ldh does NOT fit, and names the shortfall', () => {
+    // Straight ld does not fit and neither does ldh (0.60 > 0.55 available).
+    const d = generateDowels(dowels({ ldFooting: 1.2, ldhFooting: 0.60 }));
+    // ONE finding, not one per dowel: no orientation of any starter develops, which is a
+    // property of the footing's thickness and is stated once.
+    expect(d.unsupported.length).toBe(1);
+    expect(d.unsupported[0]).toMatch(/25\.4\.3\.1/);
+    // "Altura útil" was the superseded proxy (`thickness − cover − 50 mm`). The embedment is
+    // now measured to the deepest seat a foot can actually reach, and the message says so.
+    expect(d.unsupported[0]).toMatch(/excede el empotramiento disponible/);
+    expect(d.unsupported[0]).toMatch(/550 mm/);
+  });
+
+  it('fails closed when ldh was never computed', () => {
+    const d = generateDowels(dowels({ ldFooting: 1.2, ldhFooting: undefined }));
+    expect(d.unsupported.length).toBe(1);
+    expect(d.unsupported[0]).toMatch(/no se pudo verificar/);
   });
 });

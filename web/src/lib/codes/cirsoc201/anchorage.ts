@@ -149,6 +149,61 @@ export function deriveDevelopment(input: DevelopmentInputs): DevelopmentResult {
   };
 }
 
+/**
+ * §25.4.3.1 — ldh for a deformed bar ending in a standard hook, the LARGEST of:
+ *
+ *   (a) (0,24·fy·ψe·ψs·ψcc·ψr / (λ·√f'c))·db
+ *   (b) 8·db
+ *   (c) 150 mm
+ *
+ * Factors: ψe = 1 (§25.4.3.2 commentary: epoxy coating is not permitted in this
+ * edition); ψs, ψcc, ψr default to 1.0 — the un-credited baseline, since the
+ * caller rarely knows the confinement/cover conditions the sub-1.0 factors
+ * require. λ defaults to 1.0 (normal weight).
+ *
+ * Returns metres because every consumer in the detailing pipeline works in metres.
+ */
+export interface HookedDevelopmentInputs {
+  diameterMm: number;
+  fy: number;
+  fc: number;
+  /** λ — lightweight concrete factor. 1,0 for normal weight. */
+  lambda?: number;
+  edition: RegulationEdition;
+}
+
+export interface HookedDevelopmentResult {
+  /** Hooked development length ldh, in METRES. */
+  ldhM: number;
+  /** The (a) term before the (b)/(c) floors, m. */
+  computedM: number;
+  governedBy: 'formula' | '8db' | '150mm';
+  refs: ClauseRef[];
+}
+
+export function deriveHookedDevelopment(input: HookedDevelopmentInputs): HookedDevelopmentResult {
+  const { diameterMm: db, fy, fc, edition } = input;
+  const lambda = input.lambda ?? 1.0;
+  const psiE = 1.0;   // epoxy coating is not permitted in this edition.
+  const psiS = 1.0;   // no size credit taken.
+  const psiCC = 1.0;  // no concrete-cover credit taken.
+  const psiR = 1.0;   // no confinement credit taken.
+
+  const aMm = (0.24 * fy * psiE * psiS * psiCC * psiR) / (lambda * Math.sqrt(fc)) * db;
+  const bMm = 8 * db;
+  const cMm = 150;
+  const ldhMm = Math.max(aMm, bMm, cMm);
+  const governedBy = ldhMm === aMm ? 'formula' : ldhMm === bMm ? '8db' : '150mm';
+
+  return {
+    ldhM: ldhMm / 1000,
+    computedM: aMm / 1000,
+    governedBy,
+    refs: [clause('cirsoc-201', edition, '25.4.3.1',
+      'longitud de anclaje de ganchos normales en tracción')],
+  };
+}
+
 export interface LapResult {
   /** Lap length, m. */
   lapM: number;

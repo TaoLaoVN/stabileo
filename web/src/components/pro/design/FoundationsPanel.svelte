@@ -20,14 +20,25 @@
    */
   import { t, tp } from '../../../lib/i18n';
   import { modelStore } from '../../../lib/store/model.svelte';
-  import { validateFooting } from '../../../lib/model/footing';
+  import {
+    validateFooting, FOOTING_LAYER_ORDER_PREFERENCES, SUPPORTED_MAT_DIAMETERS_MM,
+  } from '../../../lib/model/footing';
   import { validateSoilProfile } from '../../../lib/model/geotechnical';
   import {
     exportFootingCadHandoff, footingCadPrerequisiteStamp,
   } from '../../../lib/store/rc-cad-export';
+  import FootingMatPanel from './FootingMatPanel.svelte';
 
   const footings = $derived([...modelStore.model.footings.values()].sort((a, b) => a.id - b.id));
   const profiles = $derived(modelStore.model.geotechnical?.profiles ?? []);
+
+  /**
+   * The project's bottom-mat preferences.
+   *
+   * Read through the store's resolver, so a project saved before these existed shows the
+   * 16/16 default it is already being designed to rather than an empty control.
+   */
+  const mat = $derived(modelStore.footingMatPreferences());
 
   /** Nodes that can take a footing: a support is where a reaction exists to carry. */
   const candidateNodes = $derived(
@@ -330,12 +341,93 @@
           {/if}
         </div>
 
+        <!--
+          The designed bottom mat, in its own component. See `FootingMatPanel.svelte`: the
+          footing editor owns geometry and the ground, that owns the design that follows from
+          them, and the split is what keeps both inside the design-tab size ceiling.
+        -->
+        <FootingMatPanel footingId={f.id} />
+
         <button class="danger" data-testid="footing-delete"
                 onclick={() => { modelStore.removeFooting(f.id); selectedId = null; }}>
           {t('footing.ui.delete')}
         </button>
       </div>
     {/if}
+  </section>
+
+  <!--
+    The bottom-mat convention. A PROJECT preference, in its own section for the same reason the
+    ground has one: it is shared by every footing rather than owned by any.
+
+    It exists as a control at all because it used to be `DEFAULT_FOOTING_BAR_DIA_MM = 16`, a
+    private constant in the detailing store that fixed the effective depth of every footing
+    check in the project and that no user could see. The note says out loud what it is — a
+    preference — so nobody reads Ø16 as something the design chose.
+  -->
+  <section class="mat-prefs" data-testid="footing-mat-prefs">
+    <header><h4>{t('footing.ui.matTitle')}</h4></header>
+    <p class="note">{t('footing.ui.matNote')}</p>
+    <div class="grid">
+      <label>{t('footing.ui.matDiameterX')}
+        <select data-testid="footing-mat-dia-x"
+                onchange={(e) => modelStore.setFootingMatPreferences({
+                  bottomMatDiameterXmm: num(e.currentTarget.value),
+                })}>
+          {#each SUPPORTED_MAT_DIAMETERS_MM as d (d)}
+            <option value={d} selected={mat.bottomMatDiameterXmm === d}>Ø{d}</option>
+          {/each}
+        </select>
+      </label>
+      <label>{t('footing.ui.matDiameterY')}
+        <select data-testid="footing-mat-dia-y"
+                onchange={(e) => modelStore.setFootingMatPreferences({
+                  bottomMatDiameterYmm: num(e.currentTarget.value),
+                })}>
+          {#each SUPPORTED_MAT_DIAMETERS_MM as d (d)}
+            <option value={d} selected={mat.bottomMatDiameterYmm === d}>Ø{d}</option>
+          {/each}
+        </select>
+      </label>
+      <!--
+        Which perpendicular mat physically goes down.
+
+        A real design decision with a real cost — the lower layer is worth a full bar diameter
+        of effective depth — and no clause makes it: §13.3.3 governs distribution, §13.2.8 and
+        §25.4 govern anchorage, and neither says which mat goes first. So it is the engineer's,
+        and AUTO is an instruction to evaluate BOTH arrangements completely and select by a
+        stated rule rather than an absence of one.
+      -->
+      <label>{t('footing.ui.matLayerOrder')}
+        <select data-testid="footing-mat-layer-order"
+                onchange={(e) => modelStore.setFootingMatPreferences({
+                  bottomMatLayerOrder:
+                    e.currentTarget.value as (typeof FOOTING_LAYER_ORDER_PREFERENCES)[number],
+                })}>
+          {#each FOOTING_LAYER_ORDER_PREFERENCES as o (o)}
+            <option value={o} selected={mat.bottomMatLayerOrder === o}>
+              {t(`footing.ui.matLayerOrder.${o}`)}
+            </option>
+          {/each}
+        </select>
+      </label>
+      <label>{t('footing.ui.matSpacingPolicy')}
+        <!--
+          One option, and it is still a control rather than a caption: the project RECORDS that
+          its spacings were derived from the code. A future hand-entered mode becomes another
+          option here, not a reinterpretation of a missing field.
+        -->
+        <select data-testid="footing-mat-spacing-policy"
+                onchange={(e) => modelStore.setFootingMatPreferences({
+                  bottomMatSpacingPolicy: e.currentTarget.value as 'AUTO_CODE_COMPLIANT',
+                })}>
+          <option value="AUTO_CODE_COMPLIANT"
+                  selected={mat.bottomMatSpacingPolicy === 'AUTO_CODE_COMPLIANT'}>
+            {t('footing.ui.matSpacingPolicyAuto')}
+          </option>
+        </select>
+      </label>
+    </div>
   </section>
 
   <!--

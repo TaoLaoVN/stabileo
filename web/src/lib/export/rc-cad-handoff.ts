@@ -52,6 +52,7 @@ import { COLLISION_CHORD_TOLERANCE, type BarConflict } from '../engine/detailing
 import { minClearSpacingFor } from '../codes/cirsoc201/spacing';
 import type { RegulationEdition, ClauseRef } from '../codes/regulation';
 import type { Footing } from '../model/footing';
+import { partitionCadFamilies } from './rc-cad-families';
 import type { DetailingAssembly } from '../engine/detailing/assembly';
 import {
   RC_CAD_HANDOFF_SCHEMA, RC_CAD_HANDOFF_SCHEMA_VERSION,
@@ -171,7 +172,7 @@ function centreline(bar: BarPath): Point3[] {
 interface Extent { minZ: number; maxZ: number }
 
 /** Vertical extent of a bar's SURFACE, m: the sampled centreline grown by the bar radius. */
-function surfaceExtent(bar: BarPath): Extent {
+export function surfaceExtent(bar: BarPath): Extent {
   const r = bar.diameterMm / 2000;
   let minZ = Infinity;
   let maxZ = -Infinity;
@@ -189,7 +190,7 @@ function surfaceExtent(bar: BarPath): Extent {
  * plane has not passed through the interface, and calling that a passage would list bars that
  * do not cross.
  */
-function crossesElevation(bar: BarPath, elevation: number): boolean {
+export function crossesElevation(bar: BarPath, elevation: number): boolean {
   let below = false;
   let above = false;
   for (const p of centreline(bar)) {
@@ -201,13 +202,13 @@ function crossesElevation(bar: BarPath, elevation: number): boolean {
 }
 
 /** Is any part of this bar's centreline below an elevation? */
-function reachesBelow(bar: BarPath, elevation: number): boolean {
+export function reachesBelow(bar: BarPath, elevation: number): boolean {
   return centreline(bar).some((p) => p.z < elevation);
 }
 
-const pt = (p: Point3): CadPoint3 => ({ x: p.x, y: p.y, z: p.z });
+export const pt = (p: Point3): CadPoint3 => ({ x: p.x, y: p.y, z: p.z });
 
-const clauseOut = (r: ClauseRef): CadClauseRef => ({
+export const clauseOut = (r: ClauseRef): CadClauseRef => ({
   code: r.regulation, edition: r.edition, clause: r.clause, label: r.label,
 });
 
@@ -295,6 +296,23 @@ export function buildRcCadHandoff(
   // Scoped by OWNERSHIP, not by id pattern: the transfer cage is the steel owned by the
   // column element the footing references. A slab bar in the same floor assembly is owned by
   // its panel and is therefore not in this document.
+  //
+  // Ownership answers "which member is this steel part of". It does NOT answer "what kind of
+  // steel is this", and once the bottom mat became physical the two stopped coinciding: a
+  // footing's bars are attributed to the COLUMN element — its dowels ARE column bars — so twenty
+  // mat bars arrive owned by the same element as the cage, with `role: 'longitudinal'`, and the
+  // classification below calls them column dowels.
+  //
+  // That is a real misdescription and it is NOT fixed by filtering the mats out: the mats are the
+  // reinforcement this handoff should be carrying. It is fixed by naming every bar from what the
+  // generators recorded — see `rc-cad-families.ts` — which needs a family vocabulary wider than
+  // this frozen V1 union, and therefore a V2 document. `buildRcCadHandoffV2` is that document.
+  //
+  // This builder is retained for HISTORICAL input only. V1's declared families are
+  // `columnDowel` and `starterTie`, so an assembly carrying mat bars or crossties is not a V1
+  // subject, and the refusal below says so rather than silently describing it wrong or silently
+  // dropping it. Both silences were considered and both are worse: one lies about what the steel
+  // is, the other lies about what steel exists.
   const cage = assembly.bars.filter((b) => b.ownerElementIds.includes(column.elementId));
   const dowels = cage.filter((b) => b.role === 'longitudinal');
   const ties = cage.filter((b) => b.role === 'transverse');
@@ -311,6 +329,29 @@ export function buildRcCadHandoff(
     // steel in the assembly, and assigning it to an existing family would misdescribe it.
     refuse('UNCLASSIFIED_CAGE_BAR', 'footing.cad.refusal.unclassifiedBar', {
       footing: f.name, bars: unclassified.map((b) => b.id).sort().join(', '),
+    });
+  }
+  /**
+   * Families V1 cannot name, refused BY NAME so the remedy is obvious.
+   *
+   * Not "unclassified": `rc-cad-families` classifies these perfectly well. They are families V1
+   * does not declare, which is a different fact and a different remedy — export V2.
+   */
+  const beyondV1 = partitionCadFamilies(cage);
+  const foreignKinds = [...beyondV1.byKind.keys()]
+    .filter((k) => k !== 'columnDowel' && k !== 'starterTie')
+    .sort();
+  if (foreignKinds.length > 0) {
+    refuse('INPUT_NOT_V1_COMPATIBLE', 'footing.cad.refusal.incompatibleWithV1', {
+      footing: f.name,
+      families: foreignKinds.join(', '),
+      bars: foreignKinds.reduce((n, k) => n + (beyondV1.byKind.get(k)?.length ?? 0), 0),
+    });
+  }
+  if (beyondV1.refused.length > 0) {
+    refuse('UNCLASSIFIED_CAGE_BAR', 'footing.cad.refusal.unclassifiedBar', {
+      footing: f.name,
+      bars: beyondV1.refused.map((r) => r.bar.id).sort().join(', '),
     });
   }
   if (refusals.length > 0) return { ok: false, refusals };
@@ -742,11 +783,11 @@ export function buildRcCadHandoff(
 // ─── Small mappers ───────────────────────────────────────────────
 
 /** Six decimals, m — a micron. Enough for geometry, short of pretending to more. */
-function round(v: number): number {
+export function round(v: number): number {
   return Math.round(v * 1e6) / 1e6;
 }
 
-function outSegment(s: BarSegment): CadBarSegment {
+export function outSegment(s: BarSegment): CadBarSegment {
   const base: CadBarSegment = {
     kind: s.kind, start: pt(s.start), end: pt(s.end), length: s.length,
   };
@@ -762,7 +803,7 @@ function outSegment(s: BarSegment): CadBarSegment {
   };
 }
 
-function outTreatment(t: BarPath['startTreatment']): CadBar['startTreatment'] {
+export function outTreatment(t: BarPath['startTreatment']): CadBar['startTreatment'] {
   if (t.kind !== 'hook') return { kind: t.kind };
   return {
     kind: 'hook',
@@ -771,12 +812,12 @@ function outTreatment(t: BarPath['startTreatment']): CadBar['startTreatment'] {
 }
 
 /** Deterministic conflict order: by pair, then by location. Never by array position. */
-function conflictOrder(a: BarConflict, b: BarConflict): number {
+export function conflictOrder(a: BarConflict, b: BarConflict): number {
   return a.barA.localeCompare(b.barA) || a.barB.localeCompare(b.barB)
     || a.at.x - b.at.x || a.at.y - b.at.y || a.at.z - b.at.z;
 }
 
-function outFinding(c: BarConflict): CadFinding {
+export function outFinding(c: BarConflict): CadFinding {
   return {
     findingId: `finding:${c.pairClass ?? 'unclassified'}:${c.barA}|${c.barB}`,
     severity: c.severity,

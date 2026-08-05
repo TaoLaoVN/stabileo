@@ -304,6 +304,13 @@ function toCompact(snapshot: ModelSnapshot, meta?: ShareMeta): Record<string, un
   // bearing check cannot run, which is worse than not sharing it at all.
   if (snapshot.footings?.length) c.fo = snapshot.footings;
   if (snapshot.geotechnical?.profiles.length) c.gt = snapshot.geotechnical;
+  // Bottom-mat preferences ride with the footings for the same reason the soil does: they set
+  // the effective depth every footing in the link was designed at, so a shared project without
+  // them would reopen designed to a different mat than the one that was shared. Emitted only
+  // when a footing exists — a link with no foundation has nothing to state a mat about.
+  if (snapshot.footings?.length && snapshot.footingMatPreferences) {
+    c.fm = snapshot.footingMatPreferences;
+  }
 
   // Provenance (CAD-draft "unreviewed" tag + assumptions): kept verbatim so the
   // honesty badge survives URL share/embed — the one persistence path that
@@ -466,6 +473,7 @@ function fromCompact(c: Record<string, unknown>): ModelSnapshot {
     // user-editable, so nothing here may be trusted to be well formed.
     footings: c.fo as ModelSnapshot['footings'],
     geotechnical: c.gt as ModelSnapshot['geotechnical'],
+    footingMatPreferences: c.fm as ModelSnapshot['footingMatPreferences'],
 
     // Provenance (CAD-draft tag) — undefined for ordinary models
     provenance: c.pv as ModelSnapshot['provenance'],

@@ -18,24 +18,28 @@
 import { describe, it, expect, beforeAll } from 'vitest';
 import { createHash } from 'node:crypto';
 import { modelStore } from '../../store/model.svelte';
-import { buildFootingCadHandoff } from '../../store/rc-cad-export';
-import { validateRcCadHandoff } from '../rc-cad-handoff-validate';
-import { serializeRcCadHandoff, rcCadHandoffFilename } from '../rc-cad-handoff';
+import { buildFootingCadHandoffV2 } from '../../store/rc-cad-export';
+import { validateRcCadHandoffV2 } from '../rc-cad-handoff-v2-validate';
+import { serializeRcCadHandoffV2, rcCadHandoffV2Filename } from '../rc-cad-handoff-v2';
 import {
-  CODE_COLUMN_COVER_OUT_OF_SCOPE, CODE_FOOTING_MAT_NOT_MODELED, CODE_NO_CONTAINMENT_CHECKER,
-  type RcCadHandoffV1,
+  CODE_COLUMN_COVER_OUT_OF_SCOPE, CODE_NO_CONTAINMENT_CHECKER,
 } from '../rc-cad-handoff-types';
+import {
+  CODE_V2_BOTTOM_MAT_MODELED, CODE_V2_MAT_STARTER_SPACING,
+  CODE_V2_PUNCHING_MOMENT_UNSUPPORTED, CODE_V2_TOP_NOT_EVALUATED,
+  type RcCadHandoffV2,
+} from '../rc-cad-handoff-v2-types';
 import { runProductionChain, fixtureText, keyTranslate } from './rc-cad-chain';
 
 const FOOTING_ID = 1;
 const COLUMN_ELEMENT_ID = 1;
 
-let doc: RcCadHandoffV1;
+let doc: RcCadHandoffV2;
 let json: string;
 
 beforeAll(async () => {
   await runProductionChain();
-  const out = buildFootingCadHandoff(FOOTING_ID, keyTranslate);
+  const out = buildFootingCadHandoffV2(FOOTING_ID, keyTranslate);
   if (!out.ok) {
     throw new Error(`export refused: ${JSON.stringify(out.refusals)} ${JSON.stringify(out.invalid)}`);
   }
@@ -48,8 +52,8 @@ const check = (id: string) => doc.checks.find((c) => c.checkId === id)!;
 
 describe('envelope and provenance', () => {
   it('declares its schema, units and coordinate system explicitly', () => {
-    expect(doc.schema).toBe('RcCadHandoffV1');
-    expect(doc.schemaVersion).toBe(1);
+    expect(doc.schema).toBe('RcCadHandoffV2');
+    expect(doc.schemaVersion).toBe(2);
     expect(doc.units).toEqual({ length: 'm', angle: 'deg', barDiameter: 'mm', mass: 'kg' });
     expect(doc.coordinateSystem).toEqual({ up: 'Z', handedness: 'right' });
   });
@@ -67,7 +71,11 @@ describe('envelope and provenance', () => {
   it('names its subject and the production certificate it was built under', () => {
     expect(doc.subject).toMatchObject({ kind: 'footing', entityId: FOOTING_ID, name: 'Z1' });
     expect(doc.subject.elementIds).toEqual([COLUMN_ELEMENT_ID]);
-    expect(doc.certificate.maturity).toBe('IMPLEMENTED_PROVISIONAL');
+    // UNSUPPORTED, and it is the honest propagation of two production limitations rather than a
+    // regression: punching with unbalanced moment transfer is not implemented and the footing's
+    // top reinforcement was never evaluated, so the family certificate cannot claim
+    // IMPLEMENTED_PROVISIONAL. `statuses` carries each of those separately.
+    expect(doc.certificate.maturity).toBe('UNSUPPORTED');
     expect(doc.certificate.verifierId).toBe('cirsoc201.provided.v2.2025');
     expect(doc.certificate.codeEdition).toBe('2025');
   });
@@ -178,6 +186,14 @@ describe('the footing-to-column interface', () => {
     const passage = iface().intentionalBarPassage!;
     const dowelIds = doc.assembly.families.find((x) => x.kind === 'columnDowel')!.barIds;
     for (const id of dowelIds) expect(passage.barIds).toContain(id);
+    // And ONLY steel that actually crosses the plane. A mat bar lies near the soffit and never
+    // reaches the interface, so listing it as an intentional passage would declare a crossing
+    // that does not happen.
+    const matIds = new Set([
+      ...doc.assembly.families.find((x) => x.kind === 'footingBottomMatX')!.barIds,
+      ...doc.assembly.families.find((x) => x.kind === 'footingBottomMatY')!.barIds,
+    ]);
+    for (const id of passage.barIds) expect(matIds.has(id), id).toBe(false);
     expect(passage.reasonKey).toBe('footing.cad.interface.intentionalPassage');
     // The clause that makes it intentional, not a bare assertion.
     expect(passage.clauseRefs?.map((c) => c.clause)).toContain('16.3.4');
@@ -201,20 +217,31 @@ describe('the footing-to-column interface', () => {
   });
 });
 
-describe('transfer-cage classification', () => {
-  it('is a footingTransferCage and says so as a value', () => {
-    expect(doc.assembly.kind).toBe('footingTransferCage');
-    expect(doc.assembly.completeness).toBe('partialConnectionOnly');
-    expect(doc.assembly.descriptionKey).toBe('footing.cad.assembly.description');
+describe('reinforcement-assembly classification', () => {
+  it('is a footingReinforcementAssembly and says so as a value', () => {
+    // A DIFFERENT subject from V1's transfer cage, not a wider version of it. The bottom mat is
+    // here, so `partialConnectionOnly` would understate the document and
+    // `completeFootingReinforcement` would overstate it — top steel was never evaluated.
+    expect(doc.assembly.kind).toBe('footingReinforcementAssembly');
+    expect(doc.assembly.completeness).toBe('bottomMatAndConnection');
+    expect(doc.assembly.descriptionKey).toBe('footing.cadv2.assembly.description');
   });
 
-  it('splits the cage into exactly the two production families', () => {
+  it('splits the assembly into exactly the five production families', () => {
     const kinds = doc.assembly.families.map((f) => f.kind).sort();
-    expect(kinds).toEqual(['columnDowel', 'starterTie']);
+    expect(kinds).toEqual([
+      'columnDowel', 'footingBottomMatX', 'footingBottomMatY', 'starterCrosstie', 'starterTie',
+    ]);
     const dowels = doc.assembly.families.find((f) => f.kind === 'columnDowel')!;
     const ties = doc.assembly.families.find((f) => f.kind === 'starterTie')!;
+    const crossties = doc.assembly.families.find((f) => f.kind === 'starterCrosstie')!;
+    const matX = doc.assembly.families.find((f) => f.kind === 'footingBottomMatX')!;
+    const matY = doc.assembly.families.find((f) => f.kind === 'footingBottomMatY')!;
     expect(dowels.barIds).toHaveLength(8);
     expect(ties.barIds).toHaveLength(6);
+    expect(crossties.barIds).toHaveLength(12);
+    expect(matX.barIds).toHaveLength(10);
+    expect(matY.barIds).toHaveLength(10);
     expect(dowels.purposeKey).toBe('footing.cad.family.columnDowel');
     expect(ties.purposeKey).toBe('footing.cad.family.starterTie');
   });
@@ -231,29 +258,43 @@ describe('transfer-cage classification', () => {
   });
 
   it('carries the production diameters, marks and cutting lengths', () => {
-    const dowels = doc.reinforcement.bars.filter((b) => b.role === 'longitudinal');
-    const ties = doc.reinforcement.bars.filter((b) => b.role === 'transverse');
+    // `role` no longer separates the families: a mat bar is longitudinal too, which is exactly
+    // why the taxonomy reads recorded identity instead. Counted by FAMILY here, and the
+    // role-based split is asserted only where it is still meaningful.
+    const familyBars = (kind: string) =>
+      doc.assembly.families.find((f) => f.kind === kind)!.barIds
+        .map((id) => doc.reinforcement.bars.find((b) => b.id === id)!);
+    const dowels = familyBars('columnDowel');
+    const ties = [...familyBars('starterTie'), ...familyBars('starterCrosstie')];
+    const mats = [...familyBars('footingBottomMatX'), ...familyBars('footingBottomMatY')];
     expect(dowels).toHaveLength(8);
-    expect(ties).toHaveLength(6);
+    expect(ties).toHaveLength(18);
+    expect(mats).toHaveLength(20);
     expect(new Set(dowels.map((b) => b.diameterMm))).toEqual(new Set([16]));
     expect(new Set(ties.map((b) => b.diameterMm))).toEqual(new Set([6]));
+    expect(new Set(mats.map((b) => b.diameterMm))).toEqual(new Set([16]));
     for (const b of doc.reinforcement.bars) {
       expect(b.cuttingLength, `bar ${b.id} cutting length`).toBeGreaterThan(0);
       expect(b.mark, `bar ${b.id} mark`).toBeTruthy();
       expect(b.ownerElementIds).toEqual([COLUMN_ELEMENT_ID]);
     }
-    expect(doc.reinforcement.marks).toHaveLength(2);
+    expect(doc.reinforcement.marks).toHaveLength(6);
     for (const m of doc.reinforcement.marks) {
       expect(m.quantity).toBe(m.barIds.length);
     }
-    expect(doc.reinforcement.marks.map((m) => m.quantity).sort((a, b) => a - b)).toEqual([6, 8]);
+    // Six marks now: two mat marks, the dowel mark and three tie/crosstie shapes. The 20 is the
+    // mat, which is one mark for both directions because the bars are identical.
+    expect(doc.reinforcement.marks.map((m) => m.quantity).sort((a, b) => a - b))
+      .toEqual([2, 6, 6, 6, 6, 20]);
   });
 });
 
 describe('bar and arc geometry', () => {
   it('serialises every arc with its exact centre and claims no approximation', () => {
     const arcs = doc.reinforcement.bars.flatMap((b) => b.segments.filter((s) => s.kind === 'arc'));
-    expect(arcs).toHaveLength(38);
+    // 62, not 38: the certified column layout earns twelve crossties, each with two hooks, and
+    // the mat bars are straight so they add none.
+    expect(arcs).toHaveLength(62);
     for (const s of arcs) {
       // The centre is what makes a 3-D arc reconstructable at all: start, end, radius and
       // sweep are satisfied by two centres in any plane, and the plane itself is free.
@@ -281,24 +322,42 @@ describe('bar and arc geometry', () => {
   });
 
   it('carries the production hook geometry rather than synthesising one', () => {
-    // Every bar in this cage is hooked, and for two different reasons: the dowels turn 90° over
-    // the bottom mat because the straight development length does not fit in a 500 mm footing,
-    // and the closed starter ties carry 135° seismic hooks at their lap. The manifest emits the
-    // geometry each one actually has and never invents a hook for a bar that has none.
+    // NOT every bar is hooked any more, and that is the point: the mat bars are straight, and a
+    // document that invented a hook for them would be describing steel nobody fabricated. The
+    // starters turn 90° over the mat because the straight development length does not fit in a
+    // 500 mm footing; the ties and crossties carry their table hooks at the lap.
     const hooked = doc.reinforcement.bars.filter((b) => b.startTreatment.kind === 'hook');
-    expect(hooked).toHaveLength(doc.reinforcement.bars.length);
+    const straight = doc.reinforcement.bars.filter((b) => b.startTreatment.kind !== 'hook');
+    expect(hooked).toHaveLength(26);
+    expect(straight).toHaveLength(20);
+    const matIds = new Set([
+      ...doc.assembly.families.find((f) => f.kind === 'footingBottomMatX')!.barIds,
+      ...doc.assembly.families.find((f) => f.kind === 'footingBottomMatY')!.barIds,
+    ]);
+    for (const b of straight) expect(matIds.has(b.id), `${b.id} straight`).toBe(true);
     for (const b of hooked) {
       expect(b.startTreatment.hook, `bar ${b.id} hook geometry`).toBeTruthy();
       expect((b.startTreatment.hook as { angle?: number }).angle).toBeGreaterThan(0);
     }
-    const dowels = doc.reinforcement.bars.filter((b) => b.role === 'longitudinal');
+    // By FAMILY, not by role: a mat bar is longitudinal too, and filtering on role would sweep
+    // twenty straight bars into a set this then asserts all carry a 90° hook.
+    const dowelIds = new Set(
+      doc.assembly.families.find((f) => f.kind === 'columnDowel')!.barIds);
+    const dowels = doc.reinforcement.bars.filter((b) => dowelIds.has(b.id));
     expect(dowels).toHaveLength(8);
     for (const b of dowels) {
       expect((b.startTreatment.hook as { angle?: number }).angle, `dowel ${b.id}`).toBe(90);
     }
-    // The mark shapes name the two hook patterns, from production, not from this test.
+    // The mark shapes come from production, not from this test. Six marks, six fabricated shapes:
+    //
+    //   straight    the twenty mat bars, which carry no hook at all
+    //   LH90 ×2     the eight starters, in TWO marks — the orientation search seats some hooks on
+    //               the upper mat layer and some on the lower, 16 mm apart, so their cutting
+    //               lengths genuinely differ and a schedule must not merge them
+    //   UH135H135   the closed starter tie
+    //   UH135H90 / UH90H135   the crossties: §25.3.5(e) alternates which END carries the 90° hook
     expect(doc.reinforcement.marks.map((m) => m.shape).sort())
-      .toEqual(['LH90', 'UH135H135']);
+      .toEqual(['LH90', 'LH90', 'UH135H135', 'UH135H90', 'UH90H135', 'straight']);
   });
 
   it('keeps every bar inside the concrete it belongs to', () => {
@@ -322,17 +381,14 @@ describe('authoritative Stabileo results are preserved, not recomputed', () => {
     expect(collision.authority).toBe('stabileo');
     expect(collision.evaluationStatus).toBe('EVALUATED');
     expect(collision.consumerObservationPolicy).toBe('MAY_CROSS_CHECK');
-    // Twelve real prohibited overlaps: the eight dowel hooks turn toward the column centre and
-    // interfere at the bottom of the footing. This is a genuine production finding and the
-    // manifest reports it rather than smoothing it into a pass.
-    expect(collision.findings).toHaveLength(12);
-    for (const f of collision.findings!) {
-      expect(f.pairClass).toBe('prohibitedOverlap');
-      expect(f.severity).toBe('overlap');
-      expect(f.shortfall!).toBeGreaterThan(0);
-      expect(f.unit).toBe('m');
-      expect(f.elementIds).toEqual([COLUMN_ELEMENT_ID]);
-    }
+    // ZERO, and that is a result rather than an absence.
+    //
+    // There used to be twelve: all eight starter hooks turned toward the column centre in one
+    // horizontal plane and interfered at the bottom of the footing, four pairs with coincident
+    // axes. The hooks are now seated on the mat layer each leg crosses and their orientations are
+    // searched, so no two share a volume. The clear-spacing check below is where the four
+    // surviving findings live — a different clause judged those.
+    expect(collision.findings).toEqual([]);
   });
 
   it('matches the assembly’s own conflicts exactly, pair for pair', () => {
@@ -343,16 +399,28 @@ describe('authoritative Stabileo results are preserved, not recomputed', () => {
     const fromManifest = doc.checks
       .flatMap((c) => c.findings ?? [])
       .map((f) => `${f.barIdA}|${f.barIdB}|${f.measured}|${f.required}`).sort();
+    // They match exactly now. In V1 they could not: every one of these four pairs is a mat bar
+    // against a starter, and the mat bar was outside V1's declared scope, so the manifest had to
+    // drop the finding and reported a clean collision check over steel that had conflicts.
     expect(fromManifest).toEqual(fromAssembly);
+    expect(fromManifest).toHaveLength(4);
   });
 
   it('keeps clear spacing as a separate evaluated check with the code-derived rules', () => {
     const spacing = check(`check:barClearSpacing:footing:${FOOTING_ID}`);
     expect(spacing.authority).toBe('stabileo');
     expect(spacing.evaluationStatus).toBe('EVALUATED');
-    // Evaluated with no findings is a real result: every reported pair was a prohibited
-    // overlap, judged before any spacing clause applied.
-    expect(spacing.findings).toHaveLength(0);
+    // FOUR findings: the mat/starter pairs at 27,97 mm against the 40,00 mm §25.2.3 requires of
+    // a pair containing a column bar. They are the reason the assembly is not constructible, and
+    // they live here rather than under `barCollision` because a clear-spacing clause is what
+    // judged them — an interpenetration is judged against zero before any clause is consulted.
+    expect(spacing.findings).toHaveLength(4);
+    for (const fnd of spacing.findings!) {
+      expect(fnd.pairClass).toBe('sameLayerSpacing');
+      expect(fnd.severity).toBe('clearance');
+      expect(fnd.measured!).toBeGreaterThan(0);
+      expect(fnd.measured!).toBeLessThan(fnd.required!);
+    }
 
     const rules = doc.requirements.clearSpacing.filter((r) => r.appliesToRolePair);
     expect(rules.length).toBeGreaterThan(0);
@@ -374,7 +442,9 @@ describe('authoritative Stabileo results are preserved, not recomputed', () => {
     // for the other pairs would need the collision detector's closest-approach data, and
     // guessing it is how a second implementation starts disagreeing with the first.
     const pairs = doc.requirements.clearSpacing.filter((r) => r.barIdA);
-    expect(pairs).toHaveLength(12);
+    // Four, one per pair Stabileo reported. In V1 this was twelve interpenetrating starter hooks;
+    // those are gone, and what remains are the four mat/starter clear-spacing failures.
+    expect(pairs).toHaveLength(4);
     for (const p of pairs) expect(p.reportable).toBe(true);
   });
 });
@@ -411,8 +481,10 @@ describe('cover and containment honesty', () => {
       const dipsIn = b.segments.some((s) => s.start.z < footingTopZ || s.end.z < footingTopZ);
       expect(scoped.has(b.id), `bar ${b.id} in footing scope`).toBe(dipsIn);
     }
-    // All eight dowels, plus the starter tie that straddles the footing top.
-    expect(scoped.size).toBe(9);
+    // Eight dowels, the starter tie that straddles the footing top, and all twenty mat bars —
+    // which sit near the soffit and are the steel the footing's cover requirement most obviously
+    // applies to. In V1 this was nine, because the mats were not in the document.
+    expect(scoped.size).toBe(29);
   });
 
   it('reports footing containment as NOT_EVALUATED, with a mandatory reason', () => {
@@ -441,7 +513,9 @@ describe('cover and containment honesty', () => {
     expect(cover.notEvaluatedCode).toBe(CODE_COLUMN_COVER_OUT_OF_SCOPE);
     // OUT_OF_SCOPE, not MAY_OBSERVE: the consumer must not measure this at all here.
     expect(cover.consumerObservationPolicy).toBe('OUT_OF_SCOPE');
-    expect(cover.requirementIds).toEqual([]);
+    // Absent, not empty: the stub carries no cover requirement at all, and an empty array would
+    // suggest one was looked for and none matched.
+    expect(cover.requirementIds).toBeUndefined();
     expect(cover.scope?.bodyIds).toEqual([body('supportedColumn').bodyId]);
   });
 
@@ -466,11 +540,31 @@ describe('cover and containment honesty', () => {
 });
 
 describe('unsupported conditions', () => {
-  it('declares that footing mat geometry is not modelled', () => {
-    const n = doc.unsupported.find((x) => x.code === CODE_FOOTING_MAT_NOT_MODELED);
-    expect(n, 'the mat condition is present').toBeTruthy();
-    expect(n!.messageKey).toBe('footing.cad.unsupported.matGeometry');
-    expect(n!.bodyIds).toEqual([body('footing').bodyId]);
+  it('declares that the bottom mat IS modelled, and that the top was not evaluated', () => {
+    // The inverse of V1's condition, and the reason V2 exists. A V1 consumer was told the mats
+    // were drawing requirements rather than bar geometry; this document carries them, and says so
+    // as a coded condition so that expectation cannot be carried across versions.
+    const modeled = doc.unsupported.find((x) => x.code === CODE_V2_BOTTOM_MAT_MODELED);
+    expect(modeled, 'the bottom-mat condition is present').toBeTruthy();
+    expect(modeled!.messageKey).toBe('footing.cadv2.scope.bottomMatModeled');
+    expect(modeled!.bodyIds).toEqual([body('footing').bodyId]);
+    expect(modeled!.params).toMatchObject({ x: 10, y: 10 });
+
+    // V1's "mats are not modelled" code must NOT appear: it would contradict the document.
+    expect(doc.unsupported.map((x) => x.code))
+      .not.toContain('FOOTING_MAT_GEOMETRY_NOT_MODELED');
+
+    // The top, which genuinely was not evaluated, and the punching limitation beside it.
+    const top = doc.unsupported.find((x) => x.code === CODE_V2_TOP_NOT_EVALUATED);
+    expect(top, 'the top-reinforcement condition is present').toBeTruthy();
+    expect(doc.statuses.topReinforcement).toBe('NOT_EVALUATED');
+    expect(doc.unsupported.map((x) => x.code))
+      .toContain(CODE_V2_PUNCHING_MOMENT_UNSUPPORTED);
+    expect(doc.statuses.punchingMomentTransfer).toBe('UNSUPPORTED');
+
+    // And the four spacing failures, as a coded condition rather than only as findings.
+    expect(doc.unsupported.map((x) => x.code)).toContain(CODE_V2_MAT_STARTER_SPACING);
+    expect(doc.statuses.constructible).toBe(false);
   });
 
   it('declares the containment and column-cover limitations too', () => {
@@ -493,7 +587,7 @@ describe('unsupported conditions', () => {
 
 describe('identity and validation', () => {
   it('passes both its own validation layers', () => {
-    const v = validateRcCadHandoff(doc);
+    const v = validateRcCadHandoffV2(doc);
     expect(v.schema, 'schema violations').toEqual([]);
     expect(v.semantic, 'semantic violations').toEqual([]);
   });
@@ -521,8 +615,8 @@ describe('identity and validation', () => {
 
 describe('determinism', () => {
   it('produces identical bytes twice from one model state', () => {
-    const a = buildFootingCadHandoff(FOOTING_ID, keyTranslate);
-    const b = buildFootingCadHandoff(FOOTING_ID, keyTranslate);
+    const a = buildFootingCadHandoffV2(FOOTING_ID, keyTranslate);
+    const b = buildFootingCadHandoffV2(FOOTING_ID, keyTranslate);
     expect(a.ok && b.ok).toBe(true);
     if (!a.ok || !b.ok) return;
     expect(a.json).toBe(b.json);
@@ -531,7 +625,7 @@ describe('determinism', () => {
 
   it('re-deriving from a fresh production chain reproduces every value but the revision', async () => {
     await runProductionChain();
-    const again = buildFootingCadHandoff(FOOTING_ID, keyTranslate);
+    const again = buildFootingCadHandoffV2(FOOTING_ID, keyTranslate);
     expect(again.ok).toBe(true);
     if (!again.ok) return;
 
@@ -543,8 +637,8 @@ describe('determinism', () => {
 
     // Everything the CAD side consumes — geometry, families, requirements, verdicts — is
     // byte-identical. That is the determinism claim that matters.
-    const strip = (d: RcCadHandoffV1) => {
-      const { revisions: _revisions, ...rest } = JSON.parse(JSON.stringify(d)) as RcCadHandoffV1;
+    const strip = (d: RcCadHandoffV2) => {
+      const { revisions: _revisions, ...rest } = JSON.parse(JSON.stringify(d)) as RcCadHandoffV2;
       return JSON.stringify(rest);
     };
     expect(strip(again.handoff)).toBe(strip(doc));
@@ -563,13 +657,16 @@ describe('determinism', () => {
   });
 
   it('names the file from identity and revisions, with no timestamp', () => {
-    const name = rcCadHandoffFilename(doc);
-    expect(name).toBe(`rc-cad-handoff-Z1-det${doc.revisions.detailing}-dem${doc.revisions.demand}.json`);
+    const name = rcCadHandoffV2Filename(doc);
+    // `v2` in the name, and BOTH revisions still in it: a file on disk has to be attributable to
+    // the version and the state it came from.
+    expect(name).toBe(
+      `rc-cad-handoff-v2-Z1-det${doc.revisions.detailing}-dem${doc.revisions.demand}.json`);
     expect(name).not.toMatch(/\d{4}-\d{2}-\d{2}/);
   });
 
   it('re-serialising the parsed document reproduces the same bytes', () => {
-    expect(serializeRcCadHandoff(JSON.parse(json) as RcCadHandoffV1)).toBe(json);
+    expect(serializeRcCadHandoffV2(JSON.parse(json) as RcCadHandoffV2)).toBe(json);
   });
 });
 

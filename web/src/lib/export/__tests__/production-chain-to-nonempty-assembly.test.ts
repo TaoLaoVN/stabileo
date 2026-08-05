@@ -98,7 +98,18 @@ describe('production chain: restored project -> column design -> non-empty footi
   it('WITHOUT column design the existing structured blocker still appears', async () => {
     const c = await runChain(false);
     const bars = c.floorAssemblies.flatMap((a) => a.bars);
-    expect(bars.length, 'no column steel means no dowels').toBe(0);
+    /**
+     * The BOTTOM MAT still exists, and only the dowels are missing.
+     *
+     * The footing's flexural design depends on its own geometry and reaction, not on the column's
+     * reinforcement, so PR18's physical mat is generated either way — twenty bars here. What the
+     * column's missing steel removes is the transfer cage: no dowels, no starter ties. This test
+     * used to assert zero bars total, which was true only while a footing produced nothing but
+     * dowels.
+     */
+    expect(bars.filter((b) => b.id.includes('dowel')), 'no column steel means no dowels')
+      .toEqual([]);
+    expect(bars.length, 'the bottom mat does not depend on column steel').toBe(20);
     expect(c.unsupportedKeys, 'and the reason is explicit, never silent')
       .toContain('footing.run.noColumnBars');
   });

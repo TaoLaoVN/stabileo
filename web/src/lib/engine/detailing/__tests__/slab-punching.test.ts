@@ -210,19 +210,29 @@ describe('the punching free body', () => {
     expect(r.contributions[0].directlyDelivered).toBe(120);
   });
 
-  it('is invariant under SIGN REVERSAL of the axial pair', () => {
-    // Uplift: both columns in tension, the step unchanged in magnitude. The transferred force
-    // is a step, so its sign convention cannot change the demand.
-    const down = checkSlabJointPunching(punchInput());
+  it('flags a reversed axial step as uplift — never certifies the downward mechanism on it', () => {
+    // |below − above| used to make the demand direction-invariant. It is NOT: a
+    // reversed step is uplift punching, with the tension face inverted — and the
+    // downward check says nothing about it.
+    // Both columns in tension (hanger): the step runs upward.
     const up = checkSlabJointPunching(punchInput({
       joint: joint({ forces: [force({ axialBelow: -900, axialAbove: -600 })] }),
     }));
-    expect(up.Vu).toBeCloseTo(down.Vu, 9);
-    // And swapping which column carries more reverses nothing either.
+    expect(up.status).toBe('UNSUPPORTED');
+    expect(up.unsupported.map((u) => u.key))
+      .toContain('detailing.slabPunching.upliftNotEstablished');
+    // And the reversed compression case (above > below, impossible under gravity)
+    // is flagged the same way rather than absorbed by the absolute value.
     const swapped = checkSlabJointPunching(punchInput({
       joint: joint({ forces: [force({ axialBelow: 600, axialAbove: 900 })] }),
     }));
-    expect(swapped.Vu).toBeCloseTo(down.Vu, 9);
+    expect(swapped.status).toBe('UNSUPPORTED');
+    expect(swapped.unsupported.map((u) => u.key))
+      .toContain('detailing.slabPunching.upliftNotEstablished');
+    // A normal downward step is untouched.
+    const down = checkSlabJointPunching(punchInput());
+    expect(down.status).not.toBe('UNSUPPORTED');
+    expect(down.Vu).toBeGreaterThan(0);
   });
 
   it('compares against the resistance an independent calculation gives', () => {

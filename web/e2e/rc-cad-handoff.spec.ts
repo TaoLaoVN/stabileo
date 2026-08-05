@@ -24,7 +24,9 @@ import { readFileSync } from 'node:fs';
 import { test, expect, solveModel, designAll } from './fixtures';
 import type { Page } from '@playwright/test';
 import { validateAgainstSchema } from '../src/lib/export/json-schema-subset';
-import { validateRcCadHandoffSemantics } from '../src/lib/export/rc-cad-handoff-semantics';
+import {
+  validateRcCadHandoffV2Semantics,
+} from '../src/lib/export/rc-cad-handoff-v2-semantics';
 
 /**
  * The schema AS COMMITTED, read from disk rather than imported.
@@ -34,7 +36,7 @@ import { validateRcCadHandoffSemantics } from '../src/lib/export/rc-cad-handoff-
  * without an import attribute, which is why `rc-cad-handoff-semantics.ts` is kept free of one.
  */
 const SCHEMA = JSON.parse(readFileSync(
-  new URL('../src/lib/export/rc-cad-handoff.schema.json', import.meta.url).pathname, 'utf8'));
+  new URL('../src/lib/export/rc-cad-handoff-v2.schema.json', import.meta.url).pathname, 'utf8'));
 
 const FIXTURE = new URL(
   '../src/lib/export/__fixtures__/rc-footing-cad-poc.ded.json', import.meta.url).pathname;
@@ -137,7 +139,7 @@ test.describe('@slow rc cad handoff — the visible export', () => {
     const file = await download;
 
     // A stable filename: identity and revisions, no timestamp.
-    expect(file.suggestedFilename()).toMatch(/^rc-cad-handoff-Z1-det\d+-dem\d+\.json$/);
+    expect(file.suggestedFilename()).toMatch(/^rc-cad-handoff-v2-Z1-det\d+-dem\d+\.json$/);
     expect(file.suggestedFilename()).not.toMatch(/\d{4}-\d{2}-\d{2}/);
 
     const path = await file.path();
@@ -150,12 +152,21 @@ test.describe('@slow rc cad handoff — the visible export', () => {
     await expect(ok).toContainText(file.suggestedFilename());
     await expect(ok).toContainText(String(Buffer.byteLength(text, 'utf8')));
 
-    // The cage the production chain actually produces.
-    expect(doc.schema).toBe('RcCadHandoffV1');
-    expect(doc.assembly.kind).toBe('footingTransferCage');
-    expect(doc.assembly.completeness).toBe('partialConnectionOnly');
-    expect(doc.reinforcement.bars).toHaveLength(14);
-    expect(doc.reinforcement.marks).toHaveLength(2);
+    // The coordinated assembly the production chain actually produces. The UI emits V2: the
+    // footing's bottom mat is physical steel and V1 cannot describe it.
+    expect(doc.schema).toBe('RcCadHandoffV2');
+    expect(doc.schemaVersion).toBe(2);
+    expect(doc.assembly.kind).toBe('footingReinforcementAssembly');
+    expect(doc.assembly.completeness).toBe('bottomMatAndConnection');
+    expect(doc.reinforcement.bars).toHaveLength(46);
+    expect(doc.reinforcement.marks).toHaveLength(6);
+    // All five families, with the mats individually addressable rather than folded into dowels.
+    expect((doc.assembly.families as Array<{ kind: string; barIds: string[] }>)
+      .map((fam) => [fam.kind, fam.barIds.length]).sort())
+      .toEqual([
+        ['columnDowel', 8], ['footingBottomMatX', 10], ['footingBottomMatY', 10],
+        ['starterCrosstie', 12], ['starterTie', 6],
+      ]);
     expect(doc.concrete.bodies.map((b: { role: string }) => b.role).sort())
       .toEqual(['footing', 'supportedColumn']);
     expect(doc.concrete.interfaces).toHaveLength(1);
@@ -163,13 +174,27 @@ test.describe('@slow rc cad handoff — the visible export', () => {
     // Exact arcs survived the download intact.
     const arcs = (doc.reinforcement.bars as Array<{ segments: Array<{ kind: string; centre?: unknown }> }>)
       .flatMap((b) => b.segments.filter((s) => s.kind === 'arc'));
-    expect(arcs).toHaveLength(38);
+    expect(arcs).toHaveLength(62);
     expect(arcs.every((s) => s.centre)).toBe(true);
 
-    // And the limitations are in the file, not only in the UI.
+    // And the limitations are in the file, not only in the UI — including the ones a user must
+    // not miss: the mat IS modelled, the top steel was never evaluated, punching with unbalanced
+    // moment transfer is not implemented, and four clear distances fail.
     const codes = (doc.unsupported as Array<{ code: string }>).map((n) => n.code);
-    expect(codes).toContain('FOOTING_MAT_GEOMETRY_NOT_MODELED');
+    expect(codes).toContain('FOOTING_BOTTOM_MAT_MODELED');
+    expect(codes).toContain('FOOTING_TOP_REINFORCEMENT_NOT_EVALUATED');
+    expect(codes).toContain('PUNCHING_UNBALANCED_MOMENT_UNSUPPORTED');
+    expect(codes).toContain('MAT_STARTER_CLEAR_SPACING_FAILURE');
     expect(codes).toContain('COLUMN_COVER_OUT_OF_SCOPE');
+    // V1's opposite claim must NOT be here.
+    expect(codes).not.toContain('FOOTING_MAT_GEOMETRY_NOT_MODELED');
+
+    // The export must not present this footing as ready to build.
+    expect(doc.statuses.constructible).toBe(false);
+    expect(doc.statuses.constructibilityBlockers).toEqual(['MAT_STARTER_CLEAR_SPACING_FAILURE']);
+    expect(doc.statuses.bottomAnchorage).toBe('FAILED');
+    expect(doc.statuses.topReinforcement).toBe('NOT_EVALUATED');
+    expect(doc.statuses.punchingMomentTransfer).toBe('UNSUPPORTED');
   });
 
   test('C-D the downloaded manifest validates against the shipped schema and rules', async ({ pro: page }) => {
@@ -188,7 +213,7 @@ test.describe('@slow rc cad handoff — the visible export', () => {
     // memory and what actually landed on disk after serialisation.
     const doc = JSON.parse(text);
     const schema = validateAgainstSchema(doc, SCHEMA);
-    const semantic = validateRcCadHandoffSemantics(doc);
+    const semantic = validateRcCadHandoffV2Semantics(doc);
     expect(schema.map((x) => `${x.path}: ${x.message}`), 'schema violations').toEqual([]);
     expect(semantic.map((x) => x.rule), 'semantic violations').toEqual([]);
 
@@ -250,13 +275,25 @@ test.describe('@slow rc cad handoff — the visible export', () => {
 
     expect(collision.authority).toBe('stabileo');
     expect(collision.evaluationStatus).toBe('EVALUATED');
-    // Twelve real prohibited overlaps where the dowel hooks meet. A production finding, exported
-    // as a finding rather than smoothed into a clean pass.
-    expect(collision.findings).toHaveLength(12);
-    for (const f of collision.findings!) {
-      expect(f.pairClass).toBe('prohibitedOverlap');
-      expect(f.shortfall).toBeGreaterThan(0);
+    // ZERO interpenetrations, and that is a RESULT reaching the file rather than an absence.
+    // There used to be twelve, where all eight starter hooks turned toward the column centre in
+    // one plane; the hooks are now seated on the mat layer each leg crosses.
+    expect(collision.findings ?? []).toHaveLength(0);
+
+    // The four that DO survive are clear-spacing failures, and they reach the file too — a
+    // download that reported only the clean collision verdict would read as a pass.
+    const spacing = (doc.checks as Array<{
+      checkKind: string; evaluationStatus: string;
+      findings?: Array<{ pairClass: string; severity: string; measured: number; required: number }>;
+    }>).find((c) => c.checkKind === 'barClearSpacing')!;
+    expect(spacing.evaluationStatus).toBe('EVALUATED');
+    expect(spacing.findings).toHaveLength(4);
+    for (const f of spacing.findings!) {
+      expect(f.pairClass).toBe('sameLayerSpacing');
+      expect(f.severity).toBe('clearance');
+      expect(f.measured).toBeLessThan(f.required);
     }
+    expect(doc.statuses.constructible).toBe(false);
   });
 });
 
@@ -270,10 +307,17 @@ test.describe('@slow rc cad handoff — Spanish', () => {
     const doc = JSON.parse(readFileSync((await (await download).path())!, 'utf8'));
 
     const mat = (doc.unsupported as Array<{ code: string; text: string }>)
-      .find((n) => n.code === 'FOOTING_MAT_GEOMETRY_NOT_MODELED')!;
-    expect(mat.text).toContain('parrillas');
+      .find((n) => n.code === 'FOOTING_BOTTOM_MAT_MODELED')!;
+    expect(mat.text).toContain('parrilla inferior');
     // The key travels with the text, so a consumer can re-render it in its own locale.
-    expect(mat.text).not.toBe('footing.cad.unsupported.matGeometry');
+    expect(mat.text).not.toBe('footing.cadv2.scope.bottomMatModeled');
+
+    // The new V2 sentences are translated too, not pasted keys — including the one a user most
+    // needs to read: four clear distances fail and the assembly is not constructible.
+    const spacing = (doc.unsupported as Array<{ code: string; text: string }>)
+      .find((n) => n.code === 'MAT_STARTER_CLEAR_SPACING_FAILURE')!;
+    expect(spacing.text).toContain('NO es constructible');
+    expect(spacing.text).not.toBe('footing.cadv2.unsupported.matStarterSpacing');
 
     // No sentence in the document is a bare i18n key — which is what `t()` returns when a
     // translation is missing, and how a missing Spanish string would ship invisibly.

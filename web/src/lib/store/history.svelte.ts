@@ -7,7 +7,7 @@ import { modelStore } from './model.svelte';
 import type { Release, ProvidedReinforcement } from './model.svelte';
 import type { Element3DMetadata } from '../model/element-3d-metadata';
 import type { ModelProvenance } from '../model/provenance';
-import type { Footing } from '../model/footing';
+import type { Footing, FootingMatPreferences } from '../model/footing';
 import type { ProjectGeotechnical } from '../model/geotechnical';
 
 export interface ModelSnapshot {
@@ -48,6 +48,14 @@ export interface ModelSnapshot {
   footings?: Array<[number, Footing]>;
   /** Project ground conditions, referenced by footings rather than copied into them. */
   geotechnical?: ProjectGeotechnical;
+  /**
+   * Bottom-mat design preferences. Absent on snapshots taken before PR18-A, which
+   * `migrateFootingMatPreferences` reads as 16 mm / 16 mm / AUTO_CODE_COMPLIANT.
+   *
+   * On the FOUNDATION channel: `restoreFoundationOnly` restores it, because
+   * `setFootingMatPreferences` is what pushes the entry.
+   */
+  footingMatPreferences?: FootingMatPreferences;
   nextId: { node: number; material: number; section: number; element: number; support: number; load: number; loadCase?: number; combination?: number; plate?: number; quad?: number; connector?: number; footing?: number; soilProfile?: number };
   /** Jurisdiction, adopted regulation editions and concrete data. Absent on
    *  models saved before this existed — see migrateCodeSettings. */

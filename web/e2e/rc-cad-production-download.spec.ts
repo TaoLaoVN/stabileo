@@ -146,9 +146,9 @@ test.describe('@slow rc cad handoff — the production download', () => {
     const m = JSON.parse(text);
 
     // ── contract ────────────────────────────────────────────────
-    expect(m.schema).toBe('RcCadHandoffV1');
-    expect(m.schemaVersion).toBe(1);
-    expect(m.generator).toEqual({ name: 'stabileo-rc-cad-handoff', version: '1.0.0' });
+    expect(m.schema).toBe('RcCadHandoffV2');
+    expect(m.schemaVersion).toBe(2);
+    expect(m.generator).toEqual({ name: 'stabileo-rc-cad-handoff', version: '2.0.0' });
 
     // ── THE DEFECT THIS SPEC EXISTS FOR ─────────────────────────
     // Not merely non-empty: the identity of the regulation actually bound and run.
@@ -162,7 +162,7 @@ test.describe('@slow rc cad handoff — the production download', () => {
     expect(m.revisions.detailing).toBeGreaterThan(0);
     expect(m.revisions.demand).toBeGreaterThan(0);
     expect(download.suggestedFilename())
-      .toBe(`rc-cad-handoff-${m.subject.name}-det${m.revisions.detailing}-dem${m.revisions.demand}.json`);
+      .toBe(`rc-cad-handoff-v2-${m.subject.name}-det${m.revisions.detailing}-dem${m.revisions.demand}.json`);
 
     // ── geometry, by count and kind ─────────────────────────────
     expect(m.concrete.bodies).toHaveLength(2);
@@ -173,13 +173,22 @@ test.describe('@slow rc cad handoff — the production download', () => {
       id: string; diameterMm: number; role: string;
       segments: Array<{ kind: string }>;
     }>;
-    expect(bars).toHaveLength(14);
-    expect(bars.filter((b) => b.diameterMm === 16)).toHaveLength(8);
-    expect(bars.filter((b) => b.diameterMm === 6)).toHaveLength(6);
+    // 46: eight starters, six closed ties, twelve crossties and twenty mat bars. The Ø16 count
+    // is 28 rather than 8 because the mat is Ø16 too — which is exactly why the families, not the
+    // diameters, are what identify the steel.
+    expect(bars).toHaveLength(46);
+    expect(bars.filter((b) => b.diameterMm === 16)).toHaveLength(28);
+    expect(bars.filter((b) => b.diameterMm === 6)).toHaveLength(18);
+    expect((m.assembly.families as Array<{ kind: string; barIds: string[] }>)
+      .map((fam) => [fam.kind, fam.barIds.length]).sort())
+      .toEqual([
+        ['columnDowel', 8], ['footingBottomMatX', 10], ['footingBottomMatY', 10],
+        ['starterCrosstie', 12], ['starterTie', 6],
+      ]);
 
     const arcs = bars.reduce(
       (n, b) => n + b.segments.filter((s) => s.kind === 'arc').length, 0);
-    expect(arcs, 'exact arcs, not chorded approximations').toBe(38);
+    expect(arcs, 'exact arcs, not chorded approximations').toBe(62);
     // Every arc carries the parameters that make it exact rather than sampled.
     for (const b of bars) {
       for (const s of b.segments.filter((x) => x.kind === 'arc')) {
@@ -199,17 +208,43 @@ test.describe('@slow rc cad handoff — the production download', () => {
 
     // ── marks ───────────────────────────────────────────────────
     const marks = m.reinforcement.marks as Array<{ mark: string; diameterMm: number; quantity: number }>;
+    // Six marks: three Ø6 tie/crosstie shapes at six pieces each, the Ø16 mat at twenty, and the
+    // eight starters split across two marks because the hook-orientation search seats some on the
+    // upper mat layer and some on the lower, giving genuinely different cutting lengths.
     expect(marks.map((k) => [k.mark, k.diameterMm, k.quantity]).sort())
-      .toEqual([['F1', 6, 6], ['F2', 16, 8]]);
+      .toEqual([
+        ['F1', 6, 6], ['F2', 6, 6], ['F3', 6, 6],
+        ['F4', 16, 6], ['F5', 16, 2], ['F6', 16, 20],
+      ].sort());
 
-    // ── no footing-mat geometry, stated as well as absent ───────
+    // ── the mat IS here, and every limitation is coded ──────────
     const unsupportedCodes = (m.unsupported as Array<{ code: string }>).map((u) => u.code).sort();
     expect(unsupportedCodes).toEqual([
       'COLUMN_COVER_OUT_OF_SCOPE',
-      'FOOTING_MAT_GEOMETRY_NOT_MODELED',
+      'FOOTING_BOTTOM_MAT_MODELED',
+      'FOOTING_TOP_REINFORCEMENT_NOT_EVALUATED',
+      'MAT_STARTER_CLEAR_SPACING_FAILURE',
       'NO_PRODUCTION_CONTAINMENT_CHECKER',
+      'PUNCHING_UNBALANCED_MOMENT_UNSUPPORTED',
     ]);
-    expect(bars.some((b) => /mat/i.test(b.id)), 'no mat bars are present').toBe(false);
+    // The inverse of what this used to assert. V1 declared the mats absent and this checked that
+    // no mat bar had slipped in; V2 carries them, so the check is that they ARE here and remain
+    // individually addressable rather than folded into the dowel family.
+    expect(bars.filter((b) => /mat/i.test(b.id)), 'the mat bars are present').toHaveLength(20);
+    const matFamilyIds = new Set((m.assembly.families as Array<{ kind: string; familyId: string }>)
+      .filter((fam) => fam.kind.startsWith('footingBottomMat')).map((fam) => fam.familyId));
+    for (const b of bars.filter((x) => /mat/i.test(x.id))) {
+      expect(matFamilyIds.has((b as unknown as { familyId: string }).familyId), b.id).toBe(true);
+    }
+
+    // ── the export must not read as ready to build ──────────────
+    expect(m.statuses.constructible).toBe(false);
+    expect(m.statuses.constructibilityBlockers).toEqual(['MAT_STARTER_CLEAR_SPACING_FAILURE']);
+    expect(m.statuses.bottomFlexure).toBe('OK');
+    expect(m.statuses.bottomMatGeometry).toBe('MODELED');
+    expect(m.statuses.bottomAnchorage).toBe('FAILED');
+    expect(m.statuses.topReinforcement).toBe('NOT_EVALUATED');
+    expect(m.statuses.punchingMomentTransfer).toBe('UNSUPPORTED');
 
     // ── checks and observation policy ───────────────────────────
     const checks = m.checks as Array<{ checkId: string; evaluationStatus: string }>;
