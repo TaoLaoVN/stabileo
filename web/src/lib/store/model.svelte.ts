@@ -1636,7 +1636,11 @@ function createModelStore() {
       model.connectors = new Map();
       // Reset materials/sections to defaults
       model.materials = new Map([[1, { ...defaultMaterial }]]);
-      model.sections = new Map([[1, { ...defaultSection }]]);
+      // Resolve the default profile's canonical state too. `clear()` runs on
+      // every new model and before every example load, so leaving it
+      // unresolved is what made a freshly loaded example report its section as
+      // amorphous even after the engine was up.
+      model.sections = new Map([[1, { ...defaultSection, canonical: resolveSectionState({ ...defaultSection }) }]]);
       model.loadCases = [
         { id: 1, type: 'D', name: 'Dead Load' },
         { id: 2, type: 'L', name: 'Live Load' },
@@ -2385,6 +2389,12 @@ function createModelStore() {
         loadFixture(json as any, api as any);
       });
 
+      // Fixtures add their sections inside a bulk mutation, which bypasses the
+      // per-section resolve, so settle canonical state once the whole model is
+      // in place. Without this a loaded example reports every section as
+      // having no known geometry.
+      this.refreshCanonicalSections();
+
       if (is2DFixture(name) && (uiStore.analysisMode === '3d' || uiStore.analysisMode === 'pro')) {
         uiStore.useUpright2DIn3DPresentation();
       } else {
@@ -2444,14 +2454,55 @@ function createModelStore() {
     addSection(data: Omit<Section, 'id'>): number {
       if (!_undoBatching) _pushUndo?.();
       const id = nextId.section++;
+      // Resolve canonical state at creation, the same way `updateSection`
+      // does on edit. Without this a freshly added section carries no
+      // canonical state at all, and every consumer that asks whether it has
+      // known geometry — the detailed stress panel above all — correctly
+      // concludes it does not, which reads to the user as "amorphous section"
+      // for a perfectly ordinary catalogue profile.
+      const created: Section = { id, ...data };
+      created.canonical = resolveSectionState(created);
       if (_bulkMutating) {
-        model.sections.set(id, { id, ...data });
+        model.sections.set(id, created);
       } else {
         const m = new Map(model.sections);
-        m.set(id, { id, ...data });
+        m.set(id, created);
         model.sections = m;
       }
       return id;
+    },
+
+    /**
+     * Re-resolve canonical state for every section.
+     *
+     * The engine initialises asynchronously, so at app start — and for a
+     * model loaded before the WASM module is ready — `resolveSectionState`
+     * can only report properties-only. Nothing would ever revisit that
+     * decision, leaving otherwise fine catalogue profiles permanently without
+     * geometry. This is the hook that runs once the engine is up.
+     *
+     * Idempotent: re-resolving an already-resolved section reproduces the
+     * same digest, so calling it more than once is harmless. It deliberately
+     * does NOT bump `modelVersion` or fire the mutation hook — deriving
+     * geometry is not a model edit and must not invalidate existing results.
+     */
+    refreshCanonicalSections(): void {
+      let changed = false;
+      const m = new Map(model.sections);
+      for (const [id, sec] of m) {
+        const next = resolveSectionState(sec);
+        const before = sec.canonical;
+        const sameKind = before?.kind === next.kind;
+        const sameDigest =
+          before?.kind === 'geometry-backed' && next.kind === 'geometry-backed'
+            ? before.digest === next.digest
+            : sameKind;
+        if (!sameDigest) {
+          m.set(id, { ...sec, canonical: next });
+          changed = true;
+        }
+      }
+      if (changed) model.sections = m;
     },
 
     updateSection(id: number, data: Partial<Omit<Section, 'id'>>): void {
