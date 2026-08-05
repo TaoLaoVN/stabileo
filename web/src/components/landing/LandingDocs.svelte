@@ -1,49 +1,29 @@
 <script lang="ts">
-  import { t } from '../../lib/i18n';
+  import { tPublic as t } from '../../lib/i18n/store.svelte';
   import { QUICK_START_URL, AI_WORKFLOW_URL, SOLVER_REF_URL } from './landing-utils';
+  import Eyebrow from './Eyebrow.svelte';
+
+  const cards = [
+    { href: QUICK_START_URL, title: 'landing.docsC1T', body: 'landing.docsC1B' },
+    { href: AI_WORKFLOW_URL, title: 'landing.docsC2T', body: 'landing.docsC2B' },
+    { href: SOLVER_REF_URL, title: 'landing.docsC3T', body: 'landing.docsC3B' },
+  ];
 </script>
 
-<section class="docs-section reveal" id="docs">
-  <div class="section-inner">
-    <div class="section-head">
-      <span class="tag">{t('landing.docsTag')}</span>
-      <h2>{t('landing.docsTitle')}</h2>
-      <p class="section-sub">{t('landing.docsSub')}</p>
-    </div>
+<section class="sec sec--ink docs reveal" data-section="docs" id="docs" aria-labelledby="docs-title">
+  <div class="wrap">
+    <Eyebrow n="14" label={t('landing.ebDocs')} />
+    <h2 id="docs-title" class="display">{t('landing.docsH')}</h2>
+    <p class="lead">{t('landing.docsP')}</p>
 
-    <div class="docs-grid">
-      <a class="docs-card" data-tone="amber" href={QUICK_START_URL} target="_blank" rel="noreferrer">
-        <span class="docs-kicker">{t('landing.docsQuickKicker')}</span>
-        <h3>{t('landing.docsQuickTitle')}</h3>
-        <p>{t('landing.docsQuickDesc')}</p>
-        <ul>
-          <li>{t('landing.docsQuick1')}</li>
-          <li>{t('landing.docsQuick2')}</li>
-        </ul>
-        <span class="docs-open">{t('landing.docsOpen')}</span>
-      </a>
-
-      <a class="docs-card" data-tone="plum" href={AI_WORKFLOW_URL} target="_blank" rel="noreferrer">
-        <span class="docs-kicker">{t('landing.docsAiKicker')}</span>
-        <h3>{t('landing.docsAiTitle')}</h3>
-        <p>{t('landing.docsAiDesc')}</p>
-        <ul>
-          <li>{t('landing.docsAi1')}</li>
-          <li>{t('landing.docsAi2')}</li>
-        </ul>
-        <span class="docs-open">{t('landing.docsOpen')}</span>
-      </a>
-
-      <a class="docs-card" data-tone="ink" href={SOLVER_REF_URL} target="_blank" rel="noreferrer">
-        <span class="docs-kicker">{t('landing.docsRefKicker')}</span>
-        <h3>{t('landing.docsRefTitle')}</h3>
-        <p>{t('landing.docsRefDesc')}</p>
-        <ul>
-          <li>{t('landing.docsRef1')}</li>
-          <li>{t('landing.docsRef2')}</li>
-        </ul>
-        <span class="docs-open">{t('landing.docsOpen')}</span>
-      </a>
+    <div class="card-row cols-3">
+      {#each cards as c}
+        <a class="card card-link" href={c.href} target="_blank" rel="noreferrer">
+          <h3>{t(c.title)}</h3>
+          <p>{t(c.body)}</p>
+          <span class="link-arrow">{t('landing.docsOpenNew')}</span>
+        </a>
+      {/each}
     </div>
   </div>
 </section>
