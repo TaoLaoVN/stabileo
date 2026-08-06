@@ -4905,10 +4905,16 @@ const en: Record<string, string> = {
   'footing.cad.refusal.stale': 'Footing {footing}: the cage was generated against demand revision {generated} and the model is now at {current}. Regenerate the detailing before exporting.',
   'footing.cad.refusal.invalid': 'The manifest failed its own validation: {schema} schema problem(s) and {semantic} semantic problem(s). Nothing was downloaded.',
   'footing.cad.ui.title': 'CAD handoff',
-  'footing.cad.ui.scope': 'Exports the column-transfer cage — dowels and starter ties, the footing pad, a column stub and the interface between them. Footing mats are not included.',
+  'footing.cad.ui.scope': 'Exports the coordinated reinforcement assembly: bottom mat in both directions, column dowels, starter ties and crossties, the footing solid, a column stub and the interface between them. Does NOT include top reinforcement, which was not evaluated.',
   'footing.cad.ui.export': 'Export CAD handoff',
   'footing.cad.ui.exported': 'Wrote {filename} ({bytes} bytes).',
   'footing.cad.ui.failed': 'Export refused.',
+  // ── The JSON is not a drawing: there is a middle step, and it must be said ──
+  'footing.cad.ui.notADrawing': 'The downloaded file is a SEMANTIC reinforcement handoff, not a drawing: it describes bar families, layer order, covers and checks. No CAD program opens it directly.',
+  'footing.cad.ui.nextStep': 'Process it with the RC CAD handoff tool, which generates from it: STEP (the assembly the viewer and any CAD tool open), GLB (lightweight 3-D visualisation), IFC4 (external BIM inspection) and cad-review.json (review metadata).',
+  'footing.cad.ui.openTool': 'Open the RC CAD handoff tool',
+  'footing.cad.ui.toolAt': 'The tool runs locally at {url}.',
+  'footing.cad.ui.toolUnavailable': 'The tool is not responding at {url}. Start it with "{command}" from the companion repository and try again.',
   'footing.cad.ui.selectFooting': 'Select a footing to export its CAD handoff.',
   // ── Bottom-mat preferences and the design they produce ──────────
   'footing.ui.matTitle': 'Bottom mat',

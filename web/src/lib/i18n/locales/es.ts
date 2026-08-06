@@ -4861,10 +4861,18 @@ const es: Record<string, string> = {
   'footing.cad.refusal.stale': 'Zapata {footing}: la jaula se generó contra la revisión de demanda {generated} y el modelo está en {current}. Regenerá el detallado antes de exportar.',
   'footing.cad.refusal.invalid': 'El manifiesto no pasó su propia validación: {schema} problema(s) de esquema y {semantic} problema(s) semántico(s). No se descargó nada.',
   'footing.cad.ui.title': 'Entrega a CAD',
-  'footing.cad.ui.scope': 'Exporta la jaula de transferencia a la columna — pelos y estribos de arranque, el macizo de la zapata, un tramo de columna y la interfaz entre ambos. No incluye las parrillas de la zapata.',
+  'footing.cad.ui.scope': 'Exporta el conjunto coordinado de armadura: parrilla inferior en ambas direcciones, pelos de columna, estribos y crossties de arranque, el macizo de la zapata, un tramo de columna y la interfaz entre ambos. NO incluye armadura superior, que no fue evaluada.',
   'footing.cad.ui.export': 'Exportar entrega a CAD',
   'footing.cad.ui.exported': 'Se escribió {filename} ({bytes} bytes).',
   'footing.cad.ui.failed': 'Exportación rechazada.',
+  // ── El JSON no es un plano: hay un paso intermedio y hay que decirlo ──
+  // La copy anterior dejaba al usuario con un .json y ninguna indicación de qué hacer con él, y
+  // ningún programa de CAD lo abre. Esto nombra la herramienta que lo convierte.
+  'footing.cad.ui.notADrawing': 'El archivo descargado es una ENTREGA SEMÁNTICA de armadura, no un plano: describe familias de barras, orden de capas, recubrimientos y verificaciones. Ningún programa de CAD lo abre directamente.',
+  'footing.cad.ui.nextStep': 'Procesalo con la herramienta RC CAD handoff, que genera a partir de él: STEP (el conjunto que abre el visor y cualquier CAD), GLB (visualización 3D liviana), IFC4 (inspección en BIM externo) y cad-review.json (metadatos de revisión).',
+  'footing.cad.ui.openTool': 'Abrir la herramienta RC CAD handoff',
+  'footing.cad.ui.toolAt': 'La herramienta corre localmente en {url}.',
+  'footing.cad.ui.toolUnavailable': 'La herramienta no responde en {url}. Arrancala con «{command}» desde el repositorio del companion y volvé a intentar.',
   'footing.cad.ui.selectFooting': 'Seleccioná una zapata para exportar su entrega a CAD.',
   // ── Preferencias de parrilla inferior y el diseño que producen ───
   'footing.ui.matTitle': 'Parrilla inferior',

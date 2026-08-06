@@ -112,10 +112,15 @@ test.describe('@slow rc cad handoff — the visible export', () => {
     const panel = page.getByTestId('footing-cad-export');
     await expect(panel).toBeVisible();
     await expect(page.getByTestId('footing-cad-export-run')).toBeVisible();
-    // The scope sentence is on the page, not in a tooltip. A reader must know before they
-    // export that this is the transfer cage and not the footing's whole reinforcement.
-    await expect(panel).toContainText('dowels and starter ties');
-    await expect(panel).toContainText('Footing mats are not included');
+    // The scope sentence is on the page, not in a tooltip. A reader must know before they export
+    // exactly what the file covers — and what it does NOT.
+    //
+    // It used to say the footing mats were excluded. That was true of V1 and became false when V2
+    // began carrying them, so the assertion moved with the fact rather than pinning the old one.
+    await expect(panel).toContainText('column dowels, starter ties and crossties');
+    await expect(panel).toContainText('bottom mat in both directions');
+    await expect(panel).toContainText('Does NOT include top reinforcement');
+    await expect(panel).not.toContainText('Footing mats are not included');
   });
 
   test('C-B exporting before detailing refuses, and says what to do', async ({ pro: page }) => {

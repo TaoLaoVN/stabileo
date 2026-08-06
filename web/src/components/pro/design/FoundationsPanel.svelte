@@ -25,9 +25,7 @@
     validateFooting, FOOTING_LAYER_ORDER_PREFERENCES, SUPPORTED_MAT_DIAMETERS_MM,
   } from '../../../lib/model/footing';
   import { validateSoilProfile } from '../../../lib/model/geotechnical';
-  import {
-    exportFootingCadHandoff, footingCadPrerequisiteStamp,
-  } from '../../../lib/store/rc-cad-export';
+  import FootingCadHandoffPanel from './FootingCadHandoffPanel.svelte';
   import FootingMatPanel from './FootingMatPanel.svelte';
 
   const footings = $derived([...modelStore.model.footings.values()].sort((a, b) => a.id - b.id));
@@ -76,56 +74,8 @@
     return Number.isFinite(n) ? n : 0;
   }
 
-  /**
-   * The last CAD handoff attempt, keyed by footing so a result never appears under a footing
-   * it does not describe.
-   */
-  type CadOutcome =
-    | { footingId: number; ok: true; filename: string; byteLength: number }
-    | {
-      footingId: number; ok: false;
-      refusals: ReadonlyArray<{ code: string; messageKey: string; params?: Record<string, unknown> }>;
-      /** Developer-facing validator output, shown when the manifest failed its own schema. */
-      details: string[];
-      /** The prerequisite state this refusal describes. See `visibleCadResult`. */
-      stamp: string;
-    };
-  let cadResult = $state<CadOutcome | null>(null);
 
-  /**
-   * The refusal, for as long as it is still true.
-   *
-   * A refusal is a statement about one attempt against one state, so it must not outlive that
-   * state. It used to: exporting before detailing refused correctly, the user then generated
-   * the detailing, and "Generate foundation detailing first" stayed on screen — advice that had
-   * already been followed — until a later successful export happened to replace it.
-   *
-   * Comparing the stamp is narrower than clearing on any store write and narrower than clearing
-   * on navigation: a refusal whose cause is untouched stays visible and keeps saying the same
-   * true thing, and a genuinely new refusal is stamped against the state it was computed
-   * against, so it displays normally. A success replaces `cadResult` outright and needs no
-   * stamp — there is nothing left to go stale.
-   */
-  const visibleCadResult = $derived.by(() => {
-    const r = cadResult;
-    if (!r || r.ok) return r;
-    return footingCadPrerequisiteStamp(r.footingId) === r.stamp ? r : null;
-  });
 
-  function runCadExport(footingId: number) {
-    // `tp` is passed straight through, so every sentence in the manifest is the app's own
-    // translated text in the user's locale rather than a second set of strings written here.
-    const r = exportFootingCadHandoff(footingId, (k, params) => tp(k, params ?? {}));
-    cadResult = r.ok
-      ? { footingId, ok: true, filename: r.filename, byteLength: r.byteLength }
-      : {
-        footingId, ok: false, refusals: r.refusals,
-        details: [...(r.invalid?.schema ?? []), ...(r.invalid?.semantic ?? [])],
-        // Stamped from the state the refusal was just computed against, not from a snapshot
-        // taken earlier: the export itself is what read that state.
-        stamp: footingCadPrerequisiteStamp(footingId),
-      };
-  }
 </script>
 
 <div class="foundations" data-testid="foundations-panel">
@@ -298,61 +248,22 @@
           {/if}
         {/each}
 
-        <!--
-          The CAD handoff.
-
-          Deliberately inside the SELECTED footing's editor rather than a global toolbar
-          button: one manifest describes one footing's connection, and a control that did not
-          say which footing it meant would produce a file whose subject the user had to infer.
-
-          The scope sentence sits above the button, not in a tooltip. A reader who exports this
-          and opens it in CAD must already know it is the transfer cage and not the mats.
-        -->
-        <div class="cad-export" data-testid="footing-cad-export">
-          <h5>{t('footing.cad.ui.title')}</h5>
-          <p class="note">{t('footing.cad.ui.scope')}</p>
-          <button data-testid="footing-cad-export-run" onclick={() => runCadExport(f.id)}>
-            {t('footing.cad.ui.export')}
-          </button>
-          {#if visibleCadResult?.footingId === f.id}
-            {#if visibleCadResult.ok}
-              <p class="ok" data-testid="footing-cad-export-ok">
-                {tp('footing.cad.ui.exported', {
-                  filename: visibleCadResult.filename, bytes: visibleCadResult.byteLength,
-                })}
-              </p>
-            {:else}
-              <!--
-                Every refusal is shown verbatim. A disabled button with no explanation is the
-                thing this panel's own header comment refuses to do, and an export that cannot
-                honestly be produced has a specific reason the user can act on.
-              -->
-              <div class="failed" data-testid="footing-cad-export-failed">
-                <p>{t('footing.cad.ui.failed')}</p>
-                <ul>
-                  {#each identifyMessages(
-                    visibleCadResult.refusals.map(
-                      (r) => ({ key: r.messageKey, params: r.params }),
-                    ),
-                  ) as r (r.id)}
-                    <li>{tp(r.message.key, r.message.params ?? {})}</li>
-                  {/each}
-                </ul>
-                {#if visibleCadResult.details.length > 0}
-                  <ul class="details" data-testid="footing-cad-export-details">
-                    {#each visibleCadResult.details as line (line)}<li><code>{line}</code></li>{/each}
-                  </ul>
-                {/if}
-              </div>
-            {/if}
-          {/if}
-        </div>
 
         <!--
           The designed bottom mat, in its own component. See `FootingMatPanel.svelte`: the
           footing editor owns geometry and the ground, that owns the design that follows from
           them, and the split is what keeps both inside the design-tab size ceiling.
         -->
+        <!--
+          The CAD handoff, in its own component.
+          `FootingCadHandoffPanel.svelte` owns the export attempt, the refusal that must not
+          outlive its cause, and the link to the RC CAD handoff tool. Split out when this file
+          crossed the 600-line component ceiling the suite enforces — the same reason
+          `FootingMatPanel` was split out before it, and the same boundary: this file owns footing
+          geometry and the ground, that one owns what follows from them.
+        -->
+        <FootingCadHandoffPanel footingId={f.id} />
+
         <FootingMatPanel footingId={f.id} />
 
         <button class="danger" data-testid="footing-delete"
@@ -579,13 +490,5 @@
   button { font: inherit; cursor: pointer; }
   .danger { margin-top: 0.5rem; }
 
-  .cad-export { margin-top: 0.75rem; padding-top: 0.5rem; border-top: 1px solid #3a3a3a; }
-  .cad-export h5 { margin: 0; font-size: 0.8rem; }
-  .cad-export .ok { margin: 0.4rem 0 0; font-size: 0.74rem; }
   /* A refusal reads as a refusal. Nothing here is styled as a success. */
-  .cad-export .failed { margin-top: 0.4rem; font-size: 0.74rem; color: #ffe4e4; }
-  .cad-export .failed p { margin: 0 0 0.2rem; font-weight: 600; }
-  .cad-export .failed li { padding: 0.15rem 0.4rem; border-radius: 3px; background: #5c1a1a; }
-  .cad-export .details li { background: none; opacity: 0.85; }
-  .cad-export .details code { font-size: 0.7rem; word-break: break-all; }
 </style>
