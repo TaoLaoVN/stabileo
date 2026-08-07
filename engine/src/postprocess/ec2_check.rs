@@ -226,9 +226,15 @@ fn check_single_ec2_member(m: &Ec2MemberData, f: &Ec2DesignForces) -> Ec2CheckRe
         _ => 0.0,
     };
 
-    // VRd,max — maximum strut capacity
+    // VRd,max — maximum strut capacity (EC2 6.2.3(3), Eq. 6.9):
+    //   VRd,max = alpha_cw · bw · z · nu1 · fcd / (cot θ + tan θ)
+    // alpha_cw accounts for the state of stress in the compression chord and is
+    // 1.0 for non-prestressed members. It is *not* alpha_cc, which scales the
+    // long-term compressive strength and is already inside `fcd` above —
+    // reusing it here applied a national-annex 0.85 twice.
+    let alpha_cw = 1.0;
     let nu1 = 0.6 * (1.0 - fck_mpa / 250.0);
-    let v_rd_max = alpha_cc * nu1 * fcd * bw * z_shear * cot_theta
+    let v_rd_max = alpha_cw * nu1 * fcd * bw * z_shear * cot_theta
         / (1.0 + cot_theta * cot_theta);
 
     // Design shear capacity
