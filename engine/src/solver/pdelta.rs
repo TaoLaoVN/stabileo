@@ -274,6 +274,10 @@ pub fn solve_pdelta_3d(
     max_iter: usize,
     tolerance: f64,
 ) -> Result<PDeltaResult3D, String> {
+    // Expand curved beams BEFORE DOF numbering and assembly: solve_3d already
+    // expands internally, but the P-Delta iterations assemble K and add
+    // geometric stiffness on the same input, so both must see the expanded model.
+    let input = &super::linear::expand_curved_beams_3d(input);
     let dof_num = DofNumbering::build_3d(input);
     if dof_num.n_free == 0 {
         return Err("No free DOFs".into());

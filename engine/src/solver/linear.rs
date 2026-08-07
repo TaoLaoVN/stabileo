@@ -3592,7 +3592,9 @@ pub(crate) fn compute_internal_forces_3d_with_loads(
 
 /// Expand curved beams into frame elements before solving.
 /// Clones input, adds intermediate nodes and frame elements.
-fn expand_curved_beams_3d(input: &SolverInput3D) -> SolverInput3D {
+/// Idempotent: the expanded model clears the curved-beam list, so a second call
+/// is a no-op clone instead of a double expansion.
+pub fn expand_curved_beams_3d(input: &SolverInput3D) -> SolverInput3D {
     if input.curved_beams.is_empty() {
         return input.clone();
     }
