@@ -4,6 +4,7 @@ mod common;
 mod cable_solver;
 mod cfs_check;
 mod cirsoc201_check;
+mod combinations;
 mod connection_check;
 mod corotational_3d;
 mod eccentric_connections;
