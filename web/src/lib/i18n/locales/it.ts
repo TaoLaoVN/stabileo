@@ -3050,6 +3050,7 @@ const it: Translations = {
   'design.reason.notConcrete': "f′c = {fc} MPa è al di fuori dell'intervallo per il calcestruzzo previsto da questa normativa.",
   'design.reason.generic': 'Bloccato: {detail}.',
   'design.reason.codeUnsupported': "{code} non può progettare l'armatura (elemento {elementId}); può solo valutare una disposizione data.",
+  'design.reason.secondaryAxisUnchecked': 'Member {elementId}: significant bending about both axes — the secondary moment {secondary} is {percent}% of the primary {primary}, and this verifier checks only the primary axis for beams. An unchecked axis is not certified.',
   'design.reason.memberUnsupported': "L'elemento {elementId} non è supportato da {code}.",
   'design.reason.noGenerator': 'Elemento {elementId}: {code} non dispone di un generatore di candidati per questo tipo di elemento.',
   'design.reason.orientationSuspect': "Elemento {elementId}: l'orientamento delle forze è sospetto, quindi nessuna progettazione può essere certificata.",
@@ -3192,6 +3193,9 @@ const it: Translations = {
   'design.error.noDemands': 'Non è stato possibile estrarre sollecitazioni di progetto dai risultati attuali.',
   'design.error.noAdapter': 'Nessun adattatore normativo è registrato per il codice selezionato.',
   'design.error.codeUnsupported': "{code} non può progettare l'armatura — può solo valutare una disposizione data.",
+  'design.error.noConcreteMembers': '{code} is the reinforced-concrete code and this model has no concrete member: all {n} of its members are steel. The reinforcement design workflow does not apply to this structure.',
+  'design.error.noRectangularSections': '{code} can only check rectangular b×h sections, and {n} concrete member(s) state none. Give them a rectangular section to design them.',
+  'design.error.noConcreteMembersMixed': '{code} found no checkable member: {steel} steel and {other} with no usable section or material.',
   'design.error.nothingChecked': 'Nessun elemento è stato verificato da {code} per questo modello.',
   'design.error.emptySelection': 'Seleziona almeno un elemento da progettare.',
 };

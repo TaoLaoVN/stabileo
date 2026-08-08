@@ -3050,6 +3050,7 @@ const pt: Translations = {
   'design.reason.notConcrete': 'f′c = {fc} MPa está fora da faixa de concreto prevista nesta norma.',
   'design.reason.generic': 'Bloqueado: {detail}.',
   'design.reason.codeUnsupported': '{code} não pode dimensionar armadura (elemento {elementId}); só pode avaliar uma disposição dada.',
+  'design.reason.secondaryAxisUnchecked': 'Member {elementId}: significant bending about both axes — the secondary moment {secondary} is {percent}% of the primary {primary}, and this verifier checks only the primary axis for beams. An unchecked axis is not certified.',
   'design.reason.memberUnsupported': 'O elemento {elementId} não é suportado por {code}.',
   'design.reason.noGenerator': 'Elemento {elementId}: {code} não possui gerador de candidatos para este tipo de elemento.',
   'design.reason.orientationSuspect': 'Elemento {elementId}: a orientação das forças é suspeita, portanto nenhum dimensionamento pode ser certificado.',
@@ -3192,6 +3193,9 @@ const pt: Translations = {
   'design.error.noDemands': 'Não foi possível extrair solicitações de dimensionamento dos resultados atuais.',
   'design.error.noAdapter': 'Nenhum adaptador de norma está registrado para o código selecionado.',
   'design.error.codeUnsupported': '{code} não pode dimensionar armadura — só pode avaliar uma disposição dada.',
+  'design.error.noConcreteMembers': '{code} is the reinforced-concrete code and this model has no concrete member: all {n} of its members are steel. The reinforcement design workflow does not apply to this structure.',
+  'design.error.noRectangularSections': '{code} can only check rectangular b×h sections, and {n} concrete member(s) state none. Give them a rectangular section to design them.',
+  'design.error.noConcreteMembersMixed': '{code} found no checkable member: {steel} steel and {other} with no usable section or material.',
   'design.error.nothingChecked': 'Nenhum elemento foi verificado por {code} para este modelo.',
   'design.error.emptySelection': 'Selecione pelo menos um elemento para dimensionar.',
 };

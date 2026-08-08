@@ -3049,6 +3049,7 @@ const tr: Translations = {
   'design.reason.notConcrete': 'f′c = {fc} MPa bu yönetmeliğin beton aralığının dışında.',
   'design.reason.generic': 'Engellendi: {detail}.',
   'design.reason.codeUnsupported': '{code} donatı tasarlayamaz (eleman {elementId}); yalnızca verilen bir düzenlemeyi değerlendirebilir.',
+  'design.reason.secondaryAxisUnchecked': 'Member {elementId}: significant bending about both axes — the secondary moment {secondary} is {percent}% of the primary {primary}, and this verifier checks only the primary axis for beams. An unchecked axis is not certified.',
   'design.reason.memberUnsupported': 'Eleman {elementId}, {code} tarafından desteklenmiyor.',
   'design.reason.noGenerator': 'Eleman {elementId}: {code}, bu eleman türü için aday üreticisine sahip değil.',
   'design.reason.orientationSuspect': 'Eleman {elementId}: kuvvet yönü şüpheli, bu nedenle hiçbir tasarım onaylanamaz.',
@@ -3191,6 +3192,9 @@ const tr: Translations = {
   'design.error.noDemands': 'Mevcut sonuçlardan tasarım talebi çıkarılamadı.',
   'design.error.noAdapter': 'Seçili kod için kayıtlı bir tasarım yönetmeliği bağdaştırıcısı yok.',
   'design.error.codeUnsupported': '{code} donatı tasarlayamaz — yalnızca verilen bir düzenlemeyi değerlendirebilir.',
+  'design.error.noConcreteMembers': '{code} is the reinforced-concrete code and this model has no concrete member: all {n} of its members are steel. The reinforcement design workflow does not apply to this structure.',
+  'design.error.noRectangularSections': '{code} can only check rectangular b×h sections, and {n} concrete member(s) state none. Give them a rectangular section to design them.',
+  'design.error.noConcreteMembersMixed': '{code} found no checkable member: {steel} steel and {other} with no usable section or material.',
   'design.error.nothingChecked': '{code} bu model için hiçbir elemanı kontrol etmedi.',
   'design.error.emptySelection': 'Tasarlamak için en az bir eleman seçin.',
 };

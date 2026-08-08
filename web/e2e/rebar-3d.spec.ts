@@ -112,6 +112,36 @@ test.describe('filtering changes what is shown, and says so', () => {
   });
 });
 
+test.describe('a member the app could not design is shown, not omitted', () => {
+  /**
+   * The reported bug, as a journey.
+   *
+   * `rc-qa-diagnostic` has 26 members and four beams the verifier refuses — their secondary
+   * bending crosses the biaxial threshold on an axis it does not check. Those four carried no
+   * steel, so they joined no assembly, so the 3-D view drew 22 members and gave no sign that
+   * anything was missing. The user found it by noticing a hole in a frame they had never seen
+   * whole.
+   */
+  test('names the refused members and says why each has no steel', async ({ pro: page }) => {
+    await loadModel(page, 'rc-qa-diagnostic');
+    await designAll(page);
+    await page.getByTestId('detailing-disclosure').locator('> summary').click();
+    const generate = page.getByTestId('cmd-generate-detailing');
+    await expect(generate).toBeEnabled();
+    await generate.click();
+    await expect.poll(async () => (await assemblies(page)).length, { timeout: 30_000 })
+      .toBeGreaterThan(0);
+    await page.getByTestId('doc-3d').click();
+
+    const block = page.getByTestId('rebar-unreinforced');
+    await expect(block).toBeVisible();
+    await expect(block).toContainText('4');
+    // The cause, not just the count: an unchecked secondary axis with its actual ratio.
+    await expect(block).toContainText(/eje|axis/i);
+    await expect(block).toContainText('%');
+  });
+});
+
 test.describe('the drawings exported from the view have content', () => {
   test('the DXF carries geometry and states whether it may be built from',
     async ({ pro: page }) => {

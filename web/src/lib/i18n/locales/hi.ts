@@ -3049,6 +3049,7 @@ const hi: Translations = {
   'design.reason.notConcrete': 'f′c = {fc} MPa इस कोड की कंक्रीट सीमा से बाहर है।',
   'design.reason.generic': 'अवरुद्ध: {detail}।',
   'design.reason.codeUnsupported': '{code} सुदृढीकरण डिज़ाइन नहीं कर सकता (अवयव {elementId}); यह केवल दी गई व्यवस्था का मूल्यांकन कर सकता है।',
+  'design.reason.secondaryAxisUnchecked': 'Member {elementId}: significant bending about both axes — the secondary moment {secondary} is {percent}% of the primary {primary}, and this verifier checks only the primary axis for beams. An unchecked axis is not certified.',
   'design.reason.memberUnsupported': 'अवयव {elementId} को {code} द्वारा समर्थित नहीं है।',
   'design.reason.noGenerator': 'अवयव {elementId}: {code} के पास इस अवयव प्रकार के लिए कोई विकल्प जनरेटर नहीं है।',
   'design.reason.orientationSuspect': 'अवयव {elementId}: बल की दिशा संदिग्ध है, इसलिए किसी भी डिज़ाइन को प्रमाणित नहीं किया जा सकता।',
@@ -3191,6 +3192,9 @@ const hi: Translations = {
   'design.error.noDemands': 'वर्तमान परिणामों से कोई डिज़ाइन बल नहीं निकाला जा सका।',
   'design.error.noAdapter': 'चयनित कोड के लिए कोई डिज़ाइन-कोड अडैप्टर पंजीकृत नहीं है।',
   'design.error.codeUnsupported': '{code} सुदृढीकरण डिज़ाइन नहीं कर सकता — यह केवल दी गई व्यवस्था का मूल्यांकन कर सकता है।',
+  'design.error.noConcreteMembers': '{code} is the reinforced-concrete code and this model has no concrete member: all {n} of its members are steel. The reinforcement design workflow does not apply to this structure.',
+  'design.error.noRectangularSections': '{code} can only check rectangular b×h sections, and {n} concrete member(s) state none. Give them a rectangular section to design them.',
+  'design.error.noConcreteMembersMixed': '{code} found no checkable member: {steel} steel and {other} with no usable section or material.',
   'design.error.nothingChecked': 'इस मॉडल के लिए {code} द्वारा कोई अवयव जाँचा नहीं गया।',
   'design.error.emptySelection': 'डिज़ाइन के लिए कम से कम एक अवयव चुनें।',
 };

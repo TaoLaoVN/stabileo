@@ -98,13 +98,34 @@ export type SceneSolidKind = 'beam' | 'column' | 'footing' | 'pedestal' | 'slab'
 export interface SceneSolid {
   id: string;
   kind: SceneSolidKind;
-  assemblyId: string;
+  /**
+   * The assembly this concrete belongs to, when one does.
+   *
+   * Absent for a member that no assembly claims — which is precisely the member whose design
+   * was refused. It has concrete and no steel, and it must still appear.
+   */
+  assemblyId?: string;
   elementIds: number[];
   /** Closed base polygon in model coordinates, m. Never repeats the first point. */
   base: Point3[];
   /** Sweep from the base to the far face, m. */
   extrude: Point3;
   label: EngineMessage;
+  /**
+   * Whether any bar in this scene sits inside this concrete.
+   *
+   * ── The bug this field exists to end ───────────────────────────
+   *
+   * A member whose design was refused carries no reinforcement, so it joins no assembly, so
+   * the document never mentions it, so the 3-D view drew nothing at all: `rc-qa-diagnostic`
+   * showed 22 of its 26 members and the four the app could not design were simply ABSENT.
+   * The user was left to notice a gap in a picture of a frame they had never seen complete.
+   *
+   * Hiding a failure is the worst thing a view of a design can do. So the concrete is drawn
+   * either way and this flag says which it is; the renderer marks it and the panel names the
+   * member and why it has no steel.
+   */
+  reinforced: boolean;
 }
 
 /**
@@ -199,6 +220,15 @@ export interface SceneModel {
    * user must be allowed to ask.
    */
   unresolvedMembers: number[];
+  /**
+   * Members drawn with concrete but carrying no steel, ascending.
+   *
+   * The scene states the FACT — this member has no reinforcement in this document. It does
+   * not state the cause, because the cause is a design outcome and this module reads only the
+   * document. The panel joins these ids to their outcomes and reports the reason, which keeps
+   * the projection pure and still gets the user a complete answer.
+   */
+  unreinforcedMembers: number[];
 }
 
 export interface SceneOptions {
@@ -280,6 +310,15 @@ function memberBase(m: MemberGeometry): { base: Point3[]; extrude: Point3 } {
 function familySolids(
   rec: FloorFamilyDesignRecord, assemblyId: string, bars: readonly BarPath[],
 ): SceneSolid[] {
+  /**
+   * Did this record actually place steel?
+   *
+   * A footing whose ground states no bearing capacity gets a record, real dimensions and no
+   * bars. Drawing its concrete and saying nothing would present an unverified foundation as
+   * a finished one.
+   */
+  const placed = rec.barIds.length > 0;
+
   if (isFootingRecord(rec)) {
     const g = rec.geometry;
     const centre = footingPlanCentre(rec, bars);
@@ -291,6 +330,7 @@ function familySolids(
       base: rectBase(centre, g.foundingElevation, g.B, g.L, g.rotationDeg),
       extrude: { x: 0, y: 0, z: g.thickness },
       label: msg('detailing.scene.solid.footing', { name: g.name }),
+      reinforced: placed,
     }];
     if (g.pedestal) {
       out.push({
@@ -303,6 +343,7 @@ function familySolids(
           g.pedestal.B, g.pedestal.L, g.rotationDeg),
         extrude: { x: 0, y: 0, z: g.pedestal.height },
         label: msg('detailing.scene.solid.pedestal', { name: g.name }),
+        reinforced: placed,
       });
     }
     return out;
@@ -324,6 +365,7 @@ function familySolids(
       // Downwards: `origin.z` is the panel's reference surface and the slab hangs below it.
       extrude: { x: 0, y: 0, z: -g.thickness },
       label: msg('detailing.scene.solid.slab', { name: g.panelId }),
+      reinforced: placed,
     }];
   }
 
@@ -348,6 +390,7 @@ function familySolids(
       ],
       extrude: { x: 0, y: 0, z: g.height },
       label: msg('detailing.scene.solid.wall', { name: g.wallId }),
+      reinforced: placed,
     }];
   }
 
@@ -382,6 +425,7 @@ export function buildSceneModel(doc: DocumentModel, opts: SceneOptions = {}): Sc
   const solids: SceneSolid[] = [];
   const wantedMembers = new Set<number>();
   const resolvedMembers = new Set<number>();
+  const assemblyOfMember = new Map<number, string>();
 
   for (const a of doc.assemblies) {
     const markOf = new Map<string, string>();
@@ -407,29 +451,41 @@ export function buildSceneModel(doc: DocumentModel, opts: SceneOptions = {}): Sc
     for (const rec of a.families) solids.push(...familySolids(rec, a.id, a.bars));
 
     /**
-     * Member concrete for the frame part of the assembly.
+     * Which assembly each member belongs to, for the solids built below.
      *
      * `a.elementIds` is what the assembly claims to span, so it — not the bars' owners — is
-     * what decides whether a member is missing. A beam line whose middle span was never
-     * detailed still owns that member, and the user is entitled to see that its concrete is
-     * absent from the picture rather than to see a two-span beam and assume three.
+     * what decides membership. A beam line whose middle span was never detailed still owns
+     * that member, and the user is entitled to see it rather than to see a two-span beam and
+     * assume three.
      */
     for (const id of a.elementIds) {
       wantedMembers.add(id);
-      const m = byElement.get(id);
-      if (!m) continue;
-      resolvedMembers.add(id);
-      const { base, extrude } = memberBase(m);
-      solids.push({
-        id: `member:${id}`,
-        kind: m.kind,
-        assemblyId: a.id,
-        elementIds: [id],
-        base,
-        extrude,
-        label: msg('detailing.scene.solid.member', { id }),
-      });
+      if (!assemblyOfMember.has(id)) assemblyOfMember.set(id, a.id);
     }
+  }
+
+  /**
+   * One solid per member the caller supplied, whether or not a document mentions it.
+   *
+   * Built from the CALLER's list rather than from the assemblies, because the members that
+   * matter most here are exactly the ones no assembly claims: those whose design was refused.
+   * Iterating the assemblies could never reach them, which is why they were invisible.
+   */
+  const barsOfElement = new Set(bars.flatMap((b) => b.elementIds));
+  for (const m of opts.members ?? []) {
+    wantedMembers.add(m.elementId);
+    resolvedMembers.add(m.elementId);
+    const { base, extrude } = memberBase(m);
+    solids.push({
+      id: `member:${m.elementId}`,
+      kind: m.kind,
+      assemblyId: assemblyOfMember.get(m.elementId),
+      elementIds: [m.elementId],
+      base,
+      extrude,
+      label: msg('detailing.scene.solid.member', { id: m.elementId }),
+      reinforced: barsOfElement.has(m.elementId),
+    });
   }
 
   const conflicts: SceneConflictMarker[] = doc.openConflicts.map((c: OpenConflict) => ({
@@ -451,6 +507,10 @@ export function buildSceneModel(doc: DocumentModel, opts: SceneOptions = {}): Sc
     facets: buildFacets(doc, bars),
     bounds: boundsOf(bars, solids),
     unresolvedMembers: [...wantedMembers].filter((id) => !resolvedMembers.has(id))
+      .sort((x, y) => x - y),
+    unreinforcedMembers: solids
+      .filter((s) => !s.reinforced && (s.kind === 'beam' || s.kind === 'column'))
+      .flatMap((s) => s.elementIds)
       .sort((x, y) => x - y),
   };
 }
@@ -520,6 +580,15 @@ export interface SceneFilter {
   layerIds?: readonly string[];
   /** Show only bars named by an unresolved conflict. */
   conflictedOnly?: boolean;
+  /**
+   * Hide the concrete of members that carry no steel.
+   *
+   * Off by default, deliberately. A member the app could not design is the most important
+   * thing on the screen, and defaulting to hidden is how it went unnoticed in the first
+   * place. The switch exists because once the user has SEEN them, wanting a clean picture of
+   * the cage is a reasonable next thing to want.
+   */
+  hideUnreinforced?: boolean;
 }
 
 export function barMatchesFilter(b: SceneBar, f: SceneFilter): boolean {
@@ -551,9 +620,20 @@ export function filterScene(scene: SceneModel, f: SceneFilter): SceneModel {
   const visibleAssemblies = new Set(bars.map((b) => b.assemblyId));
   const visibleBarIds = new Set(bars.map((b) => b.barId));
 
-  const solids = f.assemblyIds || f.families || f.roles || f.layerIds || f.conflictedOnly
-    ? scene.solids.filter((s) => visibleAssemblies.has(s.assemblyId))
-    : scene.solids;
+  /**
+   * Concrete follows the visible assemblies — except the concrete that belongs to none.
+   *
+   * A member whose design was refused has no assembly, so an assembly filter can neither
+   * include nor exclude it. Dropping it would put it back in the dark the moment the user
+   * touched a checkbox, which is exactly the failure this whole change is about. It is
+   * governed by its own switch instead.
+   */
+  const anyFilter = f.assemblyIds || f.families || f.roles || f.layerIds || f.conflictedOnly;
+  const solids = scene.solids.filter((s) => {
+    if (s.assemblyId === undefined) return f.hideUnreinforced !== true;
+    if (!s.reinforced && f.hideUnreinforced === true) return false;
+    return anyFilter ? visibleAssemblies.has(s.assemblyId) : true;
+  });
   const conflicts = scene.conflicts.filter(
     (c) => visibleBarIds.has(c.barIds[0]) || visibleBarIds.has(c.barIds[1]));
 

@@ -3036,6 +3036,7 @@ const ko: Translations = {
   'design.reason.notConcrete': 'f′c = {fc} MPa가 이 규준의 콘크리트 범위를 벗어났습니다.',
   'design.reason.generic': '차단됨: {detail}.',
   'design.reason.codeUnsupported': '{code}는 철근을 설계할 수 없습니다(요소 {elementId}); 주어진 배근만 평가할 수 있습니다.',
+  'design.reason.secondaryAxisUnchecked': 'Member {elementId}: significant bending about both axes — the secondary moment {secondary} is {percent}% of the primary {primary}, and this verifier checks only the primary axis for beams. An unchecked axis is not certified.',
   'design.reason.memberUnsupported': '요소 {elementId}는 {code}에서 지원하지 않습니다.',
   'design.reason.noGenerator': '요소 {elementId}: {code}에는 이 부재 유형에 대한 후보 생성기가 없습니다.',
   'design.reason.orientationSuspect': '요소 {elementId}: 힘의 방향이 의심스러워 설계를 인증할 수 없습니다.',
@@ -3178,6 +3179,9 @@ const ko: Translations = {
   'design.error.noDemands': '현재 결과에서 설계 응력을 추출할 수 없습니다.',
   'design.error.noAdapter': '선택한 규준에 등록된 설계 어댑터가 없습니다.',
   'design.error.codeUnsupported': '{code}는 철근을 설계할 수 없습니다 — 주어진 배근만 평가할 수 있습니다.',
+  'design.error.noConcreteMembers': '{code} is the reinforced-concrete code and this model has no concrete member: all {n} of its members are steel. The reinforcement design workflow does not apply to this structure.',
+  'design.error.noRectangularSections': '{code} can only check rectangular b×h sections, and {n} concrete member(s) state none. Give them a rectangular section to design them.',
+  'design.error.noConcreteMembersMixed': '{code} found no checkable member: {steel} steel and {other} with no usable section or material.',
   'design.error.nothingChecked': '이 모델에서 {code}로 검토된 부재가 없습니다.',
   'design.error.emptySelection': '설계할 부재를 최소 하나 선택하세요.',
 } as const satisfies Record<string, string>;

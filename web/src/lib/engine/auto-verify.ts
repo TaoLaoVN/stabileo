@@ -34,6 +34,71 @@ export interface AutoVerifyOptions {
   stirrupDia?: number; // mm, default 8
 }
 
+// ─── Which members this verifier can check, and why not ──────────
+
+/**
+ * The highest characteristic strength, MPa, that is read as concrete rather than steel.
+ *
+ * `Material.fy` carries f'c for a concrete material and f_y for a steel one — one field, two
+ * meanings, distinguished by magnitude. 80 MPa is comfortably above any concrete this code
+ * covers and far below any structural steel grade, so the split is unambiguous in practice.
+ */
+const CONCRETE_FY_CEILING = 80;
+
+/**
+ * Can CIRSOC 201 check this member at all?
+ *
+ * ── Why this is a named function and not four inline `continue`s ───
+ *
+ * Because the answer is needed in two places that must never disagree: the loop that DOES
+ * the checking, and the command layer that has to explain to a user why nothing was checked.
+ * A steel tower reported "CIRSOC 201-2025 verified no member in this model", which is true,
+ * unhelpful, and indistinguishable from a bug — and the only way to keep the explanation
+ * honest is for it to be computed from the same predicate that produced the silence.
+ */
+export function rcCheckability(
+  elem: { sectionId: number; materialId: number },
+  model: Pick<AutoVerifyModelData, 'sections' | 'materials'>,
+): 'checkable' | 'noSection' | 'noMaterial' | 'notConcrete' | 'noRectangle' {
+  const section = model.sections.get(elem.sectionId);
+  if (!section) return 'noSection';
+  const material = model.materials.get(elem.materialId);
+  if (!material) return 'noMaterial';
+  const fc = material.fy;
+  if (!fc || fc > CONCRETE_FY_CEILING) return 'notConcrete';
+  if (!section.b || !section.h) return 'noRectangle';
+  return 'checkable';
+}
+
+/** Why the RC check found nothing to do, as a census over the whole model. */
+export interface RcCheckabilityCensus {
+  total: number;
+  checkable: number;
+  notConcrete: number;
+  noRectangle: number;
+  noSection: number;
+  noMaterial: number;
+}
+
+export function censusRcCheckability(
+  model: Pick<AutoVerifyModelData, 'elements' | 'sections' | 'materials'>,
+): RcCheckabilityCensus {
+  const out: RcCheckabilityCensus = {
+    total: 0, checkable: 0, notConcrete: 0, noRectangle: 0, noSection: 0, noMaterial: 0,
+  };
+  for (const elem of model.elements.values()) {
+    out.total += 1;
+    switch (rcCheckability(elem, model)) {
+      case 'checkable': out.checkable += 1; break;
+      case 'notConcrete': out.notConcrete += 1; break;
+      case 'noRectangle': out.noRectangle += 1; break;
+      case 'noSection': out.noSection += 1; break;
+      case 'noMaterial': out.noMaterial += 1; break;
+    }
+  }
+  return out;
+}
+
 export interface AutoVerifyResult {
   concrete: ElementVerification[];
 }
@@ -67,12 +132,21 @@ export function autoVerifyFromResults(
     const nodeI = model.nodes.get(elem.nodeI);
     const nodeJ = model.nodes.get(elem.nodeJ);
     if (!nodeI || !nodeJ) continue;
-    const section = model.sections.get(elem.sectionId);
-    const material = model.materials.get(elem.materialId);
-    if (!section || !material) continue;
-    if (!section.b || !section.h) continue;
+    // One predicate, shared with the command layer that has to explain the silence.
+    if (rcCheckability(elem, model) !== 'checkable') continue;
+    /**
+     * Re-read after the guard, with the guarantees it just established made local.
+     *
+     * `rcCheckability` has proved b, h and f'c are all present, but it proved it behind a
+     * function call and the compiler cannot follow that. Narrowing once here — rather than
+     * scattering `!` over the twenty-odd uses below — keeps the assertion in one place, next
+     * to the check that earns it.
+     */
+    const section = model.sections.get(elem.sectionId) as
+      { id: number; name: string; b: number; h: number };
+    const material = model.materials.get(elem.materialId) as
+      { id: number; name: string; fy: number };
     const fc = material.fy;
-    if (!fc || fc > 80) continue;
 
     const dx = nodeJ.x - nodeI.x, dy = nodeJ.y - nodeI.y, dz = (nodeJ.z ?? 0) - (nodeI.z ?? 0);
     const L = Math.sqrt(dx * dx + dy * dy + dz * dz);

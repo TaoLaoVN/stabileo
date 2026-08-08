@@ -11,7 +11,7 @@
  * This file used to assert 408/408 VERIFIED and an empty non-VERIFIED population, which was
  * true when it was written. The biaxial column-axis mapping and biaxial-beam refusal that
  * arrived with the merged PR15 changed the honest answer to 386 VERIFIED and 22
- * SEARCH_EXHAUSTED — the fixture's BEAM-Y members, whose secondary Mz/Vy demand crosses the
+ * refusals — the fixture's BEAM-Y members, whose secondary Mz/Vy demand crosses the
  * 10% biaxial threshold on an axis this verifier never checks for beams. Before the fix they
  * were certified having never been checked; the 22 refusals are the correction, not a
  * regression, and `autodesign-regression.test.ts` is the gate that owns those numbers.
@@ -42,7 +42,19 @@ describe('the 408/373 discrepancy', () => {
     // an outcome, and the 22 that are outcomes all name the same honest cause.
     const notVerified = [...summary.outcomes.values()].filter((o) => o.outcome !== 'VERIFIED');
     expect(notVerified).toHaveLength(22);
-    expect([...new Set(notVerified.map((o) => o.outcome))]).toEqual(['SEARCH_EXHAUSTED']);
+    /**
+     * UNSUPPORTED, not SEARCH_EXHAUSTED.
+     *
+     * The refusal was moved to the adapter's capability gate. `SEARCH_EXHAUSTED` means a
+     * bounded search explored the envelope and found nothing, which invites the engineer to
+     * try a larger section or a longer run; neither can help, because no arrangement is
+     * checked on the secondary axis. `UNSUPPORTED` is the accurate claim — a required check
+     * is not implemented for this member — and it also stops the search burning its whole
+     * candidate budget to rediscover a fact known before the first candidate.
+     */
+    expect([...new Set(notVerified.map((o) => o.outcome))]).toEqual(['UNSUPPORTED']);
+    // And the cause is named, not left to the outcome kind alone.
+    expect([...new Set(notVerified.flatMap((o) => o.limiting))]).toEqual(['biaxial']);
   }, 300_000);
 
   it('detailing keys off the OUTCOME, so compliant warning members are not lost', () => {

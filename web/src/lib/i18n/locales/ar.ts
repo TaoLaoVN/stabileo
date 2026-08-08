@@ -3037,6 +3037,7 @@ const ar: Translations = {
   'design.reason.notConcrete': 'f′c = {fc} MPa خارج نطاق الخرسانة المسموح به في هذا الكود.',
   'design.reason.generic': 'محظور: {detail}.',
   'design.reason.codeUnsupported': '{code} لا يمكنه تصميم التسليح (العنصر {elementId})؛ يمكنه فقط تقييم توزيع معطى.',
+  'design.reason.secondaryAxisUnchecked': 'Member {elementId}: significant bending about both axes — the secondary moment {secondary} is {percent}% of the primary {primary}, and this verifier checks only the primary axis for beams. An unchecked axis is not certified.',
   'design.reason.memberUnsupported': 'العنصر {elementId} غير مدعوم بواسطة {code}.',
   'design.reason.noGenerator': 'العنصر {elementId}: لا يملك {code} مولّد مرشحين لهذا النوع من العناصر.',
   'design.reason.orientationSuspect': 'العنصر {elementId}: اتجاه القوى مشكوك فيه، لذا لا يمكن اعتماد أي تصميم.',
@@ -3179,6 +3180,9 @@ const ar: Translations = {
   'design.error.noDemands': 'تعذّر استخراج قوى تصميم من النتائج الحالية.',
   'design.error.noAdapter': 'لا يوجد محول كود تصميم مسجَّل للكود المحدد.',
   'design.error.codeUnsupported': '{code} لا يمكنه تصميم التسليح — يمكنه فقط تقييم توزيع معطى.',
+  'design.error.noConcreteMembers': '{code} is the reinforced-concrete code and this model has no concrete member: all {n} of its members are steel. The reinforcement design workflow does not apply to this structure.',
+  'design.error.noRectangularSections': '{code} can only check rectangular b×h sections, and {n} concrete member(s) state none. Give them a rectangular section to design them.',
+  'design.error.noConcreteMembersMixed': '{code} found no checkable member: {steel} steel and {other} with no usable section or material.',
   'design.error.nothingChecked': 'لم يتم فحص أي عنصر بواسطة {code} لهذا النموذج.',
   'design.error.emptySelection': 'حدد عنصرًا واحدًا على الأقل للتصميم.',
 } as const satisfies Record<string, string>;

@@ -111,9 +111,30 @@ export function designMember(
   // ── 1. Capability gate ──
   const unsupported = adapter.unsupported(ctx);
   if (unsupported.length > 0) {
+    /**
+     * Name the biaxial refusal specifically, because it is actionable and the generic one
+     * is not.
+     *
+     * "Member 19 is not supported by CIRSOC 201-2025" is true and leads nowhere. The
+     * secondary-axis refusal has a cause the engineer can see in their own model — a beam
+     * carrying real bending about both axes — and a remedy that is theirs to choose: brace
+     * it, re-orient it, or design that axis by hand. Telling them the ratio is what makes
+     * the difference between a dead end and a decision.
+     */
+    const biaxial = unsupported.includes('biaxial');
     return finish({
       ...base, outcome: 'UNSUPPORTED', limiting: unsupported,
-      reasons: [{ key: 'design.reason.memberUnsupported', params: { elementId: ctx.elementId, code: adapter.name } }],
+      reasons: [biaxial
+        ? {
+          key: 'design.reason.secondaryAxisUnchecked',
+          params: {
+            elementId: ctx.elementId,
+            percent: Math.round((ctx.axes?.secondaryRatio ?? 0) * 100),
+            secondary: ctx.axes?.secondaryFlexure ?? '',
+            primary: ctx.axes?.flexure ?? '',
+          },
+        }
+        : { key: 'design.reason.memberUnsupported', params: { elementId: ctx.elementId, code: adapter.name } }],
       searchStats: stats(0, 0, false, false),
     });
   }

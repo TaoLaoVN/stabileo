@@ -23,6 +23,7 @@
   import { t, tp, i18n } from '../../../lib/i18n';
   import { te } from '../../../lib/i18n/engine-text';
   import { modelStore } from '../../../lib/store/model.svelte';
+  import { verificationStore } from '../../../lib/store/verification.svelte';
   import {
     buildSceneModel, filterScene, summariseScene,
     type SceneFilter, type SceneModel,
@@ -46,6 +47,8 @@
   let showConcrete = $state(true);
   let showConflicts = $state(true);
   let conflictedOnly = $state(false);
+  // Off by default: a member the app could not design is the most important thing here.
+  let hideUnreinforced = $state(false);
   let diameterScale = $state(1);
   let selectedBarId = $state<string | null>(null);
   let hiddenAssemblies = $state<string[]>([]);
@@ -61,8 +64,19 @@
    */
   const built = $derived.by(() => {
     if (!doc) return null;
-    const elementIds = [...new Set(doc.assemblies.flatMap((a) => a.elementIds))]
-      .sort((a, b) => a - b);
+    /**
+     * EVERY member in the model, not only the ones an assembly claims.
+     *
+     * Asking for the assemblies' members was the bug: a member whose design was refused
+     * carries no steel, joins no assembly, and was therefore never asked for — so the view
+     * that was supposed to show the user their structure quietly showed them 22 of its 26
+     * members instead, with no gap where the other four should have been.
+     *
+     * Widening the request is the whole fix on this side. `membersFromModel` still refuses to
+     * invent a section, and `buildSceneModel` now marks which of the members it drew have no
+     * reinforcement in them.
+     */
+    const elementIds = [...modelStore.model.elements.keys()].sort((a, b) => a - b);
     const { members, refused } = membersFromModel({
       elementIds,
       nodes: [...modelStore.model.nodes.values()],
@@ -70,6 +84,28 @@
       sections: [...modelStore.model.sections.values()],
     });
     return { scene: buildSceneModel(doc, { members }), refused };
+  });
+
+  /**
+   * Why each unreinforced member has no steel, read from its design outcome.
+   *
+   * The scene states the fact and stops there, because it reads only the document and a
+   * design outcome is not in it. Joining the two HERE keeps that separation intact and still
+   * answers the only question the user will actually have, which is not "which members have
+   * no steel" but "why not".
+   */
+  const unreinforced = $derived.by(() => {
+    const s = visible;
+    if (!s) return [];
+    return s.unreinforcedMembers.map((id) => {
+      const o = verificationStore.outcomeFor(id);
+      return {
+        id,
+        outcome: o?.outcome ?? null,
+        reason: o?.reasons?.[0] ?? null,
+        limiting: o?.limiting ?? [],
+      };
+    });
   });
 
   /**
@@ -95,6 +131,7 @@
       f.families = s.facets.families.filter((x) => !hiddenFamilies.includes(x));
     }
     if (conflictedOnly) f.conflictedOnly = true;
+    if (hideUnreinforced) f.hideUnreinforced = true;
     return f;
   });
 
@@ -223,6 +260,11 @@
           <input type="checkbox" bind:checked={conflictedOnly} />
           <span>{t('detailing.scene.conflictedOnly')}</span>
         </label>
+        <label>
+          <input type="checkbox" bind:checked={hideUnreinforced} />
+          <span class="swatch unreinforced"></span>
+          <span>{t('detailing.scene.hideUnreinforced')}</span>
+        </label>
         <label class="slider">
           <span>{t('detailing.scene.exaggerate')} ×{diameterScale}</span>
           <input type="range" min="1" max="6" step="1" bind:value={diameterScale} />
@@ -282,6 +324,29 @@
       {/if}
     </div>
 
+    <!-- ── Members the app could not reinforce ──────────────────────
+         Named with the reason, and drawn in the viewport rather than omitted from it. -->
+    {#if unreinforced.length > 0}
+      <div class="unreinforced" data-testid="rebar-unreinforced">
+        <h5>
+          {tp('detailing.scene.unreinforcedCount', { n: unreinforced.length })}
+        </h5>
+        <ul>
+          {#each unreinforced as u (u.id)}
+            <li>
+              <strong>{tp('detailing.scene.solid.member', { id: u.id })}</strong>
+              {#if u.outcome}
+                <em>{t(`detailing.scene.outcome.${u.outcome}`)}</em>
+              {/if}
+              {#if u.reason}
+                <span class="why">{tp(u.reason.key, u.reason.params ?? {})}</span>
+              {/if}
+            </li>
+          {/each}
+        </ul>
+      </div>
+    {/if}
+
     {#if built.refused.length > 0}
       <p class="note" data-testid="rebar-unresolved">
         {tp('detailing.scene.unresolved', {
@@ -337,6 +402,20 @@
   .swatch { width: 0.7rem; height: 0.7rem; border-radius: 2px; display: inline-block; }
   .swatch.longitudinal { background: #3d7dd8; }
   .swatch.transverse { background: #e8913c; }
+  .swatch.unreinforced { background: #d4762a; }
+  .unreinforced {
+    border-left: 3px solid #d4762a;
+    padding: 0.3rem 0 0.3rem 0.55rem;
+  }
+  .unreinforced h5 { margin: 0 0 0.2rem; font-size: 0.8rem; }
+  .unreinforced ul { margin: 0; padding-left: 1rem; font-size: 0.76rem; }
+  .unreinforced li { margin-bottom: 0.15rem; }
+  .unreinforced em {
+    font-style: normal;
+    color: #d4762a;
+    margin-left: 0.3rem;
+  }
+  .unreinforced .why { display: block; color: var(--text-muted, #8b93a3); }
   .summary { margin: 0; font-size: 0.82rem; }
   .warn { color: #e0444a; }
   .detail dl {

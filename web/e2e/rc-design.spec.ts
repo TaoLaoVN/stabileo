@@ -377,7 +377,17 @@ test.describe('@slow RC design at scale', () => {
     // classification this test mirrors.
     const counts = (await page.evaluate(() => window.__stabileo.runCounts()))!;
     expect(counts.verified).toBe(386);
-    expect(counts.searchExhausted).toBe(22);
+    /**
+     * UNSUPPORTED, not SEARCH_EXHAUSTED — the refusal moved to the capability gate.
+     *
+     * No arrangement can satisfy a check the verifier does not perform, so the search could
+     * not succeed and learnt nothing by running: it spent its full candidate budget on every
+     * one of these members to reach an answer available before the first candidate.
+     * `SEARCH_EXHAUSTED` also told the engineer the envelope had been explored, which invites
+     * a section change that cannot help. `UNSUPPORTED` is the accurate claim.
+     */
+    expect(counts.searchExhausted).toBe(0);
+    expect(counts.unsupported).toBe(22);
     expect(counts.aborted).toBe(0);
     expect(counts.notReached).toBe(0);
 
@@ -397,9 +407,19 @@ test.describe('@slow RC design at scale', () => {
     await expect(page.getByTestId('summary-count-warn')).toContainText(String(display.warn));
     await expect(page.getByTestId('summary-count-fail')).toContainText(String(display.fail));
     await expect(page.getByTestId('summary-count-unavailable')).toContainText(String(display.unavailable));
-    // The 22 SEARCH_EXHAUSTED members are also surfaced in the run-outcome cluster
-    // of the counts bar, distinct from the provided-reinforcement display counts.
-    await expect(page.getByTestId('summary-count-exhausted')).toContainText(String(counts.searchExhausted));
+    /**
+     * The 22 refusals are surfaced in the run-outcome cluster, under the chip that now
+     * describes them.
+     *
+     * Each chip hides at zero, so the reclassification moves the badge rather than losing it:
+     * `summary-count-exhausted` is gone because nothing was exhausted, and
+     * `summary-count-unsupported` carries the 22. Asserting BOTH is the point — a chip that
+     * silently vanished would have made the reclassification a regression in the UI even
+     * while it was a correction in the engine.
+     */
+    await expect(page.getByTestId('summary-count-exhausted')).toHaveCount(0);
+    await expect(page.getByTestId('summary-count-unsupported'))
+      .toContainText(String(counts.unsupported));
 
     // Auto-design selected is the default scope; all-un-designed is explicit.
     await expect(page.getByTestId('cmd-autodesign')).toBeVisible();

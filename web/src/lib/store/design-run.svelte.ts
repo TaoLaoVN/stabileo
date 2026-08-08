@@ -20,6 +20,7 @@ import { detailingStore } from './detailing.svelte';
 import { resultsStore } from './results.svelte';
 import { verificationStore } from './verification.svelte';
 import { computeStationDemands, runCirsocDesign } from '../engine/verification-service';
+import { censusRcCheckability } from '../engine/auto-verify';
 import {
   buildAllMemberContexts, buildCriticalSectionMap, type ContextModelData, type MemberContext,
 } from '../engine/design/member-context';
@@ -149,7 +150,7 @@ function createDesignRunStore() {
         sectionNames,
         resultsStore.governing3D.size > 0 ? resultsStore.governing3D : null,
       );
-      if (normalized.length === 0 || !summary) return fail('design.error.nothingChecked', { code: a.name });
+      if (normalized.length === 0 || !summary) return failNothingChecked(a.name);
       verificationStore.setDesignBaseline(concrete, normalized, summary);
       resultsStore.diagramType = 'verification';
       return { ok: true };
@@ -298,6 +299,39 @@ function createDesignRunStore() {
   function fail(key: string, params?: Record<string, string | number>): CommandResult {
     lastError = { key, params };
     return { ok: false, reasonKey: key, params };
+  }
+
+  /**
+   * Say WHY the concrete code checked nothing, not merely that it did.
+   *
+   * ── The report this replaces ───────────────────────────────────
+   *
+   * "CIRSOC 201-2025 verified no member in this model." True of a steel tower, true of a
+   * model with generic sections, and true of a genuine defect — three different situations,
+   * one sentence, no way to tell them apart. The steel case is not even an error: an all-steel
+   * structure has no reinforced concrete to design, and the user is entitled to be told that
+   * rather than left to suspect the app.
+   *
+   * The census comes from `rcCheckability`, the same predicate the verifier skips on, so this
+   * explanation cannot drift from the silence it is explaining.
+   */
+  function failNothingChecked(codeName: string): CommandResult {
+    const c = censusRcCheckability(modelData() as never);
+    if (c.total === 0) return fail('design.error.nothingChecked', { code: codeName });
+    if (c.checkable === 0 && c.notConcrete === c.total) {
+      return fail('design.error.noConcreteMembers', { code: codeName, n: c.total });
+    }
+    if (c.checkable === 0 && c.noRectangle > 0) {
+      return fail('design.error.noRectangularSections', { code: codeName, n: c.noRectangle });
+    }
+    if (c.checkable === 0) {
+      return fail('design.error.noConcreteMembersMixed', {
+        code: codeName, steel: c.notConcrete, other: c.noRectangle + c.noSection + c.noMaterial,
+      });
+    }
+    // Members ARE checkable and the run still produced nothing. That is the case the original
+    // message was written for, and the only one it describes correctly.
+    return fail('design.error.nothingChecked', { code: codeName });
   }
 
   return {

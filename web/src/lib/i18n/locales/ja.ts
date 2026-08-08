@@ -3005,6 +3005,7 @@ const ja: Translations = {
   'design.reason.notConcrete': 'f′c = {fc} MPa はこの規準のコンクリート範囲外です。',
   'design.reason.generic': 'ブロック: {detail}。',
   'design.reason.codeUnsupported': '{code} は配筋を設計できません（要素 {elementId}）。所定の配筋の照査のみ可能です。',
+  'design.reason.secondaryAxisUnchecked': 'Member {elementId}: significant bending about both axes — the secondary moment {secondary} is {percent}% of the primary {primary}, and this verifier checks only the primary axis for beams. An unchecked axis is not certified.',
   'design.reason.memberUnsupported': '要素 {elementId} は {code} に対応していません。',
   'design.reason.noGenerator': '要素 {elementId}: {code} にはこの部材種別の候補生成機能がありません。',
   'design.reason.orientationSuspect': '要素 {elementId}: 力の向きが疑わしいため、設計を認定できません。',
@@ -3147,6 +3148,9 @@ const ja: Translations = {
   'design.error.noDemands': '現在の結果から設計応力を抽出できませんでした。',
   'design.error.noAdapter': '選択した規準に対応するアダプタが登録されていません。',
   'design.error.codeUnsupported': '{code} は配筋を設計できません — 所定の配筋の照査のみ可能です。',
+  'design.error.noConcreteMembers': '{code} is the reinforced-concrete code and this model has no concrete member: all {n} of its members are steel. The reinforcement design workflow does not apply to this structure.',
+  'design.error.noRectangularSections': '{code} can only check rectangular b×h sections, and {n} concrete member(s) state none. Give them a rectangular section to design them.',
+  'design.error.noConcreteMembersMixed': '{code} found no checkable member: {steel} steel and {other} with no usable section or material.',
   'design.error.nothingChecked': 'このモデルで {code} により照査された部材はありません。',
   'design.error.emptySelection': '設計する部材を少なくとも1つ選択してください。',
 

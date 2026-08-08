@@ -31,7 +31,7 @@ function scene(over: Partial<SceneModel> = {}): SceneModel {
     bars: [bar()], solids: [], conflicts: [],
     facets: { assemblies: [], families: [], roles: ['longitudinal'], layers: [] },
     bounds: { min: { x: 0, y: 0, z: 0 }, max: { x: 3, y: 0, z: 0 } },
-    unresolvedMembers: [],
+    unresolvedMembers: [], unreinforcedMembers: [],
     ...over,
   };
 }
@@ -176,7 +176,8 @@ describe('concrete is drawn so the steel can be seen through it', () => {
         { x: 0, y: 0.1, z: 0.25 }, { x: 0, y: -0.1, z: 0.25 },
       ],
       extrude: { x: 3, y: 0, z: 0 },
-      label: { key: 'scene.solid.member', params: { id: 1 } },
+      label: { key: 'detailing.scene.solid.member', params: { id: 1 } },
+      reinforced: true,
     }],
   });
 
@@ -187,6 +188,34 @@ describe('concrete is drawn so the steel can be seen through it', () => {
     expect(mat.transparent).toBe(true);
     expect(mat.opacity).toBeLessThan(0.5);
     expect(mat.depthWrite).toBe(false);
+    built.dispose();
+  });
+
+  it('draws unreinforced concrete as its OWN mesh, so it can be seen as different', () => {
+    // Merging it into the grey batch is how a member the app could not design becomes
+    // indistinguishable from one it did.
+    const built = createRebarScene(scene({
+      solids: [
+        { ...s.solids[0], id: 'member:1', reinforced: true },
+        { ...s.solids[0], id: 'member:2', elementIds: [2], reinforced: false },
+      ],
+    }));
+    const ok = built.group.getObjectByName('rebar-concrete') as THREE.Mesh;
+    const bad = built.group.getObjectByName('rebar-concrete-unreinforced') as THREE.Mesh;
+    expect(ok).toBeDefined();
+    expect(bad).toBeDefined();
+    const okMat = ok.material as THREE.MeshStandardMaterial;
+    const badMat = bad.material as THREE.MeshStandardMaterial;
+    expect(badMat.color.getHex()).toBe(REBAR_COLORS.unreinforced);
+    expect(badMat.color.getHex()).not.toBe(okMat.color.getHex());
+    // And more opaque, so it reads as the exception rather than as more of the same.
+    expect(badMat.opacity).toBeGreaterThan(okMat.opacity);
+    built.dispose();
+  });
+
+  it('emits no unreinforced mesh when every member has steel', () => {
+    const built = createRebarScene(s);
+    expect(built.group.getObjectByName('rebar-concrete-unreinforced')).toBeUndefined();
     built.dispose();
   });
 

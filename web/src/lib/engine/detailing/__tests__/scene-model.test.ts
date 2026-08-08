@@ -141,6 +141,34 @@ describe('concrete the caller did not supply is reported, not omitted', () => {
     expect(scene.unresolvedMembers).toEqual([1, 2]);
   });
 
+  it('draws a member the caller supplied even when NO assembly claims it', () => {
+    /**
+     * The member whose design was refused.
+     *
+     * It carries no steel, so it joins no assembly, so nothing in the document names it —
+     * and the view used to show 22 of `rc-qa-diagnostic`'s 26 members with no sign that four
+     * were missing. Supplying it must be enough to draw it.
+     */
+    const orphan: MemberGeometry = {
+      elementId: 99, kind: 'column',
+      start: { x: 9, y: 9, z: 0 }, end: { x: 9, y: 9, z: 3 },
+      width: 0.3, depth: 0.3,
+    };
+    const scene = buildSceneModel(doc(), { members: [...MEMBERS, orphan] });
+    const solid = scene.solids.find((s) => s.id === 'member:99');
+    expect(solid, 'the orphan member is drawn').toBeDefined();
+    expect(solid!.assemblyId, 'and belongs to no assembly').toBeUndefined();
+    expect(solid!.reinforced).toBe(false);
+    expect(scene.unreinforcedMembers).toEqual([2, 99]);
+  });
+
+  it('marks a member as reinforced only when a bar actually sits in it', () => {
+    const scene = buildSceneModel(doc(), { members: MEMBERS });
+    // Element 1 owns both bars; element 2 owns none, though the assembly spans it.
+    expect(scene.solids.find((s) => s.id === 'member:1')!.reinforced).toBe(true);
+    expect(scene.solids.find((s) => s.id === 'member:2')!.reinforced).toBe(false);
+  });
+
   it('builds a column section in the plane normal to a VERTICAL axis', () => {
     const scene = buildSceneModel(doc(), { members: MEMBERS });
     const col = scene.solids.find((s) => s.id === 'member:2')!;
@@ -267,6 +295,37 @@ describe('an absent filter and an empty filter are different states', () => {
       doc({ assemblies: [assembly({ conflicts: [CONFLICT] })] }), { members: MEMBERS });
     expect(filterScene(withConflict, { conflictedOnly: true }).conflicts).toHaveLength(1);
     expect(filterScene(withConflict, { roles: [] }).conflicts).toHaveLength(0);
+  });
+
+  it('keeps unreinforced concrete visible through an assembly filter', () => {
+    /**
+     * The regression this pins.
+     *
+     * A refused member belongs to no assembly, so an assembly filter can neither include nor
+     * exclude it. Dropping it — which a naive `visibleAssemblies.has(s.assemblyId)` does,
+     * because `undefined` is in no set — would put it back in the dark the instant the user
+     * touched a checkbox.
+     */
+    const orphan: MemberGeometry = {
+      elementId: 99, kind: 'column',
+      start: { x: 9, y: 9, z: 0 }, end: { x: 9, y: 9, z: 3 },
+      width: 0.3, depth: 0.3,
+    };
+    const s = buildSceneModel(doc(), { members: [...MEMBERS, orphan] });
+    const narrowed = filterScene(s, { assemblyIds: ['level-3.20'] });
+    expect(narrowed.solids.some((x) => x.id === 'member:99')).toBe(true);
+  });
+
+  it('hides it only when the user asks, and that switch is off by default', () => {
+    const orphan: MemberGeometry = {
+      elementId: 99, kind: 'column',
+      start: { x: 9, y: 9, z: 0 }, end: { x: 9, y: 9, z: 3 },
+      width: 0.3, depth: 0.3,
+    };
+    const s = buildSceneModel(doc(), { members: [...MEMBERS, orphan] });
+    expect(filterScene(s, {}).solids.some((x) => x.id === 'member:99')).toBe(true);
+    expect(filterScene(s, { hideUnreinforced: true }).solids.some((x) => x.id === 'member:99'))
+      .toBe(false);
   });
 
   it('keeps the concrete a visible bar sits in, whatever the bar filter says', () => {

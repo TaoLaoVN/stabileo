@@ -3052,6 +3052,7 @@ const de: Translations = {
   'design.reason.notConcrete': 'f′c = {fc} MPa liegt außerhalb des Betonbereichs dieser Norm.',
   'design.reason.generic': 'Blockiert: {detail}.',
   'design.reason.codeUnsupported': '{code} kann keine Bewehrung bemessen (Element {elementId}); es kann nur eine vorgegebene Anordnung bewerten.',
+  'design.reason.secondaryAxisUnchecked': 'Member {elementId}: significant bending about both axes — the secondary moment {secondary} is {percent}% of the primary {primary}, and this verifier checks only the primary axis for beams. An unchecked axis is not certified.',
   'design.reason.memberUnsupported': 'Element {elementId} wird von {code} nicht unterstützt.',
   'design.reason.noGenerator': 'Element {elementId}: {code} verfügt über keinen Kandidatengenerator für diesen Bauteiltyp.',
   'design.reason.orientationSuspect': 'Element {elementId}: Die Kraftorientierung ist verdächtig, daher kann keine Bemessung zertifiziert werden.',
@@ -3194,6 +3195,9 @@ const de: Translations = {
   'design.error.noDemands': 'Aus den aktuellen Ergebnissen konnten keine Bemessungsgrößen ermittelt werden.',
   'design.error.noAdapter': 'Für die ausgewählte Norm ist kein Bemessungsadapter registriert.',
   'design.error.codeUnsupported': '{code} kann keine Bewehrung bemessen — es kann nur eine vorgegebene Anordnung bewerten.',
+  'design.error.noConcreteMembers': '{code} is the reinforced-concrete code and this model has no concrete member: all {n} of its members are steel. The reinforcement design workflow does not apply to this structure.',
+  'design.error.noRectangularSections': '{code} can only check rectangular b×h sections, and {n} concrete member(s) state none. Give them a rectangular section to design them.',
+  'design.error.noConcreteMembersMixed': '{code} found no checkable member: {steel} steel and {other} with no usable section or material.',
   'design.error.nothingChecked': 'Für dieses Modell wurden von {code} keine Bauteile geprüft.',
   'design.error.emptySelection': 'Wählen Sie mindestens ein Bauteil zum Bemessen aus.',
 };

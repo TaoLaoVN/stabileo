@@ -3038,6 +3038,7 @@ const zh: Translations = {
   'design.reason.notConcrete': 'f′c = {fc} MPa 超出了该规范规定的混凝土强度范围。',
   'design.reason.generic': '已阻止：{detail}。',
   'design.reason.codeUnsupported': '{code} 无法设计配筋（单元 {elementId}）；它只能评定给定的配筋方案。',
+  'design.reason.secondaryAxisUnchecked': 'Member {elementId}: significant bending about both axes — the secondary moment {secondary} is {percent}% of the primary {primary}, and this verifier checks only the primary axis for beams. An unchecked axis is not certified.',
   'design.reason.memberUnsupported': '单元 {elementId} 不受 {code} 支持。',
   'design.reason.noGenerator': '单元 {elementId}：{code} 没有针对该构件类型的候选方案生成器。',
   'design.reason.orientationSuspect': '单元 {elementId}：力的方向存疑，因此无法认证任何设计。',
@@ -3180,6 +3181,9 @@ const zh: Translations = {
   'design.error.noDemands': '无法从当前结果中提取设计内力。',
   'design.error.noAdapter': '所选规范未注册任何设计适配器。',
   'design.error.codeUnsupported': '{code} 无法设计配筋 — 它只能评定给定的配筋方案。',
+  'design.error.noConcreteMembers': '{code} is the reinforced-concrete code and this model has no concrete member: all {n} of its members are steel. The reinforcement design workflow does not apply to this structure.',
+  'design.error.noRectangularSections': '{code} can only check rectangular b×h sections, and {n} concrete member(s) state none. Give them a rectangular section to design them.',
+  'design.error.noConcreteMembersMixed': '{code} found no checkable member: {steel} steel and {other} with no usable section or material.',
   'design.error.nothingChecked': '此模型中没有构件经过 {code} 校核。',
   'design.error.emptySelection': '请至少选择一个构件进行设计。',
 } as const satisfies Record<string, string>;

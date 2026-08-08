@@ -48,6 +48,14 @@ export const REBAR_COLORS = {
   /** A bar named by an unresolved conflict. Overrides its role colour. */
   conflicted: 0xe0444a,
   concrete: 0x9aa4b0,
+  /**
+   * Concrete with no steel in it.
+   *
+   * A distinct colour rather than a subtler shade of the same grey, because this is not a
+   * variation on "concrete" — it is a member the app could not design, and it has to read as
+   * a problem from across the room.
+   */
+  unreinforced: 0xd4762a,
   conflictMarker: 0xff2d55,
   selected: 0xffd400,
 } as const;
@@ -280,32 +288,45 @@ export function createRebarScene(
     bars.push({ category, mesh, ranges });
   }
 
-  // ── Concrete ──────────────────────────────────────────────────
+  /**
+   * Concrete, in two batches: the reinforced and the not.
+   *
+   * Two meshes rather than one, so the unreinforced members can carry their own colour and
+   * a higher opacity. They are the exception the user needs to see, and a translucent grey
+   * indistinguishable from every other member would bury them again.
+   */
   if (options.showConcrete !== false && scene.solids.length > 0) {
-    const pos: number[] = [];
-    const nor: number[] = [];
-    const idx: number[] = [];
-    for (const s of scene.solids as SceneSolid[]) {
-      appendPrism(
-        s.base.map((p) => new THREE.Vector3(p.x, p.y, p.z)),
-        new THREE.Vector3(s.extrude.x, s.extrude.y, s.extrude.z),
-        pos, nor, idx);
-    }
-    if (pos.length > 0) {
+    for (const reinforced of [true, false]) {
+      const subset = (scene.solids as SceneSolid[]).filter((s) => s.reinforced === reinforced);
+      if (subset.length === 0) continue;
+
+      const pos: number[] = [];
+      const nor: number[] = [];
+      const idx: number[] = [];
+      for (const s of subset) {
+        appendPrism(
+          s.base.map((p) => new THREE.Vector3(p.x, p.y, p.z)),
+          new THREE.Vector3(s.extrude.x, s.extrude.y, s.extrude.z),
+          pos, nor, idx);
+      }
+      if (pos.length === 0) continue;
+
       const geom = new THREE.BufferGeometry();
       geom.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
       geom.setAttribute('normal', new THREE.Float32BufferAttribute(nor, 3));
       geom.setIndex(idx);
       geom.computeBoundingSphere();
       const mat = new THREE.MeshStandardMaterial({
-        color: REBAR_COLORS.concrete,
+        color: reinforced ? REBAR_COLORS.concrete : REBAR_COLORS.unreinforced,
         // Translucent and not depth-writing, because the entire point of this view is to see
         // the steel THROUGH the concrete. Opaque concrete would hide the feature.
-        transparent: true, opacity: 0.22, depthWrite: false,
+        transparent: true,
+        opacity: reinforced ? 0.22 : 0.45,
+        depthWrite: false,
         side: THREE.DoubleSide, roughness: 0.95, metalness: 0,
       });
       const mesh = new THREE.Mesh(geom, mat);
-      mesh.name = 'rebar-concrete';
+      mesh.name = reinforced ? 'rebar-concrete' : 'rebar-concrete-unreinforced';
       mesh.renderOrder = 1;
       group.add(mesh);
       disposables.push(geom, mat);

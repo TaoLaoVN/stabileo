@@ -3050,6 +3050,7 @@ const fr: Translations = {
   'design.reason.notConcrete': 'f′c = {fc} MPa est hors de la plage de béton pour cette norme.',
   'design.reason.generic': 'Bloqué : {detail}.',
   'design.reason.codeUnsupported': '{code} ne peut pas dimensionner les armatures (élément {elementId}) ; il peut seulement évaluer une disposition donnée.',
+  'design.reason.secondaryAxisUnchecked': 'Member {elementId}: significant bending about both axes — the secondary moment {secondary} is {percent}% of the primary {primary}, and this verifier checks only the primary axis for beams. An unchecked axis is not certified.',
   'design.reason.memberUnsupported': "L'élément {elementId} n'est pas pris en charge par {code}.",
   'design.reason.noGenerator': "Élément {elementId} : {code} n'a pas de générateur de candidats pour ce type d'élément.",
   'design.reason.orientationSuspect': "Élément {elementId} : l'orientation des efforts est suspecte, aucun dimensionnement ne peut donc être certifié.",
@@ -3192,6 +3193,9 @@ const fr: Translations = {
   'design.error.noDemands': "Aucune sollicitation de dimensionnement n'a pu être extraite des résultats actuels.",
   'design.error.noAdapter': "Aucun adaptateur de norme n'est enregistré pour le code sélectionné.",
   'design.error.codeUnsupported': '{code} ne peut pas dimensionner les armatures — il peut seulement évaluer une disposition donnée.',
+  'design.error.noConcreteMembers': '{code} is the reinforced-concrete code and this model has no concrete member: all {n} of its members are steel. The reinforcement design workflow does not apply to this structure.',
+  'design.error.noRectangularSections': '{code} can only check rectangular b×h sections, and {n} concrete member(s) state none. Give them a rectangular section to design them.',
+  'design.error.noConcreteMembersMixed': '{code} found no checkable member: {steel} steel and {other} with no usable section or material.',
   'design.error.nothingChecked': "Aucun élément n'a été vérifié par {code} pour ce modèle.",
   'design.error.emptySelection': 'Sélectionnez au moins un élément à dimensionner.',
 };

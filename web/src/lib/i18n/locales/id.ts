@@ -3039,6 +3039,7 @@ const id: Translations = {
   'design.reason.notConcrete': 'f′c = {fc} MPa berada di luar rentang beton untuk kode ini.',
   'design.reason.generic': 'Diblokir: {detail}.',
   'design.reason.codeUnsupported': '{code} tidak dapat mendesain tulangan (elemen {elementId}); hanya dapat menilai susunan yang diberikan.',
+  'design.reason.secondaryAxisUnchecked': 'Member {elementId}: significant bending about both axes — the secondary moment {secondary} is {percent}% of the primary {primary}, and this verifier checks only the primary axis for beams. An unchecked axis is not certified.',
   'design.reason.memberUnsupported': 'Elemen {elementId} tidak didukung oleh {code}.',
   'design.reason.noGenerator': 'Elemen {elementId}: {code} tidak memiliki generator kandidat untuk jenis elemen ini.',
   'design.reason.orientationSuspect': 'Elemen {elementId}: orientasi gaya diragukan, sehingga tidak ada desain yang dapat disertifikasi.',
@@ -3181,6 +3182,9 @@ const id: Translations = {
   'design.error.noDemands': 'Tidak ada gaya desain yang dapat diekstrak dari hasil saat ini.',
   'design.error.noAdapter': 'Tidak ada adaptor kode desain yang terdaftar untuk kode yang dipilih.',
   'design.error.codeUnsupported': '{code} tidak dapat mendesain tulangan — hanya dapat menilai susunan yang diberikan.',
+  'design.error.noConcreteMembers': '{code} is the reinforced-concrete code and this model has no concrete member: all {n} of its members are steel. The reinforcement design workflow does not apply to this structure.',
+  'design.error.noRectangularSections': '{code} can only check rectangular b×h sections, and {n} concrete member(s) state none. Give them a rectangular section to design them.',
+  'design.error.noConcreteMembersMixed': '{code} found no checkable member: {steel} steel and {other} with no usable section or material.',
   'design.error.nothingChecked': 'Tidak ada elemen yang diperiksa oleh {code} untuk model ini.',
   'design.error.emptySelection': 'Pilih setidaknya satu elemen untuk didesain.',
 } as const satisfies Record<string, string>;

@@ -54,9 +54,19 @@ describe('flagship 408-member RC frame designs completely', () => {
     expect(s.verified).toBe(386);
     expect(s.sectionInadequate).toBe(0);
     expect(s.demandUnavailable).toBe(0);
-    expect(s.searchExhausted).toBe(22);
-    expect(s.unsupported).toBe(0);
-    expect(s.provisionalRetained).toBe(22);
+    // The refusal moved to the adapter's capability gate, so it is UNSUPPORTED — a required
+    // check is not implemented for this member — rather than SEARCH_EXHAUSTED, which would
+    // claim the envelope was explored and invite a section change that cannot help.
+    expect(s.searchExhausted).toBe(0);
+    expect(s.unsupported).toBe(22);
+    /**
+     * And no provisional is retained, which is the point rather than a loss.
+     *
+     * A provisional is the BEST FAILING CANDIDATE: a design that was evaluated and fell
+     * short. These members had no candidate evaluated at all, so there is nothing that
+     * earned the name. Offering one would imply an assessment that never happened.
+     */
+    expect(s.provisionalRetained).toBe(0);
     expect(s.aborted).toBe(false);
     expect(s.notReached).toBe(0);
 
@@ -67,7 +77,10 @@ describe('flagship 408-member RC frame designs completely', () => {
         // The refused members must be exactly the honest-refusal case: never a
         // certificate, always a reason, and the biaxial constraint recorded.
         expect(o.elementType, `element ${id}`).toBe('beam');
-        expect(o.outcome, `element ${id}`).toBe('SEARCH_EXHAUSTED');
+        expect(o.outcome, `element ${id}`).toBe('UNSUPPORTED');
+        // Refused before the search, so the stats must show no candidate was tried. A
+        // non-zero count here would mean the gate leaked and the budget was spent anyway.
+        expect(o.searchStats.candidatesTried, `element ${id} candidates`).toBe(0);
         expect(o.limiting, `element ${id}`).toContain('biaxial');
         expect(o.certificate, `element ${id} certificate`).toBeUndefined();
         expect(o.accepted, `element ${id} accepted rebar`).toBeUndefined();
