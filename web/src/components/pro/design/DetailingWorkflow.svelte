@@ -21,9 +21,11 @@
     renderReportHtml, renderDrawings, renderSchedule,
   } from '../../../lib/engine/detailing/document-render';
   import { exportToExcel } from '../../../lib/export/excel';
+  import RebarScenePanel from './RebarScenePanel.svelte';
 
   let engineer = $state('');
   let docError = $state<string | null>(null);
+  let show3d = $state(false);
 
   /**
    * Build the document, or say why not.
@@ -73,6 +75,17 @@
       locale: i18n.locale, projectName: t('detailing.doc.project'),
     });
     downloadBlob(`detailing-rev${doc.revision.number}.dxf`, 'application/dxf', set.dxf);
+  }
+
+  /**
+   * Open the 3-D view on a FRESHLY built document.
+   *
+   * Not on `detailingStore.document`, which may be a revision built before the last edit.
+   * Going through `currentDoc()` is what makes the picture and the three exports above
+   * projections of the same instance rather than of two documents that happen to agree.
+   */
+  function open3d() {
+    if (currentDoc()) show3d = true;
   }
 
   function exportXlsx() {
@@ -361,10 +374,18 @@
           <button data-testid="doc-report" onclick={exportReport}>{t('detailing.doc.report')}</button>
           <button data-testid="doc-dxf" onclick={exportDxf}>{t('detailing.doc.dxf')}</button>
           <button data-testid="doc-xlsx" onclick={exportXlsx}>{t('detailing.doc.xlsx')}</button>
+          <button data-testid="doc-3d" onclick={open3d}>{t('detailing.scene.open')}</button>
         </div>
 
         {#if docError}
           <p class="err" role="alert" data-testid="doc-error">{docError}</p>
+        {/if}
+
+        <!-- ── The fourth projection ────────────────────────────────
+             Same document instance as the three exports above, so what is orbited, what is
+             dimensioned and what is ordered cannot come apart. -->
+        {#if show3d}
+          <RebarScenePanel doc={detailingStore.document} ondownload={downloadBlob} />
         {/if}
 
         {#if detailingStore.supersededDocuments.length > 0}

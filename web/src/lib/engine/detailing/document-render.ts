@@ -22,10 +22,9 @@
 import { buildTitleBlock, buildSchedule, scheduleToAoa, sheetToDxf, sheetToSvg,
   drawElevation, drawSection, barArcs, type Sheet, type Projection } from './drawings';
 import type { DocumentAssembly, DocumentModel, OpenConflict } from './document-model';
-import type { FloorFamilyDesignRecord } from './family-record';
+import { footingPlanCentre, type FloorFamilyDesignRecord } from './family-record';
 import { drawFooting } from './family-drawings';
 import { drawSlab, drawWall } from './slab-wall-drawings';
-import type { BarPath } from '../../codes/cirsoc201/bar-geometry';
 
 /** Everything the renderers need that is not in the model: locale and presentation. */
 export interface RenderOptions {
@@ -734,7 +733,7 @@ export function renderDrawings(doc: DocumentModel, opts: RenderOptions): Drawing
         // This record's own steel. Passing the floor's would draw a neighbouring footing's
         // dowels inside this one's outline.
         bars: own,
-        centre: footingCentre(rec, own),
+        centre: footingPlanCentre(rec, own),
         clauses: doc.refs,
         sheetNumber: `R${doc.revision.number}-${n}`,
         title: `${opts.projectName} — ${rec.geometry.name} — ${readinessBanner(doc, opts.locale)}`,
@@ -933,20 +932,6 @@ function elevationAndSection(
  * already reports as an unsupported condition, and a plan drawn at the origin is visibly
  * wrong rather than subtly displaced.
  */
-function footingCentre(
-  rec: Extract<FloorFamilyDesignRecord, { family: 'footing' }>,
-  bars: readonly BarPath[],
-): { x: number; y: number } {
-  const dowelIds = new Set(rec.dowels?.barIds ?? []);
-  const dowels = bars.filter((b) => dowelIds.has(b.id));
-  if (dowels.length === 0) return { x: 0, y: 0 };
-  const pts = dowels.map((b) => b.segments[0].start);
-  return {
-    x: pts.reduce((s, p) => s + p.x, 0) / pts.length,
-    y: pts.reduce((s, p) => s + p.y, 0) / pts.length,
-  };
-}
-
 function conflictNote(c: OpenConflict, locale: string): string {
   const es = locale.startsWith('es');
   return es

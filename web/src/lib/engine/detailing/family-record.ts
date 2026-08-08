@@ -639,6 +639,39 @@ export function familyRecordId(family: FloorFamily, ownerId: string): string {
 }
 
 /**
+ * Where a footing sits in plan, recovered from the dowels it starts.
+ *
+ * ── Why the record does not simply say ──────────────────────────────
+ *
+ * `FootingGeometrySnapshot` carries B, L, the thickness, the rotation and the founding
+ * elevation, but no plan position: the footing is located by the SUPPORT it sits under, and
+ * the snapshot records the footing's own properties rather than the node's. The dowels are
+ * the one thing in the record that is already expressed in model coordinates, and they rise
+ * from the column the footing carries — so their mean start is the column axis, which is
+ * what both a plan drawing and a 3-D solid need to be centred on.
+ *
+ * `{x: 0, y: 0}` when there are no dowels. That is a real answer for a footing whose design
+ * produced no steel, not a silent failure: with nothing placed there is nothing to centre on
+ * and nothing to draw at the wrong place either.
+ *
+ * Shared rather than duplicated. The drawing renderer had this privately and the 3-D scene
+ * needs the same answer; two copies of "where is this footing" is exactly the drift the
+ * document model exists to prevent.
+ */
+export function footingPlanCentre(
+  rec: FootingDesignRecord, bars: readonly BarPath[],
+): { x: number; y: number } {
+  const dowelIds = new Set(rec.dowels?.barIds ?? []);
+  const dowels = bars.filter((b) => dowelIds.has(b.id));
+  if (dowels.length === 0) return { x: 0, y: 0 };
+  const pts = dowels.map((b) => b.segments[0].start);
+  return {
+    x: pts.reduce((s, p) => s + p.x, 0) / pts.length,
+    y: pts.reduce((s, p) => s + p.y, 0) / pts.length,
+  };
+}
+
+/**
  * Hash the physical reinforcement a record produced.
  *
  * Over the FABRICATION identity of each bar — diameter, cutting length, role, shape — not
