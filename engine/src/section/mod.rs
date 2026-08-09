@@ -8,7 +8,9 @@ use serde::{Deserialize, Serialize};
 pub mod bending;
 pub mod catalogue;
 pub mod mesh;
+pub mod plastic;
 pub mod poisson;
+pub mod warping;
 pub mod shear;
 pub mod torsion;
 

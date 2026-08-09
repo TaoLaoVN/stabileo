@@ -50,6 +50,7 @@ let wasmBuildSectionGeometry: ((json: string) => string) | null = null;
 let wasmAnalyzeSectionBending: ((json: string) => string) | null = null;
 let wasmAnalyzeSectionTorsion: ((json: string) => string) | null = null;
 let wasmAnalyzeSectionShear: ((json: string) => string) | null = null;
+let wasmAnalyzeSectionPlastic: ((json: string) => string) | null = null;
 let wasmSectionGeometryDigest: ((json: string) => string) | null = null;
 let wasmComputeSectionStress2d: ((json: string) => string) | null = null;
 let wasmComputeSectionStress3d: ((json: string) => string) | null = null;
@@ -213,6 +214,7 @@ export async function initSolver(): Promise<void> {
     wasmAnalyzeSectionBending = wasm.analyze_section_bending ?? null;
     wasmAnalyzeSectionTorsion = wasm.analyze_section_torsion ?? null;
     wasmAnalyzeSectionShear = wasm.analyze_section_shear ?? null;
+    wasmAnalyzeSectionPlastic = wasm.analyze_section_plastic ?? null;
     wasmSectionGeometryDigest = wasm.section_geometry_digest ?? null;
 
     // Section Stress
@@ -1482,4 +1484,37 @@ export function analyzeSectionShear(input: {
 }): ShearResponse {
   if (!wasmReady || !wasmAnalyzeSectionShear) throw new Error('WASM solver not initialized. Call initSolver() first.');
   return JSON.parse(wasmAnalyzeSectionShear(JSON.stringify(input)));
+}
+
+/** Plastic and elastic section moduli, plus the warping constant. */
+export interface PlasticResponse {
+  /** Plastic moduli about the horizontal and vertical axes. */
+  zy: number;
+  zz: number;
+  /** Elastic moduli, so `zy/sy` gives the shape factor directly. */
+  sy: number;
+  sz: number;
+  /** Plastic neutral axes, centroid-relative. Zero for a symmetric section. */
+  pnaZ: number;
+  pnaY: number;
+  /**
+   * Warping constant. Absent for a closed section, where the solver refuses
+   * rather than overstate a value that is negligible in practice anyway.
+   */
+  cw?: number;
+}
+
+/**
+ * Plastic moduli, elastic moduli and the warping constant for a section.
+ *
+ * `Z` is taken about the equal-area axis, not the centroid — they differ for a
+ * tee or a channel, and using the centroid understates the result. `Cw` is what
+ * lateral-torsional buckling needs alongside `J`.
+ */
+export function analyzeSectionPlastic(input: {
+  geometry: CanonicalGeometry;
+  maxArea?: number;
+}): PlasticResponse {
+  if (!wasmReady || !wasmAnalyzeSectionPlastic) throw new Error('WASM solver not initialized. Call initSolver() first.');
+  return JSON.parse(wasmAnalyzeSectionPlastic(JSON.stringify(input)));
 }

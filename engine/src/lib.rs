@@ -1568,3 +1568,111 @@ pub fn analyze_section_shear(json: &str) -> Result<String, JsValue> {
     })
     .map_err(|e| JsValue::from_str(&format!("Serialize error: {e}")))
 }
+
+/// Plastic section moduli for canonical geometry.
+///
+/// `Z` is what a limit-state check needs, and it is taken about the PLASTIC
+/// neutral axis — the equal-area line, not the centroid. The two coincide only
+/// for a doubly-symmetric section; for a tee or a channel, using the centroid
+/// understates the result.
+#[wasm_bindgen]
+pub fn analyze_section_plastic(json: &str) -> Result<String, JsValue> {
+    use section::mesh::{mesh_section, MeshParams};
+
+    #[derive(serde::Deserialize)]
+    #[serde(rename_all = "camelCase", deny_unknown_fields)]
+    struct Request {
+        geometry: section::catalogue::CanonicalGeometry,
+        #[serde(default)]
+        max_area: Option<f64>,
+    }
+
+    let req: Request = serde_json::from_str(json)
+        .map_err(|e| JsValue::from_str(&format!("Parse error: {e}")))?;
+
+    let props = section::analyze_section(&section::SectionInput {
+        polygons: req.geometry.polygons.clone(),
+        modular_ratios: Default::default(),
+    })
+    .map_err(|e| JsValue::from_str(&e))?;
+
+    let extent = req
+        .geometry
+        .polygons
+        .iter()
+        .flat_map(|p| p.vertices.iter())
+        .fold(0.0_f64, |m, v| m.max(v[0].abs()).max(v[1].abs()));
+    if !(extent > 0.0) || !extent.is_finite() {
+        return Err(JsValue::from_str("geometry has no finite extent"));
+    }
+    let scale = 100.0 / extent;
+    let mut scaled = req.geometry.polygons.clone();
+    for poly in &mut scaled {
+        for v in &mut poly.vertices {
+            v[0] *= scale;
+            v[1] *= scale;
+        }
+    }
+
+    let mut params = MeshParams::default();
+    let scaled_area = props.a * scale * scale;
+    params.max_area = req.max_area.map(|a| a * scale * scale).unwrap_or(scaled_area / 2000.0);
+
+    let mesh = mesh_section(&scaled, &params).map_err(|e| JsValue::from_str(&e))?;
+    let z = section::plastic::solve_plastic(&mesh).map_err(|e| JsValue::from_str(&e))?;
+
+    // Warping needs the shear centre as its pole, so it comes from the shear
+    // solve. Refused for closed sections, where it is negligible anyway; that
+    // is reported as absent rather than as an error, because a tube having no
+    // meaningful warping constant is an answer, not a failure.
+    let cw = {
+        use section::shear::{solve_shear, ShearInertia};
+        let c = [props.yc * scale, props.zc * scale];
+        solve_shear(
+            &mesh, c,
+            ShearInertia { iy: props.iy * scale.powi(4), iz: props.iz * scale.powi(4) },
+            section::poisson::SolveStrategy::Sparse,
+        )
+        .ok()
+        .and_then(|sh| {
+            section::warping::solve_warping(
+                &mesh, c, sh.shear_centre, section::poisson::SolveStrategy::Sparse,
+            )
+            .ok()
+        })
+        // Cw is a sixth moment.
+        .map(|w| w.cw / scale.powi(6))
+    };
+
+    #[derive(serde::Serialize)]
+    #[serde(rename_all = "camelCase")]
+    struct Response {
+        zy: f64,
+        zz: f64,
+        /// Elastic moduli, so the caller has the shape factor without a second call.
+        sy: f64,
+        sz: f64,
+        pna_z: f64,
+        pna_y: f64,
+        /// Warping constant. Absent for a closed section, where it is negligible.
+        #[serde(skip_serializing_if = "Option::is_none")]
+        cw: Option<f64>,
+    }
+    // Z is a third moment, so it scales back by `s^3`; the neutral axes are
+    // lengths and are returned centroid-relative.
+    let s3 = scale.powi(3);
+    let half_z = req.geometry.polygons.iter().flat_map(|p| p.vertices.iter())
+        .fold(0.0_f64, |m, v| m.max((v[1] - props.zc).abs()));
+    let half_y = req.geometry.polygons.iter().flat_map(|p| p.vertices.iter())
+        .fold(0.0_f64, |m, v| m.max((v[0] - props.yc).abs()));
+    serde_json::to_string(&Response {
+        zy: z.zy / s3,
+        zz: z.zz / s3,
+        sy: if half_z > 0.0 { props.iy / half_z } else { 0.0 },
+        sz: if half_y > 0.0 { props.iz / half_y } else { 0.0 },
+        pna_z: z.pna_z / scale - props.zc,
+        pna_y: z.pna_y / scale - props.yc,
+        cw,
+    })
+    .map_err(|e| JsValue::from_str(&format!("Serialize error: {e}")))
+}

@@ -183,32 +183,11 @@ pub fn solve_torsion(mesh: &SectionMesh, strategy: SolveStrategy) -> Result<Tors
     Ok(TorsionResult { j, phi: sol.u, tau, tau_max, tau_max_triangle, residual: sol.residual })
 }
 
-/// A boundary edge oriented so the material lies to its LEFT, with its triangle.
-///
-/// `boundary_edges` is derived from mesh connectivity — an edge used by exactly
-/// one triangle — so the stored `(a, b)` order carries no orientation. Taking it
-/// at face value makes the shoelace sum cancel to zero and sends outward normals
-/// half one way and half the other, which is exactly what went wrong first time:
-/// hole areas came out at 1e-14 and the hole constant blew up. The owning
-/// triangle is wound counter-clockwise, so the directed edge appearing in it is
-/// the correctly oriented one.
-fn oriented_edge(mesh: &SectionMesh, a: usize, b: usize) -> Option<(usize, usize, usize)> {
-    let t = mesh.triangles.iter().position(|t| t.contains(&a) && t.contains(&b))?;
-    let tri = mesh.triangles[t];
-    for k in 0..3 {
-        let (p, q) = (tri[k], tri[(k + 1) % 3]);
-        if (p, q) == (a, b) || (p, q) == (b, a) {
-            return Some((p, q, t));
-        }
-    }
-    None
-}
-
 /// Area enclosed by a boundary loop, by the shoelace rule over oriented edges.
 fn hole_area(mesh: &SectionMesh, loop_id: usize) -> f64 {
     let mut a = 0.0;
     for e in mesh.boundary_edges.iter().filter(|e| e.loop_id == loop_id) {
-        if let Some((p, q, _)) = oriented_edge(mesh, e.a, e.b) {
+        if let Some((p, q, _)) = mesh.oriented_boundary_edge(e.a, e.b) {
             let (pp, qq) = (mesh.nodes[p], mesh.nodes[q]);
             a += pp[0] * qq[1] - qq[0] * pp[1];
         }
@@ -230,7 +209,7 @@ fn boundary_value(mesh: &SectionMesh, sol: &PoissonSolution, loop_id: usize) -> 
 fn circulation(mesh: &SectionMesh, sol: &PoissonSolution, loop_id: usize) -> f64 {
     let mut total = 0.0;
     for e in mesh.boundary_edges.iter().filter(|e| e.loop_id == loop_id) {
-        if let Some((a, b, t)) = oriented_edge(mesh, e.a, e.b) {
+        if let Some((a, b, t)) = mesh.oriented_boundary_edge(e.a, e.b) {
             let (p, q) = (mesh.nodes[a], mesh.nodes[b]);
             let (dy, dz) = (q[0] - p[0], q[1] - p[1]);
             // With the material on the left of (dy, dz), the outward normal is

@@ -720,6 +720,28 @@ mod tests {
 }
 
 impl SectionMesh {
+    /// A boundary edge oriented so the material lies to its LEFT, with the
+    /// triangle that owns it.
+    ///
+    /// `boundary_edges` is derived from connectivity — an edge used by exactly
+    /// one triangle — so its stored vertex order carries NO orientation.
+    /// Trusting it makes shoelace sums cancel and sends outward normals half
+    /// one way and half the other. The owning triangle is wound
+    /// counter-clockwise, so the directed edge appearing in it is the correct
+    /// one. Two solvers depend on this, which is why it lives here rather than
+    /// in either of them.
+    pub fn oriented_boundary_edge(&self, a: usize, b: usize) -> Option<(usize, usize, usize)> {
+        let t = self.triangles.iter().position(|t| t.contains(&a) && t.contains(&b))?;
+        let tri = self.triangles[t];
+        for k in 0..3 {
+            let (p, q) = (tri[k], tri[(k + 1) % 3]);
+            if (p, q) == (a, b) || (p, q) == (b, a) {
+                return Some((p, q, t));
+            }
+        }
+        None
+    }
+
     /// Index of the triangle containing `p`, or the nearest one by centroid.
     ///
     /// Falling back to the nearest rather than returning `None` is deliberate:
