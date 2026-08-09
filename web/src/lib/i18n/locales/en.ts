@@ -2028,6 +2028,7 @@ const en: Record<string, string> = {
   'cat.series.i-beam': 'I / H',
   'cat.series.channel': 'Channels',
   'cat.series.angle': 'Angles',
+  'cat.series.tee': 'Tees',
   'cat.series.hollow': 'Hollow',
   'cat.note.eurocodeTubes': 'Tube tables here are the IRAM-IAS ones; EN 10219-2 leaves the corner radius as a range.',
   'cat.note.cirsoc': 'Verification code; profiles come from the dimensional standards local practice uses.',

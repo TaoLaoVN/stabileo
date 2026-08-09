@@ -65,7 +65,7 @@
 // Cross-checked against EN 10219-2 tabulated values for CHS 48.3x3.2
 // (I = 11.6 cm^4), which agrees with the exact formula, not with 12.3.
 
-export type ProfileFamily = 'IPE' | 'IPN' | 'HEB' | 'HEA' | 'W' | 'HP' | 'M' | 'C' | 'MC' | 'UPN' | 'L' | 'RHS' | 'SHS' | 'CHS';
+export type ProfileFamily = 'IPE' | 'IPN' | 'HEB' | 'HEA' | 'W' | 'HP' | 'M' | 'C' | 'MC' | 'T' | 'UPN' | 'L' | 'RHS' | 'SHS' | 'CHS';
 
 export type SectionShape = 'I' | 'H' | 'U' | 'L' | 'RHS' | 'CHS' | 'rect' | 'generic' | 'T' | 'invL' | 'C';
 
@@ -75,6 +75,7 @@ import { IRAM_HP, IRAM_M } from './iram-hp-m';
 import { IRAM_C } from './iram-c';
 import { IRAM_MC } from './iram-mc';
 import { IRAM_L } from './iram-angles';
+import { IRAM_T } from './iram-tees';
 
 export interface SteelProfile {
   family: ProfileFamily;
@@ -244,16 +245,16 @@ const L: SteelProfile[] = [
 
 /** All profiles indexed by family */
 export const PROFILE_FAMILIES: Record<ProfileFamily, SteelProfile[]> = {
-  IPE, IPN, HEB, HEA, UPN, L: [...L, ...IRAM_L], W: IRAM_W, HP: IRAM_HP, M: IRAM_M, C: IRAM_C, MC: IRAM_MC,
+  IPE, IPN, HEB, HEA, UPN, L: [...L, ...IRAM_L], W: IRAM_W, HP: IRAM_HP, M: IRAM_M, C: IRAM_C, MC: IRAM_MC, T: IRAM_T,
   RHS: IRAM_RHS, SHS: IRAM_SHS, CHS: IRAM_CHS,
 };
 
 /** All families available */
-export const FAMILY_LIST: ProfileFamily[] = ['IPN', 'IPE', 'HEB', 'HEA', 'W', 'HP', 'M', 'UPN', 'C', 'MC', 'L', 'RHS', 'SHS', 'CHS'];
+export const FAMILY_LIST: ProfileFamily[] = ['IPN', 'IPE', 'HEB', 'HEA', 'W', 'HP', 'M', 'UPN', 'C', 'MC', 'T', 'L', 'RHS', 'SHS', 'CHS'];
 
 /** All profiles flat list */
 export const ALL_PROFILES: SteelProfile[] = [
-  ...IPE, ...IPN, ...HEB, ...HEA, ...IRAM_W, ...IRAM_HP, ...IRAM_M, ...UPN, ...IRAM_C, ...IRAM_L, ...IRAM_MC, ...L, ...IRAM_RHS, ...IRAM_SHS, ...IRAM_CHS,
+  ...IPE, ...IPN, ...HEB, ...HEA, ...IRAM_W, ...IRAM_HP, ...IRAM_M, ...UPN, ...IRAM_C, ...IRAM_L, ...IRAM_MC, ...IRAM_T, ...L, ...IRAM_RHS, ...IRAM_SHS, ...IRAM_CHS,
 ];
 
 /** Map from ProfileFamily to SectionShape */
@@ -269,6 +270,7 @@ export function familyToShape(family: ProfileFamily): SectionShape {
     case 'UPN': return 'U';
     case 'C': return 'U';
     case 'MC': return 'U';
+    case 'T': return 'T';
     case 'L': return 'L';
     case 'RHS': return 'RHS';
     case 'SHS': return 'RHS';

@@ -1367,7 +1367,7 @@ export type SectionGeometryRequest =
   | { kind: 'iSection'; h: number; b: number; tw: number; tf: number; rootRadius?: number; arcSegments?: number; profileId?: string; standard?: string }
   | { kind: 'ipn'; h: number; b: number; tw: number; tf: number; arcSegments?: number; profileId?: string; standard?: string }
   | { kind: 'upn'; h: number; b: number; tw: number; tf: number; arcSegments?: number; profileId?: string; standard?: string }
-  | { kind: 'tee'; h: number; b: number; tw: number; tf: number }
+  | { kind: 'tee'; h: number; b: number; tw: number; tf: number; rootRadius?: number; toeRadius?: number; arcSegments?: number; profileId?: string; standard?: string }
   | { kind: 'angle'; h: number; b: number; t: number; rootRadius?: number; toeRadius?: number; arcSegments?: number; profileId?: string; standard?: string }
   | { kind: 'channel'; h: number; b: number; tw: number; tf: number; slope?: number; rootRadius?: number; toeRadius?: number; taperRef?: number; arcSegments?: number; profileId?: string; standard?: string }
   | { kind: 'rhs'; b: number; h: number; t: number; cornerRadius?: number; arcSegments?: number; profileId?: string; standard?: string }

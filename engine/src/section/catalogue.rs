@@ -283,6 +283,73 @@ pub fn tee_section(h: f64, b: f64, tw: f64, tf: f64) -> Result<CanonicalGeometry
     ))
 }
 
+/// T outline with rolled fillets: flange on top, web below.
+///
+/// `root_radius` fills the two junctions where the web meets the flange
+/// underside; `toe_radius` rounds the two flange tips. Zero for either is the
+/// sharp case, which is what a user-declared T is.
+pub fn tee_section_filleted(
+    h: f64, b: f64, tw: f64, tf: f64, root_radius: f64, toe_radius: f64,
+    arc_segments: usize, source: GeometrySource,
+) -> Result<CanonicalGeometry, String> {
+    let h = require_positive("h", h)?;
+    let b = require_positive("b", b)?;
+    let tw = require_positive("tw", tw)?;
+    let tf = require_positive("tf", tf)?;
+    if tf >= h {
+        return Err("flange thickness leaves no web".into());
+    }
+    if tw > b {
+        return Err("web is wider than the flange".into());
+    }
+    for (name, r) in [("root radius", root_radius), ("toe radius", toe_radius)] {
+        if !r.is_finite() || r < 0.0 {
+            return Err(format!("{name} must be finite and non-negative (got {r})"));
+        }
+    }
+    let (hb, bb, tb) = (h / 2.0, b / 2.0, tw / 2.0);
+    let zf = hb - tf;                      // flange underside
+    let r1 = root_radius.min(bb - tb).min(zf + hb);
+    let r2 = toe_radius.min(tf).min((bb - tb - r1).max(0.0));
+    let pi = std::f64::consts::PI;
+    let n = arc_segments.max(1);
+
+    // Walk anticlockwise from the web's bottom-left.
+    let mut v: Vec<[f64; 2]> = vec![[-tb, -hb], [tb, -hb]];
+    // Up the web's right face to the junction, then the fillet out to the flange.
+    if r1 > 0.0 {
+        v.push([tb, zf - r1]);
+        v.extend(arc_points(tb + r1, zf - r1, r1, pi, pi / 2.0, n));
+    } else {
+        v.push([tb, zf]);
+    }
+    // Along the flange underside to its tip.
+    if r2 > 0.0 {
+        v.push([bb - r2, zf]);
+        v.extend(arc_points(bb - r2, zf + r2, r2, -pi / 2.0, 0.0, n));
+    } else {
+        v.push([bb, zf]);
+    }
+    v.extend([[bb, hb], [-bb, hb]]);
+    // Mirror down the left-hand side.
+    if r2 > 0.0 {
+        v.push([-bb, zf + r2]);
+        v.extend(arc_points(-bb + r2, zf + r2, r2, pi, pi + pi / 2.0, n));
+    } else {
+        v.push([-bb, zf]);
+    }
+    if r1 > 0.0 {
+        v.push([-tb - r1, zf]);
+        v.extend(arc_points(-tb - r1, zf - r1, r1, pi / 2.0, 0.0, n));
+    } else {
+        v.push([-tb, zf]);
+    }
+    v.push([-tb, -hb]);
+    v.pop();
+
+    Ok(CanonicalGeometry::new(vec![solid(v)], source, arc_segments))
+}
+
 /// Sharp-cornered angle outline with the corner at the origin.
 pub fn angle_section(h: f64, b: f64, t: f64) -> Result<CanonicalGeometry, String> {
     let h = require_positive("h", h)?;
@@ -1035,6 +1102,22 @@ mod rolled_profile_validation {
                 .unwrap().yc
         };
         assert!(near(0.16) < near(0.0), "{} !< {}", near(0.16), near(0.0));
+    }
+
+    #[test]
+    fn a_zero_radius_tee_is_the_sharp_outline() {
+        let sharp = tee_section_filleted(100.0, 80.0, 6.0, 8.0, 0.0, 0.0, 8, src()).unwrap();
+        let legacy = tee_section(100.0, 80.0, 6.0, 8.0).unwrap();
+        assert!((props(&sharp).0 - props(&legacy).0).abs() < 1e-9);
+    }
+
+    #[test]
+    fn tee_fillets_add_at_the_junction_and_remove_at_the_tips() {
+        let base = props(&tee_section_filleted(100.0, 80.0, 6.0, 8.0, 0.0, 0.0, 8, src()).unwrap()).0;
+        let rooted = props(&tee_section_filleted(100.0, 80.0, 6.0, 8.0, 6.0, 0.0, 8, src()).unwrap()).0;
+        let toed = props(&tee_section_filleted(100.0, 80.0, 6.0, 8.0, 0.0, 4.0, 8, src()).unwrap()).0;
+        assert!(rooted > base, "root fillets must add material: {rooted} vs {base}");
+        assert!(toed < base, "toe rounding must remove material: {toed} vs {base}");
     }
 
     #[test]

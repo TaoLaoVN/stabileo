@@ -424,9 +424,9 @@ describe('every profile in the catalogue has exact geometry', () => {
     expect(failures).toEqual([]);
   });
 
-  it('covers all fourteen families', () => {
+  it('covers all fifteen families', () => {
     const families = new Set(ALL_PROFILES.map((p) => p.family));
-    expect(families.size).toBe(14);
+    expect(families.size).toBe(15);
     expect(ALL_PROFILES.length).toBeGreaterThan(600);
   });
 

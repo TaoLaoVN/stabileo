@@ -796,7 +796,14 @@ pub fn build_section_geometry(json: &str) -> Result<String, JsValue> {
             #[serde(default)] profile_id: Option<String>,
             #[serde(default)] standard: Option<String>,
         },
-        Tee { h: f64, b: f64, tw: f64, tf: f64 },
+        Tee {
+            h: f64, b: f64, tw: f64, tf: f64,
+            #[serde(default)] root_radius: f64,
+            #[serde(default)] toe_radius: f64,
+            #[serde(default)] arc_segments: Option<usize>,
+            #[serde(default)] profile_id: Option<String>,
+            #[serde(default)] standard: Option<String>,
+        },
         Angle {
             h: f64, b: f64, t: f64,
             #[serde(default)] root_radius: f64,
@@ -865,7 +872,10 @@ pub fn build_section_geometry(json: &str) -> Result<String, JsValue> {
             cat::upn_section(h, b, tw, tf, segs(arc_segments),
                 catalogue_source(profile_id, standard, "DIN 1025-5", "upn"))
         }
-        Request::Tee { h, b, tw, tf } => cat::tee_section(h, b, tw, tf),
+        Request::Tee { h, b, tw, tf, root_radius, toe_radius, arc_segments, profile_id, standard } => {
+            cat::tee_section_filleted(h, b, tw, tf, root_radius, toe_radius, segs(arc_segments),
+                catalogue_source(profile_id, standard, "IRAM-IAS U 500-561", "tee"))
+        }
         Request::Angle { h, b, t, root_radius, toe_radius, arc_segments, profile_id, standard } => {
             cat::angle_section_filleted(h, b, t, root_radius, toe_radius, segs(arc_segments),
                 catalogue_source(profile_id, standard, "EN 10056-1", "angle"))

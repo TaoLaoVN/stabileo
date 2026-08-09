@@ -26,7 +26,7 @@
 import type { ProfileFamily } from './steel-profiles';
 
 export type SectionMaterial = 'hot-rolled-steel' | 'cold-formed-steel';
-export type SectionSeries = 'i-beam' | 'channel' | 'angle' | 'hollow';
+export type SectionSeries = 'i-beam' | 'channel' | 'angle' | 'tee' | 'hollow';
 
 /** How faithfully the app can draw and analyse a family's real outline. */
 export type GeometryFidelity =
@@ -72,6 +72,7 @@ export const FAMILY_CLASSIFICATION: Record<ProfileFamily, FamilyClassification> 
   IPN: { family: 'IPN', standard: 'DIN 1025-1', standardsBody: 'DIN', country: 'DE', material: 'hot-rolled-steel', series: 'i-beam', fidelity: 'exact' },
   UPN: { family: 'UPN', standard: 'DIN 1025-5', standardsBody: 'DIN', country: 'DE', material: 'hot-rolled-steel', series: 'channel', fidelity: 'exact' },
   C:   { family: 'C',   standard: 'IRAM-IAS U 500-509-4', standardsBody: 'IRAM-IAS', country: 'AR', material: 'hot-rolled-steel', series: 'channel', fidelity: 'nominalDimensions' },
+  T:   { family: 'T',   standard: 'IRAM-IAS U 500-561', standardsBody: 'IRAM-IAS', country: 'AR', material: 'hot-rolled-steel', series: 'tee', fidelity: 'exact' },
   MC:  { family: 'MC',  standard: 'IRAM-IAS U 500-509-4', standardsBody: 'IRAM-IAS', country: 'AR', material: 'hot-rolled-steel', series: 'channel', fidelity: 'propertiesOnly' },
   L:   { family: 'L',   standard: 'EN 10056-1', standardsBody: 'CEN', country: 'EU', material: 'hot-rolled-steel', series: 'angle', fidelity: 'exact' },
   CHS: { family: 'CHS', standard: 'IRAM-IAS U 500-218', standardsBody: 'IRAM-IAS', country: 'AR', material: 'cold-formed-steel', series: 'hollow', fidelity: 'exact' },
@@ -116,8 +117,8 @@ export const DESIGN_CODES: DesignCode[] = [
     id: 'cirsoc-301',
     label: 'CIRSOC 301',
     region: 'AR',
-    families: ['W', 'HP', 'M', 'IPN', 'UPN', 'C', 'MC', 'L', 'CHS', 'RHS', 'SHS'],
-    missingFamilies: ['T', 'L de alas desiguales', 'C/Z conformados en frío (CIRSOC 303)'],
+    families: ['W', 'HP', 'M', 'IPN', 'UPN', 'C', 'MC', 'L', 'T', 'CHS', 'RHS', 'SHS'],
+    missingFamilies: [ 'L de alas desiguales', 'C/Z conformados en frío (CIRSOC 303)'],
     note: 'cat.note.cirsoc',
   },
   {
@@ -130,7 +131,7 @@ export const DESIGN_CODES: DesignCode[] = [
 ];
 
 /** Every family the app ships, in picker order. */
-export const ALL_FAMILIES: ProfileFamily[] = ['IPE', 'HEA', 'HEB', 'W', 'HP', 'M', 'IPN', 'UPN', 'C', 'MC', 'L', 'CHS', 'RHS', 'SHS'];
+export const ALL_FAMILIES: ProfileFamily[] = ['IPE', 'HEA', 'HEB', 'W', 'HP', 'M', 'IPN', 'UPN', 'C', 'MC', 'L', 'T', 'CHS', 'RHS', 'SHS'];
 
 /** Design code by id. */
 export function designCode(id: string): DesignCode | undefined {
@@ -163,7 +164,7 @@ export function classifyFamily(family: ProfileFamily): FamilyClassification | un
 
 /** Families grouped by series, preserving picker order, for a set of families. */
 export function groupBySeries(families: ProfileFamily[]): Array<{ series: SectionSeries; families: ProfileFamily[] }> {
-  const order: SectionSeries[] = ['i-beam', 'channel', 'angle', 'hollow'];
+  const order: SectionSeries[] = ['i-beam', 'channel', 'angle', 'tee', 'hollow'];
   return order
     .map((series) => ({
       series,
