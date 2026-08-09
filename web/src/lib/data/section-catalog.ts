@@ -67,6 +67,8 @@ export const FAMILY_CLASSIFICATION: Record<ProfileFamily, FamilyClassification> 
   HEA: { family: 'HEA', standard: 'EN 10365', standardsBody: 'CEN', country: 'EU', material: 'hot-rolled-steel', series: 'i-beam', fidelity: 'exact' },
   HEB: { family: 'HEB', standard: 'EN 10365', standardsBody: 'CEN', country: 'EU', material: 'hot-rolled-steel', series: 'i-beam', fidelity: 'exact' },
   W:   { family: 'W',   standard: 'IRAM-IAS U 500-215-6', standardsBody: 'IRAM-IAS', country: 'AR', material: 'hot-rolled-steel', series: 'i-beam', fidelity: 'nominalDimensions' },
+  HP:  { family: 'HP',  standard: 'IRAM-IAS U 500-215-7', standardsBody: 'IRAM-IAS', country: 'AR', material: 'hot-rolled-steel', series: 'i-beam', fidelity: 'nominalDimensions' },
+  M:   { family: 'M',   standard: 'IRAM-IAS U 500-215-8', standardsBody: 'IRAM-IAS', country: 'AR', material: 'hot-rolled-steel', series: 'i-beam', fidelity: 'nominalDimensions' },
   IPN: { family: 'IPN', standard: 'DIN 1025-1', standardsBody: 'DIN', country: 'DE', material: 'hot-rolled-steel', series: 'i-beam', fidelity: 'exact' },
   UPN: { family: 'UPN', standard: 'DIN 1025-5', standardsBody: 'DIN', country: 'DE', material: 'hot-rolled-steel', series: 'channel', fidelity: 'exact' },
   L:   { family: 'L',   standard: 'EN 10056-1', standardsBody: 'CEN', country: 'EU', material: 'hot-rolled-steel', series: 'angle', fidelity: 'exact' },
@@ -112,8 +114,8 @@ export const DESIGN_CODES: DesignCode[] = [
     id: 'cirsoc-301',
     label: 'CIRSOC 301',
     region: 'AR',
-    families: ['W', 'IPN', 'UPN', 'L', 'CHS', 'RHS', 'SHS'],
-    missingFamilies: ['C y MC (canal americano)', 'HP', 'M', 'T', 'L de alas desiguales', 'C/Z conformados en frío (CIRSOC 303)'],
+    families: ['W', 'HP', 'M', 'IPN', 'UPN', 'L', 'CHS', 'RHS', 'SHS'],
+    missingFamilies: ['C y MC (canal americano)', 'T', 'L de alas desiguales', 'C/Z conformados en frío (CIRSOC 303)'],
     note: 'cat.note.cirsoc',
   },
   {
@@ -126,7 +128,7 @@ export const DESIGN_CODES: DesignCode[] = [
 ];
 
 /** Every family the app ships, in picker order. */
-export const ALL_FAMILIES: ProfileFamily[] = ['IPE', 'HEA', 'HEB', 'W', 'IPN', 'UPN', 'L', 'CHS', 'RHS', 'SHS'];
+export const ALL_FAMILIES: ProfileFamily[] = ['IPE', 'HEA', 'HEB', 'W', 'HP', 'M', 'IPN', 'UPN', 'L', 'CHS', 'RHS', 'SHS'];
 
 /** Design code by id. */
 export function designCode(id: string): DesignCode | undefined {

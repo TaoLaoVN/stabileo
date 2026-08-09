@@ -390,10 +390,12 @@ describe('IPN, UPN and L are geometry-backed and reproduce their published prope
 describe('every profile in the catalogue has exact geometry', () => {
   it('resolves geometry-backed and reproduces its own published properties', () => {
     const failures: string[] = [];
-    // W is excluded deliberately and checked separately below: its source
-    // table marks its dimensions nominal and derives area from nominal mass,
-    // so no outline can reproduce both. Every other family must.
-    for (const p of ALL_PROFILES.filter((x) => x.family !== 'W')) {
+    // The American series (W, HP, M) is excluded deliberately and checked
+    // separately below: those tables mark their dimensions nominal and derive
+    // area from nominal mass, so no outline can reproduce both. Every other
+    // family must.
+    const NOMINAL = new Set(['W', 'HP', 'M']);
+    for (const p of ALL_PROFILES.filter((x) => !NOMINAL.has(x.family))) {
       const r = resolveCanonicalSection(fromCatalogue(p.name));
       if (r.state !== 'geometry-backed') {
         failures.push(`${p.name}: ${r.reason.kind}`);
@@ -411,10 +413,31 @@ describe('every profile in the catalogue has exact geometry', () => {
     expect(failures).toEqual([]);
   });
 
-  it('covers all ten families', () => {
+  it('covers all twelve families', () => {
     const families = new Set(ALL_PROFILES.map((p) => p.family));
-    expect(families.size).toBe(10);
+    expect(families.size).toBe(12);
     expect(ALL_PROFILES.length).toBeGreaterThan(600);
+  });
+
+  it('the nominal-dimension families stay inside a bounded deviation', () => {
+    // HP tracks its table closely. M has one profile — M5x18.9 — whose
+    // published Iz its own dimensions do not support: two flanges 127 mm wide
+    // and 10.6 mm thick give 363 cm⁴ by hand, and the table says 327. The
+    // outline is right and the table is not, so the deviation is declared
+    // rather than suppressed, and bounded here so it cannot grow unnoticed.
+    for (const [family, bound] of [['HP', 0.02], ['M', 0.12]] as const) {
+      for (const p of ALL_PROFILES.filter((x) => x.family === family)) {
+        const r = resolveCanonicalSection(fromCatalogue(p.name));
+        expect(r.state, p.name).toBe('geometry-backed');
+        if (r.state !== 'geometry-backed') continue;
+        const dev = Math.max(
+          rel(r.properties.a * 1e4, p.a),
+          rel(r.properties.iy * 1e8, p.iy),
+          rel(r.properties.iz * 1e8, p.iz),
+        );
+        expect(dev, `${p.name}`).toBeLessThan(bound);
+      }
+    }
   });
 
   it('W is geometry-backed too, within its declared deviation', () => {

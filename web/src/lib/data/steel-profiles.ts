@@ -65,12 +65,13 @@
 // Cross-checked against EN 10219-2 tabulated values for CHS 48.3x3.2
 // (I = 11.6 cm^4), which agrees with the exact formula, not with 12.3.
 
-export type ProfileFamily = 'IPE' | 'IPN' | 'HEB' | 'HEA' | 'W' | 'UPN' | 'L' | 'RHS' | 'SHS' | 'CHS';
+export type ProfileFamily = 'IPE' | 'IPN' | 'HEB' | 'HEA' | 'W' | 'HP' | 'M' | 'UPN' | 'L' | 'RHS' | 'SHS' | 'CHS';
 
 export type SectionShape = 'I' | 'H' | 'U' | 'L' | 'RHS' | 'CHS' | 'rect' | 'generic' | 'T' | 'invL' | 'C';
 
 import { IRAM_CHS, IRAM_SHS, IRAM_RHS } from './iram-tubes';
 import { IRAM_W } from './iram-wf';
+import { IRAM_HP, IRAM_M } from './iram-hp-m';
 
 export interface SteelProfile {
   family: ProfileFamily;
@@ -240,16 +241,16 @@ const L: SteelProfile[] = [
 
 /** All profiles indexed by family */
 export const PROFILE_FAMILIES: Record<ProfileFamily, SteelProfile[]> = {
-  IPE, IPN, HEB, HEA, UPN, L, W: IRAM_W,
+  IPE, IPN, HEB, HEA, UPN, L, W: IRAM_W, HP: IRAM_HP, M: IRAM_M,
   RHS: IRAM_RHS, SHS: IRAM_SHS, CHS: IRAM_CHS,
 };
 
 /** All families available */
-export const FAMILY_LIST: ProfileFamily[] = ['IPN', 'IPE', 'HEB', 'HEA', 'W', 'UPN', 'L', 'RHS', 'SHS', 'CHS'];
+export const FAMILY_LIST: ProfileFamily[] = ['IPN', 'IPE', 'HEB', 'HEA', 'W', 'HP', 'M', 'UPN', 'L', 'RHS', 'SHS', 'CHS'];
 
 /** All profiles flat list */
 export const ALL_PROFILES: SteelProfile[] = [
-  ...IPE, ...IPN, ...HEB, ...HEA, ...IRAM_W, ...UPN, ...L, ...IRAM_RHS, ...IRAM_SHS, ...IRAM_CHS,
+  ...IPE, ...IPN, ...HEB, ...HEA, ...IRAM_W, ...IRAM_HP, ...IRAM_M, ...UPN, ...L, ...IRAM_RHS, ...IRAM_SHS, ...IRAM_CHS,
 ];
 
 /** Map from ProfileFamily to SectionShape */
@@ -260,6 +261,8 @@ export function familyToShape(family: ProfileFamily): SectionShape {
     case 'HEB': return 'H';
     case 'HEA': return 'I';
     case 'W': return 'I';
+    case 'HP': return 'H';
+    case 'M': return 'I';
     case 'UPN': return 'U';
     case 'L': return 'L';
     case 'RHS': return 'RHS';

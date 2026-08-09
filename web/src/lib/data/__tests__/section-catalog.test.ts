@@ -39,10 +39,12 @@ describe('every shipped family is classified, and by a real standard', () => {
     // one whose outline does not reproduce the published properties, and that
     // is a separate, weaker claim tracked as `nominalDimensions`.
     expect(approximate).toEqual([]);
+    // The American series — W, HP and M — all descend from tables that mark
+    // their dimensions nominal and derive area from nominal mass.
     const nominal = Object.values(FAMILY_CLASSIFICATION)
       .filter((c) => c.fidelity === 'nominalDimensions')
       .map((c) => c.family);
-    expect(nominal).toEqual(['W']);
+    expect(new Set(nominal)).toEqual(new Set(['W', 'HP', 'M']));
   });
 });
 
