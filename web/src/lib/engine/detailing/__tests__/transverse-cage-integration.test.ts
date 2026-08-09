@@ -79,7 +79,16 @@ describe('the cage is in the assembly and it does not clash', () => {
   it('the joint volume carries its own transverse steel — §15.4.2', () => {
     // Not the beams' stirrups sitting in it. Those lie in the BEAM's section plane, at right
     // angles to what the clause asks for, and they used to be the only thing there.
-    const ties = transverse().filter((b) => b.zoneId?.includes(':ties'));
+    /**
+     * `joint-` specifically, not any zone whose id ends in `:ties`.
+     *
+     * A COLUMN's own ties now exist too, under `col-<id>:ties`, and they are owned by the one
+     * lift they belong to — correctly, because a tie in the clear height of a column confines
+     * that column and nothing else. Matching on `:ties` alone swept them in and asserted the
+     * joint's multi-owner rule against them, which is a different clause about a different
+     * piece of steel.
+     */
+    const ties = transverse().filter((b) => b.zoneId?.startsWith('joint-'));
     expect(ties.length).toBeGreaterThan(0);
     // A joint belongs to every member that forms it, or the classifier reads its ties as
     // unrelated to the beam steel they confine.

@@ -26,8 +26,18 @@ function assemblies(page: Page): Promise<Json[]> {
     (window.__stabileo as unknown as { detailingAssemblies(): Json[] }).detailingAssemblies());
 }
 
-/** Load, solve, design, coordinate, and open the workspace — all through the UI. */
-async function openWorkspace(page: Page, example = 'rc-design-qa-8') {
+/**
+ * Load, solve, design, coordinate, and open the workspace — all through the UI.
+ *
+ * `withFloors` runs the SECOND detailing command as well. Beams and columns come from
+ * `cmd-generate-detailing`; slabs, walls and footings come from `floor-design-run` in its own
+ * disclosure, and a caller who wants the whole structure has to run both. That is the app's
+ * real shape, and a helper that hid it would let a test claim coverage of families the user
+ * never generated.
+ */
+async function openWorkspace(
+  page: Page, example = 'rc-design-qa-8', withFloors = false,
+) {
   await loadModel(page, example);
   await designAll(page);
   await page.getByTestId('detailing-disclosure').locator('> summary').click();
@@ -36,6 +46,15 @@ async function openWorkspace(page: Page, example = 'rc-design-qa-8') {
   await generate.click();
   await expect.poll(async () => (await assemblies(page)).length, { timeout: 30_000 })
     .toBeGreaterThan(0);
+
+  if (withFloors) {
+    await page.getByTestId('floor-families-disclosure').locator('> summary').click();
+    const floors = page.getByTestId('floor-design-run');
+    await expect(floors).toBeEnabled();
+    await floors.click();
+    await expect(page.getByTestId('floor-families')).toBeVisible();
+  }
+
   await page.getByTestId('doc-3d').click();
   await expect(page.getByTestId('rebar-workspace')).toBeVisible();
 }
@@ -242,6 +261,54 @@ test.describe('nothing is hidden because it has no steel', () => {
       await expect(page.getByTestId('rebar-panel-state-UNSUPPORTED')).toBeVisible();
       await expect(page.getByTestId('rebar-unreinforced')).toContainText('4');
     });
+});
+
+// ─── The scene is complete, not merely populated ─────────────────
+
+test.describe('the workspace shows every family the detailing produced', () => {
+  /**
+   * The regression this guards, in the UI.
+   *
+   * A 7-storey building rendered 12 705 bars and looked full while every column tie in the
+   * model was missing — 8 251 pieces that were described as a spacing schedule and never
+   * built. "Lots of bars" and "all the bars" are indistinguishable by eye, so the counts are
+   * on screen and this asserts them there.
+   */
+  test('a whole building reports columns, beams, slabs and walls with their steel',
+    async ({ pro: page }) => {
+      // A 203-member building: solve, design, detail and then build a scene of ~21 000 bars.
+      // The default per-test budget is for journeys, not for a whole structure.
+      test.setTimeout(240_000);
+      await openWorkspace(page, 'pro-edificio-7p', true);
+      const tally = page.getByTestId('rebar-tally');
+      await expect(tally).toBeVisible();
+
+      const num = async (family: string) =>
+        (await tally.getByTestId(`rebar-tally-${family}`).innerText())
+          .split(/\s+/).map(Number).filter((n) => !Number.isNaN(n));
+
+      // Columns: concrete, longitudinals AND ties. The third number was zero.
+      const col = await num('column');
+      expect(col[0], 'column solids').toBeGreaterThan(50);
+      expect(col[1], 'column longitudinals').toBeGreaterThan(500);
+      expect(col[2], 'column ties').toBeGreaterThan(1000);
+
+      // Beams, slabs and walls all present as concrete; slabs and walls with their bars.
+      expect((await num('beam'))[0], 'beam solids').toBeGreaterThan(50);
+      expect((await num('slab'))[1], 'slab bars').toBeGreaterThan(1000);
+      expect((await num('wall'))[1], 'wall bars').toBeGreaterThan(50);
+    });
+
+  test('a model whose beams design shows beam steel too', async ({ pro: page }) => {
+    // The 7-storey model cannot prove this — its beams are refused by the verifier, so beam
+    // steel does not exist to be shown. This one distinguishes "the view drops beam bars"
+    // from "the design produced none".
+    await openWorkspace(page, 'rc-qa-diagnostic');
+    const beam = (await page.getByTestId('rebar-tally').getByTestId('rebar-tally-beam')
+      .innerText()).split(/\s+/).map(Number).filter((n) => !Number.isNaN(n));
+    expect(beam[1], 'beam longitudinals').toBeGreaterThan(0);
+    expect(beam[2], 'beam stirrups').toBeGreaterThan(0);
+  });
 });
 
 // ─── Cleanliness ─────────────────────────────────────────────────

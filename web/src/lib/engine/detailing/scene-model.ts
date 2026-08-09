@@ -705,6 +705,46 @@ export interface SceneSummary {
   massKg: number;
   conflictedBars: number;
   byDiameter: Array<{ diameterMm: number; count: number; lengthM: number }>;
+  /** Pieces of concrete on screen. */
+  solidCount: number;
+  /** How many of them have steel inside. */
+  reinforcedSolidCount: number;
+  /**
+   * Bars and concrete per family, so a partial scene is visible as a number rather than as
+   * an absence.
+   *
+   * ── Why this is in the summary and not left to the eye ─────────
+   *
+   * A 7-storey building rendered 12 705 bars and looked full, and 8 251 of the pieces it
+   * should have had were missing: every column tie in the model. Nothing on screen said so,
+   * because "lots of bars" and "all the bars" look identical in a cage. A per-family count
+   * next to the picture is what turns that into something a reviewer can check — and what a
+   * test can assert against the detailing source.
+   */
+  byFamily: Array<{
+    family: SceneSolidKind | 'unknown';
+    solids: number;
+    longitudinal: number;
+    transverse: number;
+  }>;
+}
+
+/**
+ * Which concrete family a bar belongs to.
+ *
+ * From the floor-family record when there is one, and otherwise from the member that owns
+ * it — beam or column — resolved through the solids. A bar whose owner is not in the scene
+ * is `unknown` rather than being quietly filed under a family it may not belong to.
+ */
+function barFamilyKind(
+  b: SceneBar, kindOfElement: ReadonlyMap<number, SceneSolidKind>,
+): SceneSolidKind | 'unknown' {
+  if (b.family) return b.family;
+  for (const id of b.elementIds) {
+    const k = kindOfElement.get(id);
+    if (k) return k;
+  }
+  return 'unknown';
 }
 
 export function summariseScene(
@@ -725,6 +765,23 @@ export function summariseScene(
     per.set(b.diameterMm, e);
   }
 
+  // ── Per family ──────────────────────────────────────────────
+  const kindOfElement = new Map<number, SceneSolidKind>();
+  for (const s of scene.solids) for (const id of s.elementIds) kindOfElement.set(id, s.kind);
+
+  const fam = new Map<SceneSolidKind | 'unknown',
+  { solids: number; longitudinal: number; transverse: number }>();
+  const bump = (k: SceneSolidKind | 'unknown') => {
+    const e = fam.get(k) ?? { solids: 0, longitudinal: 0, transverse: 0 };
+    fam.set(k, e);
+    return e;
+  };
+  for (const s of scene.solids) bump(s.kind).solids += 1;
+  for (const b of scene.bars) {
+    const e = bump(barFamilyKind(b, kindOfElement));
+    if (b.role === 'transverse') e.transverse += 1; else e.longitudinal += 1;
+  }
+
   return {
     barCount: scene.bars.length,
     totalLength,
@@ -733,5 +790,10 @@ export function summariseScene(
     byDiameter: [...per.entries()]
       .map(([diameterMm, v]) => ({ diameterMm, ...v }))
       .sort((a, b) => a.diameterMm - b.diameterMm),
+    solidCount: scene.solids.length,
+    reinforcedSolidCount: scene.solids.filter((s) => s.reinforced).length,
+    byFamily: [...fam.entries()]
+      .map(([family, v]) => ({ family, ...v }))
+      .sort((a, b) => String(a.family).localeCompare(String(b.family))),
   };
 }

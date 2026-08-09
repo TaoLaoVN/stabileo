@@ -355,6 +355,35 @@
           {/if}
         </section>
 
+        <!-- ── What is actually in the scene, counted ────────────────
+             A model can render thousands of bars and still be missing an entire family:
+             12 705 bars looked full while every column tie in the building was absent.
+             "Lots of bars" and "all the bars" are indistinguishable by eye, so the families
+             are counted next to the picture. -->
+        {#if summary}
+          <section class="tally" data-testid="rebar-tally">
+            <h4>{t('detailing.scene.tally.title')}</h4>
+            <p class="totals">
+              <span>{t('detailing.scene.tally.solids')} <strong>{summary.solidCount}</strong></span>
+              <span>{t('detailing.scene.tally.reinforced')}
+                <strong>{summary.reinforcedSolidCount}</strong></span>
+              <span>{t('detailing.scene.tally.bars')} <strong>{summary.barCount}</strong></span>
+            </p>
+            <table>
+              <tbody>
+                {#each summary.byFamily as f (f.family)}
+                  <tr data-testid={`rebar-tally-${f.family}`}>
+                    <th scope="row">{t(`detailing.scene.kind.${f.family}`)}</th>
+                    <td>{f.solids}</td>
+                    <td>{f.longitudinal} {t('detailing.scene.tally.long')}</td>
+                    <td>{f.transverse} {t('detailing.scene.tally.trans')}</td>
+                  </tr>
+                {/each}
+              </tbody>
+            </table>
+          </section>
+        {/if}
+
         {#if report}
           <RebarStatusPanel {report} />
         {/if}
@@ -498,6 +527,18 @@
     background: #1e2733; color: inherit; border: 1px solid #2c3644; border-radius: 4px;
     padding: 0.2rem 0.5rem;
   }
+
+  .tally table { width: 100%; border-collapse: collapse; font-size: 0.72rem; }
+  .tally th {
+    text-align: left; font-weight: 400; color: var(--text-muted, #8b93a3);
+    padding: 0.08rem 0;
+  }
+  .tally td { text-align: right; font-variant-numeric: tabular-nums; padding: 0.08rem 0; }
+  .tally .totals {
+    display: flex; flex-direction: column; gap: 0.05rem;
+    margin: 0 0 0.25rem; font-size: 0.72rem; color: var(--text-muted, #8b93a3);
+  }
+  .tally .totals strong { color: var(--text, #dfe4ec); float: right; }
 
   .inspector {
     flex: 0 0 auto; border-top: 1px solid #232a35; padding: 0.45rem 0.7rem;

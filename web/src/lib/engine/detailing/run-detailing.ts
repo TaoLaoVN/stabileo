@@ -855,12 +855,108 @@ export function runDetailing(input: RunDetailingInput): RunDetailingResult {
 
     for (const lift of lifts) {
       const bars = byOwner.get(lift.elementId) ?? [];
+      const liftUnsupported: string[] = [];
+
+      /**
+       * ── The column's own ties, which were described and never built ──
+       *
+       * `generateColumnStack` returns `ties` as a ZONE SCHEDULE — lift, extent, spacing,
+       * diameter — decided by `tieSpacing` under §10.7.6.2 and §25.7.2. It returns no
+       * geometry. The beam path a few hundred lines below appends `gen.transverse`, which
+       * IS geometry; the column path appended `gen.bars` alone, because there was nothing
+       * else to append.
+       *
+       * The consequence, measured on the 7-storey building: 1 060 column longitudinals and
+       * 39 transverse pieces, every one of the 39 a JOINT tie from a different producer.
+       * Eighty-four columns with no ties, in the model, in the drawings, in the schedule and
+       * in the collision check. The same defect the beam comment below describes, unfixed on
+       * the other member type.
+       *
+       * Nothing is invented here. The spacing, the extent and the diameter are the design's;
+       * the bar positions are the ones already generated for this lift; and the piece
+       * geometry comes from `buildColumnTieSet`, the same builder that already serves the
+       * joint cages above and the footing starter cages in `floor-transverse`.
+       */
+      const liftIndex = lifts.indexOf(lift);
+      for (const zone of gen.ties.filter((t) => t.liftIndex === liftIndex)) {
+        /**
+         * The ties stop below the beams, because the joint pass fills that band.
+         *
+         * A column's ties run its CLEAR height; the depth occupied by the beams framing in
+         * at the top is the joint, and the joint has its own cage at its own spacing —
+         * §15.3.1.4 caps it at 200 mm where §10.7.6.2 would allow more. Running the lift
+         * ties to `topZ` would put two independently generated cages in the same band, and
+         * the collision checker would be right to report every one of those pairs.
+         */
+        const clearTop = zone.to - (beamDepthAtTop.get(liftIndex) ?? 0);
+        const height = clearTop - zone.from;
+        if (!(height > 0)) continue;
+
+        const ctx = input.contexts.get(lift.elementId);
+        if (!ctx) continue;
+
+        /**
+         * The bars this tie can grip, in the tie's own frame.
+         *
+         * Read from the bars ACTUALLY generated for this lift rather than re-derived from a
+         * layout: the cage that was placed is the cage the tie has to hold, and a second
+         * derivation is a second opinion about where the steel is. `up` is global x and
+         * `across` global y — the same arbitrary-but-stated choice the joint cage makes, for
+         * the same reason.
+         */
+        const cageAt = (z: number) => bars
+          .filter((b) => b.role === 'longitudinal')
+          .filter((b) => {
+            const zs = b.segments.flatMap((sg) => [sg.start.z, sg.end.z]);
+            return Math.min(...zs) <= z + 0.002 && Math.max(...zs) >= z - 0.002;
+          })
+          .map((b) => ({
+            id: b.id,
+            across: b.segments[0].start.y - lift.centre.y,
+            up: b.segments[0].start.x - lift.centre.x,
+            diameterMm: b.diameterMm,
+          }));
+
+        const stations = stirrupStations({
+          from: 0, to: height, spacing: zone.spacing, nextZoneStartsAtEnd: false,
+        });
+        for (let si = 0; si < stations.length; si++) {
+          const set = buildColumnTieSet({
+            elementId: lift.elementId,
+            cageId: `col-${lift.elementId}:cage`,
+            zoneId: `col-${lift.elementId}:ties`,
+            station: stations[si],
+            b: lift.b, h: lift.h,
+            cover: lift.cover, stirrupDiaMm: zone.diameterMm,
+            // As at the joint: `legs` does not decide a column cage. The builder reads the
+            // bars that are there and braces every interior line that carries one.
+            legs: 2,
+            longitudinalBars: cageAt(zone.from + stations[si]),
+            origin: { x: lift.centre.x, y: lift.centre.y, z: zone.from },
+            axis: { x: 0, y: 0, z: 1 },
+            up: { x: 1, y: 0, z: 0 },
+            across: { x: 0, y: 1, z: 0 },
+            hookOrientation: si % 2 === 0 ? 'a' : 'b',
+            maxAggregateSizeMm: input.maxAggregateSizeMm,
+          });
+          if (set.unsupported.length > 0) {
+            // Said once per lift, not once per station: a cage that cannot be built fails
+            // identically at every station, and 40 copies of one sentence is not a report.
+            if (si === 0) liftUnsupported.push(...set.unsupported.map((r) => formatClause(r)));
+            continue;
+          }
+          bars.push(...set.pieces.map((p) => p.path));
+        }
+      }
+
       memberBarsById.set(lift.elementId, {
         elementId: lift.elementId,
         bars,
         // Stack-level conditions are reported once, on the lowest lift, so a single
         // unsupported condition does not multiply by the number of storeys.
-        unsupported: lift.elementId === lifts[0].elementId ? gen.unsupported : [],
+        unsupported: lift.elementId === lifts[0].elementId
+          ? [...gen.unsupported, ...liftUnsupported]
+          : liftUnsupported,
         maturity: stackMaturity,
         refs: stackRefs,
         trace: lift.elementId === lifts[0].elementId ? gen.trace : [],
