@@ -398,7 +398,7 @@
   .toolbar-section h3 {
     font-size: 0.75rem;
     text-transform: uppercase;
-    color: #888;
+    color: var(--st-text-3);
     letter-spacing: 0.05em;
   }
 
@@ -420,26 +420,26 @@
   .input-group input {
     width: 70px;
     padding: 0.25rem;
-    background: #0f3460;
-    border: 1px solid #1a4a7a;
+    background: var(--st-surface-2);
+    border: 1px solid var(--st-hair-strong);
     border-radius: 4px;
-    color: #eee;
+    color: var(--st-text);
   }
 
   .input-group input[type="range"] {
     -webkit-appearance: auto;
     appearance: auto;
-    accent-color: #e94560;
+    accent-color: var(--st-accent);
     background: transparent;
     border: none;
   }
 
   .input-group select {
     padding: 0.25rem;
-    background: #0f3460;
-    border: 1px solid #1a4a7a;
+    background: var(--st-surface-2);
+    border: 1px solid var(--st-hair-strong);
     border-radius: 4px;
-    color: #eee;
+    color: var(--st-text);
   }
 
   .diagram-grid {
@@ -450,10 +450,10 @@
 
   .diagram-btn {
     padding: 0.3rem 0.25rem;
-    background: #0f3460;
-    border: 1px solid #1a4a7a;
+    background: var(--st-surface-2);
+    border: 1px solid var(--st-hair-strong);
     border-radius: 4px;
-    color: #ccc;
+    color: var(--st-text);
     cursor: pointer;
     font-size: 0.75rem;
     font-weight: 600;
@@ -462,19 +462,19 @@
   }
 
   .diagram-btn:hover {
-    background: #1a4a7a;
+    background: var(--st-surface-3);
     color: white;
   }
 
   .diagram-btn.active {
-    background: #e94560;
-    border-color: #ff6b6b;
+    background: var(--st-accent);
+    border-color: var(--st-danger);
     color: white;
   }
 
   .no-results-msg {
     font-size: 0.72rem;
-    color: #888;
+    color: var(--st-text-3);
     font-style: italic;
     padding: 0.4rem 0.2rem;
     margin: 0;
@@ -483,26 +483,26 @@
 
   .scale-step-btn {
     padding: 1px 4px;
-    border: 1px solid #333;
+    border: 1px solid var(--st-hair);
     border-radius: 3px;
     background: transparent;
-    color: #888;
+    color: var(--st-text-3);
     font-size: 0.55rem;
     cursor: pointer;
     line-height: 1;
     transition: all 0.12s;
   }
   .scale-step-btn:hover {
-    background: #333;
-    color: #4ecdc4;
-    border-color: #4ecdc4;
+    background: var(--st-surface-3);
+    color: var(--st-value);
+    border-color: var(--st-interactive);
   }
 
   .solve-btn {
     width: 100%;
     padding: 0.5rem 0.5rem;
-    background: #e94560;
-    border: 1px solid #ff6b6b;
+    background: var(--st-accent);
+    border: 1px solid var(--st-danger);
     border-radius: 4px;
     color: white;
     cursor: pointer;
@@ -513,7 +513,7 @@
   }
 
   .solve-btn:hover:not(:disabled) {
-    background: #ff6b6b;
+    background: var(--st-danger);
   }
 
   .solve-btn:disabled {
@@ -538,9 +538,9 @@
     width: 100%;
     padding: 0.4rem 0.5rem;
     background: none;
-    border: 1px solid #333;
+    border: 1px solid var(--st-hair);
     border-radius: 4px;
-    color: #aaa;
+    color: var(--st-text-2);
     cursor: pointer;
     font-size: 0.75rem;
     font-weight: 600;
@@ -551,18 +551,18 @@
   }
 
   .section-toggle:hover {
-    background: #1a1a2e;
-    color: #ccc;
-    border-color: #555;
+    background: var(--st-bg);
+    color: var(--st-text);
+    border-color: var(--st-hair-strong);
   }
 
   .sub-toggle {
     width: 100%;
     padding: 0.25rem 0.4rem;
     background: none;
-    border: 1px solid #2a2a3e;
+    border: 1px solid var(--st-hair);
     border-radius: 3px;
-    color: #999;
+    color: var(--st-text-2);
     cursor: pointer;
     font-size: 0.68rem;
     font-weight: 500;
@@ -571,9 +571,9 @@
     transition: all 0.2s;
   }
   .sub-toggle:hover {
-    background: #1a1a2e;
-    color: #ccc;
-    border-color: #444;
+    background: var(--st-bg);
+    color: var(--st-text);
+    border-color: var(--st-hair-strong);
   }
 
   .sub-content {
@@ -581,7 +581,7 @@
     display: flex;
     flex-direction: column;
     gap: 0.35rem;
-    border: 1px solid #2a2a3e;
+    border: 1px solid var(--st-hair);
     border-radius: 4px;
     margin-top: 0.15rem;
     overflow: hidden;

@@ -81,8 +81,8 @@
     display: flex;
     flex-wrap: wrap;
     gap: 0;
-    border-bottom: 1px solid #0f3460;
-    background: #1a1a2e;
+    border-bottom: 1px solid var(--st-hair);
+    background: var(--st-bg);
     flex-shrink: 0;
   }
 
@@ -90,7 +90,7 @@
     padding: 0.35rem 0.5rem;
     border: none;
     background: transparent;
-    color: #888;
+    color: var(--st-text-3);
     cursor: pointer;
     font-size: 0.7rem;
     border-bottom: 2px solid transparent;
@@ -98,12 +98,12 @@
   }
 
   .tabs button:hover {
-    color: #eee;
+    color: var(--st-text);
   }
 
   .tabs button.active {
-    color: #4ecdc4;
-    border-bottom-color: #4ecdc4;
+    color: var(--st-value);
+    border-bottom-color: var(--st-interactive);
   }
 
   .results-tab {

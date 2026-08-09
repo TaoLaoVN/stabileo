@@ -2397,6 +2397,9 @@
     height: 100%;
     position: relative;
     overflow: hidden;
+    /* The drawing surface is the same ground as the shell, so the model sits
+       on the page rather than in a differently-coloured box inside it. */
+    background: var(--st-bg);
   }
 
   canvas {

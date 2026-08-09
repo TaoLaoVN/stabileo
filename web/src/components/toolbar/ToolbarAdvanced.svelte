@@ -832,9 +832,9 @@
     width: 100%;
     padding: 0.4rem 0.5rem;
     background: none;
-    border: 1px solid #333;
+    border: 1px solid var(--st-hair);
     border-radius: 4px;
-    color: #aaa;
+    color: var(--st-text-2);
     cursor: pointer;
     font-size: 0.75rem;
     font-weight: 600;
@@ -845,9 +845,9 @@
   }
 
   .section-toggle:hover {
-    background: #1a1a2e;
-    color: #ccc;
-    border-color: #555;
+    background: var(--st-bg);
+    color: var(--st-text);
+    border-color: var(--st-hair-strong);
   }
 
   .advanced-grid {
@@ -865,10 +865,10 @@
   .adv-btn {
     padding: 0.3rem 0.4rem;
     min-height: 28px;
-    border: 1px solid #1a4a7a;
+    border: 1px solid var(--st-hair-strong);
     border-radius: 4px;
-    background: #0f3460;
-    color: #4ecdc4;
+    background: var(--st-surface-2);
+    color: var(--st-value);
     font-size: 0.72rem;
     cursor: pointer;
     text-align: center;
@@ -877,7 +877,7 @@
   }
 
   .adv-btn:hover {
-    background: #1a4a7a;
+    background: var(--st-surface-3);
     color: white;
   }
 
@@ -887,19 +887,19 @@
   }
 
   .adv-btn.active {
-    background: #1a4a7a;
-    color: #4ecdc4;
-    border-color: #4ecdc4;
+    background: var(--st-surface-3);
+    color: var(--st-value);
+    border-color: var(--st-interactive);
   }
 
   .adv-help-btn {
     width: 20px;
     min-width: 20px;
     padding: 0;
-    border: 1px solid #1a4a7a;
+    border: 1px solid var(--st-hair-strong);
     border-radius: 50%;
-    background: #0f3460;
-    color: #888;
+    background: var(--st-surface-2);
+    color: var(--st-text-3);
     font-size: 0.65rem;
     font-weight: 700;
     cursor: pointer;
@@ -912,9 +912,9 @@
 
   .adv-help-btn:hover,
   .adv-help-btn.active {
-    background: #4ecdc4;
-    color: #0a1628;
-    border-color: #4ecdc4;
+    background: var(--st-accent);
+    color: var(--st-text-on-accent);
+    border-color: var(--st-interactive);
   }
 
   .adv-help-panel {
@@ -924,17 +924,17 @@
     border-radius: 6px;
     font-size: 0.7rem;
     line-height: 1.4;
-    color: #ccc;
+    color: var(--st-text);
   }
 
   .adv-help-panel strong {
-    color: #4ecdc4;
+    color: var(--st-value);
     font-size: 0.72rem;
   }
 
   .adv-help-panel p {
     margin: 4px 0 0;
-    color: #aaa;
+    color: var(--st-text-2);
   }
 
   .envelope-sub-panel {
@@ -942,7 +942,7 @@
     flex-direction: column;
     gap: 4px;
     padding-left: 12px;
-    border-left: 2px solid #4ecdc4;
+    border-left: 2px solid var(--st-interactive);
     margin-top: 4px;
   }
 
@@ -952,13 +952,13 @@
   .progress-bar-container {
     width: 100%;
     height: 6px;
-    background: #333;
+    background: var(--st-surface-3);
     border-radius: 3px;
     overflow: hidden;
   }
   .progress-bar-fill {
     height: 100%;
-    background: #4ecdc4;
+    background: var(--st-accent);
     border-radius: 3px;
     transition: width 0.15s ease-out;
   }
@@ -970,51 +970,51 @@
   }
   .progress-text {
     font-size: 0.68rem;
-    color: #4ecdc4;
+    color: var(--st-value);
   }
   .cancel-btn {
     padding: 0.15rem 0.5rem;
-    border: 1px solid #e94560;
+    border: 1px solid var(--st-accent);
     border-radius: 3px;
     background: transparent;
-    color: #e94560;
+    color: var(--st-accent);
     font-size: 0.68rem;
     cursor: pointer;
   }
   .cancel-btn:hover {
-    background: #e94560;
+    background: var(--st-accent);
     color: white;
   }
 
   .adv-select {
     flex: 1;
     padding: 0.3rem 0.4rem;
-    border: 1px solid #1a4a7a;
+    border: 1px solid var(--st-hair-strong);
     border-radius: 4px;
-    background: #0f3460;
-    color: #4ecdc4;
+    background: var(--st-surface-2);
+    color: var(--st-value);
     font-size: 0.72rem;
     cursor: pointer;
     transition: all 0.2s;
   }
 
   .adv-select:hover {
-    background: #1a4a7a;
+    background: var(--st-surface-3);
     color: white;
   }
 
   .small-btn {
     padding: 0.1rem 0.4rem;
-    border: 1px solid #555;
+    border: 1px solid var(--st-hair-strong);
     border-radius: 3px;
-    background: #2a2a2a;
-    color: #ccc;
+    background: var(--st-surface-2);
+    color: var(--st-text);
     font-size: 0.7rem;
     cursor: pointer;
   }
 
   .small-btn:hover:not(:disabled) {
-    background: #3a3a3a;
+    background: var(--st-surface-3);
     color: white;
   }
 
@@ -1032,36 +1032,36 @@
 
   .adv-result-btn {
     padding: 0.2rem 0.5rem;
-    border: 1px solid #555;
+    border: 1px solid var(--st-hair-strong);
     border-radius: 4px;
-    background: #2a2a2a;
-    color: #ccc;
+    background: var(--st-surface-2);
+    color: var(--st-text);
     font-size: 0.72rem;
     cursor: pointer;
     flex-shrink: 0;
   }
 
   .adv-result-btn:hover {
-    background: #3a3a3a;
+    background: var(--st-surface-3);
     color: white;
   }
 
   .adv-result-btn.active {
-    background: #e94560;
-    border-color: #ff6b6b;
+    background: var(--st-accent);
+    border-color: var(--st-danger);
     color: white;
   }
 
   .adv-result-label {
     font-size: 0.72rem;
-    color: #4ecdc4;
+    color: var(--st-value);
     min-width: 2rem;
     text-align: center;
   }
 
   .adv-result-info {
     font-size: 0.68rem;
-    color: #888;
+    color: var(--st-text-3);
     padding: 0 0 0 0.25rem;
   }
 </style>

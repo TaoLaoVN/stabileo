@@ -172,7 +172,7 @@
   .toolbar-section h3 {
     font-size: 0.75rem;
     text-transform: uppercase;
-    color: #888;
+    color: var(--st-text-3);
     letter-spacing: 0.05em;
   }
 
@@ -180,9 +180,9 @@
     width: 100%;
     padding: 0.4rem 0.5rem;
     background: none;
-    border: 1px solid #333;
+    border: 1px solid var(--st-hair);
     border-radius: 4px;
-    color: #aaa;
+    color: var(--st-text-2);
     cursor: pointer;
     font-size: 0.75rem;
     font-weight: 600;
@@ -193,9 +193,9 @@
   }
 
   .section-toggle:hover {
-    background: #1a1a2e;
-    color: #ccc;
-    border-color: #555;
+    background: var(--st-bg);
+    color: var(--st-text);
+    border-color: var(--st-hair-strong);
   }
 
   .examples-list {
@@ -204,7 +204,7 @@
     gap: 2px;
     max-height: 260px;
     overflow-y: auto;
-    border: 1px solid #1a4a7a;
+    border: 1px solid var(--st-hair-strong);
     border-radius: 4px;
     padding: 2px;
   }
@@ -216,14 +216,14 @@
     background: none;
     border: none;
     border-radius: 3px;
-    color: #ccc;
+    color: var(--st-text);
     cursor: pointer;
     text-align: left;
     transition: all 0.15s;
   }
 
   .example-item:hover {
-    background: #1a4a7a;
+    background: var(--st-surface-3);
     color: white;
   }
 
@@ -234,11 +234,11 @@
 
   .example-desc {
     font-size: 0.65rem;
-    color: #777;
+    color: var(--st-text-3);
   }
 
   .example-item:hover .example-desc {
-    color: #aaa;
+    color: var(--st-text-2);
   }
 
   .input-group {
@@ -251,10 +251,10 @@
   .input-group input {
     width: 70px;
     padding: 0.25rem;
-    background: #0f3460;
-    border: 1px solid #1a4a7a;
+    background: var(--st-surface-2);
+    border: 1px solid var(--st-hair-strong);
     border-radius: 4px;
-    color: #eee;
+    color: var(--st-text);
     cursor: pointer;
   }
 
@@ -262,23 +262,23 @@
     flex: 1;
     min-width: 100px;
     padding: 0.25rem;
-    background: #0f3460;
-    border: 1px solid #1a4a7a;
+    background: var(--st-surface-2);
+    border: 1px solid var(--st-hair-strong);
     border-radius: 4px;
-    color: #eee;
+    color: var(--st-text);
     cursor: pointer;
   }
 
   input[type="checkbox"] {
-    accent-color: #e94560;
+    accent-color: var(--st-accent);
   }
 
   .file-btn {
     padding: 0.35rem 0.4rem;
-    background: #0f3460;
-    border: 1px solid #1a4a7a;
+    background: var(--st-surface-2);
+    border: 1px solid var(--st-hair-strong);
     border-radius: 4px;
-    color: #ccc;
+    color: var(--st-text);
     cursor: pointer;
     font-size: 0.75rem;
     text-align: center;
@@ -286,7 +286,7 @@
   }
 
   .file-btn:hover:not(:disabled) {
-    background: #1a4a7a;
+    background: var(--st-surface-3);
     color: white;
   }
 

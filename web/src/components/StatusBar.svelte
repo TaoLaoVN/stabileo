@@ -137,8 +137,8 @@
 
   .draft-badge {
     background: rgba(240, 165, 0, 0.15);
-    border: 1px solid #f0a500;
-    color: #f0a500;
+    border: 1px solid var(--st-warn);
+    color: var(--st-warn);
     border-radius: 4px;
     font-size: 0.7rem;
     padding: 0.1rem 0.5rem;
@@ -153,11 +153,11 @@
   }
 
   .status-label {
-    color: #888;
+    color: var(--st-text-3);
   }
 
   .status-value {
-    color: #4ecdc4;
+    color: var(--st-value);
     font-family: monospace;
   }
 

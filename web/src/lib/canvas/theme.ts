@@ -1,0 +1,59 @@
+/**
+ * Bridge between the CSS design tokens and the 2D canvas.
+ *
+ * Canvas drawing takes colour strings, so it cannot read `var(--st-hair)` the
+ * way a stylesheet can. Without a bridge the viewport is the one surface that
+ * a palette change cannot reach — which is exactly what happened before: the
+ * shell moved to the landing's ink while the canvas kept a violet grid
+ * (#2a2a4e) and slate axes (#3a3a6e) from the old palette, on the largest
+ * area of the screen.
+ *
+ * Tokens are read once and cached, because `getComputedStyle` forces style
+ * resolution and the draw loop runs on every pan, zoom and edit. Call
+ * `refreshCanvasTheme()` if the tokens ever become themeable at runtime.
+ */
+
+const FALLBACK = {
+  grid: 'rgba(143, 163, 179, 0.14)',
+  axis: 'rgba(143, 163, 179, 0.34)',
+  surface: '#0f1e2b',
+  text: '#f4f7fa',
+  textDim: '#8fa3b3',
+  accent: '#e5482a',
+  tension: '#e5482a',
+  compression: '#2c6cb4',
+} as const;
+
+export type CanvasTheme = { -readonly [K in keyof typeof FALLBACK]: string };
+
+let cache: CanvasTheme | null = null;
+
+function read(name: string, fallback: string): string {
+  if (typeof document === 'undefined') return fallback;
+  const v = getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+  return v || fallback;
+}
+
+export function canvasTheme(): CanvasTheme {
+  if (cache) return cache;
+  cache = {
+    /*
+     * The grid is deliberately weaker than a panel hairline. It covers the
+     * whole viewport, so at hairline strength it competes with the model
+     * instead of sitting behind it.
+     */
+    grid: read('--st-canvas-grid', FALLBACK.grid),
+    axis: read('--st-canvas-axis', FALLBACK.axis),
+    surface: read('--st-bg', FALLBACK.surface),
+    text: read('--st-text', FALLBACK.text),
+    textDim: read('--st-text-2', FALLBACK.textDim),
+    accent: read('--st-accent', FALLBACK.accent),
+    tension: read('--st-tension', FALLBACK.tension),
+    compression: read('--st-compression', FALLBACK.compression),
+  };
+  return cache;
+}
+
+export function refreshCanvasTheme(): void {
+  cache = null;
+}

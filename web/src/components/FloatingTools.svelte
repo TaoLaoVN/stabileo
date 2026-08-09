@@ -133,7 +133,7 @@
     display: flex;
     flex-direction: column;
     background: rgba(22, 33, 62, 0.95);
-    border-bottom: 1px solid #1a4a7a;
+    border-bottom: 1px solid var(--st-hair-strong);
     backdrop-filter: blur(8px);
   }
 
@@ -160,13 +160,13 @@
   }
 
   .ft-btn:hover {
-    background: #1a4a7a;
-    color: #ddd;
+    background: var(--st-surface-3);
+    color: var(--st-text);
   }
 
   .ft-btn.active {
-    background: #e94560;
-    border-color: #ff6b6b;
+    background: var(--st-accent);
+    border-color: var(--st-danger);
     color: white;
   }
 
@@ -191,7 +191,7 @@
     background: transparent;
     border: none;
     border-radius: 4px;
-    color: #666;
+    color: var(--st-text-3);
     cursor: pointer;
     font-size: 0.7rem;
     transition: all 0.15s;
@@ -199,7 +199,7 @@
   }
 
   .ft-close:hover {
-    background: #e94560;
+    background: var(--st-accent);
     color: white;
   }
 
@@ -216,10 +216,10 @@
 
   .ft-opt-btn {
     padding: 2px 8px;
-    background: #0f3460;
-    border: 1px solid #1a4a7a;
+    background: var(--st-surface-2);
+    border: 1px solid var(--st-hair-strong);
     border-radius: 4px;
-    color: #aaa;
+    color: var(--st-text-2);
     cursor: pointer;
     font-size: 0.7rem;
     transition: all 0.15s;
@@ -227,21 +227,21 @@
   }
 
   .ft-opt-btn:hover:not(:disabled) {
-    background: #1a4a7a;
-    color: #ddd;
+    background: var(--st-surface-3);
+    color: var(--st-text);
   }
 
   .ft-opt-btn:disabled {
     opacity: 0.35;
     cursor: not-allowed;
     color: #555;
-    background: #0a1a30;
+    background: var(--st-surface-2);
     border-color: #1a3050;
   }
 
   .ft-opt-btn.active {
-    background: #e94560;
-    border-color: #ff6b6b;
+    background: var(--st-accent);
+    border-color: var(--st-danger);
     color: white;
   }
 
@@ -259,13 +259,13 @@
 
   .ft-il-label {
     font-size: 0.65rem;
-    color: #777;
+    color: var(--st-text-3);
     margin-right: 2px;
   }
 
   .ft-hint {
     font-size: 0.65rem;
-    color: #666;
+    color: var(--st-text-3);
     font-style: italic;
     margin-left: 4px;
   }
@@ -278,9 +278,9 @@
     width: 32px;
     height: 32px;
     background: rgba(22, 33, 62, 0.9);
-    border: 1px solid #1a4a7a;
+    border: 1px solid var(--st-hair-strong);
     border-radius: 6px;
-    color: #888;
+    color: var(--st-text-3);
     cursor: pointer;
     font-size: 1rem;
     display: flex;
@@ -291,9 +291,9 @@
   }
 
   .ft-reopen:hover {
-    background: #1a4a7a;
+    background: var(--st-surface-3);
     color: white;
-    border-color: #4ecdc4;
+    border-color: var(--st-interactive);
   }
 
   /* ===== Mobile: compact icons-only toolbar ===== */

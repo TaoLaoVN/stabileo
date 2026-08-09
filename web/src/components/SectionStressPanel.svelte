@@ -553,7 +553,7 @@
     z-index: 105;
     width: 280px;
     background: rgba(22, 33, 62, 0.96);
-    border: 1px solid #1a4a7a;
+    border: 1px solid var(--st-hair-strong);
     border-radius: 8px;
     backdrop-filter: blur(8px);
     box-shadow: 0 4px 16px rgba(0, 0, 0, 0.4);
@@ -568,13 +568,13 @@
     align-items: center;
     justify-content: space-between;
     padding: 6px 10px;
-    border-bottom: 1px solid #1a4a7a;
+    border-bottom: 1px solid var(--st-hair-strong);
   }
 
   .ssp-title {
     font-size: 0.78rem;
     font-weight: 600;
-    color: #4ecdc4;
+    color: var(--st-value);
   }
 
   .ssp-close {
@@ -583,7 +583,7 @@
     background: transparent;
     border: none;
     border-radius: 3px;
-    color: #666;
+    color: var(--st-text-3);
     cursor: pointer;
     font-size: 0.7rem;
     display: flex;
@@ -592,7 +592,7 @@
   }
 
   .ssp-close:hover {
-    background: #e94560;
+    background: var(--st-accent);
     color: white;
   }
 
@@ -605,18 +605,18 @@
     display: flex;
     justify-content: space-between;
     margin-bottom: 4px;
-    color: #aaa;
+    color: var(--st-text-2);
     font-size: 0.7rem;
   }
 
   .ssp-elem {
-    color: #ccc;
+    color: var(--st-text);
     font-weight: 600;
   }
 
   .ssp-pos {
     font-family: 'Courier New', monospace;
-    color: #888;
+    color: var(--st-text-3);
   }
 
   .ssp-slider-row {
@@ -628,7 +628,7 @@
 
   .ssp-slider-label {
     font-size: 0.6rem;
-    color: #666;
+    color: var(--st-text-3);
     font-weight: 600;
     flex-shrink: 0;
     width: 10px;
@@ -640,7 +640,7 @@
     height: 4px;
     -webkit-appearance: none;
     appearance: none;
-    background: #1a1a2e;
+    background: var(--st-bg);
     border-radius: 2px;
     outline: none;
     cursor: pointer;
@@ -652,7 +652,7 @@
     width: 12px;
     height: 12px;
     border-radius: 50%;
-    background: #e94560;
+    background: var(--st-accent);
     cursor: pointer;
     border: none;
   }
@@ -661,7 +661,7 @@
     width: 12px;
     height: 12px;
     border-radius: 50%;
-    background: #e94560;
+    background: var(--st-accent);
     cursor: pointer;
     border: none;
   }
@@ -689,7 +689,7 @@
   .ssp-force-label {
     display: block;
     font-size: 0.65rem;
-    color: #888;
+    color: var(--st-text-3);
     text-transform: uppercase;
   }
 
@@ -697,7 +697,7 @@
     display: block;
     font-family: 'Courier New', monospace;
     font-size: 0.72rem;
-    color: #eee;
+    color: var(--st-text);
   }
 
   .ssp-section-toggle {
@@ -708,7 +708,7 @@
     padding: 3px 0;
     background: none;
     border: none;
-    color: #888;
+    color: var(--st-text-3);
     font-size: 0.68rem;
     text-transform: uppercase;
     letter-spacing: 0.5px;
@@ -717,7 +717,7 @@
   }
 
   .ssp-section-toggle:hover {
-    color: #ccc;
+    color: var(--st-text);
   }
 
   .ssp-chevron {
@@ -734,24 +734,24 @@
 
   .ssp-critical-chip {
     padding: 3px 8px;
-    background: #0f3460;
-    border: 1px solid #1a4a7a;
+    background: var(--st-surface-2);
+    border: 1px solid var(--st-hair-strong);
     border-radius: 10px;
-    color: #aaa;
+    color: var(--st-text-2);
     font-size: 0.65rem;
     cursor: pointer;
     transition: all 0.15s;
   }
 
   .ssp-critical-chip:hover {
-    background: #1a4a7a;
-    color: #eee;
+    background: var(--st-surface-3);
+    color: var(--st-text);
   }
 
   .ssp-critical-chip.active {
-    background: #1a4a7a;
-    border-color: #4ecdc4;
-    color: #4ecdc4;
+    background: var(--st-surface-3);
+    border-color: var(--st-interactive);
+    color: var(--st-value);
   }
 
   .ssp-critical-t {
@@ -768,7 +768,7 @@
     height: 13px;
     border-radius: 50%;
     background: rgba(78, 205, 196, 0.12);
-    color: #4ecdc4;
+    color: var(--st-value);
     font-size: 0.5rem;
     font-weight: 700;
     cursor: help;
@@ -805,7 +805,7 @@
 
   .ssp-amorph-msg p {
     font-size: 0.78rem;
-    color: #aaa;
+    color: var(--st-text-2);
     margin: 0;
     line-height: 1.4;
   }

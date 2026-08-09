@@ -13,6 +13,7 @@ import {
   get2DDisplayMoment,
   get2DDisplayReactionVertical,
 } from '../geometry/coordinate-system';
+import { canvasTheme } from '../canvas/theme';
 
 // ── Shared types for draw-entity parameters ──────────────────────────
 
@@ -41,7 +42,7 @@ export function drawGrid(
   worldToScreen: WorldToScreenFn,
   screenToWorld: ScreenToWorldFn,
 ): void {
-  ctx.strokeStyle = '#2a2a4e';
+  ctx.strokeStyle = canvasTheme().grid;
   ctx.lineWidth = 1;
 
   const topLeft = screenToWorld(0, 0);
@@ -75,7 +76,7 @@ export function drawAxes(
   height: number,
   worldToScreen: WorldToScreenFn,
 ): void {
-  ctx.strokeStyle = '#3a3a6e';
+  ctx.strokeStyle = canvasTheme().axis;
   ctx.lineWidth = 1;
 
   const axisY = worldToScreen(0, 0).y;

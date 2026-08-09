@@ -659,7 +659,7 @@
   .toolbar-section h3 {
     font-size: 0.75rem;
     text-transform: uppercase;
-    color: #888;
+    color: var(--st-text-3);
     letter-spacing: 0.05em;
   }
 
@@ -671,10 +671,10 @@
 
   .undo-redo-btn {
     padding: 0.35rem 0.4rem;
-    background: #0f3460;
-    border: 1px solid #1a4a7a;
+    background: var(--st-surface-2);
+    border: 1px solid var(--st-hair-strong);
     border-radius: 4px;
-    color: #ccc;
+    color: var(--st-text);
     cursor: pointer;
     font-size: 0.75rem;
     text-align: center;
@@ -682,7 +682,7 @@
   }
 
   .undo-redo-btn:hover:not(:disabled) {
-    background: #1a4a7a;
+    background: var(--st-surface-3);
     color: white;
   }
 
@@ -702,11 +702,11 @@
     gap: 0;
     border-radius: 4px;
     overflow: hidden;
-    border: 1px solid #1a4a7a;
+    border: 1px solid var(--st-hair-strong);
   }
 
   .dim-toggle button {
-    background: #0a1a30;
+    background: var(--st-surface-2);
     border: none;
     color: #778;
     font-size: 0.75rem;
@@ -718,24 +718,24 @@
   }
 
   .dim-toggle button:first-child {
-    border-right: 1px solid #1a4a7a;
+    border-right: 1px solid var(--st-hair-strong);
   }
 
   .dim-toggle button:hover {
     background: #1a3860;
-    color: #ccc;
+    color: var(--st-text);
   }
 
   .dim-toggle button.active {
-    background: #e94560;
+    background: var(--st-accent);
     color: white;
   }
 
   .solve-btn {
     width: 100%;
     padding: 0.5rem 0.5rem;
-    background: #e94560;
-    border: 1px solid #ff6b6b;
+    background: var(--st-accent);
+    border: 1px solid var(--st-danger);
     border-radius: 4px;
     color: white;
     cursor: pointer;
@@ -746,7 +746,7 @@
   }
 
   .solve-btn:hover:not(:disabled) {
-    background: #ff6b6b;
+    background: var(--st-danger);
   }
 
   .solve-btn:disabled {
@@ -768,13 +768,13 @@
   }
 
   .solve-btn.solve-steps {
-    background: #0f3460;
-    border-color: #f0a500;
-    color: #f0a500;
+    background: var(--st-surface-2);
+    border-color: var(--st-warn);
+    color: var(--st-warn);
   }
 
   .solve-btn.solve-steps:hover {
-    background: #1a4a7a;
+    background: var(--st-surface-3);
     color: white;
   }
 
@@ -797,8 +797,8 @@
     justify-content: center;
   }
   .plane-modal {
-    background: #0d1b2e;
-    border: 1px solid #1a4a7a;
+    background: var(--st-surface);
+    border: 1px solid var(--st-hair-strong);
     border-radius: 8px;
     padding: 1.5rem;
     width: 320px;
@@ -809,7 +809,7 @@
   .plane-modal h3 {
     margin: 0;
     font-size: 0.95rem;
-    color: #eee;
+    color: var(--st-text);
   }
   .plane-modal p {
     margin: 0;
@@ -824,10 +824,10 @@
   .plane-btn {
     flex: 1;
     padding: 0.6rem 0.4rem;
-    background: #0f3460;
-    border: 1px solid #1a4a7a;
+    background: var(--st-surface-2);
+    border: 1px solid var(--st-hair-strong);
     border-radius: 5px;
-    color: #ccc;
+    color: var(--st-text);
     cursor: pointer;
     display: flex;
     flex-direction: column;
@@ -836,30 +836,30 @@
     transition: all 0.15s;
   }
   .plane-btn:hover {
-    background: #1a4a7a;
+    background: var(--st-surface-3);
     color: white;
-    border-color: #4ecdc4;
+    border-color: var(--st-interactive);
   }
   .plane-label {
     font-size: 1rem;
     font-weight: 700;
-    color: #4ecdc4;
+    color: var(--st-value);
   }
   .plane-desc {
     font-size: 0.6rem;
-    color: #888;
+    color: var(--st-text-3);
   }
   .plane-btn:hover .plane-desc { color: #bbb; }
   .plane-btn-warn .plane-desc { color: #e9a045; font-weight: 500; font-size: 0.55rem; }
   .plane-btn-destructive {
     background: #2a1520;
-    border-color: #e94560;
-    color: #e94560;
+    border-color: var(--st-accent);
+    color: var(--st-accent);
     font-size: 0.68rem;
     flex: unset;
   }
   .plane-btn-destructive:hover {
-    background: #e94560;
+    background: var(--st-accent);
     color: white;
   }
   .plane-modal-footer {
@@ -869,13 +869,13 @@
   }
   .plane-btn-secondary {
     background: #12192e;
-    border-color: #333;
-    color: #888;
+    border-color: var(--st-hair);
+    color: var(--st-text-3);
     font-size: 0.75rem;
   }
   .plane-btn-secondary:hover {
-    background: #1a1a2e;
-    color: #ccc;
-    border-color: #555;
+    background: var(--st-bg);
+    color: var(--st-text);
+    border-color: var(--st-hair-strong);
   }
 </style>

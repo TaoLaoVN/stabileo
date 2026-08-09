@@ -164,6 +164,15 @@
   position: relative;
 }
 
+/*
+   Status hues are derived per ground, not taken from the raw token.
+   `--lp-green` and `--lp-blue` are chosen for figures and rules, where area
+   carries the meaning. The badges and kickers reuse them as ~10px uppercase
+   text, and at that size the raw tokens measure 4.18 and 3.40 against ink and
+   3.34 for the accent against paper — below WCAG AA, on exactly the elements
+   that carry the product's status. Each ground now derives a text-safe
+   variant: every pair below is ≥ 4.5.
+*/
 .landing .sec--ink {
   --bg: var(--lp-ink);
   --fg: var(--lp-paper-2);
@@ -171,6 +180,9 @@
   --hair: rgba(143, 163, 179, 0.22);
   --card: var(--lp-ink-2);
   --card-hair: rgba(143, 163, 179, 0.16);
+  --ok: #2aa869;          /* 6.00 on ink */
+  --dev: #4a8fd4;         /* 5.36 on ink */
+  --accent-text: var(--lp-accent); /* 4.60 on ink */
 }
 
 .landing .sec--paper {
@@ -180,6 +192,9 @@
   --hair: var(--lp-hair);
   --card: var(--lp-paper-2);
   --card-hair: var(--lp-hair);
+  --ok: #17703f;          /* 5.16 on paper */
+  --dev: #255d9e;         /* 5.63 on paper */
+  --accent-text: #b3341c; /* 5.16 on paper */
 }
 
 /* ─── TYPE ───────────────────────────────────────────────────────────────── */
@@ -241,16 +256,16 @@
   font-size: 0.68rem;
   letter-spacing: 0.15em;
   text-transform: uppercase;
-  color: var(--lp-accent);
+  color: var(--accent-text);
   margin: 0 0 0.7rem;
 }
 
 .landing .kicker-blue {
-  color: var(--lp-blue);
+  color: var(--dev);
 }
 
 .landing .kicker-accent {
-  color: var(--lp-accent);
+  color: var(--accent-text);
 }
 
 /* ─── EYEBROW ────────────────────────────────────────────────────────────── */
@@ -279,7 +294,7 @@
 }
 
 .landing .eyebrow-label {
-  color: var(--lp-accent);
+  color: var(--accent-text);
 }
 
 /* ─── BUTTONS & LINKS ────────────────────────────────────────────────────── */
@@ -336,7 +351,7 @@
   font-size: 0.74rem;
   letter-spacing: 0.09em;
   text-transform: uppercase;
-  color: var(--lp-accent);
+  color: var(--accent-text);
   text-decoration: none;
   border-bottom: 1px solid var(--lp-accent-dim);
   padding-bottom: 2px;
@@ -546,7 +561,7 @@
   color: var(--fg-2);
 }
 
-.landing .hero-mode-st-today { color: var(--lp-green); }
+.landing .hero-mode-st-today { color: var(--ok); }
 
 .landing .hero-meta {
   display: flex;
@@ -774,7 +789,7 @@
 }
 
 .landing .card-link:hover h3 {
-  color: var(--lp-accent);
+  color: var(--accent-text);
 }
 
 .landing .card-media {
@@ -845,8 +860,8 @@
 
 /* The Basic pill states scope, so it reads as fact rather than as the live indicator. */
 .landing .pill-basic {
-  border-color: var(--lp-green);
-  color: var(--lp-green);
+  border-color: var(--ok);
+  color: var(--ok);
 }
 
 .landing .demo-scope {
@@ -862,7 +877,7 @@
   letter-spacing: 0.15em;
   text-transform: uppercase;
   border: 1px solid var(--lp-accent);
-  color: var(--lp-accent);
+  color: var(--accent-text);
   padding: 0.3rem 0.6rem;
   border-radius: var(--lp-radius);
   margin: 0;
@@ -1161,7 +1176,7 @@
 }
 
 .landing .chip.active {
-  color: var(--lp-accent);
+  color: var(--accent-text);
   border-color: var(--lp-accent);
 }
 
@@ -1357,7 +1372,7 @@
   font-size: clamp(1.4rem, 2.8vw, 2.2rem);
   letter-spacing: -0.03em;
   line-height: 1.15;
-  color: var(--lp-accent);
+  color: var(--accent-text);
   max-width: 24ch;
   margin: 0;
 }
@@ -1400,8 +1415,8 @@
   border-radius: var(--lp-radius);
 }
 
-.landing .badge-today { color: var(--lp-green); }
-.landing .badge-partial { color: var(--lp-accent); }
+.landing .badge-today { color: var(--ok); }
+.landing .badge-partial { color: var(--accent-text); }
 /*
    Four tiers, not three. "Partial" and "in development" were previously the
    same badge, which let a mode that calculates something today (PRO) and a
@@ -1409,14 +1424,14 @@
    in-development keeps it visually distinct from the accent used by partial
    without implying either is shipped.
 */
-.landing .badge-dev { color: var(--lp-blue); }
+.landing .badge-dev { color: var(--dev); }
 /*
    "Partial, in testing" reads as progress, not as a shortfall, so it takes the
    green the shipped tier uses rather than the accent reserved for a caveat.
    The label still says PARTIAL, so the status is not softened — only the
    colour stops implying a problem where the work is simply being validated.
 */
-.landing .badge-testing { color: var(--lp-green); }
+.landing .badge-testing { color: var(--ok); }
 .landing .badge-roadmap { color: var(--fg-2); }
 
 /* ─── MODES (shared by the mode sections and the overview) ────────────────── */
@@ -1452,7 +1467,7 @@
 
 .landing .what-access {
   margin-top: 2rem;
-  border-left: 2px solid var(--lp-green);
+  border-left: 2px solid var(--ok);
   padding-left: 1.1rem;
   color: var(--fg-2);
   max-width: 84ch;

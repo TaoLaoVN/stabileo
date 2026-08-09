@@ -245,9 +245,9 @@
     width: 100%;
     padding: 0.4rem 0.5rem;
     background: none;
-    border: 1px solid #333;
+    border: 1px solid var(--st-hair);
     border-radius: 4px;
-    color: #aaa;
+    color: var(--st-text-2);
     cursor: pointer;
     font-size: 0.75rem;
     font-weight: 600;
@@ -258,9 +258,9 @@
   }
 
   .section-toggle:hover {
-    background: #1a1a2e;
-    color: #ccc;
-    border-color: #555;
+    background: var(--st-bg);
+    color: var(--st-text);
+    border-color: var(--st-hair-strong);
   }
 
   /* Configuración sub-sections */
@@ -276,9 +276,9 @@
     width: 100%;
     padding: 0.25rem 0.4rem;
     background: none;
-    border: 1px solid #2a2a3e;
+    border: 1px solid var(--st-hair);
     border-radius: 3px;
-    color: #999;
+    color: var(--st-text-2);
     cursor: pointer;
     font-size: 0.68rem;
     font-weight: 500;
@@ -287,9 +287,9 @@
     transition: all 0.2s;
   }
   .sub-toggle:hover {
-    background: #1a1a2e;
-    color: #ccc;
-    border-color: #444;
+    background: var(--st-bg);
+    color: var(--st-text);
+    border-color: var(--st-hair-strong);
   }
 
   .sub-content {
@@ -297,7 +297,7 @@
     display: flex;
     flex-direction: column;
     gap: 0.35rem;
-    border: 1px solid #2a2a3e;
+    border: 1px solid var(--st-hair);
     border-radius: 4px;
     margin-top: 0.15rem;
     overflow: hidden;
@@ -334,10 +334,10 @@
   .input-group input {
     width: 70px;
     padding: 0.25rem;
-    background: #0f3460;
-    border: 1px solid #1a4a7a;
+    background: var(--st-surface-2);
+    border: 1px solid var(--st-hair-strong);
     border-radius: 4px;
-    color: #eee;
+    color: var(--st-text);
     cursor: pointer;
   }
 
@@ -345,16 +345,16 @@
     flex: 1;
     min-width: 100px;
     padding: 0.25rem;
-    background: #0f3460;
-    border: 1px solid #1a4a7a;
+    background: var(--st-surface-2);
+    border: 1px solid var(--st-hair-strong);
     border-radius: 4px;
-    color: #eee;
+    color: var(--st-text);
     cursor: pointer;
   }
 
   input[type="radio"],
   input[type="checkbox"] {
-    accent-color: #e94560;
+    accent-color: var(--st-accent);
   }
 
   .help-hint {
@@ -364,49 +364,49 @@
     width: 16px;
     height: 16px;
     border-radius: 50%;
-    border: 1px solid #555;
-    color: #888;
+    border: 1px solid var(--st-hair-strong);
+    color: var(--st-text-3);
     font-size: 0.6rem;
     font-weight: 600;
     cursor: help;
     flex-shrink: 0;
   }
   .help-hint:hover {
-    border-color: #4ecdc4;
-    color: #4ecdc4;
+    border-color: var(--st-interactive);
+    color: var(--st-value);
   }
 
   .config-action-btn {
     width: 100%;
     padding: 0.25rem 0.4rem;
-    background: #0f3460;
-    border: 1px solid #1a4a7a;
+    background: var(--st-surface-2);
+    border: 1px solid var(--st-hair-strong);
     border-radius: 3px;
-    color: #4ecdc4;
+    color: var(--st-value);
     cursor: pointer;
     font-size: 0.68rem;
     transition: all 0.2s;
   }
   .config-action-btn:hover {
-    background: #1a4a7a;
+    background: var(--st-surface-3);
     color: white;
   }
   .live-calc-btn {
-    color: #888;
-    background: #12192e;
-    border-color: #333;
+    color: var(--st-text-3);
+    background: var(--st-bg);
+    border-color: var(--st-hair);
   }
   .live-calc-btn:hover {
-    background: #1a1a2e;
-    color: #ccc;
+    background: var(--st-bg);
+    color: var(--st-text);
   }
   .live-calc-active {
-    color: #4ecdc4;
-    background: #0f3460;
-    border-color: #4ecdc4;
+    color: var(--st-value);
+    background: var(--st-surface-2);
+    border-color: var(--st-interactive);
   }
   .live-calc-active:hover {
-    background: #1a4a7a;
+    background: var(--st-surface-3);
     color: white;
   }
 </style>

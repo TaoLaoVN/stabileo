@@ -178,9 +178,9 @@
     width: 100%;
     padding: 0.4rem 0.5rem;
     background: none;
-    border: 1px solid #333;
+    border: 1px solid var(--st-hair);
     border-radius: 4px;
-    color: #aaa;
+    color: var(--st-text-2);
     cursor: pointer;
     font-size: 0.75rem;
     font-weight: 600;
@@ -191,18 +191,18 @@
   }
 
   .section-toggle:hover {
-    background: #1a1a2e;
-    color: #ccc;
-    border-color: #555;
+    background: var(--st-bg);
+    color: var(--st-text);
+    border-color: var(--st-hair-strong);
   }
 
   .sub-section-toggle {
     width: 100%;
     padding: 0.25rem 0.4rem;
     background: none;
-    border: 1px solid #2a2a3a;
+    border: 1px solid var(--st-hair);
     border-radius: 3px;
-    color: #777;
+    color: var(--st-text-3);
     cursor: pointer;
     font-size: 0.65rem;
     font-weight: 600;
@@ -214,15 +214,15 @@
   }
 
   .sub-section-toggle:hover {
-    background: #1a1a2e;
-    color: #aaa;
-    border-color: #444;
+    background: var(--st-bg);
+    color: var(--st-text-2);
+    border-color: var(--st-hair-strong);
   }
 
   .sub-section-content {
     margin-left: 0.25rem;
     padding-left: 0.4rem;
-    border-left: 2px solid #2a2a3a;
+    border-left: 2px solid var(--st-hair);
   }
 
   .file-grid {
@@ -233,10 +233,10 @@
 
   .file-btn {
     padding: 0.35rem 0.4rem;
-    background: #0f3460;
-    border: 1px solid #1a4a7a;
+    background: var(--st-surface-2);
+    border: 1px solid var(--st-hair-strong);
     border-radius: 4px;
-    color: #ccc;
+    color: var(--st-text);
     cursor: pointer;
     font-size: 0.75rem;
     text-align: center;
@@ -244,7 +244,7 @@
   }
 
   .file-btn:hover:not(:disabled) {
-    background: #1a4a7a;
+    background: var(--st-surface-3);
     color: white;
   }
 
@@ -256,23 +256,23 @@
   .file-sub-header {
     font-size: 0.65rem;
     text-transform: uppercase;
-    color: #666;
+    color: var(--st-text-3);
     letter-spacing: 0.05em;
     margin-top: 0.25rem;
   }
 
   .small-btn {
     padding: 0.1rem 0.4rem;
-    border: 1px solid #555;
+    border: 1px solid var(--st-hair-strong);
     border-radius: 3px;
-    background: #2a2a2a;
-    color: #ccc;
+    background: var(--st-surface-2);
+    color: var(--st-text);
     font-size: 0.7rem;
     cursor: pointer;
   }
 
   .small-btn:hover:not(:disabled) {
-    background: #3a3a3a;
+    background: var(--st-surface-3);
     color: white;
   }
 
