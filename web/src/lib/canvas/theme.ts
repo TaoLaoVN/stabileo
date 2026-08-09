@@ -35,6 +35,13 @@ const FALLBACK = {
   node: '#8fa3b3',
   support: '#8fa3b3',
   selected: '#e5482a',
+  /*
+   * The deformed shape IS the answer to the question the user asked, so it
+   * takes the accent. It was amber, which put it in the same family as the
+   * load arrows and left the eye with no way to tell demand from response.
+   */
+  deformed: 'rgba(229, 72, 42, 0.85)',
+  deformedFill: 'rgba(229, 72, 42, 0.55)',
 } as const;
 
 export type CanvasTheme = { -readonly [K in keyof typeof FALLBACK]: string };
@@ -68,6 +75,8 @@ export function canvasTheme(): CanvasTheme {
     node: read('--st-model-node', FALLBACK.node),
     support: read('--st-model-support', FALLBACK.support),
     selected: read('--st-selected', FALLBACK.selected),
+    deformed: read('--st-model-deformed', FALLBACK.deformed),
+    deformedFill: read('--st-model-deformed-fill', FALLBACK.deformedFill),
   };
   return cache;
 }

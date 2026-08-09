@@ -4910,6 +4910,8 @@ const es: Record<string, string> = {
   'ribbon.noDiagram': 'Ninguno',
   'ribbon.tool': 'Opciones',
   'ribbon.results': 'Resultados',
+  'ribbon.groupProject': 'Proyecto',
+  'ribbon.needsSolve': 'primero resolvé el modelo',
 
 };
 export default es;

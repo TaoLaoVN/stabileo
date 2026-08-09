@@ -224,3 +224,8 @@
   --st-model-node: #8fa3b3;
   --st-model-support: #8fa3b3;
 }
+
+:root {
+  --st-model-deformed: rgba(229, 72, 42, 0.85);
+  --st-model-deformed-fill: rgba(229, 72, 42, 0.55);
+}

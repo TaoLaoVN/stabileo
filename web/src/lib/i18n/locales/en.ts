@@ -4923,6 +4923,8 @@ const en: Record<string, string> = {
   'ribbon.noDiagram': 'None',
   'ribbon.tool': 'Tool options',
   'ribbon.results': 'Results',
+  'ribbon.groupProject': 'Project',
+  'ribbon.needsSolve': 'solve the model first',
 
 };
 export default en;
