@@ -46,6 +46,12 @@ let wasmComputeEnvelope3d: ((input: any) => any) | null = null;
 let wasmComputeInfluenceLine: ((json: string) => string) | null = null;
 
 // Section Stress
+let wasmBuildSectionGeometry: ((json: string) => string) | null = null;
+let wasmAnalyzeSectionBending: ((json: string) => string) | null = null;
+let wasmAnalyzeSectionTorsion: ((json: string) => string) | null = null;
+let wasmAnalyzeSectionShear: ((json: string) => string) | null = null;
+let wasmAnalyzeSectionPlastic: ((json: string) => string) | null = null;
+let wasmSectionGeometryDigest: ((json: string) => string) | null = null;
 let wasmComputeSectionStress2d: ((json: string) => string) | null = null;
 let wasmComputeSectionStress3d: ((json: string) => string) | null = null;
 let wasmComputeSectionStress3dFromForces: ((json: string) => string) | null = null;
@@ -202,6 +208,14 @@ export async function initSolver(): Promise<void> {
 
     // Influence Lines
     wasmComputeInfluenceLine = wasm.compute_influence_line;
+
+    // Canonical section geometry (JSON-string boundary, like analyze_section)
+    wasmBuildSectionGeometry = wasm.build_section_geometry ?? null;
+    wasmAnalyzeSectionBending = wasm.analyze_section_bending ?? null;
+    wasmAnalyzeSectionTorsion = wasm.analyze_section_torsion ?? null;
+    wasmAnalyzeSectionShear = wasm.analyze_section_shear ?? null;
+    wasmAnalyzeSectionPlastic = wasm.analyze_section_plastic ?? null;
+    wasmSectionGeometryDigest = wasm.section_geometry_digest ?? null;
 
     // Section Stress
     wasmComputeSectionStress2d = wasm.compute_section_stress_2d;
@@ -1313,4 +1327,196 @@ export function extractBeamStationsGrouped(input: BeamStationInput): GroupedBeam
 export function extractBeamStationsGrouped3D(input: BeamStationInput3D): GroupedBeamStationResult3D {
   if (!wasmReady || !wasmExtractBeamStationsGrouped3d) throw new Error('WASM grouped beam station 3D extraction not available.');
   return JSON.parse(wasmExtractBeamStationsGrouped3d(JSON.stringify(input)));
+}
+
+// ─── Canonical section geometry ──────────────────────────────────
+//
+// JSON-string boundary, matching `analyze_section`. These are cold paths — one
+// call per section change, not per solve — so the JsValue boundary used by
+// `solve_2d`/`solve_3d` would buy nothing and would split the section API
+// across two conventions.
+
+/** A canonical polygon region. `isVoid` marks a hole. */
+export interface CanonicalPolygon {
+  vertices: Array<[number, number]>;
+  materialId: number;
+  isVoid: boolean;
+}
+
+export interface CanonicalGeometry {
+  version: number;
+  polygons: CanonicalPolygon[];
+  source: Record<string, unknown>;
+  arcSegments: number;
+  rotation: number;
+}
+
+export interface CanonicalSectionProperties {
+  a: number; yc: number; zc: number;
+  iy: number; iz: number; iyz: number;
+  i1: number; i2: number; thetaP: number;
+  j: number; bbox: [number, number, number, number];
+  [k: string]: unknown;
+}
+
+export interface CanonicalGeometryResponse {
+  geometry: CanonicalGeometry;
+  digest: string;
+  properties: CanonicalSectionProperties;
+}
+
+/** Request shapes accepted by `build_section_geometry`. */
+export type SectionGeometryRequest =
+  | { kind: 'rect'; b: number; h: number }
+  | { kind: 'circle'; d: number; arcSegments?: number }
+  | { kind: 'chs'; d: number; t: number; arcSegments?: number }
+  | { kind: 'iSection'; h: number; b: number; tw: number; tf: number; rootRadius?: number; arcSegments?: number; profileId?: string; standard?: string }
+  | { kind: 'ipn'; h: number; b: number; tw: number; tf: number; arcSegments?: number; profileId?: string; standard?: string }
+  | { kind: 'upn'; h: number; b: number; tw: number; tf: number; arcSegments?: number; profileId?: string; standard?: string }
+  | { kind: 'tee'; h: number; b: number; tw: number; tf: number; rootRadius?: number; toeRadius?: number; arcSegments?: number; profileId?: string; standard?: string }
+  | { kind: 'angle'; h: number; b: number; t: number; rootRadius?: number; toeRadius?: number; arcSegments?: number; profileId?: string; standard?: string }
+  | { kind: 'channel'; h: number; b: number; tw: number; tf: number; slope?: number; rootRadius?: number; toeRadius?: number; taperRef?: number; arcSegments?: number; profileId?: string; standard?: string }
+  | { kind: 'rhs'; b: number; h: number; t: number; cornerRadius?: number; arcSegments?: number; profileId?: string; standard?: string }
+  | { kind: 'custom'; outer: Array<[number, number]>; holes?: Array<Array<[number, number]>> };
+
+/** Build canonical geometry and its derived properties. */
+export function buildSectionGeometry(req: SectionGeometryRequest): CanonicalGeometryResponse {
+  if (!wasmReady || !wasmBuildSectionGeometry) throw new Error('WASM solver not initialized. Call initSolver() first.');
+  return JSON.parse(wasmBuildSectionGeometry(JSON.stringify(req)));
+}
+
+export interface BendingStressPoint { y: number; z: number; sigma: number }
+
+export interface BendingResponse {
+  properties: CanonicalSectionProperties;
+  forces: { n: number; my: number; mz: number };
+  boundary: BendingStressPoint[];
+  max: BendingStressPoint;
+  min: BendingStressPoint;
+  neutralAxis: { a: number; b: number; c: number; angle: number; uniform: boolean };
+  kz: number;
+  ky: number;
+  digest: string;
+  geometryVersion: number;
+}
+
+/**
+ * Axial + unsymmetrical bending over canonical geometry.
+ *
+ * Uses the complete centroidal inertia tensor including Iyz, so angles,
+ * channels and asymmetric polygons are not treated as if their geometric axes
+ * were principal. The response echoes the geometry digest, which is how a
+ * caller proves the drawing and the numbers describe the same section.
+ */
+export function analyzeSectionBending(input: {
+  geometry: CanonicalGeometry;
+  n?: number; my?: number; mz?: number;
+  forcesAreLocal?: boolean;
+}): BendingResponse {
+  if (!wasmReady || !wasmAnalyzeSectionBending) throw new Error('WASM solver not initialized. Call initSolver() first.');
+  return JSON.parse(wasmAnalyzeSectionBending(JSON.stringify(input)));
+}
+
+/** Digest, version and provenance of a canonical geometry. */
+export function sectionGeometryDigest(geometry: CanonicalGeometry): {
+  digest: string; version: number; arcSegments: number; rotation: number;
+  source: Record<string, unknown>; solidCount: number; holeCount: number;
+} {
+  if (!wasmReady || !wasmSectionGeometryDigest) throw new Error('WASM solver not initialized. Call initSolver() first.');
+  return JSON.parse(wasmSectionGeometryDigest(JSON.stringify(geometry)));
+}
+
+/** Saint-Venant torsion result for canonical geometry. */
+export interface TorsionResponse {
+  /** Torsion constant, in the geometry's own length unit to the fourth. */
+  j: number;
+  /** Peak shear under unit twist rate. */
+  tauMax: number;
+  /** `[tauXy, tauXz]` at the queried point, under unit twist rate. */
+  at?: [number, number];
+  triangles: number;
+  residual: number;
+}
+
+/**
+ * Solve Saint-Venant torsion for a canonical section.
+ *
+ * This meshes and solves, so it costs milliseconds — compute once per section
+ * and cache it. Handles closed sections: the constant on each hole boundary
+ * comes from Bredt's circulation condition.
+ */
+export function analyzeSectionTorsion(input: {
+  geometry: CanonicalGeometry;
+  maxArea?: number;
+  /** Query point, centroid-relative, in the geometry's own units. */
+  at?: [number, number];
+}): TorsionResponse {
+  if (!wasmReady || !wasmAnalyzeSectionTorsion) throw new Error('WASM solver not initialized. Call initSolver() first.');
+  return JSON.parse(wasmAnalyzeSectionTorsion(JSON.stringify(input)));
+}
+
+/** Transverse shear response to unit forces on each centroidal axis. */
+export interface ShearResponse {
+  vy: { tauMax: number; kappa: number; at?: [number, number] };
+  vz: { tauMax: number; kappa: number; at?: [number, number] };
+  /**
+   * Shear centre, centroid-relative.
+   *
+   * The point a transverse load must pass through to bend without twisting.
+   * At the centroid for a doubly-symmetric profile; outside the section
+   * entirely for a channel, which is why loading one through its web twists it.
+   */
+  shearCentre: [number, number];
+  triangles: number;
+  residual: number;
+}
+
+/**
+ * Solve transverse shear for a canonical section.
+ *
+ * Works for shapes Jourawski cannot express — angles, closed tubes, arbitrary
+ * polygons — because it solves the equilibrium problem instead of assuming a
+ * single width. Meshes and solves, so cache the result per section.
+ */
+export function analyzeSectionShear(input: {
+  geometry: CanonicalGeometry;
+  maxArea?: number;
+  /** Query point, centroid-relative, in the geometry's own units. */
+  at?: [number, number];
+}): ShearResponse {
+  if (!wasmReady || !wasmAnalyzeSectionShear) throw new Error('WASM solver not initialized. Call initSolver() first.');
+  return JSON.parse(wasmAnalyzeSectionShear(JSON.stringify(input)));
+}
+
+/** Plastic and elastic section moduli, plus the warping constant. */
+export interface PlasticResponse {
+  /** Plastic moduli about the horizontal and vertical axes. */
+  zy: number;
+  zz: number;
+  /** Elastic moduli, so `zy/sy` gives the shape factor directly. */
+  sy: number;
+  sz: number;
+  /** Plastic neutral axes, centroid-relative. Zero for a symmetric section. */
+  pnaZ: number;
+  pnaY: number;
+  /**
+   * Warping constant. Absent for a closed section, where the solver refuses
+   * rather than overstate a value that is negligible in practice anyway.
+   */
+  cw?: number;
+}
+
+/**
+ * Plastic moduli, elastic moduli and the warping constant for a section.
+ *
+ * `Z` is taken about the equal-area axis, not the centroid — they differ for a
+ * tee or a channel, and using the centroid understates the result. `Cw` is what
+ * lateral-torsional buckling needs alongside `J`.
+ */
+export function analyzeSectionPlastic(input: {
+  geometry: CanonicalGeometry;
+  maxArea?: number;
+}): PlasticResponse {
+  if (!wasmReady || !wasmAnalyzeSectionPlastic) throw new Error('WASM solver not initialized. Call initSolver() first.');
+  return JSON.parse(wasmAnalyzeSectionPlastic(JSON.stringify(input)));
 }

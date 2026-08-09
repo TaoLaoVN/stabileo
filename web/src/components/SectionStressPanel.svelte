@@ -15,6 +15,10 @@
   let { docked = false }: { docked?: boolean } = $props();
   import { modelStore, resultsStore, uiStore, tourStore } from '../lib/store';
   import { t } from '../lib/i18n';
+  import { propertyDeviation } from '../lib/section/state';
+  import { canonicalStressState } from '../lib/section/stress-state';
+  import { supportsDetailedAnalysis } from '../lib/section/drawing';
+  import { canonicalPanelResult, stationForces2D, stationForces3D } from '../lib/section/panel';
   import {
     analyzeSectionStress,
     suggestCriticalSections,
@@ -72,14 +76,91 @@
   /** 2D section with rotation → show biaxial decomposition (quasi-3D visualization) */
   const isRotated2D = $derived(!is3D && (querySec?.rotation ?? 0) !== 0);
 
-  // ── Check for amorphous section (no shape → no stress analysis) ──
+  // ── Detailed geometry availability ──────────────────────────────
+  //
+  // A detailed stress field requires an exact outline. Previously this asked
+  // only whether the section had a `shape` string, which let a rolled profile
+  // through on the strength of its NAME while its true dimensions were
+  // reconstructed by guesswork. It now asks the canonical layer, so a section
+  // qualifies only if its geometry is actually known. The existing warning
+  // surface below is reused unchanged — the answer got stricter, not the UI.
   const isAmorphous = $derived.by((): boolean => {
     if (!query) return false;
     const elem = modelStore.elements.get(query.elementId);
     if (!elem) return false;
     const sec = modelStore.sections.get(elem.sectionId);
-    return !!sec && !sec.shape;
+    if (!sec) return false;
+    return !supportsDetailedAnalysis(sec);
   });
+
+  /**
+   * Why detailed analysis is unavailable, and for which profile.
+   *
+   * A rolled IPN or UPN is NOT an amorphous section — it is a precisely
+   * defined profile whose fillet radii and flange taper we do not yet hold.
+   * Calling it "amorfa (sin forma geométrica definida)" told the user
+   * something false about their model and read as a bug. The two cases now
+   * get different wording: genuinely shapeless sections keep the original
+   * message, known profiles get one that names the actual limitation.
+   */
+  /**
+   * How far the analysed geometry sits from the catalogue's published numbers.
+   *
+   * Null for nine of the ten families. It exists for W, whose source table
+   * marks its dimensions nominal and derives area from nominal mass, so the
+   * table is internally inconsistent and no outline reproduces both. The
+   * analysis stays consistent with the geometry it draws, and the gap against
+   * the table is stated here rather than left for the user to discover while
+   * reconciling against CIRSOC.
+   */
+  const deviation = $derived.by(() => {
+    if (!query) return null;
+    const elem = modelStore.elements.get(query.elementId);
+    if (!elem) return null;
+    const sec = modelStore.sections.get(elem.sectionId);
+    return sec ? propertyDeviation(sec) : null;
+  });
+
+  const unavailableReason = $derived.by((): { kind: 'amorphous' | 'noGeometryData'; name: string } | null => {
+    if (!query) return null;
+    const elem = modelStore.elements.get(query.elementId);
+    if (!elem) return null;
+    const sec = modelStore.sections.get(elem.sectionId);
+    if (!sec || supportsDetailedAnalysis(sec)) return null;
+    const st = sec.canonical;
+    const dataGap =
+      st?.kind === 'properties-only' &&
+      st.reason.kind !== 'noGeometry';
+    return { kind: dataGap ? 'noGeometryData' : 'amorphous', name: sec.name || '—' };
+  });
+
+  /**
+   * Canonical axial + bending for the selected element and station.
+   *
+   * The numbers here and the outline `CrossSectionDrawing` renders come from
+   * one geometry, and `canonicalPanelResult` refuses if their digests or
+   * schema versions disagree rather than letting the two describe different
+   * sections.
+   */
+  const canonical = $derived.by(() => {
+    if (!query) return null;
+    const elem = modelStore.elements.get(query.elementId);
+    if (!elem) return null;
+    const sec = modelStore.sections.get(elem.sectionId);
+    if (!sec || !supportsDetailedAnalysis(sec)) return null;
+
+    if (is3D) {
+      const ef = resultsStore.getElementForces3D(query.elementId);
+      if (!ef) return null;
+      return canonicalPanelResult(sec, stationForces3D(ef as never, query.t));
+    }
+    const ef = resultsStore.getElementForces(query.elementId);
+    if (!ef) return null;
+    return canonicalPanelResult(sec, stationForces2D(ef, query.t));
+  });
+
+  /** Canonical drawing geometry, or null when the section is refused. */
+  const canonicalGeometry = $derived(canonical?.ok ? canonical.geometry : null);
 
   // ── 2D analysis (skip if section is rotated → uses biaxial path instead) ──
   const analysis2D = $derived.by((): SectionStressResult | null => {
@@ -241,10 +322,52 @@
     return null;
   });
 
-  // Mohr circle data (unified for both 2D and 3D / rotated 2D)
-  const mohrData = $derived(uses3DPath ? analysis3D?.mohr ?? null : analysis2D?.mohr ?? null);
-  const mohrSigma = $derived(uses3DPath ? (analysis3D?.sigmaAtFiber ?? 0) : (analysis2D?.sigmaAtY ?? 0));
-  const mohrTau = $derived(uses3DPath ? (analysis3D?.tauTotal ?? 0) : (analysis2D?.tauAtY ?? 0));
+  /**
+   * The stress state at the selected fibre, from canonical geometry.
+   *
+   * The panel used to draw a canonical outline, plot canonical bending on it,
+   * and then build its Mohr circle and failure checks from the LEGACY path —
+   * which infers a section's shape from its name and invents thicknesses when
+   * they are missing. One picture, two different sections, no way for a reader
+   * to tell which number came from which. This is the same geometry
+   * throughout; the legacy result stays only as the fallback for sections that
+   * have no geometry at all.
+   */
+  const canonicalState = $derived.by(() => {
+    if (!query || !canonical?.ok) return null;
+    const elem = modelStore.elements.get(query.elementId);
+    const sec = elem ? modelStore.sections.get(elem.sectionId) : null;
+    const mat = elem ? modelStore.materials.get(elem.materialId) : null;
+    if (!sec) return null;
+
+    // The fibre the user picked, in the drawing's own frame. That frame IS the
+    // canonical one — centroid-relative, in metres — because the drawing is
+    // canonical, so the point needs no translation to be meaningful here.
+    const [yMin, zMin, yMax, zMax] = canonical.geometry.bbox;
+    const py = yMin + fiberRatioZ * (yMax - yMin);
+    const pz = zMin + fiberRatioY * (zMax - zMin);
+
+    const f = canonical.forces as { n: number; my: number; mz: number; vy?: number; vz?: number; tx?: number };
+    const r = canonicalStressState(
+      sec,
+      { n: f.n, my: f.my, mz: f.mz, vy: f.vy, vz: f.vz, t: f.tx },
+      [py, pz],
+      mat?.fy,
+    );
+    return r.ok ? r.state : null;
+  });
+
+  // Mohr circle data. Canonical where the section has geometry; the legacy
+  // result only where it does not.
+  const mohrData = $derived(
+    canonicalState?.mohr ?? (uses3DPath ? analysis3D?.mohr ?? null : analysis2D?.mohr ?? null),
+  );
+  const mohrSigma = $derived(
+    canonicalState?.sigma ?? (uses3DPath ? (analysis3D?.sigmaAtFiber ?? 0) : (analysis2D?.sigmaAtY ?? 0)),
+  );
+  const mohrTau = $derived(
+    canonicalState?.tau ?? (uses3DPath ? (analysis3D?.tauTotal ?? 0) : (analysis2D?.tauAtY ?? 0)),
+  );
 
   const criticalSections = $derived.by(() => {
     if (!query) return [];
@@ -373,6 +496,42 @@
     </div>
 
     <div class="ssp-body">
+      {#if canonicalState?.shearCentre && (Math.abs(canonicalState.shearCentre[0]) > 1e-4 || Math.abs(canonicalState.shearCentre[1]) > 1e-4)}
+        <!-- Only shown when it is NOT at the centroid, which is exactly when it
+             matters: a load anywhere else twists the member, and for a channel
+             this point falls outside the section entirely. -->
+        <div class="ssp-shearcentre">
+          <span class="ssp-sc-icon">⊗</span>
+          <div>
+            <div class="ssp-sc-head">{t('stress.shearCentre')}</div>
+            <div class="ssp-sc-body">
+              {t('stress.shearCentreMsg')}
+              <span class="ssp-sc-nums">
+                y = {(canonicalState.shearCentre[0] * 1000).toFixed(1)} mm ·
+                z = {(canonicalState.shearCentre[1] * 1000).toFixed(1)} mm
+              </span>
+            </div>
+          </div>
+        </div>
+      {/if}
+      {#if deviation}
+        <!-- Stated, not hidden: the source table's own dimensions and
+             properties disagree, so the analysed geometry cannot match both. -->
+        <div class="ssp-deviation">
+          <span class="ssp-dev-icon">≠</span>
+          <div>
+            <div class="ssp-dev-head">{t('stress.devTitle')}</div>
+            <div class="ssp-dev-body">
+              {t('stress.devBody')}
+              <span class="ssp-dev-nums">
+                A {(deviation.a * 100).toFixed(1)}% ·
+                Iy {(deviation.iy * 100).toFixed(1)}% ·
+                Iz {(deviation.iz * 100).toFixed(1)}%
+              </span>
+            </div>
+          </div>
+        </div>
+      {/if}
       <!-- Element info + position slider (issue #12) -->
       <div class="ssp-info">
         <span class="ssp-elem">Elem #{query.elementId}</span>
@@ -470,6 +629,7 @@
 
       <!-- Cross section drawing -->
       <CrossSectionDrawing
+        {canonicalGeometry}
         bind:showCrossSection
         bind:showSigma
         bind:showShearOnDrawing
@@ -552,9 +712,15 @@
     </div>
     <div class="ssp-amorph-msg">
       <span class="ssp-amorph-icon">⚠</span>
-      <p>{@html t('stress.amorphMsg1')}</p>
-      <p>{t('stress.amorphMsg2')}</p>
-      <p>{t('stress.amorphMsg3')}</p>
+      {#if unavailableReason?.kind === 'noGeometryData'}
+        <p>{@html t('stress.noGeomMsg1').replace('{name}', unavailableReason.name)}</p>
+        <p>{t('stress.noGeomMsg2')}</p>
+        <p>{t('stress.noGeomMsg3')}</p>
+      {:else}
+        <p>{@html t('stress.amorphMsg1')}</p>
+        <p>{t('stress.amorphMsg2')}</p>
+        <p>{t('stress.amorphMsg3')}</p>
+      {/if}
     </div>
   </div>
 {/if}
@@ -612,6 +778,28 @@
     max-height: calc(100% - 90px);
     font-size: 0.75rem;
   }
+
+  .ssp-shearcentre {
+    display: flex; gap: 8px; align-items: flex-start;
+    margin: 0 0 8px; padding: 7px 9px;
+    background: rgba(78, 205, 196, 0.07);
+    border-left: 2px solid #4ecdc4; border-radius: 3px;
+  }
+  .ssp-sc-icon { color: #4ecdc4; font-size: 0.95rem; line-height: 1; }
+  .ssp-sc-head { color: #4ecdc4; font-size: 0.7rem; font-weight: 600; margin-bottom: 2px; }
+  .ssp-sc-body { color: #9fbfbc; font-size: 0.66rem; line-height: 1.4; }
+  .ssp-sc-nums { display: block; margin-top: 3px; font-family: monospace; color: #4ecdc4; }
+
+  .ssp-deviation {
+    display: flex; gap: 8px; align-items: flex-start;
+    margin: 0 0 8px; padding: 7px 9px;
+    background: rgba(217, 164, 65, 0.08);
+    border-left: 2px solid #d9a441; border-radius: 3px;
+  }
+  .ssp-dev-icon { color: #d9a441; font-size: 0.95rem; line-height: 1; font-weight: 700; }
+  .ssp-dev-head { color: #d9a441; font-size: 0.7rem; font-weight: 600; margin-bottom: 2px; }
+  .ssp-dev-body { color: #b8a97f; font-size: 0.66rem; line-height: 1.4; }
+  .ssp-dev-nums { display: block; margin-top: 3px; font-family: monospace; color: #d9a441; }
 
   .ssp-header {
     display: flex;

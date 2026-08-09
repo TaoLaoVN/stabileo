@@ -11,6 +11,7 @@
     type ShapeType, type MaterialCategory,
   } from '../../lib/data/section-shapes';
   import { crossSectionPath } from '../../lib/utils/section-drawing';
+  import { profileOutline } from '../../lib/section/outline';
 
   type MainTab = 'catalog' | 'builder';
   let activeTab = $state<MainTab>('catalog');
@@ -24,15 +25,7 @@
     const profiles = PROFILE_FAMILIES[activeFamily];
     if (!profiles || profiles.length === 0) return null;
     const rep = profiles[Math.floor(profiles.length / 2)];
-    const shape = familyToShape(activeFamily);
-    return crossSectionPath({
-      shape,
-      h: rep.h,
-      b: rep.b,
-      tw: rep.tw ?? 0,
-      tf: rep.tf ?? 0,
-      t: rep.t ?? 0,
-    });
+    return profileOutline(rep).d;
   });
 
   function shapeForFamily(f: ProfileFamily): string {

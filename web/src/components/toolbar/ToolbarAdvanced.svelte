@@ -1,8 +1,7 @@
 <script lang="ts">
   import { uiStore, modelStore, resultsStore, dsmStepsStore } from '../../lib/store';
   import { t } from '../../lib/i18n';
-  import { solvePDelta, solveBuckling, solveModal, solveSpectral, solvePlastic, solvePDelta3D as wasmPDelta3D, solveModal3D as wasmModal3D, solveBuckling3D as wasmBuckling3D, solveSpectral3D as wasmSpectral3D, initSolver, isWasmReady } from '../../lib/engine/wasm-solver';
-  import { cirsoc103Spectrum } from '../../lib/engine/result-types';
+  import { solvePDelta, solveBuckling, solveModal, solvePlastic, solvePDelta3D as wasmPDelta3D, solveModal3D as wasmModal3D, solveBuckling3D as wasmBuckling3D, initSolver, isWasmReady } from '../../lib/engine/wasm-solver';
   import { getPredefinedTrains, solveMovingLoadsAsync } from '../../lib/engine/moving-loads';
   import { solveDetailed } from '../../lib/engine/solver-detailed';
   import { solveDetailed3D } from '../../lib/engine/solver-detailed-3d';
@@ -34,6 +33,8 @@
       labelKey: 'advHelp.modal.label',
       textKey: 'advHelp.modal.text',
     },
+    // NOTE: 'spectral' help is retained for when Basic regains spectral
+    // analysis with a user-defined spectrum; the action itself is removed.
     'spectral': {
       labelKey: 'advHelp.spectral.label',
       textKey: 'advHelp.spectral.text',
@@ -178,41 +179,6 @@
     }
   }
 
-  function handleSpectral() {
-    if (blockedBySlidingJoints()) return;
-    if (!resultsStore.modalResult) {
-      uiStore.toast(t('advanced.runDynamicFirst'), 'error');
-      return;
-    }
-    const input = modelStore.buildSolverInput(uiStore.includeSelfWeight);
-    if (!input) { uiStore.toast(t('advanced.emptyModel'), 'error'); return; }
-
-    // Build densities (same as modal)
-    const densities = new Map<number, number>();
-    for (const [id, mat] of modelStore.materials) {
-      densities.set(id, mat.rho * 1000 / 9.81);
-    }
-
-    try {
-      const spectrum = cirsoc103Spectrum(4, 'II'); // Default: Zone 4, Soil II
-      const t0 = performance.now();
-      const resultX = solveSpectral({
-        solver: input,
-        modes: resultsStore.modalResult.modes,
-        densities,
-        direction: 'X',
-        spectrum,
-        rule: 'CQC',
-      });
-      const dt = performance.now() - t0;
-      if (typeof resultX === 'string') { uiStore.toast(resultX, 'error'); return; }
-      // Store spectral result in results store
-      resultsStore.setSpectralResult(resultX);
-      uiStore.toast(t('toast.spectralSuccess').replace('{vBase}', resultX.baseShear.toFixed(1)).replace('{ms}', dt.toFixed(0)), 'success');
-    } catch (e: any) {
-      uiStore.toast(errText(e, 'toast.spectralError'), 'error');
-    }
-  }
 
   function handleBuckling() {
     if (blockedBySlidingJoints()) return;
@@ -364,34 +330,6 @@
     }
   }
 
-  async function handleSpectral3D() {
-    if (blockedBySlidingJoints()) return;
-    if (!await ensureWasmReady('handleSpectral3D')) return;
-    if (!resultsStore.modalResult3D) {
-      uiStore.toast(t('advanced.runDynamicFirst'), 'error');
-      return;
-    }
-    const input = modelStore.buildSolverInput3D(uiStore.includeSelfWeight, uiStore.axisConvention3D === 'leftHand', { expandMemberOffsets: false });
-    if (!input) { uiStore.toast(t('advanced.emptyModel'), 'error'); return; }
-    const densities = new Map<number, number>();
-    for (const [id, mat] of modelStore.materials) {
-      densities.set(id, mat.rho * 1000 / 9.81);
-    }
-    try {
-      const spectrum = cirsoc103Spectrum(4, 'II');
-      const t0 = performance.now();
-      const result = wasmSpectral3D({
-          solver: input, densities, spectrum, directions: ['X', 'Y'],
-          combination: 'CQC',
-        });
-      if (typeof result === 'string') { uiStore.toast(result, 'error'); return; }
-      const dt = performance.now() - t0;
-      resultsStore.setSpectralResult3D(result);
-      uiStore.toast(t('toast.spectralSuccess').replace('{vBase}', result.baseShear.toFixed(1)).replace('{ms}', dt.toFixed(0)), 'success');
-    } catch (e: any) {
-      uiStore.toast(errText(e, 'toast.spectralError'), 'error');
-    }
-  }
 
   function handleSolveCombinations() {
     if (is3D) {
@@ -444,7 +382,7 @@
     {/if}
   {/snippet}
   <div class="advanced-grid">
-        <!--
+    <!--
       2D only, and it says so instead of disappearing. In 3D these four rows
       used to be removed outright, so the panel silently changed length between
       modes and a user who had used the feature in 2D was left looking for it.
@@ -572,28 +510,23 @@
         }}>{t('advanced.dynamic')}</button>
       <button class="adv-help-btn" onclick={(e) => toggleAdvHelp('modal', e)} class:active={advHelpKey === 'modal'}>?</button>
     </div>
-    <div class="adv-btn-wrap">
-      <button class="adv-btn" class:active={is3D ? !!resultsStore.spectralResult3D : !!resultsStore.spectralResult}
-        onclick={() => {
-          if (is3D) {
-            if (resultsStore.spectralResult3D) { resultsStore.clearSpectral3D(); }
-            else { handleSpectral3D(); }
-          } else {
-            if (resultsStore.spectralResult) { resultsStore.clearSpectral(); }
-            else { handleSpectral(); }
-          }
-        }}>{t('advanced.spectral')}</button>
-      <button class="adv-help-btn" onclick={(e) => toggleAdvHelp('spectral', e)} class:active={advHelpKey === 'spectral'}>?</button>
-    </div>
-    {@render helpPanel('modal')}
-    {@render helpPanel('spectral')}
-    <!-- Plastic, Envelope, Moving Loads, Influence Lines: 2D only -->
-        <!--
-      2D only, and it says so instead of disappearing. In 3D these four rows
-      used to be removed outright, so the panel silently changed length between
-      modes and a user who had used the feature in 2D was left looking for it.
-      Disabled-with-a-reason is what the ribbon does for the same situation.
+    <!--
+      Spectral analysis is intentionally absent from Basic.
+
+      This button used to run `cirsoc103Spectrum(4, 'II')` — CIRSOC 103,
+      seismic Zone 4, Soil II — with no way to see or change either parameter,
+      and the success toast reported only a base shear. A student anywhere
+      other than that one zone and soil class got a confident, unlabelled,
+      wrong number.
+
+      Basic will get spectral analysis back when it can offer a generic,
+      user-defined spectrum; national-code presets stay in PRO, where zone and
+      soil are already selectable (ProAdvancedTab). The solver entrypoints
+      (`solveSpectral`, `solveSpectral3D`) and the `resultsStore` spectral
+      slots are deliberately left intact for that work.
     -->
+    {@render helpPanel('modal')}
+    <!-- 2D only; disabled with a reason rather than hidden — see Kinematic above. -->
     <div class="adv-btn-wrap" style="grid-column: span 2">
       <button class="adv-btn" style="flex:1" disabled={is3D} title={is3D ? t('advanced.only2d') : undefined} class:active={!!resultsStore.plasticResult}
         onclick={() => {
@@ -631,12 +564,7 @@
       <button class="adv-help-btn" onclick={(e) => toggleAdvHelp('envelope', e)} class:active={advHelpKey === 'envelope'}>?</button>
     </div>
     {@render helpPanel('envelope')}
-        <!--
-      2D only, and it says so instead of disappearing. In 3D these four rows
-      used to be removed outright, so the panel silently changed length between
-      modes and a user who had used the feature in 2D was left looking for it.
-      Disabled-with-a-reason is what the ribbon does for the same situation.
-    -->
+    <!-- 2D only; disabled with a reason rather than hidden — see Kinematic above. -->
     <div class="adv-btn-wrap" style="grid-column: span 2">
       <button class="adv-btn" style="flex:1" disabled={is3D} title={is3D ? t('advanced.only2d') : undefined} class:active={!!resultsStore.movingLoadEnvelope}
         onclick={() => {
@@ -686,12 +614,7 @@
         {/if}
       </div>
     {/if}
-        <!--
-      2D only, and it says so instead of disappearing. In 3D these four rows
-      used to be removed outright, so the panel silently changed length between
-      modes and a user who had used the feature in 2D was left looking for it.
-      Disabled-with-a-reason is what the ribbon does for the same situation.
-    -->
+    <!-- 2D only; disabled with a reason rather than hidden — see Kinematic above. -->
     <div class="adv-btn-wrap" style="grid-column: span 2">
       <button class="adv-btn" style="flex:1" disabled={is3D} title={is3D ? t('advanced.only2d') : undefined}
         class:active={uiStore.currentTool === 'influenceLine'}
@@ -774,7 +697,6 @@
   </div>
   {@const pdR = is3D ? resultsStore.pdeltaResult3D : resultsStore.pdeltaResult}
   {@const moR = is3D ? resultsStore.modalResult3D : resultsStore.modalResult}
-  {@const spR = is3D ? resultsStore.spectralResult3D : resultsStore.spectralResult}
   {@const buR = is3D ? resultsStore.bucklingResult3D : resultsStore.bucklingResult}
   {#if pdR}
     <div class="adv-result-info" style="font-size:10px">
@@ -801,18 +723,6 @@
         Σ: X={( moR.cumulativeMassRatioX * 100).toFixed(1)}% Y={( moR.cumulativeMassRatioY * 100).toFixed(1)}%
       </div>
     {/if}
-  {/if}
-  {#if spR}
-    <div class="adv-result-info" style="font-size:10px">
-      {t('advanced.spectralLabel')} ({spR.rule}):
-      V<sub>base</sub> = {spR.baseShear.toFixed(1)} kN
-    </div>
-    <div class="adv-result-info" style="font-size:9px; opacity:0.8">
-      {#each spR.perMode.slice(0, 3) as pm}
-        T<sub>{pm.mode}</sub>={pm.period.toFixed(3)}s Sa={pm.sa.toFixed(2)}g{' | '}
-      {/each}
-      {#if spR.perMode.length > 3}…{/if}
-    </div>
   {/if}
   {#if buR}
     <div class="adv-result-row">

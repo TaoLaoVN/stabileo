@@ -5,6 +5,7 @@
   import type { SteelProfile } from '../../lib/data/steel-profiles';
   import { profileToSectionFull } from '../../lib/data/steel-profiles';
   import type { SectionProperties } from '../../lib/data/section-shapes';
+  import { solverProperties } from '../../lib/section/state';
 
   const sectionsArr = $derived([...modelStore.sections.values()]);
   const is3D = $derived(uiStore.analysisMode === '3d');
@@ -114,19 +115,27 @@
   </thead>
   <tbody>
     {#each sectionsArr as sec}
-      {@const hasShape = !!sec.shape}
+      <!-- Read-only because the numbers are DERIVED, not because the section
+           happens to carry a `shape` string. A geometry-backed section's A and
+           I are outputs of its polygons; letting them be typed over would put
+           the model in a state where the drawing and the numbers disagree. -->
+      {@const derived = sec.canonical?.kind === 'geometry-backed'}
+      {@const props = solverProperties(sec)}
       <tr>
         <td class="id-cell">{sec.id}</td>
         <td class="name-with-action">
           <input type="text" value={sec.name} onchange={(e) => updateSectionField(sec.id, 'name', e.currentTarget.value)} />
           <button class="row-action-btn" title={t('table.changeSection')} onclick={() => { sectionChangerTargetSecId = sec.id; showSectionChanger = true; }}>&#9783;</button>
         </td>
-        {#if hasShape}
-          <td><span class="ro-val">{fmtA(sec.a)}</span></td>
-          <td><span class="ro-val">{fmtI(sec.iy ?? sec.iz)}</span></td>
-          <td><span class="ro-val">{fmtI(sec.iz)}</span></td>
+        {#if derived}
+          <!-- The values shown are the ones the solver is actually given, so
+               the table, the section drawing and the analysis cannot quote
+               three different areas for one profile. -->
+          <td><span class="ro-val" title={t('table.derivedFromGeometry')}>{fmtA(props.a)}</span></td>
+          <td><span class="ro-val" title={t('table.derivedFromGeometry')}>{fmtI(props.iy ?? props.iz)}</span></td>
+          <td><span class="ro-val" title={t('table.derivedFromGeometry')}>{fmtI(props.iz)}</span></td>
           {#if is3D}
-            <td><span class="ro-val">{fmtI(sec.j ?? (sec.iy ?? sec.iz) * 0.001)}</span></td>
+            <td><span class="ro-val" title={props.j == null ? t('table.torsionUnavailable') : t('table.derivedFromGeometry')}>{props.j == null ? '—' : fmtI(props.j)}</span></td>
           {/if}
         {:else}
           <td><input type="number" step="0.01" value={sec.a * M2_TO_CM2} onchange={(e) => updateSectionField(sec.id, 'a', e.currentTarget.value)} /></td>

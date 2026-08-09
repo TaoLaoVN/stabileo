@@ -377,7 +377,12 @@
     }
 
     // Initialize WASM solver (non-blocking, fallback to JS if it fails)
-    import('./lib/engine/wasm-solver').then(m => m.initSolver()).catch(() => {
+    import('./lib/engine/wasm-solver').then(m => m.initSolver()).then(() => {
+      // Canonical section geometry needs the engine. Sections created or
+      // loaded before it was ready could only resolve as properties-only, and
+      // nothing else revisits that, so resolve them now that it is up.
+      modelStore.refreshCanonicalSections();
+    }).catch(() => {
       console.warn('WASM solver unavailable, using JS fallback');
     });
 

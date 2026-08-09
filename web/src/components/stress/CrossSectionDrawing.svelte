@@ -16,6 +16,17 @@
   import { fmt, stressColor } from './fmt';
 
   interface Props {
+    /**
+     * Canonical outline the numerical path analysed, centroid-relative.
+     *
+     * Present only for a geometry-backed section. When it is present the
+     * drawing renders THESE polygons — the same ones the stress field was
+     * computed on — instead of reconstructing an outline of its own, which is
+     * what allowed a renamed profile to draw one shape and compute another.
+     * `null` means the section is properties-only and the panel has already
+     * refused detailed analysis upstream.
+     */
+    canonicalGeometry?: import('../../lib/section/drawing').DrawingGeometry | null;
     showCrossSection: boolean;
     showSigma: boolean;
     showShearOnDrawing: boolean;
@@ -43,6 +54,7 @@
   }
 
   let {
+    canonicalGeometry = null,
     showCrossSection = $bindable(),
     showSigma = $bindable(),
     showShearOnDrawing = $bindable(),
@@ -70,6 +82,32 @@
   }: Props = $props();
 
   // SVG helper
+  /**
+   * SVG path for the canonical outline, holes included.
+   *
+   * Canonical geometry arrives centroid-relative, in METRES, with z pointing
+   * up — the frame the numerical path works in. This SVG works in the scaled,
+   * y-down frame every other overlay here uses (`sc = 80 / max(h, b)`, so the
+   * section fills a ±40 box). Emitting the raw metres drew a correct outline
+   * roughly 0.3 units wide inside a ~160-unit canvas: present, sub-pixel, and
+   * invisible next to a stress plot that was scaled properly.
+   *
+   * So the same two transforms every sibling applies are applied here:
+   * multiply by `sc`, and negate z because SVG y grows downward.
+   *
+   * Solids and holes stay separate subpaths so the even-odd fill rule punches
+   * a tube's bore out rather than painting over it.
+   */
+  function canonicalPath(g: import('../../lib/section/drawing').DrawingGeometry): string {
+    const [yMin, zMin, yMax, zMax] = g.bbox;
+    const width = Math.max(yMax - yMin, 1e-12);
+    const height = Math.max(zMax - zMin, 1e-12);
+    const sc = 80 / Math.max(width, height);
+    const ring = (poly: Array<[number, number]>) =>
+      poly.map(([y, z], i) => `${i === 0 ? 'M' : 'L'}${(y * sc).toFixed(3)} ${(-z * sc).toFixed(3)}`).join(' ') + ' Z';
+    return [...g.solids, ...g.holes].map(ring).join(' ');
+  }
+
   function sectionPathFromResolved(rs: { shape: SectionShape; h: number; b: number; tw: number; tf: number; t: number; tl?: number }): string {
     return crossSectionPath({
       shape: rs.shape,
@@ -147,7 +185,7 @@
       <g transform="rotate({sectionRotation})">
       <!-- Section outline -->
       <path
-        d={sectionPathFromResolved(resolved)}
+        d={canonicalGeometry ? canonicalPath(canonicalGeometry) : sectionPathFromResolved(resolved)}
         fill="none"
         stroke="var(--st-value)"
         stroke-width="1.5"
