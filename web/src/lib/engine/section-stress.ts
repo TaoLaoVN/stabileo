@@ -86,10 +86,19 @@ export interface CriticalSection {
 /** Infer section shape from name if not explicitly set */
 export function inferSectionShape(sec: Section): SectionShape {
   if (sec.shape) return sec.shape as SectionShape;
+  // Inferring a shape from a NAME is the defect the canonical path exists to
+  // remove — it means renaming a section can change its geometry. This survives
+  // only because the legacy stress path still runs, and the honest fix is to
+  // retire that path, not to grow this list. It is grown here anyway because
+  // the alternative is worse: the IRAM families added to the catalogue would
+  // otherwise fall through to 'generic' and be analysed as featureless blocks.
   const name = sec.name.toUpperCase();
   if (name.startsWith('IPE') || name.startsWith('IPN')) return 'I';
+  if (/^(W|HP|M)\d/.test(name)) return name.startsWith('HP') ? 'H' : 'I';
   if (name.startsWith('HEB') || name.startsWith('HEA') || name.startsWith('HEM')) return 'H';
   if (name.startsWith('UPN') || name.startsWith('UPE')) return 'U';
+  if (/^(MC|C)\d/.test(name)) return 'U';
+  if (/^T\s?\d/.test(name)) return 'T';
   if (name.match(/^L\s?\d/)) return 'L';
   if (name.startsWith('RHS') || name.startsWith('SHS')) return 'RHS';
   if (name.startsWith('CHS')) return 'CHS';
