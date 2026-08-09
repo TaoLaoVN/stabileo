@@ -23,11 +23,61 @@
   type Props = { panel: string; onClose: () => void };
   let { panel, onClose }: Props = $props();
 
+  /**
+   * Width is dragged and remembered.
+   *
+   * A fixed 300 px is a guess that is wrong for both ends of the work: the
+   * results panel wants to be narrow and the model data table wants to be wide.
+   * Persisting it in localStorage means the guess only has to be corrected
+   * once, ever.
+   */
+  const MIN = 240;
+  const MAX = 620;
+  const KEY = 'stabileo-basic-panel-width';
+
+  function stored(): number {
+    try {
+      const v = Number(localStorage.getItem(KEY));
+      return Number.isFinite(v) && v >= MIN && v <= MAX ? v : 320;
+    } catch { return 320; }
+  }
+
+  let width = $state(stored());
+  let dragging = $state(false);
+
+  function startResize(e: PointerEvent) {
+    dragging = true;
+    const startX = e.clientX;
+    const startW = width;
+    const move = (ev: PointerEvent) => {
+      // The handle is on the panel's LEFT edge, so dragging left widens it.
+      width = Math.min(MAX, Math.max(MIN, startW - (ev.clientX - startX)));
+    };
+    const up = () => {
+      dragging = false;
+      try { localStorage.setItem(KEY, String(Math.round(width))); } catch { /* private mode */ }
+      window.removeEventListener('pointermove', move);
+      window.removeEventListener('pointerup', up);
+    };
+    window.addEventListener('pointermove', move);
+    window.addEventListener('pointerup', up);
+    e.preventDefault();
+  }
+
   /** Heading, so the panel always says what it is showing. */
   const title = $derived(t(`ribbon.${panel}`));
 </script>
 
-<aside class="basic-panel" data-testid="basic-panel" data-panel={panel}>
+<aside class="basic-panel" data-testid="basic-panel" data-panel={panel} style:width="{width}px">
+  <!-- svelte-ignore a11y_no_static_element_interactions -->
+  <div
+    class="bp-resize"
+    class:dragging
+    onpointerdown={startResize}
+    role="separator"
+    aria-orientation="vertical"
+    aria-label={t('ribbon.resize')}
+  ></div>
   <header class="bp-head">
     <span class="bp-title" data-testid="bp-title">{title}</span>
     <button class="bp-close" onclick={onClose} title={t('ribbon.close')} aria-label={t('ribbon.close')}>×</button>
@@ -35,7 +85,7 @@
 
   <div class="bp-body">
     {#if panel === 'results'}
-      <ToolbarResults hideDiagrams />
+      <ToolbarResults hideDiagrams flat />
     {:else if panel === 'advanced'}
       <ToolbarAdvanced />
     {:else if panel === 'examples'}
@@ -61,7 +111,7 @@
 
 <style>
   .basic-panel {
-    width: 300px;
+    position: relative;
     flex: none;
     display: flex;
     flex-direction: column;
@@ -105,4 +155,18 @@
     overflow-y: auto;
     padding: 0.65rem;
   }
+
+  /* A 5 px target on the panel's leading edge; the visible rule stays 1 px. */
+  .bp-resize {
+    position: absolute;
+    left: -2px;
+    top: 0;
+    bottom: 0;
+    width: 5px;
+    cursor: col-resize;
+    z-index: 2;
+  }
+
+  .bp-resize:hover,
+  .bp-resize.dragging { background: var(--st-accent); }
 </style>

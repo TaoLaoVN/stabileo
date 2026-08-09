@@ -1777,8 +1777,15 @@
   /* Toast notifications */
   .toast-container {
     position: fixed;
-    top: 60px;
-    right: 270px;
+    /*
+       Below the ribbon and its options bar, not over them. At 60px the toast
+       landed across the last commands in the Results group — so the message
+       telling you the analysis succeeded covered the diagrams you would press
+       next. Anchored to the bottom-right instead: out of the command surface,
+       and out of the way of the model's left-anchored drawing.
+    */
+    bottom: 46px;
+    right: 24px;
     z-index: 1100;
     display: flex;
     flex-direction: column;

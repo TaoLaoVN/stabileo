@@ -8,6 +8,7 @@
   import ToolElementOptions from '../floating-tools/ToolElementOptions.svelte';
   import ToolSupportOptions from '../floating-tools/ToolSupportOptions.svelte';
   import ToolLoadOptions from '../floating-tools/ToolLoadOptions.svelte';
+  import SelectedEntityPanel from '../floating-tools/SelectedEntityPanel.svelte';
 
   /**
    * Contextual options for the armed tool, directly under the ribbon.
@@ -57,7 +58,14 @@
     return { key: 'status.hintReadyToSolve', tone: 'warn' };
   });
 
-  const HAS_OPTIONS = ['select', 'node', 'element', 'support', 'load'];
+  /*
+   * `influenceLine` belongs here too. It is armed from Advanced analysis, not
+   * from the ribbon, and its options — which reaction or internal force the
+   * line is drawn for — used to live in the floating strip. With that strip
+   * gone on desktop, arming it left no way to choose the quantity at all: a
+   * working feature reachable but unusable.
+   */
+  const HAS_OPTIONS = ['select', 'node', 'element', 'support', 'load', 'influenceLine'];
   const showOptions = $derived(HAS_OPTIONS.includes(uiStore.currentTool));
 </script>
 
@@ -76,11 +84,27 @@
         <ToolSupportOptions />
       {:else if uiStore.currentTool === 'load'}
         <ToolLoadOptions />
+      {:else if uiStore.currentTool === 'influenceLine'}
+        <span class="tb-group-label">{t('float.reactions')}</span>
+        <button class="tb-btn" class:on={uiStore.ilQuantity === 'Ry'} onclick={() => (uiStore.ilQuantity = 'Ry')}>{t('float.ryVertical')}</button>
+        <button class="tb-btn" class:on={uiStore.ilQuantity === 'Rx'} onclick={() => (uiStore.ilQuantity = 'Rx')}>{t('float.rxHoriz')}</button>
+        <button class="tb-btn" class:on={uiStore.ilQuantity === 'Mz'} onclick={() => (uiStore.ilQuantity = 'Mz')}>{t('float.mzSupport')}</button>
+        <span class="tb-sep" aria-hidden="true"></span>
+        <span class="tb-group-label">{t('float.internal')}</span>
+        <button class="tb-btn" class:on={uiStore.ilQuantity === 'M'} onclick={() => (uiStore.ilQuantity = 'M')}>{t('float.mMoment')}</button>
+        <button class="tb-btn" class:on={uiStore.ilQuantity === 'V'} onclick={() => (uiStore.ilQuantity = 'V')}>{t('float.vShear')}</button>
       {/if}
     {:else}
       <span class="tb-hint">{t('float.' + uiStore.currentTool)}</span>
     {/if}
   </div>
+
+  <!--
+    What is selected, restored. It lived in the floating strip, which desktop no
+    longer renders, so selecting a member stopped showing its properties — the
+    single most-used read-out in the app, silently gone.
+  -->
+  <div class="tb-selection"><SelectedEntityPanel /></div>
 
   <div class="tb-state" data-testid="model-state" data-tone={state.tone}>
     <span class="tb-dot" data-tone={state.tone} aria-hidden="true"></span>
@@ -136,6 +160,30 @@
   }
 
   .tb-hint { color: var(--st-text-3); font-size: 0.78rem; }
+
+  .tb-group-label {
+    font-size: 0.7rem;
+    color: var(--st-text-3);
+    white-space: nowrap;
+    flex: none;
+  }
+
+  .tb-btn {
+    background: none;
+    border: 1px solid var(--st-hair);
+    border-radius: var(--st-radius);
+    color: var(--st-text-2);
+    font-size: 0.75rem;
+    padding: 0.2rem 0.45rem;
+    cursor: pointer;
+    white-space: nowrap;
+    flex: none;
+  }
+
+  .tb-btn:hover { background: var(--st-surface-3); color: var(--st-text); }
+  .tb-btn.on { color: var(--st-accent); border-color: var(--st-accent); }
+
+  .tb-selection { display: flex; align-items: center; flex: none; }
 
   /* ── Model state ──────────────────────────────────────────────────── */
 

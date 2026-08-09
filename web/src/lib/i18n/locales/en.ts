@@ -4931,6 +4931,8 @@ const en: Record<string, string> = {
   'ribbon.shearZ': 'Vz',
   'ribbon.torsion': 'Torsion',
   'ribbon.data': 'Model data',
+  'ribbon.resize': 'Resize panel',
+  'ribbon.needs3d': '3D analysis only',
 
 };
 export default en;

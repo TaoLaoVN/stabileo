@@ -3,6 +3,8 @@
   import { uiStore } from '../../lib/store/ui.svelte';
   import { historyStore } from '../../lib/store/history.svelte';
   import { resultsStore } from '../../lib/store/results.svelte';
+  import Icon from './Icon.svelte';
+  import { runSolve } from '../../lib/actions/solve';
 
   /**
    * Ribbon toolbar.
@@ -56,6 +58,8 @@
     action?: () => void;
     /** Greyed when false. Never hidden. */
     enabled?: () => boolean;
+    /** Only meaningful for a 3D frame; explains its own greying in 2D. */
+    needs3d?: boolean;
   };
 
   type Group = { id: string; labelKey: string; cmds: Cmd[] };
@@ -68,76 +72,67 @@
    * fixed 2D list, so in 3D it offered diagrams that did not exist and hid the
    * ones that did, and disagreed with the panel that listed them correctly.
    */
+  /*
+   * ONE list of diagrams, always the same length and always in the same place.
+   *
+   * The list was mode-dependent, so commands appeared and disappeared as the
+   * user switched 2D/3D and the row re-flowed under the cursor. The same rule
+   * that governs the results group before a solve governs this: a diagram that
+   * does not apply to the current mode is greyed, not removed, and its tooltip
+   * says why. My, Mz, Vz and torsion exist only for a 3D frame; M, V and N read
+   * as their 3D counterparts, so they stay live in both.
+   */
+  const threeD = $derived(uiStore.analysisMode === '3d');
+
   const diagramCmds = $derived.by((): Cmd[] => {
-    const en = () => solved;
-    const base: Cmd[] = [
-      { id: 'none', icon: '⊘', labelKey: 'ribbon.noDiagram', panel: 'results', diagram: 'none', enabled: en },
-      { id: 'deformed', icon: '∿', labelKey: 'ribbon.deformed', panel: 'results', diagram: 'deformed', enabled: en },
-    ];
-    if (uiStore.analysisMode === '3d') {
-      return [...base,
-        { id: 'momentY', icon: '◠', labelKey: 'ribbon.momentY', panel: 'results', diagram: 'momentY', enabled: en },
-        { id: 'momentZ', icon: '◡', labelKey: 'ribbon.momentZ', panel: 'results', diagram: 'momentZ', enabled: en },
-        { id: 'shearZ', icon: '⊿', labelKey: 'ribbon.shearZ', panel: 'results', diagram: 'shearZ', enabled: en },
-        { id: 'torsion', icon: '↻', labelKey: 'ribbon.torsion', panel: 'results', diagram: 'torsion', enabled: en },
-        { id: 'axial', icon: '⇔', labelKey: 'ribbon.axial', panel: 'results', diagram: 'axial', enabled: en },
-      ];
-    }
-    return [...base,
-      { id: 'moment', icon: '◠', labelKey: 'ribbon.moment', panel: 'results', diagram: 'moment', enabled: en },
-      { id: 'shear', icon: '⊿', labelKey: 'ribbon.shear', panel: 'results', diagram: 'shear', enabled: en },
-      { id: 'axial', icon: '⇔', labelKey: 'ribbon.axial', panel: 'results', diagram: 'axial', enabled: en },
+    const any = () => solved;
+    const only3d = () => solved && threeD;
+    return [
+      { id: 'none', icon: 'none', labelKey: 'ribbon.noDiagram', panel: 'results', diagram: 'none', enabled: any },
+      { id: 'deformed', icon: 'deformed', labelKey: 'ribbon.deformed', panel: 'results', diagram: 'deformed', enabled: any },
+      { id: 'moment', icon: 'moment', labelKey: 'ribbon.moment', panel: 'results', diagram: threeD ? 'momentZ' : 'moment', enabled: any },
+      { id: 'shear', icon: 'shear', labelKey: 'ribbon.shear', panel: 'results', diagram: threeD ? 'shearY' : 'shear', enabled: any },
+      { id: 'axial', icon: 'axial', labelKey: 'ribbon.axial', panel: 'results', diagram: 'axial', enabled: any },
+      { id: 'momentY', icon: 'momentY', labelKey: 'ribbon.momentY', panel: 'results', diagram: 'momentY', enabled: only3d, needs3d: true },
+      { id: 'shearZ', icon: 'shearZ', labelKey: 'ribbon.shearZ', panel: 'results', diagram: 'shearZ', enabled: only3d, needs3d: true },
+      { id: 'torsion', icon: 'torsion', labelKey: 'ribbon.torsion', panel: 'results', diagram: 'torsion', enabled: only3d, needs3d: true },
     ];
   });
 
-  /*
-   * Grouped by VERB, not by object.
-   *
-   * The first grouping was Model / Analyse / Results, which sounds tidy and is
-   * not: "Model" held six commands that do unrelated things — pan the view,
-   * pick something, place geometry, apply a boundary condition — while
-   * "Analyse" held a view toggle. Grouping by the noun a command touches puts
-   * navigation next to construction; grouping by what the user is DOING is what
-   * lets the eye skip three quarters of the bar.
-   *
-   * Five groups, each answering one question: how am I looking at it, what am I
-   * drawing, what is acting on it, what do I want computed, what do I want
-   * shown.
-   */
   const GROUPS: Group[] = [
     {
       id: 'view',
       labelKey: 'ribbon.groupView',
       cmds: [
-        { id: 'select', icon: '↖', labelKey: 'float.select', tool: 'select' },
-        { id: 'pan', icon: '✋', labelKey: 'float.pan', tool: 'pan' },
-        { id: 'dim2', icon: '▦', labelKey: 'ribbon.view2d', action: () => (uiStore.analysisMode = '2d') },
-        { id: 'dim3', icon: '◈', labelKey: 'ribbon.view3d', action: () => (uiStore.analysisMode = '3d') },
+        { id: 'select', icon: 'select', labelKey: 'float.select', tool: 'select' },
+        { id: 'pan', icon: 'pan', labelKey: 'float.pan', tool: 'pan' },
+        { id: 'dim2', icon: 'view2d', labelKey: 'ribbon.view2d', action: () => (uiStore.analysisMode = '2d') },
+        { id: 'dim3', icon: 'view3d', labelKey: 'ribbon.view3d', action: () => (uiStore.analysisMode = '3d') },
       ],
     },
     {
       id: 'draw',
       labelKey: 'ribbon.groupDraw',
       cmds: [
-        { id: 'node', icon: '●', labelKey: 'float.node', tool: 'node' },
-        { id: 'element', icon: '▬', labelKey: 'float.element', tool: 'element' },
+        { id: 'node', icon: 'node', labelKey: 'float.node', tool: 'node' },
+        { id: 'element', icon: 'element', labelKey: 'float.element', tool: 'element' },
       ],
     },
     {
       id: 'conditions',
       labelKey: 'ribbon.groupConditions',
       cmds: [
-        { id: 'support', icon: '▽', labelKey: 'float.support', tool: 'support' },
-        { id: 'load', icon: '↓', labelKey: 'float.load', tool: 'load' },
+        { id: 'support', icon: 'support', labelKey: 'float.support', tool: 'support' },
+        { id: 'load', icon: 'load', labelKey: 'float.load', tool: 'load' },
       ],
     },
     {
       id: 'analyse',
       labelKey: 'ribbon.tabAnalyse',
       cmds: [
-        { id: 'solve', icon: '▶', labelKey: 'pro.solve', panel: 'results' },
-        { id: 'advanced', icon: '⚙', labelKey: 'ribbon.advanced', panel: 'advanced' },
-        { id: 'data', icon: '▤', labelKey: 'ribbon.data', panel: 'data' },
+        { id: 'solve', icon: 'solve', labelKey: 'pro.solve', action: () => runSolve() },
+        { id: 'advanced', icon: 'advanced', labelKey: 'ribbon.advanced', panel: 'advanced' },
+        { id: 'data', icon: 'data', labelKey: 'ribbon.data', panel: 'data' },
       ],
     },
     {
@@ -201,9 +196,11 @@
               disabled={!on}
               data-testid="rb-cmd-{c.id}"
               onclick={() => run(c)}
-              title={on ? t(c.labelKey) : `${t(c.labelKey)} — ${t('ribbon.needsSolve')}`}
+              title={on
+                ? t(c.labelKey)
+                : `${t(c.labelKey)} — ${c.needs3d && !threeD ? t('ribbon.needs3d') : t('ribbon.needsSolve')}`}
             >
-              <span class="rb-icon" aria-hidden="true">{c.icon}</span>
+              <span class="rb-icon"><Icon name={c.icon} /></span>
               <span class="rb-label">{t(c.labelKey)}</span>
             </button>
           {/each}
@@ -227,14 +224,14 @@
         disabled={!historyStore.canUndo}
         title="{t('toolbar.undo')} ({mod}+Z)"
         aria-label={t('toolbar.undo')}
-      >↶</button>
+      ><Icon name="undo" size={17} /></button>
       <button
         class="rb-quick-btn"
         onclick={() => historyStore.redo()}
         disabled={!historyStore.canRedo}
         title="{t('toolbar.redo')} ({mod}+Y)"
         aria-label={t('toolbar.redo')}
-      >↷</button>
+      ><Icon name="redo" size={17} /></button>
       <button
         class="rb-quick-btn"
         class:active={activePanel === 'settings'}
@@ -242,7 +239,7 @@
         title={t('ribbon.settings')}
         aria-label={t('ribbon.settings')}
         data-testid="rb-settings"
-      >⚙</button>
+      ><Icon name="settings" size={17} /></button>
     </div>
   </div>
 </div>
@@ -312,8 +309,7 @@
   .rb-cmd:disabled { opacity: 0.34; cursor: default; }
 
   .rb-icon {
-    font-size: 1.35rem;
-    line-height: 1.1;
+    display: flex;
     color: var(--st-text);
   }
 
@@ -348,6 +344,8 @@
   }
 
   .rb-quick-btn {
+    display: flex;
+    align-items: center;
     background: none;
     border: 1px solid transparent;
     border-radius: var(--st-radius);
@@ -369,7 +367,6 @@
      ────────────────────────────────────────────────────────────────── */
 
   @media (max-width: 1500px) {
-    .rb-icon { font-size: 1.15rem; }
     .rb-cmd { min-width: 46px; }
     .rb-group { padding: 0 0.45rem 0.2rem; }
   }
@@ -377,7 +374,6 @@
   @media (max-width: 1180px) {
     .rb-label { display: none; }
     .rb-cmd { min-width: 34px; padding: 0.35rem 0.3rem; }
-    .rb-icon { font-size: 1.1rem; }
     .rb-group { padding: 0 0.35rem 0.2rem; }
   }
 </style>

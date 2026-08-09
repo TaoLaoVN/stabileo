@@ -4918,6 +4918,8 @@ const es: Record<string, string> = {
   'ribbon.shearZ': 'Vz',
   'ribbon.torsion': 'Torsión',
   'ribbon.data': 'Datos',
+  'ribbon.resize': 'Redimensionar panel',
+  'ribbon.needs3d': 'sólo en análisis 3D',
 
 };
 export default es;

@@ -439,14 +439,28 @@ describe('Bug 2: 3D self-weight must apply gravity to fz (not fy)', () => {
   });
 
   it('all 3D solve entry points must ensure WASM is ready before calling solve3D', () => {
-    const toolbarResults = readFileSync(new URL('../../../components/toolbar/ToolbarResults.svelte', import.meta.url), 'utf8');
+    /*
+     * The 3D solve path moved out of ToolbarResults into lib/actions/solve.ts
+     * so the ribbon could solve without opening a panel first. The guard is
+     * unchanged in intent — WASM must be initialised before solve3D — but it
+     * now has one place to check instead of two, which is the point of having
+     * extracted it. Toolbar.svelte keeps its own copy for the mobile path.
+     */
+    const solveAction = readFileSync(new URL('../../actions/solve.ts', import.meta.url), 'utf8');
     const toolbar = readFileSync(new URL('../../../components/Toolbar.svelte', import.meta.url), 'utf8');
 
-    // Both toolbar solve buttons must await WASM initialization before solve3D
-    for (const [label, text] of [['ToolbarResults.svelte', toolbarResults], ['Toolbar.svelte', toolbar]] as const) {
+    for (const [label, text] of [['actions/solve.ts', solveAction], ['Toolbar.svelte', toolbar]] as const) {
       expect(text, `${label} must call ensureWasmReady or initSolver before solve3D`).toMatch(/ensureWasmReady|initSolver/);
-      expect(text, `${label} handleSolve3D must be async`).toMatch(/async\s+function\s+handleSolve3D|handleSolve3D\s*=\s*async/);
     }
+
+    // The extracted action keeps the async 3D entry point.
+    expect(solveAction, 'runSolve3D must be async').toMatch(/export\s+async\s+function\s+runSolve3D/);
+    expect(toolbar, 'Toolbar.svelte handleSolve3D must be async').toMatch(/async\s+function\s+handleSolve3D|handleSolve3D\s*=\s*async/);
+
+    // And nothing may call solve3D without going through one of them.
+    const results = readFileSync(new URL('../../../components/toolbar/ToolbarResults.svelte', import.meta.url), 'utf8');
+    expect(results, 'ToolbarResults must delegate rather than re-implement solving')
+      .toMatch(/runSolve/);
   });
 
   it('3D viewport should keep projected 2D result overlays in the same XZ plane as the model', () => {
