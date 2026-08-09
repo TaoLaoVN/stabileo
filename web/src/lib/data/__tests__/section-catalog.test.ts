@@ -35,10 +35,11 @@ describe('every shipped family is classified, and by a real standard', () => {
     const approximate = Object.values(FAMILY_CLASSIFICATION)
       .filter((c) => c.fidelity === 'propertiesOnly')
       .map((c) => c.family);
-    // No family is properties-only: every one has an outline. W is the only
-    // one whose outline does not reproduce the published properties, and that
-    // is a separate, weaker claim tracked as `nominalDimensions`.
-    expect(approximate).toEqual([]);
+    // MC is the one family without an outline, and for a reason no data
+    // gathering fixes: its published slope contradicts its published
+    // properties, and fitting the slope against those properties would be
+    // circular. See iram-mc.ts.
+    expect(approximate).toEqual(['MC']);
     // The American series — W, HP, M and C — all descend from tables that mark
     // their dimensions nominal and derive area from nominal mass.
     const nominal = Object.values(FAMILY_CLASSIFICATION)
@@ -75,11 +76,10 @@ describe('design codes are an index over families, not a relabelling', () => {
   it('says what it is missing rather than implying the list is complete', () => {
     const cirsoc = designCode('cirsoc-301')!;
     expect(cirsoc.missingFamilies?.length).toBeGreaterThan(0);
-    // What remains unshipped is the miscellaneous channel series; if it gets
-    // added, update this deliberately.
-    expect(cirsoc.missingFamilies!.join(' ')).toMatch(/MC/);
+    // What remains unshipped is the T series and the cold-formed families.
+    expect(cirsoc.missingFamilies!.join(' ')).toMatch(/T|conformados/);
     // These are shipped now, so they must NOT still be advertised as missing.
-    for (const f of ['W', 'HP', 'M', 'C']) expect(cirsoc.families).toContain(f);
+    for (const f of ['W', 'HP', 'M', 'C', 'MC']) expect(cirsoc.families).toContain(f);
   });
 
   it('a family carries its own standard regardless of which code lists it', () => {

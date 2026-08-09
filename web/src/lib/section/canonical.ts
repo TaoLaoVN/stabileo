@@ -94,6 +94,10 @@ export type ResolvedSection = GeometryBackedSection | PropertiesOnlySection;
  */
 function rolledReason(family: string): PropertiesOnlyReason {
   switch (family) {
+    // Miscellaneous channels: the published slope contradicts the published
+    // properties, and fitting it would be circular. See iram-mc.ts.
+    case 'MC':
+      return { kind: 'missingTaperAndRadii', family };
     case 'RHS':
       return { kind: 'missingCornerRadii', family };
     default:

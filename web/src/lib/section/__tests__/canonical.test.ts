@@ -113,12 +113,15 @@ describe('CHS resolves to the exact annulus', () => {
 // ─── Properties-only families ──────────────────────────────────────
 
 describe('incomplete rolled families stay properties-only', () => {
-  // Deliberately empty: every shipped family now has an exact outline. RHS was
-  // the last holdout, and only because EN 10219-2 gives its corner radius as a
-  // range; the IRAM-IAS tables fix it at 2t. The list stays here — rather than
-  // being deleted — because a family added later without authoritative fillet
-  // data belongs in it, and an empty list makes that obvious.
-  const EXPECTED: Array<[string, number, string]> = [];
+  // MC is the only family here, and it earns the place: its page prints a
+  // 16.66 % flange slope shared with the C series, but at that slope the built
+  // outline misses MC's published properties by 14.6 % median, and no quoting
+  // position rescues it. Fitting the slope per profile works — everything then
+  // lands inside 1.5 % — but fits it against the properties it is supposed to
+  // predict. So it stays refused rather than drawn from an inferred shape.
+  const EXPECTED: Array<[string, number, string]> = [
+    ['MC', 33, 'missingTaperAndRadii'],
+  ];
 
   for (const [family, count, reasonKind] of EXPECTED) {
     it(`${family} (${count} profiles) is refused with a structured reason`, () => {
@@ -394,8 +397,10 @@ describe('every profile in the catalogue has exact geometry', () => {
     // separately below: those tables mark their dimensions nominal and derive
     // area from nominal mass, so no outline can reproduce both. Every other
     // family must.
-    const NOMINAL = new Set(['W', 'HP', 'M', 'C']);
-    for (const p of ALL_PROFILES.filter((x) => !NOMINAL.has(x.family))) {
+    // MC is excluded for a different reason again: it has no outline at all,
+    // asserted separately below.
+    const EXCLUDED = new Set(['W', 'HP', 'M', 'C', 'MC']);
+    for (const p of ALL_PROFILES.filter((x) => !EXCLUDED.has(x.family))) {
       const r = resolveCanonicalSection(fromCatalogue(p.name));
       if (r.state !== 'geometry-backed') {
         failures.push(`${p.name}: ${r.reason.kind}`);
@@ -413,9 +418,9 @@ describe('every profile in the catalogue has exact geometry', () => {
     expect(failures).toEqual([]);
   });
 
-  it('covers all thirteen families', () => {
+  it('covers all fourteen families', () => {
     const families = new Set(ALL_PROFILES.map((p) => p.family));
-    expect(families.size).toBe(13);
+    expect(families.size).toBe(14);
     expect(ALL_PROFILES.length).toBeGreaterThan(600);
   });
 
