@@ -1362,11 +1362,8 @@ mod tests {
 /// milliseconds rather than microseconds and is meant to be computed once per
 /// section and cached, not called per element.
 ///
-/// Refuses a section with holes: multiply-connected torsion needs a circulation
-/// constraint per hole that the solver does not impose yet. Closed tubes have an
-/// authoritative constant already (exact for circular, tabulated for IRAM), so
-/// the refusal costs nothing today and prevents an answer that would understate
-/// a tube's J by more than an order of magnitude.
+/// Handles closed sections as well as open ones: the unknown constant on each
+/// hole boundary is fixed by Bredt's circulation condition.
 #[wasm_bindgen]
 pub fn analyze_section_torsion(json: &str) -> Result<String, JsValue> {
     use section::mesh::{mesh_section, MeshParams};

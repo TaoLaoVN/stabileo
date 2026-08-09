@@ -30,13 +30,28 @@
 //! # Holes
 //!
 //! On a multiply-connected section `phi` is still constant on each hole
-//! boundary, but the constant is unknown and fixed by the circulation
-//! condition. That is a coupled problem this module does NOT yet solve, so a
-//! section with holes is refused rather than answered with the
-//! simply-connected result, which would understate `J` badly for a closed tube
-//! — exactly the direction that matters. Closed tubes already have an
-//! authoritative constant: exact for circular ones, tabulated for the IRAM
-//! structural series.
+//! boundary, but that constant is unknown. It is fixed by requiring the warping
+//! displacement to be single-valued around the hole, which after integration by
+//! parts is Bredt's condition:
+//!
+//! ```text
+//!   contour_integral(d(phi)/dn) ds = -2 * A_hole
+//! ```
+//!
+//! Solved here by superposition, which keeps the whole thing linear and reuses
+//! the same SPD solver. With `k` holes, solve `k + 1` Poisson problems:
+//!
+//!   * `phi_0`: source 2, zero on every boundary — the simply-connected answer.
+//!   * `phi_i`: source 0, one on hole `i`, zero elsewhere — a unit response.
+//!
+//! Then `phi = phi_0 + sum(c_i * phi_i)`, and imposing Bredt's condition on
+//! each hole gives a small dense `k x k` system for the constants. For a single
+//! hole — every tube in the catalogue — that is one scalar equation.
+//!
+//! Getting this wrong is not subtle: dropping the constants entirely (treating
+//! the hole as a free boundary) understates a thin closed tube's `J` by more
+//! than an order of magnitude, because a closed section carries torsion by
+//! shear flow around the cell and an open one does not.
 //!
 //! # Accuracy
 //!
@@ -69,33 +84,82 @@ pub struct TorsionResult {
     pub residual: f64,
 }
 
-/// Solve uniform torsion on a meshed section.
-///
-/// Refuses a section with holes: see the module note. The refusal is explicit
-/// because silently returning the simply-connected answer for a closed tube
-/// would understate `J` by more than an order of magnitude.
+/// Solve uniform torsion on a meshed section, open or closed.
 pub fn solve_torsion(mesh: &SectionMesh, strategy: SolveStrategy) -> Result<TorsionResult, String> {
-    if mesh.loop_count > 1 {
-        return Err(format!(
-            "section has {} holes; multiply-connected torsion needs the circulation \
-             constraint per hole, which this solver does not impose yet",
-            mesh.loop_count - 1
-        ));
-    }
     if mesh.triangles.is_empty() {
         return Err("mesh has no triangles".into());
     }
+    let holes = mesh.loop_count.saturating_sub(1);
 
-    let mut problem = PoissonProblem::new(mesh);
-    // `-laplacian(phi) = 2` is `laplacian(phi) = -2`, which is Prandtl's.
-    problem.source = vec![2.0; mesh.triangles.len()];
-    problem.loop_bcs = vec![LoopBc::Dirichlet { value: 0.0 }];
-    problem.strategy = strategy;
+    // phi_0: the simply-connected field, zero on every boundary.
+    let base = {
+        let mut p = PoissonProblem::new(mesh);
+        p.source = vec![2.0; mesh.triangles.len()];
+        p.loop_bcs = vec![LoopBc::Dirichlet { value: 0.0 }; mesh.loop_count];
+        p.strategy = strategy;
+        super::poisson::solve_poisson(&p)?
+    };
 
-    let sol: PoissonSolution = super::poisson::solve_poisson(&problem)?;
+    let sol: PoissonSolution = if holes == 0 {
+        base
+    } else {
+        // One unit response per hole.
+        let mut unit = Vec::with_capacity(holes);
+        for i in 0..holes {
+            let mut p = PoissonProblem::new(mesh);
+            p.source = vec![0.0; mesh.triangles.len()];
+            p.loop_bcs = (0..mesh.loop_count)
+                .map(|l| LoopBc::Dirichlet { value: if l == i + 1 { 1.0 } else { 0.0 } })
+                .collect();
+            p.strategy = strategy;
+            unit.push(super::poisson::solve_poisson(&p)?);
+        }
 
-    // J = 2 * integral(phi). The integral is exact for P1 fields.
-    let j = 2.0 * sol.integrate(mesh);
+        // Bredt: integral over the hole of laplacian(phi) equals the boundary
+        // flux, so the condition reduces to `flux_i(phi) = -2 * A_i`. The flux
+        // is evaluated as the interior area integral, which needs no boundary
+        // quadrature and no normal vectors: for the hole region enclosed by
+        // loop i, `-2 A_i` is exactly what the base field contributes and each
+        // unit field contributes its own stiffness coupling.
+        let a_hole: Vec<f64> = (0..holes).map(|i| hole_area(mesh, i + 1)).collect();
+        let mut mat = vec![0.0; holes * holes];
+        let mut rhs = vec![0.0; holes];
+        for i in 0..holes {
+            // Bredt reads `contour_integral(d(phi)/dn) ds = -2 A` with `n`
+            // leaving the HOLE. `circulation` measures with `n` leaving the
+            // MATERIAL, which on a hole boundary is the opposite direction, so
+            // the sign flips: `circulation(phi) = +2 A`.
+            rhs[i] = 2.0 * a_hole[i] - circulation(mesh, &base, i + 1);
+            for j in 0..holes {
+                mat[i * holes + j] = circulation(mesh, &unit[j], i + 1);
+            }
+        }
+        let c = solve_small_dense(&mat, &rhs, holes)?;
+
+        let mut u = base.u.clone();
+        let mut grad = base.grad.clone();
+        for (k, s) in unit.iter().enumerate() {
+            for (n, v) in s.u.iter().enumerate() {
+                u[n] += c[k] * v;
+            }
+            for (t, g) in s.grad.iter().enumerate() {
+                grad[t][0] += c[k] * g[0];
+                grad[t][1] += c[k] * g[1];
+            }
+        }
+        PoissonSolution { u, grad, residual: base.residual }
+    };
+
+    // J = 2 * integral(phi) over the material, PLUS 2 * (hole constant) *
+    // (hole area) for each hole: the stress function is defined over the whole
+    // enclosed region, and the hole contributes its plateau value times its
+    // area even though no material sits there. Omitting that term is what
+    // makes a naive implementation report a closed tube as if it were slit.
+    let mut j = 2.0 * sol.integrate(mesh);
+    for i in 0..holes {
+        let plateau = boundary_value(mesh, &sol, i + 1);
+        j += 2.0 * plateau * hole_area(mesh, i + 1);
+    }
     if !j.is_finite() || j <= 0.0 {
         return Err(format!(
             "torsion constant came out {j}, which is not physical — check the source sign"
@@ -117,6 +181,97 @@ pub fn solve_torsion(mesh: &SectionMesh, strategy: SolveStrategy) -> Result<Tors
     }
 
     Ok(TorsionResult { j, phi: sol.u, tau, tau_max, tau_max_triangle, residual: sol.residual })
+}
+
+/// A boundary edge oriented so the material lies to its LEFT, with its triangle.
+///
+/// `boundary_edges` is derived from mesh connectivity — an edge used by exactly
+/// one triangle — so the stored `(a, b)` order carries no orientation. Taking it
+/// at face value makes the shoelace sum cancel to zero and sends outward normals
+/// half one way and half the other, which is exactly what went wrong first time:
+/// hole areas came out at 1e-14 and the hole constant blew up. The owning
+/// triangle is wound counter-clockwise, so the directed edge appearing in it is
+/// the correctly oriented one.
+fn oriented_edge(mesh: &SectionMesh, a: usize, b: usize) -> Option<(usize, usize, usize)> {
+    let t = mesh.triangles.iter().position(|t| t.contains(&a) && t.contains(&b))?;
+    let tri = mesh.triangles[t];
+    for k in 0..3 {
+        let (p, q) = (tri[k], tri[(k + 1) % 3]);
+        if (p, q) == (a, b) || (p, q) == (b, a) {
+            return Some((p, q, t));
+        }
+    }
+    None
+}
+
+/// Area enclosed by a boundary loop, by the shoelace rule over oriented edges.
+fn hole_area(mesh: &SectionMesh, loop_id: usize) -> f64 {
+    let mut a = 0.0;
+    for e in mesh.boundary_edges.iter().filter(|e| e.loop_id == loop_id) {
+        if let Some((p, q, _)) = oriented_edge(mesh, e.a, e.b) {
+            let (pp, qq) = (mesh.nodes[p], mesh.nodes[q]);
+            a += pp[0] * qq[1] - qq[0] * pp[1];
+        }
+    }
+    (a / 2.0).abs()
+}
+
+/// The stress function's plateau value on a loop, read from any of its nodes.
+fn boundary_value(mesh: &SectionMesh, sol: &PoissonSolution, loop_id: usize) -> f64 {
+    mesh.boundary_edges
+        .iter()
+        .find(|e| e.loop_id == loop_id)
+        .map(|e| sol.u[e.a])
+        .unwrap_or(0.0)
+}
+
+/// Net outward flux of `phi` across a loop, as the sum over triangles touching
+/// it of the constant gradient dotted with the outward edge normal.
+fn circulation(mesh: &SectionMesh, sol: &PoissonSolution, loop_id: usize) -> f64 {
+    let mut total = 0.0;
+    for e in mesh.boundary_edges.iter().filter(|e| e.loop_id == loop_id) {
+        if let Some((a, b, t)) = oriented_edge(mesh, e.a, e.b) {
+            let (p, q) = (mesh.nodes[a], mesh.nodes[b]);
+            let (dy, dz) = (q[0] - p[0], q[1] - p[1]);
+            // With the material on the left of (dy, dz), the outward normal is
+            // (dz, -dy) — unnormalised, so the edge length falls out of the dot
+            // product and this sum is already the line integral.
+            let g = sol.grad[t];
+            total += g[0] * dz - g[1] * dy;
+        }
+    }
+    total
+}
+
+/// Gauss elimination for the tiny hole-constant system. `n` is the number of
+/// holes, which is one or two in practice.
+fn solve_small_dense(mat: &[f64], rhs: &[f64], n: usize) -> Result<Vec<f64>, String> {
+    let mut m = mat.to_vec();
+    let mut b = rhs.to_vec();
+    for k in 0..n {
+        let piv = (k..n).max_by(|&i, &j| {
+            m[i * n + k].abs().partial_cmp(&m[j * n + k].abs()).unwrap()
+        }).unwrap();
+        if m[piv * n + k].abs() < 1e-300 {
+            return Err("hole-constant system is singular".into());
+        }
+        if piv != k {
+            for c in 0..n { m.swap(k * n + c, piv * n + c); }
+            b.swap(k, piv);
+        }
+        for i in k + 1..n {
+            let f = m[i * n + k] / m[k * n + k];
+            for c in k..n { m[i * n + c] -= f * m[k * n + c]; }
+            b[i] -= f * b[k];
+        }
+    }
+    let mut x = vec![0.0; n];
+    for i in (0..n).rev() {
+        let mut s = b[i];
+        for c in i + 1..n { s -= m[i * n + c] * x[c]; }
+        x[i] = s / m[i * n + i];
+    }
+    Ok(x)
 }
 
 #[cfg(test)]
@@ -248,12 +403,51 @@ mod tests {
         assert!((1.1..1.5).contains(&ratio), "J {j:.0} / plate sum {plates:.0} = {ratio:.3}");
     }
 
+    /// A circular tube has a closed form too: J = pi/2 (ro^4 - ri^4), the same
+    /// polar second moment, because the section is axisymmetric. This is the
+    /// check that the hole constants are right — get them wrong and the answer
+    /// collapses towards the slit-tube value, which is smaller by orders of
+    /// magnitude.
     #[test]
-    fn a_section_with_a_hole_is_refused_rather_than_answered_wrongly() {
-        let tube = cat::circular_hollow(100.0, 5.0, 48).unwrap();
-        let mesh = meshed(&tube, 4.0);
-        let err = solve_torsion(&mesh, SolveStrategy::Sparse).unwrap_err();
-        assert!(err.contains("circulation"), "{err}");
+    fn a_circular_tube_converges_to_its_closed_form() {
+        let (d, t) = (100.0, 5.0);
+        let (ro, ri) = (d / 2.0, d / 2.0 - t);
+        let g = cat::circular_hollow(d, t, 96).unwrap();
+        let exact = std::f64::consts::PI / 2.0 * (ro.powi(4) - ri.powi(4));
+        let j = j_of(&g, 1.0);
+        let err = (j / exact - 1.0).abs();
+        assert!(err < 0.05, "J = {j:.1} vs exact {exact:.1} ({:.2} %)", err * 100.0);
+    }
+
+    /// The property the hole constants exist for: closing a section makes it
+    /// enormously stiffer in torsion. A slit tube of the same wall carries
+    /// torsion as an open strip, and the ratio runs into the hundreds.
+    #[test]
+    fn a_closed_tube_is_vastly_stiffer_than_the_open_strip_of_the_same_wall() {
+        let (d, t) = (100.0, 5.0);
+        let g = cat::circular_hollow(d, t, 96).unwrap();
+        let j_closed = j_of(&g, 1.0);
+        // Unrolled wall as a thin strip: J ~ L t^3 / 3 with L the mean circumference.
+        let l = std::f64::consts::PI * (d - t);
+        let j_open = l * t.powi(3) / 3.0;
+        assert!(
+            j_closed > 100.0 * j_open,
+            "closed {j_closed:.0} should dwarf open {j_open:.0}"
+        );
+    }
+
+    /// Bredt's thin-walled formula for a closed cell: J = 4 A_m^2 / integral(ds/t).
+    /// A square tube is the case where a mistake in the hole constant shows up
+    /// as a plausible-looking number rather than an absurd one.
+    #[test]
+    fn a_square_tube_matches_bredts_thin_walled_formula() {
+        let (b, t) = (100.0, 4.0);
+        let g = cat::rectangular_hollow_rounded(b, b, t, 0.0, 8, src()).unwrap();
+        let j = j_of(&g, 1.5);
+        let am = (b - t) * (b - t);              // area enclosed by the wall centreline
+        let bredt = 4.0 * am * am / (4.0 * (b - t) / t);
+        let err = (j / bredt - 1.0).abs();
+        assert!(err < 0.10, "J = {j:.0} vs Bredt {bredt:.0} ({:.1} %)", err * 100.0);
     }
 
     #[test]

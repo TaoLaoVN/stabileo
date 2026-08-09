@@ -1434,8 +1434,8 @@ export interface TorsionResponse {
  * Solve Saint-Venant torsion for a canonical section.
  *
  * This meshes and solves, so it costs milliseconds — compute once per section
- * and cache it. Throws for a section with holes: multiply-connected torsion is
- * not implemented, and closed tubes have an authoritative constant already.
+ * and cache it. Handles closed sections: the constant on each hole boundary
+ * comes from Bredt's circulation condition.
  */
 export function analyzeSectionTorsion(input: {
   geometry: CanonicalGeometry;

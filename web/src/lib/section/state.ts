@@ -126,9 +126,9 @@ function resolveTorsion(
     // form covers arbitrary outlines. Verified against the CIRSOC tables to
     // within a few percent, where Routh's approximation was 37-57 % out.
     //
-    // Holes are refused by the solver rather than answered, so a closed tube
-    // without a tabulated J falls through to unavailable instead of getting a
-    // value an order of magnitude low.
+    // Closed sections are handled too: the hole constants come from Bredt's
+    // circulation condition, so a tube is not silently treated as if it were
+    // slit — which would understate its J by more than a hundredfold.
     try {
       const { j } = analyzeSectionTorsion({ geometry });
       if (Number.isFinite(j) && j > 0) return { j, jProvenance: 'saintVenant' };
