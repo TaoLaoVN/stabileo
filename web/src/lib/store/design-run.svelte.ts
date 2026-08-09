@@ -29,6 +29,11 @@ import { runDesign, designMember, DEFAULT_RUN_MS } from '../engine/design/candid
 import { getDesignCode, type DesignCodeId } from '../engine/design/code-adapter';
 import type { DesignRunSummary, MemberDesignOutcome } from '../engine/design/outcome';
 import type { RunProgress } from '../engine/design/candidate-search';
+import {
+  DESIGN_FAMILIES, FLOOR_FAMILIES, FRAME_FAMILIES, emptyFamilyResult, isFrameFamily,
+  needsFloorPass, needsFramePass,
+  type DesignFamily, type DesignFamilySelection, type DesignRunReport, type FamilyRunResult,
+} from '../engine/design/design-families';
 
 export interface CommandResult {
   ok: boolean;
@@ -263,6 +268,118 @@ function createDesignRunStore() {
     return autoDesign(target);
   }
 
+  /**
+   * One command for the whole building, scoped to the families the user chose.
+   *
+   * ── Why this exists ────────────────────────────────────────────
+   *
+   * "Diseñar todo" ran `computeDemands → runCodeCheck → autoDesign` over the frame and
+   * stopped. Slabs, walls and foundations came from `Ejecutar diseño de pisos` in a different
+   * disclosure, so the button named "all" produced a building with no floors and said nothing
+   * about it. The user found out from the 3-D view.
+   *
+   * ── One implementation, not two ────────────────────────────────
+   *
+   * This does not reimplement either pass. It calls `autoDesign` for the frame families and
+   * `detailingStore.generate` / `generateFloors` for the rest — the same functions the
+   * individual buttons call — so the advanced button and the global selector cannot diverge.
+   * What it adds is the SCOPE and the per-family report.
+   *
+   * ── Idempotence ───────────────────────────────────────────────
+   *
+   * Nothing is run for a family that was not selected, and the frame pass is given only the
+   * members of the selected frame families. Running it twice with the same selection reaches
+   * the same state: `autoDesign` writes reinforcement through the existing transaction and
+   * the detailing commands bump their own revisions, which is what the staleness machinery
+   * already keys off.
+   */
+  function designFamilies(
+    selection: DesignFamilySelection,
+    opts: { verifierId?: string } = {},
+  ): DesignRunReport {
+    const families: FamilyRunResult[] = [];
+    const chosen = new Set(selection);
+
+    // ── Frame families ─────────────────────────────────────────
+    const frameWanted = needsFramePass(selection);
+    if (frameWanted) {
+      const d = computeDemands();
+      const c = d.ok ? runCodeCheck() : d;
+      if (!d.ok || !c.ok) {
+        const bad = !d.ok ? d : c;
+        for (const f of FRAME_FAMILIES) {
+          if (!chosen.has(f)) { families.push(emptyFamilyResult(f, 'skipped')); continue; }
+          families.push({
+            ...emptyFamilyResult(f, 'failed'),
+            errorKey: bad.reasonKey, errorParams: bad.params,
+          });
+        }
+      } else {
+        // Split the members by what the context says they are, so "columns only" designs
+        // columns only. The context is the same authority the search reads.
+        const byFamily = new Map<DesignFamily, number[]>();
+        for (const [id, ctx] of verificationStore.contexts) {
+          const t = (ctx as { elementType?: string }).elementType;
+          const f: DesignFamily | null = t === 'column' ? 'column' : t === 'beam' ? 'beam' : null;
+          if (!f) continue;
+          byFamily.set(f, [...(byFamily.get(f) ?? []), id]);
+        }
+        const target = FRAME_FAMILIES
+          .filter((f) => chosen.has(f))
+          .flatMap((f) => byFamily.get(f) ?? []);
+        if (target.length > 0) autoDesign(target);
+
+        for (const f of FRAME_FAMILIES) {
+          if (!chosen.has(f)) { families.push(emptyFamilyResult(f, 'skipped')); continue; }
+          const ids = byFamily.get(f) ?? [];
+          if (ids.length === 0) { families.push(emptyFamilyResult(f, 'noElements')); continue; }
+          let designed = 0;
+          let refused = 0;
+          let notModelled = 0;
+          for (const id of ids) {
+            const o = verificationStore.outcomeFor(id);
+            if (!o) continue;
+            if (o.outcome !== 'VERIFIED') refused += 1;
+            else if (o.accepted) designed += 1;
+            else notModelled += 1;
+          }
+          families.push({
+            family: f, state: 'designed', processed: ids.length, designed, refused, notModelled,
+          });
+        }
+      }
+    } else {
+      for (const f of FRAME_FAMILIES) families.push(emptyFamilyResult(f, 'skipped'));
+    }
+
+    // Frame detailing follows the frame design, and only when a frame family was designed.
+    if (frameWanted && families.some((f) => isFrameFamily(f.family) && f.state === 'designed')) {
+      detailingStore.generate({ verifierId: opts.verifierId });
+    }
+
+    // ── Floor families ─────────────────────────────────────────
+    if (needsFloorPass(selection)) {
+      const floorSel = FLOOR_FAMILIES.filter((f) => chosen.has(f));
+      detailingStore.generateFloors({
+        verifierId: opts.verifierId,
+        families: floorSel as readonly ('slab' | 'wall' | 'footing')[],
+      });
+      const run = detailingStore.lastFloorRun;
+      for (const f of FLOOR_FAMILIES) {
+        if (!chosen.has(f)) { families.push(emptyFamilyResult(f, 'skipped')); continue; }
+        families.push(floorFamilyResult(f, run));
+      }
+    } else {
+      for (const f of FLOOR_FAMILIES) families.push(emptyFamilyResult(f, 'skipped'));
+    }
+
+    // Report in selector order rather than run order, so the panel reads the same as the
+    // checkboxes above it.
+    families.sort((a, b) =>
+      DESIGN_FAMILIES.indexOf(a.family) - DESIGN_FAMILIES.indexOf(b.family));
+    return { selection, families, ok: families.every((f) => f.state !== 'failed') };
+  }
+
   /** Re-run the search for one member (used after a section change is approved). */
   function designOne(elementId: number): MemberDesignOutcome | null {
     const a = adapter();
@@ -294,6 +411,31 @@ function createDesignRunStore() {
       const manual = new Set(manualOverrides); manual.delete(elementId); manualOverrides = manual;
     }
     return o;
+  }
+
+  /**
+   * What the floor run produced for one family.
+   *
+   * Read off the run's own records rather than recounted: the run already decided what it
+   * designed, and a second tally here could disagree with the certificates it issued.
+   */
+  function floorFamilyResult(
+    family: DesignFamily,
+    run: { assemblies?: Array<{ families?: Array<{ family: string; barIds?: string[] }> }> } | null,
+  ): FamilyRunResult {
+    const records = (run?.assemblies ?? [])
+      .flatMap((a) => a.families ?? [])
+      .filter((r) => r.family === family);
+    if (records.length === 0) return emptyFamilyResult(family, 'noElements');
+    let designed = 0;
+    let notModelled = 0;
+    for (const r of records) {
+      if ((r.barIds ?? []).length > 0) designed += 1; else notModelled += 1;
+    }
+    return {
+      family, state: 'designed', processed: records.length,
+      designed, refused: 0, notModelled,
+    };
   }
 
   function fail(key: string, params?: Record<string, string | number>): CommandResult {
@@ -363,6 +505,7 @@ function createDesignRunStore() {
 
     computeDemands,
     runCodeCheck,
+    designFamilies,
     autoDesign,
     designAll,
     designOne,

@@ -39,7 +39,7 @@ import {
 import { regulationsStore } from './regulations.svelte';
 import { resultsStore } from './results.svelte';
 import {
-  floorDesignReadiness, runFloorDesign,
+  classifyShell, floorDesignReadiness, runFloorDesign,
   type FloorDesignReadiness, type FloorShell, type FloorShellStress,
   type RunFloorDesignResult,
 } from '../engine/detailing/run-floor-design';
@@ -205,6 +205,32 @@ function collectShells(): FloorShell[] {
   }
   // Sorted so the run is deterministic regardless of Map insertion order.
   return out.sort((a, b) => a.id - b.id);
+}
+
+/**
+ * The shells a run should design, filtered through the engine's own classifier.
+ *
+ * A shell the classifier cannot place — neither clearly horizontal nor clearly vertical — is
+ * KEPT whenever either family is wanted, so a sloping roof panel is not silently dropped by a
+ * filter that was only meant to exclude walls.
+ */
+function scopedShells(wants: (f: 'slab' | 'wall' | 'footing') => boolean): FloorShell[] {
+  const all = collectShells();
+  if (wants('slab') && wants('wall')) return all;
+  if (!wants('slab') && !wants('wall')) return [];
+  return all.filter((sh) => {
+    const pts = sh.nodes
+      .map((n) => modelStore.model.nodes.get(n))
+      .filter(Boolean)
+      .map((n) => ({ x: n!.x, y: n!.y, z: n!.z ?? 0 }));
+    if (pts.length < 3) return true;
+    const { family } = classifyShell(sh.id, pts as never);
+    if (family === 'slab') return wants('slab');
+    if (family === 'wall') return wants('wall');
+    // `inclined` and `degenerate` belong to neither and are reported by the run itself, so
+    // they survive any filter rather than disappearing without a word.
+    return true;
+  });
 }
 
 /** Shell stresses from the active result set, quads and plates in one list. */
@@ -1107,7 +1133,25 @@ function createDetailingStore() {
      * of that type — selection, conflict navigation, the review gate, the document, the
      * DXF and the XLSX — receives them without a parallel pipeline.
      */
-    generateFloors(opts: { verifierId?: string } = {}): RunFloorDesignResult | null {
+    /**
+     * The floor pass, scoped to the families the caller asked for.
+     *
+     * ── Why the filter is here and the classifier is not ───────────
+     *
+     * `classifyShell` already decides whether a shell is a slab or a wall, and it lives in the
+     * engine with the rest of the floor design. Re-deriving that here to filter would be a
+     * second opinion about the same shell — the kind that agrees for a year and then does not.
+     * So the shells are filtered THROUGH it.
+     *
+     * Footings are simpler: they are their own collection, so an unselected footing family
+     * passes an empty list and the run reports no footings rather than pretending it checked.
+     *
+     * `families` absent means every family, which is what the existing advanced button and
+     * every previous caller mean.
+     */
+    generateFloors(
+      opts: { verifierId?: string; families?: readonly ('slab' | 'wall' | 'footing')[] } = {},
+    ): RunFloorDesignResult | null {
       generating = true;
       lastError = null;
       try {
@@ -1115,8 +1159,10 @@ function createDetailingStore() {
         // Footings are checked FIRST, so their entries can join the level assemblies the
         // shell pass builds. Their demand is a support reaction and their level is their
         // founding elevation, so neither comes from the shell loop.
+        const wants = (f: 'slab' | 'wall' | 'footing') =>
+          opts.families === undefined || opts.families.includes(f);
         const footingRun = runFootingDesign({
-          footings: [...modelStore.model.footings.values()],
+          footings: wants('footing') ? [...modelStore.model.footings.values()] : [],
           geotechnical: modelStore.model.geotechnical,
           nodes: modelStore.model.nodes as never,
           columns: collectFootingColumns(),
@@ -1160,7 +1206,7 @@ function createDetailingStore() {
         lastFootingRunFingerprint = footingRunFingerprint();
         const result = runFloorDesign({
           nodes: modelStore.model.nodes as never,
-          shells: collectShells(),
+          shells: scopedShells(wants),
           stresses: collectStresses(),
           factoredAreaLoad: factoredAreaLoads(),
           fc: props.fc,

@@ -38,6 +38,8 @@
     type DesignRow, type RowFilter, type SortKey,
   } from './design/design-view';
   import DesignToolbar from './design/DesignToolbar.svelte';
+  import DesignFamilyPanel from './design/DesignFamilyPanel.svelte';
+  import { detailingStore } from '../../lib/store/detailing.svelte';
   import DesignFilterBar from './design/DesignFilterBar.svelte';
   import DesignTable from './design/DesignTable.svelte';
   import RebarEditorBeam from './design/RebarEditorBeam.svelte';
@@ -302,6 +304,22 @@
     onReviewChanges={() => (showChanged = true)}
     onRevertEdits={revertAllEdits}
     onShowOrientation={() => (showChanged = true)}
+  />
+
+  <!--
+    One selection, one run.
+
+    The toolbar's own `Diseñar todo` stays as the quick path for the frame. This is the whole
+    building: pick the families, run once, and the result names what each one did with the
+    3-D view beside it — instead of sending the user to a second command in another disclosure
+    to discover their floors were never designed.
+  -->
+  <DesignFamilyPanel
+    canDesign={hasResults && hasCombinations}
+    onView3d={() => detailingStore.buildDocument({
+      author: t('detailing.doc.unnamedAuthor'),
+      at: new Date().toISOString(),
+    })}
   />
 
   {#if !hasResults}
