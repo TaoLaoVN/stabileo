@@ -4925,6 +4925,7 @@ const en: Record<string, string> = {
   'ribbon.results': 'Results',
   'ribbon.groupProject': 'Project',
   'ribbon.needsSolve': 'solve the model first',
+  'ribbon.groupDraw': 'Draw',
 
 };
 export default en;

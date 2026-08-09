@@ -4912,6 +4912,7 @@ const es: Record<string, string> = {
   'ribbon.results': 'Resultados',
   'ribbon.groupProject': 'Proyecto',
   'ribbon.needsSolve': 'primero resolvé el modelo',
+  'ribbon.groupDraw': 'Dibujar',
 
 };
 export default es;

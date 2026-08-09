@@ -32,10 +32,10 @@
 <style>
   .ft-opt-btn {
     padding: 2px 8px;
-    background: #0f3460;
-    border: 1px solid #1a4a7a;
+    background: var(--st-surface-2);
+    border: 1px solid var(--st-hair-strong);
     border-radius: 4px;
-    color: #aaa;
+    color: var(--st-text-2);
     cursor: pointer;
     font-size: 0.7rem;
     transition: all 0.15s;
@@ -43,27 +43,27 @@
   }
 
   .ft-opt-btn:hover:not(:disabled) {
-    background: #1a4a7a;
-    color: #ddd;
+    background: var(--st-surface-3);
+    color: var(--st-text);
   }
 
   .ft-opt-btn:disabled {
     opacity: 0.35;
     cursor: not-allowed;
-    color: #555;
-    background: #0a1a30;
-    border-color: #1a3050;
+    color: var(--st-text-3);
+    background: var(--st-surface-2);
+    border-color: var(--st-hair);
   }
 
   .ft-opt-btn.active {
-    background: #e94560;
-    border-color: #ff6b6b;
+    background: var(--st-accent);
+    border-color: var(--st-danger);
     color: white;
   }
 
   .ft-hint {
     font-size: 0.65rem;
-    color: #666;
+    color: var(--st-text-3);
     font-style: italic;
     margin-left: 4px;
   }

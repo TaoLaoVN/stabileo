@@ -1,12 +1,5 @@
 <script lang="ts">
   import { t } from '../../lib/i18n';
-  import { uiStore } from '../../lib/store/ui.svelte';
-  import ToolSelectOptions from '../floating-tools/ToolSelectOptions.svelte';
-  import ToolNodeOptions from '../floating-tools/ToolNodeOptions.svelte';
-  import ToolElementOptions from '../floating-tools/ToolElementOptions.svelte';
-  import ToolSupportOptions from '../floating-tools/ToolSupportOptions.svelte';
-  import ToolLoadOptions from '../floating-tools/ToolLoadOptions.svelte';
-  import SelectedEntityPanel from '../floating-tools/SelectedEntityPanel.svelte';
   import ToolbarResults from '../toolbar/ToolbarResults.svelte';
   import ToolbarAdvanced from '../toolbar/ToolbarAdvanced.svelte';
   import ToolbarExamples from '../toolbar/ToolbarExamples.svelte';
@@ -14,45 +7,21 @@
   import ToolbarProject from '../toolbar/ToolbarProject.svelte';
 
   /**
-   * The right-hand panel: exactly one thing, chosen by what the user did.
+   * The right-hand panel: one thing, named by the command that opened it.
    *
-   * The first cut of this opened the whole legacy Toolbar on the right — solve,
-   * results, advanced, examples, settings and project stacked together — which
-   * moved the old left panel across the window without making it any easier to
-   * use. Pressing "Examples" should show examples.
-   *
-   * There are two sources for what belongs here, and they are different in kind:
-   *
-   *   a COMMAND panel is what the ribbon button named — examples, settings,
-   *   project, advanced, results, solve. The user asked for it by name.
-   *
-   *   a TOOL panel is the options of the armed tool — the node placement mode,
-   *   the support type, the load direction. The user did not ask for a panel at
-   *   all; they picked a tool that happens to need parameters, so the panel is
-   *   a consequence and it follows the tool as it changes.
-   *
-   * `TOOLS_WITH_OPTIONS` is what "in case it is needed" means concretely: pan
-   * is not in it, so arming pan closes the panel rather than opening an empty
-   * one.
+   * It holds only what genuinely needs area and outlives a single tool —
+   * results, advanced analysis, examples, project, settings. Tool options do
+   * NOT come here: they were tried here and fought the panel, because they are
+   * written as horizontal strips and because putting a tool's settings at the
+   * far right disconnects them from the button at the top that summoned them.
+   * They live in the contextual bar under the ribbon instead.
    */
 
   type Props = { panel: string; onClose: () => void };
   let { panel, onClose }: Props = $props();
 
-  export const TOOLS_WITH_OPTIONS = ['select', 'node', 'element', 'support', 'load'] as const;
-
-  /** Heading for the panel, so it always says what it is showing. */
-  const title = $derived.by(() => {
-    if (panel !== 'tool') return t(`ribbon.${panel}`);
-    switch (uiStore.currentTool) {
-      case 'select': return t('float.select');
-      case 'node': return t('float.node');
-      case 'element': return t('float.element');
-      case 'support': return t('float.support');
-      case 'load': return t('float.load');
-      default: return t('ribbon.tool');
-    }
-  });
+  /** Heading, so the panel always says what it is showing. */
+  const title = $derived(t(`ribbon.${panel}`));
 </script>
 
 <aside class="basic-panel" data-testid="basic-panel" data-panel={panel}>
@@ -62,24 +31,7 @@
   </header>
 
   <div class="bp-body">
-    {#if panel === 'tool'}
-      <!--
-        Follows the armed tool. Rendering the options of a tool that is not
-        armed would show controls that change nothing.
-      -->
-      {#if uiStore.currentTool === 'select'}
-        <ToolSelectOptions />
-        <SelectedEntityPanel />
-      {:else if uiStore.currentTool === 'node'}
-        <ToolNodeOptions />
-      {:else if uiStore.currentTool === 'element'}
-        <ToolElementOptions />
-      {:else if uiStore.currentTool === 'support'}
-        <ToolSupportOptions />
-      {:else if uiStore.currentTool === 'load'}
-        <ToolLoadOptions />
-      {/if}
-    {:else if panel === 'results'}
+    {#if panel === 'results'}
       <ToolbarResults />
     {:else if panel === 'advanced'}
       <ToolbarAdvanced />

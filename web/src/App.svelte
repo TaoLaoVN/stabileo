@@ -27,6 +27,7 @@
   import FloatingTools from './components/FloatingTools.svelte';
   import Ribbon from './components/ribbon/Ribbon.svelte';
   import BasicPanel from './components/ribbon/BasicPanel.svelte';
+  import ToolOptionsBar from './components/ribbon/ToolOptionsBar.svelte';
 
   /**
    * Which right-hand panel the ribbon has opened, if any.
@@ -718,6 +719,7 @@
 
   {#if uiStore.appMode === 'basico' && !uiStore.isMobile}
     <Ribbon onOpenPanel={openBasicPanel} activePanel={basicPanel} />
+    <ToolOptionsBar />
   {/if}
 
   <div class="app-body" class:app-body-pro={uiStore.appMode === 'pro'}>

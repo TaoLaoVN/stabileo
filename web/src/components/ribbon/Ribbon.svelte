@@ -46,12 +46,6 @@
   };
   let { onOpenPanel, activePanel }: Props = $props();
 
-  /**
-   * Tools whose options are worth a panel. Pan acts immediately, so arming it
-   * closes the panel instead of opening an empty one.
-   */
-  const TOOLS_WITH_OPTIONS = ['select', 'node', 'element', 'support', 'load'];
-
   type Cmd = {
     id: string;
     icon: string;
@@ -68,25 +62,51 @@
 
   const solved = $derived(resultsStore.results != null || resultsStore.results3D != null);
 
+  /*
+   * Grouped by VERB, not by object.
+   *
+   * The first grouping was Model / Analyse / Results, which sounds tidy and is
+   * not: "Model" held six commands that do unrelated things — pan the view,
+   * pick something, place geometry, apply a boundary condition — while
+   * "Analyse" held a view toggle. Grouping by the noun a command touches puts
+   * navigation next to construction; grouping by what the user is DOING is what
+   * lets the eye skip three quarters of the bar.
+   *
+   * Five groups, each answering one question: how am I looking at it, what am I
+   * drawing, what is acting on it, what do I want computed, what do I want
+   * shown.
+   */
   const GROUPS: Group[] = [
     {
-      id: 'model',
-      labelKey: 'ribbon.tabModel',
+      id: 'view',
+      labelKey: 'ribbon.groupView',
       cmds: [
         { id: 'select', icon: '↖', labelKey: 'float.select', tool: 'select' },
+        { id: 'pan', icon: '✋', labelKey: 'float.pan', tool: 'pan' },
+        { id: 'dim2', icon: '▦', labelKey: 'ribbon.view2d', action: () => (uiStore.analysisMode = '2d') },
+        { id: 'dim3', icon: '◈', labelKey: 'ribbon.view3d', action: () => (uiStore.analysisMode = '3d') },
+      ],
+    },
+    {
+      id: 'draw',
+      labelKey: 'ribbon.groupDraw',
+      cmds: [
         { id: 'node', icon: '●', labelKey: 'float.node', tool: 'node' },
         { id: 'element', icon: '▬', labelKey: 'float.element', tool: 'element' },
+      ],
+    },
+    {
+      id: 'conditions',
+      labelKey: 'ribbon.groupConditions',
+      cmds: [
         { id: 'support', icon: '▽', labelKey: 'float.support', tool: 'support' },
         { id: 'load', icon: '↓', labelKey: 'float.load', tool: 'load' },
-        { id: 'pan', icon: '✋', labelKey: 'float.pan', tool: 'pan' },
       ],
     },
     {
       id: 'analyse',
       labelKey: 'ribbon.tabAnalyse',
       cmds: [
-        { id: 'dim2', icon: '▦', labelKey: 'ribbon.view2d', action: () => (uiStore.analysisMode = '2d') },
-        { id: 'dim3', icon: '◈', labelKey: 'ribbon.view3d', action: () => (uiStore.analysisMode = '3d') },
         { id: 'solve', icon: '▶', labelKey: 'pro.solve', panel: 'results' },
         { id: 'advanced', icon: '⚙', labelKey: 'ribbon.advanced', panel: 'advanced' },
       ],
@@ -107,8 +127,14 @@
   function run(cmd: Cmd) {
     if (cmd.enabled && !cmd.enabled()) return;
     if (cmd.tool) {
+      /*
+       * Arming a tool no longer opens a side panel: its options appear in the
+       * contextual bar directly below, where the eye already is. It does close
+       * whatever panel was open, because that panel belonged to a different
+       * task than the one just started.
+       */
       uiStore.currentTool = cmd.tool as never;
-      onOpenPanel(TOOLS_WITH_OPTIONS.includes(cmd.tool) ? 'tool' : null);
+      onOpenPanel(null);
       return;
     }
     if (cmd.diagram) resultsStore.diagramType = cmd.diagram as never;

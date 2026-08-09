@@ -20,23 +20,23 @@
     align-items: center;
     gap: 3px;
     font-size: 0.72rem;
-    color: #bbb;
+    color: var(--st-text-2);
     cursor: pointer;
   }
 
   .ft-opt-radio input {
-    accent-color: #e94560;
+    accent-color: var(--st-accent);
   }
 
   .ft-sep {
-    color: #444;
+    color: var(--st-text-3);
     font-size: 0.8rem;
     margin: 0 2px;
   }
 
   .ft-hint {
     font-size: 0.65rem;
-    color: #666;
+    color: var(--st-text-3);
     font-style: italic;
     margin-left: 4px;
   }

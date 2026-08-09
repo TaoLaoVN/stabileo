@@ -148,10 +148,10 @@
 <style>
   .ft-opt-btn {
     padding: 2px 8px;
-    background: #0f3460;
-    border: 1px solid #1a4a7a;
+    background: var(--st-surface-2);
+    border: 1px solid var(--st-hair-strong);
     border-radius: 4px;
-    color: #aaa;
+    color: var(--st-text-2);
     cursor: pointer;
     font-size: 0.7rem;
     transition: all 0.15s;
@@ -159,21 +159,21 @@
   }
 
   .ft-opt-btn:hover:not(:disabled) {
-    background: #1a4a7a;
-    color: #ddd;
+    background: var(--st-surface-3);
+    color: var(--st-text);
   }
 
   .ft-opt-btn:disabled {
     opacity: 0.35;
     cursor: not-allowed;
-    color: #555;
-    background: #0a1a30;
-    border-color: #1a3050;
+    color: var(--st-text-3);
+    background: var(--st-surface-2);
+    border-color: var(--st-hair);
   }
 
   .ft-opt-btn.active {
-    background: #e94560;
-    border-color: #ff6b6b;
+    background: var(--st-accent);
+    border-color: var(--st-danger);
     color: white;
   }
 
@@ -197,12 +197,12 @@
     align-items: center;
     gap: 2px;
     font-size: 0.68rem;
-    color: #bbb;
+    color: var(--st-text-2);
     cursor: pointer;
     white-space: nowrap;
   }
   .ft-chk input {
-    accent-color: #e94560;
+    accent-color: var(--st-accent);
     margin: 0;
     width: 13px;
     height: 13px;
@@ -212,7 +212,7 @@
   }
 
   .ft-sep {
-    color: #444;
+    color: var(--st-text-3);
     font-size: 0.8rem;
     margin: 0 2px;
   }
@@ -222,22 +222,22 @@
     align-items: center;
     gap: 3px;
     font-size: 0.7rem;
-    color: #aaa;
+    color: var(--st-text-2);
   }
 
   .ft-input-group input {
     width: 55px;
     padding: 2px 4px;
-    background: #0f3460;
-    border: 1px solid #1a4a7a;
+    background: var(--st-surface-2);
+    border: 1px solid var(--st-hair-strong);
     border-radius: 3px;
-    color: #eee;
+    color: var(--st-text);
     font-size: 0.7rem;
   }
 
   .ft-unit {
     font-size: 0.6rem;
-    color: #666;
+    color: var(--st-text-3);
     white-space: nowrap;
   }
 
@@ -257,7 +257,7 @@
 
   .ft-hint {
     font-size: 0.65rem;
-    color: #666;
+    color: var(--st-text-3);
     font-style: italic;
     margin-left: 4px;
   }
