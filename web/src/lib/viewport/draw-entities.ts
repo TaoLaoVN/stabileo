@@ -118,8 +118,8 @@ export function drawNode(
   const screen = worldToScreen(node.x, node.y);
 
   ctx.beginPath();
-  ctx.arc(screen.x, screen.y, isSelected ? 8 : 6, 0, Math.PI * 2);
-  ctx.fillStyle = isSelected ? '#ff6b6b' : '#e94560';
+  ctx.arc(screen.x, screen.y, isSelected ? 6 : 4, 0, Math.PI * 2);
+  ctx.fillStyle = isSelected ? canvasTheme().selected : canvasTheme().node;
   ctx.fill();
 
   // Node ID
@@ -142,7 +142,7 @@ export function getElementColor(
     return ELEMENT_PALETTE[(elem.sectionId - 1) % ELEMENT_PALETTE.length];
   }
   // Default: differentiate frame vs truss by color
-  return elem.type === 'truss' ? '#e8a030' : '#4a9eff';
+  return elem.type === 'truss' ? canvasTheme().memberTruss : canvasTheme().member;
 }
 
 // ── Elements ─────────────────────────────────────────────────────────
@@ -379,12 +379,12 @@ export function drawSupport(
   const size = 15;
 
   if (isSelected) {
-    ctx.shadowColor = '#4ecdc4';
+    ctx.shadowColor = canvasTheme().selected;
     ctx.shadowBlur = 12;
   }
 
-  ctx.fillStyle = isSelected ? '#4ecdc4' : '#ffa500';
-  ctx.strokeStyle = isSelected ? '#4ecdc4' : '#ffa500';
+  ctx.fillStyle = isSelected ? canvasTheme().selected : canvasTheme().support;
+  ctx.strokeStyle = isSelected ? canvasTheme().selected : canvasTheme().support;
   ctx.lineWidth = 2;
 
   if (sup.type === 'fixed') {
@@ -447,8 +447,8 @@ export function drawSupport(
     ctx.save();
     ctx.translate(screen.x, screen.y);
     ctx.rotate(springAngle);
-    ctx.strokeStyle = isSelected ? '#4ecdc4' : '#44bb88';
-    ctx.fillStyle = isSelected ? '#4ecdc4' : '#44bb88';
+    ctx.strokeStyle = isSelected ? canvasTheme().selected : canvasTheme().support;
+    ctx.fillStyle = isSelected ? canvasTheme().selected : canvasTheme().support;
     ctx.lineWidth = 2;
     const nCoils = 4;
     const springH = size * 1.5;

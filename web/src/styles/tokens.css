@@ -212,3 +212,15 @@
   --st-canvas-grid: rgba(143, 163, 179, 0.13);
   --st-canvas-axis: rgba(143, 163, 179, 0.32);
 }
+
+/* ── Model geometry ──────────────────────────────────────────────────────
+   Quiet by design. Colour in the viewport should mean something — a result, a
+   selection — and geometry is neither.
+   ───────────────────────────────────────────────────────────────────────── */
+
+:root {
+  --st-model-member: #c7d3dd;
+  --st-model-truss: #9fb2c2;
+  --st-model-node: #8fa3b3;
+  --st-model-support: #8fa3b3;
+}

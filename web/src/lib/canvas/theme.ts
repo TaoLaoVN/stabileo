@@ -22,6 +22,19 @@ const FALLBACK = {
   accent: '#e5482a',
   tension: '#e5482a',
   compression: '#2c6cb4',
+  /*
+   * Model geometry is deliberately quiet. Before this the frame was bright
+   * blue, the nodes pink and the supports orange: three saturated hues
+   * competing, none of them meaning anything. The landing's truss figure does
+   * the opposite — grey geometry, colour only where it carries a result — and
+   * that is what makes it readable. So geometry is near-white, and the accent
+   * is reserved for the one thing the user is acting on.
+   */
+  member: '#c7d3dd',
+  memberTruss: '#9fb2c2',
+  node: '#8fa3b3',
+  support: '#8fa3b3',
+  selected: '#e5482a',
 } as const;
 
 export type CanvasTheme = { -readonly [K in keyof typeof FALLBACK]: string };
@@ -50,6 +63,11 @@ export function canvasTheme(): CanvasTheme {
     accent: read('--st-accent', FALLBACK.accent),
     tension: read('--st-tension', FALLBACK.tension),
     compression: read('--st-compression', FALLBACK.compression),
+    member: read('--st-model-member', FALLBACK.member),
+    memberTruss: read('--st-model-truss', FALLBACK.memberTruss),
+    node: read('--st-model-node', FALLBACK.node),
+    support: read('--st-model-support', FALLBACK.support),
+    selected: read('--st-selected', FALLBACK.selected),
   };
   return cache;
 }

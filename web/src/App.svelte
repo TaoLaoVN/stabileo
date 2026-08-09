@@ -25,6 +25,20 @@
   import CadImportWizard from './components/CadImportWizard.svelte';
   import IfcImportDialog from './components/IfcImportDialog.svelte';
   import FloatingTools from './components/FloatingTools.svelte';
+  import Ribbon from './components/ribbon/Ribbon.svelte';
+
+  /**
+   * Which right-hand panel the ribbon has opened, if any.
+   *
+   * Basic used to keep a 250 px left panel open permanently for controls that
+   * are used once and then ignored. The ribbon opens them on demand, on the
+   * right, so the canvas keeps the window and the drawing does not shift
+   * sideways when a panel appears.
+   */
+  let basicPanel = $state<string | null>(null);
+  function openBasicPanel(panel: string) {
+    basicPanel = basicPanel === panel ? null : panel;
+  }
   import WhatIfPanel from './components/WhatIfPanel.svelte';
   import SectionStressPanel from './components/SectionStressPanel.svelte';
   import KinematicPanel from './components/KinematicPanel.svelte';
@@ -677,17 +691,17 @@
     </div>
   {/if}
 
+  {#if uiStore.appMode === 'basico' && !uiStore.isMobile}
+    <Ribbon onOpenPanel={openBasicPanel} activePanel={basicPanel} />
+  {/if}
+
   <div class="app-body" class:app-body-pro={uiStore.appMode === 'pro'}>
-    {#if uiStore.appMode === 'basico'}
-      {#if !uiStore.isMobile}
-        {#if uiStore.leftSidebarOpen}
-          <aside class="sidebar left">
-            <Toolbar />
-          </aside>
-        {/if}
-        <button class="sidebar-toggle-btn left-toggle" class:sidebar-closed={!uiStore.leftSidebarOpen} onclick={() => uiStore.leftSidebarOpen = !uiStore.leftSidebarOpen} title={uiStore.leftSidebarOpen ? t('app.hideLeftPanel') : t('app.showLeftPanel')}>
-          {uiStore.leftSidebarOpen ? '◂' : '▸'}
-        </button>
+    {#if uiStore.appMode === 'basico' && uiStore.isMobile}
+      <!-- Mobile keeps the old panel: a ribbon needs width the phone does not have. -->
+      {#if uiStore.leftSidebarOpen}
+        <aside class="sidebar left">
+          <Toolbar />
+        </aside>
       {/if}
     {/if}
 
@@ -833,7 +847,7 @@
             {/if}
           </div>
         {/if}
-        {#if uiStore.appMode === 'basico'}
+        {#if uiStore.appMode === 'basico' && uiStore.isMobile}
           <FloatingTools />
         {/if}
         <WhatIfPanel />
@@ -842,6 +856,18 @@
         <MobileResultsPanel />
       </main>
     </div>
+
+    {#if uiStore.appMode === 'basico' && basicPanel && !uiStore.isMobile}
+      <aside class="sidebar right basic-panel">
+        <div class="bp-head">
+          <span class="bp-title">{t('ribbon.' + basicPanel) !== 'ribbon.' + basicPanel ? t('ribbon.' + basicPanel) : basicPanel}</span>
+          <button class="bp-close" onclick={() => (basicPanel = null)} title={t('ribbon.close')} aria-label={t('ribbon.close')}>×</button>
+        </div>
+        <div class="bp-body">
+          <Toolbar />
+        </div>
+      </aside>
+    {/if}
 
     {#if !uiStore.isMobile}
       {#if uiStore.appMode === 'pro' && uiStore.proPanelVisible}
@@ -2150,4 +2176,49 @@
     color: rgba(255, 255, 255, 0.5);
     font-size: 0.7rem;
   }
+
+  /* ── Basic right-hand panel ───────────────────────────────────────────
+     Opened by the ribbon, closed by its own header. On the right because the
+     drawing stays anchored to the left edge and does not jump when it opens.
+     ─────────────────────────────────────────────────────────────────── */
+
+  .basic-panel {
+    width: 300px;
+    display: flex;
+    flex-direction: column;
+    background: var(--st-surface);
+    border-left: 1px solid var(--st-hair);
+  }
+
+  .bp-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 0.5rem 0.75rem;
+    border-bottom: 1px solid var(--st-hair);
+    flex: none;
+  }
+
+  .bp-title {
+    font-family: var(--st-mono);
+    font-size: 0.68rem;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: var(--st-text-2);
+  }
+
+  .bp-close {
+    background: none;
+    border: none;
+    color: var(--st-text-2);
+    font-size: 1.1rem;
+    line-height: 1;
+    padding: 0.15rem 0.4rem;
+    cursor: pointer;
+    border-radius: var(--st-radius);
+  }
+
+  .bp-close:hover { background: var(--st-surface-3); color: var(--st-text); }
+
+  .bp-body { flex: 1; overflow-y: auto; }
 </style>
