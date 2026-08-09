@@ -300,6 +300,24 @@ export interface RebarScene {
   solidIdAt(mesh: THREE.Object3D, faceIndex: number | undefined): string | null;
   /** Every mesh a raycast should consider, bars and concrete alike. */
   pickable(): THREE.Mesh[];
+  /**
+   * Change the concrete's opacity without touching a vertex.
+   *
+   * ── Why this is not a rebuild ──────────────────────────────────
+   *
+   * Opacity is a MATERIAL property. Dragging the slider used to re-tube all 20 917 bars and
+   * re-prism every solid — measured at 1,6 s per step on the 7-storey building — to arrive at
+   * geometry identical to the one already on the GPU. Nothing about where the steel is
+   * depends on how see-through the concrete is.
+   */
+  setConcreteOpacity(scale: number): void;
+  /**
+   * Move or clear the section plane without touching a vertex.
+   *
+   * Clipping is done by the material against a plane, so a section is a plane swap. Rebuilding
+   * for it cost the same 1,6 s and produced the same buffers.
+   */
+  setSection(section: RebarSceneOptions['section']): void;
   dispose(): void;
 }
 
@@ -466,6 +484,23 @@ export function createRebarScene(
      */
     pickable() {
       return [...bars.map((b) => b.mesh), ...solidMeshes.map((s) => s.mesh)];
+    },
+    setConcreteOpacity(scale) {
+      for (const { reinforced, mesh } of solidMeshes) {
+        const mat = mesh.material as THREE.MeshStandardMaterial;
+        // Same clamp the builder applies: fully opaque concrete would hide the reinforcement,
+        // which is the one thing this view exists to show.
+        mat.opacity = Math.min(0.92, (reinforced ? 0.22 : 0.45) * scale);
+        mat.needsUpdate = true;
+      }
+    },
+    setSection(section) {
+      const planes = planesFor(section);
+      for (const { mesh } of [...bars, ...solidMeshes]) {
+        const mat = mesh.material as THREE.Material;
+        mat.clippingPlanes = planes;
+        mat.needsUpdate = true;
+      }
     },
     dispose() {
       for (const d of disposables) d.dispose();

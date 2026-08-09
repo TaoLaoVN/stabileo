@@ -318,18 +318,38 @@
    * section plane never yanks the view away from where the user put it.
    */
   let lastSignature: string | null = null;
-  let lastOptions = '';
+  let lastGeometryOptions = '';
   $effect(() => {
-    const options = `${diameterScale}|${showConcrete}|${showConflicts}|${concreteOpacity}|`
-      + `${section ? `${section.axis}:${section.at}:${section.flip}` : '-'}`;
+    /**
+     * Only the options that change VERTICES belong here.
+     *
+     * Opacity and the section plane do not: one is a material property and the other is a
+     * plane the material clips against, and both used to re-tube 20 917 bars to arrive at
+     * geometry byte-identical to the one already on the GPU — 1,6 s per slider step, measured
+     * on the 7-storey building. They are applied in place by the effects below.
+     */
+    const geometryOptions = `${diameterScale}|${showConcrete}|${showConflicts}`;
     if (!root) return;
     const signature = sceneSignature(scene);
-    if (signature === lastSignature && options === lastOptions) return;
+    if (signature === lastSignature && geometryOptions === lastGeometryOptions) return;
     const sceneChanged = signature !== lastSignature;
     lastSignature = signature;
-    lastOptions = options;
+    lastGeometryOptions = geometryOptions;
     rebuild();
     if (sceneChanged) fit();
+  });
+
+  // Material-only updates. No vertex is touched and no buffer is reallocated.
+  $effect(() => {
+    void concreteOpacity;
+    built?.setConcreteOpacity(concreteOpacity);
+    invalidate(2);
+  });
+
+  $effect(() => {
+    void section;
+    built?.setSection(section ?? undefined);
+    invalidate(2);
   });
 
   $effect(() => {
