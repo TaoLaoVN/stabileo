@@ -48,6 +48,7 @@ let wasmComputeInfluenceLine: ((json: string) => string) | null = null;
 // Section Stress
 let wasmBuildSectionGeometry: ((json: string) => string) | null = null;
 let wasmAnalyzeSectionBending: ((json: string) => string) | null = null;
+let wasmAnalyzeSectionTorsion: ((json: string) => string) | null = null;
 let wasmSectionGeometryDigest: ((json: string) => string) | null = null;
 let wasmComputeSectionStress2d: ((json: string) => string) | null = null;
 let wasmComputeSectionStress3d: ((json: string) => string) | null = null;
@@ -209,6 +210,7 @@ export async function initSolver(): Promise<void> {
     // Canonical section geometry (JSON-string boundary, like analyze_section)
     wasmBuildSectionGeometry = wasm.build_section_geometry ?? null;
     wasmAnalyzeSectionBending = wasm.analyze_section_bending ?? null;
+    wasmAnalyzeSectionTorsion = wasm.analyze_section_torsion ?? null;
     wasmSectionGeometryDigest = wasm.section_geometry_digest ?? null;
 
     // Section Stress
@@ -1416,4 +1418,29 @@ export function sectionGeometryDigest(geometry: CanonicalGeometry): {
 } {
   if (!wasmReady || !wasmSectionGeometryDigest) throw new Error('WASM solver not initialized. Call initSolver() first.');
   return JSON.parse(wasmSectionGeometryDigest(JSON.stringify(geometry)));
+}
+
+/** Saint-Venant torsion result for canonical geometry. */
+export interface TorsionResponse {
+  /** Torsion constant, in the geometry's own length unit to the fourth. */
+  j: number;
+  /** Peak shear under unit twist rate. */
+  tauMax: number;
+  triangles: number;
+  residual: number;
+}
+
+/**
+ * Solve Saint-Venant torsion for a canonical section.
+ *
+ * This meshes and solves, so it costs milliseconds — compute once per section
+ * and cache it. Throws for a section with holes: multiply-connected torsion is
+ * not implemented, and closed tubes have an authoritative constant already.
+ */
+export function analyzeSectionTorsion(input: {
+  geometry: CanonicalGeometry;
+  maxArea?: number;
+}): TorsionResponse {
+  if (!wasmReady || !wasmAnalyzeSectionTorsion) throw new Error('WASM solver not initialized. Call initSolver() first.');
+  return JSON.parse(wasmAnalyzeSectionTorsion(JSON.stringify(input)));
 }

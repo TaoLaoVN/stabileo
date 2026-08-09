@@ -1640,7 +1640,7 @@ function createModelStore() {
       // every new model and before every example load, so leaving it
       // unresolved is what made a freshly loaded example report its section as
       // amorphous even after the engine was up.
-      model.sections = new Map([[1, { ...defaultSection, canonical: resolveSectionState({ ...defaultSection }) }]]);
+      model.sections = new Map([[1, { ...defaultSection, canonical: resolveSectionState({ ...defaultSection }, { torsion: true }) }]]);
       model.loadCases = [
         { id: 1, type: 'D', name: 'Dead Load' },
         { id: 2, type: 'L', name: 'Live Load' },
@@ -2461,7 +2461,7 @@ function createModelStore() {
       // concludes it does not, which reads to the user as "amorphous section"
       // for a perfectly ordinary catalogue profile.
       const created: Section = { id, ...data };
-      created.canonical = resolveSectionState(created);
+      created.canonical = resolveSectionState(created, { torsion: true });
       if (_bulkMutating) {
         model.sections.set(id, created);
       } else {
@@ -2490,7 +2490,7 @@ function createModelStore() {
       let changed = false;
       const m = new Map(model.sections);
       for (const [id, sec] of m) {
-        const next = resolveSectionState(sec);
+        const next = resolveSectionState(sec, { torsion: true });
         const before = sec.canonical;
         const sameKind = before?.kind === next.kind;
         const sameDigest =
@@ -2543,7 +2543,7 @@ function createModelStore() {
       // step. Doing it here keeps geometry and properties atomically
       // consistent: there is no window in which a section carries new
       // dimensions and stale canonical values.
-      updated.canonical = resolveSectionState(updated);
+      updated.canonical = resolveSectionState(updated, { torsion: true });
 
       const m = new Map(model.sections);
       m.set(id, updated);

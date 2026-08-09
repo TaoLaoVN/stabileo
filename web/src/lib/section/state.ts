@@ -31,7 +31,7 @@ import type { Section } from '../store/model.svelte';
 import { ALL_PROFILES } from '../data/steel-profiles';
 import { resolveCanonicalSection, type PropertiesOnlyReason } from './canonical';
 import type { CanonicalGeometry } from '../engine/wasm-solver';
-import { isSolverReady } from '../engine/wasm-solver';
+import { isSolverReady, analyzeSectionTorsion } from '../engine/wasm-solver';
 import { CANONICAL_STATE_VERSION } from './version';
 
 /** Where a torsional constant came from. Never inferred, never fabricated. */
@@ -107,16 +107,35 @@ function isCircularFamily(source: Record<string, unknown> | undefined): boolean 
 function resolveTorsion(
   sec: Section,
   circular: { iy: number; iz: number } | null,
+  geometry: CanonicalGeometry | null,
 ): { j: number | null; jProvenance: TorsionProvenance } {
   if (circular) {
     const j = circular.iy + circular.iz;
     if (Number.isFinite(j) && j > 0) return { j, jProvenance: 'exactAnalytical' };
   }
   if (sec.j != null && Number.isFinite(sec.j) && sec.j > 0) {
-    // Preserve whatever the section already carried. A catalogue-sourced value
-    // and a user-declared one are both more trustworthy than Routh; the
-    // distinction is recorded rather than guessed at.
+    // Preserve whatever the section already carried. A tabulated value is
+    // NORMATIVE — it is the number a designer reconciles against — so it wins
+    // over a computed one even though Saint-Venant is more fundamental.
     return { j: sec.j, jProvenance: sec.name ? 'catalogue' : 'legacy' };
+  }
+  if (geometry) {
+    // Saint-Venant, solved on the section's own mesh. This is what retires the
+    // `Iz * 0.001` placeholder for every shape without a published constant:
+    // an open profile's J is dominated by its thinnest plate and no closed
+    // form covers arbitrary outlines. Verified against the CIRSOC tables to
+    // within a few percent, where Routh's approximation was 37-57 % out.
+    //
+    // Holes are refused by the solver rather than answered, so a closed tube
+    // without a tabulated J falls through to unavailable instead of getting a
+    // value an order of magnitude low.
+    try {
+      const { j } = analyzeSectionTorsion({ geometry });
+      if (Number.isFinite(j) && j > 0) return { j, jProvenance: 'saintVenant' };
+    } catch {
+      // Multiply-connected, degenerate mesh, or engine not ready — all mean
+      // "no trustworthy constant", which is what `unavailable` says.
+    }
   }
   return { j: null, jProvenance: 'unavailable' };
 }
@@ -131,9 +150,23 @@ function resolveTorsion(
  * throwing or publishing unverified numbers: an un-analysed section is exactly
  * a section whose geometry is unknown.
  */
-export function resolveSectionState(sec: Section): SectionState {
+export interface ResolveOptions {
+  /**
+   * Solve Saint-Venant torsion when no published constant exists.
+   *
+   * Off by default, and that default is a performance decision with teeth:
+   * torsion meshes the section and solves a linear system, which costs
+   * milliseconds. That is nothing for the handful of sections in a model, and
+   * unacceptable for the seven hundred in the catalogue picker, which resolves
+   * every profile just to draw a thumbnail. Callers that own model sections
+   * pass `true`; callers that browse pass nothing.
+   */
+  torsion?: boolean;
+}
+
+export function resolveSectionState(sec: Section, opts: ResolveOptions = {}): SectionState {
   if (!isSolverReady()) {
-    const torsion = resolveTorsion(sec, null);
+    const torsion = resolveTorsion(sec, null, null);
     return {
       kind: 'properties-only',
       reason: { kind: 'noGeometry' },
@@ -147,7 +180,7 @@ export function resolveSectionState(sec: Section): SectionState {
 
   const resolved = resolveCanonicalSection(sec);
   if (resolved.state === 'properties-only') {
-    const torsion = resolveTorsion(sec, null);
+    const torsion = resolveTorsion(sec, null, null);
     return {
       kind: 'properties-only',
       reason: resolved.reason,
@@ -163,6 +196,7 @@ export function resolveSectionState(sec: Section): SectionState {
   const torsion = resolveTorsion(
     sec,
     isCircularFamily(resolved.geometry.source) ? { iy: p.iy, iz: p.iz } : null,
+    opts.torsion ? resolved.geometry : null,
   );
   return {
     kind: 'geometry-backed',
@@ -217,7 +251,7 @@ export function solverProperties(sec: Section): {
       digest: st.digest,
     };
   }
-  const torsion = resolveTorsion(sec, null);
+  const torsion = resolveTorsion(sec, null, null);
   return {
     a: sec.a,
     iy: sec.iy ?? sec.iz,

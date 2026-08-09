@@ -140,16 +140,34 @@ describe('torsional constant provenance', () => {
     }
   });
 
-  it('a non-circular geometry-backed section does NOT take J from the polygon engine', () => {
+  it('a non-circular section takes J from Saint-Venant, never from Routh', () => {
+    // Resolved WITH torsion, the way the model store does it — browsing the
+    // catalogue deliberately does not pay for a mesh-and-solve per thumbnail.
+    const withJ = resolveSectionState(fromCatalogue('IPE 300'), { torsion: true });
+    if (withJ.kind !== 'geometry-backed') throw new Error('expected geometry-backed');
+    expect(withJ.jProvenance).toBe('saintVenant');
+    expect(withJ.j).toBeGreaterThan(0);
+
+    // IPE 300's J against the thin-strip sum of its three plates. The
+    // published European value is about 20 cm⁴ and this lands at 19.7; it is
+    // checked against the plate sum rather than a transcribed number so the
+    // test does not depend on reading one column out of a PDF correctly.
+    const plates = (2 * 0.15 * 0.0107 ** 3 + (0.3 - 2 * 0.0107) * 0.0071 ** 3) / 3;
+    const ratio = withJ.j! / plates;
+    expect(ratio, 'fillets add to the plate sum without doubling it').toBeGreaterThan(1.1);
+    expect(ratio).toBeLessThan(1.5);
+
+    // The Routh prohibition is now satisfied structurally rather than
+    // numerically: `saintVenant` provenance means the value came from solving
+    // Prandtl's problem on the mesh, and Routh is not reachable from there.
+    // Asserting a numeric distance from Routh's formula was tempting but is a
+    // bad test — for this profile the two happen to sit 20 % apart, so the
+    // threshold would be measuring a coincidence, not the property.
+
+    // Without the flag, nothing is claimed rather than something cheap.
     const st = ipe.canonical!;
     if (st.kind !== 'geometry-backed') throw new Error('expected geometry-backed');
-    // No authoritative J on the profile, so none is claimed.
     expect(st.jProvenance).toBe('unavailable');
-    expect(st.j).toBeNull();
-    // And specifically not Routh: A^4 / (4 pi^2 Ip).
-    const ip = st.iy + st.iz;
-    const routh = st.a ** 4 / (4 * Math.PI ** 2 * ip);
-    expect(st.j).not.toBeCloseTo(routh, 12);
   });
 
   it('a declared J is preserved rather than recomputed', () => {

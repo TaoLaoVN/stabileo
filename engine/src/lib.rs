@@ -1344,3 +1344,98 @@ mod tests {
         assert!((r1.rz - 5.0).abs() < 0.01);
     }
 }
+
+/// Saint-Venant torsion constant and shear field for canonical geometry.
+///
+/// This is what retires the `Iz * 0.001` placeholder. It is a real solve — mesh
+/// the section, solve Prandtl's stress function, integrate — so it costs
+/// milliseconds rather than microseconds and is meant to be computed once per
+/// section and cached, not called per element.
+///
+/// Refuses a section with holes: multiply-connected torsion needs a circulation
+/// constraint per hole that the solver does not impose yet. Closed tubes have an
+/// authoritative constant already (exact for circular, tabulated for IRAM), so
+/// the refusal costs nothing today and prevents an answer that would understate
+/// a tube's J by more than an order of magnitude.
+#[wasm_bindgen]
+pub fn analyze_section_torsion(json: &str) -> Result<String, JsValue> {
+    use section::mesh::{mesh_section, MeshParams};
+    use section::poisson::SolveStrategy;
+
+    #[derive(serde::Deserialize)]
+    #[serde(rename_all = "camelCase", deny_unknown_fields)]
+    struct Request {
+        geometry: section::catalogue::CanonicalGeometry,
+        /// Largest triangle area, in the geometry's own units squared. Omitted
+        /// means "size it from the section", which is what callers should do.
+        #[serde(default)]
+        max_area: Option<f64>,
+    }
+
+    let req: Request = serde_json::from_str(json)
+        .map_err(|e| JsValue::from_str(&format!("Parse error: {e}")))?;
+
+    let props = section::analyze_section(&section::SectionInput {
+        polygons: req.geometry.polygons.clone(),
+        modular_ratios: Default::default(),
+    })
+    .map_err(|e| JsValue::from_str(&e))?;
+
+    // Mesh in a normalised frame. The caller's units are its own business —
+    // the web side works in metres, so a section is 0.3 across and its target
+    // triangle area is ~1e-6 — and a Delaunay refiner carries absolute
+    // robustness tolerances that such small coordinates walk straight into,
+    // yielding a mesh far coarser than asked for and a J tens of percent low.
+    // Scaling the outline so its largest dimension is ~100 units makes the
+    // result independent of the caller's units; J is a fourth moment, so it
+    // scales back by `s^4` exactly.
+    let extent = req
+        .geometry
+        .polygons
+        .iter()
+        .flat_map(|p| p.vertices.iter())
+        .fold(0.0_f64, |m, v| m.max(v[0].abs()).max(v[1].abs()));
+    if !(extent > 0.0) || !extent.is_finite() {
+        return Err(JsValue::from_str("geometry has no finite extent"));
+    }
+    let scale = 100.0 / extent;
+
+    let mut scaled = req.geometry.polygons.clone();
+    for poly in &mut scaled {
+        for v in &mut poly.vertices {
+            v[0] *= scale;
+            v[1] *= scale;
+        }
+    }
+
+    let mut params = MeshParams::default();
+    // Roughly two thousand triangles: J converges at the field's rate rather
+    // than the gradient's, so this is ample and keeps the solve within a few
+    // milliseconds — which matters, because this runs per model section.
+    let scaled_area = props.a * scale * scale;
+    params.max_area = req.max_area.map(|a| a * scale * scale).unwrap_or(scaled_area / 2000.0);
+
+    let mesh = mesh_section(&scaled, &params).map_err(|e| JsValue::from_str(&e))?;
+    let mut res = section::torsion::solve_torsion(&mesh, SolveStrategy::Sparse)
+        .map_err(|e| JsValue::from_str(&e))?;
+    // Back to the caller's units: J is L^4, shear under unit twist rate is L.
+    res.j /= scale.powi(4);
+    res.tau_max /= scale;
+
+    #[derive(serde::Serialize)]
+    #[serde(rename_all = "camelCase")]
+    struct Response {
+        j: f64,
+        /// Peak shear under unit twist rate, for scaling a real state.
+        tau_max: f64,
+        triangles: usize,
+        residual: f64,
+    }
+    serde_json::to_string(&Response {
+        j: res.j,
+        tau_max: res.tau_max,
+        triangles: mesh.triangles.len(),
+        residual: res.residual,
+    })
+    .map_err(|e| JsValue::from_str(&format!("Serialize error: {e}")))
+}
