@@ -24,8 +24,17 @@
 
   interface Props {
     report: ElementStatusReport;
+    /**
+     * Why each member is in the state it is, keyed by member.
+     *
+     * The state NAME is not an explanation. "UNSUPPORTED" on 117 beams told a reviewer that
+     * something was wrong and nothing about what, when the design had already produced a
+     * sentence naming the axis and the ratio behind it. Passed in rather than read here so
+     * this component stays free of stores.
+     */
+    reasons?: ReadonlyMap<number, string>;
   }
-  const { report }: Props = $props();
+  const { report, reasons }: Props = $props();
 
   const filtered = $derived.by(() => {
     const f = rebarWorkspace.statusFilter;
@@ -90,6 +99,9 @@
             <span class="id">{tp('detailing.scene.solid.member', { id: e.elementId })}</span>
             <span class="st">{t(`detailing.scene.status.${e.status}`)}</span>
           </button>
+          {#if reasons?.get(e.elementId) && selectedIds.has(e.elementId)}
+            <p class="reason">{reasons.get(e.elementId)}</p>
+          {/if}
         </li>
       {/each}
     </ul>
@@ -121,7 +133,22 @@
   .st-designed-not-modelled .dot { background: #d9c04a; }
   .st-not-evaluated .dot { background: #8b93a3; }
   .st-modelled .dot { background: #4caf72; }
-  .elements { overflow-y: auto; flex: 1 1 auto; min-height: 0; max-height: 40vh; }
+  /**
+   * The member list does NOT scroll on its own.
+   *
+   * It used to, inside a rail that also scrolls. Two nested scrollers meant the browser could
+   * bring a row into view within the inner list while the list itself sat below the rail's
+   * visible area — the row was "visible, enabled and stable" and still unreachable, which is
+   * what happened the moment the tally and the piece breakdown grew the rail above it.
+   *
+   * One scroller, the rail's, and every row is reachable by scrolling the thing the user is
+   * already scrolling.
+   */
+  .elements { flex: 0 0 auto; }
+  .reason {
+    margin: 0 0 0.25rem 1.4rem; font-size: 0.7rem;
+    color: var(--text-muted, #8b93a3);
+  }
   .link {
     background: none; border: none; padding: 0; color: #6fa8ff;
     font-size: 0.74rem; cursor: pointer; text-align: left;

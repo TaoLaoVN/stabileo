@@ -71,6 +71,41 @@ export interface SceneBar {
   /** The floor family that owns it, when one does. Beam and column steel has none. */
   family?: FloorFamily;
   /**
+   * Which id space `elementIds` is expressed in.
+   *
+   * ── The collision this exists to stop ──────────────────────────
+   *
+   * Frame members and shell elements are numbered independently and both start at 1. The
+   * 7-storey building has frame elements 1…203 and quads 1…77, so EVERY quad id is also a
+   * frame element id. A slab bar reporting `ownerElementIds: [1]` means panel 1; a column bar
+   * reporting the same means column 1; and nothing in the number distinguishes them.
+   *
+   * Measured before this field existed: 11 340 slab bars and 234 wall bars were counted as
+   * steel belonging to columns. A column with no reinforcement of its own was reported
+   * MODELLED because a slab bar had claimed its number — the exact failure the honest-status
+   * work was built to prevent, reintroduced through an id.
+   *
+   * `frame` for beam and column steel; `family` for slab, wall and footing steel, whose ids
+   * name panels, walls and footings.
+   */
+  ownerScope: 'frame' | 'family';
+  /**
+   * What KIND of piece this is, beyond longitudinal-or-transverse.
+   *
+   * ── Why `role` was not enough ──────────────────────────────────
+   *
+   * A 7-storey building's cage contains 1 444 closed ties and 6 768 crossties, and `role`
+   * calls all 8 212 of them "transverse". On screen they became one orange thicket, and the
+   * first QA reading was "these do not look like stirrups" — which was fair, because a closed
+   * hoop and a single-leg crosstie with a hook at each end are different pieces doing
+   * different jobs under different sub-clauses, and nothing distinguished them.
+   *
+   * Read from the producer's own naming rather than re-derived from geometry: the generators
+   * name what they built, and inferring "is this a hoop" from a polyline is exactly the kind
+   * of second opinion this module exists to avoid.
+   */
+  piece: 'longitudinal' | 'closedTie' | 'crosstie' | 'jointTie' | 'jointCrosstie' | 'stirrup';
+  /**
    * The centreline, sampled in model coordinates, m.
    *
    * From `samplePath` at its default chord tolerance, so a hook is an arc of the correct
@@ -82,6 +117,25 @@ export interface SceneBar {
   cuttingLength: number;
   /** True when this bar is named by an unresolved conflict. */
   conflicted: boolean;
+}
+
+/**
+ * Which piece a bar is, from the id its generator gave it.
+ *
+ * The naming is the producers' contract with the schedule and the drawings — `col-<id>:ties`
+ * for a column's own cage, `joint-<node>:ties` for the cage inside a beam-column joint,
+ * `crosstie` for a single-leg piece — so reading it here keeps one vocabulary across the
+ * schedule, the sheets and the view. A transverse piece whose id matches nothing known is
+ * reported as a generic stirrup rather than guessed at.
+ */
+export function classifyPiece(bar: BarPath): SceneBar['piece'] {
+  if (bar.role !== 'transverse') return 'longitudinal';
+  const id = bar.id;
+  const joint = id.startsWith('joint-');
+  if (id.includes('crosstie')) return joint ? 'jointCrosstie' : 'crosstie';
+  if (joint) return 'jointTie';
+  if (id.startsWith('col-')) return 'closedTie';
+  return 'stirrup';
 }
 
 // ─── Concrete ────────────────────────────────────────────────────
@@ -442,6 +496,9 @@ export function buildSceneModel(doc: DocumentModel, opts: SceneOptions = {}): Sc
         assemblyId: a.id,
         elementIds: [...bar.ownerElementIds],
         family: familyOf.get(bar.id),
+        // A floor family's bars name panels, walls and footings; frame bars name members.
+        ownerScope: familyOf.get(bar.id) ? 'family' : 'frame',
+        piece: classifyPiece(bar),
         polyline: samplePath(bar),
         cuttingLength: bar.cuttingLength,
         conflicted: conflictedBars.has(bar.id),
@@ -471,7 +528,15 @@ export function buildSceneModel(doc: DocumentModel, opts: SceneOptions = {}): Sc
    * matter most here are exactly the ones no assembly claims: those whose design was refused.
    * Iterating the assemblies could never reach them, which is why they were invisible.
    */
-  const barsOfElement = new Set(bars.flatMap((b) => b.elementIds));
+  /**
+   * Frame steel only, keyed by member.
+   *
+   * `ownerScope` is what makes this safe: including family bars would credit a column with a
+   * slab panel that happens to share its number, and the whole point of `reinforced` is to be
+   * the one field a user can trust about whether a member has steel in it.
+   */
+  const barsOfElement = new Set(
+    bars.filter((b) => b.ownerScope === 'frame').flatMap((b) => b.elementIds));
   for (const m of opts.members ?? []) {
     wantedMembers.add(m.elementId);
     resolvedMembers.add(m.elementId);
@@ -609,8 +674,44 @@ export interface SceneFilter {
   elementIds?: readonly number[];
 }
 
-export function barMatchesFilter(b: SceneBar, f: SceneFilter): boolean {
+/**
+ * Which layer switch governs a bar.
+ *
+ * A bar belongs to the family of the concrete it sits in: slab steel to `slab`, footing mats
+ * and dowels to `footing`, and frame steel to the beam or column that owns it. The frame case
+ * needs the solids to answer, because only they know whether member 84 is a beam or a column.
+ */
+export function barSolidKind(
+  b: SceneBar, kindOfElement: ReadonlyMap<number, SceneSolidKind>,
+): SceneSolidKind | undefined {
+  if (b.family) return b.family;
+  if (b.ownerScope !== 'frame') return undefined;
+  for (const id of b.elementIds) {
+    const k = kindOfElement.get(id);
+    if (k) return k;
+  }
+  return undefined;
+}
+
+export function barMatchesFilter(
+  b: SceneBar, f: SceneFilter, kindOfElement?: ReadonlyMap<number, SceneSolidKind>,
+): boolean {
   if (f.hideBars) return false;
+  /**
+   * A layer switch takes the STEEL with it.
+   *
+   * Without this, turning off `Columns` removed 84 concrete prisms and left all 9 311 column
+   * bars floating in place — which is what "the toggles do not work" meant, and why slabs and
+   * walls could not be found: with 20 917 bars drawn no matter what, isolating a family was
+   * impossible and the families looked absent.
+   *
+   * A bar whose family cannot be resolved is KEPT. Hiding steel because the scene could not
+   * work out which switch owns it would be the same silent omission in a new place.
+   */
+  if (f.solidKinds && kindOfElement) {
+    const kind = barSolidKind(b, kindOfElement);
+    if (kind !== undefined && !f.solidKinds.includes(kind)) return false;
+  }
   if (f.assemblyIds && !f.assemblyIds.includes(b.assemblyId)) return false;
   if (f.roles && !f.roles.includes(b.role)) return false;
   if (f.layerIds && (b.layerId === undefined || !f.layerIds.includes(b.layerId))) return false;
@@ -660,7 +761,13 @@ export function solidMatchesFilter(s: SceneSolid, f: SceneFilter): boolean {
 }
 
 export function filterScene(scene: SceneModel, f: SceneFilter): SceneModel {
-  const bars = scene.bars.filter((b) => barMatchesFilter(b, f));
+  // Built from the UNFILTERED solids, so a bar's family is resolved against the whole model
+  // rather than against whatever survived — otherwise hiding columns would make column bars
+  // unresolvable and therefore kept.
+  const kindOfElement = new Map<number, SceneSolidKind>();
+  for (const s of scene.solids) for (const id of s.elementIds) kindOfElement.set(id, s.kind);
+
+  const bars = scene.bars.filter((b) => barMatchesFilter(b, f, kindOfElement));
   const visibleBarIds = new Set(bars.map((b) => b.barId));
 
   /**
@@ -729,24 +836,6 @@ export interface SceneSummary {
   }>;
 }
 
-/**
- * Which concrete family a bar belongs to.
- *
- * From the floor-family record when there is one, and otherwise from the member that owns
- * it — beam or column — resolved through the solids. A bar whose owner is not in the scene
- * is `unknown` rather than being quietly filed under a family it may not belong to.
- */
-function barFamilyKind(
-  b: SceneBar, kindOfElement: ReadonlyMap<number, SceneSolidKind>,
-): SceneSolidKind | 'unknown' {
-  if (b.family) return b.family;
-  for (const id of b.elementIds) {
-    const k = kindOfElement.get(id);
-    if (k) return k;
-  }
-  return 'unknown';
-}
-
 export function summariseScene(
   scene: SceneModel, steelDensity = 7850,
 ): SceneSummary {
@@ -778,7 +867,7 @@ export function summariseScene(
   };
   for (const s of scene.solids) bump(s.kind).solids += 1;
   for (const b of scene.bars) {
-    const e = bump(barFamilyKind(b, kindOfElement));
+    const e = bump(barSolidKind(b, kindOfElement) ?? 'unknown');
     if (b.role === 'transverse') e.transverse += 1; else e.longitudinal += 1;
   }
 

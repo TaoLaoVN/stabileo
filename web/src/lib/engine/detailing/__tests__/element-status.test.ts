@@ -31,7 +31,7 @@ function solid(id: number, over: Partial<SceneSolid> = {}): SceneSolid {
 
 function barFor(id: number): SceneBar {
   return {
-    barId: `b${id}`, diameterMm: 16, role: 'longitudinal', assemblyId: 'a',
+    barId: `b${id}`, diameterMm: 16, role: 'longitudinal', assemblyId: 'a', ownerScope: 'frame', piece: 'longitudinal',
     elementIds: [id], polyline: [{ x: 0, y: 0, z: 0 }, { x: 1, y: 0, z: 0 }],
     cuttingLength: 1, conflicted: false,
   };

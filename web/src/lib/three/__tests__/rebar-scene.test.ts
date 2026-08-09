@@ -15,7 +15,7 @@ import type { SceneBar, SceneModel } from '../../engine/detailing/scene-model';
 
 function bar(over: Partial<SceneBar> = {}): SceneBar {
   return {
-    barId: 'b1', mark: 'B1', diameterMm: 20, role: 'longitudinal',
+    barId: 'b1', mark: 'B1', diameterMm: 20, role: 'longitudinal', ownerScope: 'frame', piece: 'longitudinal',
     assemblyId: 'a', elementIds: [1], cuttingLength: 5, conflicted: false,
     polyline: [
       { x: 0, y: 0, z: 0 }, { x: 1, y: 0, z: 0 },

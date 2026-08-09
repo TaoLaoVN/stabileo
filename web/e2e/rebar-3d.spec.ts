@@ -311,6 +311,67 @@ test.describe('the workspace shows every family the detailing produced', () => {
   });
 });
 
+// ─── Toggles, states and naming ──────────────────────────────────
+
+test.describe('a layer switch takes its own family and nothing else', () => {
+  test('turning columns off removes their STEEL as well as their concrete',
+    async ({ pro: page }) => {
+      test.setTimeout(240_000);
+      await openWorkspace(page, 'pro-edificio-7p', true);
+      const tally = page.getByTestId('rebar-tally');
+      const nums = async (family: string) =>
+        (await tally.getByTestId(`rebar-tally-${family}`).innerText())
+          .split(/\s+/).map(Number).filter((n) => !Number.isNaN(n));
+
+      const slabsBefore = await nums('slab');
+      await page.getByTestId('rebar-layer-column').uncheck();
+      // The column row disappears entirely — concrete AND bars. Leaving 9 311 column bars
+      // floating with no column round them is what "the toggles do not work" meant.
+      await expect(tally.getByTestId('rebar-tally-column')).toHaveCount(0);
+      // And no other family moved.
+      expect(await nums('slab')).toEqual(slabsBefore);
+
+      await page.getByTestId('rebar-layer-column').check();
+      await expect(tally.getByTestId('rebar-tally-column')).toBeVisible();
+    });
+
+  test('a family the model does not contain says so on its switch',
+    async ({ pro: page }) => {
+      test.setTimeout(240_000);
+      await openWorkspace(page, 'pro-edificio-7p', true);
+      // This building has no footings at all. A switch that looks identical to a working one
+      // is how "no foundations in this model" reads as "the viewer lost them".
+      await expect(page.getByTestId('rebar-layer-empty-footing')).toBeVisible();
+      await expect(page.getByTestId('rebar-empty-families')).toBeVisible();
+      await expect(page.getByTestId('rebar-tally-footing')).toHaveCount(0);
+    });
+});
+
+test.describe('the cage is legible and the refusals are explained', () => {
+  test('closed ties, crossties and joint ties are counted apart',
+    async ({ pro: page }) => {
+      test.setTimeout(240_000);
+      await openWorkspace(page, 'pro-edificio-7p', true);
+      const pieces = page.getByTestId('rebar-pieces');
+      await expect(pieces).toBeVisible();
+      // `role` calls all 8 212 of them "transverse"; a hoop and a single-leg crosstie are
+      // different pieces and the view has to say which is which.
+      await expect(pieces.getByTestId('rebar-piece-closedTie')).toBeVisible();
+      await expect(pieces.getByTestId('rebar-piece-crosstie')).toBeVisible();
+    });
+
+  test('a refused member states its reason in words', async ({ pro: page }) => {
+    await openWorkspace(page, 'rc-qa-diagnostic');
+    await page.getByTestId('rebar-status-UNSUPPORTED').click();
+    await page.getByTestId('rebar-element-list').locator('button').first().click();
+    const reason = page.getByTestId('rebar-sel-reason');
+    await expect(reason).toBeVisible();
+    // Not the state name — the design's own sentence, with the ratio that caused it.
+    await expect(reason).toContainText('%');
+    await expect(reason).toContainText(/eje|axis/i);
+  });
+});
+
 // ─── Cleanliness ─────────────────────────────────────────────────
 
 test.describe('the workspace is quiet', () => {

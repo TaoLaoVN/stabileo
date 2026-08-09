@@ -403,11 +403,29 @@ describe('concrete families are layers of one model', () => {
       .toEqual(['beam', 'column', 'footing']);
   });
 
-  it('switches a family off without touching the others', () => {
+  it('takes a family’s STEEL with it, and leaves every other family alone', () => {
+    /**
+     * A layer switch that moved only the concrete is what "the toggles do not work" meant.
+     *
+     * Turning `Columns` off removed 84 prisms and left 9 311 column bars hanging in place, and
+     * because the steel never went away there was no way to isolate slabs or walls and see
+     * them — which is why they were reported missing.
+     */
     const noFoundations = filterScene(scene, { solidKinds: ['beam', 'column'] });
     expect(noFoundations.solids.map((s) => s.kind).sort()).toEqual(['beam', 'column']);
-    // And the frame's own steel is untouched by a concrete-layer switch.
-    expect(noFoundations.bars.length).toBe(scene.bars.length);
+    // The footing's dowel goes with the footing.
+    expect(noFoundations.bars.some((b) => b.family === 'footing')).toBe(false);
+    // And the frame's own steel is untouched: hiding one family must not hide another.
+    expect(noFoundations.bars.length).toBe(scene.bars.filter((b) => !b.family).length);
+    expect(noFoundations.bars.length).toBeGreaterThan(0);
+  });
+
+  it('keeps a bar whose family cannot be resolved rather than dropping it', () => {
+    // Silently hiding steel the scene could not classify would be the same omission in a new
+    // place. A bar owned by no drawn member survives every layer switch.
+    const orphan = buildSceneModel(doc(), { members: [] });
+    expect(filterScene(orphan, { solidKinds: ['footing'] }).bars.length)
+      .toBe(orphan.bars.length);
   });
 
   it('isolates one member, keeping a bar that is continuous into another', () => {

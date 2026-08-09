@@ -31,7 +31,8 @@ import { verificationStore } from '../../store/verification.svelte';
 import { deserializeProject } from '../../store/file';
 import { isSolverReady } from '../../engine/wasm-solver';
 import {
-  buildSceneModel, filterScene, summariseScene, type SceneModel,
+  buildSceneModel, filterScene, summariseScene, classifyPiece,
+  type SceneModel,
 } from '../../engine/detailing/scene-model';
 import { membersFromModel } from '../../engine/detailing/member-geometry';
 import type { DocumentModel } from '../../engine/detailing/document-model';
@@ -197,6 +198,131 @@ describe('a footing brings its own steel into the same scene', () => {
     expect(footingBars.some((b) => b.role === 'longitudinal'), 'mats and dowels').toBe(true);
     expect(footingBars.some((b) => b.role === 'transverse'), 'starter ties').toBe(true);
     expect(scene.solids.some((s) => s.kind === 'footing'), 'the pad itself').toBe(true);
+  }, 120_000);
+});
+
+// ─── The column cage, piece by piece ─────────────────────────────
+
+describe('column transverse steel is classified, not lumped together', () => {
+  let built: Built;
+  beforeEach(async () => { built = await build(example('pro-edificio-7p')); }, 120_000);
+
+  it('tells a closed tie from a crosstie from a joint tie', () => {
+    /**
+     * `role` calls all 8 212 pieces "transverse", which is how the cage read as an
+     * undifferentiated thicket and drew the QA comment "these do not look like stirrups". A
+     * closed hoop and a single-leg crosstie are different pieces under different sub-clauses.
+     */
+    const kinds = new Set(built.scene.bars.map((b) => b.piece));
+    expect(kinds.has('closedTie'), 'closed column ties').toBe(true);
+    expect(kinds.has('crosstie'), 'column crossties').toBe(true);
+    expect(kinds.has('jointTie') || kinds.has('jointCrosstie'), 'joint cage').toBe(true);
+    // And they are never confused: a crosstie is never reported as a closed tie.
+    for (const b of built.scene.bars) {
+      if (b.barId.includes('crosstie')) {
+        expect(b.piece === 'crosstie' || b.piece === 'jointCrosstie', b.barId).toBe(true);
+      }
+    }
+  });
+
+  it('does not duplicate the lift cage inside the joint band', () => {
+    // The lift ties stop below the beams; the joint cage fills that band. Two cages at one
+    // elevation would be double steel and every pair would clash.
+    const lift = built.scene.bars.filter((b) => b.piece === 'closedTie' || b.piece === 'crosstie');
+    const joint = built.scene.bars.filter((b) => b.piece === 'jointTie' || b.piece === 'jointCrosstie');
+    expect(lift.length).toBeGreaterThan(0);
+    expect(joint.length).toBeGreaterThan(0);
+    // Distinct producers, distinct id namespaces — never the same piece counted twice.
+    expect(lift.filter((b) => joint.some((j) => j.barId === b.barId))).toEqual([]);
+  });
+
+  it('gives every crosstie a bar to brace, in the cage it belongs to', () => {
+    // A crosstie whose hooks embrace nothing is the piece §25.3.5(d) forbids, and the shape
+    // an over-eager generator produces. Every one must own the member whose cage it is in.
+    const cross = built.scene.bars.filter((b) => b.piece === 'crosstie');
+    expect(cross.length).toBeGreaterThan(0);
+    for (const b of cross.slice(0, 200)) {
+      expect(b.elementIds.length, b.barId).toBeGreaterThan(0);
+      expect(b.ownerScope).toBe('frame');
+    }
+  });
+
+  it('classifies from the producer’s naming, so the schedule agrees', () => {
+    const source = built.doc.assemblies.flatMap((a) => a.bars);
+    for (const bar of source.slice(0, 500)) {
+      const inScene = built.scene.bars.find((b) => b.barId === bar.id)!;
+      expect(inScene.piece, bar.id).toBe(classifyPiece(bar));
+    }
+  });
+});
+
+// ─── Owner identity across two id spaces ─────────────────────────
+
+describe('shell ids and frame ids are not confused', () => {
+  it('does not credit a column with a slab panel that shares its number', async () => {
+    /**
+     * Frame members are 1…203 and quads are 1…77 in this model, so every quad id is also a
+     * frame element id. Before `ownerScope`, 11 340 slab bars and 234 wall bars counted as
+     * steel belonging to columns — and a column with no reinforcement could report MODELLED
+     * because a slab bar had claimed its number.
+     */
+    const { scene } = await build(example('pro-edificio-7p'));
+    for (const b of scene.bars) {
+      expect(b.ownerScope, b.barId).toBe(b.family ? 'family' : 'frame');
+    }
+    // A member's `reinforced` flag counts frame steel only.
+    const frameOwners = new Set(
+      scene.bars.filter((b) => b.ownerScope === 'frame').flatMap((b) => b.elementIds));
+    for (const s of scene.solids) {
+      if (s.kind !== 'beam' && s.kind !== 'column') continue;
+      expect(s.reinforced, s.id).toBe(s.elementIds.some((id) => frameOwners.has(id)));
+    }
+  }, 120_000);
+});
+
+// ─── Families the model does not contain ─────────────────────────
+
+describe('a family with no members is stated, not silently empty', () => {
+  it('the 7-storey model has no footings, and the scene says so by having none', async () => {
+    /**
+     * Distinguishing "not in this model" from "lost in the scene" is the whole point. This
+     * fixture genuinely contains zero footings — `model.footings.size === 0` — so a footing
+     * solid appearing here would mean the scene invented one.
+     */
+    const { scene } = await build(example('pro-edificio-7p'));
+    expect(modelStore.model.footings.size).toBe(0);
+    expect(scene.solids.filter((s) => s.kind === 'footing')).toEqual([]);
+    expect(scene.solids.filter((s) => s.kind === 'pedestal')).toEqual([]);
+  }, 120_000);
+});
+
+// ─── Toggles ─────────────────────────────────────────────────────
+
+describe('each layer switch filters its own family and no other', () => {
+  it('every family can be hidden alone, taking its steel and nothing else', async () => {
+    const { scene } = await build(example('pro-edificio-7p'));
+    const present = [...new Set(scene.solids.map((s) => s.kind))];
+    expect(present.length).toBeGreaterThan(1);
+
+    for (const hidden of present) {
+      const kept = present.filter((k) => k !== hidden);
+      const out = filterScene(scene, { solidKinds: kept });
+      // The hidden family is gone, concrete and steel alike.
+      expect(out.solids.some((s) => s.kind === hidden), `${hidden} solids`).toBe(false);
+      // And every other family is untouched.
+      for (const k of kept) {
+        expect(out.solids.filter((s) => s.kind === k).length,
+          `${k} survives hiding ${hidden}`)
+          .toBe(scene.solids.filter((s) => s.kind === k).length);
+      }
+    }
+  }, 120_000);
+
+  it('hiding reinforcement never removes a piece of concrete', async () => {
+    const { scene } = await build(example('pro-edificio-7p'));
+    const shell = filterScene(scene, { hideBars: true });
+    expect(shell.bars).toEqual([]);
+    expect(shell.solids.length).toBe(scene.solids.length);
   }, 120_000);
 });
 
