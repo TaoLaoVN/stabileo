@@ -86,53 +86,42 @@ async function panelResponse(page: Page): Promise<number> {
 }
 
 /**
- * The budget each model is held to, in milliseconds to the first frame after returning.
- *
- * ── Why the big model's budget is not 600 ms ───────────────────────
- *
- * Because it does not meet 600 ms, and pretending otherwise by widening the number without
- * saying so is how a latency problem gets declared fixed.
- *
- * `sceneSignature` removed the geometry rebuild — the seconds of tube-building that used to
- * dominate — and the small model now returns in a frame. The 7-storey building still costs
- * about 2,4 s, and the WebGL evidence says the remaining cost is NOT the renderer: no context
- * is created or lost across five round trips, and no canvas is added. What is left is the
- * derived chain above the viewport, where `buildSceneModel` samples 20 917 bars.
- *
- * So the budget is the measured cost with headroom, pinned as a CEILING. It cannot silently
- * grow, and the gap between the two rows is the work that remains.
- */
-/**
  * Budgets in milliseconds to the first frame after returning, per model.
  *
- * ── What these numbers are actually measuring ──────────────────────
+ * ── The history, because the numbers only mean something with it ───
  *
- * Isolated by probe, on the 7-storey building:
+ * Three separate costs were confused with each other here, and each was fixed by a different
+ * change:
  *
- *     workspace closed, settled            0,2 ms
- *     workspace open, settled, untouched   ~230 ms
- *     workspace open, after a toggle
- *       and a selection                    ~2 400 ms
+ *   · re-tubing 20 917 bars whenever the scene OBJECT changed — fixed by `sceneSignature`;
+ *   · re-PROJECTING the document on every reactive touch, ~2,4 s of `samplePath` — fixed by
+ *     `cachedSceneModel`;
+ *   · re-tubing them again to answer a LAYER SWITCH, because a filtered scene is a different
+ *     scene — fixed by batching the merge per family and switching `mesh.visible`.
  *
- * So returning to the tab is NOT the cost. The cost is recomputing the filter, the summary and
- * the status report across 20 917 bars after an interaction — and it lands on whatever frame
- * comes next, which is why it looked like a tab-switch problem and was reported as one.
+ * ── Why the big model's ceiling is STILL 9 000 ms ──────────────────
  *
- * The first version of this file made the same mistake in reverse: it reactivated on top of an
- * unsettled setup and timed its own `loadModel`, which costs ~2 500 ms on its own with no
- * workspace open at all.
+ * Because the measurement has not moved, and lowering the number without the measurement moving
+ * is how a gate stops meaning anything. Measured after the third fix: 2 356 ms on this building,
+ * against a recorded spread of 2 405, 2 512 and 6 355 ms before it. The ceiling was chosen for
+ * that spread and the spread is unchanged.
  *
- * These budgets are CEILINGS over the real, settled behaviour, and the test does toggle and
- * select before reactivating on purpose — that is the worst case a user meets.
+ * What is left is not a rebuild — the assertion below proves that outright — it is ONE FRAME.
+ * This suite draws on SwiftShader, a software rasteriser, and the 7-storey document carries
+ * 39 240 open conflicts, each a 10 × 8 sphere: about 6,3 million triangles of translucent marker,
+ * six times the reinforcement's own 1,0 million. Reactivation flushes the pending effects and the
+ * frame they land on has to rasterise all of it on the CPU. That frame is expensive for a reason
+ * this code does not reach, and `rebar-viewport-cost.spec.ts` measures the same switch with the
+ * markers off — 490 ms against 6 131 — so the attribution is on the record rather than assumed.
  *
- * The big model's number is NOISY: 2 405, 2 512 and 6 355 ms across three runs on a machine
- * that had been running heavy suites all session. The ceiling sits above the observed range
- * rather than at the best sample, because a budget tuned to a quiet machine fails on a busy one
- * and teaches everyone to ignore it. What it can still catch is an order-of-magnitude
- * regression, which is what a returning geometry rebuild would be.
+ * So the millisecond ceiling stays where the data puts it, and the REAL gate is the build counter
+ * added below: whatever the frame costs, not one tube may be rebuilt on the way back. A stopwatch
+ * on a shared runner can always be explained away; a counter that went up cannot.
  *
- * The small model is the sensitive one — it is quiet enough for 600 ms to mean something — and
- * closing the big model's gap is the next piece of work.
+ * The measurements are printed, so a future change to these numbers can be argued from data
+ * rather than from memory. The first version of this file reactivated on top of an unsettled
+ * setup and timed its own `loadModel` — ~2 500 ms with no workspace open at all — and concluded
+ * the tab switch was the problem.
  */
 const REACTIVATION_BUDGET_MS = { 'small control': 600, '7-storey building': 9000 } as const;
 
@@ -140,10 +129,15 @@ const REACTIVATION_BUDGET_MS = { 'small control': 600, '7-storey building': 9000
  * Milliseconds for the side panel to answer a click, per model.
  *
  * Not a tab-switch cost: the same click costs the same with the tab never hidden. Selecting a
- * member recomputes the filter, the summary and the status report across every bar, which on
- * the 7-storey building is 20 917 of them. Pinned as a ceiling while that is unfixed.
+ * member recomputes the filter, the summary and the piece counts over every bar — 20 917 of them
+ * on this building, measured at about 5 ms — and then asks the camera to fly to the member, which
+ * is where any remaining frames are spent.
+ *
+ * This one HAS moved, so its ceiling moves with it: 1 527 ms measured against a 9 000 ms
+ * placeholder set while the rebuild was still in the path. 6 000 ms leaves room for a contended
+ * run and would still catch the rebuild coming back.
  */
-const PANEL_BUDGET_MS = { 'small control': 4000, '7-storey building': 9000 } as const;
+const PANEL_BUDGET_MS = { 'small control': 4000, '7-storey building': 6000 } as const;
 
 for (const [label, example, floors] of [
   ['small control', 'rc-qa-diagnostic', false],
@@ -160,12 +154,24 @@ for (const [label, example, floors] of [
       const before = await page.getByTestId('rebar-sel-parent').innerText();
       const canvasesBefore = await page.evaluate(() => document.querySelectorAll('canvas').length);
 
+      const buildsBefore = await page.evaluate(() => window.__stabileo.rebarSceneBuilds());
       const { afterFrame, canvases } = await reactivate(page);
+      const buildsAfter = await page.evaluate(() => window.__stabileo.rebarSceneBuilds());
 
-      // Held to this model's own budget. The gap between the two rows is the remaining work,
-      // and neither may grow without this failing.
+      // Held to this model's own budget, and printed so the next person to touch the number can
+      // argue from data.
+      console.log(`\n${label}: first frame after returning ${afterFrame.toFixed(0)} ms, `
+        + `tube builds ${buildsBefore} → ${buildsAfter}\n`);
       expect(afterFrame, `first frame after returning (${label})`)
         .toBeLessThan(REACTIVATION_BUDGET_MS[label]);
+      /**
+       * And not one tube rebuilt on the way back.
+       *
+       * This is the property, where the millisecond count is only evidence for it. Returning from
+       * a hidden tab is where Svelte flushes every pending effect at once, so it is the single
+       * most likely place for a rebuild to reappear unnoticed.
+       */
+      expect(buildsAfter, `tubes rebuilt by returning to the tab (${label})`).toBe(buildsBefore);
 
       // No new WebGL context: a leaked one per reactivation is how the viewport silently
       // stops rendering after a dozen visits.
@@ -178,17 +184,13 @@ for (const [label, example, floors] of [
       /**
        * The panel's own response, timed separately from the frame.
        *
-       * These are different costs and conflating them hid which one was real. The frame after
-       * returning is now ~230 ms on this building; SELECTING a member from the list is not, and
-       * the budget says so rather than pretending otherwise.
-       *
-       * Selecting recomputes the filter, the summary and the status report over 20 917 bars,
-       * and none of that is the tab switch — the same click costs the same with the tab never
-       * hidden. It is the next thing to fix, and the ceiling is here so it cannot grow while
-       * it waits.
+       * These are different costs and conflating them hid which one was real: the same click costs
+       * the same with the tab never hidden, so it was never a tab-switch cost at all. Kept as its
+       * own number and its own ceiling for that reason.
        */
-      expect(await panelResponse(page), `panel response (${label})`)
-        .toBeLessThan(PANEL_BUDGET_MS[label]);
+      const panel = await panelResponse(page);
+      console.log(`${label}: panel response ${panel} ms\n`);
+      expect(panel, `panel response (${label})`).toBeLessThan(PANEL_BUDGET_MS[label]);
     });
 
     test('repeated switching does not accumulate contexts', async ({ pro: page }) => {

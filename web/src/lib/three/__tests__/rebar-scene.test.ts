@@ -9,7 +9,7 @@
 
 import { describe, expect, it } from 'vitest';
 import * as THREE from 'three';
-import { createRebarScene, transportFrames, frameBounds, REBAR_COLORS }
+import { createRebarScene, transportFrames, frameExtent, REBAR_COLORS }
   from '../rebar-scene';
 import type { SceneBar, SceneModel } from '../../engine/detailing/scene-model';
 
@@ -183,8 +183,7 @@ describe('concrete is drawn so the steel can be seen through it', () => {
 
   it('is translucent and does not write depth', () => {
     const built = createRebarScene(s);
-    const mesh = built.group.getObjectByName('rebar-concrete') as THREE.Mesh;
-    const mat = mesh.material as THREE.MeshStandardMaterial;
+    const mat = built.solids[0].mesh.material as THREE.MeshStandardMaterial;
     expect(mat.transparent).toBe(true);
     expect(mat.opacity).toBeLessThan(0.5);
     expect(mat.depthWrite).toBe(false);
@@ -200,12 +199,12 @@ describe('concrete is drawn so the steel can be seen through it', () => {
         { ...s.solids[0], id: 'member:2', elementIds: [2], reinforced: false },
       ],
     }));
-    const ok = built.group.getObjectByName('rebar-concrete') as THREE.Mesh;
-    const bad = built.group.getObjectByName('rebar-concrete-unreinforced') as THREE.Mesh;
+    const ok = built.solids.find((x) => x.reinforced);
+    const bad = built.solids.find((x) => !x.reinforced);
     expect(ok).toBeDefined();
     expect(bad).toBeDefined();
-    const okMat = ok.material as THREE.MeshStandardMaterial;
-    const badMat = bad.material as THREE.MeshStandardMaterial;
+    const okMat = ok!.mesh.material as THREE.MeshStandardMaterial;
+    const badMat = bad!.mesh.material as THREE.MeshStandardMaterial;
     expect(badMat.color.getHex()).toBe(REBAR_COLORS.unreinforced);
     expect(badMat.color.getHex()).not.toBe(okMat.color.getHex());
     // And more opaque, so it reads as the exception rather than as more of the same.
@@ -215,21 +214,20 @@ describe('concrete is drawn so the steel can be seen through it', () => {
 
   it('emits no unreinforced mesh when every member has steel', () => {
     const built = createRebarScene(s);
-    expect(built.group.getObjectByName('rebar-concrete-unreinforced')).toBeUndefined();
+    expect(built.solids.some((x) => !x.reinforced)).toBe(false);
     built.dispose();
   });
 
   it('can be turned off to leave the bare cage', () => {
     const built = createRebarScene(s, { showConcrete: false });
-    expect(built.group.getObjectByName('rebar-concrete')).toBeUndefined();
+    expect(built.solids).toHaveLength(0);
     built.dispose();
   });
 
   it('closes the prism: two caps and one quad per side', () => {
     const built = createRebarScene(s);
-    const mesh = built.group.getObjectByName('rebar-concrete') as THREE.Mesh;
     // 4 sides × 2 + 2 caps × 2 = 12 triangles.
-    expect(mesh.geometry.getIndex()!.count / 3).toBe(12);
+    expect(built.solids[0].mesh.geometry.getIndex()!.count / 3).toBe(12);
     built.dispose();
   });
 });
@@ -267,30 +265,40 @@ describe('a conflict is a thing you can point at', () => {
 
 // ─── Framing ─────────────────────────────────────────────────────
 
+/**
+ * Framed from an extent, not from a scene.
+ *
+ * `frameBounds(scene)` used to wrap this with `scene.bounds`, and the viewport no longer wants
+ * that: it frames what the layer switches leave VISIBLE, which `visibleBounds` answers. A
+ * one-line wrapper nothing but its own tests called is dead weight, so the tests point at the
+ * function that does the work.
+ */
 describe('framing', () => {
+  const bounds = () => scene().bounds;
+
   it('centres on the bounds and backs off enough to see them', () => {
-    const f = frameBounds(scene())!;
+    const f = frameExtent(bounds())!;
     expect(f.centre.x).toBeCloseTo(1.5, 9);
     expect(f.distance).toBeGreaterThan(1.5);
   });
 
   it('refuses to frame an empty scene', () => {
-    expect(frameBounds(scene({ bounds: null }))).toBeNull();
+    expect(frameExtent(null)).toBeNull();
   });
 
   it('backs further off a TALL viewport, where the horizontal angle is the tight one', () => {
     // A panel narrower than it is tall constrains width, not height. Framing on the vertical
     // fov alone would fit the height and let the scene run off both sides — which is exactly
     // what this view did before the aspect was passed in.
-    const wide = frameBounds(scene(), 50, 2)!;
-    const tall = frameBounds(scene(), 50, 0.5)!;
+    const wide = frameExtent(bounds(), 50, 2)!;
+    const tall = frameExtent(bounds(), 50, 0.5)!;
     expect(tall.distance).toBeGreaterThan(wide.distance);
   });
 
   it('is unaffected by aspect once the vertical angle is the tight one', () => {
     // Beyond square, the vertical fov governs and widening the canvas cannot require more
     // distance. A framing that kept receding with aspect would shrink the scene for nothing.
-    expect(frameBounds(scene(), 50, 4)!.distance)
-      .toBeCloseTo(frameBounds(scene(), 50, 2)!.distance, 9);
+    expect(frameExtent(bounds(), 50, 4)!.distance)
+      .toBeCloseTo(frameExtent(bounds(), 50, 2)!.distance, 9);
   });
 });

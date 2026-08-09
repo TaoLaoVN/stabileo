@@ -33,6 +33,8 @@ import { designRunStore } from '../store/design-run.svelte';
 import { isSolverReady } from '../engine/wasm-solver';
 import { getStructuralSolveCount } from './solve-counter';
 import { runGlobalSolve } from '../engine/live-calc';
+import { rebarSceneBuilds } from '../three/rebar-scene';
+import { sceneCacheStats } from '../engine/detailing/scene-cache';
 
 export const E2E_QUERY_FLAG = 'e2e';
 
@@ -89,6 +91,16 @@ export interface StabileoTestHooks {
   detailingAssemblies(): unknown;
   /** Bar-schedule totals for the selected assembly. */
   detailingSchedule(): unknown;
+  /**
+   * How many times the 3-D viewport has BUILT its tube geometry.
+   *
+   * The property the viewport benchmark asserts, rather than infers from a stopwatch: a layer
+   * switch, a selection, an isolate or an opacity change must not move this number. A timing can
+   * always be explained away as a busy runner; a counter that went up cannot.
+   */
+  rebarSceneBuilds(): number;
+  /** Scene-projection cache hits and misses. A toggle must not produce a miss. */
+  sceneCacheStats(): { hits: number; misses: number };
 }
 
 /**
@@ -195,6 +207,8 @@ export function installE2EHooks(): void {
     detailingAssemblies: () =>
       JSON.parse(JSON.stringify(modelStore.model.detailing?.assemblies ?? [])),
     detailingSchedule: () => JSON.parse(JSON.stringify(detailingStore.schedule ?? null)),
+    rebarSceneBuilds,
+    sceneCacheStats,
   };
   const actions: StabileoTestActions = {
     /** Seed a coordinated assembly — the same shape the pipeline writes. */

@@ -18,10 +18,12 @@
   import { onMount } from 'svelte';
   import * as THREE from 'three';
   import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
-  import { createRebarScene, frameBounds, frameExtent, elementExtent, type RebarScene }
+  import { createRebarScene, frameExtent, elementExtent, type RebarScene }
     from '../../../lib/three/rebar-scene';
-  import { sceneSignature, type SceneModel }
-    from '../../../lib/engine/detailing/scene-model';
+  import {
+    barMatchesFilter, kindByElement, sceneSignature, visibleBounds,
+    type SceneFilter, type SceneModel,
+  } from '../../../lib/engine/detailing/scene-model';
   import { t } from '../../../lib/i18n';
 
   /** What the user clicked: a bar, a piece of concrete, or empty space. */
@@ -32,7 +34,21 @@
   }
 
   interface Props {
+    /**
+     * The WHOLE model, not what the user has chosen to see.
+     *
+     * ── Why this is the unfiltered scene ──────────────────────────
+     *
+     * It used to be the filtered one, and that is what made a layer switch cost seconds:
+     * `filterScene` returns a smaller scene, a smaller scene has a different signature, and a
+     * different signature meant re-tubing all 20 917 bars to answer a checkbox.
+     *
+     * Geometry is built once from everything the document contains. `filter` then decides what
+     * is VISIBLE, which is a flag per batch and not a vertex anywhere.
+     */
     scene: SceneModel;
+    /** What the user has chosen to see. Applied as visibility; never rebuilds geometry. */
+    filter?: SceneFilter;
     diameterScale?: number;
     showConcrete?: boolean;
     showConflicts?: boolean;
@@ -45,9 +61,17 @@
   }
 
   const {
-    scene, diameterScale = 1, showConcrete = true, showConflicts = true,
+    scene, filter = {}, diameterScale = 1, showConcrete = true, showConflicts = true,
     concreteOpacity = 1, selectedBarId = null, section = null, onselect, height = '460px',
   }: Props = $props();
+
+  /**
+   * Which family owns each member, memoised against the scene.
+   *
+   * The same map the filter and the tally use, from the same function, so this file cannot form
+   * a second opinion about whether a bar is a slab's or a column's.
+   */
+  const kindOfElement = $derived(kindByElement(scene.solids));
 
   let host = $state<HTMLDivElement | null>(null);
   let failed = $state(false);
@@ -81,7 +105,15 @@
 
   function fit() {
     if (!camera || !controls) return;
-    const f = frameBounds(scene, camera.fov, camera.aspect);
+    /**
+     * Framed on what is VISIBLE, not on everything built.
+     *
+     * The geometry is now the whole model whatever the switches say, so framing `scene.bounds`
+     * would back the camera off far enough to see a building the user has narrowed to one
+     * footing. `visibleBounds` answers the same question `filterScene` used to answer on the way
+     * past, without allocating a filtered scene to read six numbers off it.
+     */
+    const f = frameExtent(visibleBounds(scene, filter), camera.fov, camera.aspect);
     if (!f) return;
     controls.target.copy(f.centre);
     // Down the long diagonal: a cage read straight down an axis hides every bar behind the
@@ -100,13 +132,35 @@
 
   export function fitView() { fit(); }
 
+  /**
+   * Build the geometry, then re-apply everything that is not geometry.
+   *
+   * The concrete and the conflict markers are built UNCONDITIONALLY and switched with visibility,
+   * so their checkboxes cost a flag rather than a rebuild. Only `diameterScale` reaches the
+   * builder, because only it changes where a vertex is.
+   *
+   * A rebuild is a new set of meshes, so the visibility, the opacity and the section have to be
+   * re-applied to them. Forgetting one of those is how a rebuild silently resets a filter the
+   * user set — the failure mode that made "it forgets my layers" a bug report.
+   */
   function rebuild() {
     if (!root) return;
+    /**
+     * The bookkeeping lives HERE, not only in the effect that usually calls it.
+     *
+     * `onMount` builds the scene and the rebuild effect then runs for the first time with no
+     * recorded signature — so it built everything a second time, immediately, before the user
+     * had touched anything. On the 7-storey building that is a second full pass over 20 917
+     * bars to arrive at the geometry already on the GPU. Recording the state inside the build
+     * makes the effect's own guard cover the mount as well.
+     */
+    lastSignature = sceneSignature(scene);
+    lastGeometryOptions = `${diameterScale}`;
     if (built) { root.remove(built.group); built.dispose(); built = null; }
-    built = createRebarScene(scene, {
-      diameterScale, showConcrete, showConflicts, concreteOpacity,
-      section: section ?? undefined,
-    });
+    built = createRebarScene(scene, { diameterScale });
+    built.setVisibility({ filter, concrete: showConcrete, conflicts: showConflicts });
+    built.setConcreteOpacity(concreteOpacity);
+    built.setSection(section ?? undefined);
     root.add(built.group);
     invalidate(2);
   }
@@ -165,7 +219,9 @@
    */
   export function focusElement(elementId: number): boolean {
     if (!camera || !controls) return false;
-    const extent = elementExtent(scene, elementId);
+    // Restricted to what is visible: a request for a member the user has switched off cannot be
+    // served, and reporting a move that never happened is worse than not moving.
+    const extent = elementExtent(scene, elementId, filter);
     const f = frameExtent(extent, camera.fov, camera.aspect);
     if (!f) return false;
     const dir = new THREE.Vector3()
@@ -193,7 +249,16 @@
       (highlight.material as THREE.Material).dispose();
       highlight = null;
     }
-    const bar = selectedBarId ? scene.bars.find((b) => b.barId === selectedBarId) : null;
+    /**
+     * No ring on a bar that is not being drawn.
+     *
+     * The scene here is the whole model, so a selected bar survives its own layer being switched
+     * off — and a yellow ring floating where a hidden bar used to be says "this is selected and
+     * it is here", which is half true in the worst way. The filter decides, using the same
+     * predicate the batches were switched with.
+     */
+    const found = selectedBarId ? scene.bars.find((b) => b.barId === selectedBarId) : null;
+    const bar = found && barMatchesFilter(found, filter, kindOfElement) ? found : null;
     if (bar && bar.polyline.length > 0) {
       const p = bar.polyline[Math.floor(bar.polyline.length / 2)];
       const r = Math.max(0.05, (bar.diameterMm / 2000) * 6);
@@ -321,22 +386,38 @@
   let lastGeometryOptions = '';
   $effect(() => {
     /**
-     * Only the options that change VERTICES belong here.
+     * Only the options that change VERTICES belong here — and by now there is one.
      *
-     * Opacity and the section plane do not: one is a material property and the other is a
+     * Opacity and the section plane never did: one is a material property and the other is a
      * plane the material clips against, and both used to re-tube 20 917 bars to arrive at
      * geometry byte-identical to the one already on the GPU — 1,6 s per slider step, measured
-     * on the 7-storey building. They are applied in place by the effects below.
+     * on the 7-storey building.
+     *
+     * `showConcrete` and `showConflicts` have now joined them, because "draw this or not" is a
+     * flag on a mesh and was costing a full rebuild for no reason at all. What is left is
+     * `diameterScale`, which genuinely moves every ring off its centreline.
+     *
+     * The scene's own signature is the other trigger, and it changes when the DOCUMENT does —
+     * which is the one case where the tubes really are wrong and must be rebuilt.
      */
-    const geometryOptions = `${diameterScale}|${showConcrete}|${showConflicts}`;
+    const geometryOptions = `${diameterScale}`;
     if (!root) return;
     const signature = sceneSignature(scene);
     if (signature === lastSignature && geometryOptions === lastGeometryOptions) return;
     const sceneChanged = signature !== lastSignature;
-    lastSignature = signature;
-    lastGeometryOptions = geometryOptions;
     rebuild();
     if (sceneChanged) fit();
+  });
+
+  /**
+   * Visibility. No vertex is touched, no buffer is reallocated, no picking map is rebuilt.
+   *
+   * This is the effect that used to be a rebuild. A family switch reaches `mesh.visible`; an
+   * isolate or a status filter re-selects which of the already-built triangles are drawn.
+   */
+  $effect(() => {
+    built?.setVisibility({ filter, concrete: showConcrete, conflicts: showConflicts });
+    invalidate(2);
   });
 
   // Material-only updates. No vertex is touched and no buffer is reallocated.

@@ -18,7 +18,7 @@
  * handles the walk and cannot grow without limit.
  */
 
-import type { SceneSolidKind } from '../engine/detailing/scene-model';
+import { SCENE_SOLID_KINDS, type SceneSolidKind } from '../engine/detailing/scene-model';
 import type { ElementStatus } from '../engine/detailing/element-status';
 
 /** What the user has selected, however they selected it. */
@@ -37,10 +37,14 @@ export interface WorkspaceSection {
   flip: boolean;
 }
 
-/** Every concrete family, in the order the layer switches present them. */
-export const SOLID_KINDS: readonly SceneSolidKind[] = [
-  'column', 'beam', 'slab', 'wall', 'footing', 'pedestal',
-];
+/**
+ * Every concrete family, in the order the layer switches present them.
+ *
+ * Re-exported rather than re-listed. The renderer batches its meshes per family and the tally
+ * counts per family, and a fourth copy of the same six strings is a fourth chance for one of them
+ * to drift — a family missing from one list is a switch that quietly governs nothing.
+ */
+export const SOLID_KINDS: readonly SceneSolidKind[] = SCENE_SOLID_KINDS;
 
 /** How deep the "go back" stack goes. */
 const HISTORY_LIMIT = 20;

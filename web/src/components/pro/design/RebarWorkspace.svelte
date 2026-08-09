@@ -289,7 +289,11 @@
           onclick={() => rebarWorkspace.goBack()}
         >← {t('detailing.scene.back')}</button>
       {/if}
-      <button type="button" onclick={() => viewport?.fitView()}>
+      <button
+        type="button"
+        data-testid="rebar-fit-view"
+        onclick={() => viewport?.fitView()}
+      >
         {t('detailing.scene.reset')}
       </button>
       <button
@@ -310,10 +314,23 @@
       </aside>
 
       <main class="stage">
-        {#if visible}
+        {#if built}
+          <!--
+            The WHOLE scene, plus the filter as a separate input.
+
+            The viewport used to be handed `visible` — the filtered scene — and that is what made
+            every layer switch cost seconds: a smaller scene has a different signature, and a
+            different signature meant re-tubing all 20 917 bars to answer a checkbox. It builds
+            once from everything the document contains and switches batches instead.
+
+            `visible` is still computed, because the tally, the inspector and the piece counts are
+            all statements about what is ON SCREEN. Filtering arrays of bars is milliseconds;
+            rebuilding their geometry was seconds.
+          -->
           <RebarViewport3D
             bind:this={viewport}
-            scene={visible}
+            scene={built.scene}
+            {filter}
             diameterScale={rebarWorkspace.diameterScale}
             showConcrete={rebarWorkspace.showConcrete}
             showConflicts={rebarWorkspace.showConflicts}

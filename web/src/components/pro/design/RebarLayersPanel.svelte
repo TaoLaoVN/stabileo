@@ -66,11 +66,19 @@
     <span>{t('detailing.scene.showBars')}</span>
   </label>
   <label>
-    <input type="checkbox" bind:checked={rebarWorkspace.showConcrete} />
+    <input
+      type="checkbox"
+      data-testid="rebar-layer-concrete"
+      bind:checked={rebarWorkspace.showConcrete}
+    />
     <span>{t('detailing.scene.showConcrete')}</span>
   </label>
   <label>
-    <input type="checkbox" bind:checked={rebarWorkspace.showConflicts} />
+    <input
+      type="checkbox"
+      data-testid="rebar-layer-conflicts"
+      bind:checked={rebarWorkspace.showConflicts}
+    />
     <span>{t('detailing.scene.showConflicts')}</span>
   </label>
   <label>
@@ -84,6 +92,7 @@
   <label class="slider">
     <span>{t('detailing.scene.exaggerate')} ×{rebarWorkspace.diameterScale}</span>
     <input type="range" min="1" max="6" step="1"
+           data-testid="rebar-exaggerate"
            bind:value={rebarWorkspace.diameterScale} />
   </label>
   <label class="slider">

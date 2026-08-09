@@ -143,6 +143,19 @@ export function classifyPiece(bar: BarPath): SceneBar['piece'] {
 export type SceneSolidKind = 'beam' | 'column' | 'footing' | 'pedestal' | 'slab' | 'wall';
 
 /**
+ * Every concrete family, in one place.
+ *
+ * The layer switches, the renderer's batches and the tally all enumerate these, and three
+ * copies of the same six strings is three chances for one of them to drift — a family missing
+ * from the renderer's list would batch its bars as unknown and quietly stop answering its own
+ * switch. Order is the order the switches present them, which is also the order the batches
+ * are built in, so the two read the same way.
+ */
+export const SCENE_SOLID_KINDS: readonly SceneSolidKind[] = [
+  'column', 'beam', 'slab', 'wall', 'footing', 'pedestal',
+];
+
+/**
  * A piece of concrete, as a prism.
  *
  * One shape covers every member this app details — a rectangular section swept along an
@@ -675,6 +688,29 @@ export interface SceneFilter {
 }
 
 /**
+ * Which family owns each member, from the concrete itself.
+ *
+ * ── Why this is one function and not three copies ──────────────────
+ *
+ * The filter, the tally and the renderer's batching all need it, and all three must agree
+ * exactly: a bar the filter counts as slab steel and the renderer batches under columns is a
+ * bar that disappears when the user switches columns off while the tally still claims it. That
+ * is not a cosmetic disagreement — it is the id-collision failure this scene already carries a
+ * whole field to prevent, arriving through a second implementation instead.
+ *
+ * Member solids are appended to the scene AFTER the family solids, so a frame member wins any
+ * number it shares with a footing. That ordering is `buildSceneModel`'s, and the last-write
+ * behaviour here is what carries it — stated so it is a property rather than an accident.
+ */
+export function kindByElement(
+  solids: readonly SceneSolid[],
+): ReadonlyMap<number, SceneSolidKind> {
+  const out = new Map<number, SceneSolidKind>();
+  for (const s of solids) for (const id of s.elementIds) out.set(id, s.kind);
+  return out;
+}
+
+/**
  * Which layer switch governs a bar.
  *
  * A bar belongs to the family of the concrete it sits in: slab steel to `slab`, footing mats
@@ -764,8 +800,7 @@ export function filterScene(scene: SceneModel, f: SceneFilter): SceneModel {
   // Built from the UNFILTERED solids, so a bar's family is resolved against the whole model
   // rather than against whatever survived — otherwise hiding columns would make column bars
   // unresolvable and therefore kept.
-  const kindOfElement = new Map<number, SceneSolidKind>();
-  for (const s of scene.solids) for (const id of s.elementIds) kindOfElement.set(id, s.kind);
+  const kindOfElement = kindByElement(scene.solids);
 
   const bars = scene.bars.filter((b) => barMatchesFilter(b, f, kindOfElement));
   const visibleBarIds = new Set(bars.map((b) => b.barId));
@@ -794,6 +829,24 @@ export function filterScene(scene: SceneModel, f: SceneFilter): SceneModel {
       .flatMap((s) => s.elementIds)
       .sort((x, y) => x - y),
   };
+}
+
+/**
+ * The bounds of what a filter leaves visible, without materialising a filtered scene.
+ *
+ * ── Why this is not just `filterScene(...).bounds` ─────────────────
+ *
+ * Because the renderer no longer holds a filtered scene. It builds its geometry from the whole
+ * model once and answers the layer switches with mesh visibility, so the only thing it still
+ * needs from the filter is where to point the camera. Asking `filterScene` for that would
+ * allocate two arrays of thousands of bars and solids to read six numbers off the end of them.
+ */
+export function visibleBounds(scene: SceneModel, f: SceneFilter): SceneBounds | null {
+  const kindOfElement = kindByElement(scene.solids);
+  return boundsOf(
+    scene.bars.filter((b) => barMatchesFilter(b, f, kindOfElement)),
+    scene.solids.filter((s) => solidMatchesFilter(s, f)),
+  );
 }
 
 /**
@@ -891,8 +944,7 @@ export function summariseScene(
   }
 
   // ── Per family ──────────────────────────────────────────────
-  const kindOfElement = new Map<number, SceneSolidKind>();
-  for (const s of scene.solids) for (const id of s.elementIds) kindOfElement.set(id, s.kind);
+  const kindOfElement = kindByElement(scene.solids);
 
   const fam = new Map<SceneSolidKind | 'unknown',
   { solids: number; longitudinal: number; transverse: number }>();

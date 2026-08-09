@@ -37,6 +37,10 @@ export interface TestHooks {
   orientationSuspectCount(): number;
   undoCount(): number;
   canvasInkRatio(): number;
+  /** How many times the 3-D viewport has built its tube geometry. */
+  rebarSceneBuilds(): number;
+  /** Scene-projection cache hits and misses. */
+  sceneCacheStats(): { hits: number; misses: number };
 }
 
 /** Actions a spec may drive — the same operations the UI controls perform. */
