@@ -86,9 +86,9 @@
         <ToolLoadOptions />
       {:else if uiStore.currentTool === 'influenceLine'}
         <span class="tb-group-label">{t('float.reactions')}</span>
-        <button class="tb-btn" class:on={uiStore.ilQuantity === 'Ry'} onclick={() => (uiStore.ilQuantity = 'Ry')}>{t('float.ryVertical')}</button>
+        <button class="tb-btn" class:on={uiStore.ilQuantity === 'Rz'} onclick={() => (uiStore.ilQuantity = 'Rz')}>{t('float.rzVertical')}</button>
         <button class="tb-btn" class:on={uiStore.ilQuantity === 'Rx'} onclick={() => (uiStore.ilQuantity = 'Rx')}>{t('float.rxHoriz')}</button>
-        <button class="tb-btn" class:on={uiStore.ilQuantity === 'Mz'} onclick={() => (uiStore.ilQuantity = 'Mz')}>{t('float.mzSupport')}</button>
+        <button class="tb-btn" class:on={uiStore.ilQuantity === 'My'} onclick={() => (uiStore.ilQuantity = 'My')}>{t('float.mySupport')}</button>
         <span class="tb-sep" aria-hidden="true"></span>
         <span class="tb-group-label">{t('float.internal')}</span>
         <button class="tb-btn" class:on={uiStore.ilQuantity === 'M'} onclick={() => (uiStore.ilQuantity = 'M')}>{t('float.mMoment')}</button>

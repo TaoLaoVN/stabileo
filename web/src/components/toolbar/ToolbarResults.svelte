@@ -109,9 +109,17 @@
 {/if}
 
 <div class="toolbar-section" data-tour="results-section">
-  <button class="section-toggle" onclick={() => showResultsPanel = !showResultsPanel}>
-    {showResultsPanel ? '▾' : '▸'} {t('results.results')}
-  </button>
+  <!--
+    The header is a real toggle only where it toggles something. In the right
+    panel the body below renders regardless (`|| flat`), so this was a chevron
+    that changed direction and did nothing else — the panel already carries the
+    heading "RESULTS" two lines above it.
+  -->
+  {#if !flat}
+    <button class="section-toggle" onclick={() => showResultsPanel = !showResultsPanel}>
+      {showResultsPanel ? '▾' : '▸'} {t('results.results')}
+    </button>
+  {/if}
   {#if showResultsPanel || flat}
     {#if resultsStore.results || resultsStore.results3D || resultsStore.influenceLine}
       {#if !hideDiagrams}
@@ -198,10 +206,15 @@
         {@const caseKeys = is3D ? [...resultsStore.perCase3D.keys()] : [...resultsStore.perCase.keys()]}
         {@const comboKeys = is3D ? [...resultsStore.perCombo3D.keys()] : [...resultsStore.perCombo.keys()]}
         {@const hasEnvelope = is3D ? resultsStore.fullEnvelope3D !== null : resultsStore.fullEnvelope !== null}
-        <button class="sub-toggle" onclick={() => showResultsViewSub = !showResultsViewSub}>
-          {showResultsViewSub ? '▾' : '▸'} {t('results.changeResultsView')}
-        </button>
-        {#if showResultsViewSub}
+        <!-- Open in the panel: no accordions there. -->
+        {#if !flat}
+          <button class="sub-toggle" onclick={() => showResultsViewSub = !showResultsViewSub}>
+            {showResultsViewSub ? '▾' : '▸'} {t('results.changeResultsView')}
+          </button>
+        {:else}
+          <span class="sub-heading">{t('results.changeResultsView')}</span>
+        {/if}
+        {#if showResultsViewSub || flat}
           <div class="sub-content">
             {#if uiStore.showPrimarySelector}
               <div class="input-group">
@@ -451,6 +464,16 @@
     50% {
       box-shadow: 0 0 8px 2px rgba(233, 69, 96, 0.4);
     }
+  }
+
+  .sub-heading {
+    display: block;
+    font-family: var(--st-mono);
+    font-size: 0.66rem;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: var(--st-text-3);
+    padding: 0.4rem 0 0.25rem;
   }
 
   .section-toggle {

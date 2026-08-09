@@ -3,6 +3,14 @@
   import { t } from '../lib/i18n';
 </script>
 
+<!--
+  Escape closes it. The backdrop was the only way out besides the ✕, which is
+  the one gesture nobody tries first on a modal — and this is the dialog a user
+  opens to learn the keyboard, so it not answering the keyboard is its own
+  small joke.
+-->
+<svelte:window onkeydown={(e) => { if (e.key === 'Escape' && uiStore.showHelp) uiStore.showHelp = false; }} />
+
 {#if uiStore.showHelp}
   <div class="help-overlay" role="dialog" aria-label={t('help.title')}>
     <div class="help-backdrop" onclick={() => uiStore.showHelp = false}></div>
@@ -68,6 +76,18 @@
 {/if}
 
 <style>
+  /*
+     The shortcuts dialog, on the application's design system.
+     ────────────────────────────────────────────────────────
+     This kept the pre-token palette wholesale: a #16213e card on a #0f3460
+     border, a turquoise heading and pink keycaps — so the one panel a new user
+     opens to learn the application looked like a different application.
+
+     The keycaps carry the mono face and the hairline the rest of the shell
+     uses; the shortcut letter is a value the user reads off, so it takes the
+     value colour rather than the accent, which is reserved for what they are
+     acting on.
+  */
   .help-overlay {
     position: fixed;
     inset: 0;
@@ -75,52 +95,60 @@
     display: flex;
     align-items: center;
     justify-content: center;
+    font-family: var(--st-sans);
   }
 
   .help-backdrop {
     position: absolute;
     inset: 0;
-    background: rgba(0, 0, 0, 0.6);
+    background: rgba(12, 22, 32, 0.72);
+    backdrop-filter: blur(2px);
   }
 
   .help-content {
     position: relative;
-    background: #16213e;
-    border: 1px solid #0f3460;
-    border-radius: 8px;
-    padding: 1.5rem 2rem;
-    max-width: 600px;
+    background: var(--st-surface);
+    border: 1px solid var(--st-hair);
+    border-radius: var(--st-radius-lg);
+    padding: 1.4rem 1.6rem;
+    max-width: 620px;
     width: 90%;
     max-height: 80vh;
     overflow-y: auto;
-    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.5);
+    box-shadow: 0 16px 48px rgba(0, 0, 0, 0.55);
   }
 
   .help-header {
     display: flex;
     justify-content: space-between;
     align-items: center;
+    padding-bottom: 0.7rem;
     margin-bottom: 1rem;
+    border-bottom: 1px solid var(--st-hair);
   }
 
   .help-header h2 {
-    font-size: 1.1rem;
-    color: #4ecdc4;
+    font-family: var(--st-mono);
+    font-size: 0.72rem;
+    font-weight: 400;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    color: var(--st-text-2);
     margin: 0;
   }
 
   .help-close {
     background: none;
     border: none;
-    color: #888;
-    font-size: 1.2rem;
+    color: var(--st-text-3);
+    font-size: 1.1rem;
+    line-height: 1;
     cursor: pointer;
-    padding: 0.25rem;
+    padding: 0.1rem 0.35rem;
+    border-radius: var(--st-radius);
   }
 
-  .help-close:hover {
-    color: #eee;
-  }
+  .help-close:hover { background: var(--st-surface-3); color: var(--st-text); }
 
   .help-columns {
     display: grid;
@@ -129,44 +157,47 @@
   }
 
   .help-col h3 {
-    font-size: 0.75rem;
+    font-family: var(--st-mono);
+    font-size: 0.64rem;
+    font-weight: 400;
     text-transform: uppercase;
-    color: #888;
-    letter-spacing: 0.05em;
-    margin: 0.75rem 0 0.4rem 0;
+    color: var(--st-text-3);
+    letter-spacing: 0.11em;
+    margin: 1rem 0 0.4rem 0;
   }
 
-  .help-col h3:first-child {
-    margin-top: 0;
-  }
+  .help-col h3:first-child { margin-top: 0; }
 
   .shortcut {
     display: flex;
     align-items: center;
-    gap: 0.5rem;
+    gap: 0.55rem;
     font-size: 0.8rem;
-    color: #ccc;
-    padding: 0.15rem 0;
+    color: var(--st-text-2);
+    padding: 0.18rem 0;
   }
 
   .help-content :global(kbd) {
-    background: #0f3460;
-    border: 1px solid #1a4a7a;
-    border-radius: 3px;
-    padding: 0.1rem 0.4rem;
-    font-family: monospace;
-    font-size: 0.75rem;
-    color: #e94560;
-    min-width: 1.5rem;
+    background: var(--st-surface-3);
+    border: 1px solid var(--st-hair);
+    border-bottom-width: 2px;
+    border-radius: var(--st-radius);
+    padding: 0.12rem 0.42rem;
+    font-family: var(--st-mono);
+    font-size: 0.72rem;
+    color: var(--st-value);
+    min-width: 1.6rem;
     text-align: center;
+    flex: none;
   }
 
   .help-hint {
     text-align: center;
-    color: #666;
-    font-size: 0.75rem;
-    margin-top: 1rem;
-    margin-bottom: 0;
+    color: var(--st-text-3);
+    font-size: 0.72rem;
+    margin: 1.2rem 0 0;
+    padding-top: 0.8rem;
+    border-top: 1px solid var(--st-hair);
   }
 
   @media (max-width: 767px) {

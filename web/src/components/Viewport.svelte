@@ -1704,22 +1704,22 @@
         }
       }
     } else if (uiStore.currentTool === 'influenceLine') {
-      // Influence line: click node for Ry/Rx/Mz, click element for V/M
+      // Influence line: click node for Rz/Rx/My, click element for V/M
       const q = uiStore.ilQuantity;
       const nearNode = findNearestNode(world.x, world.y, 0.5);
       const nearElem = findNearestElement(world.x, world.y, 0.5);
 
       let result: any;
-      if ((q === 'Ry' || q === 'Rx' || q === 'Mz') && nearNode) {
+      if ((q === 'Rz' || q === 'Rx' || q === 'My') && nearNode) {
         result = modelStore.computeInfluenceLine(q, nearNode.id);
       } else if ((q === 'V' || q === 'M') && nearElem) {
         result = modelStore.computeInfluenceLine(q, undefined, nearElem.id, 0.5);
       } else if (nearNode) {
-        // Clicked node but quantity is V/M → switch to Ry
-        result = modelStore.computeInfluenceLine('Ry', nearNode.id);
-        uiStore.ilQuantity = 'Ry';
+        // Clicked node but quantity is V/M → switch to Rz
+        result = modelStore.computeInfluenceLine('Rz', nearNode.id);
+        uiStore.ilQuantity = 'Rz';
       } else if (nearElem) {
-        // Clicked element but quantity is Ry/Rx/Mz → switch to M
+        // Clicked element but quantity is Rz/Rx/My → switch to M
         result = modelStore.computeInfluenceLine('M', undefined, nearElem.id, 0.5);
         uiStore.ilQuantity = 'M';
       } else {

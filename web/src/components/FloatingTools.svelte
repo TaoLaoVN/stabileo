@@ -100,9 +100,9 @@
         {#if uiStore.currentTool === 'influenceLine'}
           <span class="ft-il-group">
             <span class="ft-il-label">{t('float.reactions')}</span>
-            <button class="ft-opt-btn" class:active={uiStore.ilQuantity === 'Ry'} onclick={() => uiStore.ilQuantity = 'Ry'}>{t('float.ryVertical')}</button>
+            <button class="ft-opt-btn" class:active={uiStore.ilQuantity === 'Rz'} onclick={() => uiStore.ilQuantity = 'Rz'}>{t('float.rzVertical')}</button>
             <button class="ft-opt-btn" class:active={uiStore.ilQuantity === 'Rx'} onclick={() => uiStore.ilQuantity = 'Rx'}>{t('float.rxHoriz')}</button>
-            <button class="ft-opt-btn" class:active={uiStore.ilQuantity === 'Mz'} onclick={() => uiStore.ilQuantity = 'Mz'}>{t('float.mzSupport')}</button>
+            <button class="ft-opt-btn" class:active={uiStore.ilQuantity === 'My'} onclick={() => uiStore.ilQuantity = 'My'}>{t('float.mySupport')}</button>
           </span>
           <span class="ft-sep">|</span>
           <span class="ft-il-group">

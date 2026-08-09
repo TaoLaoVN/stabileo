@@ -177,18 +177,24 @@ describe('Bug 1: 2D Displacement uses uz/ry (not uy/rz)', () => {
     const mobileResults = readFileSync(new URL('../../../components/MobileResultsPanel.svelte', import.meta.url), 'utf8');
     const sectionStress = readFileSync(new URL('../../../components/SectionStressPanel.svelte', import.meta.url), 'utf8');
     const aiReview = readFileSync(new URL('../../../components/toolbar/ToolbarAiReview.svelte', import.meta.url), 'utf8');
-    const toolbar = readFileSync(new URL('../../../components/Toolbar.svelte', import.meta.url), 'utf8');
+    // Copy/paste moved out of Toolbar with the rest of the keyboard layer:
+    // Toolbar is mounted on mobile only, so every shortcut it owned did nothing
+    // on desktop. These guarantees follow the code to its new home.
+    const toolbar = readFileSync(new URL('../../../components/KeyboardShortcuts.svelte', import.meta.url), 'utf8');
+    const oldToolbar = readFileSync(new URL('../../../components/Toolbar.svelte', import.meta.url), 'utf8');
 
     expect(aiDrawer, 'AiDrawer.svelte should treat pro as 3D').toContain("uiStore.analysisMode === '3d' || uiStore.analysisMode === 'pro'");
     expect(aiDrawer, 'AiDrawer.svelte should send canonical 3D mode to the AI backend').toContain("const aiAnalysisMode = $derived(is3DMode ? '3d' : '2d');");
     expect(mobileResults, 'MobileResultsPanel.svelte should treat pro as 3D').toContain("uiStore.analysisMode === '3d' || uiStore.analysisMode === 'pro'");
     expect(sectionStress, 'SectionStressPanel.svelte should treat pro as 3D').toContain("uiStore.analysisMode === '3d' || uiStore.analysisMode === 'pro'");
     expect(aiReview, 'ToolbarAiReview.svelte should treat pro as 3D').toContain("uiStore.analysisMode === '3d' || uiStore.analysisMode === 'pro'");
-    expect(toolbar, 'Toolbar.svelte should treat pro as 3D when pasting copied geometry').toContain("uiStore.analysisMode === '3d' || uiStore.analysisMode === 'pro'");
-    expect(toolbar, 'Toolbar.svelte should copy 3D element metadata into the clipboard through the shared helper').toContain('...pickElement3DMetadata(elem)');
-    expect(toolbar, 'Toolbar.svelte should require a complete explicit local axis before restoring it on paste').toContain('if (hasExplicitLocalY(el)) {');
-    expect(toolbar, 'Toolbar.svelte should restore localY metadata when pasting').toContain('modelStore.updateElementLocalY(newElemId, el.localYx, el.localYy, el.localYz);');
-    expect(toolbar, 'Toolbar.svelte should restore rollAngle metadata when pasting').toContain('modelStore.rotateElementLocalAxes(newElemId, el.rollAngle);');
+    expect(toolbar, 'KeyboardShortcuts.svelte should treat pro as 3D when pasting copied geometry').toContain("uiStore.analysisMode === '3d' || uiStore.analysisMode === 'pro'");
+    expect(toolbar, 'KeyboardShortcuts.svelte should copy 3D element metadata into the clipboard through the shared helper').toContain('...pickElement3DMetadata(elem)');
+    expect(toolbar, 'KeyboardShortcuts.svelte should require a complete explicit local axis before restoring it on paste').toContain('if (hasExplicitLocalY(el)) {');
+    expect(toolbar, 'KeyboardShortcuts.svelte should restore localY metadata when pasting').toContain('modelStore.updateElementLocalY(newElemId, el.localYx, el.localYy, el.localYz);');
+    expect(toolbar, 'KeyboardShortcuts.svelte should restore rollAngle metadata when pasting').toContain('modelStore.rotateElementLocalAxes(newElemId, el.rollAngle);');
+    expect(oldToolbar, 'the keyboard layer should live in ONE place, not two')
+      .not.toContain('function handleKeydown');
   });
 
   it('3D viewport presentation should be explicit rather than a boolean projection hint', () => {

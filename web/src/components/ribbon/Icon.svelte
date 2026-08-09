@@ -91,8 +91,20 @@
     <rect x="3.5" y="4.5" width="17" height="15" rx="1" />
     <path d="M3.5 9.5h17M3.5 14.5h17M9.5 4.5v15" />
   {:else if name === 'settings'}
-    <circle cx="12" cy="12" r="3.2" />
-    <path d="M12 2.5v2.6M12 18.9v2.6M2.5 12h2.6M18.9 12h2.6M5.2 5.2l1.9 1.9M16.9 16.9l1.9 1.9M18.8 5.2l-1.9 1.9M7.1 16.9l-1.9 1.9" />
+    <!--
+      A gear. This was a circle ringed by eight straight rays, which is the
+      drawing of a sun — the rays have to be teeth, sitting ON the circle rather
+      than radiating away from it, or the shape says "brightness".
+    -->
+    <circle cx="12" cy="12" r="3.1" />
+    <path d="M12 3.4v2.2M12 18.4v2.2M3.4 12h2.2M18.4 12h2.2" />
+    <path d="M6.1 6.1l1.6 1.6M16.3 16.3l1.6 1.6M17.9 6.1l-1.6 1.6M7.7 16.3l-1.6 1.6" />
+    <circle cx="12" cy="12" r="7.1" />
+  {:else if name === 'save'}
+    <!-- A diskette: still the one shape everyone reads as "save". -->
+    <path d="M4.5 4.5h11.4L19.5 8.1v11.4h-15z" />
+    <path d="M8 4.5v5h7v-5" />
+    <rect x="7.5" y="13" width="9" height="6.5" />
   {:else if name === 'undo'}
     <path d="M4 10h10a5 5 0 0 1 0 10H8" />
     <path d="M7.5 6.5L4 10l3.5 3.5" />

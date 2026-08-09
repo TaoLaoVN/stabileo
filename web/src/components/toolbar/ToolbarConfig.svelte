@@ -44,11 +44,21 @@
   </button>
   {/if}
   {/if}
-  {#if showConfig || inline}
+  <!--
+    `flat` belongs in this gate. Every sub-section below already opens on
+    `flat ||`, but the outer one did not, and `showConfig` starts closed —
+    so pressing Settings in the ribbon opened a right panel with a heading
+    and nothing underneath it.
+  -->
+  {#if showConfig || inline || flat}
   <div class="config-children">
-    <button class="sub-toggle" onclick={() => showGridSub = !showGridSub}>
-      {showGridSub ? '▾' : '▸'} {t('config.grid')}
-    </button>
+    {#if flat}
+      <span class="sub-heading">{t('config.grid')}</span>
+    {:else}
+      <button class="sub-toggle" onclick={() => showGridSub = !showGridSub}>
+        {showGridSub ? '▾' : '▸'} {t('config.grid')}
+      </button>
+    {/if}
     {#if flat || showGridSub}
       {@const is3D = uiStore.analysisMode === '3d' || uiStore.analysisMode === 'pro'}
       {@const isPro = uiStore.analysisMode === 'pro'}
@@ -122,9 +132,19 @@
       </div>
     {/if}
 
-    <button class="sub-toggle" onclick={() => showStructureSub = !showStructureSub}>
-      {showStructureSub ? '▾' : '▸'} {t('config.model')}
-    </button>
+    {#if flat}
+
+      <span class="sub-heading">{t('config.model')}</span>
+
+    {:else}
+
+      <button class="sub-toggle" onclick={() => showStructureSub = !showStructureSub}>
+
+        {showStructureSub ? '▾' : '▸'} {t('config.model')}
+
+      </button>
+
+    {/if}
     {#if flat || showStructureSub}
       {@const is3Dm = uiStore.analysisMode === '3d' || uiStore.analysisMode === 'pro'}
       <div class="sub-content">
@@ -197,9 +217,19 @@
       </div>
     {/if}
 
-    <button class="sub-toggle" onclick={() => showResultsSub = !showResultsSub}>
-      {showResultsSub ? '▾' : '▸'} {t('config.resultsSection')}
-    </button>
+    {#if flat}
+
+      <span class="sub-heading">{t('config.resultsSection')}</span>
+
+    {:else}
+
+      <button class="sub-toggle" onclick={() => showResultsSub = !showResultsSub}>
+
+        {showResultsSub ? '▾' : '▸'} {t('config.resultsSection')}
+
+      </button>
+
+    {/if}
     {#if flat || showResultsSub}
       <div class="sub-content">
         <label class="checkbox-item">
@@ -281,6 +311,18 @@
     gap: 0.25rem;
     padding-left: 0.2rem;
     padding-right: 0.2rem;
+  }
+
+  .sub-heading {
+    display: block;
+    font-family: var(--st-mono);
+    font-size: 0.66rem;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: var(--st-text-2);
+    padding: 0.5rem 0 0.2rem;
+    border-bottom: 1px solid var(--st-hair);
+    margin-bottom: 0.25rem;
   }
 
   .sub-toggle {

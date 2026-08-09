@@ -1,10 +1,12 @@
 <script lang="ts">
   import { t } from '../../lib/i18n';
+  import { TWO_D_INTERNAL_FORCE_LABELS as F2D } from '../../lib/geometry/coordinate-system';
   import { uiStore } from '../../lib/store/ui.svelte';
   import { historyStore } from '../../lib/store/history.svelte';
   import { resultsStore } from '../../lib/store/results.svelte';
   import Icon from './Icon.svelte';
   import { runSolve } from '../../lib/actions/solve';
+  import { saveProject } from '../../lib/store/file';
 
   /**
    * Ribbon toolbar.
@@ -54,7 +56,7 @@
     icon: string | (() => string);
     /** Translation key for the button label. */
     labelKey?: string | (() => string);
-    /** Literal label, for symbols like N, Mz, Vy that are not translated. */
+    /** Literal label, for symbols like N, My, Vz that are not translated. */
     label?: string;
     /** Translation key for the human name, shown in the tooltip. */
     nameKey?: string;
@@ -75,20 +77,11 @@
   const solved = $derived(resultsStore.results != null || resultsStore.results3D != null);
 
   /*
-   * The available diagrams genuinely differ between 2D and 3D — a 3D frame has
-   * My, Mz, Vy, Vz and torsion where a 2D one has M, V and N. The ribbon used a
-   * fixed 2D list, so in 3D it offered diagrams that did not exist and hid the
-   * ones that did, and disagreed with the panel that listed them correctly.
-   */
-  /*
-   * ONE list of diagrams, always the same length and always in the same place.
-   *
-   * The list was mode-dependent, so commands appeared and disappeared as the
-   * user switched 2D/3D and the row re-flowed under the cursor. The same rule
-   * that governs the results group before a solve governs this: a diagram that
-   * does not apply to the current mode is greyed, not removed, and its tooltip
-   * says why. My, Mz, Vz and torsion exist only for a 3D frame; M, V and N read
-   * as their 3D counterparts, so they stay live in both.
+   * Greying beats hiding for a command that could apply here but cannot run
+   * yet — that is why the whole results group is present and disabled before
+   * the first solve. It does NOT apply to a quantity that has no meaning in
+   * the current mode: Mz and Vy are out-of-plane and simply do not exist in a
+   * 2D model, so in 2D they are absent rather than greyed. See below.
    */
   const threeD = $derived(uiStore.analysisMode === '3d');
 
@@ -96,30 +89,63 @@
    * Ordered N, My, Vz, Mz, Vy, T — the pairs that share a plane sit together,
    * rather than the alphabetical order the store happens to use.
    *
-   * The symbols are always fully qualified. A 2D frame bends about z and shears
-   * along y, so its diagrams ARE Mz and Vy; labelling them bare "M" and "V"
-   * left the user to guess which axis they meant and made the 3D-only My and Vz
-   * look like different quantities rather than the other half of the same pair.
+   * ── Which axis a 2D diagram is about ──────────────────────────────────
    *
-   * My/Mz and Vz/Vy each share an icon turned 90°, because they are the same
-   * action about perpendicular axes.
+   * The 2D plane is x–z, and a 2D node's degrees of freedom are ux, uz and θy.
+   * A 2D frame therefore bends about its local y and shears along its local z:
+   * its two diagrams are **My and Vz**, the same two an identical model shows
+   * in 3D. Mz and Vy are the out-of-plane pair and cannot exist in 2D at all,
+   * so they are not offered there.
+   *
+   * These were labelled Mz and Vy, which is the pre-migration Y-up naming from
+   * before the app moved to Z-up. The engine still carries that history: the
+   * Rust `Reaction` struct serialises `rx`, `rz`, `my` and keeps `ry`/`mz` only
+   * as deserialise aliases for old files. Anything in the UI still saying Mz or
+   * Vy about a 2D model is a leftover from that migration.
+   *
+   * The consequence was not cosmetic. The same model solved in 2D and in 3D
+   * put the identical diagram under two different names — 2D's "Mz" was 3D's
+   * "My" — so comparing the two modes suggested the solver disagreed with
+   * itself.
+   *
+   * My/Mz and Vz/Vy each share an icon; the out-of-plane one is turned 90°,
+   * because it is the same action about a perpendicular axis.
    */
   const diagramCmds = $derived.by((): Cmd[] => {
     const any = () => solved;
     const only3d = () => solved && threeD;
-    return [
+    const cmds: Cmd[] = [
       { id: 'none', icon: 'none', labelKey: 'ribbon.noDiagram', panel: 'results', diagram: 'none', enabled: any },
       { id: 'deformed', icon: 'deformed', labelKey: 'ribbon.deformed', panel: 'results', diagram: 'deformed', enabled: any },
-      { id: 'axial', icon: 'axial', label: 'N', nameKey: 'ribbon.nameAxial', panel: 'results', diagram: 'axial', enabled: any },
-      { id: 'momentY', icon: 'moment', label: 'My', nameKey: 'ribbon.nameMomentY', panel: 'results', diagram: 'momentY', enabled: only3d, needs3d: true },
-      { id: 'shearZ', icon: 'shear', label: 'Vz', nameKey: 'ribbon.nameShearZ', panel: 'results', diagram: 'shearZ', enabled: only3d, needs3d: true },
-      { id: 'moment', icon: 'moment', rotate: 90, label: 'Mz', nameKey: 'ribbon.nameMomentZ', panel: 'results', diagram: threeD ? 'momentZ' : 'moment', enabled: any },
-      { id: 'shear', icon: 'shear', rotate: 90, label: 'Vy', nameKey: 'ribbon.nameShearY', panel: 'results', diagram: threeD ? 'shearY' : 'shear', enabled: any },
-      { id: 'torsion', icon: 'torsion', label: 'T', nameKey: 'ribbon.nameTorsion', panel: 'results', diagram: 'torsion', enabled: only3d, needs3d: true },
+      { id: 'axial', icon: 'axial', label: F2D.axial, nameKey: 'ribbon.nameAxial', panel: 'results', diagram: 'axial', enabled: any },
+      { id: 'momentY', icon: 'moment', label: F2D.moment, nameKey: 'ribbon.nameMomentY', panel: 'results', diagram: threeD ? 'momentY' : 'moment', enabled: any },
+      { id: 'shearZ', icon: 'shear', label: F2D.shear, nameKey: 'ribbon.nameShearZ', panel: 'results', diagram: threeD ? 'shearZ' : 'shear', enabled: any },
     ];
+    /*
+     * Out-of-plane, so absent rather than disabled in 2D. A greyed-out Mz would
+     * imply the quantity exists here and is merely unavailable; it does not.
+     */
+    if (threeD) {
+      cmds.push(
+        { id: 'moment', icon: 'moment', rotate: 90, label: 'Mz', nameKey: 'ribbon.nameMomentZ', panel: 'results', diagram: 'momentZ', enabled: only3d, needs3d: true },
+        { id: 'shear', icon: 'shear', rotate: 90, label: 'Vy', nameKey: 'ribbon.nameShearY', panel: 'results', diagram: 'shearY', enabled: only3d, needs3d: true },
+        { id: 'torsion', icon: 'torsion', label: 'T', nameKey: 'ribbon.nameTorsion', panel: 'results', diagram: 'torsion', enabled: only3d, needs3d: true },
+      );
+    }
+    return cmds;
   });
 
-  const GROUPS: Group[] = [
+  /*
+   * Derived, not a plain const.
+   *
+   * This was evaluated once at component init, which read `diagramCmds` and
+   * froze that snapshot. It happened to work while the diagram list was always
+   * the same length and only its `enabled`/`diagram` closures varied — those
+   * are re-read on every render. It stops working the moment the list's LENGTH
+   * depends on the mode, which is what hiding the out-of-plane Mz and Vy in 2D
+   * does: switching to 3D left the ribbon showing the 2D list forever.
+   */
+  const GROUPS: Group[] = $derived([
     {
       id: 'view',
       labelKey: 'ribbon.groupView',
@@ -170,7 +196,7 @@
       labelKey: 'ribbon.tabResults',
       cmds: diagramCmds,
     },
-  ];
+  ]);
 
   function run(cmd: Cmd) {
     if (cmd.enabled && !cmd.enabled()) return;
@@ -240,37 +266,49 @@
 
 <div class="ribbon" data-testid="ribbon">
   <div class="rb-row">
-    {#each GROUPS as g (g.id)}
-      <section class="rb-group" data-group={g.id} aria-label={t(g.labelKey)}>
-        <div class="rb-cmds">
-          {#each g.cmds as c (c.id)}
-            {@const on = !c.enabled || c.enabled()}
-            <button
-              class="rb-cmd"
-              class:active={isActive(c)}
-              disabled={!on}
-              data-testid="rb-cmd-{c.id}"
-              onclick={() => run(c)}
-              title={cmdTitle(c, on)}
-            >
-              <span class="rb-icon"><Icon name={typeof c.icon === 'function' ? c.icon() : c.icon} rotate={c.rotate ?? 0} /></span>
-              <span class="rb-label" class:symbol={!!c.label}>{cmdLabel(c)}</span>
-            </button>
-          {/each}
-        </div>
-        <p class="rb-group-label">{t(g.labelKey)}</p>
-      </section>
-    {/each}
-
-    <div class="rb-spacer"></div>
-
     <!--
-      Undo, redo and settings sit apart and never move. They apply to
-      everything, so filing them under one group heading would misstate their
-      scope — the same reason Office keeps its quick-access controls outside the
-      tabs.
+      Document-level commands, in their own box before the first group.
+      ─────────────────────────────────────────────────────────────────
+      Examples, Project, Save, Undo, Redo and Settings do not act on the model
+      in front of you — they act on WHICH model you have, or on the application
+      itself. Filing them under a group heading would misstate their scope, and
+      scattering them (two in the title bar, three at the far right) made the
+      most consequential commands in the window the hardest to find.
+
+      Word puts exactly this set in a quick-access block pinned ahead of the
+      ribbon's first tab, and that is what this is: leftmost, boxed off by a
+      rule, never moving, never changing with the mode.
     -->
-    <div class="rb-quick">
+    <div class="rb-quick" data-testid="rb-quick">
+      <button
+        class="rb-quick-btn"
+        class:active={activePanel === 'examples'}
+        onclick={() => onOpenPanel('examples')}
+        title={t('ribbon.examples')}
+        aria-label={t('ribbon.examples')}
+        data-testid="hdr-examples"
+      ><Icon name="examples" size={17} /></button>
+      <button
+        class="rb-quick-btn"
+        class:active={activePanel === 'project'}
+        onclick={() => onOpenPanel('project')}
+        title={t('ribbon.project')}
+        aria-label={t('ribbon.project')}
+        data-testid="hdr-project"
+      ><Icon name="project" size={17} /></button>
+      <!--
+        Save is in the Project panel too. It is here as well because it is the
+        one command in that panel you run repeatedly, and reaching it through a
+        panel is three actions for something that should be one.
+      -->
+      <button
+        class="rb-quick-btn"
+        onclick={() => saveProject()}
+        title="{t('project.saveTab')} ({mod}+S)"
+        aria-label={t('project.saveTab')}
+        data-testid="rb-save"
+      ><Icon name="save" size={17} /></button>
+      <span class="rb-quick-sep" aria-hidden="true"></span>
       <button
         class="rb-quick-btn"
         onclick={() => historyStore.undo()}
@@ -294,6 +332,30 @@
         data-testid="rb-settings"
       ><Icon name="settings" size={17} /></button>
     </div>
+
+    {#each GROUPS as g (g.id)}
+      <section class="rb-group" data-group={g.id} aria-label={t(g.labelKey)}>
+        <div class="rb-cmds">
+          {#each g.cmds as c (c.id)}
+            {@const on = !c.enabled || c.enabled()}
+            <button
+              class="rb-cmd"
+              class:active={isActive(c)}
+              disabled={!on}
+              data-testid="rb-cmd-{c.id}"
+              onclick={() => run(c)}
+              title={cmdTitle(c, on)}
+            >
+              <span class="rb-icon"><Icon name={typeof c.icon === 'function' ? c.icon() : c.icon} rotate={c.rotate ?? 0} /></span>
+              <span class="rb-label" class:symbol={!!c.label}>{cmdLabel(c)}</span>
+            </button>
+          {/each}
+        </div>
+        <p class="rb-group-label">{t(g.labelKey)}</p>
+      </section>
+    {/each}
+
+    <div class="rb-spacer"></div>
   </div>
 </div>
 
@@ -395,11 +457,29 @@
 
   .rb-spacer { flex: 1; min-width: 0.5rem; }
 
+  /*
+     Boxed off, ahead of the first group, with the same rule the groups use
+     between themselves — so it reads as a peer of the groups rather than as
+     part of View, which is what it would look like sitting flush against it.
+  */
   .rb-quick {
     display: flex;
-    align-items: flex-start;
+    align-items: center;
     gap: 0.1rem;
-    padding: 0.3rem 0.2rem 0;
+    padding: 0 0.5rem 0 0.2rem;
+    margin-right: 0.35rem;
+    border-right: 1px solid var(--st-hair);
+    align-self: stretch;
+    flex: none;
+  }
+
+  /* Document commands | history and settings. */
+  .rb-quick-sep {
+    width: 1px;
+    align-self: center;
+    height: 16px;
+    margin: 0 0.25rem;
+    background: var(--st-hair);
     flex: none;
   }
 
