@@ -24,8 +24,9 @@
  *
  * REPORTED: the milliseconds, as a table, next to the cost of one deliberate rebuild so every row
  * can be read against what it used to cost. They carry two sets of ceilings — a wide one for the
- * default view, whose frame is dominated by 39 240 conflict markers on a software rasteriser, and a
- * tight one measured with those markers off, where what is left is the app's own work.
+ * default view, whose frame is still dominated by 39 240 conflict markers on a software rasteriser
+ * even after their tessellation was cut, and a tight one measured with those markers off, where what
+ * is left is the app's own work.
  *
  * ── Setup is never inside a measurement ────────────────────────────
  *
@@ -124,9 +125,11 @@ const FAMILIES = ['column', 'beam', 'slab', 'wall', 'footing'] as const;
  *     conflict markers + concrete off       627 ms
  *
  * The markers are the cost, and the reason is a number worth stating: this document carries 39 240
- * open conflicts, and each marker is a 10 × 8 sphere. That is about 6,3 million triangles of
- * translucent geometry — six times the 1,0 million the reinforcement itself needs. Software
- * rasterising it twice per switch is the seconds.
+ * open conflicts. At the 10 × 8 sphere they were built with, that was 5 493 600 triangles of
+ * translucent geometry against the reinforcement's own 1 008 672. Cutting them to 6 × 4 took the
+ * markers to 1 412 640 and the same switch to about 2 610 ms — 1,9×, not the 3,89× the geometry
+ * fell by, because the rest is fill rate: the same screen area, blended, however few triangles
+ * cover it.
  *
  * So the budgets below sit above the observed range on this runner, and the spec MEASURES the
  * marker contribution rather than quietly absorbing it into a wide number. What the ceilings catch
@@ -406,6 +409,102 @@ for (const [label, example, floors] of [
       expect(first.total, `first selection (${label})`).toBeLessThan(budget.select);
       expect(repeat.total, `repeated selection (${label})`).toBeLessThan(budget.select);
       expect(panel.total, `member-list selection (${label})`).toBeLessThan(budget.select);
+    });
+
+    test('showing and hiding the conflict markers costs a flag, not a rebuild', async (
+      { pro: page },
+    ) => {
+      test.setTimeout(900_000);
+      await openWorkspace(page, example, floors);
+      const start = await counters(page);
+
+      const markers = page.getByTestId('rebar-layer-conflicts');
+      const rows: Array<[string, string]> = [];
+      /** Median of an odd-length sample, so one unlucky frame does not become the number. */
+      const median = (xs: number[]) => [...xs].sort((a, b) => a - b)[xs.length >> 1];
+
+      /**
+       * The markers' own switch, timed on its own.
+       *
+       * This is the gesture the tessellation change is about. At 10 × 8 a marker was 140 triangles
+       * and the 7-storey document carries 39 240 of them — 5,5 million triangles, five and a half
+       * times the reinforcement's own 1,0 million. At 6 × 4 it is 36 triangles and 1,4 million.
+       *
+       * Three passes each way and the MEDIAN reported, because two were not enough to say anything.
+       * Measured across two passes, hiding the markers read 7 694 ms and then 1 543 ms — the first
+       * pass pays for whatever the previous gesture left pending, and picking either number would
+       * have been picking a conclusion.
+       */
+      const hidden: number[] = [];
+      const shown: number[] = [];
+      for (let i = 0; i < 3; i++) {
+        const off = await timed(page, () => markers.uncheck(),
+          () => expect(markers).not.toBeChecked());
+        const on = await timed(page, () => markers.check(),
+          () => expect(markers).toBeChecked());
+        hidden.push(off.total);
+        shown.push(on.total);
+      }
+      rows.push(['hide conflicts', `${median(hidden)} ms  (${hidden.join(', ')})`]);
+      rows.push(['show conflicts', `${median(shown)} ms  (${shown.join(', ')})`]);
+
+      /**
+       * And a family switch with the markers drawn, which is where the cost showed up.
+       *
+       * The markers are never the thing the user clicked — they are what makes everything ELSE
+       * slow, because every frame has to rasterise them. So the number that matters most is a
+       * different gesture measured while they are on screen.
+       */
+      const column = page.getByTestId('rebar-layer-column');
+      if (await column.count()) {
+        const offs: number[] = [];
+        const ons: number[] = [];
+        for (let i = 0; i < 3; i++) {
+          offs.push((await timed(page, () => column.uncheck(),
+            () => expect(column).not.toBeChecked())).total);
+          ons.push((await timed(page, () => column.check(),
+            () => expect(column).toBeChecked())).total);
+        }
+        rows.push(['toggle column, markers ON',
+          `off ${median(offs)} ms (${offs.join(', ')}), on ${median(ons)} ms (${ons.join(', ')})`]);
+      }
+
+      const end = await counters(page);
+      rows.unshift(['WebGL contexts', `${start.contexts} → ${end.contexts}`]);
+      rows.unshift(['canvases', `${start.canvases} → ${end.canvases}`]);
+      rows.unshift(['tube rebuilds', `${start.builds} → ${end.builds}`]);
+      rows.unshift(['projections built', `${start.misses} → ${end.misses}`]);
+
+      const w = Math.max(...rows.map(([k]) => k.length));
+      console.log(`\nconflict markers — ${label}\n${
+        rows.map(([k, v]) => `  ${k.padEnd(w)}  ${v}`).join('\n')}\n`);
+
+      // Switching a marker is a flag. Nothing about the reinforcement may be rebuilt for it.
+      expect(end.builds, 'tubes rebuilt by switching markers').toBe(start.builds);
+      expect(end.misses, 'projections rebuilt by switching markers').toBe(start.misses);
+      expect(end.contexts, 'WebGL contexts added').toBe(start.contexts);
+      expect(end.canvases, 'canvases added').toBe(start.canvases);
+      // And the markers are still all there — hidden is not discarded.
+      await expect(markers).toBeChecked();
+    });
+
+    test('repeating the marker switch adds no canvas and no context', async ({ pro: page }) => {
+      test.setTimeout(900_000);
+      await openWorkspace(page, example, floors);
+      const start = await counters(page);
+
+      const markers = page.getByTestId('rebar-layer-conflicts');
+      for (let i = 0; i < 20; i++) {
+        await markers.uncheck();
+        await markers.check();
+      }
+
+      const end = await counters(page);
+      expect(end.builds, 'tubes rebuilt across forty marker switches').toBe(start.builds);
+      expect(end.canvases).toBe(start.canvases);
+      expect(end.contexts).toBe(start.contexts);
+      await expect(markers).toBeChecked();
+      await expect(page.getByTestId('rebar-canvas')).toBeVisible();
     });
 
     test('opening and closing the workspace leaks no WebGL context', async ({ pro: page }) => {

@@ -55,7 +55,8 @@
 import * as THREE from 'three';
 import {
   SCENE_SOLID_KINDS, barMatchesFilter, barSolidKind, kindByElement, solidMatchesFilter,
-  type SceneBar, type SceneFilter, type SceneModel, type SceneSolid, type SceneSolidKind,
+  type SceneBar, type SceneConflictMarker, type SceneFilter, type SceneModel, type SceneSolid,
+  type SceneSolidKind,
 } from '../engine/detailing/scene-model';
 
 // ─── Palette ─────────────────────────────────────────────────────
@@ -101,6 +102,56 @@ export type RebarFamily = SceneSolidKind | 'unknown';
 
 /** Every batch family, in build order. Families first, then the unresolved. */
 export const REBAR_FAMILIES: readonly RebarFamily[] = [...SCENE_SOLID_KINDS, 'unknown'];
+
+/**
+ * How round a conflict marker is.
+ *
+ * ── Why these numbers, and why they are a named constant ───────────
+ *
+ * A marker is a DOT. What it has to communicate is where the conflict is and how bad it is, and
+ * the second of those is carried by the marker's SIZE — scaled by the shortfall, floored so a 2 mm
+ * one is still visible. Its roundness communicates nothing.
+ *
+ * At 10 × 8 a marker was 140 triangles. The 7-storey building carries 39 240 open conflicts, so the
+ * markers alone were 5 493 600 triangles — five and a half times the 1 008 672 the entire
+ * reinforcement needs. 6 × 4 is 36 triangles and 1 412 640 in total: the same position, the same
+ * radius, the same colour, the same instance matrix, 3,89× less geometry. It reads as a faceted bead
+ * at the size a marker is viewed rather than as a smooth ball, which is a fair description of what
+ * it is.
+ *
+ * ── What that bought, measured, and what it did not ────────────────
+ *
+ * A family switch with the markers on screen, median of three on the E2E runner's software
+ * rasteriser:
+ *
+ *     hide columns   5 412 ms → 2 611 ms
+ *     show columns   4 934 ms → 2 610 ms
+ *
+ * About 1,9×, against 3,89× less geometry — so the triangles were not the whole cost. The rest is
+ * fill rate: 39 240 translucent spheres cover the same screen area however few triangles each is
+ * made of, and blending them is per-fragment work no tessellation change can reach. Switching the
+ * markers themselves is too noisy on this runner to quote a factor for; the benchmark prints its
+ * raw samples rather than a conclusion.
+ *
+ * Named rather than inlined so the benchmark can report what it measured against, and so a future
+ * change to it is a change to a documented decision rather than to two digits in a constructor.
+ */
+export const MARKER_SEGMENTS = { width: 6, height: 4 } as const;
+
+/**
+ * Triangles in one marker, counted from the geometry rather than from a formula.
+ *
+ * A sphere's two polar rings are triangles and the rest are quads, so the arithmetic is
+ * `width × (2·height − 2)` — and writing that out here would be a second implementation of
+ * something Three already decides. Built once and thrown away; the benchmark reports the number so
+ * the reduction is a measurement rather than a claim.
+ */
+function markerTriangles(): number {
+  const g = new THREE.SphereGeometry(1, MARKER_SEGMENTS.width, MARKER_SEGMENTS.height);
+  const n = (g.getIndex()?.count ?? 0) / 3;
+  g.dispose();
+  return n;
+}
 
 // ─── Tube geometry ───────────────────────────────────────────────
 
@@ -371,9 +422,22 @@ export interface RebarSceneStats {
   /** Bars that produced geometry. A degenerate one-point bar is not one of them. */
   tubes: number;
   solids: number;
+  /** Triangles in the bar and concrete batches. Markers are counted separately, and why. */
   triangles: number;
   barBatches: number;
   solidBatches: number;
+  /** Conflict markers built. One instance each. */
+  markers: number;
+  /** Triangles in ONE marker, at the current tessellation. */
+  markerTriangles: number;
+  /**
+   * Triangles the markers contribute in total.
+   *
+   * Reported apart from `triangles` because they are a different kind of cost with a different
+   * remedy: the reinforcement's triangles are the thing the view exists to show and cannot be
+   * reduced, and a marker's are a rendering choice about a dot.
+   */
+  markerTrianglesTotal: number;
 }
 
 export interface RebarScene {
@@ -385,6 +449,16 @@ export interface RebarScene {
   /** The conflict markers, or null when the document has no open conflict. */
   markers: THREE.InstancedMesh | null;
   stats: RebarSceneStats;
+  /**
+   * Which conflict is drawn in a marker slot, or null when that slot is not drawn.
+   *
+   * The markers are not pickable today — `pickable()` lists bars and concrete, and a raycast never
+   * reaches the instanced mesh — so nothing in the app calls this yet. It exists because the
+   * compaction MOVES markers between slots, and "slot 3 is still the same conflict it was" is a
+   * property that has to be checkable rather than assumed. It is also exactly the map a clickable
+   * marker would need.
+   */
+  conflictAt(instanceIndex: number): SceneConflictMarker | null;
   /** Which bar a raycast hit, or null when the hit was concrete or a marker. */
   barIdAt(mesh: THREE.Object3D, faceIndex: number | undefined): string | null;
   /**
@@ -756,8 +830,19 @@ export function createRebarScene(
   let markerMatrices: Float32Array | null = null;
   /** Whether the live instance buffer has been moved away from the master. */
   let markersCompacted = false;
+  /**
+   * Which conflict is drawn in each instance slot.
+   *
+   * The compaction moves markers around, so slot 0 is not conflict 0 once a filter is on. This is
+   * the map back — the marker equivalent of `BarRange`, and the piece that would be needed the day
+   * a marker becomes clickable. Written into a pre-allocated array so a toggle allocates nothing.
+   */
+  const drawnConflictOf = new Int32Array(scene.conflicts.length);
+  let drawnConflictCount = 0;
+
   if (options.showConflicts !== false && scene.conflicts.length > 0) {
-    const geom = new THREE.SphereGeometry(1, 10, 8);
+    const geom = new THREE.SphereGeometry(
+      1, MARKER_SEGMENTS.width, MARKER_SEGMENTS.height);
     const mat = new THREE.MeshBasicMaterial({
       color: REBAR_COLORS.conflictMarker, transparent: true, opacity: 0.75,
     });
@@ -903,8 +988,11 @@ export function createRebarScene(
           markersCompacted = true;
           touched = true;
         }
+        // Which conflict this slot now holds. The matrix moved; the identity must move with it.
+        drawnConflictOf[n] = i;
         n += 1;
       }
+      drawnConflictCount = n;
       // Re-uploading 39 240 matrices that did not move is the kind of work that turns a flag into
       // a frame. `count` alone is enough when nothing was rewritten.
       if (touched) markers.instanceMatrix.needsUpdate = true;
@@ -922,6 +1010,11 @@ export function createRebarScene(
    */
   applyVisibility();
 
+  // Counted once, not twice: `markerTriangles` builds a throwaway sphere to ask Three rather than
+  // to reimplement its arithmetic, and doing that per field would build two of them.
+  const perMarker = markerTriangles();
+  const markerCount = markers?.instanceMatrix.count ?? 0;
+
   return {
     group,
     bars,
@@ -933,6 +1026,20 @@ export function createRebarScene(
       triangles,
       barBatches: bars.length,
       solidBatches: solidMeshes.length,
+      markers: markerCount,
+      markerTriangles: perMarker,
+      markerTrianglesTotal: perMarker * markerCount,
+    },
+    /**
+     * Which conflict a drawn marker slot holds.
+     *
+     * Null past the drawn count, rather than the conflict that used to be there: an instance beyond
+     * `count` is not on screen, and reporting its former occupant would be the marker version of a
+     * picking map returning the neighbouring bar.
+     */
+    conflictAt(instanceIndex) {
+      if (instanceIndex < 0 || instanceIndex >= drawnConflictCount) return null;
+      return scene.conflicts[drawnConflictOf[instanceIndex]] ?? null;
     },
     /**
      * Which bar a picked triangle belongs to.
