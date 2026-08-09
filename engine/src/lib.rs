@@ -1446,3 +1446,95 @@ pub fn analyze_section_torsion(json: &str) -> Result<String, JsValue> {
     })
     .map_err(|e| JsValue::from_str(&format!("Serialize error: {e}")))
 }
+
+/// Transverse shear over canonical geometry, for unit forces on both axes.
+///
+/// This is what lets angles, closed tubes and arbitrary polygons report a shear
+/// stress at all: Jourawski's `V*Q/(I*b)` needs one well-defined width and they
+/// have none, so the legacy path refused them outright.
+///
+/// Like torsion, it meshes and solves, so it is a per-section cost meant to be
+/// cached rather than a per-query one.
+#[wasm_bindgen]
+pub fn analyze_section_shear(json: &str) -> Result<String, JsValue> {
+    use section::mesh::{mesh_section, MeshParams};
+    use section::poisson::SolveStrategy;
+    use section::shear::ShearInertia;
+
+    #[derive(serde::Deserialize)]
+    #[serde(rename_all = "camelCase", deny_unknown_fields)]
+    struct Request {
+        geometry: section::catalogue::CanonicalGeometry,
+        #[serde(default)]
+        max_area: Option<f64>,
+    }
+
+    let req: Request = serde_json::from_str(json)
+        .map_err(|e| JsValue::from_str(&format!("Parse error: {e}")))?;
+
+    let props = section::analyze_section(&section::SectionInput {
+        polygons: req.geometry.polygons.clone(),
+        modular_ratios: Default::default(),
+    })
+    .map_err(|e| JsValue::from_str(&e))?;
+
+    // Same unit normalisation as torsion, and for the same reason: a Delaunay
+    // refiner carries absolute tolerances that metre-scale coordinates walk
+    // into. Shear stress is force over area, so it scales back by `s^2`.
+    let extent = req
+        .geometry
+        .polygons
+        .iter()
+        .flat_map(|p| p.vertices.iter())
+        .fold(0.0_f64, |m, v| m.max(v[0].abs()).max(v[1].abs()));
+    if !(extent > 0.0) || !extent.is_finite() {
+        return Err(JsValue::from_str("geometry has no finite extent"));
+    }
+    let scale = 100.0 / extent;
+
+    let mut scaled = req.geometry.polygons.clone();
+    for poly in &mut scaled {
+        for v in &mut poly.vertices {
+            v[0] *= scale;
+            v[1] *= scale;
+        }
+    }
+
+    let mut params = MeshParams::default();
+    let scaled_area = props.a * scale * scale;
+    params.max_area = req.max_area.map(|a| a * scale * scale).unwrap_or(scaled_area / 2000.0);
+
+    let mesh = mesh_section(&scaled, &params).map_err(|e| JsValue::from_str(&e))?;
+    let res = section::shear::solve_shear(
+        &mesh,
+        [props.yc * scale, props.zc * scale],
+        ShearInertia { iy: props.iy * scale.powi(4), iz: props.iz * scale.powi(4) },
+        SolveStrategy::Sparse,
+    )
+    .map_err(|e| JsValue::from_str(&e))?;
+
+    #[derive(serde::Serialize)]
+    #[serde(rename_all = "camelCase")]
+    struct Axis {
+        tau_max: f64,
+        kappa: f64,
+    }
+    #[derive(serde::Serialize)]
+    #[serde(rename_all = "camelCase")]
+    struct Response {
+        vy: Axis,
+        vz: Axis,
+        triangles: usize,
+        residual: f64,
+    }
+    // Unit force over scaled geometry gives stress in scaled units; a stress is
+    // force per area, so undo `s^2`.
+    let s2 = scale * scale;
+    serde_json::to_string(&Response {
+        vy: Axis { tau_max: res.vy.tau_max * s2, kappa: res.vy.kappa },
+        vz: Axis { tau_max: res.vz.tau_max * s2, kappa: res.vz.kappa },
+        triangles: mesh.triangles.len(),
+        residual: res.residual,
+    })
+    .map_err(|e| JsValue::from_str(&format!("Serialize error: {e}")))
+}

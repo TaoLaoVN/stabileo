@@ -49,6 +49,7 @@ let wasmComputeInfluenceLine: ((json: string) => string) | null = null;
 let wasmBuildSectionGeometry: ((json: string) => string) | null = null;
 let wasmAnalyzeSectionBending: ((json: string) => string) | null = null;
 let wasmAnalyzeSectionTorsion: ((json: string) => string) | null = null;
+let wasmAnalyzeSectionShear: ((json: string) => string) | null = null;
 let wasmSectionGeometryDigest: ((json: string) => string) | null = null;
 let wasmComputeSectionStress2d: ((json: string) => string) | null = null;
 let wasmComputeSectionStress3d: ((json: string) => string) | null = null;
@@ -211,6 +212,7 @@ export async function initSolver(): Promise<void> {
     wasmBuildSectionGeometry = wasm.build_section_geometry ?? null;
     wasmAnalyzeSectionBending = wasm.analyze_section_bending ?? null;
     wasmAnalyzeSectionTorsion = wasm.analyze_section_torsion ?? null;
+    wasmAnalyzeSectionShear = wasm.analyze_section_shear ?? null;
     wasmSectionGeometryDigest = wasm.section_geometry_digest ?? null;
 
     // Section Stress
@@ -1443,4 +1445,27 @@ export function analyzeSectionTorsion(input: {
 }): TorsionResponse {
   if (!wasmReady || !wasmAnalyzeSectionTorsion) throw new Error('WASM solver not initialized. Call initSolver() first.');
   return JSON.parse(wasmAnalyzeSectionTorsion(JSON.stringify(input)));
+}
+
+/** Transverse shear response to unit forces on each centroidal axis. */
+export interface ShearResponse {
+  vy: { tauMax: number; kappa: number };
+  vz: { tauMax: number; kappa: number };
+  triangles: number;
+  residual: number;
+}
+
+/**
+ * Solve transverse shear for a canonical section.
+ *
+ * Works for shapes Jourawski cannot express — angles, closed tubes, arbitrary
+ * polygons — because it solves the equilibrium problem instead of assuming a
+ * single width. Meshes and solves, so cache the result per section.
+ */
+export function analyzeSectionShear(input: {
+  geometry: CanonicalGeometry;
+  maxArea?: number;
+}): ShearResponse {
+  if (!wasmReady || !wasmAnalyzeSectionShear) throw new Error('WASM solver not initialized. Call initSolver() first.');
+  return JSON.parse(wasmAnalyzeSectionShear(JSON.stringify(input)));
 }

@@ -9,6 +9,7 @@ pub mod bending;
 pub mod catalogue;
 pub mod mesh;
 pub mod poisson;
+pub mod shear;
 pub mod torsion;
 
 // ==================== Types ====================

@@ -11,33 +11,24 @@
  *
  * # What is canonical and what is not
  *
- * Only axial and bending stress come from canonical geometry today. Transverse
- * shear and torsion are boundary-value problems on the section that Checkpoint
- * 2C solves; the legacy formulas for them are valid for a narrow set of
- * families and wrong for angles, arbitrary polygons and closed sections. The
- * result therefore reports its components explicitly rather than handing back
- * one undifferentiated "stress", so a caller cannot combine a trustworthy
- * normal stress with an untrustworthy shear and present the total as valid.
+ * Every component now comes from the section's own geometry: axial and bending
+ * in closed form, transverse shear from longitudinal equilibrium, torsion from
+ * Saint-Venant — or from a closed form or published table where one exists.
+ *
+ * The result still reports its components separately rather than handing back
+ * one undifferentiated "stress". That mattered when shear was restricted to
+ * four shapes (`V*Q/(I*b)` needs a single well-defined width, which an angle, a
+ * closed tube and an arbitrary polygon do not have) and it matters now for a
+ * different reason: a section declared by properties alone has no geometry, so
+ * it must still be prevented from presenting a combined criterion.
  */
 
 import type { Section } from '../store/model.svelte';
+import type { TorsionProvenance } from './state';
 import type { ElementForces } from '../engine/types';
 import { analyzeSectionBending, type BendingResponse } from '../engine/wasm-solver';
 import { computeDiagramValueAt } from '../engine/diagrams';
 import { resolveDrawingGeometry, assertSameGeometry, type DrawingGeometry, type DrawingRefusal } from './drawing';
-
-/**
- * Section families whose legacy transverse-shear implementation was validated
- * for its own domain.
- *
- * A solid rectangle and the web/flange split of an I, H or U profile have a
- * single well-defined width `b(y)`, which is what `V*Q/(I*b)` requires. An
- * angle does not — its principal axes are rotated and its shear centre sits at
- * the corner — and neither does an arbitrary polygon or a closed section. Those
- * are excluded here rather than run through a formula that returns a
- * plausible-looking wrong number.
- */
-const LEGACY_SHEAR_VALID_SHAPES = new Set(['rect', 'I', 'H', 'U']);
 
 export type StressComponentSource = 'canonical' | 'legacy' | 'unavailable';
 
@@ -98,21 +89,42 @@ export function stationForces3D(
 
 /** Decide which stress components this section may legitimately report. */
 export function componentProvenance(sec: Section): ComponentProvenance {
-  const canonical = sec.canonical?.kind === 'geometry-backed';
-  const shape = sec.shape ?? '';
-  const legacyShearOk = canonical && LEGACY_SHEAR_VALID_SHAPES.has(shape);
+  const st = sec.canonical;
+  const canonical = st?.kind === 'geometry-backed';
   return {
     normalAndBending: canonical ? 'canonical' : 'unavailable',
-    transverseShear: legacyShearOk ? 'legacy' : 'unavailable',
-    // Neither Routh's J nor the `Iz * 0.001` compatibility fallback is a
-    // detailed torsional result, and the Saint-Venant solver is Checkpoint 2C.
-    torsion: 'unavailable',
+    // Shear is solved from longitudinal equilibrium over the real outline, so
+    // it no longer depends on the section having a single well-defined width.
+    // An angle, a closed tube and an arbitrary polygon all report it now.
+    transverseShear: canonical ? 'canonical' : 'unavailable',
+    // Torsion follows whatever the section's constant is backed by: a closed
+    // form for circular shapes, a published table where one exists, and
+    // Saint-Venant solved on the mesh otherwise. `unavailable` now means the
+    // section has no geometry at all, not that the problem is unsolved.
+    torsion: canonical && st.j != null ? torsionSource(st.jProvenance) : 'unavailable',
     // A combined criterion is only meaningful if every component feeding it is
     // trustworthy. With shear or torsion unavailable, von Mises over "normal
     // stress plus nothing" is still exact, so the flag tracks whether an
     // INVALID component would be mixed in — never whether one is missing.
     combinedCriteriaValid: canonical,
   };
+}
+
+/** Map a torsional constant's provenance onto how much it may be trusted. */
+function torsionSource(p: TorsionProvenance): StressComponentSource {
+  switch (p) {
+    // All three are derived from the section itself and may be relied on.
+    case 'exactAnalytical':
+    case 'saintVenant':
+      return 'canonical';
+    case 'catalogue':
+      return 'canonical';
+    // A value inherited from an old file with no known basis.
+    case 'legacy':
+      return 'legacy';
+    default:
+      return 'unavailable';
+  }
 }
 
 /**

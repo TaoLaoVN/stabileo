@@ -127,47 +127,55 @@ describe('the panel refuses rather than approximating', () => {
 // ─── Canonical vs legacy component separation ──────────────────────
 
 describe('stress components report what may be trusted', () => {
-  it('a rectangle may use legacy shear; its normal stress is canonical', () => {
+  it('a rectangle reports every component from its own geometry', () => {
     const p = componentProvenance(resolved(sec({ shape: 'rect', b: 0.2, h: 0.4 })));
     expect(p.normalAndBending).toBe('canonical');
-    expect(p.transverseShear).toBe('legacy');
+    expect(p.transverseShear).toBe('canonical');
     expect(p.combinedCriteriaValid).toBe(true);
   });
 
-  it('an I profile may use legacy shear', () => {
-    expect(componentProvenance(resolved(sec({ shape: 'I', h: 0.3, b: 0.15, tw: 0.0071, tf: 0.0107 }))).transverseShear)
-      .toBe('legacy');
-  });
-
-  it('an ANGLE must NOT run legacy shear', () => {
-    // The defect this closes: `V*Q/(I*b)` needs one well-defined width, and an
-    // angle has rotated principal axes and a corner shear centre.
+  it('an ANGLE reports shear, which the legacy formula could never do', () => {
+    // The defect this closes ran the other way for a long time: `V*Q/(I*b)`
+    // needs one well-defined width, and an angle has rotated principal axes and
+    // a shear centre at its corner, so the old path refused it outright and
+    // left combined criteria unavailable. Solving equilibrium over the real
+    // outline needs no width at all.
     const p = componentProvenance(resolved(sec({ shape: 'L', h: 0.1, b: 0.1, t: 0.01 })));
     expect(p.normalAndBending).toBe('canonical');
-    expect(p.transverseShear).toBe('unavailable');
+    expect(p.transverseShear).toBe('canonical');
   });
 
-  it('a closed section and an arbitrary polygon must NOT run legacy shear', () => {
+  it('a closed section and an arbitrary polygon report shear too', () => {
     expect(componentProvenance(resolved(sec({ shape: 'RHS', b: 0.1, h: 0.2, t: 0.008 }))).transverseShear)
-      .toBe('unavailable');
+      .toBe('canonical');
     expect(
       componentProvenance(
         resolved(sec({ polygon: [[0, 0], [0.3, 0], [0.22, 0.09], [0.05, 0.18]] })),
       ).transverseShear,
-    ).toBe('unavailable');
+    ).toBe('canonical');
   });
 
-  it('torsion is never claimed — Routh and the compatibility fallback are not results', () => {
-    for (const s of [
-      sec({ shape: 'rect', b: 0.2, h: 0.4 }),
-      fromCatalogue('IPE 300'),
-      fromCatalogue('CHS 88.9x4'),
-    ]) {
-      expect(componentProvenance(resolved(s)).torsion).toBe('unavailable');
+  it('torsion is reported when the constant has a basis, and only then', () => {
+    // A circular family gets the closed form; anything else geometry-backed
+    // gets Saint-Venant solved on its own mesh. What is NOT allowed, and never
+    // was, is Routh's polygon approximation or the `Iz * 0.001` placeholder.
+    const circle = resolveSectionState(sec({ shape: 'CHS', h: 0.2, t: 0.01 }), { torsion: true });
+    expect(circle.kind).toBe('geometry-backed');
+    if (circle.kind === 'geometry-backed') {
+      expect(circle.jProvenance).toBe('exactAnalytical');
     }
+
+    const open = resolveSectionState(sec({ shape: 'rect', b: 0.2, h: 0.4 }), { torsion: true });
+    if (open.kind !== 'geometry-backed') throw new Error('expected geometry-backed');
+    expect(open.jProvenance).toBe('saintVenant');
+    // A square's J against Saint-Venant's series, so the value is pinned and
+    // not merely present.
+    const s = 0.2, l = 0.4;
+    const series = l * s ** 3 * (1 / 3 - 0.21 * (s / l) * (1 - s ** 4 / (12 * l ** 4)));
+    expect(Math.abs(open.j! / series - 1)).toBeLessThan(0.05);
   });
 
-  it('a properties-only section claims nothing at all', () => {
+  it('a section with no geometry claims nothing at all', () => {
     const p = componentProvenance(resolved(sec({ name: 'Losa equivalente', a: 0.05, iy: 4e-4, iz: 1e-4 })));
     expect(p.normalAndBending).toBe('unavailable');
     expect(p.transverseShear).toBe('unavailable');
