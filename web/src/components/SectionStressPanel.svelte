@@ -2,6 +2,7 @@
   import { modelStore, resultsStore, uiStore, tourStore } from '../lib/store';
   import { t } from '../lib/i18n';
   import { propertyDeviation } from '../lib/section/state';
+  import { canonicalStressState } from '../lib/section/stress-state';
   import { supportsDetailedAnalysis } from '../lib/section/drawing';
   import { canonicalPanelResult, stationForces2D, stationForces3D } from '../lib/section/panel';
   import {
@@ -307,10 +308,52 @@
     return null;
   });
 
-  // Mohr circle data (unified for both 2D and 3D / rotated 2D)
-  const mohrData = $derived(uses3DPath ? analysis3D?.mohr ?? null : analysis2D?.mohr ?? null);
-  const mohrSigma = $derived(uses3DPath ? (analysis3D?.sigmaAtFiber ?? 0) : (analysis2D?.sigmaAtY ?? 0));
-  const mohrTau = $derived(uses3DPath ? (analysis3D?.tauTotal ?? 0) : (analysis2D?.tauAtY ?? 0));
+  /**
+   * The stress state at the selected fibre, from canonical geometry.
+   *
+   * The panel used to draw a canonical outline, plot canonical bending on it,
+   * and then build its Mohr circle and failure checks from the LEGACY path —
+   * which infers a section's shape from its name and invents thicknesses when
+   * they are missing. One picture, two different sections, no way for a reader
+   * to tell which number came from which. This is the same geometry
+   * throughout; the legacy result stays only as the fallback for sections that
+   * have no geometry at all.
+   */
+  const canonicalState = $derived.by(() => {
+    if (!query || !canonical?.ok) return null;
+    const elem = modelStore.elements.get(query.elementId);
+    const sec = elem ? modelStore.sections.get(elem.sectionId) : null;
+    const mat = elem ? modelStore.materials.get(elem.materialId) : null;
+    if (!sec) return null;
+
+    // The fibre the user picked, in the drawing's own frame. That frame IS the
+    // canonical one — centroid-relative, in metres — because the drawing is
+    // canonical, so the point needs no translation to be meaningful here.
+    const [yMin, zMin, yMax, zMax] = canonical.geometry.bbox;
+    const py = yMin + fiberRatioZ * (yMax - yMin);
+    const pz = zMin + fiberRatioY * (zMax - zMin);
+
+    const f = canonical.forces as { n: number; my: number; mz: number; vy?: number; vz?: number; tx?: number };
+    const r = canonicalStressState(
+      sec,
+      { n: f.n, my: f.my, mz: f.mz, vy: f.vy, vz: f.vz, t: f.tx },
+      [py, pz],
+      mat?.fy,
+    );
+    return r.ok ? r.state : null;
+  });
+
+  // Mohr circle data. Canonical where the section has geometry; the legacy
+  // result only where it does not.
+  const mohrData = $derived(
+    canonicalState?.mohr ?? (uses3DPath ? analysis3D?.mohr ?? null : analysis2D?.mohr ?? null),
+  );
+  const mohrSigma = $derived(
+    canonicalState?.sigma ?? (uses3DPath ? (analysis3D?.sigmaAtFiber ?? 0) : (analysis2D?.sigmaAtY ?? 0)),
+  );
+  const mohrTau = $derived(
+    canonicalState?.tau ?? (uses3DPath ? (analysis3D?.tauTotal ?? 0) : (analysis2D?.tauAtY ?? 0)),
+  );
 
   const criticalSections = $derived.by(() => {
     if (!query) return [];

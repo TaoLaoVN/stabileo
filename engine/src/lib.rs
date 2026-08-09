@@ -1377,6 +1377,9 @@ pub fn analyze_section_torsion(json: &str) -> Result<String, JsValue> {
         /// means "size it from the section", which is what callers should do.
         #[serde(default)]
         max_area: Option<f64>,
+        /// Optional query point, CENTROID-RELATIVE, in the caller's units.
+        #[serde(default)]
+        at: Option<[f64; 2]>,
     }
 
     let req: Request = serde_json::from_str(json)
@@ -1435,12 +1438,20 @@ pub fn analyze_section_torsion(json: &str) -> Result<String, JsValue> {
         j: f64,
         /// Peak shear under unit twist rate, for scaling a real state.
         tau_max: f64,
+        /// `[tau_xy, tau_xz]` at the query point under unit twist rate.
+        #[serde(skip_serializing_if = "Option::is_none")]
+        at: Option<[f64; 2]>,
         triangles: usize,
         residual: f64,
     }
+    let at = req.at.and_then(|p| {
+        mesh.locate([p[0] * scale + props.yc * scale, p[1] * scale + props.zc * scale])
+            .map(|i| [res.tau[i][0] / scale, res.tau[i][1] / scale])
+    });
     serde_json::to_string(&Response {
         j: res.j,
         tau_max: res.tau_max,
+        at,
         triangles: mesh.triangles.len(),
         residual: res.residual,
     })
@@ -1467,6 +1478,9 @@ pub fn analyze_section_shear(json: &str) -> Result<String, JsValue> {
         geometry: section::catalogue::CanonicalGeometry,
         #[serde(default)]
         max_area: Option<f64>,
+        /// Optional query point, CENTROID-RELATIVE, in the caller's units.
+        #[serde(default)]
+        at: Option<[f64; 2]>,
     }
 
     let req: Request = serde_json::from_str(json)
@@ -1518,6 +1532,10 @@ pub fn analyze_section_shear(json: &str) -> Result<String, JsValue> {
     struct Axis {
         tau_max: f64,
         kappa: f64,
+        /// `[tau_xy, tau_xz]` at the query point, per unit force. Absent when
+        /// no point was asked for.
+        #[serde(skip_serializing_if = "Option::is_none")]
+        at: Option<[f64; 2]>,
     }
     #[derive(serde::Serialize)]
     #[serde(rename_all = "camelCase")]
@@ -1530,9 +1548,17 @@ pub fn analyze_section_shear(json: &str) -> Result<String, JsValue> {
     // Unit force over scaled geometry gives stress in scaled units; a stress is
     // force per area, so undo `s^2`.
     let s2 = scale * scale;
+    // The query arrives centroid-relative; the mesh is in absolute scaled
+    // coordinates, so shift it onto the centroid before locating.
+    let located = req.at.and_then(|p| {
+        mesh.locate([p[0] * scale + props.yc * scale, p[1] * scale + props.zc * scale])
+    });
+    let at_of = |f: &section::shear::ShearField| {
+        located.map(|i| [f.tau[i][0] * s2, f.tau[i][1] * s2])
+    };
     serde_json::to_string(&Response {
-        vy: Axis { tau_max: res.vy.tau_max * s2, kappa: res.vy.kappa },
-        vz: Axis { tau_max: res.vz.tau_max * s2, kappa: res.vz.kappa },
+        vy: Axis { tau_max: res.vy.tau_max * s2, kappa: res.vy.kappa, at: at_of(&res.vy) },
+        vz: Axis { tau_max: res.vz.tau_max * s2, kappa: res.vz.kappa, at: at_of(&res.vz) },
         triangles: mesh.triangles.len(),
         residual: res.residual,
     })

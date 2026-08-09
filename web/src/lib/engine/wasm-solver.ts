@@ -1428,6 +1428,8 @@ export interface TorsionResponse {
   j: number;
   /** Peak shear under unit twist rate. */
   tauMax: number;
+  /** `[tauXy, tauXz]` at the queried point, under unit twist rate. */
+  at?: [number, number];
   triangles: number;
   residual: number;
 }
@@ -1442,6 +1444,8 @@ export interface TorsionResponse {
 export function analyzeSectionTorsion(input: {
   geometry: CanonicalGeometry;
   maxArea?: number;
+  /** Query point, centroid-relative, in the geometry's own units. */
+  at?: [number, number];
 }): TorsionResponse {
   if (!wasmReady || !wasmAnalyzeSectionTorsion) throw new Error('WASM solver not initialized. Call initSolver() first.');
   return JSON.parse(wasmAnalyzeSectionTorsion(JSON.stringify(input)));
@@ -1449,8 +1453,8 @@ export function analyzeSectionTorsion(input: {
 
 /** Transverse shear response to unit forces on each centroidal axis. */
 export interface ShearResponse {
-  vy: { tauMax: number; kappa: number };
-  vz: { tauMax: number; kappa: number };
+  vy: { tauMax: number; kappa: number; at?: [number, number] };
+  vz: { tauMax: number; kappa: number; at?: [number, number] };
   triangles: number;
   residual: number;
 }
@@ -1465,6 +1469,8 @@ export interface ShearResponse {
 export function analyzeSectionShear(input: {
   geometry: CanonicalGeometry;
   maxArea?: number;
+  /** Query point, centroid-relative, in the geometry's own units. */
+  at?: [number, number];
 }): ShearResponse {
   if (!wasmReady || !wasmAnalyzeSectionShear) throw new Error('WASM solver not initialized. Call initSolver() first.');
   return JSON.parse(wasmAnalyzeSectionShear(JSON.stringify(input)));

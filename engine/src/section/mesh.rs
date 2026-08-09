@@ -718,3 +718,36 @@ mod tests {
         assert!(fine.triangles.len() > coarse.triangles.len());
     }
 }
+
+impl SectionMesh {
+    /// Index of the triangle containing `p`, or the nearest one by centroid.
+    ///
+    /// Falling back to the nearest rather than returning `None` is deliberate:
+    /// a query point comes from a user clicking a fibre on a drawing, and it
+    /// can land a hair outside the outline through nothing worse than rounding.
+    /// Refusing there would read as a broken panel; snapping to the nearest
+    /// element gives the value the user meant and is wrong by at most one
+    /// element's width — which the mesh already bounds.
+    pub fn locate(&self, p: [f64; 2]) -> Option<usize> {
+        let mut best: Option<(f64, usize)> = None;
+        for (i, &t) in self.triangles.iter().enumerate() {
+            let [a, b, c] = [self.nodes[t[0]], self.nodes[t[1]], self.nodes[t[2]]];
+            let d = (b[0] - a[0]) * (c[1] - a[1]) - (c[0] - a[0]) * (b[1] - a[1]);
+            if d.abs() > 0.0 {
+                let l1 = ((b[0] - p[0]) * (c[1] - p[1]) - (c[0] - p[0]) * (b[1] - p[1])) / d;
+                let l2 = ((c[0] - p[0]) * (a[1] - p[1]) - (a[0] - p[0]) * (c[1] - p[1])) / d;
+                let l3 = 1.0 - l1 - l2;
+                if l1 >= -1e-9 && l2 >= -1e-9 && l3 >= -1e-9 {
+                    return Some(i);
+                }
+            }
+            let cy = (a[0] + b[0] + c[0]) / 3.0 - p[0];
+            let cz = (a[1] + b[1] + c[1]) / 3.0 - p[1];
+            let dist = cy * cy + cz * cz;
+            if best.map_or(true, |(d0, _)| dist < d0) {
+                best = Some((dist, i));
+            }
+        }
+        best.map(|(_, i)| i)
+    }
+}

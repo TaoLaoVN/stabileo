@@ -66,24 +66,46 @@ export type PanelResult = CanonicalPanelResult | { ok: false; refusal: PanelRefu
  * rotated by `-rotation` in its own frame — the same transform the Rust side
  * applies, requested here by `forcesAreLocal` rather than duplicated.
  */
-export function stationForces2D(ef: ElementForces, t: number): { n: number; my: number; mz: number } {
+export function stationForces2D(
+  ef: ElementForces,
+  t: number,
+): { n: number; my: number; mz: number; vy: number; vz: number; tx: number } {
   return {
     n: computeDiagramValueAt('axial', t, ef),
     my: computeDiagramValueAt('moment', t, ef),
     mz: 0,
+    // A plane frame's shear acts in the plane, which is the section's vertical
+    // axis, and carries no torsion.
+    vy: 0,
+    vz: computeDiagramValueAt('shear', t, ef),
+    tx: 0,
   };
 }
 
 /** Interpolate a 3D element's resultants at a station. */
 export function stationForces3D(
-  ef: { nStart: number; nEnd: number; myStart: number; myEnd: number; mzStart: number; mzEnd: number },
+  ef: {
+    nStart: number; nEnd: number;
+    myStart: number; myEnd: number;
+    mzStart: number; mzEnd: number;
+    vyStart?: number; vyEnd?: number;
+    vzStart?: number; vzEnd?: number;
+    txStart?: number; txEnd?: number;
+  },
   t: number,
-): { n: number; my: number; mz: number } {
+): { n: number; my: number; mz: number; vy: number; vz: number; tx: number } {
   const lerp = (a: number, b: number) => a + (b - a) * t;
+  const opt = (a: number | undefined, b: number | undefined) =>
+    a == null || b == null ? 0 : lerp(a, b);
   return {
     n: lerp(ef.nStart, ef.nEnd),
     my: lerp(ef.myStart, ef.myEnd),
     mz: lerp(ef.mzStart, ef.mzEnd),
+    // Shear and torsion are optional so a caller with only bending resultants
+    // still works; absent means zero, never "unknown scaled to something".
+    vy: opt(ef.vyStart, ef.vyEnd),
+    vz: opt(ef.vzStart, ef.vzEnd),
+    tx: opt(ef.txStart, ef.txEnd),
   };
 }
 

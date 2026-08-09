@@ -203,8 +203,9 @@ describe('station selection reaches the calculation', () => {
 
   it('3D resultants interpolate both bending axes', () => {
     const e3 = { nStart: 0, nEnd: 20, myStart: 0, myEnd: 100, mzStart: -10, mzEnd: 10 };
-    expect(stationForces3D(e3, 0)).toEqual({ n: 0, my: 0, mz: -10 });
-    expect(stationForces3D(e3, 1)).toEqual({ n: 20, my: 100, mz: 10 });
+    // Shear and torsion are optional; absent means zero rather than unknown.
+    expect(stationForces3D(e3, 0)).toEqual({ n: 0, my: 0, mz: -10, vy: 0, vz: 0, tx: 0 });
+    expect(stationForces3D(e3, 1)).toEqual({ n: 20, my: 100, mz: 10, vy: 0, vz: 0, tx: 0 });
     const mid = stationForces3D(e3, 0.5);
     expect(mid.n).toBeCloseTo(10, 12);
     expect(mid.my).toBeCloseTo(50, 12);
