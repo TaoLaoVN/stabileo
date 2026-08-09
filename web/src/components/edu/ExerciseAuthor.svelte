@@ -21,6 +21,7 @@
   import { saveToLibrary, toShareLink } from './exercise-library';
   import { solveForEdu } from './edu-solver';
   import { ALL_PROFILES } from '../../lib/data/steel-profiles';
+  import { EXERCISE_EXAMPLES, fromExample, fromFileDed, fromShareUrl, hasDrawnModel } from './exercise-source';
 
   interface Props {
     onclose: () => void;
@@ -47,6 +48,54 @@
     editing ? { spec: editing.model, warnings: [] } : null,
   );
   let warnings = $state<CaptureWarning[]>([]);
+
+  // ── Where the structure comes from ─────────────────────────
+  //
+  // Four routes, because switching from Basic to Educational does not carry
+  // the model across: a teacher who just built a frame arrives here with an
+  // empty canvas. All four end with a model in the store, which `capture()`
+  // then reads.
+  let sourceTab = $state<'draw' | 'example' | 'file' | 'link'>('draw');
+  let exampleId = $state(EXERCISE_EXAMPLES[0].id);
+  let shareUrl = $state('');
+  let sourceError = $state('');
+  let sourceBusy = $state(false);
+
+  async function useExample() {
+    sourceBusy = true;
+    const r = await fromExample(exampleId);
+    sourceBusy = false;
+    sourceError = r.ok ? '' : t('edu.author.errExample');
+    if (r.ok) capture();
+  }
+
+  async function useFile(e: Event) {
+    const file = (e.target as HTMLInputElement).files?.[0];
+    if (!file) return;
+    sourceBusy = true;
+    const r = await fromFileDed(file);
+    sourceBusy = false;
+    sourceError = r.ok ? '' : sourceMessage(r.error);
+    if (r.ok) capture();
+  }
+
+  function useLink() {
+    const r = fromShareUrl(shareUrl);
+    sourceError = r.ok ? '' : sourceMessage(r.error);
+    if (r.ok) capture();
+  }
+
+  /** Error codes to sentences, exhaustively, so none can reach a teacher raw. */
+  function sourceMessage(code: string): string {
+    switch (code) {
+      case 'errFileRead': return t('edu.author.errFileRead');
+      case 'errNotDed': return t('edu.author.errNotDed');
+      case 'errEmptyLink': return t('edu.author.errEmptyLink');
+      case 'errNotShareLink': return t('edu.author.errNotShareLink');
+      case 'errLinkBroken': return t('edu.author.errLinkBroken');
+      default: return t('edu.author.errExample');
+    }
+  }
 
   function capture() {
     const r = captureModel(modelStore.model);
@@ -222,18 +271,58 @@
   </div>
   <p class="author-intro">{t('edu.author.intro')}</p>
 
-  <!-- 1 · The structure, read from the canvas -->
+  <!-- 1 · Where the structure comes from -->
   <section>
     <h4>1 · {t('edu.author.structure')}</h4>
-    <button class="btn-primary" onclick={capture}>{t('edu.author.capture')}</button>
+
+    <!-- Written out rather than looped over a key list: a translation key
+         assembled by concatenation cannot be found by searching for it. -->
+    <div class="source-tabs">
+      <button class="src-tab" class:active={sourceTab === 'draw'}
+        onclick={() => { sourceTab = 'draw'; sourceError = ''; }}>{t('edu.author.srcDraw')}</button>
+      <button class="src-tab" class:active={sourceTab === 'example'}
+        onclick={() => { sourceTab = 'example'; sourceError = ''; }}>{t('edu.author.srcExample')}</button>
+      <button class="src-tab" class:active={sourceTab === 'file'}
+        onclick={() => { sourceTab = 'file'; sourceError = ''; }}>{t('edu.author.srcFile')}</button>
+      <button class="src-tab" class:active={sourceTab === 'link'}
+        onclick={() => { sourceTab = 'link'; sourceError = ''; }}>{t('edu.author.srcLink')}</button>
+    </div>
+
+    {#if sourceTab === 'draw'}
+      <p class="hint">{t('edu.author.drawHint')}</p>
+      <button class="btn-primary" onclick={capture} disabled={!hasDrawnModel()}>
+        {t('edu.author.capture')}
+      </button>
+      {#if !hasDrawnModel()}<p class="hint">{t('edu.author.nothingDrawn')}</p>{/if}
+    {:else if sourceTab === 'example'}
+      <p class="hint">{t('edu.author.exampleHint')}</p>
+      <div class="row">
+        <select bind:value={exampleId}>
+          {#each EXERCISE_EXAMPLES as ex}<option value={ex.id}>{t(ex.nameKey)}</option>{/each}
+        </select>
+        <button class="btn-primary" onclick={useExample} disabled={sourceBusy}>
+          {t('edu.author.load')}
+        </button>
+      </div>
+    {:else if sourceTab === 'file'}
+      <p class="hint">{t('edu.author.fileHint')}</p>
+      <input type="file" accept=".ded,.json" onchange={useFile} />
+    {:else}
+      <p class="hint">{t('edu.author.linkHint')}</p>
+      <div class="row">
+        <input type="text" bind:value={shareUrl} placeholder="https://stabileo.com/#data=..." />
+        <button class="btn-primary" onclick={useLink}>{t('edu.author.load')}</button>
+      </div>
+    {/if}
+
+    {#if sourceError}<p class="warn">⚠ {sourceError}</p>{/if}
+
     {#if captured?.spec}
       <p class="summary">
         {captured.spec.nodes.length} {t('edu.author.nodes')} ·
         {captured.spec.elements.length} {t('edu.author.elements')} ·
         {captured.spec.supports.length} {t('edu.author.supports')}
       </p>
-    {:else}
-      <p class="hint">{t('edu.author.drawFirst')}</p>
     {/if}
     {#each warnings as w}<p class="warn">⚠ {w.detail}</p>{/each}
   </section>
@@ -472,6 +561,13 @@
   .author-head h3 { margin: 0; font-size: 0.95rem; color: #4ecdc4; }
   .author-close { background: none; border: none; color: #888; cursor: pointer; font-size: 0.9rem; }
   .author-intro { color: #999; font-size: 0.72rem; line-height: 1.45; margin: 0 0 12px; }
+  .source-tabs { display: flex; gap: 4px; margin-bottom: 8px; flex-wrap: wrap; }
+  .src-tab {
+    background: #1c1c1c; border: 1px solid #333; color: #999;
+    padding: 3px 9px; border-radius: 3px; cursor: pointer; font-size: 0.71rem;
+  }
+  .src-tab:hover { border-color: #4ecdc4; color: #ddd; }
+  .src-tab.active { background: #4ecdc4; border-color: #4ecdc4; color: #111; font-weight: 600; }
   section { border-top: 1px solid #2a2a2a; padding: 10px 0; }
   h4 { margin: 0 0 8px; font-size: 0.78rem; color: #bbb; font-weight: 600; }
   label { display: block; margin-bottom: 6px; font-size: 0.72rem; color: #999; }
