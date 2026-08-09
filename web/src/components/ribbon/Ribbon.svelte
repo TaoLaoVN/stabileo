@@ -102,14 +102,6 @@
         { id: 'none', icon: '⊘', labelKey: 'ribbon.noDiagram', panel: 'results', diagram: 'none', enabled: () => solved },
       ],
     },
-    {
-      id: 'project',
-      labelKey: 'ribbon.groupProject',
-      cmds: [
-        { id: 'examples', icon: '☰', labelKey: 'ribbon.examples', panel: 'examples' },
-        { id: 'project', icon: '🗎', labelKey: 'ribbon.project', panel: 'project' },
-      ],
-    },
   ];
 
   function run(cmd: Cmd) {

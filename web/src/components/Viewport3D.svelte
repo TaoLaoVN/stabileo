@@ -2185,7 +2185,7 @@
           const wireframe = uiStore.renderMode3D === 'wireframe';
           const isTruss = elem?.type === 'truss';
           const base = wireframe
-            ? (isTruss ? 0xf0b848 : 0x6cb4ff)
+            ? (isTruss ? 0x9fb2c2 : 0xa8b8c6)
             : (isTruss ? COLORS.truss : COLORS.frame);
           const color = selected ? COLORS.elementSelected : base;
           setGroupColor(group, color);

@@ -196,7 +196,7 @@ export function syncElements(ctx: SceneSyncContext): void {
     {
       const isTruss = elem.type === 'truss';
       const baseColor = (renderMode === 'wireframe')
-        ? (isTruss ? 0xf0b848 : 0x6cb4ff)
+        ? (isTruss ? 0x9fb2c2 : 0xa8b8c6)
         : (isTruss ? COLORS.truss : COLORS.frame);
       eb.setBaseColor(id, baseColor);
     }
@@ -815,7 +815,7 @@ export function syncSelection(ctx: SceneSyncContext): void {
     const isTruss = elem?.type === 'truss';
     // Use brightened colors in wireframe mode for grid contrast
     const baseColor = wireframe
-      ? (isTruss ? 0xf0b848 : 0x6cb4ff)
+      ? (isTruss ? 0x9fb2c2 : 0xa8b8c6)
       : (isTruss ? COLORS.truss : COLORS.frame);
     const color = selected ? COLORS.elementSelected : baseColor;
     setGroupColor(group, color);

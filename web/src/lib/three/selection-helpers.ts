@@ -8,20 +8,33 @@ import { LineMaterial } from 'three/addons/lines/LineMaterial.js';
  *  visible against unselected members. */
 export const AXIS_COLORS = { x: 0xff4444, y: 0x44ff44, z: 0x4488ff } as const;
 
+/**
+ * The 3D palette, matched to the 2D canvas and the landing.
+ *
+ * These were the old application colours — a navy background, bright blue
+ * frames, orange trusses, cyan selection — so switching from 2D to 3D changed
+ * products. Same rule as the 2D viewport now applies: geometry is quiet,
+ * selection is the accent, and colour is spent on what carries meaning.
+ *
+ * Three.js wants numbers, and CSS custom properties are strings, so these are
+ * literals rather than reads. They are the same values as the `--st-model-*`
+ * tokens; if those move, move these with them.
+ */
 export const COLORS: Record<string, number> = {
-  node:            0xdddddd,
-  nodeSelected:    0x00ffff,
-  nodeHovered:     0xffff44,
-  frame:           0x4a9eff,
-  truss:           0xe8a030,
-  elementSelected: 0x00ffff,
-  elementHovered:  0xffff44,
-  support:         0x778899,
-  load:            0xff4444,
-  moment:          0xff8844,
-  reaction:        0x44ff88,
-  deformed:        0xff8800,
-  background:      0x1a1a2e,
+  node:            0x8fa3b3,  /* --st-model-node */
+  nodeSelected:    0xe5482a,  /* --st-selected */
+  nodeHovered:     0xf4f7fa,  /* --st-text */
+  frame:           0xc7d3dd,  /* --st-model-member */
+  frameWire:       0xa8b8c6,  /* dimmer: a line reads heavier than a shaded solid */
+  truss:           0x9fb2c2,  /* --st-model-truss */
+  elementSelected: 0xe5482a,
+  elementHovered:  0xf4f7fa,
+  support:         0x8fa3b3,
+  load:            0xe8705f,  /* --st-red-text */
+  moment:          0xd9a441,  /* --st-amber-text */
+  reaction:        0x2aa869,  /* --st-green-text */
+  deformed:        0xe5482a,  /* the answer to the question, so it reads as the result */
+  background:      0x0c1620,  /* --st-ink */
 };
 
 /** Set emissive+color on a single Mesh's material (MeshStandard or LineMaterial) */
@@ -201,8 +214,8 @@ export function verificationStateColor(
  * Axial force color: tension (positive) → red, compression (negative) → blue, ~zero → gray
  */
 export function axialForceColor(nAvg: number): number {
-  if (nAvg > 1e-6) return 0xff4444;   // tension = red
-  if (nAvg < -1e-6) return 0x4488ff;  // compression = blue
+  if (nAvg > 1e-6) return 0xe5482a;   // tension, --st-tension = red
+  if (nAvg < -1e-6) return 0x2c6cb4;  // compression = blue, --st-compression
   return 0x888888;                      // ~zero = gray
 }
 

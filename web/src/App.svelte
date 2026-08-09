@@ -663,6 +663,29 @@
     <span class="separator">|</span>
     <TabBar />
     <div class="header-actions">
+      <!--
+        Examples and Project are document-level, not drawing commands: they act
+        on which model you have open, not on the model in front of you. Sitting
+        in the ribbon they took the width of two tools and implied they belonged
+        to the same loop as Node and Load. Small buttons up here, beside the
+        document name, is where that kind of command lives in every CAD app.
+      -->
+      {#if uiStore.appMode === 'basico' && !uiStore.isMobile}
+        <button
+          class="btn btn-doc"
+          class:on={basicPanel === 'examples'}
+          onclick={() => openBasicPanel('examples')}
+          title={t('ribbon.examples')}
+          data-testid="hdr-examples"
+        >☰ <span class="btn-doc-label">{t('ribbon.examples')}</span></button>
+        <button
+          class="btn btn-doc"
+          class:on={basicPanel === 'project'}
+          onclick={() => openBasicPanel('project')}
+          title={t('ribbon.project')}
+          data-testid="hdr-project"
+        >🗎 <span class="btn-doc-label">{t('ribbon.project')}</span></button>
+      {/if}
       <button class="btn btn-help" onclick={() => uiStore.showHelp = true} title={t('app.keyboardShortcuts')}>
         ?
       </button>
@@ -2171,4 +2194,28 @@
     font-size: 0.7rem;
   }
 
+
+  /* Document-level commands: examples and project, beside the document name. */
+  .btn-doc {
+    background: none;
+    border: 1px solid var(--st-hair);
+    border-radius: var(--st-radius);
+    color: var(--st-text-2);
+    font-size: 0.8rem;
+    padding: 0.3rem 0.6rem;
+    cursor: pointer;
+    white-space: nowrap;
+    transition: background 0.12s, color 0.12s, border-color 0.12s;
+  }
+
+  .btn-doc:hover { background: var(--st-surface-3); color: var(--st-text); }
+
+  .btn-doc.on {
+    color: var(--st-accent);
+    border-color: var(--st-accent);
+  }
+
+  @media (max-width: 1100px) {
+    .btn-doc-label { display: none; }
+  }
 </style>

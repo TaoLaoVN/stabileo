@@ -28,7 +28,13 @@ export function updateGrid(
   if (!showGrid) return null;
 
   const divisions = Math.max(1, Math.round(gridExtent / gridSize3D));
-  const grid = new THREE.GridHelper(gridExtent, divisions, 0x1a4a7a, 0x0f3460);
+  /*
+   * Neutral, and weaker than a panel hairline. The grid was two navy blues from
+   * the old palette, which put a saturated colour across the whole floor and
+   * left it competing with the model instead of sitting behind it. Centre line
+   * slightly stronger than the rest, which is what a grid is for.
+   */
+  const grid = new THREE.GridHelper(gridExtent, divisions, 0x3d4b57, 0x27333d);
 
   setPlaneOffset(grid, workingPlane, nodeCreateZ);
 

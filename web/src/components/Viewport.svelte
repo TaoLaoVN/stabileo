@@ -38,6 +38,7 @@
     snapWithMidpoint as _snapWithMidpoint,
     segmentIntersectsRect,
   } from '../lib/viewport/spatial-queries';
+  import { canvasTheme } from '../lib/canvas/theme';
 
   let canvas: HTMLCanvasElement;
   let ctx: CanvasRenderingContext2D | null = null;
@@ -331,7 +332,8 @@
     ctx.clearRect(0, 0, width, height);
 
     // Background
-    ctx.fillStyle = '#1a1a2e';
+    // Same ground as the shell: the model sits on the page, not in a box on it.
+    ctx.fillStyle = canvasTheme().surface;
     ctx.fillRect(0, 0, width, height);
 
     // Draw grid
