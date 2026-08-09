@@ -39,6 +39,16 @@ export interface ModelSpec {
   /** Elements as `[startNode, endNode]`, by node index. */
   elements: Array<[number, number]>;
   supports: Array<{ node: number; type: SupportType }>;
+  /**
+   * Catalogue profile the members use, by name.
+   *
+   * Only needed when the exercise asks about stresses — a statics problem about
+   * reactions and diagrams does not care, and forcing a choice would be noise.
+   * When present it is what makes "what is sigma_max here" answerable.
+   */
+  profile?: string;
+  /** Yield strength in MPa, for failure-criterion questions. */
+  fy?: number;
   nodalLoads?: Array<{ node: number; fx?: number; fy?: number; mz?: number }>;
   /** Distributed loads on an element index; `qJ` defaults to `qI` (uniform). */
   distributedLoads?: Array<{ element: number; qI: number; qJ?: number }>;
@@ -106,7 +116,18 @@ export type AnswerSpec =
    * a section modulus from its own formula, an Euler load the student is meant
    * to compute. NOT for anything the solver could have told us.
    */
-  | { kind: 'literal'; value: number };
+  | { kind: 'literal'; value: number }
+  /**
+   * A stress at a station, computed over the exercise's real section geometry.
+   *
+   * This is what the section work bought the teaching mode: a student can be
+   * asked for a von Mises stress on an actual rolled profile, with the answer
+   * coming from the same solver the professional mode uses.
+   */
+  | { kind: 'stress'; measure: StressMeasure; element: number; t: number };
+
+/** Which stress a question asks about. */
+export type StressMeasure = 'sigmaMax' | 'sigmaMin' | 'tauMax' | 'vonMises';
 
 /** Stations per element when sweeping. Odd, so mid-span is sampled exactly. */
 const SWEEP = 41;
@@ -142,12 +163,33 @@ function sweep(
  * pointing at a non-existent element is an authoring error and has to surface
  * as one.
  */
-export function evaluateAnswer(spec: AnswerSpec, forces: ElementForces[]): number | null {
+export interface AnswerContext {
+  /**
+   * Resolves a stress measure over the exercise's section.
+   *
+   * Injected rather than imported so this module stays free of the section
+   * engine — it is the piece that has to be trivially testable, since every
+   * answer a student is marked against passes through it.
+   */
+  stress?: (measure: StressMeasure, element: number, t: number, forces: ElementForces[]) => number | null;
+}
+
+export function evaluateAnswer(
+  spec: AnswerSpec,
+  forces: ElementForces[],
+  ctx: AnswerContext = {},
+): number | null {
   switch (spec.kind) {
+    case 'stress': {
+      if (!forces[spec.element]) return null;
+      // No resolver means the caller cannot answer stress questions. Null, not
+      // zero: zero would read as "no stress here", which is a different claim.
+      return ctx.stress ? ctx.stress(spec.measure, spec.element, spec.t, forces) : null;
+    }
     case 'literal':
       return spec.value;
     case 'scaled': {
-      const inner = evaluateAnswer(spec.of, forces);
+      const inner = evaluateAnswer(spec.of, forces, ctx);
       return inner === null ? null : inner * spec.factor;
     }
     case 'maxAbs': {
@@ -246,6 +288,12 @@ export function lintExercise(ex: EduExerciseSpec): string[] {
     if (a.kind === 'at') {
       elem(a.element, where);
       if (a.t < 0 || a.t > 1) problems.push(`${where}: t = ${a.t} is outside [0, 1]`);
+    } else if (a.kind === 'stress') {
+      elem(a.element, where);
+      if (a.t < 0 || a.t > 1) problems.push(`${where}: t = ${a.t} is outside [0, 1]`);
+      if (!ex.model.profile) {
+        problems.push(`${where}: asks about stress, but the exercise declares no section profile`);
+      }
     } else if (a.kind === 'scaled') {
       if (!Number.isFinite(a.factor) || a.factor === 0) {
         problems.push(`${where}: scale factor ${a.factor} is not usable`);

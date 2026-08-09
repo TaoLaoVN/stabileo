@@ -191,6 +191,50 @@ export function getExerciseSpecs(): EduExerciseSpec[] {
       ],
     },
 
+    // ── Combined stresses on a rolled profile ──────────────────
+    //
+    // The exercise the section work made possible: a real IPE 300, asked for
+    // the stresses a designer actually checks. Every answer comes out of the
+    // same solver the professional mode uses, over the profile's true outline
+    // — fillets included — rather than a rectangle standing in for it.
+    {
+      id: 'combined-stress-ipe',
+      title: t('edu.ex11Title'),
+      description: t('edu.ex11Desc'),
+      difficulty: 'hard',
+      category: 'strength',
+      model: {
+        nodes: [[0, 0], [3, 0]],
+        elements: [[0, 1]],
+        supports: [{ node: 0, type: 'fixed' }],
+        nodalLoads: [{ node: 1, fy: -40 }],
+        profile: 'IPE 300',
+        fy: 235,
+      },
+      supports: [{ label: t('edu.ex11SupportA'), nodeIndex: 0, dofs: ['Rx', 'Ry', 'M'] }],
+      characteristics: [
+        { label: 'Mmax', unit: 'kN·m', answer: { kind: 'maxAbs', force: 'moment' } },
+        // At the fixed end's extreme fibre, where bending governs.
+        { label: 'σmax', unit: 'MPa', answer: { kind: 'stress', measure: 'sigmaMax', element: 0, t: 0 } },
+        // At the neutral axis of the same section, where shear governs and
+        // bending does not — the pairing the exercise is built to teach.
+        { label: 'τmax', unit: 'MPa', answer: { kind: 'stress', measure: 'tauMax', element: 0, t: 0 } },
+        { label: 'von Mises', unit: 'MPa', answer: { kind: 'stress', measure: 'vonMises', element: 0, t: 0 } },
+      ],
+      diagramQuestions: [
+        { question: t('edu.dq.momentAtFixed'), unit: 'kN·m', answer: { kind: 'at', force: 'moment', element: 0, t: 0 } },
+      ],
+      diagramShapeQuestions: [
+        { diagram: 'V', correct: 'constant' },
+        { diagram: 'M', correct: 'linear' },
+      ],
+      sectionData: [
+        { label: t('edu.ex11Profile'), value: 'IPE 300' },
+        { label: 'fy', value: '235 MPa' },
+        { label: t('edu.sectionFormula'), value: 'σ = M·c/I ; τ = V·Q/(I·b)' },
+      ],
+    },
+
     // ── P-Delta on a leaning column ────────────────────────────
     {
       id: 'pdelta-column',

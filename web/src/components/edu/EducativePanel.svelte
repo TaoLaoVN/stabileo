@@ -7,10 +7,49 @@
   import { eduStore } from './edu-store.svelte';
   import ExerciseAuthor from './ExerciseAuthor.svelte';
   import { buildFromSpec, evaluateAnswer, type EduExerciseSpec } from './exercise-spec';
+  import { stressContext } from './exercise-stress';
+  import { loadLibrary, removeFromLibrary, saveToLibrary, fromShareLink } from './exercise-library';
 
-  /** Teacher-authored exercises live alongside the shipped ones. */
+  /** Teacher-authored exercises, restored from the library on mount. */
   let authoring = $state(false);
-  let custom = $state<EduExercise[]>([]);
+  let editingSpec = $state<EduExerciseSpec | null>(null);
+  let library = $state<EduExerciseSpec[]>([]);
+  let linkNotice = $state('');
+
+  $effect(() => {
+    library = loadLibrary();
+    // An exercise handed out as a link opens straight into the library, so a
+    // student following it does not have to do anything but click.
+    const shared = fromShareLink(location.hash);
+    if (shared) {
+      if (shared.ok) {
+        const { library: next } = saveToLibrary(shared.exercise);
+        library = next;
+        linkNotice = t('edu.author.linkLoaded');
+        history.replaceState(null, '', location.pathname + location.search);
+      } else {
+        linkNotice = shared.error;
+      }
+    }
+  });
+
+  const customExercises = $derived(library.map(specToExercise));
+
+  function handleAuthored(spec: EduExerciseSpec) {
+    const { library: next } = saveToLibrary(spec);
+    library = next;
+    authoring = false;
+    editingSpec = null;
+  }
+
+  function editExercise(spec: EduExerciseSpec) {
+    editingSpec = spec;
+    authoring = true;
+  }
+
+  function deleteExercise(id: string) {
+    library = removeFromLibrary(id);
+  }
 
   /** Adapt an authored spec to the shape the exercise view consumes. */
   function specToExercise(spec: EduExerciseSpec): EduExercise {
@@ -23,13 +62,15 @@
       solverType: spec.solverType,
       build: (api) => buildFromSpec(spec.model, api),
       supports: spec.supports,
+      // The stress resolver is built once per exercise, not per question: it
+      // meshes and solves the section, which is far too costly to repeat.
       characteristics: spec.characteristics.map((c) => ({
         label: c.label, unit: c.unit,
-        getCorrect: (f) => evaluateAnswer(c.answer, f) ?? 0,
+        getCorrect: (f) => evaluateAnswer(c.answer, f, stressContext(spec.model.profile, spec.model.fy)) ?? 0,
       })),
       diagramQuestions: spec.diagramQuestions.map((q) => ({
         question: q.question, unit: q.unit,
-        getCorrect: (f) => evaluateAnswer(q.answer, f) ?? 0,
+        getCorrect: (f) => evaluateAnswer(q.answer, f, stressContext(spec.model.profile, spec.model.fy)) ?? 0,
       })),
       kinematicQuestion: spec.kinematicQuestion,
       diagramShapeQuestions: spec.diagramShapeQuestions,
@@ -87,7 +128,13 @@
 </script>
 
 <div class="edu-panel">
-  {#if !eduStore.hasExercise}
+  {#if authoring}
+    <ExerciseAuthor
+      onclose={() => { authoring = false; editingSpec = null; }}
+      onsaved={handleAuthored}
+      editing={editingSpec}
+    />
+  {:else if !eduStore.hasExercise}
     <div class="edu-welcome">
       <h2>{t('edu.title')}</h2>
       <p class="edu-subtitle">{t('edu.subtitle')}</p>
@@ -113,18 +160,28 @@
         {/if}
       {/each}
 
-      {#if custom.length > 0}
+      {#if linkNotice}
+        <p class="edu-link-notice">{linkNotice}</p>
+      {/if}
+
+      {#if library.length > 0}
         <div class="exercise-section">
           <h3 class="section-title">{t('edu.author.mine')}</h3>
           <div class="exercise-list">
-            {#each custom as ex}
-              <button class="exercise-card" onclick={() => loadExercise(ex)}>
-                <div class="exercise-header">
-                  <span class="exercise-title">{ex.title}</span>
-                  <span class="difficulty difficulty-{ex.difficulty}">{t('edu.' + ex.difficulty)}</span>
+            {#each library as spec, i}
+              <div class="exercise-card-wrap">
+                <button class="exercise-card" onclick={() => loadExercise(customExercises[i])}>
+                  <div class="exercise-header">
+                    <span class="exercise-title">{spec.title}</span>
+                    <span class="difficulty difficulty-{spec.difficulty}">{t('edu.' + spec.difficulty)}</span>
+                  </div>
+                  <p class="exercise-desc">{spec.description}</p>
+                </button>
+                <div class="card-actions">
+                  <button class="card-act" onclick={() => editExercise(spec)}>{t('edu.author.edit')}</button>
+                  <button class="card-act del" onclick={() => deleteExercise(spec.id)}>{t('edu.author.delete')}</button>
                 </div>
-                <p class="exercise-desc">{ex.description}</p>
-              </button>
+              </div>
             {/each}
           </div>
         </div>
@@ -139,15 +196,6 @@
         </button>
       </div>
     </div>
-  {:else if authoring}
-    <ExerciseAuthor
-      onclose={() => (authoring = false)}
-      onload={(spec) => {
-        const ex = specToExercise(spec);
-        custom = [...custom.filter((c) => c.id !== ex.id), ex];
-        authoring = false;
-      }}
-    />
   {:else}
     <div class="edu-exercise-container">
       <div class="edu-topbar">
@@ -268,6 +316,22 @@
     color: #999;
     margin: 0;
     line-height: 1.4;
+  }
+
+  .exercise-card-wrap { position: relative; }
+  .card-actions {
+    display: flex; gap: 6px; justify-content: flex-end;
+    margin: -4px 4px 6px 0;
+  }
+  .card-act {
+    background: none; border: none; color: #777;
+    font-size: 0.66rem; cursor: pointer; padding: 2px 4px;
+  }
+  .card-act:hover { color: #4ecdc4; }
+  .card-act.del:hover { color: #c66; }
+  .edu-link-notice {
+    background: rgba(78,205,196,0.08); border-left: 2px solid #4ecdc4;
+    padding: 6px 9px; color: #9fbfbc; font-size: 0.72rem; border-radius: 3px;
   }
 
   .edu-author-btn {

@@ -19,6 +19,7 @@
 import { describe, it, expect, beforeAll } from 'vitest';
 import { getExerciseSpecs } from '../exercise-data';
 import { buildFromSpec, evaluateAnswer, lintExercise } from '../exercise-spec';
+import { stressContext } from '../exercise-stress';
 import { solve } from '../../../lib/engine/wasm-solver';
 import { initSolver } from '../../../lib/engine/wasm-solver';
 import type { ElementForces } from '../../../lib/engine/types';
@@ -99,13 +100,17 @@ describe('every exercise solves, and its stated answers come from that solve', (
       const forces = results.elementForces as ElementForces[];
       expect(forces.length).toBe(spec.model.elements.length);
 
+      // Stress questions need the section resolver; an exercise that declares
+      // no profile simply gets an empty context, and any stress question in it
+      // then fails here — which is the intended outcome, not an oversight.
+      const ctx = stressContext(spec.model.profile, spec.model.fy);
       for (const c of spec.characteristics) {
-        const v = evaluateAnswer(c.answer, forces);
+        const v = evaluateAnswer(c.answer, forces, ctx);
         expect(v, `${spec.id} / ${c.label}`).not.toBeNull();
         expect(Number.isFinite(v!), `${spec.id} / ${c.label}`).toBe(true);
       }
       for (const q of spec.diagramQuestions) {
-        const v = evaluateAnswer(q.answer, forces);
+        const v = evaluateAnswer(q.answer, forces, ctx);
         expect(v, `${spec.id} / ${q.question}`).not.toBeNull();
         expect(Number.isFinite(v!)).toBe(true);
       }
