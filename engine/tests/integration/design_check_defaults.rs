@@ -125,12 +125,44 @@ fn timber_interaction_diverges_past_the_buckling_load() {
     let r = run(timber(0.10, 0.10, 4.0, None, 10e9, Some(0.5e9)), Some(-3_000.0), 100.0);
 
     assert!(
-        r.interaction_ratio > 100.0,
-        "fc exceeds FcE, so NDS 3.9.2 must blow up rather than drop the \
+        r.interaction_ratio > 1.0,
+        "fc exceeds FcE, so NDS 3.9.2 must fail rather than drop the \
          amplification; got {:.3}",
         r.interaction_ratio
     );
     assert!(r.interaction_ratio.is_finite(), "must stay finite for serialization");
+    // Saturated, not runaway: a number like 300000 breaks every bar and table
+    // that renders it and says nothing a reader can act on.
+    assert!(
+        r.interaction_ratio <= 99.0,
+        "the reported ratio must be capped, got {:.1}",
+        r.interaction_ratio
+    );
+}
+
+/// Below the cap the amplification is reported exactly, so the check still
+/// discriminates in the range that matters.
+///
+/// 100x100, le = 3.0 m, Emin = 0.5 GPa -> FcE = 0.822·0.5e9/900 = 456_667 Pa.
+/// N = -2 kN over A = 0.01 m² gives fc = 200_000 Pa, so
+/// 1 - fc/FcE = 0.5620 and the bending term is amplified by 1/0.5620 = 1.78x.
+#[test]
+fn timber_interaction_below_the_cap_is_exact() {
+    let r = run(timber(0.10, 0.10, 3.0, None, 10e9, Some(0.5e9)), Some(-2_000.0), 100.0);
+
+    assert!(
+        r.interaction_ratio > 0.0 && r.interaction_ratio < 99.0,
+        "must stay under the cap, got {:.3}",
+        r.interaction_ratio
+    );
+
+    // Same member with no axial load: the bending ratio unamplified.
+    let plain = run(timber(0.10, 0.10, 3.0, None, 10e9, Some(0.5e9)), None, 100.0);
+    assert!(
+        r.interaction_ratio > plain.interaction_ratio,
+        "the amplification must actually raise the ratio: {:.3} vs {:.3}",
+        r.interaction_ratio, plain.interaction_ratio
+    );
 }
 
 /// With no bending there is nothing to amplify, so the same buckled member is

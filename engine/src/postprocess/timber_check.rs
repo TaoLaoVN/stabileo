@@ -120,6 +120,14 @@ pub struct TimberCheckResult {
     pub cl: f64,
 }
 
+/// Ceiling on a reported interaction ratio.
+///
+/// The NDS 3.9.2 amplification diverges as fc approaches FcE1, so the raw value
+/// is unbounded. Anything past this is reported as this number: the member
+/// fails, and the exact magnitude carries no engineering meaning — it is an
+/// artefact of how close the denominator got to zero.
+const MAX_REPORTED_RATIO: f64 = 99.0;
+
 // ==================== NDS Design Checks ====================
 
 /// Run NDS timber design checks on all members.
@@ -249,13 +257,27 @@ fn check_single_timber_member(
             0.0
         };
         // NDS 3.9.2 is only defined while fc < FcE1. Past that the member has
-        // buckled; dropping the amplification made the check *weakest* exactly
-        // where it should diverge. Flooring the denominator keeps the ratio
-        // finite (NaN/inf do not survive JSON) while letting it blow up — and
-        // leaves a pure-compression member governed by the (fc/Fc')² term.
+        // buckled, and dropping the amplification made the check *weakest*
+        // exactly where it should diverge.
+        //
+        // The ratio is saturated rather than left to run away: an amplification
+        // approaching zero sends it to infinity, and "utilisation: 300000" is
+        // not a number anyone can act on — it breaks every bar and table that
+        // renders it, and it does not distinguish "just past" from "far past",
+        // since the divergence swamps the difference either way. Below the cap
+        // the value is exact; at the cap it means "fails", not a magnitude.
+        //
+        // With no bending there is nothing to amplify, so the member stays
+        // governed by the (fc/Fc')² term — which is already >= 1 here.
         let amplification = if fce > 0.0 { 1.0 - fc_actual / fce } else { 1.0 };
-        let amplified_bending = bending_ratio / amplification.max(1e-6);
-        fc_ratio * fc_ratio + amplified_bending
+        let amplified_bending = if bending_ratio <= 0.0 {
+            0.0
+        } else if amplification > 0.0 {
+            bending_ratio / amplification
+        } else {
+            f64::INFINITY
+        };
+        (fc_ratio * fc_ratio + amplified_bending).min(MAX_REPORTED_RATIO)
     } else if n > 0.0 {
         // NDS 3.9.1: Combined bending and axial tension
         // ft/Ft' + fb/Fb' <= 1.0
