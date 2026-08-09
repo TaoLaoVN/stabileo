@@ -45,7 +45,7 @@ import {
  * corner at R = 2t where EN 10219-2 only gives a range. Every family now has
  * an exact outline.
  */
-const GEOMETRY_BACKED_FAMILIES = new Set(['IPE', 'HEA', 'HEB', 'CHS', 'IPN', 'UPN', 'L', 'RHS', 'SHS']);
+const GEOMETRY_BACKED_FAMILIES = new Set(['IPE', 'HEA', 'HEB', 'W', 'CHS', 'IPN', 'UPN', 'L', 'RHS', 'SHS']);
 
 /**
  * Why a section could not be expressed as canonical geometry.
@@ -248,7 +248,7 @@ export function resolveCanonicalSection(sec: Section): ResolvedSection {
         tf: mm(profile.tf!),
         rootRadius: mm(profile.r!),
         profileId: profile.name,
-        standard: 'EN 10365',
+        standard: profile.family === 'W' ? 'IRAM-IAS U 500-215-6' : 'EN 10365',
       }),
       profile.name,
     );

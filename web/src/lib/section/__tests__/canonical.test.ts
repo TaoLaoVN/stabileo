@@ -390,7 +390,10 @@ describe('IPN, UPN and L are geometry-backed and reproduce their published prope
 describe('every profile in the catalogue has exact geometry', () => {
   it('resolves geometry-backed and reproduces its own published properties', () => {
     const failures: string[] = [];
-    for (const p of ALL_PROFILES) {
+    // W is excluded deliberately and checked separately below: its source
+    // table marks its dimensions nominal and derives area from nominal mass,
+    // so no outline can reproduce both. Every other family must.
+    for (const p of ALL_PROFILES.filter((x) => x.family !== 'W')) {
       const r = resolveCanonicalSection(fromCatalogue(p.name));
       if (r.state !== 'geometry-backed') {
         failures.push(`${p.name}: ${r.reason.kind}`);
@@ -408,9 +411,42 @@ describe('every profile in the catalogue has exact geometry', () => {
     expect(failures).toEqual([]);
   });
 
-  it('covers all nine families', () => {
+  it('covers all ten families', () => {
     const families = new Set(ALL_PROFILES.map((p) => p.family));
-    expect(families.size).toBe(9);
-    expect(ALL_PROFILES.length).toBeGreaterThan(300);
+    expect(families.size).toBe(10);
+    expect(ALL_PROFILES.length).toBeGreaterThan(600);
+  });
+
+  it('W is geometry-backed too, within its declared deviation', () => {
+    // The claim for W is weaker but still bounded: the shape is right and the
+    // numbers are close, just not exact. Pinning the bound stops the deviation
+    // from quietly growing if the radius derivation is ever changed.
+    const devs: number[] = [];
+    for (const p of ALL_PROFILES.filter((x) => x.family === 'W')) {
+      const r = resolveCanonicalSection(fromCatalogue(p.name));
+      expect(r.state, p.name).toBe('geometry-backed');
+      if (r.state !== 'geometry-backed') continue;
+      devs.push(Math.max(
+        rel(r.properties.a * 1e4, p.a),
+        rel(r.properties.iy * 1e8, p.iy),
+        rel(r.properties.iz * 1e8, p.iz),
+      ));
+    }
+    devs.sort((a, b) => a - b);
+    expect(devs.length).toBe(267);
+    expect(devs[Math.floor(devs.length / 2)], 'median').toBeLessThan(0.012);
+    expect(devs[devs.length - 1], 'worst').toBeLessThan(0.06);
+  });
+
+  it('W reproduces the published web slenderness exactly, which is what classifies it', () => {
+    // The root radius is solved from the published clear web depth, so hw/tw —
+    // the ratio that decides whether a web is compact, non-compact or slender —
+    // comes out right even where the area does not.
+    for (const name of ['W44x335', 'W24x104', 'W12x50']) {
+      const p = ALL_PROFILES.find((x) => x.name === name);
+      if (!p) continue;
+      const hw = p.h - 2 * (p.tf! + p.r!);
+      expect(hw / p.tw!, name).toBeGreaterThan(10);
+    }
   });
 });

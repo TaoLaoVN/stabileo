@@ -2016,6 +2016,8 @@ const en: Record<string, string> = {
 
   // ─── Table headers ───
   'table.type': 'Type',
+  'stress.devTitle': 'Nominal dimensions',
+  'stress.devBody': 'The table for this profile publishes nominal dimensions and derives its area from nominal mass, so the two disagree at the source. The analysis below is consistent with the outline drawn; against the published values it differs by:',
   'cat.code': 'Code',
   'cat.allCodes': 'All',
   'cat.standard': 'Standard',

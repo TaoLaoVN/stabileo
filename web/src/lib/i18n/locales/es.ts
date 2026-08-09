@@ -1978,6 +1978,8 @@ const es: Record<string, string> = {
 
   // ─── Table headers ───
   'table.type': 'Tipo',
+  'stress.devTitle': 'Dimensiones nominales',
+  'stress.devBody': 'La tabla de este perfil publica dimensiones nominales y deriva el área de la masa nominal, así que la propia fuente es inconsistente. El análisis de abajo es consistente con el contorno dibujado; contra los valores publicados difiere en:',
   'cat.code': 'Reglamento',
   'cat.allCodes': 'Todos',
   'cat.standard': 'Norma',

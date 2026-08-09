@@ -28,6 +28,7 @@
  */
 
 import type { Section } from '../store/model.svelte';
+import { ALL_PROFILES } from '../data/steel-profiles';
 import { resolveCanonicalSection, type PropertiesOnlyReason } from './canonical';
 import type { CanonicalGeometry } from '../engine/wasm-solver';
 import { isSolverReady } from '../engine/wasm-solver';
@@ -243,4 +244,38 @@ export function cloneSectionState(st: SectionState | undefined): SectionState | 
       })),
     },
   };
+}
+
+/**
+ * How far a geometry-backed section's derived properties sit from the values
+ * its catalogue row publishes.
+ *
+ * For nine of the ten families this is table rounding and nothing else. For W
+ * it is real and worth showing: those tables mark their dimensions "nominal"
+ * and derive the tabulated area from nominal mass, so dimensions and
+ * properties are mutually inconsistent in the SOURCE and no outline can
+ * satisfy both. Rather than pick one silently, the app analyses the geometry —
+ * which keeps the drawing, the stress field and the numbers consistent with
+ * each other — and reports the gap against the table so a user reconciling
+ * against CIRSOC sees it instead of discovering it.
+ *
+ * Returns `null` when there is nothing to compare or the gap is negligible.
+ */
+export function propertyDeviation(
+  sec: Section,
+): { a: number; iy: number; iz: number; worst: number } | null {
+  const st = sec.canonical;
+  if (!st || st.kind !== 'geometry-backed' || !sec.name) return null;
+  const p = ALL_PROFILES.find((x) => x.name.trim().toUpperCase() === sec.name.trim().toUpperCase());
+  if (!p) return null;
+
+  // Catalogue units are cm² and cm⁴; canonical state is SI.
+  const rel = (got: number, want: number) => (want === 0 ? 0 : (got - want) / want);
+  const a = rel(st.a * 1e4, p.a);
+  const iy = rel(st.iy * 1e8, p.iy);
+  const iz = rel(st.iz * 1e8, p.iz);
+  const worst = Math.max(Math.abs(a), Math.abs(iy), Math.abs(iz));
+  // Below one percent is the rounding of a three-significant-figure table, not
+  // a discrepancy worth putting in front of anyone.
+  return worst < 0.01 ? null : { a, iy, iz, worst };
 }

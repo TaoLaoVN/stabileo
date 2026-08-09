@@ -35,10 +35,14 @@ describe('every shipped family is classified, and by a real standard', () => {
     const approximate = Object.values(FAMILY_CLASSIFICATION)
       .filter((c) => c.fidelity === 'propertiesOnly')
       .map((c) => c.family);
-    // Every shipped family has an exact outline. RHS was the last one out, and
-    // only because EN 10219-2 gives its corner radius as a range; the IRAM-IAS
-    // tables fix it at 2t.
+    // No family is properties-only: every one has an outline. W is the only
+    // one whose outline does not reproduce the published properties, and that
+    // is a separate, weaker claim tracked as `nominalDimensions`.
     expect(approximate).toEqual([]);
+    const nominal = Object.values(FAMILY_CLASSIFICATION)
+      .filter((c) => c.fidelity === 'nominalDimensions')
+      .map((c) => c.family);
+    expect(nominal).toEqual(['W']);
   });
 });
 
@@ -69,9 +73,11 @@ describe('design codes are an index over families, not a relabelling', () => {
   it('says what it is missing rather than implying the list is complete', () => {
     const cirsoc = designCode('cirsoc-301')!;
     expect(cirsoc.missingFamilies?.length).toBeGreaterThan(0);
-    // The wide-flange series is the big one local practice uses and we do not
-    // ship; if it ever gets added, this test should be updated deliberately.
-    expect(cirsoc.missingFamilies!.join(' ')).toMatch(/W|ala ancha/);
+    // The American channel series is the big one local practice uses and we do
+    // not ship; if it gets added, update this deliberately.
+    expect(cirsoc.missingFamilies!.join(' ')).toMatch(/canal americano/);
+    // W is shipped now, so it must NOT still be advertised as missing.
+    expect(cirsoc.families).toContain('W');
   });
 
   it('a family carries its own standard regardless of which code lists it', () => {

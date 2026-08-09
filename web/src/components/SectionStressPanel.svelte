@@ -1,6 +1,7 @@
 <script lang="ts">
   import { modelStore, resultsStore, uiStore, tourStore } from '../lib/store';
   import { t } from '../lib/i18n';
+  import { propertyDeviation } from '../lib/section/state';
   import { supportsDetailedAnalysis } from '../lib/section/drawing';
   import { canonicalPanelResult, stationForces2D, stationForces3D } from '../lib/section/panel';
   import {
@@ -87,6 +88,24 @@
    * get different wording: genuinely shapeless sections keep the original
    * message, known profiles get one that names the actual limitation.
    */
+  /**
+   * How far the analysed geometry sits from the catalogue's published numbers.
+   *
+   * Null for nine of the ten families. It exists for W, whose source table
+   * marks its dimensions nominal and derives area from nominal mass, so the
+   * table is internally inconsistent and no outline reproduces both. The
+   * analysis stays consistent with the geometry it draws, and the gap against
+   * the table is stated here rather than left for the user to discover while
+   * reconciling against CIRSOC.
+   */
+  const deviation = $derived.by(() => {
+    if (!query) return null;
+    const elem = modelStore.elements.get(query.elementId);
+    if (!elem) return null;
+    const sec = modelStore.sections.get(elem.sectionId);
+    return sec ? propertyDeviation(sec) : null;
+  });
+
   const unavailableReason = $derived.by((): { kind: 'amorphous' | 'noGeometryData'; name: string } | null => {
     if (!query) return null;
     const elem = modelStore.elements.get(query.elementId);
@@ -420,6 +439,24 @@
     </div>
 
     <div class="ssp-body">
+      {#if deviation}
+        <!-- Stated, not hidden: the source table's own dimensions and
+             properties disagree, so the analysed geometry cannot match both. -->
+        <div class="ssp-deviation">
+          <span class="ssp-dev-icon">≠</span>
+          <div>
+            <div class="ssp-dev-head">{t('stress.devTitle')}</div>
+            <div class="ssp-dev-body">
+              {t('stress.devBody')}
+              <span class="ssp-dev-nums">
+                A {(deviation.a * 100).toFixed(1)}% ·
+                Iy {(deviation.iy * 100).toFixed(1)}% ·
+                Iz {(deviation.iz * 100).toFixed(1)}%
+              </span>
+            </div>
+          </div>
+        </div>
+      {/if}
       <!-- Element info + position slider (issue #12) -->
       <div class="ssp-info">
         <span class="ssp-elem">Elem #{query.elementId}</span>
@@ -630,6 +667,17 @@
     max-height: calc(100% - 90px);
     font-size: 0.75rem;
   }
+
+  .ssp-deviation {
+    display: flex; gap: 8px; align-items: flex-start;
+    margin: 0 0 8px; padding: 7px 9px;
+    background: rgba(217, 164, 65, 0.08);
+    border-left: 2px solid #d9a441; border-radius: 3px;
+  }
+  .ssp-dev-icon { color: #d9a441; font-size: 0.95rem; line-height: 1; font-weight: 700; }
+  .ssp-dev-head { color: #d9a441; font-size: 0.7rem; font-weight: 600; margin-bottom: 2px; }
+  .ssp-dev-body { color: #b8a97f; font-size: 0.66rem; line-height: 1.4; }
+  .ssp-dev-nums { display: block; margin-top: 3px; font-family: monospace; color: #d9a441; }
 
   .ssp-header {
     display: flex;

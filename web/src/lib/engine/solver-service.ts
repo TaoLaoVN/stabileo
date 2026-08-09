@@ -1372,7 +1372,19 @@ export function buildSolverInput3D(
     sections: new Map(Array.from(model.sections.entries()).map(([id, s]) => {
       if (project2DToXZ) {
         const inPlaneIy = effectiveBendingInertia(s);
-        const outOfPlaneIz = s.iy ?? s.iz;
+        // Out-of-plane bending happens about the section's WEAK axis, which is
+        // `iz`. This read `s.iy ?? s.iz` — the strong axis — which overstated
+        // out-of-plane stiffness and so understated lateral displacement and
+        // the lateral buckling that follows from it. The `??` fallback belongs
+        // on the in-plane term above, where a section with only one declared
+        // inertia should reuse it; here it silently picked the wrong axis.
+        //
+        // It survived because it is invisible on any symmetric section: an
+        // angle, a circular tube or a square tube has iy == iz. It only shows
+        // on an asymmetric properties-only section, which is also the only
+        // case that still reaches this line — a geometry-backed section takes
+        // the canonical branch below, which was always correct.
+        const outOfPlaneIz = s.iz;
         const props = solverProperties(s);
         return [id, {
           id: s.id, name: s.name, a: props.a,

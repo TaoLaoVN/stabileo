@@ -94,6 +94,14 @@ describe('canonical properties reach the 3D solver wire', () => {
     const wire = buildSolverInput3D(model(bare), false, false)!;
     const s = wire.sections.get(bare.id)!;
     expect(s.a).toBeCloseTo(bare.a, 15);
+    // The axis each declared inertia lands on, pinned deliberately. In-plane
+    // bending uses the strong axis; out-of-plane uses the WEAK one. This read
+    // `s.iy ?? s.iz` for the out-of-plane term and so handed the engine the
+    // strong axis, overstating out-of-plane stiffness. Deliberately asserted on
+    // an ASYMMETRIC section: with iy == iz both readings agree and the test
+    // would pass either way, which is exactly how the defect survived.
+    expect(s.iy, 'in-plane uses the strong axis').toBeCloseTo(9e-5, 15);
+    expect(s.iz, 'out-of-plane uses the weak axis').toBeCloseTo(3e-5, 15);
     // What this pins is that NOTHING canonical is invented for a section that
     // has no geometry: both inertias on the wire are values the section itself
     // declared. It deliberately does not pin WHICH declared inertia lands on

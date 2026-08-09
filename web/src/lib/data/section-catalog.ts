@@ -32,6 +32,14 @@ export type SectionSeries = 'i-beam' | 'channel' | 'angle' | 'hollow';
 export type GeometryFidelity =
   /** Exact outline: fillets, tapers and all, verified against published data. */
   | 'exact'
+  /**
+   * The outline is the right SHAPE, but it does not reproduce the published
+   * area and inertias, because the source table is itself inconsistent: it
+   * marks its dimensions "nominal" and derives the area from nominal mass.
+   * The section is fully analysable; the deviation is measured per profile and
+   * shown, never hidden.
+   */
+  | 'nominalDimensions'
   /** Properties are right; the outline is not available, so no detailed stress. */
   | 'propertiesOnly';
 
@@ -58,6 +66,7 @@ export const FAMILY_CLASSIFICATION: Record<ProfileFamily, FamilyClassification> 
   IPE: { family: 'IPE', standard: 'EN 10365', standardsBody: 'CEN', country: 'EU', material: 'hot-rolled-steel', series: 'i-beam', fidelity: 'exact' },
   HEA: { family: 'HEA', standard: 'EN 10365', standardsBody: 'CEN', country: 'EU', material: 'hot-rolled-steel', series: 'i-beam', fidelity: 'exact' },
   HEB: { family: 'HEB', standard: 'EN 10365', standardsBody: 'CEN', country: 'EU', material: 'hot-rolled-steel', series: 'i-beam', fidelity: 'exact' },
+  W:   { family: 'W',   standard: 'IRAM-IAS U 500-215-6', standardsBody: 'IRAM-IAS', country: 'AR', material: 'hot-rolled-steel', series: 'i-beam', fidelity: 'nominalDimensions' },
   IPN: { family: 'IPN', standard: 'DIN 1025-1', standardsBody: 'DIN', country: 'DE', material: 'hot-rolled-steel', series: 'i-beam', fidelity: 'exact' },
   UPN: { family: 'UPN', standard: 'DIN 1025-5', standardsBody: 'DIN', country: 'DE', material: 'hot-rolled-steel', series: 'channel', fidelity: 'exact' },
   L:   { family: 'L',   standard: 'EN 10056-1', standardsBody: 'CEN', country: 'EU', material: 'hot-rolled-steel', series: 'angle', fidelity: 'exact' },
@@ -103,8 +112,8 @@ export const DESIGN_CODES: DesignCode[] = [
     id: 'cirsoc-301',
     label: 'CIRSOC 301',
     region: 'AR',
-    families: ['IPN', 'UPN', 'L', 'CHS', 'RHS', 'SHS'],
-    missingFamilies: ['W (ala ancha)', 'C y MC (canal americano)', 'HP', 'M', 'T', 'L de alas desiguales', 'C/Z conformados en frío (CIRSOC 303)'],
+    families: ['W', 'IPN', 'UPN', 'L', 'CHS', 'RHS', 'SHS'],
+    missingFamilies: ['C y MC (canal americano)', 'HP', 'M', 'T', 'L de alas desiguales', 'C/Z conformados en frío (CIRSOC 303)'],
     note: 'cat.note.cirsoc',
   },
   {
@@ -117,7 +126,7 @@ export const DESIGN_CODES: DesignCode[] = [
 ];
 
 /** Every family the app ships, in picker order. */
-export const ALL_FAMILIES: ProfileFamily[] = ['IPE', 'HEA', 'HEB', 'IPN', 'UPN', 'L', 'CHS', 'RHS', 'SHS'];
+export const ALL_FAMILIES: ProfileFamily[] = ['IPE', 'HEA', 'HEB', 'W', 'IPN', 'UPN', 'L', 'CHS', 'RHS', 'SHS'];
 
 /** Design code by id. */
 export function designCode(id: string): DesignCode | undefined {
