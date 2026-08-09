@@ -208,7 +208,7 @@
     padding: 3px 0;
     background: none;
     border: none;
-    color: #888;
+    color: var(--st-text-3);
     font-size: 0.68rem;
     text-transform: uppercase;
     letter-spacing: 0.5px;
@@ -217,7 +217,7 @@
   }
 
   .ssp-section-toggle:hover {
-    color: #ccc;
+    color: var(--st-text-2);
   }
 
   .ssp-chevron {
@@ -232,13 +232,13 @@
     width: 13px;
     height: 13px;
     border-radius: 50%;
-    background: rgba(78, 205, 196, 0.12);
-    color: #4ecdc4;
+    background: rgba(127, 212, 204, 0.12);
+    color: var(--st-value);
     font-size: 0.5rem;
     font-weight: 700;
     cursor: help;
     flex-shrink: 0;
-    border: 1px solid rgba(78, 205, 196, 0.25);
+    border: 1px solid rgba(127, 212, 204, 0.25);
     opacity: 0.6;
     transition: opacity 0.15s;
     font-style: normal;
@@ -248,7 +248,7 @@
 
   .ssp-help:hover {
     opacity: 1;
-    background: rgba(78, 205, 196, 0.25);
+    background: rgba(127, 212, 204, 0.25);
   }
 
   .ssp-stress-detail {
@@ -261,20 +261,20 @@
     gap: 4px;
     margin-bottom: 2px;
     font-size: 0.7rem;
-    color: #aaa;
+    color: var(--st-text-2);
   }
 
   .ssp-stress-val {
     font-family: 'Courier New', monospace;
-    color: #eee;
+    color: var(--st-text);
   }
 
   .ssp-stress-val.tension {
-    color: #ff6b6b;
+    color: var(--st-danger);
   }
 
   .ssp-stress-val.compression {
-    color: #6ba3ff;
+    color: var(--st-info);
   }
 
   .ssp-ratio {
@@ -282,11 +282,11 @@
   }
 
   .ssp-ratio.ok {
-    color: #4caf50;
+    color: var(--st-ok);
   }
 
   .ssp-ratio.fail {
-    color: #e94560;
+    color: var(--st-accent);
   }
 
   .ssp-tau-note {
@@ -296,13 +296,13 @@
 
   .ssp-stress-hint {
     font-size: 0.6rem;
-    color: #666;
+    color: var(--st-text-3);
     font-style: italic;
   }
 
   .ssp-2d-note {
     font-size: 0.6rem;
-    color: #555;
+    color: var(--st-text-3);
     font-style: italic;
   }
 
@@ -314,7 +314,7 @@
 
   .ssp-fy-bar {
     height: 4px;
-    background: #1a4a7a;
+    background: var(--st-surface-3);
     border-radius: 2px;
     margin-top: 4px;
     overflow: hidden;
@@ -327,18 +327,18 @@
   }
 
   .ssp-fy-fill.ok {
-    background: #4caf50;
+    background: var(--st-ok);
   }
 
   .ssp-fy-fill.fail {
-    background: #e94560;
+    background: var(--st-accent);
   }
 
   .ssp-fy-legend {
     display: flex;
     justify-content: space-between;
     font-size: 0.55rem;
-    color: #666;
+    color: var(--st-text-3);
     margin-top: 1px;
   }
 </style>

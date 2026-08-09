@@ -1,4 +1,18 @@
 <script lang="ts">
+
+  /**
+   * `docked` renders this panel inside the right-hand panel instead of floating
+   * over the canvas.
+   *
+   * Floating was the old shell's answer to "where does an analysis put its
+   * output": a box pinned to a corner of the drawing area. With several
+   * analyses open it stopped being an answer — Kinematic sat over the left of
+   * the model, Explore over the right, and the structure they describe was
+   * behind them. The new shell already has one place for anything that needs
+   * area and outlives a single click, so that is where this goes; the floating
+   * form is kept for mobile, which has no right panel to dock into.
+   */
+  let { docked = false }: { docked?: boolean } = $props();
   import { modelStore, resultsStore, uiStore, tourStore } from '../lib/store';
   import { t } from '../lib/i18n';
   import {
@@ -350,7 +364,7 @@
 </script>
 
 {#if query && hasAnalysis}
-  <div class="ssp-panel"
+  <div class="ssp-panel" class:docked={docked}
     style="{uiStore.isMobile && tourStore.isActive ? `bottom:auto; top:${uiStore.floatingToolsTopOffset}px; max-height:calc(100vh - ${uiStore.floatingToolsTopOffset}px - 45vh - 16px)` : ''}"
   >
     <div class="ssp-header">
@@ -529,7 +543,7 @@
     </div>
   </div>
 {:else if query && isAmorphous}
-  <div class="ssp-panel ssp-amorphous-warning"
+  <div class="ssp-panel ssp-amorphous-warning" class:docked={docked}
     style="{uiStore.isMobile && tourStore.isActive ? `bottom:auto; top:${uiStore.floatingToolsTopOffset}px` : ''}"
   >
     <div class="ssp-header">
@@ -546,13 +560,49 @@
 {/if}
 
 <style>
+  /*
+     Docked, this panel's header is a section heading inside the right panel,
+     not the title bar of a window: the rule above separates it from the
+     analysis list it belongs to, and the type matches every other heading in
+     the panel so the eye reads one column, not a widget dropped into one.
+  */
+  .ssp-panel.docked .ssp-header {
+    background: none;
+    padding: 0.5rem 0 0.35rem;
+    margin-top: 0.5rem;
+    border-top: 1px solid var(--st-hair);
+    border-bottom: none;
+  }
+
+  .ssp-panel.docked .ssp-title {
+    font-family: var(--st-mono);
+    font-size: 0.68rem;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: var(--st-text-2);
+    font-weight: 400;
+  }
+
+  /* Docked: no chrome of its own — the right panel already supplies the frame. */
+  .ssp-panel.docked {
+    position: static;
+    width: auto;
+    max-height: none;
+    border: none;
+    border-radius: 0;
+    box-shadow: none;
+    backdrop-filter: none;
+    background: transparent;
+    z-index: auto;
+  }
+
   .ssp-panel {
     position: absolute;
     bottom: 8px;
     left: 8px;
     z-index: 105;
     width: 280px;
-    background: rgba(22, 33, 62, 0.96);
+    background: rgba(19, 33, 45, 0.96);
     border: 1px solid var(--st-hair-strong);
     border-radius: 8px;
     backdrop-filter: blur(8px);
@@ -767,13 +817,13 @@
     width: 13px;
     height: 13px;
     border-radius: 50%;
-    background: rgba(78, 205, 196, 0.12);
+    background: rgba(127, 212, 204, 0.12);
     color: var(--st-value);
     font-size: 0.5rem;
     font-weight: 700;
     cursor: help;
     flex-shrink: 0;
-    border: 1px solid rgba(78, 205, 196, 0.25);
+    border: 1px solid rgba(127, 212, 204, 0.25);
     opacity: 0.6;
     transition: opacity 0.15s;
     font-style: normal;
@@ -783,7 +833,7 @@
 
   .ssp-help:hover {
     opacity: 1;
-    background: rgba(78, 205, 196, 0.25);
+    background: rgba(127, 212, 204, 0.25);
   }
 
   .ssp-help-inline {

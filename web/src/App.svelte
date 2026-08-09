@@ -45,6 +45,19 @@
     // It is wrong for a selection like a diagram, which only ever means "show".
     basicPanel = toggle && basicPanel === panel ? null : panel;
   }
+
+  /*
+   * The step-by-step wizard is started from Advanced but renders in the Model
+   * data panel, which is the only place with room for a 10×10 matrix. Pressing
+   * the button therefore lit it up and showed nothing: the wizard was mounted
+   * behind the panel the user was already looking at. Following the wizard here
+   * is what the ribbon does for every other command that owns a panel.
+   */
+  $effect(() => {
+    if (dsmStepsStore.isOpen && uiStore.appMode === 'basico' && !uiStore.isMobile) {
+      basicPanel = 'data';
+    }
+  });
   import WhatIfPanel from './components/WhatIfPanel.svelte';
   import SectionStressPanel from './components/SectionStressPanel.svelte';
   import KinematicPanel from './components/KinematicPanel.svelte';
@@ -873,9 +886,17 @@
         {#if uiStore.appMode === 'basico' && uiStore.isMobile}
           <FloatingTools />
         {/if}
-        <WhatIfPanel />
-        <SectionStressPanel />
-        <KinematicPanel />
+        <!--
+          Advanced analyses float over the canvas only where there is nothing to
+          dock them into. In desktop Basic the right panel is that place, and
+          BasicPanel renders them there instead — otherwise Kinematic and
+          Explore end up as two boxes covering the structure they describe.
+        -->
+        {#if !(uiStore.appMode === 'basico' && !uiStore.isMobile)}
+          <WhatIfPanel />
+          <SectionStressPanel />
+          <KinematicPanel />
+        {/if}
         <MobileResultsPanel />
       </main>
     </div>
@@ -1549,7 +1570,13 @@
   .ai-fab {
     position: fixed;
     bottom: 24px;
-    right: 24px;
+    /*
+       Over the canvas, not over the panel. Fixed at the viewport's corner it
+       covered the bottom-right of the right panel — enough to swallow the last
+       row of the step-by-step wizard, and enough to intercept clicks meant for
+       whatever was underneath it.
+    */
+    right: calc(24px + var(--st-right-panel-w, 0px));
     z-index: 100;
     width: 48px;
     height: 48px;
@@ -1778,7 +1805,8 @@
        and out of the way of the model's left-anchored drawing.
     */
     bottom: 46px;
-    right: 24px;
+    /* Clear of the right panel when one is open — BasicPanel publishes its width. */
+    right: calc(24px + var(--st-right-panel-w, 0px));
     z-index: 1100;
     display: flex;
     flex-direction: column;

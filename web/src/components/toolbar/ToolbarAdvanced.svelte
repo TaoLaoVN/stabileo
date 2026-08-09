@@ -76,6 +76,23 @@
     },
   };
 
+  /**
+   * What a failed analysis actually said.
+   *
+   * Every handler here used to catch with `e.message` and a generic fallback,
+   * which assumes the thrown value is an Error. The WASM solvers throw raw
+   * strings — wasm-bindgen hands a JsValue straight to `throw` — so `.message`
+   * is undefined and all of them collapsed to their generic fallback. In 3D
+   * that turned a specific solver complaint into the word "Buckling error",
+   * which tells the user nothing about the model they have to fix.
+   */
+  function errText(e: unknown, fallbackKey: string): string {
+    if (typeof e === 'string' && e.trim()) return e;
+    const msg = (e as { message?: unknown } | null)?.message;
+    if (typeof msg === 'string' && msg.trim()) return msg;
+    return t(fallbackKey);
+  }
+
   function toggleAdvHelp(key: string, e: MouseEvent) {
     e.stopPropagation();
     advHelpKey = advHelpKey === key ? null : key;
@@ -127,7 +144,7 @@
         : result.isStable ? t('toast.pdeltaNotConverged').replace('{iterations}', String(result.iterations)) : t('toast.pdeltaUnstable');
       uiStore.toast(msg, result.converged ? 'success' : 'error');
     } catch (e: any) {
-      uiStore.toast(e.message || t('toast.pdeltaError'), 'error');
+      uiStore.toast(errText(e, 'toast.pdeltaError'), 'error');
     }
   }
 
@@ -157,7 +174,7 @@
       const cumMassInfo = ` | \u03a3Meff: X=${(result.cumulativeMassRatioX * 100).toFixed(0)}%, Y=${(result.cumulativeMassRatioY * 100).toFixed(0)}%`;
       uiStore.toast(t('toast.modalSuccess').replace('{modes}', String(result.modes.length)).replace('{cumMass}', cumMassInfo).replace('{rayleigh}', rayleighInfo).replace('{ms}', dt.toFixed(0)), 'success');
     } catch (e: any) {
-      uiStore.toast(e.message || t('toast.modalError'), 'error');
+      uiStore.toast(errText(e, 'toast.modalError'), 'error');
     }
   }
 
@@ -193,7 +210,7 @@
       resultsStore.setSpectralResult(resultX);
       uiStore.toast(t('toast.spectralSuccess').replace('{vBase}', resultX.baseShear.toFixed(1)).replace('{ms}', dt.toFixed(0)), 'success');
     } catch (e: any) {
-      uiStore.toast(e.message || t('toast.spectralError'), 'error');
+      uiStore.toast(errText(e, 'toast.spectralError'), 'error');
     }
   }
 
@@ -211,7 +228,7 @@
       const nComp = result.elementData.length;
       uiStore.toast(t('toast.bucklingSuccess').replace('{factor}', factor?.toFixed(2) ?? '—').replace('{nComp}', String(nComp)).replace('{ms}', dt.toFixed(0)), 'success');
     } catch (e: any) {
-      uiStore.toast(e.message || t('toast.bucklingError'), 'error');
+      uiStore.toast(errText(e, 'toast.bucklingError'), 'error');
     }
   }
 
@@ -239,7 +256,7 @@
         : t('toast.plasticNoCollapse').replace('{hinges}', String(result.hinges.length)).replace('{lambda}', result.collapseFactor.toFixed(2)).replace('{redundancy}', String(result.redundancy)).replace('{ms}', dt.toFixed(0));
       uiStore.toast(msg, result.isMechanism ? 'info' : 'success');
     } catch (e: any) {
-      uiStore.toast(e.message || t('toast.plasticError'), 'error');
+      uiStore.toast(errText(e, 'toast.plasticError'), 'error');
     }
   }
 
@@ -272,7 +289,7 @@
       uiStore.toast(t('toast.movingLoadSuccess').replace('{positions}', String(result.positions.length)).replace('{ms}', dt.toFixed(0)), 'success');
     } catch (e: any) {
       if (!abortController.signal.aborted) {
-        uiStore.toast(e.message || t('toast.movingLoadError'), 'error');
+        uiStore.toast(errText(e, 'toast.movingLoadError'), 'error');
       }
     } finally {
       resultsStore.finishMovingLoad();
@@ -300,7 +317,7 @@
         : result.isStable ? t('toast.pdeltaNotConverged').replace('{iterations}', String(result.iterations)) : t('toast.pdeltaUnstable');
       uiStore.toast(msg, result.converged ? 'success' : 'error');
     } catch (e: any) {
-      uiStore.toast(e.message || t('toast.pdeltaError'), 'error');
+      uiStore.toast(errText(e, 'toast.pdeltaError'), 'error');
     }
   }
 
@@ -323,7 +340,7 @@
       const cumMassInfo = ` | \u03a3Meff: X=${(result.cumulativeMassRatioX * 100).toFixed(0)}%, Y=${(result.cumulativeMassRatioY * 100).toFixed(0)}%, Z=${(result.cumulativeMassRatioZ * 100).toFixed(0)}%`;
       uiStore.toast(t('toast.modalSuccess').replace('{modes}', String(result.modes.length)).replace('{cumMass}', cumMassInfo).replace('{rayleigh}', '').replace('{ms}', dt.toFixed(0)), 'success');
     } catch (e: any) {
-      uiStore.toast(e.message || t('toast.modalError'), 'error');
+      uiStore.toast(errText(e, 'toast.modalError'), 'error');
     }
   }
 
@@ -343,7 +360,7 @@
       const nComp = result.elementData.length;
       uiStore.toast(t('toast.bucklingSuccess').replace('{factor}', factor?.toFixed(2) ?? '\u2014').replace('{nComp}', String(nComp)).replace('{ms}', dt.toFixed(0)), 'success');
     } catch (e: any) {
-      uiStore.toast(e.message || t('toast.bucklingError'), 'error');
+      uiStore.toast(errText(e, 'toast.bucklingError'), 'error');
     }
   }
 
@@ -372,7 +389,7 @@
       resultsStore.setSpectralResult3D(result);
       uiStore.toast(t('toast.spectralSuccess').replace('{vBase}', result.baseShear.toFixed(1)).replace('{ms}', dt.toFixed(0)), 'success');
     } catch (e: any) {
-      uiStore.toast(e.message || t('toast.spectralError'), 'error');
+      uiStore.toast(errText(e, 'toast.spectralError'), 'error');
     }
   }
 
@@ -412,7 +429,7 @@
   let { flat = false }: { flat?: boolean } = $props();
 </script>
 
-<div class="toolbar-section" data-tour="advanced-section">
+<div class="toolbar-section" class:flat data-tour="advanced-section">
   {#if !flat}<button class="section-toggle" onclick={() => showAdvanced = !showAdvanced}>
     {showAdvanced ? '▾' : '▸'} {t('advanced.title')}
   </button>
@@ -427,9 +444,14 @@
     {/if}
   {/snippet}
   <div class="advanced-grid">
-    {#if !is3D}
+        <!--
+      2D only, and it says so instead of disappearing. In 3D these four rows
+      used to be removed outright, so the panel silently changed length between
+      modes and a user who had used the feature in 2D was left looking for it.
+      Disabled-with-a-reason is what the ribbon does for the same situation.
+    -->
     <div class="adv-btn-wrap" style="grid-column: span 2">
-      <button class="adv-btn" style="flex:1"
+      <button class="adv-btn" style="flex:1" disabled={is3D} title={is3D ? t('advanced.only2d') : undefined}
         class:active={uiStore.showKinematicPanel}
         onclick={() => uiStore.showKinematicPanel = !uiStore.showKinematicPanel}>
         {t('advanced.kinematicAnalysis')}
@@ -437,7 +459,6 @@
       <button class="adv-help-btn" onclick={(e) => toggleAdvHelp('kinematic', e)} class:active={advHelpKey === 'kinematic'}>?</button>
     </div>
     {@render helpPanel('kinematic')}
-    {/if}
     <!-- Despiece / member free-body view (Basic 2D + 3D, solver-free overlay) -->
     <div class="adv-btn-wrap" style="grid-column: span 2">
       <button class="adv-btn" style="flex:1"
@@ -455,35 +476,35 @@
     {#if resultsStore.diagramType === 'despiece'}
       <div class="adv-btn-wrap" style="grid-column: span 2; flex-direction: column; align-items: stretch; gap: 4px;">
         <div style="display:flex; gap:4px; align-items:center;">
-          <span style="font-size:0.7rem; color:#9aa;">{t('despiece.vectors')}</span>
+          <span style="font-size:0.7rem; color:var(--st-text-2);">{t('despiece.vectors')}</span>
           <button class="adv-btn" style="flex:1" class:active={uiStore.despieceVectorMode === 'all'} onclick={() => uiStore.despieceVectorMode = 'all'}>{t('despiece.vAll')}</button>
           <button class="adv-btn" style="flex:1" class:active={uiStore.despieceVectorMode === 'members'} onclick={() => uiStore.despieceVectorMode = 'members'}>{t('despiece.vMembers')}</button>
           <button class="adv-btn" style="flex:1" class:active={uiStore.despieceVectorMode === 'nodes'} onclick={() => uiStore.despieceVectorMode = 'nodes'}>{t('despiece.vNodes')}</button>
         </div>
         <div style="display:flex; gap:4px; align-items:center;">
-          <span style="font-size:0.7rem; color:#9aa;">{t('despiece.basis')}</span>
+          <span style="font-size:0.7rem; color:var(--st-text-2);">{t('despiece.basis')}</span>
           <button class="adv-btn" style="flex:1" class:active={uiStore.despieceBasis === 'local'} onclick={() => uiStore.despieceBasis = 'local'} title={t('despiece.basisLocalHint')}>{t('despiece.basisLocal')}</button>
           <button class="adv-btn" style="flex:1" class:active={uiStore.despieceBasis === 'global'} onclick={() => uiStore.despieceBasis = 'global'} title={t('despiece.basisGlobalHint')}>{t('despiece.basisGlobal')}</button>
         </div>
-        <label style="display:flex; align-items:center; gap:6px; font-size:0.7rem; color:#9aa;">
+        <label style="display:flex; align-items:center; gap:6px; font-size:0.7rem; color:var(--st-text-2);">
           <span style="min-width:70px;">{t('despiece.vectorSize')}</span>
           <input type="range" min="0.5" max="2" step="0.1" bind:value={uiStore.despieceVectorSize} style="flex:1;" />
         </label>
-        <label style="display:flex; align-items:center; gap:6px; font-size:0.7rem; color:#9aa;">
+        <label style="display:flex; align-items:center; gap:6px; font-size:0.7rem; color:var(--st-text-2);">
           <span style="min-width:70px;">{t('despiece.labelSize')}</span>
           <input type="range" min="0.6" max="2" step="0.1" bind:value={uiStore.despieceLabelSize} style="flex:1;" />
         </label>
-        <label style="display:flex; align-items:center; gap:6px; font-size:0.72rem; color:#ccc; cursor:pointer;">
+        <label style="display:flex; align-items:center; gap:6px; font-size:0.72rem; color:var(--st-text-2); cursor:pointer;">
           <input type="checkbox" bind:checked={resultsStore.showReactions} />
           {t('despiece.reactions')}
         </label>
         <div style="display:flex; gap:4px; align-items:center;">
-          <span style="font-size:0.7rem; color:#9aa;">{t('despiece.loads')}</span>
+          <span style="font-size:0.7rem; color:var(--st-text-2);">{t('despiece.loads')}</span>
           <button class="adv-btn" style="flex:1" class:active={uiStore.despieceLoadMode === 'off'} onclick={() => uiStore.despieceLoadMode = 'off'}>{t('despiece.loadsOff')}</button>
           <button class="adv-btn" style="flex:1" class:active={uiStore.despieceLoadMode === 'resultant'} onclick={() => uiStore.despieceLoadMode = 'resultant'}>{t('despiece.loadsResultant')}</button>
           <button class="adv-btn" style="flex:1" class:active={uiStore.despieceLoadMode === 'all'} onclick={() => uiStore.despieceLoadMode = 'all'}>{t('despiece.loadsAll')}</button>
         </div>
-        <label style="display:flex; align-items:center; gap:6px; font-size:0.72rem; color:#ccc; cursor:pointer;">
+        <label style="display:flex; align-items:center; gap:6px; font-size:0.72rem; color:var(--st-text-2); cursor:pointer;">
           <input type="checkbox" bind:checked={uiStore.despieceCombineVectors} />
           {t('despiece.combinedVectors')}
         </label>
@@ -567,9 +588,14 @@
     {@render helpPanel('modal')}
     {@render helpPanel('spectral')}
     <!-- Plastic, Envelope, Moving Loads, Influence Lines: 2D only -->
-    {#if !is3D}
+        <!--
+      2D only, and it says so instead of disappearing. In 3D these four rows
+      used to be removed outright, so the panel silently changed length between
+      modes and a user who had used the feature in 2D was left looking for it.
+      Disabled-with-a-reason is what the ribbon does for the same situation.
+    -->
     <div class="adv-btn-wrap" style="grid-column: span 2">
-      <button class="adv-btn" style="flex:1" class:active={!!resultsStore.plasticResult}
+      <button class="adv-btn" style="flex:1" disabled={is3D} title={is3D ? t('advanced.only2d') : undefined} class:active={!!resultsStore.plasticResult}
         onclick={() => {
           if (resultsStore.plasticResult) {
             resultsStore.clearPlastic();
@@ -580,7 +606,6 @@
       <button class="adv-help-btn" onclick={(e) => toggleAdvHelp('plastic', e)} class:active={advHelpKey === 'plastic'}>?</button>
     </div>
     {@render helpPanel('plastic')}
-    {/if}
     <div class="adv-btn-wrap" style="grid-column: span 2">
       <button class="adv-btn" style="flex:1"
         class:active={resultsStore.activeView === 'envelope'}
@@ -606,9 +631,14 @@
       <button class="adv-help-btn" onclick={(e) => toggleAdvHelp('envelope', e)} class:active={advHelpKey === 'envelope'}>?</button>
     </div>
     {@render helpPanel('envelope')}
-    {#if !is3D}
+        <!--
+      2D only, and it says so instead of disappearing. In 3D these four rows
+      used to be removed outright, so the panel silently changed length between
+      modes and a user who had used the feature in 2D was left looking for it.
+      Disabled-with-a-reason is what the ribbon does for the same situation.
+    -->
     <div class="adv-btn-wrap" style="grid-column: span 2">
-      <button class="adv-btn" style="flex:1" class:active={!!resultsStore.movingLoadEnvelope}
+      <button class="adv-btn" style="flex:1" disabled={is3D} title={is3D ? t('advanced.only2d') : undefined} class:active={!!resultsStore.movingLoadEnvelope}
         onclick={() => {
           if (resultsStore.movingLoadEnvelope) {
             resultsStore.clearMovingLoad();
@@ -617,12 +647,18 @@
             showTrainPanel = false;
           } else { showTrainPanel = !showTrainPanel; }
         }}>
-        {showTrainPanel ? '▾' : '▸'} {t('advanced.trainLoad')}
+        {flat ? '' : showTrainPanel ? '▾ ' : '▸ '}{t('advanced.trainLoad')}
       </button>
       <button class="adv-help-btn" onclick={(e) => toggleAdvHelp('trainLoad', e)} class:active={advHelpKey === 'trainLoad'}>?</button>
     </div>
     {@render helpPanel('trainLoad')}
-    {#if flat || showTrainPanel}
+    <!--
+      `flat` keeps sub-panels open rather than behind a chevron, but not when
+      the analysis they configure is unavailable: in 3D the train selector was
+      left sitting under a greyed-out Moving Load, offering to configure a run
+      that cannot start.
+    -->
+    {#if (flat && !is3D) || showTrainPanel}
       <div class="envelope-sub-panel" style="grid-column: span 2">
         {#if resultsStore.movingLoadRunning}
           <div class="moving-load-progress">
@@ -650,10 +686,14 @@
         {/if}
       </div>
     {/if}
-    {/if}
-    {#if !is3D}
+        <!--
+      2D only, and it says so instead of disappearing. In 3D these four rows
+      used to be removed outright, so the panel silently changed length between
+      modes and a user who had used the feature in 2D was left looking for it.
+      Disabled-with-a-reason is what the ribbon does for the same situation.
+    -->
     <div class="adv-btn-wrap" style="grid-column: span 2">
-      <button class="adv-btn" style="flex:1"
+      <button class="adv-btn" style="flex:1" disabled={is3D} title={is3D ? t('advanced.only2d') : undefined}
         class:active={uiStore.currentTool === 'influenceLine'}
         onclick={() => {
           if (uiStore.currentTool === 'influenceLine') {
@@ -667,12 +707,11 @@
           }
           uiStore.currentTool = 'influenceLine';
         }}>
-        ⌇ {t('advanced.influenceLine')}
+        {t('advanced.influenceLine')}
       </button>
       <button class="adv-help-btn" onclick={(e) => toggleAdvHelp('influenceLine', e)} class:active={advHelpKey === 'influenceLine'}>?</button>
     </div>
     {@render helpPanel('influenceLine')}
-    {/if}
     <div class="adv-btn-wrap" style="grid-column: span 2">
         <button class="adv-btn" style="flex:1"
           class:active={uiStore.showWhatIf}
@@ -710,7 +749,7 @@
               else uiStore.rightSidebarOpen = true;
               setTimeout(() => window.dispatchEvent(new Event('stabileo-zoom-to-fit')), 100);
             } catch (e: any) {
-              uiStore.toast(e.message || t('toast.detailedSolver3dError'), 'error');
+              uiStore.toast(errText(e, 'toast.detailedSolver3dError'), 'error');
             }
           } else {
             const input = modelStore.buildSolverInput(uiStore.includeSelfWeight);
@@ -723,7 +762,7 @@
               else uiStore.rightSidebarOpen = true;
               setTimeout(() => window.dispatchEvent(new Event('stabileo-zoom-to-fit')), 100);
             } catch (e: any) {
-              uiStore.toast(e.message || t('toast.detailedSolverError'), 'error');
+              uiStore.toast(errText(e, 'toast.detailedSolverError'), 'error');
             }
           }
         }}>
@@ -868,6 +907,37 @@
     gap: 0.25rem;
   }
 
+  /*
+     One column in the right panel.
+     ─────────────────────────────
+     The two-column grid was built for the old left sidebar, where the section
+     was a short accordion and pairing P-Δ with Pcr saved vertical space. In the
+     right panel it produced a ragged list: most analyses carry
+     `grid-column: span 2` inline and take a full row, four do not, and each row
+     also ends in a round help button — so the panel showed full-width rows,
+     half-width rows and help buttons landing at three different x positions.
+
+     Flex, not a one-column grid: `grid-column: span 2` is set inline on most of
+     these rows, and in a single-column grid a span of 2 does not clamp — it
+     creates an implicit second column, which is how the ragged layout survived
+     the first attempt at this. `display: flex` makes those inline declarations
+     inert without touching sixty of them, and every child stretches to the
+     panel width on its own. Thirteen analyses read better as a list anyway.
+  */
+  .flat .advanced-grid {
+    display: flex;
+    flex-direction: column;
+    gap: 0.3rem;
+  }
+
+  /* Sub-controls belong to the analysis above them, and should look it. */
+  .flat .envelope-sub-panel,
+  .flat .il-sub-panel {
+    margin-left: 0.6rem;
+    padding-left: 0.6rem;
+    border-left: 2px solid var(--st-hair);
+  }
+
   .adv-btn-wrap {
     display: flex;
     align-items: stretch;
@@ -943,8 +1013,8 @@
 
   .adv-help-panel {
     padding: 6px 8px;
-    background: rgba(78, 205, 196, 0.08);
-    border: 1px solid rgba(78, 205, 196, 0.3);
+    background: rgba(127, 212, 204, 0.08);
+    border: 1px solid rgba(127, 212, 204, 0.3);
     border-radius: 6px;
     font-size: 0.7rem;
     line-height: 1.4;
@@ -1087,5 +1157,20 @@
     font-size: 0.68rem;
     color: var(--st-text-3);
     padding: 0 0 0 0.25rem;
+  }
+
+  /*
+     The run's summary — "B₂ = 1.000 | 1 iter | stable" — reads as a caption on
+     the analysis above it, so it gets the monospace and the indent that every
+     other subordinate line in this panel gets. Loose at the foot of the list it
+     looked like a stray line of debug output.
+  */
+  .flat .adv-result-info {
+    font-family: var(--st-mono);
+    font-size: 0.66rem;
+    letter-spacing: 0.02em;
+    margin-left: 0.6rem;
+    padding: 0.1rem 0 0.1rem 0.6rem;
+    border-left: 2px solid var(--st-hair);
   }
 </style>

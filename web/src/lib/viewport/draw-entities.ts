@@ -28,7 +28,7 @@ export type ScreenToWorldFn = (sx: number, sy: number) => { x: number; y: number
 // ── Constants ────────────────────────────────────────────────────────
 
 export const ELEMENT_PALETTE = [
-  '#4ecdc4', '#e9c46a', '#e76f51', '#2a9d8f',
+  '#7fd4cc', '#e9c46a', '#e76f51', '#2a9d8f',
   '#f4a261', '#264653', '#a8dadc', '#e63946',
 ];
 
@@ -95,9 +95,9 @@ export function drawAxes(
   const cx = 40, cy = height - 40, len = 25;
   ctx.lineWidth = 2;
   // X axis (red, right)
-  ctx.strokeStyle = '#ff4444';
+  ctx.strokeStyle = '#e5482a';
   ctx.beginPath(); ctx.moveTo(cx, cy); ctx.lineTo(cx + len, cy); ctx.stroke();
-  ctx.fillStyle = '#ff4444'; ctx.font = '11px sans-serif';
+  ctx.fillStyle = '#e5482a'; ctx.font = '11px sans-serif';
   ctx.fillText('X', cx + len + 3, cy + 4);
   // Z axis (blue, up)
   ctx.strokeStyle = '#4488ff';
@@ -184,7 +184,7 @@ export function drawElement(
   ctx.beginPath();
   ctx.moveTo(si.x, si.y);
   ctx.lineTo(sj.x, sj.y);
-  ctx.strokeStyle = opts.isSelected ? '#ff6b6b' : baseColor;
+  ctx.strokeStyle = opts.isSelected ? '#e8705f' : baseColor;
   ctx.lineWidth = opts.isSelected ? 4.5 : 3.5;
   if (elem.type === 'truss' && opts.diagramType !== 'axialColor') {
     ctx.setLineDash([8, 4]);
@@ -204,7 +204,7 @@ export function drawElement(
   const hasHingeStart = elem.releaseI?.mz === true;
   const hasHingeEnd = elem.releaseJ?.mz === true;
 
-  const hingeColor = opts.isSelected ? '#ff6b6b' : baseColor;
+  const hingeColor = opts.isSelected ? '#e8705f' : baseColor;
   if (hasHingeStart) {
     const count = nodeBarCount?.get(elem.nodeI) ?? 1;
     // <=2 bars: centered on node (offset=0). >=3 bars: small offset along element
@@ -598,7 +598,7 @@ export function drawNodalLoad(
   labelYOffset?: number,
 ): void {
   const arrowLen = 40;
-  const color = caseColor ?? '#ff4444';
+  const color = caseColor ?? '#e5482a';
   const prefix = caseName ? `${caseName}: ` : '';
   const yOff = labelYOffset ?? 0;
   const vertical = loadData.fz ?? loadData.fy ?? 0;

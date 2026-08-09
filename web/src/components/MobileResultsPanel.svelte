@@ -39,7 +39,7 @@
   >
     <svg viewBox="0 0 24 24" width="20" height="20" fill="none">
       <line x1="2" y1="17" x2="22" y2="17" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"/>
-      <path d="M2,17 Q7,5 12,17 Q17,5 22,17" stroke="#e94560" stroke-width="1.8" fill="none"/>
+      <path d="M2,17 Q7,5 12,17 Q17,5 22,17" stroke="var(--st-accent)" stroke-width="1.8" fill="none"/>
     </svg>
   </button>
 {/if}
@@ -150,10 +150,10 @@
     z-index: 90;
     width: 36px;
     height: 36px;
-    background: rgba(22, 33, 62, 0.9);
-    border: 1px solid #445;
+    background: rgba(19, 33, 45, 0.9);
+    border: 1px solid var(--st-hair);
     border-radius: 6px;
-    color: #aabbcc;
+    color: var(--st-text-2);
     cursor: pointer;
     display: flex;
     align-items: center;
@@ -163,8 +163,8 @@
   }
 
   .mrp-reopen:hover, .mrp-reopen:active {
-    background: rgba(40, 60, 100, 0.95);
-    color: #ddeeff;
+    background: rgba(23, 41, 58, 0.95);
+    color: var(--st-text);
   }
 
   /* Floating panel */
@@ -174,7 +174,7 @@
     z-index: 90;
     width: min(240px, calc(100vw - 60px));
     max-height: calc(100% - 80px);
-    background: rgba(22, 33, 62, 0.96);
+    background: rgba(19, 33, 45, 0.96);
     border: 1px solid var(--st-hair-strong);
     border-radius: 8px;
     backdrop-filter: blur(8px);
@@ -207,7 +207,7 @@
   .mrp-title {
     font-size: 0.75rem;
     font-weight: 600;
-    color: #aabbcc;
+    color: var(--st-text-2);
     text-transform: uppercase;
     letter-spacing: 0.5px;
   }
@@ -249,11 +249,11 @@
   }
 
   .mrp-solve:active {
-    background: #d63851;
+    background: var(--st-accent);
   }
 
   .mrp-solve:disabled {
-    background: #555;
+    background: var(--st-hair);
     color: var(--st-text-3);
     cursor: not-allowed;
   }
@@ -374,7 +374,7 @@
   /* Hint text when no results */
   .mrp-hint {
     font-size: 0.7rem;
-    color: #667;
+    color: var(--st-text-3);
     margin: 4px 0;
     text-align: center;
     font-style: italic;

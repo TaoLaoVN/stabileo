@@ -5,9 +5,14 @@
   import ToolbarExamples from '../toolbar/ToolbarExamples.svelte';
   import ToolbarConfig from '../toolbar/ToolbarConfig.svelte';
   import ToolbarProject from '../toolbar/ToolbarProject.svelte';
+  import KinematicPanel from '../KinematicPanel.svelte';
+  import WhatIfPanel from '../WhatIfPanel.svelte';
+  import SectionStressPanel from '../SectionStressPanel.svelte';
   import DataTable from '../DataTable.svelte';
   import StepWizard from '../dsm/StepWizard.svelte';
   import { dsmStepsStore } from '../../lib/store/dsmSteps.svelte';
+  import { uiStore } from '../../lib/store/ui.svelte';
+  import { resultsStore } from '../../lib/store/results.svelte';
 
   /**
    * The right-hand panel: one thing, named by the command that opened it.
@@ -66,6 +71,46 @@
 
   /** Heading, so the panel always says what it is showing. */
   const title = $derived(t(`ribbon.${panel}`));
+
+  /*
+   * Publish the width so fixed-position overlays can stay clear of the panel.
+   *
+   * Toasts are anchored bottom-right of the viewport, which used to be the
+   * corner of the canvas and is now the middle of this panel — success messages
+   * landed on top of the report they were announcing. A custom property is the
+   * least invasive way to tell them: nothing has to be threaded through the
+   * component tree, and the value follows the drag handle for free.
+   */
+  $effect(() => {
+    const el = document.documentElement;
+    el.style.setProperty('--st-right-panel-w', `${width}px`);
+    return () => el.style.removeProperty('--st-right-panel-w');
+  });
+
+  /*
+   * Bring a freshly opened analysis into view.
+   *
+   * The docked outputs sit below a list of thirteen analyses, and the Kinematic
+   * report alone is longer than the panel. Opening Explore while Kinematic was
+   * up therefore appended its sliders somewhere off the bottom of the scroll,
+   * and the button you had just pressed looked like it had done nothing. The
+   * count of open outputs is the trigger — it rises only when one opens, so
+   * this never fights a user who has scrolled up to read something.
+   */
+  let dockedOutputs = $state<HTMLElement | null>(null);
+  const openOutputs = $derived(
+    (uiStore.showKinematicPanel ? 1 : 0) +
+    (uiStore.showWhatIf ? 1 : 0) +
+    (resultsStore.stressQuery ? 1 : 0),
+  );
+  let lastOpen = 0;
+  $effect(() => {
+    const n = openOutputs;
+    if (n > lastOpen && dockedOutputs) {
+      requestAnimationFrame(() => dockedOutputs?.scrollIntoView({ block: 'start', behavior: 'smooth' }));
+    }
+    lastOpen = n;
+  });
 </script>
 
 <aside class="basic-panel" data-testid="basic-panel" data-panel={panel} style:width="{width}px">
@@ -88,6 +133,16 @@
       <ToolbarResults hideDiagrams flat />
     {:else if panel === 'advanced'}
       <ToolbarAdvanced flat />
+      <!--
+        An analysis and its output in one column: pick Kinematic here and its
+        report unfolds directly beneath the button that ran it. These used to
+        float over the canvas, which put the answer on top of the question.
+      -->
+      <div bind:this={dockedOutputs}>
+        <KinematicPanel docked />
+        <WhatIfPanel docked />
+        <SectionStressPanel docked />
+      </div>
     {:else if panel === 'examples'}
       <ToolbarExamples flat />
     {:else if panel === 'settings'}

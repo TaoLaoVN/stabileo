@@ -160,7 +160,7 @@
     border-color: var(--st-interactive);
   }
   .explorer-toggle.active {
-    background: rgba(78, 205, 196, 0.15);
+    background: rgba(127, 212, 204, 0.15);
     color: var(--st-value);
     border-color: var(--st-interactive);
   }
@@ -199,8 +199,8 @@
     transition: all 0.15s;
   }
   .step-dot.active {
-    background: #4ecdc4;
-    color: #1a1a2e;
+    background: var(--st-value);
+    color: var(--st-surface);
     border-color: var(--st-interactive);
     font-weight: 700;
   }
@@ -257,6 +257,6 @@
     border-bottom: 1px solid var(--st-hair);
     flex-shrink: 0;
   }
-  .mode-3d { background: #1a2f4a; color: #7cb3f0; }
-  .mode-2d { background: #1a2a2a; color: var(--st-value); }
+  .mode-3d { background: var(--st-surface-3); color: var(--st-info); }
+  .mode-2d { background: var(--st-surface-2); color: var(--st-value); }
 </style>

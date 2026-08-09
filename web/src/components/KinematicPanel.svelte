@@ -1,4 +1,18 @@
 <script lang="ts">
+
+  /**
+   * `docked` renders this panel inside the right-hand panel instead of floating
+   * over the canvas.
+   *
+   * Floating was the old shell's answer to "where does an analysis put its
+   * output": a box pinned to a corner of the drawing area. With several
+   * analyses open it stopped being an answer — Kinematic sat over the left of
+   * the model, Explore over the right, and the structure they describe was
+   * behind them. The new shell already has one place for anything that needs
+   * area and outlives a single click, so that is where this goes; the floating
+   * form is kept for mobile, which has no right panel to dock into.
+   */
+  let { docked = false }: { docked?: boolean } = $props();
   import { modelStore, uiStore } from '../lib/store';
   import { generateKinematicReport, type KinematicReport, type SlidingJointInput } from '../lib/engine/kinematic-report';
   import { t } from '../lib/i18n';
@@ -83,7 +97,7 @@
 <svelte:window onkeydown={handleKeydown} />
 
 {#if uiStore.showKinematicPanel}
-  <div class="kp-panel">
+  <div class="kp-panel" class:docked={docked}>
     <div class="kp-header">
       <span class="kp-title">{t('kinematic.title')}</span>
       <div class="kp-header-actions">
@@ -157,7 +171,7 @@
               </div>
               {#each report.supportDetails as sup}
                 <div class="kp-detail">
-                  {t('kinematic.nodeDetail').replace('{id}', String(sup.nodeId)).replace('{type}', sup.type).replace('{dofs}', String(sup.dofs)).replace('{restrained}', sup.restrainedDofs)}
+                  {t('kinematic.nodeDetail').replaceAll('{id}', String(sup.nodeId)).replaceAll('{type}', sup.type).replaceAll('{dofs}', String(sup.dofs)).replaceAll('{restrained}', sup.restrainedDofs)}
                 </div>
               {/each}
             {:else}
@@ -171,7 +185,7 @@
               </div>
               {#each report.hingeDetails as hinge}
                 <div class="kp-detail">
-                  {t('kinematic.nodeHingeDetail').replace('{id}', String(hinge.nodeId)).replace('{explanation}', hinge.explanation)}
+                  {t('kinematic.nodeHingeDetail').replaceAll('{id}', String(hinge.nodeId)).replaceAll('{explanation}', hinge.explanation)}
                 </div>
               {/each}
               {#each report.slideDetails as slide}
@@ -221,14 +235,14 @@
               </div>
             {:else if report.hasHiddenMechanism}
               <div class="kp-result kp-danger-bg">
-                {t('kinematic.hiddenMechanism').replace('{n}', String(report.mechanismModes)).replace('{s}', report.mechanismModes > 1 ? 's' : '').replace('{degree}', String(report.degree))}
+                {t('kinematic.hiddenMechanism').replaceAll('{n}', String(report.mechanismModes)).replaceAll('{s}', report.mechanismModes > 1 ? 's' : '').replaceAll('{degree}', String(report.degree))}
               </div>
               <div class="kp-explanation">
                 {t('kinematic.hiddenMechanismExplanation')}
               </div>
             {:else}
               <div class="kp-result kp-danger-bg">
-                {t('kinematic.mechanismDetected').replace('{n}', String(report.mechanismModes)).replace('{s}', report.mechanismModes > 1 ? 's' : '')}
+                {t('kinematic.mechanismDetected').replaceAll('{n}', String(report.mechanismModes)).replaceAll('{s}', report.mechanismModes > 1 ? 's' : '')}
               </div>
             {/if}
 
@@ -236,7 +250,7 @@
               <div class="kp-sub-title">{t('kinematic.freeMovements')}</div>
               {#each report.unconstrainedDofs as ud}
                 <div class="kp-unconstrained">
-                  <span class="kp-dof-badge">{t('kinematic.nodeDof').replace('{id}', String(ud.nodeId)).replace('{dofName}', ud.dofName)}</span>
+                  <span class="kp-dof-badge">{t('kinematic.nodeDof').replaceAll('{id}', String(ud.nodeId)).replaceAll('{dofName}', ud.dofName)}</span>
                   <div class="kp-dof-explanation">{ud.explanation}</div>
                 </div>
               {/each}
@@ -258,7 +272,7 @@
                       <button class="kp-elem-toggle" onclick={() => toggleElem(ea.elemId)}>
                         <span class="kp-elem-toggle-left">
                           <span class="kp-chevron">{expandedElems.has(ea.elemId) ? '▾' : '▸'}</span>
-                          {t('kinematic.bar').replace('{id}', String(ea.elemId))} <span class="kp-elem-type">({ea.type === 'frame' ? t('kinematic.rigid') : t('kinematic.truss')})</span>
+                          {t('kinematic.bar').replaceAll('{id}', String(ea.elemId))} <span class="kp-elem-type">({ea.type === 'frame' ? t('kinematic.rigid') : t('kinematic.truss')})</span>
                         </span>
                         <span class="kp-elem-badge"
                           class:kp-elem-badge-ok={ea.status === 'isostatic'}
@@ -322,14 +336,50 @@
 {/if}
 
 <style>
+  /*
+     Docked, this panel's header is a section heading inside the right panel,
+     not the title bar of a window: the rule above separates it from the
+     analysis list it belongs to, and the type matches every other heading in
+     the panel so the eye reads one column, not a widget dropped into one.
+  */
+  .kp-panel.docked .kp-header {
+    background: none;
+    padding: 0.5rem 0 0.35rem;
+    margin-top: 0.5rem;
+    border-top: 1px solid var(--st-hair);
+    border-bottom: none;
+  }
+
+  .kp-panel.docked .kp-title {
+    font-family: var(--st-mono);
+    font-size: 0.68rem;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: var(--st-text-2);
+    font-weight: 400;
+  }
+
+  /* Docked: no chrome of its own — the right panel already supplies the frame. */
+  .kp-panel.docked {
+    position: static;
+    width: auto;
+    max-height: none;
+    border: none;
+    border-radius: 0;
+    box-shadow: none;
+    backdrop-filter: none;
+    background: transparent;
+    z-index: auto;
+  }
+
   .kp-panel {
     position: absolute;
     bottom: 8px;
     left: 8px;
     width: 310px;
     max-height: calc(100% - 90px);
-    background: #141e33;
-    border: 1px solid #2a3a5a;
+    background: var(--st-surface-2);
+    border: 1px solid var(--st-surface-3);
     border-radius: 8px;
     box-shadow: 0 4px 24px rgba(0,0,0,0.5);
     z-index: 105;
@@ -345,8 +395,8 @@
     justify-content: space-between;
     align-items: center;
     padding: 0.45rem 0.6rem;
-    background: #1a2744;
-    border-bottom: 1px solid #2a3a5a;
+    background: var(--st-surface-2);
+    border-bottom: 1px solid var(--st-surface-3);
     flex-shrink: 0;
   }
 
@@ -365,10 +415,10 @@
   .kp-quick-btn {
     width: 22px;
     height: 22px;
-    border: 1px solid #2a3a5a;
+    border: 1px solid var(--st-surface-3);
     border-radius: 4px;
     background: transparent;
-    color: #556;
+    color: var(--st-text-3);
     font-size: 0.62rem;
     font-weight: 700;
     cursor: pointer;
@@ -380,19 +430,26 @@
     line-height: 1;
   }
   .kp-quick-btn:hover {
-    border-color: #4a6a9a;
+    border-color: var(--st-surface-3);
     color: var(--st-text-2);
-    background: rgba(42, 58, 90, 0.3);
+    background: rgba(23, 41, 58, 0.3);
   }
+  /*
+     N / E / Q are view toggles, so they take the accent every other active
+     toggle in the application takes. They were green, which in this palette is
+     reserved for "solved" and "stable" — the panel's own verdict sits four
+     lines below in the same green, and two unrelated things claiming the same
+     colour is how a status colour stops meaning anything.
+  */
   .kp-quick-active {
-    background: rgba(76, 175, 80, 0.15);
-    border-color: rgba(76, 175, 80, 0.4);
-    color: var(--st-ok);
+    background: var(--st-selected-bg);
+    border-color: var(--st-accent);
+    color: var(--st-accent);
   }
   .kp-quick-active:hover {
-    background: rgba(76, 175, 80, 0.25);
-    border-color: rgba(76, 175, 80, 0.5);
-    color: #5dce60;
+    background: var(--st-selected-bg);
+    border-color: var(--st-accent-hover);
+    color: var(--st-accent-hover);
   }
 
   .kp-close {
@@ -412,7 +469,7 @@
     background: rgba(255, 193, 7, 0.08);
     border: 1px dashed rgba(255, 193, 7, 0.35);
     border-radius: 4px;
-    color: #ffc107;
+    color: var(--st-warn);
     font-size: 0.72rem;
     padding: 0.4rem 0.5rem;
     cursor: pointer;
@@ -439,10 +496,10 @@
 
   .kp-section-toggle {
     width: 100%;
-    background: rgba(42, 58, 90, 0.3);
+    background: rgba(23, 41, 58, 0.3);
     border: none;
     border-radius: 4px;
-    color: #b0bec5;
+    color: var(--st-text-2);
     font-size: 0.75rem;
     font-weight: 600;
     padding: 0.35rem 0.5rem;
@@ -451,7 +508,7 @@
     margin-top: 0.25rem;
     transition: background 0.15s;
   }
-  .kp-section-toggle:hover { background: rgba(42, 58, 90, 0.6); }
+  .kp-section-toggle:hover { background: rgba(23, 41, 58, 0.6); }
 
   .kp-chevron {
     display: inline-block;
@@ -468,12 +525,12 @@
     justify-content: space-between;
     padding: 0.1rem 0;
   }
-  .kp-label { color: #999; }
+  .kp-label { color: var(--st-text-3); }
   .kp-value { color: var(--st-text); font-weight: 500; }
 
   .kp-sub-title {
     font-weight: 600;
-    color: #b0bec5;
+    color: var(--st-text-2);
     margin-top: 0.35rem;
     margin-bottom: 0.15rem;
     font-size: 0.73rem;
@@ -481,7 +538,7 @@
 
   .kp-detail {
     padding: 0.15rem 0 0.15rem 0.4rem;
-    border-left: 2px solid #2a3a5a;
+    border-left: 2px solid var(--st-surface-3);
     margin: 0.1rem 0;
     line-height: 1.4;
     font-size: 0.72rem;
@@ -516,13 +573,13 @@
     text-align: center;
     width: 100%;
   }
-  .kp-ok { background: rgba(76, 175, 80, 0.15); color: var(--st-ok); border: 1px solid rgba(76, 175, 80, 0.4); }
-  .kp-warn { background: rgba(255, 193, 7, 0.12); color: #ffc107; border: 1px solid rgba(255, 193, 7, 0.35); }
-  .kp-danger { background: rgba(233, 69, 96, 0.15); color: var(--st-accent); border: 1px solid rgba(233, 69, 96, 0.4); }
+  .kp-ok { background: rgba(42, 168, 105, 0.15); color: var(--st-ok); border: 1px solid rgba(42, 168, 105, 0.4); }
+  .kp-warn { background: rgba(255, 193, 7, 0.12); color: var(--st-warn); border: 1px solid rgba(255, 193, 7, 0.35); }
+  .kp-danger { background: rgba(229, 72, 42, 0.15); color: var(--st-accent); border: 1px solid rgba(229, 72, 42, 0.4); }
 
   .kp-explanation {
     font-size: 0.72rem;
-    color: #999;
+    color: var(--st-text-3);
     line-height: 1.45;
     margin: 0.2rem 0;
   }
@@ -535,14 +592,14 @@
     font-size: 0.74rem;
     line-height: 1.4;
   }
-  .kp-ok-bg { background: rgba(76, 175, 80, 0.1); color: var(--st-ok); }
-  .kp-warn-bg { background: rgba(255, 193, 7, 0.1); color: #ffc107; }
-  .kp-danger-bg { background: rgba(233, 69, 96, 0.1); color: var(--st-accent); }
+  .kp-ok-bg { background: rgba(42, 168, 105, 0.1); color: var(--st-ok); }
+  .kp-warn-bg { background: rgba(255, 193, 7, 0.1); color: var(--st-warn); }
+  .kp-danger-bg { background: rgba(229, 72, 42, 0.1); color: var(--st-accent); }
 
   .kp-unconstrained {
     margin: 0.25rem 0;
     padding: 0.3rem 0.4rem;
-    background: rgba(233, 69, 96, 0.06);
+    background: rgba(229, 72, 42, 0.06);
     border-radius: 4px;
     border-left: 3px solid var(--st-accent);
   }
@@ -566,13 +623,13 @@
   .kp-suggestions li {
     margin: 0.2rem 0;
     line-height: 1.4;
-    color: #b0bec5;
+    color: var(--st-text-2);
     font-size: 0.72rem;
   }
 
   .kp-footer {
     padding: 0.4rem 0.5rem;
-    border-top: 1px solid #2a3a5a;
+    border-top: 1px solid var(--st-surface-3);
     margin-top: 0.3rem;
     text-align: center;
   }
@@ -586,9 +643,9 @@
   .kp-sub-toggle {
     width: 100%;
     background: rgba(30, 45, 70, 0.4);
-    border: 1px dashed rgba(42, 58, 90, 0.5);
+    border: 1px dashed rgba(23, 41, 58, 0.5);
     border-radius: 4px;
-    color: #8899aa;
+    color: var(--st-text-2);
     font-size: 0.72rem;
     font-weight: 600;
     padding: 0.3rem 0.5rem;
@@ -597,7 +654,7 @@
     margin-top: 0.4rem;
     transition: background 0.15s;
   }
-  .kp-sub-toggle:hover { background: rgba(42, 58, 90, 0.5); color: #b0bec5; }
+  .kp-sub-toggle:hover { background: rgba(23, 41, 58, 0.5); color: var(--st-text-2); }
 
   .kp-sub-section {
     padding: 0.2rem 0;
@@ -611,7 +668,7 @@
     overflow: hidden;
   }
   .kp-elem-ok { border-left-color: var(--st-ok); }
-  .kp-elem-hyper { border-left-color: #5c6bc0; }
+  .kp-elem-hyper { border-left-color: var(--st-info); }
   .kp-elem-mech { border-left-color: var(--st-accent); }
 
   .kp-elem-toggle {
@@ -645,13 +702,13 @@
     letter-spacing: 0.03em;
     flex-shrink: 0;
   }
-  .kp-elem-badge-ok { background: rgba(76, 175, 80, 0.15); color: var(--st-ok); }
-  .kp-elem-badge-hyper { background: rgba(92, 107, 192, 0.15); color: #7986cb; }
-  .kp-elem-badge-mech { background: rgba(233, 69, 96, 0.15); color: var(--st-accent); }
+  .kp-elem-badge-ok { background: rgba(42, 168, 105, 0.15); color: var(--st-ok); }
+  .kp-elem-badge-hyper { background: rgba(74, 143, 212, 0.15); color: var(--st-info); }
+  .kp-elem-badge-mech { background: rgba(229, 72, 42, 0.15); color: var(--st-accent); }
 
   .kp-elem-body {
     padding: 0.15rem 0.4rem 0.3rem;
-    border-top: 1px solid rgba(42, 58, 90, 0.3);
+    border-top: 1px solid rgba(23, 41, 58, 0.3);
   }
 
   .kp-dof-line {
@@ -690,7 +747,7 @@
     font-style: italic;
     margin-top: 0.15rem;
     padding-top: 0.1rem;
-    border-top: 1px solid rgba(42, 58, 90, 0.2);
+    border-top: 1px solid rgba(23, 41, 58, 0.2);
   }
 
   @media (max-width: 640px) {
