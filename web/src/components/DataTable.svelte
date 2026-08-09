@@ -107,11 +107,11 @@
   }
 
   .results-tab {
-    color: #e9c46a !important;
+    color: var(--st-warn) !important;
   }
   .results-tab.active {
-    color: #e9c46a !important;
-    border-bottom-color: #e9c46a !important;
+    color: var(--st-warn) !important;
+    border-bottom-color: var(--st-warn) !important;
   }
 
   .table-wrapper {

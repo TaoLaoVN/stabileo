@@ -4937,6 +4937,10 @@ const en: Record<string, string> = {
   'ribbon.nameMoment': 'Bending moment',
   'ribbon.nameShear': 'Shear force',
   'ribbon.nameTorsion': 'Torsion',
+  'ribbon.nameMomentY': 'Bending moment about y',
+  'ribbon.nameMomentZ': 'Bending moment about z',
+  'ribbon.nameShearY': 'Shear along y',
+  'ribbon.nameShearZ': 'Shear along z',
 
 };
 export default en;

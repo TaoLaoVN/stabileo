@@ -18,8 +18,15 @@
    * hairline borders around them.
    */
 
-  type Props = { name: string; size?: number };
-  let { name, size = 22 }: Props = $props();
+  type Props = { name: string; size?: number; rotate?: number };
+  /**
+   * `rotate` distinguishes a pair that shares a shape but not an axis. My and
+   * Mz are the same bending action about perpendicular axes, and so are Vz and
+   * Vy — drawing them identically made the two halves of the results row
+   * indistinguishable. Turning one by 90° says "same force, other axis" without
+   * inventing a second icon that would imply a different quantity.
+   */
+  let { name, size = 22, rotate = 0 }: Props = $props();
 </script>
 
 <svg
@@ -34,6 +41,7 @@
   stroke-linejoin="round"
   aria-hidden="true"
   focusable="false"
+  style={rotate ? `transform: rotate(${rotate}deg)` : undefined}
 >
   {#if name === 'select'}
     <!-- Arrow cursor, the one shape every application agrees on. -->

@@ -87,13 +87,13 @@
     {#if panel === 'results'}
       <ToolbarResults hideDiagrams flat />
     {:else if panel === 'advanced'}
-      <ToolbarAdvanced />
+      <ToolbarAdvanced flat />
     {:else if panel === 'examples'}
-      <ToolbarExamples />
+      <ToolbarExamples flat />
     {:else if panel === 'settings'}
-      <ToolbarConfig />
+      <ToolbarConfig flat />
     {:else if panel === 'project'}
-      <ToolbarProject />
+      <ToolbarProject flat />
     {:else if panel === 'data'}
       <!--
         Model data and the step-by-step wizard used to live in a SECOND right

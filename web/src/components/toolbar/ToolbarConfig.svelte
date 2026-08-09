@@ -4,7 +4,17 @@
   import { t } from '../../lib/i18n';
 
   /** When true, skip outer toggle and show content directly (used in PRO dropdown). */
-  let { inline = false }: { inline?: boolean } = $props();
+
+  /**
+   * `flat` — everything open, no accordions.
+   *
+   * These sections collapse because they used to be stacked in one narrow left
+   * column where five of them competed for the same vertical space. In the
+   * ribbon layout only ONE of them is ever mounted, in a panel that already
+   * names it and that the user can widen, so a disclosure triangle just hides
+   * what they explicitly asked to see.
+   */
+  let { inline = false, flat = false }: any = $props();
 
   let showConfig = $state(false);
   let showGridSub = $state(false);
@@ -29,16 +39,17 @@
 
 <div class="toolbar-section" data-tour="config-section">
   {#if !inline}
-  <button class="section-toggle" onclick={() => showConfig = !showConfig}>
+  {#if !flat}<button class="section-toggle" onclick={() => showConfig = !showConfig}>
     {showConfig ? '▾' : '▸'} {t('config.title')}
   </button>
+  {/if}
   {/if}
   {#if showConfig || inline}
   <div class="config-children">
     <button class="sub-toggle" onclick={() => showGridSub = !showGridSub}>
       {showGridSub ? '▾' : '▸'} {t('config.grid')}
     </button>
-    {#if showGridSub}
+    {#if flat || showGridSub}
       {@const is3D = uiStore.analysisMode === '3d' || uiStore.analysisMode === 'pro'}
       {@const isPro = uiStore.analysisMode === 'pro'}
       {@const gridVisible = is3D ? uiStore.showGrid3D : uiStore.showGrid}
@@ -114,7 +125,7 @@
     <button class="sub-toggle" onclick={() => showStructureSub = !showStructureSub}>
       {showStructureSub ? '▾' : '▸'} {t('config.model')}
     </button>
-    {#if showStructureSub}
+    {#if flat || showStructureSub}
       {@const is3Dm = uiStore.analysisMode === '3d' || uiStore.analysisMode === 'pro'}
       <div class="sub-content">
         <label class="checkbox-item">
@@ -189,7 +200,7 @@
     <button class="sub-toggle" onclick={() => showResultsSub = !showResultsSub}>
       {showResultsSub ? '▾' : '▸'} {t('config.resultsSection')}
     </button>
-    {#if showResultsSub}
+    {#if flat || showResultsSub}
       <div class="sub-content">
         <label class="checkbox-item">
           <input type="checkbox" bind:checked={resultsStore.showDiagramValues} />

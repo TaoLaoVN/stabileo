@@ -69,15 +69,27 @@
   ];
 
 
+
+  /**
+   * `flat` — everything open, no accordions.
+   *
+   * These sections collapse because they used to be stacked in one narrow left
+   * column where five of them competed for the same vertical space. In the
+   * ribbon layout only ONE of them is ever mounted, in a panel that already
+   * names it and that the user can widen, so a disclosure triangle just hides
+   * what they explicitly asked to see.
+   */
+  let { flat = false }: { flat?: boolean } = $props();
 </script>
 
 {#if uiStore.analysisMode === 'pro'}
 <!-- PRO mode: only PRO examples -->
 <div class="toolbar-section" data-tour="examples-section">
-  <button class="section-toggle" onclick={() => showExamples = !showExamples}>
+  {#if !flat}<button class="section-toggle" onclick={() => showExamples = !showExamples}>
     {showExamples ? '▾' : '▸'} {t('examples.titlePro')}
   </button>
-  {#if showExamples}
+  {/if}
+  {#if flat || showExamples}
     <div class="examples-list">
       {#each examplesPro as ex}
         <button class="example-item" onclick={async () => { await modelStore.loadExample(ex.id); resultsStore.clear(); resultsStore.clear3D(); if (uiStore.isMobile) uiStore.leftDrawerOpen = false; setTimeout(() => window.dispatchEvent(new Event('stabileo-zoom-to-fit')), 50); }}>
@@ -93,10 +105,11 @@
 <!-- 3D mode: 2D + 3D example sections -->
 <div data-tour="examples-section" style="display:flex;flex-direction:column;gap:1rem">
 <div class="toolbar-section">
-  <button class="section-toggle" onclick={() => showExamples = !showExamples}>
+  {#if !flat}<button class="section-toggle" onclick={() => showExamples = !showExamples}>
     {showExamples ? '▾' : '▸'} {t('examples.title2d')}
   </button>
-  {#if showExamples}
+  {/if}
+  {#if flat || showExamples}
     <div class="examples-list">
       {#each examples as ex}
         <button class="example-item" onclick={async () => { await modelStore.loadExample(ex.id); resultsStore.clear(); resultsStore.clear3D(); if (uiStore.isMobile) uiStore.leftDrawerOpen = false; setTimeout(() => window.dispatchEvent(new Event('stabileo-zoom-to-fit')), 50); }}>
@@ -109,9 +122,10 @@
 </div>
 
 <div class="toolbar-section">
-  <button class="section-toggle" onclick={() => showExamples3D = !showExamples3D}>
+  {#if !flat}<button class="section-toggle" onclick={() => showExamples3D = !showExamples3D}>
     {showExamples3D ? '▾' : '▸'} {t('examples.title3d')}
   </button>
+  {/if}
   {#if showExamples3D}
     <div class="examples-list">
       {#each examples3D as ex}
@@ -128,10 +142,11 @@
 {:else if uiStore.analysisMode === 'edu'}
 <!-- EDU mode: same 2D examples as basic -->
 <div class="toolbar-section" data-tour="examples-section">
-  <button class="section-toggle" onclick={() => showExamples = !showExamples}>
+  {#if !flat}<button class="section-toggle" onclick={() => showExamples = !showExamples}>
     {showExamples ? '▾' : '▸'} {t('examples.title')}
   </button>
-  {#if showExamples}
+  {/if}
+  {#if flat || showExamples}
     <div class="examples-list">
       {#each examples as ex}
         <button class="example-item" onclick={async () => { await modelStore.loadExample(ex.id); resultsStore.clear(); resultsStore.clear3D(); if (uiStore.isMobile) uiStore.leftDrawerOpen = false; setTimeout(() => window.dispatchEvent(new Event('stabileo-zoom-to-fit')), 50); }}>
@@ -146,10 +161,11 @@
 {:else}
 <!-- 2D mode: single examples section -->
 <div class="toolbar-section" data-tour="examples-section">
-  <button class="section-toggle" onclick={() => showExamples = !showExamples}>
+  {#if !flat}<button class="section-toggle" onclick={() => showExamples = !showExamples}>
     {showExamples ? '▾' : '▸'} {t('examples.title')}
   </button>
-  {#if showExamples}
+  {/if}
+  {#if flat || showExamples}
     <div class="examples-list">
       {#each examples as ex}
         <button class="example-item" onclick={async () => { await modelStore.loadExample(ex.id); resultsStore.clear(); resultsStore.clear3D(); if (uiStore.isMobile) uiStore.leftDrawerOpen = false; setTimeout(() => window.dispatchEvent(new Event('stabileo-zoom-to-fit')), 50); }}>

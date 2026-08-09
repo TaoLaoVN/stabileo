@@ -94,12 +94,19 @@
   let { hideDiagrams = false, flat = false }: { hideDiagrams?: boolean; flat?: boolean } = $props();
 </script>
 
+<!--
+  The solve button belongs to the ribbon now. Keeping a second one here meant a
+  panel opened BY solving still offered to solve, and the two would have needed
+  to agree about 3D, readiness and disabled state forever.
+-->
+{#if !flat}
 <div class="toolbar-section">
   {#if !flat}<h3>{t('results.solve')}</h3>{/if}
   <button class="solve-btn" data-tour="calcular-btn" class:ready={modelReady} onclick={handleSolve} use:tooltip={'solve'} title={uiStore.analysisMode === '3d' ? t('results.analysis3dTooltip') : ''}>
     {uiStore.analysisMode === '3d' ? t('results.solve3d') : t('results.solve')}
   </button>
 </div>
+{/if}
 
 <div class="toolbar-section" data-tour="results-section">
   <button class="section-toggle" onclick={() => showResultsPanel = !showResultsPanel}>

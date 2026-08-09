@@ -399,13 +399,25 @@
       uiStore.toast(t('toast.combinationsSuccess').replace('{n}', String(nCombos)).replace('{cases}', String(nCases)), 'success');
     }
   }
+
+  /**
+   * `flat` — everything open, no accordions.
+   *
+   * These sections collapse because they used to be stacked in one narrow left
+   * column where five of them competed for the same vertical space. In the
+   * ribbon layout only ONE of them is ever mounted, in a panel that already
+   * names it and that the user can widen, so a disclosure triangle just hides
+   * what they explicitly asked to see.
+   */
+  let { flat = false }: { flat?: boolean } = $props();
 </script>
 
 <div class="toolbar-section" data-tour="advanced-section">
-  <button class="section-toggle" onclick={() => showAdvanced = !showAdvanced}>
+  {#if !flat}<button class="section-toggle" onclick={() => showAdvanced = !showAdvanced}>
     {showAdvanced ? '▾' : '▸'} {t('advanced.title')}
   </button>
-  {#if showAdvanced}
+  {/if}
+  {#if flat || showAdvanced}
   {#snippet helpPanel(key: string)}
     {#if advHelpKey === key && ADV_HELP[key]}
       <div class="adv-help-panel" style="grid-column: span 2">
@@ -610,7 +622,7 @@
       <button class="adv-help-btn" onclick={(e) => toggleAdvHelp('trainLoad', e)} class:active={advHelpKey === 'trainLoad'}>?</button>
     </div>
     {@render helpPanel('trainLoad')}
-    {#if showTrainPanel}
+    {#if flat || showTrainPanel}
       <div class="envelope-sub-panel" style="grid-column: span 2">
         {#if resultsStore.movingLoadRunning}
           <div class="moving-load-progress">
@@ -862,18 +874,24 @@
     gap: 4px;
   }
 
+  /*
+     A command, styled like the rest of the application's commands. These were
+     cyan on a raised block, which is the palette for a computed value, so a
+     column of thirteen buttons read as a column of results.
+  */
   .adv-btn {
-    padding: 0.3rem 0.4rem;
-    min-height: 28px;
-    border: 1px solid var(--st-hair-strong);
-    border-radius: 4px;
-    background: var(--st-surface-2);
-    color: var(--st-value);
-    font-size: 0.72rem;
+    padding: 0.4rem 0.55rem;
+    min-height: 30px;
+    border: 1px solid var(--st-hair);
+    border-radius: var(--st-radius);
+    background: none;
+    color: var(--st-text-2);
+    font-family: var(--st-sans);
+    font-size: 0.76rem;
     cursor: pointer;
-    text-align: center;
+    text-align: left;
     flex: 1;
-    transition: all 0.2s;
+    transition: background 0.12s, color 0.12s, border-color 0.12s;
   }
 
   .adv-btn:hover {
@@ -890,6 +908,12 @@
     background: var(--st-surface-3);
     color: var(--st-value);
     border-color: var(--st-interactive);
+  }
+
+  .adv-btn:hover:not(:disabled) {
+    background: var(--st-surface-3);
+    color: var(--st-text);
+    border-color: var(--st-hair-strong);
   }
 
   .adv-help-btn {

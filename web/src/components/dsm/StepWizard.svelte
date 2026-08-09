@@ -126,61 +126,61 @@
     display: flex;
     flex-direction: column;
     height: 100%;
-    background: #1a1a2e;
-    color: #eee;
+    background: var(--st-bg);
+    color: var(--st-text);
   }
   .wizard-header {
     display: flex;
     justify-content: space-between;
     align-items: center;
     padding: 0.5rem 0.75rem;
-    background: #16213e;
-    border-bottom: 1px solid #0f3460;
+    background: var(--st-surface);
+    border-bottom: 1px solid var(--st-hair);
     flex-shrink: 0;
   }
   .wizard-title {
     font-size: 0.85rem;
     font-weight: 600;
-    color: #4ecdc4;
+    color: var(--st-value);
   }
   .explorer-toggle {
     margin-left: auto;
     margin-right: 8px;
     padding: 2px 8px;
-    border: 1px solid #0f3460;
+    border: 1px solid var(--st-hair);
     border-radius: 4px;
     background: transparent;
-    color: #888;
+    color: var(--st-text-3);
     font-size: 0.7rem;
     cursor: pointer;
     transition: all 0.15s;
   }
   .explorer-toggle:hover {
-    color: #ddd;
-    border-color: #4ecdc4;
+    color: var(--st-text);
+    border-color: var(--st-interactive);
   }
   .explorer-toggle.active {
     background: rgba(78, 205, 196, 0.15);
-    color: #4ecdc4;
-    border-color: #4ecdc4;
+    color: var(--st-value);
+    border-color: var(--st-interactive);
   }
 
   .close-btn {
     background: none;
     border: none;
-    color: #888;
+    color: var(--st-text-3);
     cursor: pointer;
     font-size: 1rem;
     padding: 0.2rem;
   }
-  .close-btn:hover { color: #e94560; }
+  .close-btn:hover { color: var(--st-accent); }
 
   .step-indicator {
     display: flex;
     gap: 0.2rem;
     padding: 0.4rem 0.75rem;
-    background: #16213e;
-    border-bottom: 1px solid #0f3460;
+    background: var(--st-surface);
+    border-bottom: 1px solid var(--st-hair);
     flex-shrink: 0;
     flex-wrap: wrap;
   }
@@ -188,9 +188,9 @@
     width: 1.6rem;
     height: 1.6rem;
     border-radius: 50%;
-    border: 1.5px solid #0f3460;
+    border: 1.5px solid var(--st-hair);
     background: transparent;
-    color: #666;
+    color: var(--st-text-3);
     font-size: 0.6rem;
     cursor: pointer;
     display: flex;
@@ -201,21 +201,21 @@
   .step-dot.active {
     background: #4ecdc4;
     color: #1a1a2e;
-    border-color: #4ecdc4;
+    border-color: var(--st-interactive);
     font-weight: 700;
   }
   .step-dot.past {
-    border-color: #4ecdc4;
-    color: #4ecdc4;
+    border-color: var(--st-interactive);
+    color: var(--st-value);
   }
-  .step-dot:hover { border-color: #4ecdc4; color: #4ecdc4; }
+  .step-dot:hover { border-color: var(--st-interactive); color: var(--st-value); }
 
   .step-name {
     padding: 0.35rem 0.75rem;
     font-size: 0.75rem;
-    color: #ccc;
-    background: #1a1a2e;
-    border-bottom: 1px solid #0f3460;
+    color: var(--st-text);
+    background: var(--st-bg);
+    border-bottom: 1px solid var(--st-hair);
     flex-shrink: 0;
   }
 
@@ -231,32 +231,32 @@
     justify-content: space-between;
     align-items: center;
     padding: 0.4rem 0.75rem;
-    background: #16213e;
-    border-top: 1px solid #0f3460;
+    background: var(--st-surface);
+    border-top: 1px solid var(--st-hair);
     flex-shrink: 0;
   }
   .nav-btn {
     padding: 0.3rem 0.8rem;
-    border: 1px solid #0f3460;
+    border: 1px solid var(--st-hair);
     background: transparent;
-    color: #ccc;
+    color: var(--st-text);
     cursor: pointer;
     border-radius: 3px;
     font-size: 0.7rem;
     transition: all 0.15s;
   }
-  .nav-btn:hover:not(:disabled) { background: #0f3460; color: #4ecdc4; }
+  .nav-btn:hover:not(:disabled) { background: var(--st-surface-2); color: var(--st-value); }
   .nav-btn:disabled { opacity: 0.3; cursor: default; }
-  .step-counter { font-size: 0.65rem; color: #666; }
+  .step-counter { font-size: 0.65rem; color: var(--st-text-3); }
 
   .mode-banner {
     padding: 0.25rem 0.75rem;
     font-size: 0.6rem;
     font-weight: 600;
     letter-spacing: 0.02em;
-    border-bottom: 1px solid #0f3460;
+    border-bottom: 1px solid var(--st-hair);
     flex-shrink: 0;
   }
   .mode-3d { background: #1a2f4a; color: #7cb3f0; }
-  .mode-2d { background: #1a2a2a; color: #4ecdc4; }
+  .mode-2d { background: #1a2a2a; color: var(--st-value); }
 </style>

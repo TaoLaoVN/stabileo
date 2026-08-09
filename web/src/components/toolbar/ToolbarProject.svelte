@@ -75,13 +75,25 @@
     // Dispatch custom event — App.svelte handles it with canvas ref
     window.dispatchEvent(new CustomEvent('stabileo-export-png'));
   }
+
+  /**
+   * `flat` — everything open, no accordions.
+   *
+   * These sections collapse because they used to be stacked in one narrow left
+   * column where five of them competed for the same vertical space. In the
+   * ribbon layout only ONE of them is ever mounted, in a panel that already
+   * names it and that the user can widen, so a disclosure triangle just hides
+   * what they explicitly asked to see.
+   */
+  let { flat = false }: { flat?: boolean } = $props();
 </script>
 
 <div class="toolbar-section" data-tour="project-section">
-  <button class="section-toggle" onclick={() => showProject = !showProject}>
+  {#if !flat}<button class="section-toggle" onclick={() => showProject = !showProject}>
     {showProject ? '▾' : '▸'} {t('project.title')}
   </button>
-  {#if showProject}
+  {/if}
+  {#if flat || showProject}
   <div class="file-grid">
     <button class="file-btn" onclick={saveProject} title={t('project.saveTabTooltip')}>
       {t('project.saveTab')}
@@ -96,7 +108,7 @@
   <button class="sub-section-toggle" onclick={() => showProjectExtras = !showProjectExtras}>
     {showProjectExtras ? '▾' : '▸'} {t('project.exportImport')}
   </button>
-  {#if showProjectExtras}
+  {#if flat || showProjectExtras}
     <div class="sub-section-content">
       <span class="file-sub-header">{t('project.export')}</span>
       <div class="file-grid">

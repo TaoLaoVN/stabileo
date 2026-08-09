@@ -138,7 +138,7 @@
   }
 
   .draft-badge {
-    background: rgba(240, 165, 0, 0.15);
+    background: transparent;
     border: 1px solid var(--st-warn);
     color: var(--st-warn);
     border-radius: 4px;
@@ -146,7 +146,7 @@
     padding: 0.1rem 0.5rem;
     cursor: pointer;
   }
-  .draft-badge:hover { background: rgba(240, 165, 0, 0.3); }
+  .draft-badge:hover { background: var(--st-surface-3); }
 
   .status-item {
     display: flex;
@@ -169,7 +169,13 @@
 
   .status-value {
     font-family: var(--st-mono);
-    color: var(--st-value);
+    /*
+       Neutral. `--st-value` is the cyan reserved for a COMPUTED number — a
+       force, a displacement — and spending it on the cursor position and the
+       grid size made the quietest strip on screen the brightest, competing
+       with results it has nothing to do with.
+    */
+    color: var(--st-text-2);
     font-family: monospace;
   }
 

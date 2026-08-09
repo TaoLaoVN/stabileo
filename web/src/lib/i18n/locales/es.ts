@@ -4924,6 +4924,10 @@ const es: Record<string, string> = {
   'ribbon.nameMoment': 'Momento flector',
   'ribbon.nameShear': 'Esfuerzo de corte',
   'ribbon.nameTorsion': 'Torsión',
+  'ribbon.nameMomentY': 'Momento flector respecto a y',
+  'ribbon.nameMomentZ': 'Momento flector respecto a z',
+  'ribbon.nameShearY': 'Corte según y',
+  'ribbon.nameShearZ': 'Corte según z',
 
 };
 export default es;

@@ -58,6 +58,8 @@
     label?: string;
     /** Translation key for the human name, shown in the tooltip. */
     nameKey?: string;
+    /** Degrees to turn the icon, for a force about a perpendicular axis. */
+    rotate?: number;
     tool?: string;
     panel?: string;
     diagram?: string;
@@ -90,23 +92,29 @@
    */
   const threeD = $derived(uiStore.analysisMode === '3d');
 
+  /*
+   * Ordered N, My, Vz, Mz, Vy, T — the pairs that share a plane sit together,
+   * rather than the alphabetical order the store happens to use.
+   *
+   * The symbols are always fully qualified. A 2D frame bends about z and shears
+   * along y, so its diagrams ARE Mz and Vy; labelling them bare "M" and "V"
+   * left the user to guess which axis they meant and made the 3D-only My and Vz
+   * look like different quantities rather than the other half of the same pair.
+   *
+   * My/Mz and Vz/Vy each share an icon turned 90°, because they are the same
+   * action about perpendicular axes.
+   */
   const diagramCmds = $derived.by((): Cmd[] => {
     const any = () => solved;
     const only3d = () => solved && threeD;
     return [
       { id: 'none', icon: 'none', labelKey: 'ribbon.noDiagram', panel: 'results', diagram: 'none', enabled: any },
       { id: 'deformed', icon: 'deformed', labelKey: 'ribbon.deformed', panel: 'results', diagram: 'deformed', enabled: any },
-      /*
-       * The label is the SYMBOL and the tooltip is the name. "Momento" next to
-       * "Mz" gave two different kinds of name in one row and left no way to
-       * tell which moment the first one was. In 2D there is one of each, so
-       * they carry the bare symbol; in 3D they take their axis.
-       */
       { id: 'axial', icon: 'axial', label: 'N', nameKey: 'ribbon.nameAxial', panel: 'results', diagram: 'axial', enabled: any },
-      { id: 'moment', icon: 'moment', label: threeD ? 'Mz' : 'M', nameKey: 'ribbon.nameMoment', panel: 'results', diagram: threeD ? 'momentZ' : 'moment', enabled: any },
-      { id: 'shear', icon: 'shear', label: threeD ? 'Vy' : 'V', nameKey: 'ribbon.nameShear', panel: 'results', diagram: threeD ? 'shearY' : 'shear', enabled: any },
-      { id: 'momentY', icon: 'momentY', label: 'My', nameKey: 'ribbon.nameMoment', panel: 'results', diagram: 'momentY', enabled: only3d, needs3d: true },
-      { id: 'shearZ', icon: 'shearZ', label: 'Vz', nameKey: 'ribbon.nameShear', panel: 'results', diagram: 'shearZ', enabled: only3d, needs3d: true },
+      { id: 'momentY', icon: 'moment', label: 'My', nameKey: 'ribbon.nameMomentY', panel: 'results', diagram: 'momentY', enabled: only3d, needs3d: true },
+      { id: 'shearZ', icon: 'shear', label: 'Vz', nameKey: 'ribbon.nameShearZ', panel: 'results', diagram: 'shearZ', enabled: only3d, needs3d: true },
+      { id: 'moment', icon: 'moment', rotate: 90, label: 'Mz', nameKey: 'ribbon.nameMomentZ', panel: 'results', diagram: threeD ? 'momentZ' : 'moment', enabled: any },
+      { id: 'shear', icon: 'shear', rotate: 90, label: 'Vy', nameKey: 'ribbon.nameShearY', panel: 'results', diagram: threeD ? 'shearY' : 'shear', enabled: any },
       { id: 'torsion', icon: 'torsion', label: 'T', nameKey: 'ribbon.nameTorsion', panel: 'results', diagram: 'torsion', enabled: only3d, needs3d: true },
     ];
   });
@@ -245,7 +253,7 @@
               onclick={() => run(c)}
               title={cmdTitle(c, on)}
             >
-              <span class="rb-icon"><Icon name={typeof c.icon === 'function' ? c.icon() : c.icon} /></span>
+              <span class="rb-icon"><Icon name={typeof c.icon === 'function' ? c.icon() : c.icon} rotate={c.rotate ?? 0} /></span>
               <span class="rb-label" class:symbol={!!c.label}>{cmdLabel(c)}</span>
             </button>
           {/each}
