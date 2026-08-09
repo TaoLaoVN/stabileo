@@ -482,6 +482,24 @@
     </div>
 
     <div class="ssp-body">
+      {#if canonicalState?.shearCentre && (Math.abs(canonicalState.shearCentre[0]) > 1e-4 || Math.abs(canonicalState.shearCentre[1]) > 1e-4)}
+        <!-- Only shown when it is NOT at the centroid, which is exactly when it
+             matters: a load anywhere else twists the member, and for a channel
+             this point falls outside the section entirely. -->
+        <div class="ssp-shearcentre">
+          <span class="ssp-sc-icon">⊗</span>
+          <div>
+            <div class="ssp-sc-head">{t('stress.shearCentre')}</div>
+            <div class="ssp-sc-body">
+              {t('stress.shearCentreMsg')}
+              <span class="ssp-sc-nums">
+                y = {(canonicalState.shearCentre[0] * 1000).toFixed(1)} mm ·
+                z = {(canonicalState.shearCentre[1] * 1000).toFixed(1)} mm
+              </span>
+            </div>
+          </div>
+        </div>
+      {/if}
       {#if deviation}
         <!-- Stated, not hidden: the source table's own dimensions and
              properties disagree, so the analysed geometry cannot match both. -->
@@ -710,6 +728,17 @@
     max-height: calc(100% - 90px);
     font-size: 0.75rem;
   }
+
+  .ssp-shearcentre {
+    display: flex; gap: 8px; align-items: flex-start;
+    margin: 0 0 8px; padding: 7px 9px;
+    background: rgba(78, 205, 196, 0.07);
+    border-left: 2px solid #4ecdc4; border-radius: 3px;
+  }
+  .ssp-sc-icon { color: #4ecdc4; font-size: 0.95rem; line-height: 1; }
+  .ssp-sc-head { color: #4ecdc4; font-size: 0.7rem; font-weight: 600; margin-bottom: 2px; }
+  .ssp-sc-body { color: #9fbfbc; font-size: 0.66rem; line-height: 1.4; }
+  .ssp-sc-nums { display: block; margin-top: 3px; font-family: monospace; color: #4ecdc4; }
 
   .ssp-deviation {
     display: flex; gap: 8px; align-items: flex-start;

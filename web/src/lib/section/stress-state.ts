@@ -66,6 +66,15 @@ export interface CanonicalStressState {
   };
   mohr: MohrCircle;
   failure: FailureCheck;
+  /**
+   * Shear centre, centroid-relative, in metres — present only when the state
+   * needed a shear solve.
+   *
+   * Worth surfacing rather than keeping internal: a load applied anywhere else
+   * twists the member, and for a channel this point lies OUTSIDE the section,
+   * which is not something a user can guess from the drawing.
+   */
+  shearCentre?: [number, number];
 }
 
 export type StressStateResult =
@@ -114,8 +123,10 @@ export function canonicalStressState(
     let shearZ = 0;
     let tauXy = 0;
     let tauXz = 0;
+    let shearCentre: [number, number] | undefined;
     if (forces.vy || forces.vz) {
       const sh = analyzeSectionShear({ geometry: st.geometry, at: point });
+      shearCentre = sh.shearCentre;
       // The solve is per UNIT force, so scaling is linear and superposable.
       if (forces.vy && sh.vy.at) {
         tauXy += sh.vy.at[0] * forces.vy;
@@ -168,6 +179,7 @@ export function canonicalStressState(
         // that was never in question.
         mohr: computeMohrCircle(sMPa, tMPa),
         failure: checkFailure(sMPa, tMPa, fy),
+        shearCentre,
       },
     };
   } catch (err) {

@@ -69,6 +69,15 @@ pub struct ShearResult {
     pub vy: ShearField,
     /// Response to a unit force along `z` (the vertical centroidal axis).
     pub vz: ShearField,
+    /// Shear centre, CENTROID-RELATIVE, as `[y, z]`.
+    ///
+    /// The point a transverse load must pass through to bend the section
+    /// without twisting it. For a doubly-symmetric profile it coincides with
+    /// the centroid, which is why the distinction can be ignored for an I-beam
+    /// and cannot be for a channel or an angle: load a channel through its web
+    /// and it twists, because the shear centre sits outside the section
+    /// entirely, on the far side of the web from the flanges.
+    pub shear_centre: [f64; 2],
     pub residual: f64,
 }
 
@@ -144,6 +153,22 @@ fn solve_one(
     ))
 }
 
+/// Torque the shear field exerts about the centroid, per unit applied force.
+///
+/// `integral(y * tau_xz - z * tau_xy) dA`. A force applied at the centroid
+/// produces this much twist; moving the line of action by that distance
+/// cancels it, which is what puts the shear centre where it is.
+fn torque_about_centroid(mesh: &SectionMesh, centroid: [f64; 2], field: &ShearField) -> f64 {
+    let mut m = 0.0;
+    for (i, &t) in mesh.triangles.iter().enumerate() {
+        let y = (mesh.nodes[t[0]][0] + mesh.nodes[t[1]][0] + mesh.nodes[t[2]][0]) / 3.0 - centroid[0];
+        let z = (mesh.nodes[t[0]][1] + mesh.nodes[t[1]][1] + mesh.nodes[t[2]][1]) / 3.0 - centroid[1];
+        let a = mesh.triangle_area(t).abs();
+        m += (y * field.tau[i][1] - z * field.tau[i][0]) * a;
+    }
+    m
+}
+
 /// Solve transverse shear for unit forces along both centroidal axes.
 pub fn solve_shear(
     mesh: &SectionMesh,
@@ -157,7 +182,16 @@ pub fn solve_shear(
     // A force along z bends about y, so it is driven by z and divided by Iy.
     let (vz, r1) = solve_one(mesh, centroid, inertia.iy, 1, strategy)?;
     let (vy, r2) = solve_one(mesh, centroid, inertia.iz, 0, strategy)?;
-    Ok(ShearResult { vy, vz, residual: r1.max(r2) })
+
+    // A unit force along z applied at the centroid twists the section by
+    // `torque_about_centroid`; shifting its line of action along y by that
+    // amount cancels the twist, so that offset IS the shear centre's y.
+    // The z coordinate comes from the other direction, with the opposite sign
+    // because the moment arm flips.
+    let ysc = torque_about_centroid(mesh, centroid, &vz);
+    let zsc = -torque_about_centroid(mesh, centroid, &vy);
+
+    Ok(ShearResult { vy, vz, shear_centre: [ysc, zsc], residual: r1.max(r2) })
 }
 
 #[cfg(test)]
@@ -296,6 +330,92 @@ mod tests {
         let mean = 1.0 / mesh.area();
         assert!(r.vz.tau_max > mean, "peak must exceed the average");
         assert!(r.vz.tau_max < 12.0 * mean, "peak {:.3e} is implausible", r.vz.tau_max);
+    }
+
+    // ─── Shear centre ──────────────────────────────────────────────
+
+    /// A doubly-symmetric section has its shear centre AT the centroid. This is
+    /// why the distinction can be ignored for an I-beam, and it is the one case
+    /// where the answer is exactly known, so it bounds the numerical noise
+    /// every other case has to be read against.
+    #[test]
+    fn a_doubly_symmetric_section_has_its_shear_centre_at_the_centroid() {
+        for g in [
+            cat::rectangle(60.0, 100.0).unwrap(),
+            cat::i_section(300.0, 150.0, 7.1, 10.7, 15.0, 8, src()).unwrap(),
+        ] {
+            let (mesh, c, i) = setup(&g, 3.0);
+            let r = solve_shear(&mesh, c, i, SolveStrategy::Sparse).unwrap();
+            let scale = mesh.area().sqrt();
+            assert!(
+                r.shear_centre[0].abs() < 0.05 * scale && r.shear_centre[1].abs() < 0.05 * scale,
+                "shear centre {:?} should sit at the centroid (scale {scale:.1})",
+                r.shear_centre
+            );
+        }
+    }
+
+    /// A channel's shear centre lies OUTSIDE the section, on the opposite side
+    /// of the web from the flanges. That is the whole reason loading a channel
+    /// through its web twists it, and it is the case an engineer is most likely
+    /// to be caught by.
+    #[test]
+    fn a_channel_has_its_shear_centre_outside_the_web() {
+        let g = cat::upn_section(200.0, 75.0, 8.5, 11.5, 8, src()).unwrap();
+        let (mesh, c, i) = setup(&g, 2.0);
+        let r = solve_shear(&mesh, c, i, SolveStrategy::Sparse).unwrap();
+        // The web sits at the horizontal origin and the flanges run towards +y,
+        // so the centroid is at positive y and the shear centre must be further
+        // negative than the web's outer face.
+        assert!(
+            r.shear_centre[0] < -c[0],
+            "shear centre y {:.2} should be beyond the web face (centroid at {:.2})",
+            r.shear_centre[0],
+            c[0]
+        );
+        // Symmetry about mid-height pins the other coordinate.
+        assert!(r.shear_centre[1].abs() < 0.05 * mesh.area().sqrt());
+    }
+
+    /// A channel and its mirror must give mirrored shear centres. A sign error
+    /// in the moment arm survives every symmetric test and dies here.
+    #[test]
+    fn mirroring_a_channel_mirrors_its_shear_centre() {
+        let g = cat::upn_section(200.0, 75.0, 8.5, 11.5, 8, src()).unwrap();
+        let mut flipped = g.clone();
+        for poly in &mut flipped.polygons {
+            for v in &mut poly.vertices {
+                v[0] = -v[0];
+            }
+            poly.vertices.reverse();
+        }
+        let (m1, c1, i1) = setup(&g, 2.0);
+        let (m2, c2, i2) = setup(&flipped, 2.0);
+        let a = solve_shear(&m1, c1, i1, SolveStrategy::Sparse).unwrap();
+        let b = solve_shear(&m2, c2, i2, SolveStrategy::Sparse).unwrap();
+        assert!(
+            (a.shear_centre[0] + b.shear_centre[0]).abs() < 0.1 * a.shear_centre[0].abs().max(1.0),
+            "{:?} and {:?} are not mirrored",
+            a.shear_centre,
+            b.shear_centre
+        );
+    }
+
+    /// An angle's shear centre sits at the corner where its two legs meet,
+    /// because both walls' shear flows pass through it.
+    #[test]
+    fn an_angle_has_its_shear_centre_near_the_leg_intersection() {
+        let (leg, t) = (100.0, 10.0);
+        let g = cat::angle_section_filleted(leg, leg, t, 12.0, 6.0, 8, src()).unwrap();
+        let (mesh, c, i) = setup(&g, 1.5);
+        let r = solve_shear(&mesh, c, i, SolveStrategy::Sparse).unwrap();
+        // The outline puts the corner at the origin, so the intersection of the
+        // two wall centrelines is at (t/2, t/2) absolute — centroid-relative,
+        // that is (t/2 - yc, t/2 - zc).
+        let want = [t / 2.0 - c[0], t / 2.0 - c[1]];
+        let err = ((r.shear_centre[0] - want[0]).powi(2) + (r.shear_centre[1] - want[1]).powi(2))
+            .sqrt();
+        assert!(err < 0.25 * leg, "shear centre {:?} vs corner {want:?} (off by {err:.1})", r.shear_centre);
     }
 
     #[test]

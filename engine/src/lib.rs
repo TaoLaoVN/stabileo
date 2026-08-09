@@ -1542,6 +1542,8 @@ pub fn analyze_section_shear(json: &str) -> Result<String, JsValue> {
     struct Response {
         vy: Axis,
         vz: Axis,
+        /// Shear centre, centroid-relative, in the caller's units.
+        shear_centre: [f64; 2],
         triangles: usize,
         residual: f64,
     }
@@ -1559,6 +1561,8 @@ pub fn analyze_section_shear(json: &str) -> Result<String, JsValue> {
     serde_json::to_string(&Response {
         vy: Axis { tau_max: res.vy.tau_max * s2, kappa: res.vy.kappa, at: at_of(&res.vy) },
         vz: Axis { tau_max: res.vz.tau_max * s2, kappa: res.vz.kappa, at: at_of(&res.vz) },
+        // A length, so it scales back by `s` alone.
+        shear_centre: [res.shear_centre[0] / scale, res.shear_centre[1] / scale],
         triangles: mesh.triangles.len(),
         residual: res.residual,
     })

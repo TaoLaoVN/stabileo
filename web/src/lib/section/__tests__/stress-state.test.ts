@@ -141,3 +141,33 @@ describe('shapes the legacy path could not handle', () => {
     expect(r.state.failure.vonMises).toBeGreaterThan(0);
   });
 });
+
+describe('the shear centre is reported when it is not at the centroid', () => {
+  it('a doubly-symmetric section reports one at the centroid', () => {
+    const r = canonicalStressState(rect(), { n: 0, my: 0, mz: 0, vz: 100 }, [0, 0]);
+    if (!r.ok) throw new Error(r.message ?? r.reason);
+    expect(r.state.shearCentre).toBeDefined();
+    // 200 x 400 mm, so a millimetre is well inside the numerical noise floor.
+    expect(Math.abs(r.state.shearCentre![0])).toBeLessThan(0.02);
+    expect(Math.abs(r.state.shearCentre![1])).toBeLessThan(0.02);
+  });
+
+  it('a channel reports one displaced from the centroid, which is the point', () => {
+    // Loading a channel through its web twists it, and the drawing gives a user
+    // no way to guess that. UPN 200: web 8.5 mm, flanges 75 mm.
+    const ch = sec({ shape: 'U', h: 0.2, b: 0.075, tw: 0.0085, tf: 0.0115 });
+    const r = canonicalStressState(ch, { n: 0, my: 0, mz: 0, vz: 100 }, [0, 0]);
+    if (!r.ok) throw new Error(r.message ?? r.reason);
+    expect(r.state.shearCentre).toBeDefined();
+    // Displaced by a meaningful fraction of the flange width, not a rounding.
+    expect(Math.abs(r.state.shearCentre![0])).toBeGreaterThan(0.01);
+  });
+
+  it('no shear force means no shear solve, and so no shear centre', () => {
+    // It is not computed speculatively: the solve costs milliseconds and a
+    // pure bending query has no use for it.
+    const r = canonicalStressState(rect(), { n: 100, my: 50, mz: 0 }, [0, 0]);
+    if (!r.ok) throw new Error('expected ok');
+    expect(r.state.shearCentre).toBeUndefined();
+  });
+});

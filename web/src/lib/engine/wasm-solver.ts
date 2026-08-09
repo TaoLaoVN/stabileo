@@ -1455,6 +1455,14 @@ export function analyzeSectionTorsion(input: {
 export interface ShearResponse {
   vy: { tauMax: number; kappa: number; at?: [number, number] };
   vz: { tauMax: number; kappa: number; at?: [number, number] };
+  /**
+   * Shear centre, centroid-relative.
+   *
+   * The point a transverse load must pass through to bend without twisting.
+   * At the centroid for a doubly-symmetric profile; outside the section
+   * entirely for a channel, which is why loading one through its web twists it.
+   */
+  shearCentre: [number, number];
   triangles: number;
   residual: number;
 }
