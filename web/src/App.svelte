@@ -26,6 +26,7 @@
   import IfcImportDialog from './components/IfcImportDialog.svelte';
   import FloatingTools from './components/FloatingTools.svelte';
   import Ribbon from './components/ribbon/Ribbon.svelte';
+  import BasicPanel from './components/ribbon/BasicPanel.svelte';
 
   /**
    * Which right-hand panel the ribbon has opened, if any.
@@ -36,8 +37,9 @@
    * sideways when a panel appears.
    */
   let basicPanel = $state<string | null>(null);
-  function openBasicPanel(panel: string) {
-    basicPanel = basicPanel === panel ? null : panel;
+  function openBasicPanel(panel: string | null) {
+    // null closes; pressing the open panel's own command closes it too.
+    basicPanel = panel === null || basicPanel === panel ? null : panel;
   }
   import WhatIfPanel from './components/WhatIfPanel.svelte';
   import SectionStressPanel from './components/SectionStressPanel.svelte';
@@ -858,15 +860,7 @@
     </div>
 
     {#if uiStore.appMode === 'basico' && basicPanel && !uiStore.isMobile}
-      <aside class="sidebar right basic-panel">
-        <div class="bp-head">
-          <span class="bp-title">{t('ribbon.' + basicPanel) !== 'ribbon.' + basicPanel ? t('ribbon.' + basicPanel) : basicPanel}</span>
-          <button class="bp-close" onclick={() => (basicPanel = null)} title={t('ribbon.close')} aria-label={t('ribbon.close')}>×</button>
-        </div>
-        <div class="bp-body">
-          <Toolbar />
-        </div>
-      </aside>
+      <BasicPanel panel={basicPanel} onClose={() => (basicPanel = null)} />
     {/if}
 
     {#if !uiStore.isMobile}
@@ -2177,48 +2171,4 @@
     font-size: 0.7rem;
   }
 
-  /* ── Basic right-hand panel ───────────────────────────────────────────
-     Opened by the ribbon, closed by its own header. On the right because the
-     drawing stays anchored to the left edge and does not jump when it opens.
-     ─────────────────────────────────────────────────────────────────── */
-
-  .basic-panel {
-    width: 300px;
-    display: flex;
-    flex-direction: column;
-    background: var(--st-surface);
-    border-left: 1px solid var(--st-hair);
-  }
-
-  .bp-head {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    padding: 0.5rem 0.75rem;
-    border-bottom: 1px solid var(--st-hair);
-    flex: none;
-  }
-
-  .bp-title {
-    font-family: var(--st-mono);
-    font-size: 0.68rem;
-    letter-spacing: 0.12em;
-    text-transform: uppercase;
-    color: var(--st-text-2);
-  }
-
-  .bp-close {
-    background: none;
-    border: none;
-    color: var(--st-text-2);
-    font-size: 1.1rem;
-    line-height: 1;
-    padding: 0.15rem 0.4rem;
-    cursor: pointer;
-    border-radius: var(--st-radius);
-  }
-
-  .bp-close:hover { background: var(--st-surface-3); color: var(--st-text); }
-
-  .bp-body { flex: 1; overflow-y: auto; }
 </style>

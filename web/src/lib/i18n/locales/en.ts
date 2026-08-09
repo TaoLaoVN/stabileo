@@ -4919,6 +4919,10 @@ const en: Record<string, string> = {
   'ribbon.project': 'Project',
   'ribbon.settings': 'Settings',
   'ribbon.close': 'Close panel',
+  'ribbon.axial': 'Axial',
+  'ribbon.noDiagram': 'None',
+  'ribbon.tool': 'Tool options',
+  'ribbon.results': 'Results',
 
 };
 export default en;

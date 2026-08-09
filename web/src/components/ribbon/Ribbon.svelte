@@ -2,6 +2,14 @@
   import { t } from '../../lib/i18n';
   import { uiStore } from '../../lib/store/ui.svelte';
   import { historyStore } from '../../lib/store/history.svelte';
+  import { resultsStore } from '../../lib/store/results.svelte';
+
+  /**
+   * Tools whose options are worth a panel. Pan and the rest act immediately,
+   * so arming them closes the panel instead of opening an empty one — "in case
+   * it is needed", made concrete.
+   */
+  const TOOLS_WITH_OPTIONS = ['select', 'node', 'element', 'support', 'load'];
 
   /**
    * Ribbon toolbar, in the shape CAD users already know.
@@ -31,7 +39,7 @@
    */
 
   type Props = {
-    onOpenPanel: (panel: string) => void;
+    onOpenPanel: (panel: string | null) => void;
     activePanel: string | null;
   };
   let { onOpenPanel, activePanel }: Props = $props();
@@ -46,6 +54,8 @@
     panel?: string;
     /** Runs an action. */
     action?: () => void;
+    /** Selects a result diagram before opening the panel. */
+    diagram?: string;
     /** Large button — the primary command of its group. */
     big?: boolean;
   };
@@ -86,8 +96,8 @@
           id: 'properties',
           labelKey: 'ribbon.groupProperties',
           cmds: [
-            { id: 'sections', icon: '⌗', labelKey: 'ribbon.sections', panel: 'sections' },
             { id: 'examples', icon: '☰', labelKey: 'ribbon.examples', panel: 'examples' },
+            { id: 'project', icon: '🗎', labelKey: 'ribbon.project', panel: 'project' },
           ],
         },
       ],
@@ -100,7 +110,7 @@
           id: 'solve',
           labelKey: 'ribbon.groupSolve',
           cmds: [
-            { id: 'solve', icon: '▶', labelKey: 'pro.solve', panel: 'solve', big: true },
+            { id: 'solve', icon: '▶', labelKey: 'pro.solve', panel: 'results', big: true },
             { id: 'advanced', icon: '⚙', labelKey: 'ribbon.advanced', panel: 'advanced', big: true },
           ],
         },
@@ -122,17 +132,17 @@
           id: 'diagrams',
           labelKey: 'ribbon.groupDiagrams',
           cmds: [
-            { id: 'deformed', icon: '∿', labelKey: 'ribbon.deformed', panel: 'results', big: true },
-            { id: 'moment', icon: '◠', labelKey: 'ribbon.moment', panel: 'results', big: true },
-            { id: 'shear', icon: '⊿', labelKey: 'ribbon.shear', panel: 'results', big: true },
+            { id: 'deformed', icon: '∿', labelKey: 'ribbon.deformed', panel: 'results', diagram: 'deformed', big: true },
+            { id: 'moment', icon: '◠', labelKey: 'ribbon.moment', panel: 'results', diagram: 'moment', big: true },
+            { id: 'shear', icon: '⊿', labelKey: 'ribbon.shear', panel: 'results', diagram: 'shear', big: true },
+            { id: 'axial', icon: '⇔', labelKey: 'ribbon.axial', panel: 'results', diagram: 'axial', big: true },
           ],
         },
         {
           id: 'inspect',
           labelKey: 'ribbon.groupInspect',
           cmds: [
-            { id: 'section', icon: '⊞', labelKey: 'ribbon.sectionStress', panel: 'sectionStress' },
-            { id: 'project', icon: '🗎', labelKey: 'ribbon.project', panel: 'project' },
+            { id: 'none', icon: '⊘', labelKey: 'ribbon.noDiagram', panel: 'results', diagram: 'none' },
           ],
         },
       ],
@@ -143,7 +153,17 @@
   const tab = $derived(TABS.find((x) => x.id === activeTab) ?? TABS[0]);
 
   function run(cmd: Cmd) {
-    if (cmd.tool) uiStore.currentTool = cmd.tool as never;
+    if (cmd.tool) {
+      uiStore.currentTool = cmd.tool as never;
+      /*
+       * A tool opens its own options, or closes whatever was open. Leaving the
+       * previous panel up would leave the user reading the settings of a tool
+       * they just put down.
+       */
+      onOpenPanel(TOOLS_WITH_OPTIONS.includes(cmd.tool) ? 'tool' : null);
+      return;
+    }
+    if (cmd.diagram) resultsStore.diagramType = cmd.diagram as never;
     if (cmd.action) cmd.action();
     if (cmd.panel) onOpenPanel(cmd.panel);
   }
@@ -151,6 +171,7 @@
   /** A command reads as current when its tool is armed or its panel is open. */
   function isActive(cmd: Cmd): boolean {
     if (cmd.tool) return uiStore.currentTool === cmd.tool;
+    if (cmd.diagram) return resultsStore.diagramType === cmd.diagram;
     if (cmd.panel) return activePanel === cmd.panel;
     if (cmd.id === 'dim2') return uiStore.analysisMode === '2d';
     if (cmd.id === 'dim3') return uiStore.analysisMode === '3d';

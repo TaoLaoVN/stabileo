@@ -4906,6 +4906,10 @@ const es: Record<string, string> = {
   'ribbon.project': 'Proyecto',
   'ribbon.settings': 'Ajustes',
   'ribbon.close': 'Cerrar panel',
+  'ribbon.axial': 'Axil',
+  'ribbon.noDiagram': 'Ninguno',
+  'ribbon.tool': 'Opciones',
+  'ribbon.results': 'Resultados',
 
 };
 export default es;
