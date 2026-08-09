@@ -20,7 +20,8 @@
   import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
   import { createRebarScene, frameBounds, frameExtent, elementExtent, type RebarScene }
     from '../../../lib/three/rebar-scene';
-  import type { SceneModel } from '../../../lib/engine/detailing/scene-model';
+  import { sceneSignature, type SceneModel }
+    from '../../../lib/engine/detailing/scene-model';
   import { t } from '../../../lib/i18n';
 
   /** What the user clicked: a bar, a piece of concrete, or empty space. */
@@ -298,18 +299,37 @@
     };
   });
 
-  // Rebuilding on a scene or option change, and refitting only when the SCENE changed —
-  // refitting on a checkbox would yank the camera away from wherever the user had put it.
-  let lastScene: SceneModel | null = null;
+  /**
+   * Rebuild only when the CONTENT changed, not when the object did.
+   *
+   * ── The three-second freeze ────────────────────────────────────
+   *
+   * This used to compare `lastScene !== scene`, and `filterScene` returns a fresh object on
+   * every recompute — so any reactive touch anywhere rebuilt all 20 917 tubes. Returning from
+   * another browser tab was the worst case: the browser had suspended `requestAnimationFrame`
+   * while hidden, Svelte flushed the pending effects the moment the tab became visible, and
+   * the user got a frozen camera and dead controls for about three seconds.
+   *
+   * The signature answers the question the renderer actually has — did the steel change —
+   * for about a millisecond. The on-demand render loop is untouched: this decides whether to
+   * REBUILD, not whether to draw.
+   *
+   * The camera refits only when the signature changes, so toggling opacity or moving a
+   * section plane never yanks the view away from where the user put it.
+   */
+  let lastSignature: string | null = null;
+  let lastOptions = '';
   $effect(() => {
-    // Touch the options so the effect re-runs when any of them changes.
-    void diameterScale; void showConcrete; void showConflicts; void section;
-    void concreteOpacity;
+    const options = `${diameterScale}|${showConcrete}|${showConflicts}|${concreteOpacity}|`
+      + `${section ? `${section.axis}:${section.at}:${section.flip}` : '-'}`;
     if (!root) return;
-    const changed = lastScene !== scene;
-    lastScene = scene;
+    const signature = sceneSignature(scene);
+    if (signature === lastSignature && options === lastOptions) return;
+    const sceneChanged = signature !== lastSignature;
+    lastSignature = signature;
+    lastOptions = options;
     rebuild();
-    if (changed) fit();
+    if (sceneChanged) fit();
   });
 
   $effect(() => {

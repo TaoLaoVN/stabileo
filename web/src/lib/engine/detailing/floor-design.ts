@@ -29,7 +29,7 @@ import {
 } from '../../codes/cirsoc201/bar-geometry';
 import { clause, type ClauseRef, type RegulationEdition } from '../../codes/regulation';
 import { worstMaturity, type Maturity } from '../../codes/maturity';
-import { dedupeMessages, type EngineMessage } from '../../codes/message';
+import { dedupeMessages, msg, type EngineMessage } from '../../codes/message';
 import { assessConstructibility } from './constructibility';
 import {
   certificateFreshness, completeFamilyRecord, emptyRequirement, familyDesignsPass,
@@ -79,12 +79,37 @@ export interface SlabPanelGeometry {
  * are placed above bottom bars in the same direction, and the two directions are stacked
  * so an x bar and a y bar on the same face never occupy the same depth.
  */
+/**
+ * How far a slab bar runs past its panel at each end, m.
+ *
+ * ── What this is, and what it is NOT ───────────────────────────────
+ *
+ * It is an anchorage ALLOWANCE: a slab bar has to continue into the support it lands on, so
+ * running it exactly to the panel boundary would model a bar that stops in mid-air at the
+ * face of every beam. The bars protruding from the concrete in the 3-D view are this, working
+ * as designed — not a clipping, transformation or unit error.
+ *
+ * It is NOT a development length. §25.4 decides `ld` from the bar diameter, the concrete
+ * strength, the cover and the bar's position, and `anchorageFunctions` computes exactly that
+ * for beams, columns and footing dowels. This constant consults none of it. 150 mm is short
+ * of `ld` for most slab bars, so the allowance shown is a placeholder for a number this
+ * module does not yet compute.
+ *
+ * That is why it is DECLARED as an assumption on every floor run rather than left as a
+ * literal. A bar that visibly leaves its panel and explains itself is a detail an engineer
+ * can accept or reject; the same bar with no explanation is the app appearing to be wrong.
+ *
+ * Exported so the containment test can state the bound it is checking against, rather than
+ * repeating the number and drifting from it.
+ */
+export const SLAB_BAR_ANCHOR_ALLOWANCE = 0.15;
+
 export function generateSlabBars(
   panel: SlabPanelGeometry, layers: readonly SlabBarLayer[], edition: RegulationEdition,
 ): BarPath[] {
   const bars: BarPath[] = [];
   const halfT = panel.thickness / 2;
-  const ANCHOR = 0.15;
+  const ANCHOR = SLAB_BAR_ANCHOR_ALLOWANCE;
 
   for (const layer of layers) {
     const isTop = layer.face === 'top';
@@ -403,6 +428,20 @@ export function buildFloorAssembly(input: FloorAssemblyInput): FloorAssemblyResu
           .map((b) => b.id).sort(),
       }));
       pending.push({ draft: s.record, bars: panelBars });
+    }
+    /**
+     * The anchorage allowance, said out loud once per panel that has bars.
+     *
+     * It is why slab bars visibly leave their panel, and it was a silent constant: the view
+     * showed steel outside the concrete and offered no reason, which reads as a defect. It is
+     * not one — but the length is an assumption, not a computed `ld`, and an assumption that
+     * reaches the drawings unstated is the kind that gets built.
+     */
+    if (panelBars.length > 0) {
+      assumptions.push(msg('detailing.slab.anchorAllowance', {
+        mm: Math.round(SLAB_BAR_ANCHOR_ALLOWANCE * 1000),
+        panel: s.geometry.panelId,
+      }));
     }
     maturities.push(s.design.maturity.maturity);
     assumptions.push(...s.design.maturity.assumptions);

@@ -4743,6 +4743,7 @@ const en: Record<string, string> = {
   'detailing.scene.piece.jointCrosstie': 'Joint crosstie',
   'detailing.scene.piece.stirrup': 'Beam stirrup',
   'detailing.scene.piece.longitudinal': 'Longitudinal',
+  'detailing.slab.anchorAllowance': 'Slab {panel}: bars run {mm} mm past the panel at each end as an anchorage allowance. This is an ASSUMPTION, not a development length computed under §25.4.',
   'detailing.scene.title': '3-D reinforcement view',
   'detailing.scene.subtitle': 'Rev. {revision} — {readiness}. The same bars the drawings and the schedule describe.',
   'detailing.scene.empty': 'No coordinated reinforcement to show yet.',

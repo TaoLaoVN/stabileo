@@ -796,6 +796,42 @@ export function filterScene(scene: SceneModel, f: SceneFilter): SceneModel {
   };
 }
 
+/**
+ * A cheap content fingerprint of a scene.
+ *
+ * ── The freeze this exists to end ──────────────────────────────────
+ *
+ * The viewport rebuilt every tube whenever the `SceneModel` OBJECT changed, and
+ * `filterScene` returns a new object on every recompute — as does the filter literal that
+ * feeds it. So any reactive touch anywhere rebuilt 20 917 tubes from scratch. Switching to
+ * another browser tab and back was the worst case: Svelte flushes the pending effects on
+ * return, and the user got roughly three seconds of frozen camera and dead controls.
+ *
+ * Identity is the wrong question. What the renderer needs to know is whether the STEEL
+ * changed, and that is answered by the ids and counts. Hashing 20 000 short strings costs
+ * about a millisecond against seconds of geometry.
+ *
+ * Deliberately not a cryptographic hash: this decides whether to redraw, and the cost of an
+ * astronomically unlikely collision is one stale frame until the next real change.
+ */
+export function sceneSignature(scene: SceneModel): string {
+  let h = 2166136261;
+  const eat = (s: string) => {
+    for (let i = 0; i < s.length; i++) {
+      h ^= s.charCodeAt(i);
+      h = Math.imul(h, 16777619);
+    }
+  };
+  for (const b of scene.bars) eat(b.barId);
+  for (const s of scene.solids) {
+    eat(s.id);
+    // `reinforced` decides which of the two concrete batches a solid lands in, so a change
+    // in it changes the geometry even though the id set is identical.
+    if (s.reinforced) h ^= 0x9e3779b9;
+  }
+  return `${scene.bars.length}:${scene.solids.length}:${scene.conflicts.length}:${h >>> 0}`;
+}
+
 // ─── Summary ─────────────────────────────────────────────────────
 
 /**

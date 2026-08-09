@@ -31,9 +31,10 @@ import { verificationStore } from '../../store/verification.svelte';
 import { deserializeProject } from '../../store/file';
 import { isSolverReady } from '../../engine/wasm-solver';
 import {
-  buildSceneModel, filterScene, summariseScene, classifyPiece,
+  buildSceneModel, filterScene, summariseScene, classifyPiece, sceneSignature,
   type SceneModel,
 } from '../../engine/detailing/scene-model';
+import { SLAB_BAR_ANCHOR_ALLOWANCE } from '../../engine/detailing/floor-design';
 import { membersFromModel } from '../../engine/detailing/member-geometry';
 import type { DocumentModel } from '../../engine/detailing/document-model';
 import '../../engine/design/adapters/cirsoc201-adapter';
@@ -360,5 +361,131 @@ describe('the view stays honest under its own controls', () => {
     const known = new Set(scene.solids.flatMap((s) => s.elementIds));
     const orphans = scene.bars.filter((b) => !b.elementIds.some((id) => known.has(id)));
     expect(orphans.map((b) => b.barId)).toEqual([]);
+  }, 120_000);
+});
+
+// ─── Slab bars and their panels ──────────────────────────────────
+
+describe('slab bars leave their panel only by the declared anchorage allowance', () => {
+  it('stays within the panel plus that allowance, in the bar’s own direction', async () => {
+    /**
+     * The protrusion QA saw is real and intentional: `generateSlabBars` runs each bar past its
+     * panel by `SLAB_BAR_ANCHOR_ALLOWANCE` at each end so it continues into the support rather
+     * than stopping in mid-air at the beam face.
+     *
+     * What must never happen is a bar leaving by MORE than that — which is what a transform,
+     * a unit or a clipping error would look like. The bound is read from the constant so the
+     * test cannot drift from the generator.
+     */
+    const { doc, scene } = await build(example('pro-edificio-7p'));
+
+    const panels = new Map<string, { min: [number, number]; max: [number, number] }>();
+    for (const a of doc.assemblies) {
+      for (const rec of a.families) {
+        if (rec.family !== 'slab') continue;
+        const g = rec.geometry;
+        panels.set(g.panelId, {
+          min: [g.origin.x, g.origin.y],
+          max: [g.origin.x + g.lx, g.origin.y + g.ly],
+        });
+      }
+    }
+    expect(panels.size, 'the model has slab panels').toBeGreaterThan(0);
+
+    const slack = SLAB_BAR_ANCHOR_ALLOWANCE + 1e-6;
+    let checked = 0;
+    for (const b of scene.bars) {
+      if (b.family !== 'slab') continue;
+      const panel = panels.get(b.barId.split('-')[0]);
+      if (!panel) continue;
+      checked += 1;
+      for (const p of b.polyline) {
+        expect(p.x, `${b.barId} x`).toBeGreaterThanOrEqual(panel.min[0] - slack);
+        expect(p.x, `${b.barId} x`).toBeLessThanOrEqual(panel.max[0] + slack);
+        expect(p.y, `${b.barId} y`).toBeGreaterThanOrEqual(panel.min[1] - slack);
+        expect(p.y, `${b.barId} y`).toBeLessThanOrEqual(panel.max[1] + slack);
+      }
+    }
+    expect(checked, 'slab bars were actually checked').toBeGreaterThan(1000);
+  }, 120_000);
+
+  it('declares the allowance rather than leaving it a silent constant', async () => {
+    // A bar that visibly leaves the concrete and explains itself is a detail an engineer can
+    // accept or reject. The same bar with no explanation is the app appearing to be wrong.
+    const { doc } = await build(example('pro-edificio-7p'));
+    const keys = doc.assemblies.flatMap((a) => a.assumptions).map((m) => m.key);
+    expect(keys).toContain('detailing.slab.anchorAllowance');
+  }, 120_000);
+});
+
+// ─── Beams, member by member ─────────────────────────────────────
+
+describe('every beam’s state is explained, and none loses its steel on the way', () => {
+  it('separates refusal from geometry loss', async () => {
+    /**
+     * QA saw two armed beams in a 7-storey building. That is a design outcome, not a data
+     * loss, and this test is what tells the two apart: every beam WITH reinforcement in the
+     * document must have it in the scene, and every beam WITHOUT must carry a stated reason.
+     */
+    const { doc, scene } = await build(example('pro-edificio-7p'));
+    const beamIds = scene.solids.filter((s) => s.kind === 'beam').flatMap((s) => s.elementIds);
+    expect(beamIds.length).toBeGreaterThan(100);
+
+    const inDoc = new Map<number, number>();
+    for (const a of doc.assemblies) {
+      for (const b of a.bars) {
+        for (const id of b.ownerElementIds) inDoc.set(id, (inDoc.get(id) ?? 0) + 1);
+      }
+    }
+    const inScene = new Map<number, number>();
+    for (const b of scene.bars) {
+      if (b.ownerScope !== 'frame') continue;
+      for (const id of b.elementIds) inScene.set(id, (inScene.get(id) ?? 0) + 1);
+    }
+
+    let armed = 0;
+    let refused = 0;
+    for (const id of beamIds) {
+      const doced = inDoc.get(id) ?? 0;
+      if (doced > 0) {
+        // The rule that matters: steel in the document is steel in the view.
+        expect(inScene.get(id) ?? 0, `member ${id} keeps its bars`).toBeGreaterThan(0);
+        armed += 1;
+      } else {
+        const o = verificationStore.outcomeFor(id);
+        expect(o?.outcome, `member ${id} has an outcome`).toBeDefined();
+        expect((o?.reasons ?? []).length, `member ${id} states a reason`).toBeGreaterThan(0);
+        refused += 1;
+      }
+    }
+    expect(armed, 'some beams are armed').toBeGreaterThan(0);
+    expect(refused, 'the rest are refused with a reason').toBeGreaterThan(0);
+  }, 120_000);
+});
+
+// ─── The signature that stops needless rebuilds ──────────────────
+
+describe('the scene signature tracks content, not object identity', () => {
+  it('is stable across two projections of one document', async () => {
+    // This is what stops the viewport rebuilding 20 917 tubes on every reactive touch — the
+    // three-second freeze on returning from another browser tab.
+    const { doc } = await build(example('rc-qa-diagnostic'));
+    const { members } = membersFromModel({
+      elementIds: [...modelStore.model.elements.keys()],
+      nodes: [...modelStore.model.nodes.values()],
+      elements: [...modelStore.model.elements.values()],
+      sections: [...modelStore.model.sections.values()],
+    });
+    const a = buildSceneModel(doc, { members });
+    const b = buildSceneModel(doc, { members });
+    expect(a).not.toBe(b);
+    expect(sceneSignature(a)).toBe(sceneSignature(b));
+  }, 120_000);
+
+  it('changes when the visible steel changes', async () => {
+    const { scene } = await build(example('rc-qa-diagnostic'));
+    expect(sceneSignature(filterScene(scene, { hideBars: true })))
+      .not.toBe(sceneSignature(scene));
+    expect(sceneSignature(filterScene(scene, {}))).toBe(sceneSignature(scene));
   }, 120_000);
 });

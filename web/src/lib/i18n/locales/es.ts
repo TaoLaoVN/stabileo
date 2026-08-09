@@ -4699,6 +4699,7 @@ const es: Record<string, string> = {
   'detailing.scene.piece.jointCrosstie': 'Crosstie de nudo',
   'detailing.scene.piece.stirrup': 'Estribo de viga',
   'detailing.scene.piece.longitudinal': 'Longitudinal',
+  'detailing.slab.anchorAllowance': 'Losa {panel}: las barras se extienden {mm} mm más allá del panel a cada extremo como tolerancia de anclaje. Es una SUPOSICIÓN, no una longitud de anclaje calculada según §25.4.',
   'detailing.scene.title': 'Vista 3D del armado',
   'detailing.scene.subtitle': 'Rev. {revision} — {readiness}. Las mismas barras que los planos y la planilla.',
   'detailing.scene.empty': 'Todavía no hay armado coordinado para mostrar.',
