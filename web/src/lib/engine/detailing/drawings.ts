@@ -72,7 +72,16 @@ export const PLAN: Projection = {
 
 // ─── Sheet model ─────────────────────────────────────────────────
 
-export type SheetKind = 'beamElevation' | 'columnElevation' | 'section' | 'jointDetail' | 'floorPlan';
+export type SheetKind =
+  | 'beamElevation' | 'columnElevation' | 'section' | 'jointDetail' | 'floorPlan'
+  /** The whole structure in plan, one sheet. */
+  | 'generalPlan'
+  /** One storey in plan, carrying only that storey's members. */
+  | 'levelPlan'
+  /** A horizontal cut at a stated elevation. */
+  | 'horizontalSection'
+  /** One column lift: section, longitudinals and every transverse piece. */
+  | 'columnDetail';
 
 export interface TitleBlock {
   sheetNumber: string;

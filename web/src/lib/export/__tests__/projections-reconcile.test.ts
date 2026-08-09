@@ -107,10 +107,23 @@ for (const example of ['pro-edificio-7p', 'rc-qa-diagnostic']) {
        * and no sheet frames a whole storey or details one column. Without this the reviewer's
        * only way to find out is to look for a drawing that was never going to be there.
        */
-      const { coverage } = renderDrawings(b.doc, OPTS);
-      expect(coverage.missingSheetKinds).toEqual([...MISSING_SHEET_KINDS]);
-      expect(coverage.missingSheetKinds).toContain('levelPlan');
-      expect(coverage.missingSheetKinds).toContain('columnDetail');
+      /**
+       * A set built WITHOUT a scene cannot produce the four structure-wide sheets, and says
+       * which four rather than letting their absence pass for "this model has none".
+       */
+      const withoutScene = renderDrawings(b.doc, OPTS);
+      expect(withoutScene.coverage.missingSheetKinds).toContain('levelPlan');
+      expect(withoutScene.coverage.missingSheetKinds).toContain('columnDetail');
+
+      // Given the scene, it produces them and declares nothing missing.
+      const withScene = renderDrawings(b.doc, { ...OPTS, scene: b.scene });
+      expect(withScene.coverage.missingSheetKinds).toEqual([...MISSING_SHEET_KINDS]);
+      expect(withScene.coverage.missingSheetKinds).toEqual([]);
+      const kinds = new Set(withScene.sheets.map((s) => s.sheet.kind));
+      expect(kinds.has('generalPlan')).toBe(true);
+      expect(kinds.has('levelPlan')).toBe(true);
+      expect(kinds.has('horizontalSection')).toBe(true);
+      expect(kinds.has('columnDetail')).toBe(true);
     }, 300_000);
 
     it('reports each family’s presence against the document', () => {

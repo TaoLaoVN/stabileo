@@ -23,6 +23,11 @@ import { buildTitleBlock, buildSchedule, scheduleToAoa, sheetToDxf, sheetToSvg,
   drawElevation, drawSection, barArcs, type Sheet, type Projection } from './drawings';
 import type { DocumentAssembly, DocumentModel, OpenConflict } from './document-model';
 import { footingPlanCentre, type FloorFamilyDesignRecord } from './family-record';
+import type { SceneModel } from './scene-model';
+import type { ElementStatus } from './element-status';
+import {
+  drawColumnDetail, drawGeneralPlan, drawHorizontalSection, drawLevelPlan, levelsOf,
+} from './structure-drawings';
 import { drawFooting } from './family-drawings';
 import { drawSlab, drawWall } from './slab-wall-drawings';
 
@@ -30,6 +35,20 @@ import { drawSlab, drawWall } from './slab-wall-drawings';
 export interface RenderOptions {
   locale: string;
   projectName: string;
+  /**
+   * The projected scene, when the caller has one.
+   *
+   * The general plan, the level plans, the horizontal sections and the column details are
+   * built from it — the same projection the 3-D view renders, so a plan and the viewport
+   * cannot show different steel. A caller without one still gets every other sheet, and the
+   * set's `missingSheetKinds` names the four it could not produce rather than letting their
+   * absence pass for "this model has none".
+   */
+  scene?: SceneModel;
+  /** Design status per member, for the notes those sheets carry. */
+  statusOf?: (elementId: number) => ElementStatus | undefined;
+  /** Elevations to cut horizontal sections at, m. */
+  sectionElevations?: readonly number[];
   /** Commercial stock length for the schedule, m. */
   stockLength?: number;
   /** Steel density, kg/m³, for the mass column. */
@@ -731,16 +750,18 @@ export interface DrawingCoverage {
  * schedule. What no sheet shows is a whole storey in one plan, a horizontal cut through the
  * building, or one column on its own sheet.
  */
-export const MISSING_SHEET_KINDS: readonly string[] = [
-  /** A single plan of the whole structure. Panels are drawn one per sheet. */
-  'generalPlan',
-  /** One plan per storey, gathering that level's members. */
-  'levelPlan',
-  /** A horizontal cut at an arbitrary elevation. */
-  'horizontalSection',
-  /** One column lift on its own sheet, the way a beam line gets an elevation. */
-  'columnDetail',
-];
+/**
+ * Sheet kinds the renderer does not produce, whatever the model contains.
+ *
+ * Now empty. The four that used to be here — general plan, level plan, horizontal section and
+ * column detail — are built by `structure-drawings.ts` from the `SceneModel`, the same
+ * projection the 3-D view renders, so a plan and the viewport cannot show different steel.
+ *
+ * The constant stays, and stays exported, because the honest statement it makes is worth more
+ * than the list it currently holds: a set that cannot say what it omits is a set nobody can
+ * check. The next kind that is asked for and not built belongs here.
+ */
+export const MISSING_SHEET_KINDS: readonly string[] = [];
 
 /**
  * Elevations for every beam line, a section per assembly, and the conflict annotations.
@@ -876,11 +897,79 @@ export function renderDrawings(doc: DocumentModel, opts: RenderOptions): Drawing
     }
   }
 
+  /**
+   * The structure-wide sheets, from the scene.
+   *
+   * Appended rather than woven in, because they answer a different question from the rest: the
+   * elevations and sections describe one assembly each, and these describe the building.
+   */
+  const structural = opts.scene
+    ? structureSheets(doc, opts.scene, opts, () => (n += 1))
+    : [];
+  sheets.push(...structural);
+
   return {
     sheets,
     dxf: sheets.map((s) => s.dxf).join('\n'),
-    coverage: coverageOf(doc, sheets),
+    coverage: {
+      ...coverageOf(doc, sheets),
+      missingSheetKinds: opts.scene
+        ? [...MISSING_SHEET_KINDS]
+        // Named, not silently absent: this set does not contain them and says which.
+        : ['generalPlan', 'levelPlan', 'horizontalSection', 'columnDetail'],
+    },
   };
+}
+
+/** The four structure-wide sheets, built from the scene the 3-D view renders. */
+function structureSheets(
+  doc: DocumentModel, scene: SceneModel, opts: RenderOptions, nextN: () => number,
+): DrawingSet['sheets'] {
+  const statusOf = opts.statusOf ?? (() => undefined);
+  const out: DrawingSet['sheets'] = [];
+  const emit = (name: string, sheet: Sheet) => {
+    out.push({
+      name, sheet,
+      dxf: sheetToDxf(sheet, [], opts.locale),
+      svg: sheetToSvg(sheet, 1200, opts.locale),
+    });
+  };
+  const titleFor = (label: string) => buildTitleBlock({
+    sheetNumber: `R${doc.revision.number}-${nextN()}`,
+    title: `${opts.projectName} — ${label} — ${readinessBanner(doc, opts.locale)}`,
+    assembly: doc.assemblies[0]?.source as never,
+    clauses: doc.refs,
+  });
+
+  emit('structure-general-plan',
+    drawGeneralPlan({ scene, title: titleFor('Planta general'), statusOf }));
+
+  const levels = levelsOf(scene);
+  for (const level of levels) {
+    emit(`structure-level-${level.z.toFixed(2)}-plan`,
+      drawLevelPlan({ scene, title: titleFor(`Planta +${level.z.toFixed(2)}`), statusOf, level }));
+  }
+
+  /**
+   * One horizontal section per storey by default, cut just below the level.
+   *
+   * Cutting AT the level would land in the slab and show its mat rather than the columns
+   * passing through, which is the thing a horizontal section is usually asked for.
+   */
+  const cuts = opts.sectionElevations ?? levels.map((l) => l.z - 0.5);
+  for (const z of cuts) {
+    emit(`structure-section-z${z.toFixed(2)}`,
+      drawHorizontalSection({ scene, title: titleFor(`Corte z=${z.toFixed(2)}`), statusOf, atZ: z }));
+  }
+
+  for (const s of scene.solids) {
+    if (s.kind !== 'column' || s.elementIds.length === 0) continue;
+    const id = s.elementIds[0];
+    emit(`structure-column-${id}-detail`,
+      drawColumnDetail({ scene, title: titleFor(`Columna ${id}`), statusOf, elementId: id }));
+  }
+
+  return out;
 }
 
 /**
