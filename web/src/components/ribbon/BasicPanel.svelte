@@ -5,6 +5,9 @@
   import ToolbarExamples from '../toolbar/ToolbarExamples.svelte';
   import ToolbarConfig from '../toolbar/ToolbarConfig.svelte';
   import ToolbarProject from '../toolbar/ToolbarProject.svelte';
+  import DataTable from '../DataTable.svelte';
+  import StepWizard from '../dsm/StepWizard.svelte';
+  import { dsmStepsStore } from '../../lib/store/dsmSteps.svelte';
 
   /**
    * The right-hand panel: one thing, named by the command that opened it.
@@ -32,7 +35,7 @@
 
   <div class="bp-body">
     {#if panel === 'results'}
-      <ToolbarResults />
+      <ToolbarResults hideDiagrams />
     {:else if panel === 'advanced'}
       <ToolbarAdvanced />
     {:else if panel === 'examples'}
@@ -41,6 +44,17 @@
       <ToolbarConfig />
     {:else if panel === 'project'}
       <ToolbarProject />
+    {:else if panel === 'data'}
+      <!--
+        Model data and the step-by-step wizard used to live in a SECOND right
+        sidebar with its own toggle, so opening one while the other was up gave
+        two stacked panels on the same edge. One panel, one edge.
+      -->
+      {#if dsmStepsStore.isOpen}
+        <StepWizard />
+      {:else}
+        <DataTable />
+      {/if}
     {/if}
   </div>
 </aside>

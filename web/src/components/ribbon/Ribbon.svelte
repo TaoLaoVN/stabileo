@@ -41,7 +41,7 @@
    */
 
   type Props = {
-    onOpenPanel: (panel: string | null) => void;
+    onOpenPanel: (panel: string | null, opts?: { toggle?: boolean }) => void;
     activePanel: string | null;
   };
   let { onOpenPanel, activePanel }: Props = $props();
@@ -61,6 +61,34 @@
   type Group = { id: string; labelKey: string; cmds: Cmd[] };
 
   const solved = $derived(resultsStore.results != null || resultsStore.results3D != null);
+
+  /*
+   * The available diagrams genuinely differ between 2D and 3D — a 3D frame has
+   * My, Mz, Vy, Vz and torsion where a 2D one has M, V and N. The ribbon used a
+   * fixed 2D list, so in 3D it offered diagrams that did not exist and hid the
+   * ones that did, and disagreed with the panel that listed them correctly.
+   */
+  const diagramCmds = $derived.by((): Cmd[] => {
+    const en = () => solved;
+    const base: Cmd[] = [
+      { id: 'none', icon: '⊘', labelKey: 'ribbon.noDiagram', panel: 'results', diagram: 'none', enabled: en },
+      { id: 'deformed', icon: '∿', labelKey: 'ribbon.deformed', panel: 'results', diagram: 'deformed', enabled: en },
+    ];
+    if (uiStore.analysisMode === '3d') {
+      return [...base,
+        { id: 'momentY', icon: '◠', labelKey: 'ribbon.momentY', panel: 'results', diagram: 'momentY', enabled: en },
+        { id: 'momentZ', icon: '◡', labelKey: 'ribbon.momentZ', panel: 'results', diagram: 'momentZ', enabled: en },
+        { id: 'shearZ', icon: '⊿', labelKey: 'ribbon.shearZ', panel: 'results', diagram: 'shearZ', enabled: en },
+        { id: 'torsion', icon: '↻', labelKey: 'ribbon.torsion', panel: 'results', diagram: 'torsion', enabled: en },
+        { id: 'axial', icon: '⇔', labelKey: 'ribbon.axial', panel: 'results', diagram: 'axial', enabled: en },
+      ];
+    }
+    return [...base,
+      { id: 'moment', icon: '◠', labelKey: 'ribbon.moment', panel: 'results', diagram: 'moment', enabled: en },
+      { id: 'shear', icon: '⊿', labelKey: 'ribbon.shear', panel: 'results', diagram: 'shear', enabled: en },
+      { id: 'axial', icon: '⇔', labelKey: 'ribbon.axial', panel: 'results', diagram: 'axial', enabled: en },
+    ];
+  });
 
   /*
    * Grouped by VERB, not by object.
@@ -109,18 +137,13 @@
       cmds: [
         { id: 'solve', icon: '▶', labelKey: 'pro.solve', panel: 'results' },
         { id: 'advanced', icon: '⚙', labelKey: 'ribbon.advanced', panel: 'advanced' },
+        { id: 'data', icon: '▤', labelKey: 'ribbon.data', panel: 'data' },
       ],
     },
     {
       id: 'results',
       labelKey: 'ribbon.tabResults',
-      cmds: [
-        { id: 'deformed', icon: '∿', labelKey: 'ribbon.deformed', panel: 'results', diagram: 'deformed', enabled: () => solved },
-        { id: 'moment', icon: '◠', labelKey: 'ribbon.moment', panel: 'results', diagram: 'moment', enabled: () => solved },
-        { id: 'shear', icon: '⊿', labelKey: 'ribbon.shear', panel: 'results', diagram: 'shear', enabled: () => solved },
-        { id: 'axial', icon: '⇔', labelKey: 'ribbon.axial', panel: 'results', diagram: 'axial', enabled: () => solved },
-        { id: 'none', icon: '⊘', labelKey: 'ribbon.noDiagram', panel: 'results', diagram: 'none', enabled: () => solved },
-      ],
+      cmds: diagramCmds,
     },
   ];
 
@@ -137,7 +160,18 @@
       onOpenPanel(null);
       return;
     }
-    if (cmd.diagram) resultsStore.diagramType = cmd.diagram as never;
+    if (cmd.diagram) {
+      /*
+       * Picking a diagram OPENS the panel; it never toggles it shut. Routing it
+       * through the toggle meant choosing Shear while Results was already open
+       * closed the panel — the command reads as "show me this", and "show" has
+       * no off state.
+       */
+      resultsStore.diagramType = cmd.diagram as never;
+      if (cmd.action) cmd.action();
+      onOpenPanel(cmd.panel ?? null, { toggle: false });
+      return;
+    }
     if (cmd.action) cmd.action();
     if (cmd.panel) onOpenPanel(cmd.panel);
   }

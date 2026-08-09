@@ -182,6 +182,16 @@
     }
   }
 
+
+  /**
+   * Hide the diagram buttons when the ribbon is already showing them.
+   *
+   * In Basic the ribbon owns diagram selection, so repeating the grid here gave
+   * two controls for one piece of state — and they disagreed, because this list
+   * is mode-aware and the ribbon's was not. The panel keeps what the ribbon has
+   * no room for: the scale, the animation and the view options.
+   */
+  let { hideDiagrams = false }: { hideDiagrams?: boolean } = $props();
 </script>
 
 <div class="toolbar-section">
@@ -197,6 +207,7 @@
   </button>
   {#if showResultsPanel}
     {#if resultsStore.results || resultsStore.results3D || resultsStore.influenceLine}
+      {#if !hideDiagrams}
       <div class="diagram-grid">
         <button class="diagram-btn" class:active={resultsStore.diagramType === 'none'} onclick={() => resultsStore.diagramType = 'none'} title={t('results.noDiagramTooltip')} use:tooltip={'diag-none'}>{t('results.none')}</button>
         <button class="diagram-btn" class:active={resultsStore.diagramType === 'deformed'} onclick={() => resultsStore.diagramType = 'deformed'} title={t('results.deformedTooltip')} use:tooltip={'diag-deformed'}>{t('results.deformed')}</button>
@@ -216,6 +227,7 @@
           <button class="diagram-btn" class:active={resultsStore.diagramType === 'colorMap'} onclick={() => resultsStore.diagramType = 'colorMap'} title={t('results.colorMapTooltip')}>{t('results.colorMap')}</button>
         {/if}
       </div>
+      {/if}
       {#if resultsStore.diagramType === 'deformed'}
         <div class="input-group">
           <label>{t('results.diagramScale')}:</label>

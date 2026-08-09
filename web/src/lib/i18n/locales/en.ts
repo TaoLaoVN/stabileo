@@ -4926,6 +4926,11 @@ const en: Record<string, string> = {
   'ribbon.groupProject': 'Project',
   'ribbon.needsSolve': 'solve the model first',
   'ribbon.groupDraw': 'Draw',
+  'ribbon.momentY': 'My',
+  'ribbon.momentZ': 'Mz',
+  'ribbon.shearZ': 'Vz',
+  'ribbon.torsion': 'Torsion',
+  'ribbon.data': 'Model data',
 
 };
 export default en;

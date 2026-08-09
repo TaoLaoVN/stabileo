@@ -38,9 +38,12 @@
    * sideways when a panel appears.
    */
   let basicPanel = $state<string | null>(null);
-  function openBasicPanel(panel: string | null) {
-    // null closes; pressing the open panel's own command closes it too.
-    basicPanel = panel === null || basicPanel === panel ? null : panel;
+  function openBasicPanel(panel: string | null, opts: { toggle?: boolean } = {}) {
+    const toggle = opts.toggle !== false;
+    if (panel === null) { basicPanel = null; return; }
+    // Toggling is right for a command that owns its panel (Settings, Examples).
+    // It is wrong for a selection like a diagram, which only ever means "show".
+    basicPanel = toggle && basicPanel === panel ? null : panel;
   }
   import WhatIfPanel from './components/WhatIfPanel.svelte';
   import SectionStressPanel from './components/SectionStressPanel.svelte';
@@ -899,7 +902,12 @@
         <aside class="sidebar right edu-sidebar">
           <EducativePanel />
         </aside>
-      {:else if uiStore.appMode === 'basico'}
+      {:else if uiStore.appMode === 'basico' && uiStore.isMobile}
+        <!--
+          Desktop Basic serves model data and the DSM wizard through the one
+          ribbon panel. This legacy sidebar, with its own edge toggle, stays only
+          for mobile, where there is no ribbon to route them through.
+        -->
         {#if !uiStore.aiDrawerOpen}
           <button class="sidebar-toggle-btn right-toggle" class:sidebar-closed={!uiStore.rightSidebarOpen} onclick={() => uiStore.rightSidebarOpen = !uiStore.rightSidebarOpen} title={uiStore.rightSidebarOpen ? t('app.hideRightPanel') : t('app.showRightPanel')}>
             {uiStore.rightSidebarOpen ? '▸' : '◂'}
