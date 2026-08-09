@@ -394,7 +394,7 @@ describe('every profile in the catalogue has exact geometry', () => {
     // separately below: those tables mark their dimensions nominal and derive
     // area from nominal mass, so no outline can reproduce both. Every other
     // family must.
-    const NOMINAL = new Set(['W', 'HP', 'M']);
+    const NOMINAL = new Set(['W', 'HP', 'M', 'C']);
     for (const p of ALL_PROFILES.filter((x) => !NOMINAL.has(x.family))) {
       const r = resolveCanonicalSection(fromCatalogue(p.name));
       if (r.state !== 'geometry-backed') {
@@ -413,9 +413,9 @@ describe('every profile in the catalogue has exact geometry', () => {
     expect(failures).toEqual([]);
   });
 
-  it('covers all twelve families', () => {
+  it('covers all thirteen families', () => {
     const families = new Set(ALL_PROFILES.map((p) => p.family));
-    expect(families.size).toBe(12);
+    expect(families.size).toBe(13);
     expect(ALL_PROFILES.length).toBeGreaterThan(600);
   });
 
@@ -425,7 +425,7 @@ describe('every profile in the catalogue has exact geometry', () => {
     // and 10.6 mm thick give 363 cm⁴ by hand, and the table says 327. The
     // outline is right and the table is not, so the deviation is declared
     // rather than suppressed, and bounded here so it cannot grow unnoticed.
-    for (const [family, bound] of [['HP', 0.02], ['M', 0.12]] as const) {
+    for (const [family, bound] of [['HP', 0.02], ['M', 0.12], ['C', 0.07]] as const) {
       for (const p of ALL_PROFILES.filter((x) => x.family === family)) {
         const r = resolveCanonicalSection(fromCatalogue(p.name));
         expect(r.state, p.name).toBe('geometry-backed');

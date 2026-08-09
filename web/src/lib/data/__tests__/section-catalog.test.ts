@@ -39,12 +39,12 @@ describe('every shipped family is classified, and by a real standard', () => {
     // one whose outline does not reproduce the published properties, and that
     // is a separate, weaker claim tracked as `nominalDimensions`.
     expect(approximate).toEqual([]);
-    // The American series — W, HP and M — all descend from tables that mark
+    // The American series — W, HP, M and C — all descend from tables that mark
     // their dimensions nominal and derive area from nominal mass.
     const nominal = Object.values(FAMILY_CLASSIFICATION)
       .filter((c) => c.fidelity === 'nominalDimensions')
       .map((c) => c.family);
-    expect(new Set(nominal)).toEqual(new Set(['W', 'HP', 'M']));
+    expect(new Set(nominal)).toEqual(new Set(['W', 'HP', 'M', 'C']));
   });
 });
 
@@ -75,11 +75,11 @@ describe('design codes are an index over families, not a relabelling', () => {
   it('says what it is missing rather than implying the list is complete', () => {
     const cirsoc = designCode('cirsoc-301')!;
     expect(cirsoc.missingFamilies?.length).toBeGreaterThan(0);
-    // The American channel series is the big one local practice uses and we do
-    // not ship; if it gets added, update this deliberately.
-    expect(cirsoc.missingFamilies!.join(' ')).toMatch(/canal americano/);
-    // W is shipped now, so it must NOT still be advertised as missing.
-    expect(cirsoc.families).toContain('W');
+    // What remains unshipped is the miscellaneous channel series; if it gets
+    // added, update this deliberately.
+    expect(cirsoc.missingFamilies!.join(' ')).toMatch(/MC/);
+    // These are shipped now, so they must NOT still be advertised as missing.
+    for (const f of ['W', 'HP', 'M', 'C']) expect(cirsoc.families).toContain(f);
   });
 
   it('a family carries its own standard regardless of which code lists it', () => {

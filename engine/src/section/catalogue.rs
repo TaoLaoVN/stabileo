@@ -452,10 +452,24 @@ pub fn ipn_section(
     Ok(CanonicalGeometry::new(vec![solid(v)], source, arc_segments))
 }
 
-/// UPN, per DIN 1025-5. `tf` is the published flange thickness, quoted at b/2
-/// from the web's outer face, which sits at the horizontal origin.
-pub fn upn_section(
-    h: f64, b: f64, tw: f64, tf: f64, arc_segments: usize, source: GeometrySource,
+/// Channel with tapered flanges, web on the left at the horizontal origin.
+///
+/// The taper is a parameter rather than a constant because the two channel
+/// families this serves disagree on every part of it: DIN's UPN slopes at 8 %
+/// with `r_root = tf` and quotes `tf` at b/2 from the web's outer face, while
+/// the American C series slopes at 1:6, carries a roller radius constant per
+/// rolling depth, and quotes `tf` at the middle of the flange overhang.
+/// Hard-coding either one is what forced the first version of this to be
+/// UPN-only.
+///
+/// `taper_ref` is the horizontal position, measured from the web's outer face,
+/// at which the flange is `tf` thick. `r_root`/`r_toe` of zero give a sharp
+/// junction, which is the honest rendering when a table does not publish a
+/// radius.
+pub fn tapered_channel(
+    h: f64, b: f64, tw: f64, tf: f64,
+    slope: f64, r_root: f64, r_toe: f64, taper_ref: f64,
+    arc_segments: usize, source: GeometrySource,
 ) -> Result<CanonicalGeometry, String> {
     let h = require_positive("h", h)?;
     let b = require_positive("b", b)?;
@@ -467,22 +481,35 @@ pub fn upn_section(
     if tw >= b {
         return Err("web is thicker than the flange is wide".into());
     }
+    if !slope.is_finite() || slope < 0.0 {
+        return Err(format!("flange slope must be finite and non-negative (got {slope})"));
+    }
     let hh = h / 2.0;
-    let (m, r_root, r_toe) = (0.08, tf, 0.5 * tf);
-    let c = hh - tf - m * (b / 2.0);
-    if m * tw + c <= 0.0 {
+    let c = hh - tf - slope * taper_ref;
+    if slope * tw + c <= 0.0 {
         return Err("flange taper leaves no web between the flanges".into());
     }
+    // A fillet cannot be larger than the space it sits in.
+    let r_root = r_root.max(0.0).min((b - tw) / 2.0).min(hh - tf);
+    let r_toe = r_toe.max(0.0).min((b - tw) / 2.0);
     let n = arc_segments.max(1);
 
     let mut top: Vec<[f64; 2]> = vec![[0.0, hh], [b, hh]];
-    top.extend(tapered_flange_run(tw, b, m, c, r_root, r_toe, n));
+    top.extend(tapered_flange_run(tw, b, slope, c, r_root, r_toe, n));
     top.push([tw, 0.0]);
 
     let mut v = top.clone();
     v.extend_from_slice(&mirrored(&top, false, true, true)[1..]);
 
     Ok(CanonicalGeometry::new(vec![solid(v)], source, arc_segments))
+}
+
+/// UPN, per DIN 1025-5. `tf` is the published flange thickness, quoted at b/2
+/// from the web's outer face, which sits at the horizontal origin.
+pub fn upn_section(
+    h: f64, b: f64, tw: f64, tf: f64, arc_segments: usize, source: GeometrySource,
+) -> Result<CanonicalGeometry, String> {
+    tapered_channel(h, b, tw, tf, 0.08, tf, 0.5 * tf, b / 2.0, arc_segments, source)
 }
 
 /// Equal- or unequal-leg angle with the rolled fillets, corner at the origin.
@@ -962,6 +989,52 @@ mod rolled_profile_validation {
         assert!(p.iyz.abs() < 1e-9 * p.iy);
         // The published centroid sits 20.1 mm from the web's outer face.
         assert!((p.yc - 20.1).abs() < 0.4, "centroid at {}", p.yc);
+    }
+
+    /// IRAM-IAS U 500-509-4 American channels: slope 1:6, roller radius
+    /// constant per rolling depth, tf quoted at mid-overhang.
+    /// Columns: d, bf, tf, tw, r, A, Ix, Iy, centroid from the web face.
+    const CHANNELS: &[(&str, f64, f64, f64, f64, f64, f64, f64, f64, f64)] = &[
+        ("C15x50", 381.0, 94.4, 16.5, 18.2, 20.00, 94.8, 16816.0, 458.0, 20.3),
+        ("C12x30", 305.0, 80.5, 12.7, 13.0, 15.80, 56.9,  6743.0, 214.0, 17.1),
+        ("C10x20", 254.0, 69.6, 11.1,  9.6, 14.40, 37.9,  3284.0, 117.0, 15.4),
+        ("C8x11,5", 203.0, 57.4, 9.91, 5.6, 13.59, 21.8,  1357.0,  55.0, 14.5),
+    ];
+
+    #[test]
+    fn american_channels_reproduce_their_published_properties() {
+        for &(name, d, bf, tf, tw, r, a, ix, iy, _e) in CHANNELS {
+            let g = tapered_channel(d, bf, tw, tf, 1.0 / 6.0, r, r / 2.0,
+                                    tw + (bf - tw) / 2.0, 8, src()).expect(name);
+            let (ga, gix, giy) = props(&g);
+            // Looser than the DIN families on purpose: the American tables give
+            // nominal dimensions, so a few percent is the source's own spread.
+            for (label, got, want) in [("A", ga, a), ("Ix", gix, ix), ("Iy", giy, iy)] {
+                let err = (got / want - 1.0) * 100.0;
+                assert!(err.abs() < 7.0, "{name} {label}: {got:.4} vs {want:.4} ({err:+.2} %)");
+            }
+        }
+    }
+
+    #[test]
+    fn a_channel_with_no_taper_is_the_sharp_channel() {
+        let flat = tapered_channel(200.0, 75.0, 8.5, 11.5, 0.0, 0.0, 0.0, 37.5, 8, src()).unwrap();
+        let legacy = channel_section(200.0, 75.0, 8.5, 11.5).unwrap();
+        assert!((props(&flat).0 - props(&legacy).0).abs() < 1e-9);
+    }
+
+    #[test]
+    fn a_steeper_flange_taper_moves_material_towards_the_web() {
+        // The centroid of a channel sits between the web and the flange tips;
+        // steepening the taper thickens the flange at the web and thins it at
+        // the tip, so the centroid must move TOWARDS the web. Getting the sign
+        // of the slope wrong is otherwise easy and quiet — it was, once.
+        let near = |slope: f64| {
+            let g = tapered_channel(200.0, 75.0, 8.5, 11.5, slope, 11.5, 5.75, 37.5, 8, src()).unwrap();
+            analyze_section(&SectionInput { polygons: g.polygons.clone(), modular_ratios: Default::default() })
+                .unwrap().yc
+        };
+        assert!(near(0.16) < near(0.0), "{} !< {}", near(0.16), near(0.0));
     }
 
     #[test]

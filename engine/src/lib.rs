@@ -805,7 +805,18 @@ pub fn build_section_geometry(json: &str) -> Result<String, JsValue> {
             #[serde(default)] profile_id: Option<String>,
             #[serde(default)] standard: Option<String>,
         },
-        Channel { h: f64, b: f64, tw: f64, tf: f64 },
+        Channel {
+            h: f64, b: f64, tw: f64, tf: f64,
+            #[serde(default)] slope: f64,
+            #[serde(default)] root_radius: f64,
+            #[serde(default)] toe_radius: f64,
+            /// Where `tf` is quoted, from the web's outer face. Defaults to
+            /// mid-overhang, which is what the American tables use.
+            #[serde(default)] taper_ref: Option<f64>,
+            #[serde(default)] arc_segments: Option<usize>,
+            #[serde(default)] profile_id: Option<String>,
+            #[serde(default)] standard: Option<String>,
+        },
         Rhs {
             b: f64, h: f64, t: f64,
             #[serde(default)] corner_radius: f64,
@@ -859,7 +870,12 @@ pub fn build_section_geometry(json: &str) -> Result<String, JsValue> {
             cat::angle_section_filleted(h, b, t, root_radius, toe_radius, segs(arc_segments),
                 catalogue_source(profile_id, standard, "EN 10056-1", "angle"))
         }
-        Request::Channel { h, b, tw, tf } => cat::channel_section(h, b, tw, tf),
+        Request::Channel { h, b, tw, tf, slope, root_radius, toe_radius, taper_ref,
+                           arc_segments, profile_id, standard } => {
+            cat::tapered_channel(h, b, tw, tf, slope, root_radius, toe_radius,
+                taper_ref.unwrap_or(tw + (b - tw) / 2.0), segs(arc_segments),
+                catalogue_source(profile_id, standard, "IRAM-IAS U 500-509-4", "channel"))
+        }
         Request::Rhs { b, h, t, corner_radius, arc_segments, profile_id, standard } => {
             cat::rectangular_hollow_rounded(b, h, t, corner_radius, segs(arc_segments),
                 catalogue_source(profile_id, standard, "IRAM-IAS U 500-218", "rhs"))

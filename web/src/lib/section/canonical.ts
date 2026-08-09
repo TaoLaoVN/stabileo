@@ -52,7 +52,7 @@ const IRAM_I_STANDARD: Record<string, string> = {
   M: 'IRAM-IAS U 500-215-8',
 };
 
-const GEOMETRY_BACKED_FAMILIES = new Set(['IPE', 'HEA', 'HEB', 'W', 'HP', 'M', 'CHS', 'IPN', 'UPN', 'L', 'RHS', 'SHS']);
+const GEOMETRY_BACKED_FAMILIES = new Set(['IPE', 'HEA', 'HEB', 'W', 'HP', 'M', 'C', 'CHS', 'IPN', 'UPN', 'L', 'RHS', 'SHS']);
 
 /**
  * Why a section could not be expressed as canonical geometry.
@@ -182,6 +182,32 @@ export function resolveCanonicalSection(sec: Section): ResolvedSection {
           tf: mm(profile.tf!),
           profileId: profile.name,
           standard: profile.family === 'IPN' ? 'DIN 1025-1' : 'DIN 1025-5',
+        }),
+        profile.name,
+      );
+    }
+    // American channels — 1:6 flange taper, roller radius constant per rolling
+    // depth, tf quoted at mid-overhang. The C9 group ships radius 0 because its
+    // published clear web depth is not a geometry; see iram-c.ts.
+    if (profile.family === 'C') {
+      const missing: string[] = [];
+      if (profile.tw == null) missing.push('tw');
+      if (profile.tf == null) missing.push('tf');
+      if (missing.length > 0) {
+        return propertiesOnly(sec, { kind: 'missingDimensions', missing }, profile.name);
+      }
+      const r = profile.r ?? 0;
+      return backed(
+        buildSectionGeometry({
+          kind: 'channel',
+          h: mm(profile.h), b: mm(profile.b),
+          tw: mm(profile.tw!), tf: mm(profile.tf!),
+          slope: 1 / 6,
+          rootRadius: mm(r),
+          toeRadius: mm(r / 2),
+          taperRef: mm(profile.tw! + (profile.b - profile.tw!) / 2),
+          profileId: profile.name,
+          standard: 'IRAM-IAS U 500-509-4',
         }),
         profile.name,
       );
