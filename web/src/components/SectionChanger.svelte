@@ -1,6 +1,6 @@
 <script lang="ts">
   import {
-    FAMILY_LIST, PROFILE_FAMILIES, searchProfiles, profileToSection, familyToShape,
+    PROFILE_FAMILIES, searchProfiles, profileToSection,
     type ProfileFamily, type SteelProfile, type SectionShape,
   } from '../lib/data/steel-profiles';
   import {
@@ -9,6 +9,10 @@
     type ShapeType, type SectionProperties, type MaterialCategory,
   } from '../lib/data/section-shapes';
   import { crossSectionPath } from '../lib/utils/section-drawing';
+  import { profileOutline } from '../lib/section/outline';
+  import {
+    DESIGN_CODES, familiesForCode, groupBySeries, classifyFamily,
+  } from '../lib/data/section-catalog';
   import { t } from '../lib/i18n';
 
   interface Props {
@@ -39,23 +43,34 @@
   });
 
   // ─── Profile Selector state ──────────────────
+  //
+  // The design code is a FILTER over families, not an owner of them: picking
+  // CIRSOC 301 narrows the list to the families whose shipped dimensions that
+  // code's practice actually uses, and says which ones are still missing. It
+  // never relabels a European family as Argentine.
+  let activeCode = $state<string | null>(null);
   let activeFamily = $state<ProfileFamily>('IPN');
   let searchQuery = $state('');
+
+  const availableFamilies = $derived(familiesForCode(activeCode));
+  const familyGroups = $derived(groupBySeries(availableFamilies));
+  const activeCodeDef = $derived(DESIGN_CODES.find((c) => c.id === activeCode) ?? null);
+  const activeClass = $derived(classifyFamily(activeFamily));
+
+  // Selecting a code that does not carry the current family must move the
+  // selection somewhere valid rather than leave an empty table.
+  $effect(() => {
+    const fams = availableFamilies;
+    if (!fams.includes(activeFamily) && fams.length > 0) activeFamily = fams[0];
+  });
+
   let filteredProfiles = $derived(searchProfiles(searchQuery, activeFamily));
 
   const profilePreviewPath = $derived.by(() => {
     const profiles = PROFILE_FAMILIES[activeFamily];
     if (!profiles || profiles.length === 0) return null;
     const rep = profiles[Math.floor(profiles.length / 2)];
-    const shape = familyToShape(activeFamily);
-    return crossSectionPath({
-      shape,
-      h: rep.h,
-      b: rep.b,
-      tw: rep.tw ?? 0,
-      tf: rep.tf ?? 0,
-      t: rep.t ?? 0,
-    });
+    return profileOutline(rep).d;
   });
 
   function handleProfileClick(p: SteelProfile) {
@@ -176,23 +191,55 @@
       <!-- ═══ Profile Selector Tab ═══ -->
       {#if activeMainTab === 'profile'}
         <div class="sc-body sc-profile-body">
-          <div class="profile-tabs">
-            {#each FAMILY_LIST as fam}
-              <button
-                class="tab-btn"
-                class:active={activeFamily === fam}
-                onclick={() => { activeFamily = fam; searchQuery = ''; }}
-              >{fam}</button>
+          <div class="code-bar">
+            <span class="code-label">{t('cat.code')}</span>
+            <button class="code-btn" class:active={activeCode === null}
+              onclick={() => { activeCode = null; searchQuery = ''; }}>{t('cat.allCodes')}</button>
+            {#each DESIGN_CODES as c}
+              <button class="code-btn" class:active={activeCode === c.id}
+                onclick={() => { activeCode = c.id; searchQuery = ''; }}>{c.label}</button>
             {/each}
           </div>
 
-          {#if profilePreviewPath}
-            <div class="profile-preview">
-              <svg viewBox="-90 -90 180 180" class="preview-svg">
-                <path d={profilePreviewPath} fill="none" stroke="#4ecdc4" stroke-width="1.5" fill-rule="evenodd" />
-              </svg>
+          <div class="profile-tabs">
+            {#each familyGroups as group}
+              <span class="series-label">{t('cat.series.' + group.series)}</span>
+              {#each group.families as fam}
+                <button
+                  class="tab-btn"
+                  class:active={activeFamily === fam}
+                  class:approx={classifyFamily(fam)?.fidelity === 'propertiesOnly'}
+                  title={classifyFamily(fam)?.standard}
+                  onclick={() => { activeFamily = fam; searchQuery = ''; }}
+                >{fam}</button>
+              {/each}
+            {/each}
+          </div>
+
+          <div class="profile-head">
+            {#if profilePreviewPath}
+              <div class="profile-preview">
+                <svg viewBox="-90 -90 180 180" class="preview-svg">
+                  <path d={profilePreviewPath} fill="none" stroke="#4ecdc4" stroke-width="1.5" fill-rule="evenodd" />
+                </svg>
+              </div>
+            {/if}
+            <div class="profile-meta">
+              {#if activeClass}
+                <div class="meta-row"><span class="meta-k">{t('cat.standard')}</span><span class="meta-v">{activeClass.standard}</span></div>
+                <div class="meta-row"><span class="meta-k">{t('cat.geometry')}</span>
+                  <span class="meta-v" class:warn={activeClass.fidelity === 'propertiesOnly'}>
+                    {activeClass.fidelity === 'exact' ? t('cat.geomExact') : t('cat.geomApprox')}
+                  </span>
+                </div>
+              {/if}
+              {#if activeCodeDef?.missingFamilies?.length}
+                <div class="meta-missing">
+                  {t('cat.missing')}: {activeCodeDef.missingFamilies.join(', ')}
+                </div>
+              {/if}
             </div>
-          {/if}
+          </div>
 
           <div class="profile-search">
             <input type="text" placeholder={t('search.profile')} bind:value={searchQuery} />
@@ -214,7 +261,13 @@
               <tbody>
                 {#each filteredProfiles as p}
                   <tr onclick={() => handleProfileClick(p)} class="profile-row">
-                    <td class="name-cell">{p.name}</td>
+                    <td class="name-cell">
+                      <svg viewBox="-90 -90 180 180" class="row-thumb" aria-hidden="true">
+                        <path d={profileOutline(p).d} fill="#4ecdc4" fill-opacity="0.25"
+                              stroke="#4ecdc4" stroke-width="4" fill-rule="evenodd" />
+                      </svg>
+                      {p.name}
+                    </td>
                     <td>{p.h}</td>
                     <td>{p.b}</td>
                     <td>{p.a.toFixed(1)}</td>
@@ -493,6 +546,34 @@
     border-radius: 6px;
     border: 1px solid rgba(26, 74, 122, 0.4);
   }
+
+  .code-bar {
+    display: flex; align-items: center; gap: 6px; flex-wrap: wrap;
+    padding: 6px 8px; border-bottom: 1px solid #2a2a2a;
+  }
+  .code-label { font-size: 0.68rem; color: #777; text-transform: uppercase; letter-spacing: 0.04em; }
+  .code-btn {
+    background: #1c1c1c; border: 1px solid #333; color: #aaa;
+    font-size: 0.72rem; padding: 3px 9px; border-radius: 3px; cursor: pointer;
+  }
+  .code-btn:hover { border-color: #4ecdc4; color: #ddd; }
+  .code-btn.active { background: #4ecdc4; border-color: #4ecdc4; color: #111; font-weight: 600; }
+  .series-label {
+    font-size: 0.62rem; color: #666; text-transform: uppercase;
+    letter-spacing: 0.05em; margin: 0 2px 0 8px; align-self: center;
+  }
+  .series-label:first-child { margin-left: 0; }
+  /* A family whose outline is approximate is marked in the picker itself, so
+     the limitation is visible before the profile is chosen, not after. */
+  .tab-btn.approx { border-bottom: 2px dotted #d9a441; }
+  .profile-head { display: flex; align-items: center; gap: 12px; padding: 0 8px; }
+  .profile-meta { flex: 1; min-width: 0; font-size: 0.7rem; }
+  .meta-row { display: flex; gap: 6px; }
+  .meta-k { color: #777; min-width: 74px; }
+  .meta-v { color: #ccc; font-family: monospace; }
+  .meta-v.warn { color: #d9a441; }
+  .meta-missing { margin-top: 6px; color: #8a7a55; font-size: 0.65rem; line-height: 1.35; }
+  .row-thumb { width: 18px; height: 18px; vertical-align: -4px; margin-right: 6px; }
 
   .profile-search {
     padding: 0 1.25rem 0.5rem;

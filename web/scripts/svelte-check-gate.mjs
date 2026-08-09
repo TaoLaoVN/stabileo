@@ -38,6 +38,10 @@ const GUARDED_PATHS = [
   'src/lib/section/',
   'src/components/SectionStressPanel.svelte',
   'src/components/stress/CrossSectionDrawing.svelte',
+  'src/lib/data/section-catalog.ts',
+  'src/components/SectionChanger.svelte',
+  'src/components/ProfileSelector.svelte',
+  'src/components/tables/SectionsTable.svelte',
 ];
 
 const isGuarded = (file) => GUARDED_PATHS.some((p) => file.startsWith(p));
