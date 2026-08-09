@@ -4920,6 +4920,10 @@ const es: Record<string, string> = {
   'ribbon.data': 'Datos',
   'ribbon.resize': 'Redimensionar panel',
   'ribbon.needs3d': 'sólo en análisis 3D',
+  'ribbon.nameAxial': 'Esfuerzo axil',
+  'ribbon.nameMoment': 'Momento flector',
+  'ribbon.nameShear': 'Esfuerzo de corte',
+  'ribbon.nameTorsion': 'Torsión',
 
 };
 export default es;

@@ -4933,6 +4933,10 @@ const en: Record<string, string> = {
   'ribbon.data': 'Model data',
   'ribbon.resize': 'Resize panel',
   'ribbon.needs3d': '3D analysis only',
+  'ribbon.nameAxial': 'Axial force',
+  'ribbon.nameMoment': 'Bending moment',
+  'ribbon.nameShear': 'Shear force',
+  'ribbon.nameTorsion': 'Torsion',
 
 };
 export default en;

@@ -712,13 +712,6 @@
     </div>
   </header>
 
-  {#if showAutosaveBanner}
-    <div class="autosave-banner">
-      <span>{t('app.autosaveFound')} <strong>{autosaveData?.name}</strong></span>
-      <button class="banner-btn restore" onclick={restoreAutosave}>{t('app.restore')}</button>
-      <button class="banner-btn discard" onclick={discardAutosave}>{t('app.discard')}</button>
-    </div>
-  {/if}
 
   {#if uiStore.appMode === 'basico' && !uiStore.isMobile}
     <Ribbon onOpenPanel={openBasicPanel} activePanel={basicPanel} />
@@ -2235,4 +2228,122 @@
   @media (max-width: 1100px) {
     .btn-doc-label { display: none; }
   }
+
+  /* ── Autosave prompt, inline with the tabs ──────────────────────────── */
+
+  .autosave-inline {
+    display: flex;
+    align-items: center;
+    gap: 0.45rem;
+    margin-left: 0.6rem;
+    padding: 0.25rem 0.5rem;
+    border: 1px solid var(--st-hair);
+    border-left: 2px solid var(--st-warn);
+    border-radius: var(--st-radius);
+    background: var(--st-surface-2);
+    font-size: 0.78rem;
+    color: var(--st-text-2);
+    white-space: nowrap;
+    min-width: 0;
+  }
+
+  .ai-text { overflow: hidden; text-overflow: ellipsis; max-width: 30ch; }
+
+  .ai-btn {
+    background: none;
+    border: 1px solid var(--st-hair);
+    border-radius: var(--st-radius);
+    color: var(--st-text-2);
+    font-size: 0.74rem;
+    padding: 0.15rem 0.45rem;
+    cursor: pointer;
+    flex: none;
+  }
+
+  .ai-btn:hover { background: var(--st-surface-3); color: var(--st-text); }
+  .ai-btn.restore { color: var(--st-accent); border-color: var(--st-accent); }
+
+  @media (max-width: 1100px) { .ai-text { max-width: 16ch; } }
+
+  /* ── Header, brought into the token system ──────────────────────────── */
+
+  .app-header { gap: 0.75rem; }
+
+  .logo-text {
+    font-family: var(--st-display);
+    font-weight: 600;
+    font-size: 1.05rem;
+    letter-spacing: -0.01em;
+  }
+
+  .logo-icon { color: var(--st-accent); font-size: 1.15rem; }
+
+  /*
+     The mode switch is the one place the accent belongs up here: it says which
+     product you are in. It was a filled pill with a hard red; a rule under the
+     active mode reads as navigation rather than as an alert, and matches the
+     ribbon's own active treatment.
+  */
+  .mode-toggle {
+    display: flex;
+    gap: 0.1rem;
+    background: none;
+    border: none;
+    padding: 0;
+  }
+
+  .mode-toggle button {
+    background: none;
+    border: none;
+    border-bottom: 2px solid transparent;
+    color: var(--st-text-2);
+    font-family: var(--st-sans);
+    font-size: 0.82rem;
+    font-weight: 500;
+    padding: 0.3rem 0.6rem 0.25rem;
+    cursor: pointer;
+    border-radius: 0;
+    transition: color 0.12s, border-color 0.12s;
+  }
+
+  .mode-toggle button:hover { color: var(--st-text); background: none; }
+
+  .mode-toggle button.active {
+    color: var(--st-text);
+    background: none;
+    border-bottom-color: var(--st-accent);
+  }
+
+  .demo-badge {
+    font-family: var(--st-mono);
+    font-size: 0.55rem;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--st-text-3);
+    background: none;
+    border: 1px solid var(--st-hair);
+    border-radius: var(--st-radius);
+    padding: 0.05rem 0.25rem;
+    margin-left: 0.3rem;
+    vertical-align: middle;
+  }
+
+  .separator { color: var(--st-hair); font-size: 1rem; }
+
+  .btn-help,
+  .lang-select {
+    background: none;
+    border: 1px solid var(--st-hair);
+    border-radius: var(--st-radius);
+    color: var(--st-text-2);
+    font-family: var(--st-sans);
+    font-size: 0.8rem;
+    padding: 0.3rem 0.5rem;
+    cursor: pointer;
+  }
+
+  .btn-help:hover,
+  .lang-select:hover { background: var(--st-surface-3); color: var(--st-text); }
+
+  .btn-help { width: 26px; padding: 0.3rem 0; text-align: center; }
 </style>

@@ -7,6 +7,7 @@
   import ToolSupportOptions from './floating-tools/ToolSupportOptions.svelte';
   import ToolLoadOptions from './floating-tools/ToolLoadOptions.svelte';
   import SelectedEntityPanel from './floating-tools/SelectedEntityPanel.svelte';
+  import Icon from './ribbon/Icon.svelte';
 
   // If the active load case is deleted, reset to the first available case
   $effect(() => {
@@ -16,12 +17,12 @@
   });
 
   const tools = [
-    { id: 'pan', icon: '✋', labelKey: 'float.pan', key: 'H' },
-    { id: 'select', icon: '↖', labelKey: 'float.select', key: 'V' },
-    { id: 'node', icon: '●', labelKey: 'float.node', key: 'N' },
-    { id: 'element', icon: '—', labelKey: 'float.element', key: 'E' },
-    { id: 'support', icon: '▽', labelKey: 'float.support', key: 'S' },
-    { id: 'load', icon: '↓', labelKey: 'float.load', key: 'L' },
+    { id: 'pan', icon: 'pan', labelKey: 'float.pan', key: 'H' },
+    { id: 'select', icon: 'select', labelKey: 'float.select', key: 'V' },
+    { id: 'node', icon: 'node', labelKey: 'float.node', key: 'N' },
+    { id: 'element', icon: 'element', labelKey: 'float.element', key: 'E' },
+    { id: 'support', icon: 'support', labelKey: 'float.support', key: 'S' },
+    { id: 'load', icon: 'load', labelKey: 'float.load', key: 'L' },
   ] as const;
 
   // Check if current tool has options
@@ -62,7 +63,8 @@
           onclick={() => uiStore.currentTool = tool.id}
           title="{t(tool.labelKey)} ({tool.key})"
         >
-          <span class="ft-icon">{tool.icon}</span>
+          <!-- Same drawn set as the ribbon: one product, one icon family. -->
+          <span class="ft-icon"><Icon name={tool.icon} size={19} /></span>
           <span class="ft-label">{t(tool.labelKey)}</span>
         </button>
       {/each}

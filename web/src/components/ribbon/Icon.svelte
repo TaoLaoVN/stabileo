@@ -98,22 +98,39 @@
     <!-- The undeflected member, ghosted, with the deflected one over it. -->
     <path d="M3 8h18" opacity="0.4" />
     <path d="M3 8c4 0 5 9 9 9s5-9 9-9" />
-  {:else if name === 'moment'}
-    <!-- Parabola on a baseline: the bending diagram itself. -->
-    <path d="M3 6h18" />
-    <path d="M3 6c3.5 0 5 12 9 12s5.5-12 9-12" />
-  {:else if name === 'momentY' || name === 'momentZ'}
-    <path d="M3 6h18" />
-    <path d="M3 6c3.5 0 5 12 9 12s5.5-12 9-12" />
-  {:else if name === 'shear' || name === 'shearZ'}
-    <!-- Shear is a step function, and it is drawn as one. -->
-    <path d="M3 12h6V5h6v14h6" />
+
+  <!--
+    Internal forces are drawn as the ACTION ON A CUT SECTION, not as their
+    diagram. A diagram is what the result looks like plotted along a member; the
+    arrows either side of a cut face are what the force IS, and they are how the
+    convention is taught and how an engineer recognises it at a glance. Drawing
+    the diagram made every one of these look like a squiggle on a baseline, so
+    moment and shear read as near-identical curves.
+
+    Each is a section face with the characteristic arrow pair:
+      N  opposed arrows normal to the face      (pulls apart / pushes together)
+      V  opposed arrows parallel to the face    (slides)
+      M  opposed curved arrows                  (rotates)
+      T  one curved arrow about the axis        (twists)
+  -->
   {:else if name === 'axial'}
-    <path d="M3 12h18" />
-    <path d="M6.5 8.5L3 12l3.5 3.5M17.5 8.5L21 12l-3.5 3.5" />
+    <rect x="10.6" y="5" width="2.8" height="14" rx="0.4" fill="currentColor" stroke="none" />
+    <path d="M8.4 12H2.6M17.6 12h3.8" />
+    <path d="M5 9.4L2.4 12 5 14.6M19 9.4L21.6 12 19 14.6" />
+  {:else if name === 'shear' || name === 'shearZ' || name === 'shearY'}
+    <rect x="10.6" y="5" width="2.8" height="14" rx="0.4" fill="currentColor" stroke="none" />
+    <path d="M7 17.5V6.5M17 6.5v11" />
+    <path d="M4.6 9L7 6.4 9.4 9M14.6 15L17 17.6 19.4 15" />
+  {:else if name === 'moment' || name === 'momentY' || name === 'momentZ'}
+    <rect x="10.6" y="5" width="2.8" height="14" rx="0.4" fill="currentColor" stroke="none" />
+    <path d="M8.4 7.6a5 5 0 0 0 0 8.8" />
+    <path d="M15.6 7.6a5 5 0 0 1 0 8.8" />
+    <path d="M6.6 6.6l1.9 1L7.6 9.6M17.4 6.6l-1.9 1 .9 2" />
   {:else if name === 'torsion'}
-    <path d="M4 12a8 8 0 1 1 3 6.2" />
-    <path d="M3.2 8.6L4 12.4l3.8-.9" />
+    <path d="M12 4v16" opacity="0.45" />
+    <path d="M5.5 9.5a7.5 4 0 1 0 13 0" />
+    <path d="M4.4 6.6l1.2 3.2 3.2-.9" />
+
   {:else if name === 'examples'}
     <path d="M4 6.5h16M4 12h16M4 17.5h10" />
   {:else if name === 'project'}

@@ -50,8 +50,14 @@
 
   type Cmd = {
     id: string;
-    icon: string;
-    labelKey: string;
+    /** Icon name, or a function when it depends on state. */
+    icon: string | (() => string);
+    /** Translation key for the button label. */
+    labelKey?: string | (() => string);
+    /** Literal label, for symbols like N, Mz, Vy that are not translated. */
+    label?: string;
+    /** Translation key for the human name, shown in the tooltip. */
+    nameKey?: string;
     tool?: string;
     panel?: string;
     diagram?: string;
@@ -90,12 +96,18 @@
     return [
       { id: 'none', icon: 'none', labelKey: 'ribbon.noDiagram', panel: 'results', diagram: 'none', enabled: any },
       { id: 'deformed', icon: 'deformed', labelKey: 'ribbon.deformed', panel: 'results', diagram: 'deformed', enabled: any },
-      { id: 'moment', icon: 'moment', labelKey: 'ribbon.moment', panel: 'results', diagram: threeD ? 'momentZ' : 'moment', enabled: any },
-      { id: 'shear', icon: 'shear', labelKey: 'ribbon.shear', panel: 'results', diagram: threeD ? 'shearY' : 'shear', enabled: any },
-      { id: 'axial', icon: 'axial', labelKey: 'ribbon.axial', panel: 'results', diagram: 'axial', enabled: any },
-      { id: 'momentY', icon: 'momentY', labelKey: 'ribbon.momentY', panel: 'results', diagram: 'momentY', enabled: only3d, needs3d: true },
-      { id: 'shearZ', icon: 'shearZ', labelKey: 'ribbon.shearZ', panel: 'results', diagram: 'shearZ', enabled: only3d, needs3d: true },
-      { id: 'torsion', icon: 'torsion', labelKey: 'ribbon.torsion', panel: 'results', diagram: 'torsion', enabled: only3d, needs3d: true },
+      /*
+       * The label is the SYMBOL and the tooltip is the name. "Momento" next to
+       * "Mz" gave two different kinds of name in one row and left no way to
+       * tell which moment the first one was. In 2D there is one of each, so
+       * they carry the bare symbol; in 3D they take their axis.
+       */
+      { id: 'axial', icon: 'axial', label: 'N', nameKey: 'ribbon.nameAxial', panel: 'results', diagram: 'axial', enabled: any },
+      { id: 'moment', icon: 'moment', label: threeD ? 'Mz' : 'M', nameKey: 'ribbon.nameMoment', panel: 'results', diagram: threeD ? 'momentZ' : 'moment', enabled: any },
+      { id: 'shear', icon: 'shear', label: threeD ? 'Vy' : 'V', nameKey: 'ribbon.nameShear', panel: 'results', diagram: threeD ? 'shearY' : 'shear', enabled: any },
+      { id: 'momentY', icon: 'momentY', label: 'My', nameKey: 'ribbon.nameMoment', panel: 'results', diagram: 'momentY', enabled: only3d, needs3d: true },
+      { id: 'shearZ', icon: 'shearZ', label: 'Vz', nameKey: 'ribbon.nameShear', panel: 'results', diagram: 'shearZ', enabled: only3d, needs3d: true },
+      { id: 'torsion', icon: 'torsion', label: 'T', nameKey: 'ribbon.nameTorsion', panel: 'results', diagram: 'torsion', enabled: only3d, needs3d: true },
     ];
   });
 
@@ -106,8 +118,18 @@
       cmds: [
         { id: 'select', icon: 'select', labelKey: 'float.select', tool: 'select' },
         { id: 'pan', icon: 'pan', labelKey: 'float.pan', tool: 'pan' },
-        { id: 'dim2', icon: 'view2d', labelKey: 'ribbon.view2d', action: () => (uiStore.analysisMode = '2d') },
-        { id: 'dim3', icon: 'view3d', labelKey: 'ribbon.view3d', action: () => (uiStore.analysisMode = '3d') },
+        /*
+         * One button, not two. A pair where one is always lit reads as a
+         * permanent alarm — the accent is for what you are doing now, and
+         * "the view is 2D" is a condition, not an action. The button shows the
+         * mode you would switch TO, which is how a toggle explains itself.
+         */
+        {
+          id: 'dim',
+          icon: () => (threeD ? 'view2d' : 'view3d'),
+          labelKey: () => (threeD ? 'ribbon.view2d' : 'ribbon.view3d'),
+          action: () => (uiStore.analysisMode = threeD ? '2d' : '3d'),
+        },
       ],
     },
     {
@@ -174,13 +196,38 @@
   function isActive(cmd: Cmd): boolean {
     if (cmd.tool) return uiStore.currentTool === cmd.tool;
     if (cmd.diagram) return solved && resultsStore.diagramType === cmd.diagram;
-    if (cmd.id === 'dim2') return uiStore.analysisMode === '2d';
-    if (cmd.id === 'dim3') return uiStore.analysisMode === '3d';
     if (cmd.panel) return activePanel === cmd.panel;
-    return false;
+    return false;  // `dim` is a switch, not a state: it never lights up.
   }
 
   const mod = typeof navigator !== 'undefined' && navigator.platform?.includes('Mac') ? '⌘' : 'Ctrl';
+
+  /** Keyboard shortcuts the application already listens for. */
+  const KEYS: Record<string, string> = {
+    node: 'N', element: 'E', support: 'S', load: 'L',
+    select: 'V', pan: 'H', solve: 'Enter',
+  };
+
+  function cmdLabel(c: Cmd): string {
+    if (c.label) return c.label;
+    const k = typeof c.labelKey === 'function' ? c.labelKey() : c.labelKey;
+    return k ? t(k) : '';
+  }
+
+  /**
+   * Name, then shortcut, then why it is unavailable. A tooltip that only
+   * repeats the visible label is wasted: these carry the full name of a symbol
+   * like Mz, the key that arms the tool, and the reason a greyed command is
+   * greyed.
+   */
+  function cmdTitle(c: Cmd, enabled: boolean): string {
+    const name = c.nameKey ? t(c.nameKey) : cmdLabel(c);
+    const full = c.label ? `${name} (${c.label})` : name;
+    const key = KEYS[c.id];
+    const withKey = key ? `${full} — ${key}` : full;
+    if (enabled) return withKey;
+    return `${withKey} — ${c.needs3d && !threeD ? t('ribbon.needs3d') : t('ribbon.needsSolve')}`;
+  }
 </script>
 
 <div class="ribbon" data-testid="ribbon">
@@ -196,12 +243,10 @@
               disabled={!on}
               data-testid="rb-cmd-{c.id}"
               onclick={() => run(c)}
-              title={on
-                ? t(c.labelKey)
-                : `${t(c.labelKey)} — ${c.needs3d && !threeD ? t('ribbon.needs3d') : t('ribbon.needsSolve')}`}
+              title={cmdTitle(c, on)}
             >
-              <span class="rb-icon"><Icon name={c.icon} /></span>
-              <span class="rb-label">{t(c.labelKey)}</span>
+              <span class="rb-icon"><Icon name={typeof c.icon === 'function' ? c.icon() : c.icon} /></span>
+              <span class="rb-label" class:symbol={!!c.label}>{cmdLabel(c)}</span>
             </button>
           {/each}
         </div>
@@ -314,6 +359,13 @@
   }
 
   .rb-cmd:disabled .rb-icon { color: var(--st-text-2); }
+
+  /* A symbol is the engineering notation itself, so it takes the mono face. */
+  .rb-label.symbol {
+    font-family: var(--st-mono);
+    font-size: 0.72rem;
+    letter-spacing: 0.02em;
+  }
 
   .rb-label {
     font-size: 0.63rem;
