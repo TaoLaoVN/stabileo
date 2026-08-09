@@ -534,6 +534,54 @@ pub fn angle_section_filleted(
     Ok(CanonicalGeometry::new(vec![solid(v)], source, arc_segments))
 }
 
+/// Rectangular hollow section with rolled corner radii.
+///
+/// IRAM-IAS U 500-218 / U 500-2592 fixes the OUTER corner at `R = 2t`, and the
+/// inner corner follows at `R - t`. That single value is the whole difference
+/// between this family being geometry-backed and not: EN 10219-2 gives the
+/// same radius as a RANGE (1.6t-2.4t below 6 mm), which leaves the outline
+/// underdetermined no matter how carefully you read it.
+///
+/// `outer_radius` of zero yields the sharp box a user-declared section is.
+pub fn rectangular_hollow_rounded(
+    b: f64, h: f64, t: f64, outer_radius: f64, arc_segments: usize, source: GeometrySource,
+) -> Result<CanonicalGeometry, String> {
+    let b = require_positive("b", b)?;
+    let h = require_positive("h", h)?;
+    let t = require_positive("t", t)?;
+    if 2.0 * t >= b.min(h) {
+        return Err("wall thickness leaves no cavity".into());
+    }
+    if !outer_radius.is_finite() || outer_radius < 0.0 {
+        return Err(format!("corner radius must be finite and non-negative (got {outer_radius})"));
+    }
+    // A corner cannot eat more than half the shorter side, and the inner
+    // corner cannot go negative — a wall thinner than its own radius is a
+    // straight inner face, not an error.
+    let ro = outer_radius.min(b.min(h) / 2.0);
+    let ri = (ro - t).max(0.0);
+    let n = arc_segments.max(1);
+    let pi = std::f64::consts::PI;
+
+    let ring = |bb: f64, hh: f64, r: f64| -> Vec<[f64; 2]> {
+        let (hw, hd) = (bb / 2.0, hh / 2.0);
+        if r <= 0.0 {
+            return vec![[-hw, -hd], [hw, -hd], [hw, hd], [-hw, hd]];
+        }
+        let mut v = Vec::new();
+        for (sw, sd, a0) in [(1.0, -1.0, -pi / 2.0), (1.0, 1.0, 0.0), (-1.0, 1.0, pi / 2.0), (-1.0, -1.0, pi)] {
+            v.extend(arc_points(sw * (hw - r), sd * (hd - r), r, a0, a0 + pi / 2.0, n));
+        }
+        v
+    };
+
+    Ok(CanonicalGeometry::new(
+        vec![solid(ring(b, h, ro)), void(ring(b - 2.0 * t, h - 2.0 * t, ri))],
+        source,
+        arc_segments,
+    ))
+}
+
 /// Custom outline with optional holes, supplied by the caller.
 pub fn custom(outer: Vec<[f64; 2]>, holes: Vec<Vec<[f64; 2]>>) -> Result<CanonicalGeometry, String> {
     if outer.len() < 3 {
@@ -923,6 +971,49 @@ mod rolled_profile_validation {
         let (a1, _, _) = props(&sharp);
         let (a2, _, _) = props(&legacy);
         assert!((a1 - a2).abs() < 1e-9, "{a1} vs {a2}");
+    }
+
+    /// IRAM-IAS structural tubes: R = 2t, verified against the published table.
+    /// Columns: b, h, t, A, Iy, Iz.
+    const TUBES: &[(&str, f64, f64, f64, f64, f64, f64)] = &[
+        ("SHS 40x40x2",    40.0,  40.0, 2.0,  2.937,    6.935,    6.935),
+        ("SHS 100x100x4", 100.0, 100.0, 4.0, 14.950,  226.200,  226.200),
+        ("SHS 150x150x8", 150.0, 150.0, 8.0, 43.790, 1441.910, 1441.910),
+        ("RHS 30x20x1.25", 20.0,  30.0, 1.25, 1.147,    1.378,    0.733),
+        ("RHS 80x40x4",    40.0,  80.0, 4.0,  8.548,   64.753,   21.441),
+        ("RHS 120x60x4",   60.0, 120.0, 4.0, 13.348,  240.557,   81.151),
+    ];
+
+    #[test]
+    fn structural_tubes_reproduce_their_published_properties() {
+        for &(name, b, h, t, a, iy, iz) in TUBES {
+            let g = rectangular_hollow_rounded(b, h, t, 2.0 * t, 8, src()).expect(name);
+            let (ga, giy, giz) = props(&g);
+            // Tube tables carry more precision than the rolled-profile ones,
+            // so this is tighter than TOL.
+            for (label, got, want) in [("A", ga, a), ("Iy", giy, iy), ("Iz", giz, iz)] {
+                let err = (got / want - 1.0) * 100.0;
+                assert!(err.abs() < 1.5, "{name} {label}: {got:.4} vs {want:.4} ({err:+.2} %)");
+            }
+        }
+    }
+
+    #[test]
+    fn a_zero_radius_tube_is_the_sharp_box() {
+        let sharp = rectangular_hollow_rounded(100.0, 60.0, 4.0, 0.0, 8, src()).unwrap();
+        let legacy = rectangular_hollow(100.0, 60.0, 4.0).unwrap();
+        assert!((props(&sharp).0 - props(&legacy).0).abs() < 1e-9);
+    }
+
+    #[test]
+    fn rounded_corners_remove_material_rather_than_add_it() {
+        // The rounding is real: a rolled tube is lighter than the sharp box of
+        // the same outside dimensions, and getting the sign wrong here would
+        // quietly inflate every tube in the catalogue.
+        let sharp = props(&rectangular_hollow_rounded(80.0, 80.0, 3.0, 0.0, 8, src()).unwrap());
+        let round = props(&rectangular_hollow_rounded(80.0, 80.0, 3.0, 6.0, 8, src()).unwrap());
+        assert!(round.0 < sharp.0, "{} !< {}", round.0, sharp.0);
+        assert!(round.1 < sharp.1);
     }
 
     #[test]

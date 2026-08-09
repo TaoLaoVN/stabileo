@@ -25,6 +25,9 @@ function fromCatalogue(name: string, id = 1): Section {
 }
 /** A section as an OLD file would hold it: no canonical state at all. */
 const legacy = (name: string, id = 1) => fromCatalogue(name, id);
+/** An old file's section that never had a shape — declared by properties. */
+const legacyBare = (name: string, id = 1) =>
+  sec({ id, name, a: 0.05, iy: 4e-4, iz: 1e-4 });
 
 // ─── Legacy files ──────────────────────────────────────────────────
 
@@ -37,18 +40,20 @@ describe('legacy files without canonical state', () => {
     }
   });
 
-  it('a legacy CHS section is derived and lands on the CORRECTED inertia', () => {
-    const { section, outcome } = restoreSectionState(legacy('CHS 48.3x3.2'));
+  it('a legacy tube is derived and lands on the exact annulus', () => {
+    const p = ALL_PROFILES.find((x) => x.family === 'CHS' && x.h === 88.9)!;
+    const { section, outcome } = restoreSectionState(legacy(p.name));
     expect(outcome.kind).toBe('derived');
     const st = section.canonical!;
     if (st.kind !== 'geometry-backed') throw new Error('expected geometry-backed');
-    // 11.59 cm^4 exact; the superseded catalogue value was 12.3.
-    expect(Math.abs(st.iy * 1e8 - 11.59) / 11.59).toBeLessThan(5e-3);
+    const ro = p.h / 2000, ri = ro - p.t! / 1000;
+    const exact = (Math.PI / 4) * (ro ** 4 - ri ** 4);
+    expect(Math.abs(st.iy - exact) / exact).toBeLessThan(2e-3);
   });
 
-  it('a legacy RHS section stays properties-only and still solves', () => {
-    for (const name of ['RHS 100x50x4', 'RHS 60x40x3', 'RHS 80x40x3', 'RHS 120x60x4']) {
-      const { section, outcome } = restoreSectionState(legacy(name));
+  it('a legacy shapeless section stays properties-only and still solves', () => {
+    for (const name of ['Losa equivalente', 'Sección compuesta', 'Tabique', 'Viga cajón']) {
+      const { section, outcome } = restoreSectionState(legacyBare(name));
       expect(outcome.kind, name).toBe('propertiesOnly');
       const st = section.canonical!;
       expect(st.kind).toBe('properties-only');
@@ -185,7 +190,7 @@ describe('save / open is a fixed point', () => {
   it('restoring a whole model returns a fresh Map with no shared arrays', () => {
     const input = new Map<number, Section>([
       [1, legacy('IPE 300', 1)],
-      [2, legacy('RHS 100x50x4', 2)],
+      [2, legacyBare('Losa equivalente', 2)],
     ]);
     const { sections, outcomes } = restoreSections(input);
     expect(sections).not.toBe(input);

@@ -1989,6 +1989,7 @@ const es: Record<string, string> = {
   'cat.series.channel': 'Perfiles U',
   'cat.series.angle': 'Ángulos',
   'cat.series.hollow': 'Tubos',
+  'cat.note.eurocodeTubes': 'Los tubos acá son los de IRAM-IAS; EN 10219-2 deja el radio de esquina como rango.',
   'cat.note.cirsoc': 'Reglamento de verificación; los perfiles vienen de las normas dimensionales que usa la práctica local.',
   'table.derivedFromGeometry': 'Derivado de la geometría del perfil — es el valor que usa el solver.',
   'table.torsionUnavailable': 'Todavía no hay una constante torsional validada para esta sección.',

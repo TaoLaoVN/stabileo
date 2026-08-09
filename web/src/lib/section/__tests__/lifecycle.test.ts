@@ -65,12 +65,18 @@ describe('a section added through the normal path is immediately analysable', ()
     expect(supportsDetailedAnalysis(refreshed)).toBe(true);
   });
 
-  it('properties-only families still refuse, for the right reason', () => {
-    for (const name of ['RHS 100x50x4', 'RHS 60x40x3', 'RHS 80x40x3', 'RHS 120x60x4']) {
-      const id = modelStore.addSection(cat(name));
-      const sec = modelStore.sections.get(id)!;
-      expect(sec.canonical!.kind, name).toBe('properties-only');
-      expect(supportsDetailedAnalysis(sec), name).toBe(false);
+  it('a section declared by properties alone still refuses detailed analysis', () => {
+    // Every catalogue family is geometry-backed now, so the refusal path is
+    // reached only by a section the user declares with properties and no
+    // shape — an equivalent slab, a composite member sized by hand.
+    for (const spec of [
+      { name: 'Losa equivalente', a: 0.05, iy: 4e-4, iz: 1e-4 },
+      { name: 'Sección compuesta', a: 0.02, iy: 9e-5, iz: 3e-5 },
+    ]) {
+      const id = modelStore.addSection(spec);
+      const s = modelStore.sections.get(id)!;
+      expect(s.canonical!.kind, spec.name).toBe('properties-only');
+      expect(supportsDetailedAnalysis(s), spec.name).toBe(false);
     }
   });
 });

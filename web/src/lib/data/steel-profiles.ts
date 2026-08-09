@@ -43,13 +43,12 @@
 //   L 60x60x6     22.8   (was 25.3)      L 120x120x12  368    (was 400)
 //   L 70x70x7     42.4   (was 46.8)      L 150x150x15  898    (was 985)
 //
-// NOT yet available, so this family alone stays properties-only:
-//   RHS (12)            - EN 10219-2 specifies the outer corner radius as a
-//                         RANGE (1.6t-2.4t for t <= 6 mm), not a value, so the
-//                         outline is genuinely underdetermined. Assuming 2t
-//                         misses the published A by up to 3.0 % and Iy by 6.3 %,
-//                         scattered in sign - no single rule fits. Needs the
-//                         manufacturer's own corner radii.
+// ─── Structural tubes ──────────────────────────────────────────────
+// The European RHS/CHS tables were REPLACED by the IRAM-IAS tubes tabulated
+// for CIRSOC 301-EL (see iram-tubes.ts). EN 10219-2 gives the corner radius as
+// a range, which left RHS underdetermined and properties-only; IRAM-IAS fixes
+// it at R = 2t, so every tube now has an exact outline. The Argentine tables
+// are also larger (239 sections against 24) and carry a tabulated J.
 //
 // ─── CHS inertia corrections ───────────────────────────────────────
 // A circular hollow section is fully defined by its outer diameter and wall
@@ -66,9 +65,11 @@
 // Cross-checked against EN 10219-2 tabulated values for CHS 48.3x3.2
 // (I = 11.6 cm^4), which agrees with the exact formula, not with 12.3.
 
-export type ProfileFamily = 'IPE' | 'IPN' | 'HEB' | 'HEA' | 'UPN' | 'L' | 'RHS' | 'CHS';
+export type ProfileFamily = 'IPE' | 'IPN' | 'HEB' | 'HEA' | 'UPN' | 'L' | 'RHS' | 'SHS' | 'CHS';
 
 export type SectionShape = 'I' | 'H' | 'U' | 'L' | 'RHS' | 'CHS' | 'rect' | 'generic' | 'T' | 'invL' | 'C';
+
+import { IRAM_CHS, IRAM_SHS, IRAM_RHS } from './iram-tubes';
 
 export interface SteelProfile {
   family: ProfileFamily;
@@ -89,8 +90,16 @@ export interface SteelProfile {
   tw?: number;
   /** Flange thickness (mm) — for I/H/U sections */
   tf?: number;
-  /** Wall thickness (mm) — for RHS, CHS, L sections */
+  /** Wall thickness (mm) — for RHS, SHS, CHS, L sections */
   t?: number;
+  /**
+   * Tabulated torsional constant (cm⁴), where the source publishes one.
+   *
+   * Present for the IRAM structural tubes. It is authoritative — it comes from
+   * the table, not from Routh's polygon approximation — so it may be used as a
+   * torsional constant, which nothing polygon-derived may.
+   */
+  j?: number;
   /**
    * Root radius (mm) — the fillet between web and flange on IPE/HEA/HEB.
    *
@@ -225,48 +234,21 @@ const L: SteelProfile[] = [
 ];
 
 // RHS profiles (Rectangular Hollow Sections)
-const RHS: SteelProfile[] = [
-  { family: 'RHS', name: 'RHS 60x40x3',   h: 60,  b: 40,  a: 5.41, iy: 24.9,  iz: 13.3,  weight: 4.25, t: 3 },
-  { family: 'RHS', name: 'RHS 80x40x3',   h: 80,  b: 40,  a: 6.61, iy: 52.7,  iz: 18.0,  weight: 5.19, t: 3 },
-  { family: 'RHS', name: 'RHS 100x50x4',  h: 100, b: 50,  a: 10.9, iy: 138,   iz: 48.5,  weight: 8.59, t: 4 },
-  { family: 'RHS', name: 'RHS 100x60x4',  h: 100, b: 60,  a: 11.7, iy: 152,   iz: 70.2,  weight: 9.22, t: 4 },
-  { family: 'RHS', name: 'RHS 120x60x4',  h: 120, b: 60,  a: 13.3, iy: 239,   iz: 82.7,  weight: 10.5, t: 4 },
-  { family: 'RHS', name: 'RHS 120x80x5',  h: 120, b: 80,  a: 18.4, iy: 355,   iz: 190,   weight: 14.4, t: 5 },
-  { family: 'RHS', name: 'RHS 150x100x5', h: 150, b: 100, a: 23.4, iy: 700,   iz: 381,   weight: 18.4, t: 5 },
-  { family: 'RHS', name: 'RHS 160x80x5',  h: 160, b: 80,  a: 22.4, iy: 718,   iz: 244,   weight: 17.6, t: 5 },
-  { family: 'RHS', name: 'RHS 200x100x6', h: 200, b: 100, a: 33.4, iy: 1590,  iz: 555,   weight: 26.2, t: 6 },
-  { family: 'RHS', name: 'RHS 200x120x6', h: 200, b: 120, a: 36.4, iy: 1760,  iz: 823,   weight: 28.6, t: 6 },
-  { family: 'RHS', name: 'RHS 250x150x8', h: 250, b: 150, a: 59.2, iy: 4680,  iz: 2150,  weight: 46.5, t: 8 },
-  { family: 'RHS', name: 'RHS 300x200x10',h: 300, b: 200, a: 93.3, iy: 11400, iz: 6120,  weight: 73.2, t: 10 },
-];
 
 // CHS profiles (Circular Hollow Sections)
-const CHS: SteelProfile[] = [
-  { family: 'CHS', name: 'CHS 42.4x3.2',  h: 42.4,  b: 42.4,  a: 3.93, iy: 7.62,   iz: 7.62,   weight: 3.09, t: 3.2 },
-  { family: 'CHS', name: 'CHS 48.3x3.2',  h: 48.3,  b: 48.3,  a: 4.53, iy: 11.59,   iz: 11.59,   weight: 3.56, t: 3.2 },
-  { family: 'CHS', name: 'CHS 60.3x3.6',  h: 60.3,  b: 60.3,  a: 6.41, iy: 25.87,   iz: 25.87,   weight: 5.03, t: 3.6 },
-  { family: 'CHS', name: 'CHS 76.1x4',    h: 76.1,  b: 76.1,  a: 9.06, iy: 59.06,   iz: 59.06,   weight: 7.11, t: 4 },
-  { family: 'CHS', name: 'CHS 88.9x4',    h: 88.9,  b: 88.9,  a: 10.7, iy: 96.34,   iz: 96.34,   weight: 8.38, t: 4 },
-  { family: 'CHS', name: 'CHS 101.6x5',   h: 101.6, b: 101.6, a: 15.2, iy: 178,    iz: 178,    weight: 11.9, t: 5 },
-  { family: 'CHS', name: 'CHS 114.3x5',   h: 114.3, b: 114.3, a: 17.2, iy: 257,    iz: 257,    weight: 13.5, t: 5 },
-  { family: 'CHS', name: 'CHS 139.7x6',   h: 139.7, b: 139.7, a: 25.2, iy: 564,    iz: 564,    weight: 19.8, t: 6 },
-  { family: 'CHS', name: 'CHS 168.3x6',   h: 168.3, b: 168.3, a: 30.6, iy: 1004,   iz: 1004,   weight: 24.0, t: 6 },
-  { family: 'CHS', name: 'CHS 193.7x8',   h: 193.7, b: 193.7, a: 46.6, iy: 2015.54,   iz: 2015.54,   weight: 36.6, t: 8 },
-  { family: 'CHS', name: 'CHS 219.1x8',   h: 219.1, b: 219.1, a: 53.0, iy: 2951,   iz: 2951,   weight: 41.6, t: 8 },
-  { family: 'CHS', name: 'CHS 273x10',    h: 273,   b: 273,   a: 82.6, iy: 7122,   iz: 7122,   weight: 64.9, t: 10 },
-];
 
 /** All profiles indexed by family */
 export const PROFILE_FAMILIES: Record<ProfileFamily, SteelProfile[]> = {
-  IPE, IPN, HEB, HEA, UPN, L, RHS, CHS,
+  IPE, IPN, HEB, HEA, UPN, L,
+  RHS: IRAM_RHS, SHS: IRAM_SHS, CHS: IRAM_CHS,
 };
 
 /** All families available */
-export const FAMILY_LIST: ProfileFamily[] = ['IPN', 'IPE', 'HEB', 'HEA', 'UPN', 'L', 'RHS', 'CHS'];
+export const FAMILY_LIST: ProfileFamily[] = ['IPN', 'IPE', 'HEB', 'HEA', 'UPN', 'L', 'RHS', 'SHS', 'CHS'];
 
 /** All profiles flat list */
 export const ALL_PROFILES: SteelProfile[] = [
-  ...IPE, ...IPN, ...HEB, ...HEA, ...UPN, ...L, ...RHS, ...CHS,
+  ...IPE, ...IPN, ...HEB, ...HEA, ...UPN, ...L, ...IRAM_RHS, ...IRAM_SHS, ...IRAM_CHS,
 ];
 
 /** Map from ProfileFamily to SectionShape */
@@ -279,6 +261,7 @@ export function familyToShape(family: ProfileFamily): SectionShape {
     case 'UPN': return 'U';
     case 'L': return 'L';
     case 'RHS': return 'RHS';
+    case 'SHS': return 'RHS';
     case 'CHS': return 'CHS';
   }
 }
@@ -324,5 +307,9 @@ export function profileToSectionFull(p: SteelProfile): {
     tw: p.tw ? p.tw * 1e-3 : undefined,   // mm → m
     tf: p.tf ? p.tf * 1e-3 : undefined,   // mm → m
     t: p.t ? p.t * 1e-3 : undefined,      // mm → m
+    // The tabulated torsional constant, where the source publishes one. This
+    // is the authoritative value the Routh prohibition exists to protect: it
+    // comes from the table, not from integrating a polygon.
+    j: p.j != null ? p.j * 1e-8 : undefined,   // cm⁴ → m⁴
   };
 }

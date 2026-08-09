@@ -89,7 +89,7 @@ describe('IPE / HEA / HEB resolve to canonical geometry with root fillets', () =
 describe('CHS resolves to the exact annulus', () => {
   it('every CHS profile resolves and is isotropic in bending', () => {
     const chs = ALL_PROFILES.filter((p) => p.family === 'CHS');
-    expect(chs.length).toBe(12);
+    expect(chs.length).toBeGreaterThan(90);   // IRAM-IAS ships 95
     for (const p of chs) {
       const r = backed(resolveCanonicalSection(fromCatalogue(p.name)));
       expect(rel(r.properties.iy, r.properties.iz), p.name).toBeLessThan(1e-6);
@@ -97,24 +97,28 @@ describe('CHS resolves to the exact annulus', () => {
     }
   });
 
-  it('reaches the CORRECTED inertia, not the superseded value', () => {
-    // CHS 48.3x3.2 listed 12.3 cm^4; the exact annulus is 11.59, and
-    // EN 10219-2 agrees with the formula.
-    const r = backed(resolveCanonicalSection(fromCatalogue('CHS 48.3x3.2')));
-    expect(rel(r.properties.iy * 1e8, 11.59)).toBeLessThan(5e-3);
-    expect(rel(r.properties.iy * 1e8, 12.3)).toBeGreaterThan(0.04);
+  it('every CHS lands on the exact annulus, so no listed inertia can drift', () => {
+    // The European table this replaced had six entries whose inertia
+    // contradicted their own diameter and wall. An annulus is exact in closed
+    // form, so that class of error is checkable for every row at once.
+    for (const p of ALL_PROFILES.filter((x) => x.family === 'CHS')) {
+      const ro = p.h / 2000, ri = ro - p.t! / 1000;
+      const exact = (Math.PI / 4) * (ro ** 4 - ri ** 4);
+      const r = backed(resolveCanonicalSection(fromCatalogue(p.name)));
+      expect(rel(r.properties.iy, exact), p.name).toBeLessThan(2e-3);
+    }
   });
 });
 
 // ─── Properties-only families ──────────────────────────────────────
 
 describe('incomplete rolled families stay properties-only', () => {
-  const EXPECTED: Array<[string, number, string]> = [
-    // RHS is the last family out, and for a reason that no amount of care
-    // fixes: EN 10219-2 gives the outer corner radius as a RANGE, so the
-    // outline is underdetermined rather than merely undocumented.
-    ['RHS', 12, 'missingCornerRadii'],
-  ];
+  // Deliberately empty: every shipped family now has an exact outline. RHS was
+  // the last holdout, and only because EN 10219-2 gives its corner radius as a
+  // range; the IRAM-IAS tables fix it at 2t. The list stays here — rather than
+  // being deleted — because a family added later without authoritative fillet
+  // data belongs in it, and an empty list makes that obvious.
+  const EXPECTED: Array<[string, number, string]> = [];
 
   for (const [family, count, reasonKind] of EXPECTED) {
     it(`${family} (${count} profiles) is refused with a structured reason`, () => {
@@ -299,10 +303,7 @@ describe('custom geometry is canonical by definition', () => {
  * the distinction is pinned here rather than left to the component.
  */
 describe('a properties-only refusal distinguishes a data gap from a shapeless section', () => {
-  const dataGap: Array<[string, string]> = [
-    ['RHS 100x50x4', 'missingCornerRadii'],
-    ['RHS 60x40x3', 'missingCornerRadii'],
-  ];
+  const dataGap: Array<[string, string]> = [];
 
   for (const [name, kind] of dataGap) {
     it(`${name} reports ${kind}, never noGeometry`, () => {
@@ -374,5 +375,42 @@ describe('IPN, UPN and L are geometry-backed and reproduce their published prope
   it('an equal-leg angle keeps its 45° principal axis after filleting', () => {
     const r = backed(resolveCanonicalSection(fromCatalogue('L 100x100x10')));
     expect(Math.abs(Math.abs((r.properties.thetaP * 180) / Math.PI) - 45)).toBeLessThan(0.5);
+  });
+});
+
+// ─── The whole catalogue, in one assertion ─────────────────────────
+
+/**
+ * With the IRAM-IAS tube tables in, no shipped profile is properties-only any
+ * more. That is a claim worth pinning over the entire catalogue rather than
+ * per family: a profile added later without the fillet data its family needs
+ * would fail here immediately, instead of quietly reaching a user as a refusal
+ * in the section panel.
+ */
+describe('every profile in the catalogue has exact geometry', () => {
+  it('resolves geometry-backed and reproduces its own published properties', () => {
+    const failures: string[] = [];
+    for (const p of ALL_PROFILES) {
+      const r = resolveCanonicalSection(fromCatalogue(p.name));
+      if (r.state !== 'geometry-backed') {
+        failures.push(`${p.name}: ${r.reason.kind}`);
+        continue;
+      }
+      // Tube tables are tighter than rolled-profile ones, but 2 % covers the
+      // smallest tubes whose tabulated area carries only two decimals.
+      const err = Math.max(
+        rel(r.properties.a * 1e4, p.a),
+        rel(r.properties.iy * 1e8, p.iy),
+        rel(r.properties.iz * 1e8, p.iz),
+      );
+      if (err > 0.03) failures.push(`${p.name}: ${(err * 100).toFixed(2)} %`);
+    }
+    expect(failures).toEqual([]);
+  });
+
+  it('covers all nine families', () => {
+    const families = new Set(ALL_PROFILES.map((p) => p.family));
+    expect(families.size).toBe(9);
+    expect(ALL_PROFILES.length).toBeGreaterThan(300);
   });
 });

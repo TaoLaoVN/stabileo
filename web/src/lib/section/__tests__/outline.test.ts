@@ -26,7 +26,7 @@ function coords(d: string): Array<[number, number]> {
 }
 
 describe('catalogue profiles draw their real outline', () => {
-  const GEOMETRY_BACKED = ['IPE 300', 'HEA 300', 'HEB 200', 'IPN 300', 'UPN 200', 'L 100x100x10', 'CHS 88.9x4'];
+  const GEOMETRY_BACKED = ['IPE 300', 'HEA 300', 'HEB 200', 'IPN 300', 'UPN 200', 'L 100x100x10', 'CHS 88.9x3.2', 'RHS 120x60x4', 'SHS 100x100x4'];
 
   for (const name of GEOMETRY_BACKED) {
     it(`${name} is drawn from canonical geometry, not approximated`, () => {
@@ -37,13 +37,12 @@ describe('catalogue profiles draw their real outline', () => {
     });
   }
 
-  it('an RHS still draws, and says the outline is approximate', () => {
-    // RHS has no canonical geometry (EN 10219-2 gives a radius range, not a
-    // value), so it falls back — but it must say so, because a sharp-cornered
-    // rectangle is visibly not what a rolled RHS looks like.
-    const o = profileOutline(profile('RHS 100x50x4'));
-    expect(o.source).toBe('parametric');
-    expect(o.d).toBeTruthy();
+  it('a rolled tube is drawn with its rounded corners, not as a sharp box', () => {
+    // IRAM-IAS fixes the outer corner at 2t, so this is exact geometry now.
+    // A sharp box would have exactly 8 vertices; the rounded one has many more.
+    const o = profileOutline(profile('RHS 120x60x4'));
+    expect(o.source).toBe('canonical');
+    expect(coords(o.d!).length).toBeGreaterThan(20);
   });
 
   it('an IPN is drawn with a tapered flange — the reported defect', () => {

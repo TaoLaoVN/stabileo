@@ -35,7 +35,10 @@ describe('every shipped family is classified, and by a real standard', () => {
     const approximate = Object.values(FAMILY_CLASSIFICATION)
       .filter((c) => c.fidelity === 'propertiesOnly')
       .map((c) => c.family);
-    expect(approximate).toEqual(['RHS']);
+    // Every shipped family has an exact outline. RHS was the last one out, and
+    // only because EN 10219-2 gives its corner radius as a range; the IRAM-IAS
+    // tables fix it at 2t.
+    expect(approximate).toEqual([]);
   });
 });
 
@@ -56,6 +59,8 @@ describe('design codes are an index over families, not a relabelling', () => {
     // be presented as Argentine.
     expect(cirsoc.families).toContain('IPN');
     expect(cirsoc.families).toContain('UPN');
+    // The tubes are IRAM-IAS tables, so they belong to it outright.
+    for (const tube of ['CHS', 'RHS', 'SHS']) expect(cirsoc.families).toContain(tube);
     for (const european of ['IPE', 'HEA', 'HEB']) {
       expect(cirsoc.families, european).not.toContain(european);
     }

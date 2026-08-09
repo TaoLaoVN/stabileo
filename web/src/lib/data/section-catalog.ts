@@ -61,10 +61,9 @@ export const FAMILY_CLASSIFICATION: Record<ProfileFamily, FamilyClassification> 
   IPN: { family: 'IPN', standard: 'DIN 1025-1', standardsBody: 'DIN', country: 'DE', material: 'hot-rolled-steel', series: 'i-beam', fidelity: 'exact' },
   UPN: { family: 'UPN', standard: 'DIN 1025-5', standardsBody: 'DIN', country: 'DE', material: 'hot-rolled-steel', series: 'channel', fidelity: 'exact' },
   L:   { family: 'L',   standard: 'EN 10056-1', standardsBody: 'CEN', country: 'EU', material: 'hot-rolled-steel', series: 'angle', fidelity: 'exact' },
-  CHS: { family: 'CHS', standard: 'EN 10219-2', standardsBody: 'CEN', country: 'EU', material: 'cold-formed-steel', series: 'hollow', fidelity: 'exact' },
-  // The one family whose outline is genuinely underdetermined: EN 10219-2
-  // gives the outer corner radius as a range, not a value.
-  RHS: { family: 'RHS', standard: 'EN 10219-2', standardsBody: 'CEN', country: 'EU', material: 'cold-formed-steel', series: 'hollow', fidelity: 'propertiesOnly' },
+  CHS: { family: 'CHS', standard: 'IRAM-IAS U 500-218', standardsBody: 'IRAM-IAS', country: 'AR', material: 'cold-formed-steel', series: 'hollow', fidelity: 'exact' },
+  RHS: { family: 'RHS', standard: 'IRAM-IAS U 500-218', standardsBody: 'IRAM-IAS', country: 'AR', material: 'cold-formed-steel', series: 'hollow', fidelity: 'exact' },
+  SHS: { family: 'SHS', standard: 'IRAM-IAS U 500-218', standardsBody: 'IRAM-IAS', country: 'AR', material: 'cold-formed-steel', series: 'hollow', fidelity: 'exact' },
 };
 
 // ─── Design codes ──────────────────────────────────────────────────
@@ -104,20 +103,21 @@ export const DESIGN_CODES: DesignCode[] = [
     id: 'cirsoc-301',
     label: 'CIRSOC 301',
     region: 'AR',
-    families: ['IPN', 'UPN', 'L'],
-    missingFamilies: ['W (ala ancha)', 'C (canal americano)', 'L de alas desiguales', 'C/Z conformados en frío (CIRSOC 303)'],
+    families: ['IPN', 'UPN', 'L', 'CHS', 'RHS', 'SHS'],
+    missingFamilies: ['W (ala ancha)', 'C y MC (canal americano)', 'HP', 'M', 'T', 'L de alas desiguales', 'C/Z conformados en frío (CIRSOC 303)'],
     note: 'cat.note.cirsoc',
   },
   {
     id: 'eurocode-3',
     label: 'Eurocode 3',
     region: 'EU',
-    families: ['IPE', 'HEA', 'HEB', 'IPN', 'UPN', 'L', 'CHS', 'RHS'],
+    families: ['IPE', 'HEA', 'HEB', 'IPN', 'UPN', 'L'],
+    note: 'cat.note.eurocodeTubes',
   },
 ];
 
 /** Every family the app ships, in picker order. */
-export const ALL_FAMILIES: ProfileFamily[] = ['IPE', 'HEA', 'HEB', 'IPN', 'UPN', 'L', 'CHS', 'RHS'];
+export const ALL_FAMILIES: ProfileFamily[] = ['IPE', 'HEA', 'HEB', 'IPN', 'UPN', 'L', 'CHS', 'RHS', 'SHS'];
 
 /** Design code by id. */
 export function designCode(id: string): DesignCode | undefined {

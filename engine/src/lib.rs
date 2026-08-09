@@ -806,7 +806,13 @@ pub fn build_section_geometry(json: &str) -> Result<String, JsValue> {
             #[serde(default)] standard: Option<String>,
         },
         Channel { h: f64, b: f64, tw: f64, tf: f64 },
-        Rhs { b: f64, h: f64, t: f64 },
+        Rhs {
+            b: f64, h: f64, t: f64,
+            #[serde(default)] corner_radius: f64,
+            #[serde(default)] arc_segments: Option<usize>,
+            #[serde(default)] profile_id: Option<String>,
+            #[serde(default)] standard: Option<String>,
+        },
         Custom { outer: Vec<[f64; 2]>, #[serde(default)] holes: Vec<Vec<[f64; 2]>> },
     }
 
@@ -854,7 +860,10 @@ pub fn build_section_geometry(json: &str) -> Result<String, JsValue> {
                 catalogue_source(profile_id, standard, "EN 10056-1", "angle"))
         }
         Request::Channel { h, b, tw, tf } => cat::channel_section(h, b, tw, tf),
-        Request::Rhs { b, h, t } => cat::rectangular_hollow(b, h, t),
+        Request::Rhs { b, h, t, corner_radius, arc_segments, profile_id, standard } => {
+            cat::rectangular_hollow_rounded(b, h, t, corner_radius, segs(arc_segments),
+                catalogue_source(profile_id, standard, "IRAM-IAS U 500-218", "rhs"))
+        }
         Request::Custom { outer, holes } => cat::custom(outer, holes),
     }
     .map_err(|e| JsValue::from_str(&e))?;

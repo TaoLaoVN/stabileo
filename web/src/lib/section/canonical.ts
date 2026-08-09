@@ -40,10 +40,12 @@ import {
  *
  * IPN and UPN joined this set without any new table: DIN 1025-1 and -5 define
  * their flange taper and both radii as rules on dimensions already here. L
- * joined it with the EN 10056-1 root radii. RHS is the one family still out,
- * because EN 10219-2 gives its corner radius as a range rather than a value.
+ * joined it with the EN 10056-1 root radii. RHS and SHS joined it when the
+ * European tube tables were replaced by the IRAM-IAS ones, which fix the outer
+ * corner at R = 2t where EN 10219-2 only gives a range. Every family now has
+ * an exact outline.
  */
-const GEOMETRY_BACKED_FAMILIES = new Set(['IPE', 'HEA', 'HEB', 'CHS', 'IPN', 'UPN', 'L']);
+const GEOMETRY_BACKED_FAMILIES = new Set(['IPE', 'HEA', 'HEB', 'CHS', 'IPN', 'UPN', 'L', 'RHS', 'SHS']);
 
 /**
  * Why a section could not be expressed as canonical geometry.
@@ -173,6 +175,25 @@ export function resolveCanonicalSection(sec: Section): ResolvedSection {
           tf: mm(profile.tf!),
           profileId: profile.name,
           standard: profile.family === 'IPN' ? 'DIN 1025-1' : 'DIN 1025-5',
+        }),
+        profile.name,
+      );
+    }
+    // Structural tubes — IRAM-IAS fixes the outer corner at exactly 2t, which
+    // is the whole reason these are geometry-backed rather than properties-only.
+    if (profile.family === 'RHS' || profile.family === 'SHS') {
+      if (profile.t == null) {
+        return propertiesOnly(sec, { kind: 'missingDimensions', missing: ['t'] }, profile.name);
+      }
+      return backed(
+        buildSectionGeometry({
+          kind: 'rhs',
+          b: mm(profile.b),
+          h: mm(profile.h),
+          t: mm(profile.t),
+          cornerRadius: mm(2 * profile.t),
+          profileId: profile.name,
+          standard: 'IRAM-IAS U 500-218',
         }),
         profile.name,
       );

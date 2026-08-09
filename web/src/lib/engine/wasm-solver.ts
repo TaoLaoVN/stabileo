@@ -1368,7 +1368,7 @@ export type SectionGeometryRequest =
   | { kind: 'tee'; h: number; b: number; tw: number; tf: number }
   | { kind: 'angle'; h: number; b: number; t: number; rootRadius?: number; toeRadius?: number; arcSegments?: number; profileId?: string; standard?: string }
   | { kind: 'channel'; h: number; b: number; tw: number; tf: number }
-  | { kind: 'rhs'; b: number; h: number; t: number }
+  | { kind: 'rhs'; b: number; h: number; t: number; cornerRadius?: number; arcSegments?: number; profileId?: string; standard?: string }
   | { kind: 'custom'; outer: Array<[number, number]>; holes?: Array<Array<[number, number]>> };
 
 /** Build canonical geometry and its derived properties. */

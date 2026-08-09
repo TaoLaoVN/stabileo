@@ -79,10 +79,13 @@ describe('geometry-backed sections get a canonical result', () => {
 // ─── Refusals ──────────────────────────────────────────────────────
 
 describe('the panel refuses rather than approximating', () => {
-  for (const name of ['RHS 100x50x4', 'RHS 60x40x3', 'RHS 80x40x3', 'RHS 120x60x4']) {
-    it(`${name} is properties-only and gets no canonical analysis`, () => {
-      const r = canonicalPanelResult(resolved(fromCatalogue(name)), F);
-      expect(r.ok, name).toBe(false);
+  for (const spec of [
+    { name: 'Losa equivalente', a: 0.05, iy: 4e-4, iz: 1e-4 },
+    { name: 'Sección compuesta', a: 0.02, iy: 9e-5, iz: 3e-5 },
+  ]) {
+    it(`${spec.name} is properties-only and gets no canonical analysis`, () => {
+      const r = canonicalPanelResult(resolved(sec(spec)), F);
+      expect(r.ok, spec.name).toBe(false);
       if (!r.ok) expect(r.refusal.kind).toBe('propertiesOnly');
     });
   }
@@ -165,7 +168,7 @@ describe('stress components report what may be trusted', () => {
   });
 
   it('a properties-only section claims nothing at all', () => {
-    const p = componentProvenance(resolved(fromCatalogue('RHS 100x50x4')));
+    const p = componentProvenance(resolved(sec({ name: 'Losa equivalente', a: 0.05, iy: 4e-4, iz: 1e-4 })));
     expect(p.normalAndBending).toBe('unavailable');
     expect(p.transverseShear).toBe('unavailable');
     expect(p.torsion).toBe('unavailable');
