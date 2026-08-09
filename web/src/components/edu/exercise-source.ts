@@ -24,6 +24,8 @@
 import { modelStore, resultsStore } from '../../lib/store';
 import { deserializeProject } from '../../lib/store/file';
 import { loadFromShareLink, parseShareURL } from '../../lib/utils/url-sharing';
+import { buildSolverInput2D } from '../../lib/engine/solver-service';
+import { analyzeKinematics } from '../../lib/engine/wasm-solver';
 
 export type SourceResult = { ok: true } | { ok: false; error: string };
 
@@ -99,4 +101,36 @@ export function fromShareUrl(url: string): SourceResult {
 /** True when the store holds something worth capturing. */
 export function hasDrawnModel(): boolean {
   return modelStore.model.nodes.size > 0 && modelStore.model.elements.size > 0;
+}
+
+// ─── Kinematic classification, detected rather than declared ───────
+
+/**
+ * Classify the current model, so the teacher does not have to state it.
+ *
+ * Asking an author to type "hyperstatic, degree 3" was the worst part of the
+ * old panel: it is the ANSWER to a question the app can work out itself, and
+ * getting it wrong means marking a class against a mistake. The app already
+ * computes the degree of static indeterminacy for its own diagnostics; this
+ * reads it.
+ *
+ * Returns `null` when it cannot be determined, which is honest — a structure
+ * that does not resolve should not silently be called isostatic.
+ */
+export function detectKinematics(): { classification: 'isostatic' | 'hyperstatic'; degree: number } | null {
+  try {
+    const input = buildSolverInput2D(modelStore.model, false);
+    if (!input) return null;
+    const r = analyzeKinematics(input);
+    const degree = typeof r?.degree === 'number' ? r.degree : null;
+    if (degree === null) return null;
+    // A mechanism (negative degree) is neither, and posing it as a question
+    // would be teaching something false.
+    if (degree < 0) return null;
+    return degree === 0
+      ? { classification: 'isostatic', degree: 0 }
+      : { classification: 'hyperstatic', degree };
+  } catch {
+    return null;
+  }
 }

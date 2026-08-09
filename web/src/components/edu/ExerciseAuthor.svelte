@@ -21,7 +21,11 @@
   import { saveToLibrary, toShareLink } from './exercise-library';
   import { solveForEdu } from './edu-solver';
   import { ALL_PROFILES } from '../../lib/data/steel-profiles';
-  import { EXERCISE_EXAMPLES, fromExample, fromFileDed, fromShareUrl, hasDrawnModel } from './exercise-source';
+  import { EXERCISE_EXAMPLES, fromExample, fromFileDed, fromShareUrl, hasDrawnModel, detectKinematics } from './exercise-source';
+  import FieldHelp from './FieldHelp.svelte';
+  import {
+    STEEL_GRADES, DEFAULT_GRADE, CHARACTERISTIC_PRESETS, STATIONS, suggestShapes,
+  } from './exercise-presets';
 
   interface Props {
     onclose: () => void;
@@ -36,12 +40,34 @@
   let description = $state(editing?.description ?? '');
   let difficulty = $state<'easy' | 'medium' | 'hard'>(editing?.difficulty ?? 'easy');
   let category = $state<'statics' | 'strength' | 'advanced'>(editing?.category ?? 'statics');
-  let kinematic = $state<'none' | 'isostatic' | 'hyperstatic'>(
-    editing?.kinematicQuestion?.classification ?? 'none',
+  // Whether to ASK the classification — not what it is. The app works that out.
+  let askKinematic = $state(!!editing?.kinematicQuestion);
+  let detected = $state<{ classification: 'isostatic' | 'hyperstatic'; degree: number } | null>(
+    editing?.kinematicQuestion
+      ? { classification: editing.kinematicQuestion.classification, degree: editing.kinematicQuestion.degree ?? 0 }
+      : null,
   );
-  let degree = $state(editing?.kinematicQuestion?.degree ?? 1);
   let profile = $state(editing?.model.profile ?? '');
-  let fy = $state(editing?.model.fy ?? 235);
+  // Named grades rather than a bare number: 235 looked arbitrary and, in an
+  // Argentine classroom, is not what anyone reaches for first.
+  let gradeId = $state(
+    STEEL_GRADES.find((g) => g.fy === editing?.model.fy)?.id ?? DEFAULT_GRADE.id,
+  );
+  let customFy = $state(editing?.model.fy ?? DEFAULT_GRADE.fy);
+  const grade = $derived(STEEL_GRADES.find((g) => g.id === gradeId) ?? DEFAULT_GRADE);
+  const fy = $derived(grade.id === 'custom' ? customFy : grade.fy);
+
+  // ── Profile picker: family, then size ──────────────────────
+  //
+  // A datalist over seven hundred profiles was unusable. Choosing the family
+  // first cuts it to a couple of dozen, which is how a catalogue is read.
+  const families = $derived([...new Set(ALL_PROFILES.map((p) => p.family))]);
+  let profileFamily = $state(
+    ALL_PROFILES.find((p) => p.name === editing?.model.profile)?.family ?? '',
+  );
+  const familyProfiles = $derived(
+    profileFamily ? ALL_PROFILES.filter((p) => p.family === profileFamily) : [],
+  );
 
   // ── The structure ──────────────────────────────────────────
   let captured = $state<ReturnType<typeof captureModel> | null>(
@@ -110,6 +136,22 @@
         dofs: s.type === 'fixed' ? ['Rx', 'Ry', 'M'] : s.type === 'pinned' ? ['Rx', 'Ry'] : ['Ry'],
       }));
     }
+    // Whatever the structure is, the app can say how it is classified — so it
+    // does, instead of asking the teacher for the answer to their own question.
+    detected = detectKinematics();
+    if (r.spec && shapeQs.length === 0) {
+      // Suggested, not imposed: a member with no distributed load cannot have a
+      // parabolic moment, so offering that as the default invites a mistake.
+      const hasDist = (r.spec.distributedLoads?.length ?? 0) > 0;
+      shapeQs = suggestShapes(hasDist) as never;
+    }
+  }
+
+  /** Add a preset question in one click, with its label and unit already right. */
+  function addPreset(id: string) {
+    const p = CHARACTERISTIC_PRESETS.find((x) => x.id === id);
+    if (!p) return;
+    characteristics = [...characteristics, fromAnswer(p.label, p.unit, p.answer)];
   }
 
   // ── Questions ──────────────────────────────────────────────
@@ -153,7 +195,6 @@
       : { kind: 'maxAbs', force: c.force, elements: [c.element] };
   }
 
-  const addChar = () => (characteristics = [...characteristics, { label: 'Mmax', unit: 'kN·m', source: 'force', force: 'moment', measure: 'sigmaMax', scope: 'all', element: 0, t: 0 }]);
   const addDiagram = () => (diagramQs = [...diagramQs, { question: '', unit: 'kN·m', force: 'moment', element: 0, t: 0 }]);
   const addShape = () => (shapeQs = [...shapeQs, { diagram: 'M', correct: 'linear' }]);
   const addGiven = () => (givens = [...givens, { label: '', value: '' }]);
@@ -180,8 +221,9 @@
         question: q.question, unit: q.unit,
         answer: { kind: 'at', force: q.force, element: q.element, t: q.t },
       })),
-      kinematicQuestion: kinematic === 'none' ? undefined
-        : { classification: kinematic, degree: kinematic === 'hyperstatic' ? degree : undefined },
+      kinematicQuestion: askKinematic && detected
+        ? { classification: detected.classification, degree: detected.degree || undefined }
+        : undefined,
       diagramShapeQuestions: shapeQs.length ? shapeQs : undefined,
       sectionData: givens.filter((g) => g.label.trim()).length ? givens.filter((g) => g.label.trim()) : undefined,
     };
@@ -261,7 +303,6 @@
   }
 
   const elementCount = $derived(captured?.spec?.elements.length ?? 0);
-  const profileNames = $derived(ALL_PROFILES.map((p) => p.name));
 </script>
 
 <div class="author">
@@ -349,14 +390,40 @@
           </select>
         </label>
       </div>
-      <label>{t('edu.author.profile')}
-        <input type="text" list="edu-profiles" bind:value={profile} placeholder={t('edu.author.profileNone')} />
-      </label>
-      <datalist id="edu-profiles">
-        {#each profileNames as n}<option value={n}></option>{/each}
-      </datalist>
+      <div class="field-head">
+        <span class="field-label">{t('edu.author.profile')}</span>
+        <FieldHelp
+          what={t('edu.author.helpProfileWhat')}
+          example={t('edu.author.helpProfileEx')}
+        />
+      </div>
+      <div class="row">
+        <select bind:value={profileFamily} onchange={() => (profile = '')}>
+          <option value="">{t('edu.author.profileNone')}</option>
+          {#each families as f}<option value={f}>{f}</option>{/each}
+        </select>
+        {#if profileFamily}
+          <select bind:value={profile}>
+            <option value="">{t('edu.author.pickSize')}</option>
+            {#each familyProfiles as p}<option value={p.name}>{p.name}</option>{/each}
+          </select>
+        {/if}
+      </div>
       {#if profile.trim()}
-        <label>fy (MPa)<input type="number" bind:value={fy} /></label>
+        <div class="field-head">
+          <span class="field-label">{t('edu.author.steel')}</span>
+          <FieldHelp what={t('edu.author.helpSteelWhat')} example={t(grade.noteKey)} />
+        </div>
+        <div class="row">
+          <select bind:value={gradeId}>
+            {#each STEEL_GRADES as g}
+              <option value={g.id}>{g.label}{g.fy ? ` — fy ${g.fy} MPa` : ''}</option>
+            {/each}
+          </select>
+          {#if grade.id === 'custom'}
+            <input type="number" class="num" bind:value={customFy} /> <span class="unit-lbl">MPa</span>
+          {/if}
+        </div>
       {:else}
         <p class="hint">{t('edu.author.profileHint')}</p>
       {/if}
@@ -401,78 +468,114 @@
       </div>
 
       <div class="qgroup">
-        <span class="qlabel">{t('edu.author.characteristics')}</span>
+        <div class="field-head">
+          <span class="qlabel">{t('edu.author.characteristics')}</span>
+          <FieldHelp what={t('edu.author.helpCharWhat')} example={t('edu.author.helpCharEx')} />
+        </div>
+        <!-- One click for the questions that are actually asked. The full form
+             stays underneath for anything unusual. -->
+        <div class="presets">
+          {#each CHARACTERISTIC_PRESETS as p}
+            <button class="preset" disabled={p.needsProfile && !profile.trim()}
+              title={p.needsProfile && !profile.trim() ? t('edu.author.needsProfile') : ''}
+              onclick={() => addPreset(p.id)}>+ {p.label}</button>
+          {/each}
+        </div>
         {#each characteristics as c, i}
-          <div class="row">
-            <input type="text" bind:value={c.label} placeholder="Mmax" />
-            <input type="text" class="unit" bind:value={c.unit} />
-            <select bind:value={c.source}>
-              <option value="force">{t('edu.author.internalForce')}</option>
-              <option value="stress" disabled={!profile.trim()}>{t('edu.author.stress')}</option>
-            </select>
-            {#if c.source === 'force'}
-              <select bind:value={c.force}>
-                <option value="moment">M</option><option value="shear">V</option><option value="axial">N</option>
+          <div class="qrow">
+            <div class="row">
+              <input type="text" bind:value={c.label} placeholder="Mmax" />
+              <input type="text" class="unit" bind:value={c.unit} />
+              <button class="btn-del" onclick={() => (characteristics = characteristics.filter((_, k) => k !== i))} aria-label="✕">✕</button>
+            </div>
+            <div class="row sub">
+              <select bind:value={c.source}>
+                <option value="force">{t('edu.author.internalForce')}</option>
+                <option value="stress" disabled={!profile.trim()}>{t('edu.author.stress')}</option>
               </select>
-              <select bind:value={c.scope}>
-                <option value="all">{t('edu.author.wholeStructure')}</option>
-                <option value="element">{t('edu.author.oneMember')}</option>
-              </select>
-              {#if c.scope === 'element'}
-                <input type="number" class="num" min="1" max={elementCount} value={c.element + 1}
-                  onchange={(e) => (c.element = Math.max(0, Number(e.currentTarget.value) - 1))} />
+              {#if c.source === 'force'}
+                <select bind:value={c.force}>
+                  <option value="moment">{t('edu.author.moment')}</option>
+                  <option value="shear">{t('edu.author.shear')}</option>
+                  <option value="axial">{t('edu.author.axial')}</option>
+                </select>
+                <select bind:value={c.scope}>
+                  <option value="all">{t('edu.author.wholeStructure')}</option>
+                  <option value="element">{t('edu.author.oneMember')}</option>
+                </select>
+                {#if c.scope === 'element'}
+                  <select value={c.element} onchange={(e) => (c.element = Number(e.currentTarget.value))}>
+                    {#each Array(elementCount) as _, k}
+                      <option value={k}>{t('edu.author.member')} {k + 1}</option>
+                    {/each}
+                  </select>
+                {/if}
+              {:else}
+                <select bind:value={c.measure}>
+                  <option value="sigmaMax">σmax</option>
+                  <option value="sigmaMin">σmin</option>
+                  <option value="tauMax">τmax</option>
+                  <option value="vonMises">von Mises</option>
+                </select>
+                <select value={c.element} onchange={(e) => (c.element = Number(e.currentTarget.value))}>
+                  {#each Array(elementCount) as _, k}
+                    <option value={k}>{t('edu.author.member')} {k + 1}</option>
+                  {/each}
+                </select>
+                <select bind:value={c.t}>
+                  {#each STATIONS as st}<option value={st.t}>{t(st.key)}</option>{/each}
+                </select>
               {/if}
-            {:else}
-              <select bind:value={c.measure}>
-                <option value="sigmaMax">σmax</option>
-                <option value="sigmaMin">σmin</option>
-                <option value="tauMax">τmax</option>
-                <option value="vonMises">von Mises</option>
-              </select>
-              <input type="number" class="num" min="1" max={elementCount} value={c.element + 1}
-                onchange={(e) => (c.element = Math.max(0, Number(e.currentTarget.value) - 1))} />
-              <select bind:value={c.t}>
-                <option value={0}>{t('edu.author.atStart')}</option>
-                <option value={0.5}>{t('edu.author.atMid')}</option>
-                <option value={1}>{t('edu.author.atEnd')}</option>
-              </select>
-            {/if}
-            <button class="btn-del" onclick={() => (characteristics = characteristics.filter((_, k) => k !== i))} aria-label="✕">✕</button>
+            </div>
           </div>
         {/each}
-        <button class="btn-add" onclick={addChar}>+ {t('edu.author.add')}</button>
       </div>
 
       <div class="qgroup">
-        <span class="qlabel">{t('edu.author.diagramQuestions')}</span>
+        <div class="field-head">
+          <span class="qlabel">{t('edu.author.diagramQuestions')}</span>
+          <FieldHelp what={t('edu.author.helpDiagWhat')} example={t('edu.author.helpDiagEx')} />
+        </div>
         {#each diagramQs as q, i}
-          <div class="row">
-            <input type="text" bind:value={q.question} placeholder={t('edu.author.questionText')} />
-            <input type="text" class="unit" bind:value={q.unit} />
-            <select bind:value={q.force}>
-              <option value="moment">M</option><option value="shear">V</option><option value="axial">N</option>
-            </select>
-            <input type="number" class="num" min="1" max={elementCount} value={q.element + 1}
-              onchange={(e) => (q.element = Math.max(0, Number(e.currentTarget.value) - 1))} />
-            <select bind:value={q.t}>
-              <option value={0}>{t('edu.author.atStart')}</option>
-              <option value={0.5}>{t('edu.author.atMid')}</option>
-              <option value={1}>{t('edu.author.atEnd')}</option>
-            </select>
-            <button class="btn-del" onclick={() => (diagramQs = diagramQs.filter((_, k) => k !== i))} aria-label="✕">✕</button>
+          <div class="qrow">
+            <div class="row">
+              <input type="text" bind:value={q.question} placeholder={t('edu.author.questionText')} />
+              <input type="text" class="unit" bind:value={q.unit} />
+              <button class="btn-del" onclick={() => (diagramQs = diagramQs.filter((_, k) => k !== i))} aria-label="✕">✕</button>
+            </div>
+            <div class="row sub">
+              <select bind:value={q.force}>
+                <option value="moment">{t('edu.author.moment')}</option>
+                <option value="shear">{t('edu.author.shear')}</option>
+                <option value="axial">{t('edu.author.axial')}</option>
+              </select>
+              <select value={q.element} onchange={(e) => (q.element = Number(e.currentTarget.value))}>
+                {#each Array(elementCount) as _, k}
+                  <option value={k}>{t('edu.author.member')} {k + 1}</option>
+                {/each}
+              </select>
+              <select bind:value={q.t}>
+                {#each STATIONS as st}<option value={st.t}>{t(st.key)}</option>{/each}
+              </select>
+            </div>
           </div>
         {/each}
         <button class="btn-add" onclick={addDiagram}>+ {t('edu.author.add')}</button>
       </div>
 
       <div class="qgroup">
-        <span class="qlabel">{t('edu.author.shapes')}</span>
-        {#each shapeQs as s, i}
+        <div class="field-head">
+          <span class="qlabel">{t('edu.author.shapes')}</span>
+          <FieldHelp what={t('edu.author.helpShapeWhat')} example={t('edu.author.helpShapeEx')} />
+        </div>
+        {#each shapeQs as sq, i}
           <div class="row">
-            <select bind:value={s.diagram}>
-              <option value="N">N</option><option value="V">V</option><option value="M">M</option>
+            <select bind:value={sq.diagram}>
+              <option value="N">{t('edu.author.axial')} (N)</option>
+              <option value="V">{t('edu.author.shear')} (V)</option>
+              <option value="M">{t('edu.author.moment')} (M)</option>
             </select>
-            <select bind:value={s.correct}>
+            <select bind:value={sq.correct}>
               <option value="zero">{t('edu.shape.zero')}</option>
               <option value="constant">{t('edu.shape.constant')}</option>
               <option value="linear">{t('edu.shape.linear')}</option>
@@ -485,17 +588,26 @@
       </div>
 
       <div class="qgroup">
-        <span class="qlabel">{t('edu.author.kinematic')}</span>
-        <div class="row">
-          <select bind:value={kinematic}>
-            <option value="none">{t('edu.author.dontAsk')}</option>
-            <option value="isostatic">{t('edu.isostatic')}</option>
-            <option value="hyperstatic">{t('edu.hyperstatic')}</option>
-          </select>
-          {#if kinematic === 'hyperstatic'}
-            <input type="number" class="num" min="1" bind:value={degree} />
-          {/if}
+        <div class="field-head">
+          <span class="qlabel">{t('edu.author.kinematic')}</span>
+          <FieldHelp what={t('edu.author.helpKinWhat')} example={t('edu.author.helpKinEx')} />
         </div>
+        <!-- Detected, not typed. Asking a teacher to state the degree of
+             indeterminacy is asking for the ANSWER to their own question, and
+             a slip there marks a whole class against a mistake. -->
+        {#if detected}
+          <label class="chk wide">
+            <input type="checkbox" bind:checked={askKinematic} />
+            {t('edu.author.askKinematic')}
+          </label>
+          <p class="detected">
+            {t('edu.author.detected')}:
+            <strong>{detected.classification === 'isostatic' ? t('edu.isostatic') : t('edu.hyperstatic')}</strong>
+            {#if detected.degree > 0}· {t('edu.author.degree')} {detected.degree}{/if}
+          </p>
+        {:else}
+          <p class="hint">{t('edu.author.kinUnavailable')}</p>
+        {/if}
       </div>
     </section>
 
@@ -582,7 +694,29 @@
   .unit { width: 62px; flex: none !important; }
   .num { width: 52px; }
   .chk { display: flex; align-items: center; gap: 3px; margin: 0; font-size: 0.7rem; }
-  .qgroup { margin-bottom: 10px; }
+  .qgroup { margin-bottom: 12px; }
+  .field-head { display: flex; align-items: center; gap: 5px; margin-bottom: 4px; }
+  .field-label { font-size: 0.72rem; color: #999; }
+  .presets { display: flex; gap: 4px; flex-wrap: wrap; margin-bottom: 7px; }
+  .preset {
+    background: #1c1c1c; border: 1px solid #3a3a3a; color: #bbb;
+    padding: 2px 8px; border-radius: 10px; cursor: pointer; font-size: 0.7rem;
+  }
+  .preset:hover:not(:disabled) { border-color: #4ecdc4; color: #4ecdc4; }
+  .preset:disabled { color: #555; border-color: #2a2a2a; cursor: not-allowed; }
+  .qrow {
+    border-left: 2px solid #2c2c2c; padding-left: 7px; margin-bottom: 7px;
+  }
+  .row.sub { margin-bottom: 0; }
+  .row.sub select { font-size: 0.71rem; }
+  .chk.wide { font-size: 0.73rem; color: #bbb; margin-bottom: 5px; }
+  .detected {
+    margin: 0; padding: 5px 8px; border-radius: 3px;
+    background: rgba(78,205,196,0.07); border-left: 2px solid #4ecdc4;
+    color: #9fbfbc; font-size: 0.7rem;
+  }
+  .detected strong { color: #4ecdc4; }
+  .unit-lbl { color: #888; font-size: 0.7rem; }
   .qlabel { display: block; font-size: 0.7rem; color: #777; text-transform: uppercase; letter-spacing: 0.04em; margin-bottom: 4px; }
   .btn-primary {
     background: #4ecdc4; border: none; color: #111; font-weight: 600;
