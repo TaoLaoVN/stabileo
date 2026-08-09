@@ -5,6 +5,37 @@
   import { t } from '../../lib/i18n';
   import { solveForEdu } from './edu-solver';
   import { eduStore } from './edu-store.svelte';
+  import ExerciseAuthor from './ExerciseAuthor.svelte';
+  import { buildFromSpec, evaluateAnswer, type EduExerciseSpec } from './exercise-spec';
+
+  /** Teacher-authored exercises live alongside the shipped ones. */
+  let authoring = $state(false);
+  let custom = $state<EduExercise[]>([]);
+
+  /** Adapt an authored spec to the shape the exercise view consumes. */
+  function specToExercise(spec: EduExerciseSpec): EduExercise {
+    return {
+      id: spec.id,
+      title: spec.title,
+      description: spec.description,
+      difficulty: spec.difficulty,
+      category: spec.category,
+      solverType: spec.solverType,
+      build: (api) => buildFromSpec(spec.model, api),
+      supports: spec.supports,
+      characteristics: spec.characteristics.map((c) => ({
+        label: c.label, unit: c.unit,
+        getCorrect: (f) => evaluateAnswer(c.answer, f) ?? 0,
+      })),
+      diagramQuestions: spec.diagramQuestions.map((q) => ({
+        question: q.question, unit: q.unit,
+        getCorrect: (f) => evaluateAnswer(q.answer, f) ?? 0,
+      })),
+      kinematicQuestion: spec.kinematicQuestion,
+      diagramShapeQuestions: spec.diagramShapeQuestions,
+      sectionData: spec.sectionData,
+    };
+  }
 
   const sections = $derived(getExerciseSections());
 
@@ -82,10 +113,41 @@
         {/if}
       {/each}
 
+      {#if custom.length > 0}
+        <div class="exercise-section">
+          <h3 class="section-title">{t('edu.author.mine')}</h3>
+          <div class="exercise-list">
+            {#each custom as ex}
+              <button class="exercise-card" onclick={() => loadExercise(ex)}>
+                <div class="exercise-header">
+                  <span class="exercise-title">{ex.title}</span>
+                  <span class="difficulty difficulty-{ex.difficulty}">{t('edu.' + ex.difficulty)}</span>
+                </div>
+                <p class="exercise-desc">{ex.description}</p>
+              </button>
+            {/each}
+          </div>
+        </div>
+      {/if}
+
       <div class="edu-footer">
         <p>{t('edu.moreExercises')}</p>
+        <!-- Authoring lives beside the exercise list, not behind a setting:
+             a teacher looking for "how do I make one of these" looks here. -->
+        <button class="edu-author-btn" onclick={() => (authoring = true)}>
+          {t('edu.author.open')}
+        </button>
       </div>
     </div>
+  {:else if authoring}
+    <ExerciseAuthor
+      onclose={() => (authoring = false)}
+      onload={(spec) => {
+        const ex = specToExercise(spec);
+        custom = [...custom.filter((c) => c.id !== ex.id), ex];
+        authoring = false;
+      }}
+    />
   {:else}
     <div class="edu-exercise-container">
       <div class="edu-topbar">
@@ -207,6 +269,13 @@
     margin: 0;
     line-height: 1.4;
   }
+
+  .edu-author-btn {
+    background: none; border: 1px solid #4ecdc4; color: #4ecdc4;
+    padding: 5px 14px; border-radius: 3px; cursor: pointer;
+    font-size: 0.78rem; margin-top: 8px;
+  }
+  .edu-author-btn:hover { background: rgba(78,205,196,0.1); }
 
   .edu-footer {
     margin-top: 24px;
