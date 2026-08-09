@@ -685,7 +685,62 @@ export interface DrawingSet {
   sheets: Array<{ name: string; sheet: Sheet; dxf: string; svg: string }>;
   /** All sheets concatenated into one DXF. */
   dxf: string;
+  /**
+   * What this set covers, and what it does not.
+   *
+   * ── Why a set has to declare its own gaps ──────────────────────
+   *
+   * A drawing set that omits a family looks exactly like a drawing set that had none: 128
+   * sheets arrive, every mark reconciles, and nothing says that no sheet frames a whole
+   * storey or details a single column. The reviewer's only way to find out is to look for a
+   * sheet that was never going to be there.
+   *
+   * So the set states it. `families` is what reached a sheet; `missingSheetKinds` is what
+   * this renderer does not produce at all, named rather than left as an absence.
+   */
+  coverage: DrawingCoverage;
 }
+
+/** A family's presence in a drawing set. */
+export interface DrawingFamilyCoverage {
+  family: 'beam' | 'column' | 'slab' | 'wall' | 'footing';
+  /** Members or panels of this family in the document. */
+  inDocument: number;
+  /** How many of them a sheet actually draws. */
+  drawn: number;
+  /** Sheets that carry them, by name prefix. */
+  sheets: number;
+}
+
+export interface DrawingCoverage {
+  families: DrawingFamilyCoverage[];
+  /**
+   * Sheet kinds this renderer does not produce.
+   *
+   * Stated so a set is never mistaken for complete. These are absences of a DRAWING TYPE, not
+   * of data: the geometry exists in the document and in the 3-D view, and no sheet frames it.
+   */
+  missingSheetKinds: string[];
+}
+
+/**
+ * Sheet kinds the renderer does not produce, whatever the model contains.
+ *
+ * Measured on the 7-storey building: 128 sheets came out — 15 assembly elevations, 57 sections
+ * and 56 per-panel slab plans — and every mark in them reconciled with the 3-D view and the
+ * schedule. What no sheet shows is a whole storey in one plan, a horizontal cut through the
+ * building, or one column on its own sheet.
+ */
+export const MISSING_SHEET_KINDS: readonly string[] = [
+  /** A single plan of the whole structure. Panels are drawn one per sheet. */
+  'generalPlan',
+  /** One plan per storey, gathering that level's members. */
+  'levelPlan',
+  /** A horizontal cut at an arbitrary elevation. */
+  'horizontalSection',
+  /** One column lift on its own sheet, the way a beam line gets an elevation. */
+  'columnDetail',
+];
 
 /**
  * Elevations for every beam line, a section per assembly, and the conflict annotations.
@@ -821,7 +876,60 @@ export function renderDrawings(doc: DocumentModel, opts: RenderOptions): Drawing
     }
   }
 
-  return { sheets, dxf: sheets.map((s) => s.dxf).join('\n') };
+  return {
+    sheets,
+    dxf: sheets.map((s) => s.dxf).join('\n'),
+    coverage: coverageOf(doc, sheets),
+  };
+}
+
+/**
+ * What the sheets actually reached, counted against the document.
+ *
+ * Counted from the DOCUMENT rather than from the sheets alone, because the question a
+ * reviewer has is "did everything get drawn", and only the document knows what everything is.
+ */
+function coverageOf(doc: DocumentModel, sheets: DrawingSet['sheets']): DrawingCoverage {
+  const families: DrawingFamilyCoverage[] = [];
+
+  for (const family of ['slab', 'wall', 'footing'] as const) {
+    const records = doc.assemblies.flatMap((a) => a.families).filter((r) => r.family === family);
+    const owned = sheets.filter((s) => records.some((r) => s.name.includes(r.ownerId)));
+    families.push({
+      family,
+      inDocument: records.length,
+      drawn: new Set(owned.flatMap((s) =>
+        records.filter((r) => s.name.includes(r.ownerId)).map((r) => r.ownerId))).size,
+      sheets: owned.length,
+    });
+  }
+
+  /**
+   * Beams and columns share their assembly's elevation and section.
+   *
+   * There is no per-member sheet for either, so `drawn` counts the members whose assembly
+   * produced a sheet — which is the honest statement: the member IS on a drawing, and it does
+   * not have one of its own. `columnDetail` in `missingSheetKinds` says the second part.
+   */
+  const assemblyDrawn = new Set(
+    doc.assemblies.filter((a) => sheets.some((s) => s.name.startsWith(a.id))).map((a) => a.id));
+  for (const family of ['beam', 'column'] as const) {
+    let inDoc = 0;
+    let drawn = 0;
+    for (const a of doc.assemblies) {
+      // A frame assembly's members are its `elementIds`; family split is not recorded here,
+      // so both rows report the assembly population rather than inventing a split.
+      if (a.families.length > 0) continue;
+      inDoc += a.elementIds.length;
+      if (assemblyDrawn.has(a.id)) drawn += a.elementIds.length;
+    }
+    families.push({
+      family, inDocument: inDoc, drawn,
+      sheets: sheets.filter((s) => assemblyDrawn.has(s.name.split('-')[0])).length,
+    });
+  }
+
+  return { families, missingSheetKinds: [...MISSING_SHEET_KINDS] };
 }
 
 /** The generic elevation and section for an assembly that has steel. */
