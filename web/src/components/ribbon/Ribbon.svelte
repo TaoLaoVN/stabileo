@@ -198,6 +198,21 @@
     },
   ]);
 
+  /*
+   * Editing and viewing results are two different jobs, and the ribbon should
+   * only ever look like it is doing one of them.
+   *
+   * The tool highlight and the diagram highlight were independent, so after a
+   * solve you could have Node lit in Draw AND My lit in Results at once — the
+   * ribbon claiming you were placing nodes on a moment diagram. Picking a
+   * diagram now disarms an editing tool, and arming one clears the diagram.
+   *
+   * View is deliberately exempt in one direction: Select and Pan stay armed
+   * while a diagram is shown, because reading a result means moving around it
+   * and clicking things in it. They are how you LOOK, not how you edit.
+   */
+  const EDIT_TOOLS = ['node', 'element', 'support', 'load'];
+
   function run(cmd: Cmd) {
     if (cmd.enabled && !cmd.enabled()) return;
     if (cmd.tool) {
@@ -208,6 +223,10 @@
        * task than the one just started.
        */
       uiStore.currentTool = cmd.tool as never;
+      // Back to editing: put the diagram away rather than draw on top of it.
+      if (EDIT_TOOLS.includes(cmd.tool) && resultsStore.diagramType !== 'none') {
+        resultsStore.diagramType = 'none';
+      }
       onOpenPanel(null);
       return;
     }
@@ -219,6 +238,8 @@
        * no off state.
        */
       resultsStore.diagramType = cmd.diagram as never;
+      // Reading a result: fall back to Select, which is the tool for reading.
+      if (EDIT_TOOLS.includes(uiStore.currentTool)) uiStore.currentTool = 'select';
       if (cmd.action) cmd.action();
       onOpenPanel(cmd.panel ?? null, { toggle: false });
       return;
@@ -269,68 +290,50 @@
     <!--
       Document-level commands, in their own box before the first group.
       ─────────────────────────────────────────────────────────────────
-      Examples, Project, Save, Undo, Redo and Settings do not act on the model
-      in front of you — they act on WHICH model you have, or on the application
-      itself. Filing them under a group heading would misstate their scope, and
-      scattering them (two in the title bar, three at the far right) made the
-      most consequential commands in the window the hardest to find.
+      Project, Save, Undo and Redo do not act on the model in front of you —
+      they act on WHICH model you have. Filing them under a group heading would
+      misstate their scope, and scattering them (two in the title bar, three at
+      the far right) made the most consequential commands the hardest to find.
 
-      Word puts exactly this set in a quick-access block pinned ahead of the
-      ribbon's first tab, and that is what this is: leftmost, boxed off by a
-      rule, never moving, never changing with the mode.
+      Two rows of two, not a row of four: at ribbon height a single row of small
+      square buttons reads as a strip of unrelated glyphs, while a 2×2 block
+      reads as one control with the document pair above and the history pair
+      below. It also costs half the width, which the groups want.
     -->
     <div class="rb-quick" data-testid="rb-quick">
-      <button
-        class="rb-quick-btn"
-        class:active={activePanel === 'examples'}
-        onclick={() => onOpenPanel('examples')}
-        title={t('ribbon.examples')}
-        aria-label={t('ribbon.examples')}
-        data-testid="hdr-examples"
-      ><Icon name="examples" size={17} /></button>
-      <button
-        class="rb-quick-btn"
-        class:active={activePanel === 'project'}
-        onclick={() => onOpenPanel('project')}
-        title={t('ribbon.project')}
-        aria-label={t('ribbon.project')}
-        data-testid="hdr-project"
-      ><Icon name="project" size={17} /></button>
-      <!--
-        Save is in the Project panel too. It is here as well because it is the
-        one command in that panel you run repeatedly, and reaching it through a
-        panel is three actions for something that should be one.
-      -->
-      <button
-        class="rb-quick-btn"
-        onclick={() => saveProject()}
-        title="{t('project.saveTab')} ({mod}+S)"
-        aria-label={t('project.saveTab')}
-        data-testid="rb-save"
-      ><Icon name="save" size={17} /></button>
-      <span class="rb-quick-sep" aria-hidden="true"></span>
-      <button
-        class="rb-quick-btn"
-        onclick={() => historyStore.undo()}
-        disabled={!historyStore.canUndo}
-        title="{t('toolbar.undo')} ({mod}+Z)"
-        aria-label={t('toolbar.undo')}
-      ><Icon name="undo" size={17} /></button>
-      <button
-        class="rb-quick-btn"
-        onclick={() => historyStore.redo()}
-        disabled={!historyStore.canRedo}
-        title="{t('toolbar.redo')} ({mod}+Y)"
-        aria-label={t('toolbar.redo')}
-      ><Icon name="redo" size={17} /></button>
-      <button
-        class="rb-quick-btn"
-        class:active={activePanel === 'settings'}
-        onclick={() => onOpenPanel('settings')}
-        title={t('ribbon.settings')}
-        aria-label={t('ribbon.settings')}
-        data-testid="rb-settings"
-      ><Icon name="settings" size={17} /></button>
+      <div class="rb-quick-row">
+        <button
+          class="rb-quick-btn"
+          class:active={activePanel === 'project'}
+          onclick={() => onOpenPanel('project')}
+          title={t('ribbon.project')}
+          aria-label={t('ribbon.project')}
+          data-testid="hdr-project"
+        ><Icon name="project" size={16} /></button>
+        <button
+          class="rb-quick-btn"
+          onclick={() => saveProject()}
+          title="{t('project.saveTab')} ({mod}+S)"
+          aria-label={t('project.saveTab')}
+          data-testid="rb-save"
+        ><Icon name="save" size={16} /></button>
+      </div>
+      <div class="rb-quick-row">
+        <button
+          class="rb-quick-btn"
+          onclick={() => historyStore.undo()}
+          disabled={!historyStore.canUndo}
+          title="{t('toolbar.undo')} ({mod}+Z)"
+          aria-label={t('toolbar.undo')}
+        ><Icon name="undo" size={16} /></button>
+        <button
+          class="rb-quick-btn"
+          onclick={() => historyStore.redo()}
+          disabled={!historyStore.canRedo}
+          title="{t('toolbar.redo')} ({mod}+Y)"
+          aria-label={t('toolbar.redo')}
+        ><Icon name="redo" size={16} /></button>
+      </div>
     </div>
 
     {#each GROUPS as g (g.id)}
@@ -464,8 +467,9 @@
   */
   .rb-quick {
     display: flex;
-    align-items: center;
-    gap: 0.1rem;
+    flex-direction: column;
+    justify-content: center;
+    gap: 0.12rem;
     padding: 0 0.5rem 0 0.2rem;
     margin-right: 0.35rem;
     border-right: 1px solid var(--st-hair);
@@ -473,15 +477,11 @@
     flex: none;
   }
 
-  /* Document commands | history and settings. */
-  .rb-quick-sep {
-    width: 1px;
-    align-self: center;
-    height: 16px;
-    margin: 0 0.25rem;
-    background: var(--st-hair);
-    flex: none;
+  .rb-quick-row {
+    display: flex;
+    gap: 0.12rem;
   }
+
 
   .rb-quick-btn {
     display: flex;

@@ -92,14 +92,19 @@
     <path d="M3.5 9.5h17M3.5 14.5h17M9.5 4.5v15" />
   {:else if name === 'settings'}
     <!--
-      A gear. This was a circle ringed by eight straight rays, which is the
-      drawing of a sun — the rays have to be teeth, sitting ON the circle rather
-      than radiating away from it, or the shape says "brightness".
+      A gear, drawn as one outline.
+      ─────────────────────────────
+      First attempt was a circle ringed by eight straight rays: that is a sun,
+      because rays radiate AWAY from the disc. The second added a second circle
+      around them, which read as a sun in a frame.
+
+      A gear is a single closed profile that alternates between a root radius
+      and a tip radius — the teeth are part of the body, not decoration on it.
+      Eight teeth at r=10.4 over roots at r=7.6, with the bore at r=3.2, which
+      keeps the hub visible at 16 px where the ribbon renders it.
     -->
-    <circle cx="12" cy="12" r="3.1" />
-    <path d="M12 3.4v2.2M12 18.4v2.2M3.4 12h2.2M18.4 12h2.2" />
-    <path d="M6.1 6.1l1.6 1.6M16.3 16.3l1.6 1.6M17.9 6.1l-1.6 1.6M7.7 16.3l-1.6 1.6" />
-    <circle cx="12" cy="12" r="7.1" />
+    <path d="M13.42 3.2l.28 2.2 1.9.79 1.75-1.36 1.82 1.82-1.36 1.75.79 1.9 2.2.28v2.58l-2.2.28-.79 1.9 1.36 1.75-1.82 1.82-1.75-1.36-1.9.79-.28 2.2h-2.58l-.28-2.2-1.9-.79-1.75 1.36-1.82-1.82 1.36-1.75-.79-1.9-2.2-.28v-2.58l2.2-.28.79-1.9-1.36-1.75 1.82-1.82 1.75 1.36 1.9-.79.28-2.2z" />
+    <circle cx="12" cy="12" r="3.2" />
   {:else if name === 'save'}
     <!-- A diskette: still the one shape everyone reads as "save". -->
     <path d="M4.5 4.5h11.4L19.5 8.1v11.4h-15z" />

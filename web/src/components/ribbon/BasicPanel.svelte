@@ -2,7 +2,6 @@
   import { t } from '../../lib/i18n';
   import ToolbarResults from '../toolbar/ToolbarResults.svelte';
   import ToolbarAdvanced from '../toolbar/ToolbarAdvanced.svelte';
-  import ToolbarExamples from '../toolbar/ToolbarExamples.svelte';
   import ToolbarConfig from '../toolbar/ToolbarConfig.svelte';
   import ToolbarProject from '../toolbar/ToolbarProject.svelte';
   import KinematicPanel from '../KinematicPanel.svelte';
@@ -18,7 +17,7 @@
    * The right-hand panel: one thing, named by the command that opened it.
    *
    * It holds only what genuinely needs area and outlives a single tool —
-   * results, advanced analysis, examples, project, settings. Tool options do
+   * results, advanced analysis, project, settings. Tool options do
    * NOT come here: they were tried here and fought the panel, because they are
    * written as horizontal strips and because putting a tool's settings at the
    * far right disconnects them from the button at the top that summoned them.
@@ -143,8 +142,6 @@
         <WhatIfPanel docked />
         <SectionStressPanel docked />
       </div>
-    {:else if panel === 'examples'}
-      <ToolbarExamples flat />
     {:else if panel === 'settings'}
       <ToolbarConfig flat />
     {:else if panel === 'project'}

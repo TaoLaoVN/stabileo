@@ -674,6 +674,7 @@ const es: Record<string, string> = {
   'project.saveSession': 'Guardar Sesión',
   'project.open': 'Abrir',
   'project.exportImport': 'Exportar / Importar',
+  'project.fileSection': 'Archivo',
   'project.export': 'Exportar',
   'project.importLabel': 'Importar (Beta)',
   'project.openDed': 'Abrir .ded',

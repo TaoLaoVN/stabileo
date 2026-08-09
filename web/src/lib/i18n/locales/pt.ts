@@ -396,6 +396,7 @@ const pt: Translations = {
   'project.saveSession': 'Salvar Sessão',
   'project.open': 'Abrir',
   'project.exportImport': 'Exportar / Importar',
+  'project.fileSection': 'Arquivo',
   'project.export': 'Exportar',
   'project.importLabel': 'Importar (Beta)',
   'project.openDed': 'Abrir .ded',

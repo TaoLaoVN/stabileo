@@ -87,6 +87,76 @@
    * that turned a specific solver complaint into the word "Buckling error",
    * which tells the user nothing about the model they have to fix.
    */
+  /**
+   * One advanced analysis at a time, and the panel belongs to it.
+   *
+   * Thirteen buttons stayed on screen while an analysis ran, so a Kinematic
+   * report or a What-if slider stack opened UNDER a list taller than itself and
+   * the panel was mostly menu. Worse, the list let two run at once: Section
+   * Analysis arms a picking mode rather than producing a result, so it stayed
+   * armed while you started something else, and the only way to stop it was to
+   * pick a different tool in the ribbon — a control in a different part of the
+   * window from the one that started it.
+   *
+   * So the list is a menu, not a dashboard. Choosing an entry replaces it with
+   * that analysis's own controls under a heading that names it and a ✕ that
+   * ends it. Nothing is nested that does not belong to the running analysis:
+   * the train selector appears when Moving Load is running, not before.
+   *
+   * `isActive` is read from the stores rather than from a local flag, so the
+   * panel reflects what is actually running — including analyses started from
+   * a toast action or restored with a saved model — and closing goes through
+   * each analysis's own teardown.
+   */
+  type Adv = { key: string; labelKey: string; isActive: () => boolean; close: () => void };
+
+  const ADV: Adv[] = [
+    { key: 'kinematic', labelKey: 'advanced.kinematicAnalysis',
+      isActive: () => uiStore.showKinematicPanel,
+      close: () => { uiStore.showKinematicPanel = false; } },
+    { key: 'despiece', labelKey: 'advanced.despiece',
+      isActive: () => resultsStore.diagramType === 'despiece',
+      close: () => { resultsStore.diagramType = 'none'; uiStore.despieceInspect = null; } },
+    { key: 'stress', labelKey: 'advanced.sectionAnalysis',
+      isActive: () => uiStore.currentTool === 'select' && uiStore.selectMode === 'stress',
+      close: () => { uiStore.selectMode = 'elements'; resultsStore.stressQuery = null; } },
+    { key: 'pdelta', labelKey: 'advanced.pdelta',
+      isActive: () => !!(is3D ? resultsStore.pdeltaResult3D : resultsStore.pdeltaResult),
+      close: () => resultsStore.clearPDelta() },
+    { key: 'buckling', labelKey: 'advanced.buckling',
+      isActive: () => !!(is3D ? resultsStore.bucklingResult3D : resultsStore.bucklingResult),
+      close: () => resultsStore.clearBuckling() },
+    { key: 'modal', labelKey: 'advanced.dynamic',
+      isActive: () => !!(is3D ? resultsStore.modalResult3D : resultsStore.modalResult),
+      close: () => resultsStore.clearModal() },
+    { key: 'plastic', labelKey: 'advanced.plasticCollapse',
+      isActive: () => !!resultsStore.plasticResult,
+      close: () => resultsStore.clearPlastic() },
+    { key: 'envelope', labelKey: 'advanced.envelope',
+      isActive: () => resultsStore.activeView === 'envelope',
+      close: () => { resultsStore.activeView = 'base'; } },
+    { key: 'trainLoad', labelKey: 'advanced.trainLoad',
+      isActive: () => !!resultsStore.movingLoadEnvelope || showTrainPanel,
+      close: () => { resultsStore.clearMovingLoad(); showTrainPanel = false; selectedTrainIndex = ''; } },
+    { key: 'influenceLine', labelKey: 'advanced.influenceLine',
+      isActive: () => uiStore.currentTool === 'influenceLine',
+      close: () => { uiStore.currentTool = 'select'; resultsStore.setInfluenceLine(null); } },
+    { key: 'whatif', labelKey: 'advanced.whatIf',
+      isActive: () => uiStore.showWhatIf,
+      close: () => { uiStore.showWhatIf = false; } },
+    { key: 'dsm', labelKey: 'advanced.stepByStep',
+      isActive: () => dsmStepsStore.isOpen,
+      close: () => dsmStepsStore.close() },
+  ];
+
+  const active = $derived(ADV.find(a => a.isActive()) ?? null);
+
+  /** A block is drawn when nothing is running, or when it IS what is running. */
+  function shown(key: string): boolean {
+    if (!flat) return true;
+    return active === null || active.key === key;
+  }
+
   function errText(e: unknown, fallbackKey: string): string {
     if (typeof e === 'string' && e.trim()) return e;
     const msg = (e as { message?: unknown } | null)?.message;
@@ -381,13 +451,33 @@
       </div>
     {/if}
   {/snippet}
+  {#if flat && active}
+    <!--
+      The running analysis names itself and carries its own ✕. Section Analysis
+      in particular had no off switch here at all — you had to go up to the
+      ribbon and pick another tool, which is not where you turned it on.
+    -->
+    <div class="adv-running" data-testid="adv-running" data-adv={active.key}>
+      <span class="adv-running-name">{t(active.labelKey)}</span>
+      <button
+        class="adv-running-close"
+        onclick={() => active?.close()}
+        title={t('ribbon.close')}
+        aria-label={t('ribbon.close')}
+        data-testid="adv-close"
+      >&times;</button>
+    </div>
+  {/if}
+
   <div class="advanced-grid">
+    {#if shown('kinematic')}
     <!--
       2D only, and it says so instead of disappearing. In 3D these four rows
       used to be removed outright, so the panel silently changed length between
       modes and a user who had used the feature in 2D was left looking for it.
       Disabled-with-a-reason is what the ribbon does for the same situation.
     -->
+      {#if !flat || active?.key !== 'kinematic'}
     <div class="adv-btn-wrap" style="grid-column: span 2">
       <button class="adv-btn" style="flex:1" disabled={is3D} title={is3D ? t('advanced.only2d') : undefined}
         class:active={uiStore.showKinematicPanel}
@@ -397,7 +487,11 @@
       <button class="adv-help-btn" onclick={(e) => toggleAdvHelp('kinematic', e)} class:active={advHelpKey === 'kinematic'}>?</button>
     </div>
     {@render helpPanel('kinematic')}
+      {/if}
+    {/if}
+    {#if shown('despiece')}
     <!-- Despiece / member free-body view (Basic 2D + 3D, solver-free overlay) -->
+      {#if !flat || active?.key !== 'despiece'}
     <div class="adv-btn-wrap" style="grid-column: span 2">
       <button class="adv-btn" style="flex:1"
         class:active={resultsStore.diagramType === 'despiece'}
@@ -411,6 +505,7 @@
       <button class="adv-help-btn" onclick={(e) => toggleAdvHelp('despiece', e)} class:active={advHelpKey === 'despiece'}>?</button>
     </div>
     {@render helpPanel('despiece')}
+      {/if}
     {#if resultsStore.diagramType === 'despiece'}
       <div class="adv-btn-wrap" style="grid-column: span 2; flex-direction: column; align-items: stretch; gap: 4px;">
         <div style="display:flex; gap:4px; align-items:center;">
@@ -448,10 +543,21 @@
         </label>
       </div>
     {/if}
+    {/if}
+    {#if shown('stress')}
+      {#if !flat || active?.key !== 'stress'}
     <div class="adv-btn-wrap" style="grid-column: span 2">
       <button class="adv-btn" style="flex:1"
         class:active={uiStore.currentTool === 'select' && uiStore.selectMode === 'stress'}
         onclick={() => {
+          // A toggle, like every other analysis here. It used to be one-way:
+          // it armed a picking mode and the only way back out was to pick a
+          // different tool in the ribbon — not where you turned it on.
+          if (uiStore.currentTool === 'select' && uiStore.selectMode === 'stress') {
+            uiStore.selectMode = 'elements';
+            resultsStore.stressQuery = null;
+            return;
+          }
           if (!resultsStore.results && !resultsStore.results3D) { uiStore.toast(t('advanced.calculateFirst'), 'error'); return; }
           uiStore.currentTool = 'select';
           uiStore.selectMode = 'stress';
@@ -461,7 +567,11 @@
       <button class="adv-help-btn" onclick={(e) => toggleAdvHelp('stress', e)} class:active={advHelpKey === 'stress'}>?</button>
     </div>
     {@render helpPanel('stress')}
+      {/if}
+    {/if}
+    {#if shown('pdelta')}
     <!-- P-Delta & Buckling: available in both 2D and 3D -->
+      {#if !flat || active?.key !== 'pdelta'}
     <div class="adv-btn-wrap">
       <button class="adv-btn" class:active={is3D ? !!resultsStore.pdeltaResult3D : !!resultsStore.pdeltaResult}
         onclick={() => {
@@ -481,6 +591,10 @@
         }}>{t('advanced.pdelta')}</button>
       <button class="adv-help-btn" onclick={(e) => toggleAdvHelp('pdelta', e)} class:active={advHelpKey === 'pdelta'}>?</button>
     </div>
+      {/if}
+    {/if}
+    {#if shown('buckling')}
+      {#if !flat || active?.key !== 'buckling'}
     <div class="adv-btn-wrap">
       <button class="adv-btn" class:active={is3D ? !!resultsStore.bucklingResult3D : !!resultsStore.bucklingResult}
         onclick={() => {
@@ -494,9 +608,13 @@
         }}>{t('advanced.buckling')}</button>
       <button class="adv-help-btn" onclick={(e) => toggleAdvHelp('buckling', e)} class:active={advHelpKey === 'buckling'}>?</button>
     </div>
+      {/if}
     {@render helpPanel('pdelta')}
     {@render helpPanel('buckling')}
+    {/if}
+    {#if shown('modal')}
     <!-- Modal & Spectral: available in both 2D and 3D -->
+      {#if !flat || active?.key !== 'modal'}
     <div class="adv-btn-wrap">
       <button class="adv-btn" class:active={is3D ? !!resultsStore.modalResult3D : !!resultsStore.modalResult}
         onclick={() => {
@@ -510,6 +628,7 @@
         }}>{t('advanced.dynamic')}</button>
       <button class="adv-help-btn" onclick={(e) => toggleAdvHelp('modal', e)} class:active={advHelpKey === 'modal'}>?</button>
     </div>
+      {/if}
     <!--
       Spectral analysis is intentionally absent from Basic.
 
@@ -526,7 +645,10 @@
       slots are deliberately left intact for that work.
     -->
     {@render helpPanel('modal')}
+    {/if}
+    {#if shown('plastic')}
     <!-- 2D only; disabled with a reason rather than hidden — see Kinematic above. -->
+      {#if !flat || active?.key !== 'plastic'}
     <div class="adv-btn-wrap" style="grid-column: span 2">
       <button class="adv-btn" style="flex:1" disabled={is3D} title={is3D ? t('advanced.only2d') : undefined} class:active={!!resultsStore.plasticResult}
         onclick={() => {
@@ -539,6 +661,10 @@
       <button class="adv-help-btn" onclick={(e) => toggleAdvHelp('plastic', e)} class:active={advHelpKey === 'plastic'}>?</button>
     </div>
     {@render helpPanel('plastic')}
+      {/if}
+    {/if}
+    {#if shown('envelope')}
+      {#if !flat || active?.key !== 'envelope'}
     <div class="adv-btn-wrap" style="grid-column: span 2">
       <button class="adv-btn" style="flex:1"
         class:active={resultsStore.activeView === 'envelope'}
@@ -564,7 +690,11 @@
       <button class="adv-help-btn" onclick={(e) => toggleAdvHelp('envelope', e)} class:active={advHelpKey === 'envelope'}>?</button>
     </div>
     {@render helpPanel('envelope')}
+      {/if}
+    {/if}
+    {#if shown('trainLoad')}
     <!-- 2D only; disabled with a reason rather than hidden — see Kinematic above. -->
+      {#if !flat || active?.key !== 'trainLoad'}
     <div class="adv-btn-wrap" style="grid-column: span 2">
       <button class="adv-btn" style="flex:1" disabled={is3D} title={is3D ? t('advanced.only2d') : undefined} class:active={!!resultsStore.movingLoadEnvelope}
         onclick={() => {
@@ -580,13 +710,14 @@
       <button class="adv-help-btn" onclick={(e) => toggleAdvHelp('trainLoad', e)} class:active={advHelpKey === 'trainLoad'}>?</button>
     </div>
     {@render helpPanel('trainLoad')}
+      {/if}
     <!--
-      `flat` keeps sub-panels open rather than behind a chevron, but not when
-      the analysis they configure is unavailable: in 3D the train selector was
-      left sitting under a greyed-out Moving Load, offering to configure a run
-      that cannot start.
+      The train selector is part of running Moving Load, so it appears when
+      Moving Load is running. In the menu it sat permanently under the button —
+      in 3D, under a greyed-out one, offering to configure a run that cannot
+      start.
     -->
-    {#if (flat && !is3D) || showTrainPanel}
+    {#if (flat && !is3D && active?.key === 'trainLoad') || (!flat && showTrainPanel)}
       <div class="envelope-sub-panel" style="grid-column: span 2">
         {#if resultsStore.movingLoadRunning}
           <div class="moving-load-progress">
@@ -614,7 +745,10 @@
         {/if}
       </div>
     {/if}
+    {/if}
+    {#if shown('influenceLine')}
     <!-- 2D only; disabled with a reason rather than hidden — see Kinematic above. -->
+      {#if !flat || active?.key !== 'influenceLine'}
     <div class="adv-btn-wrap" style="grid-column: span 2">
       <button class="adv-btn" style="flex:1" disabled={is3D} title={is3D ? t('advanced.only2d') : undefined}
         class:active={uiStore.currentTool === 'influenceLine'}
@@ -635,6 +769,10 @@
       <button class="adv-help-btn" onclick={(e) => toggleAdvHelp('influenceLine', e)} class:active={advHelpKey === 'influenceLine'}>?</button>
     </div>
     {@render helpPanel('influenceLine')}
+      {/if}
+    {/if}
+    {#if shown('whatif')}
+      {#if !flat || active?.key !== 'whatif'}
     <div class="adv-btn-wrap" style="grid-column: span 2">
         <button class="adv-btn" style="flex:1"
           class:active={uiStore.showWhatIf}
@@ -652,6 +790,10 @@
         <button class="adv-help-btn" onclick={(e) => toggleAdvHelp('whatif', e)} class:active={advHelpKey === 'whatif'}>?</button>
       </div>
       {@render helpPanel('whatif')}
+      {/if}
+    {/if}
+    {#if shown('dsm')}
+      {#if !flat || active?.key !== 'dsm'}
     <div class="adv-btn-wrap" style="grid-column: span 2">
       <button class="adv-btn" style="flex:1" class:active={dsmStepsStore.isOpen}
         onclick={() => {
@@ -694,6 +836,8 @@
       <button class="adv-help-btn" onclick={(e) => toggleAdvHelp('dsm', e)} class:active={advHelpKey === 'dsm'}>?</button>
     </div>
     {@render helpPanel('dsm')}
+      {/if}
+    {/if}
   </div>
   {@const pdR = is3D ? resultsStore.pdeltaResult3D : resultsStore.pdeltaResult}
   {@const moR = is3D ? resultsStore.modalResult3D : resultsStore.modalResult}
@@ -834,6 +978,37 @@
      inert without touching sixty of them, and every child stretches to the
      panel width on its own. Thirteen analyses read better as a list anyway.
   */
+  .adv-running {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.5rem;
+    padding: 0.35rem 0 0.45rem;
+    margin-bottom: 0.5rem;
+    border-bottom: 1px solid var(--st-hair);
+  }
+
+  .adv-running-name {
+    font-family: var(--st-mono);
+    font-size: 0.68rem;
+    letter-spacing: 0.11em;
+    text-transform: uppercase;
+    color: var(--st-accent);
+  }
+
+  .adv-running-close {
+    background: none;
+    border: none;
+    color: var(--st-text-2);
+    font-size: 1.15rem;
+    line-height: 1;
+    padding: 0 0.3rem;
+    cursor: pointer;
+    border-radius: var(--st-radius);
+  }
+
+  .adv-running-close:hover { background: var(--st-surface-3); color: var(--st-text); }
+
   .flat .advanced-grid {
     display: flex;
     flex-direction: column;

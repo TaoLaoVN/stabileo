@@ -64,6 +64,7 @@
   import TabBar from './components/TabBar.svelte';
   import MobileResultsPanel from './components/MobileResultsPanel.svelte';
   import KeyboardShortcuts from './components/KeyboardShortcuts.svelte';
+  import Icon from './components/ribbon/Icon.svelte';
   import ProPanel from './components/pro/ProPanel.svelte';
   import ToolbarConfig from './components/toolbar/ToolbarConfig.svelte';
   import EducativePanel from './components/edu/EducativePanel.svelte';
@@ -705,6 +706,22 @@
         <option value="ar">{t('lang.ar')}</option>
         <option value="id">{t('lang.id')}</option>
       </select>
+
+      <!--
+        Settings sits with the other application-level controls — help and
+        language — rather than in the ribbon. It configures the application,
+        not the document, which is what everything else in this corner does.
+      -->
+      {#if uiStore.appMode === 'basico' && !uiStore.isMobile}
+        <button
+          class="btn btn-settings"
+          class:on={basicPanel === 'settings'}
+          onclick={() => openBasicPanel('settings')}
+          title={t('ribbon.settings')}
+          aria-label={t('ribbon.settings')}
+          data-testid="rb-settings"
+        ><Icon name="settings" size={16} /></button>
+      {/if}
     </div>
   </header>
 
@@ -1622,6 +1639,19 @@
     border-color: var(--st-interactive);
     color: var(--st-value);
   }
+
+  .btn-settings {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 28px;
+    height: 26px;
+    padding: 0;
+    color: var(--st-text-2);
+  }
+
+  .btn-settings:hover { color: var(--st-text); }
+  .btn-settings.on { color: var(--st-accent); border-color: var(--st-accent); }
 
   .lang-select {
     background: transparent;

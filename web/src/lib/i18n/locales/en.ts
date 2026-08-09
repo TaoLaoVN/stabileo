@@ -681,6 +681,7 @@ const en: Record<string, string> = {
   'project.saveSession': 'Save Session',
   'project.open': 'Open',
   'project.exportImport': 'Export / Import',
+  'project.fileSection': 'File',
   'project.export': 'Export',
   'project.importLabel': 'Import (Beta)',
   'project.openDed': 'Open .ded',

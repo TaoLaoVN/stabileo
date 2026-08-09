@@ -129,6 +129,14 @@
 <div data-tour="examples-section" class="ex-groups">
   {#if uiStore.analysisMode === 'pro'}
     {@render group('examples.titlePro', examplesPro, false, showExamples, () => showExamples = !showExamples)}
+  {:else if uiStore.analysisMode === '3d'}
+    <!--
+      The catalogue for the mode you are IN goes first. Both are offered in both
+      modes, but in 3D the 3D examples sat under nineteen 2D ones, far enough
+      down the panel to read as an afterthought.
+    -->
+    {@render group('examples.title3d', examples3D, true, showExamples3D, () => showExamples3D = !showExamples3D)}
+    {@render group('examples.title2d', [...examples], false, showExamples, () => showExamples = !showExamples)}
   {:else}
     {@render group('examples.title2d', [...examples], false, showExamples, () => showExamples = !showExamples)}
     {@render group('examples.title3d', examples3D, true, showExamples3D, () => showExamples3D = !showExamples3D)}

@@ -3,6 +3,7 @@
   import { saveProject, loadFile, saveSession, downloadResultsCSV, downloadDXF, downloadSVG, downloadExcel, isMode3D } from '../../lib/store/file';
   import { generateShareURL, loadFromShareLink, MAX_URL_SAFE } from '../../lib/utils/url-sharing';
   import { t } from '../../lib/i18n';
+  import ToolbarExamples from './ToolbarExamples.svelte';
   import CalcReportDialog from '../CalcReportDialog.svelte';
 
   let fileInput: HTMLInputElement;
@@ -94,6 +95,7 @@
   </button>
   {/if}
   {#if flat || showProject}
+  {#if flat}<h4 class="proj-heading">{t('project.fileSection')}</h4>{/if}
   <div class="file-grid">
     <button class="file-btn" onclick={saveProject} title={t('project.saveTabTooltip')}>
       {t('project.saveTab')}
@@ -105,9 +107,28 @@
       {t('project.open')}
     </button>
   </div>
-  <button class="sub-section-toggle" onclick={() => showProjectExtras = !showProjectExtras}>
-    {showProjectExtras ? '▾' : '▸'} {t('project.exportImport')}
-  </button>
+  <!--
+    Examples belong to the document, like everything else here: they answer
+    "which model am I working on". They had their own panel and their own
+    button, which put one of the six commands in the window's most valuable
+    corner on the same footing as Save. Between opening a file and exporting
+    one is where starting from a supplied model actually falls.
+  -->
+  <div class="proj-block">
+    <ToolbarExamples flat={true} />
+  </div>
+
+  <!--
+    A heading, not a toggle. Below it opens on `flat ||` regardless, so in the
+    right panel this chevron changed direction and did nothing else.
+  -->
+  {#if flat}
+    <h4 class="proj-heading">{t('project.exportImport')}</h4>
+  {:else}
+    <button class="sub-section-toggle" onclick={() => showProjectExtras = !showProjectExtras}>
+      {showProjectExtras ? '▾' : '▸'} {t('project.exportImport')}
+    </button>
+  {/if}
   {#if flat || showProjectExtras}
     <div class="sub-section-content">
       <span class="file-sub-header">{t('project.export')}</span>
@@ -237,23 +258,80 @@
     border-left: 2px solid var(--st-hair);
   }
 
-  .file-grid {
-    display: grid;
-    grid-template-columns: repeat(3, 1fr);
-    gap: 0.25rem;
+  :global(.basic-panel) .sub-section-content {
+    margin-left: 0;
+    padding-left: 0;
+    border-left: none;
   }
 
+  /*
+     Every command in this panel is the same size.
+     ────────────────────────────────────────────
+     The file row and the export row used the same class but landed at
+     different widths, because a three-column grid holding three items gives
+     each a third of the panel while one holding six gives each a sixth — so
+     "Save tab" was a wide button and "DXF" a small one, implying DXF was a
+     lesser command than Save. They are peers: both are one action on the
+     document.
+
+     `auto-fill` with a floor sizes by CONTENT rather than by count, so a row of
+     three and a row of six produce the same button. The floor is wide enough
+     for "Guardar sesión" at the panel's minimum width without wrapping.
+  */
+  .file-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(84px, 1fr));
+    gap: 0.3rem;
+  }
+
+  /*
+     A command, on the shell's own button language: hairline border, no fill
+     until hover, accent on hover. These were raised blocks on a lighter
+     surface, which is how this application draws a VALUE — so a column of file
+     commands read as a column of read-outs.
+  */
   .file-btn {
-    padding: 0.35rem 0.4rem;
-    background: var(--st-surface-2);
-    border: 1px solid var(--st-hair-strong);
-    border-radius: 4px;
-    color: var(--st-text);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 30px;
+    padding: 0.35rem 0.5rem;
+    background: none;
+    border: 1px solid var(--st-hair);
+    border-radius: var(--st-radius);
+    color: var(--st-text-2);
     cursor: pointer;
+    font-family: var(--st-sans);
     font-size: 0.75rem;
     text-align: center;
-    transition: all 0.2s;
+    transition: background 0.12s, color 0.12s, border-color 0.12s;
   }
+
+  .file-btn:hover:not(:disabled) {
+    background: var(--st-surface-3);
+    border-color: var(--st-hair-strong);
+    color: var(--st-text);
+  }
+
+  .file-btn:disabled { opacity: 0.4; cursor: not-allowed; }
+
+  /* Section headings, matching every other heading in the right panel. */
+  .proj-heading {
+    font-family: var(--st-mono);
+    font-size: 0.66rem;
+    font-weight: 400;
+    letter-spacing: 0.11em;
+    text-transform: uppercase;
+    color: var(--st-text-2);
+    margin: 0.9rem 0 0.4rem;
+    padding-bottom: 0.15rem;
+    border-bottom: 1px solid var(--st-hair);
+  }
+
+  .proj-heading:first-child { margin-top: 0; }
+
+  /* Examples brings its own headings, so it only needs the spacing. */
+  .proj-block { margin: 0.9rem 0 0; }
 
   .file-btn:hover:not(:disabled) {
     background: var(--st-surface-3);
@@ -266,11 +344,13 @@
   }
 
   .file-sub-header {
-    font-size: 0.65rem;
+    display: block;
+    font-family: var(--st-mono);
+    font-size: 0.62rem;
     text-transform: uppercase;
     color: var(--st-text-3);
-    letter-spacing: 0.05em;
-    margin-top: 0.25rem;
+    letter-spacing: 0.09em;
+    margin: 0.7rem 0 0.3rem;
   }
 
   .small-btn {
