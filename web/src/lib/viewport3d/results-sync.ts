@@ -150,39 +150,59 @@ export function syncDeformed(ctx: ResultsSyncContext, scaleOverride?: number): v
   let scale = scaleOverride ?? resultsStore.deformedScale;
   let modeColor: number | null = null;
 
+  /**
+   * Nothing to draw means the old shape has to GO, not merely stop updating.
+   *
+   * Every branch below bailed with a bare `return` when its data was missing —
+   * and the code that removes the previous group sits after them, on the path
+   * where the data changed. So going from "deformed on screen" to "no results"
+   * left the group in the scene: load a second model over a solved one and the
+   * previous structure's deformed shape stayed floating over it, at full size,
+   * while the status bar reported the new model's three nodes. `clear()` had
+   * dropped the results correctly; the scene was never told.
+   */
+  function dropDeformed(): void {
+    if (!ctx.deformedGroup) return;
+    ctx.resultsParent.remove(ctx.deformedGroup);
+    disposeObject(ctx.deformedGroup);
+    ctx.deformedGroup = null;
+  }
+
   if (dt === 'deformed') {
     const r3d = resultsStore.results3D;
-    if (!r3d) return;
+    if (!r3d) { dropDeformed(); return; }
     displacements = r3d.displacements;
     // Scale x1 = true physical deformation (1:1). No auto-amplification.
     // The user increases the scale slider to amplify if needed.
   } else if (dt === 'modeShape') {
     const modal = resultsStore.modalResult3D;
-    if (!modal || !modal.modes.length) return;
+    if (!modal || !modal.modes.length) { dropDeformed(); return; }
     const mode = modal.modes[resultsStore.activeModeIndex];
-    if (!mode) return;
+    if (!mode) { dropDeformed(); return; }
     // Scale mode shapes relative to structure size (eigenvectors are normalized to max=1)
     const structureSize = computeStructureBBox();
     const modeScale = structureSize * 0.15 * (scale / 100);
     scale = modeScale * Math.sin(performance.now() / 500);
     displacements = mode.displacements;
-    modeColor = 0x4ecdc4; // cyan
+    modeColor = 0x7fd4cc; // --st-value
   } else if (dt === 'bucklingMode') {
     const buckling = resultsStore.bucklingResult3D;
-    if (!buckling || !buckling.modes.length) return;
+    if (!buckling || !buckling.modes.length) { dropDeformed(); return; }
     const mode = buckling.modes[resultsStore.activeBucklingMode];
-    if (!mode) return;
+    if (!mode) { dropDeformed(); return; }
     // Scale buckling modes relative to structure size (eigenvectors are normalized to max=1)
     const structureSize = computeStructureBBox();
     const modeScale = structureSize * 0.15 * (scale / 100);
     scale = modeScale * Math.sin(performance.now() / 500);
     displacements = mode.displacements;
-    modeColor = 0xe96941; // orange-red
+    modeColor = 0xd9a441; // --st-warn
   } else {
+    // Any other diagram — including 'none' after a model swap.
+    dropDeformed();
     return;
   }
 
-  if (!displacements) return;
+  if (!displacements) { dropDeformed(); return; }
 
   // In-place scale update when the underlying data is unchanged: the group
   // carries preallocated base/displacement buffers and a setScale() that

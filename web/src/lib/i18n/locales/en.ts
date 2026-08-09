@@ -5065,6 +5065,7 @@ const en: Record<string, string> = {
   'ribbon.groupProject': 'Project',
   'ribbon.needsSolve': 'solve the model first',
   'ribbon.groupDraw': 'Draw',
+  'ribbon.groupData': 'Data',
   'ribbon.momentY': 'My',
   'ribbon.momentZ': 'Mz',
   'ribbon.shearZ': 'Vz',

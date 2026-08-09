@@ -70,6 +70,8 @@
     enabled?: () => boolean;
     /** Only meaningful for a 3D frame; explains its own greying in 2D. */
     needs3d?: boolean;
+    /** Sole command of its group: drawn larger, since it carries the group. */
+    prominent?: boolean;
   };
 
   type Group = { id: string; labelKey: string; cmds: Cmd[] };
@@ -166,6 +168,27 @@
         },
       ],
     },
+    /*
+     * Model data is not an analysis.
+     * ─────────────────────────────
+     * It sat in Analyse next to Solve, which reads as "a thing you do to get
+     * results". The panel is the opposite: it is where the nodes, elements,
+     * supports, loads, materials and sections you DREW live, in editable form,
+     * with results as one tab among eight. It spans drawing, conditions and
+     * results, so it belongs to none of them — hence its own group, ahead of
+     * the drawing commands whose output it holds.
+     *
+     * The button carries no label: the group is already called Data directly
+     * beneath it, and a button labelled the same as its own group is a word
+     * printed twice.
+     */
+    {
+      id: 'data',
+      labelKey: 'ribbon.groupData',
+      cmds: [
+        { id: 'data', icon: 'data', nameKey: 'ribbon.data', panel: 'data', prominent: true },
+      ],
+    },
     {
       id: 'draw',
       labelKey: 'ribbon.groupDraw',
@@ -186,9 +209,21 @@
       id: 'analyse',
       labelKey: 'ribbon.tabAnalyse',
       cmds: [
-        { id: 'solve', icon: 'solve', labelKey: 'pro.solve', action: () => runSolve() },
+        /*
+         * Solve opens Results.
+         *
+         * A solve already selects the deformed shape — `setResults` falls back
+         * to it — so the canvas changed while the panel that governs it stayed
+         * shut, and the scale slider that makes a 1:1 deformation legible was
+         * two clicks away from the command that produced it. Picking a diagram
+         * opens this panel; producing one should too.
+         */
+        { id: 'solve', icon: 'solve', labelKey: 'pro.solve', panel: 'results',
+          action: () => {
+            runSolve();
+            if (EDIT_TOOLS.includes(uiStore.currentTool)) uiStore.currentTool = 'select';
+          } },
         { id: 'advanced', icon: 'advanced', labelKey: 'ribbon.advanced', panel: 'advanced' },
-        { id: 'data', icon: 'data', labelKey: 'ribbon.data', panel: 'data' },
       ],
     },
     {
@@ -245,12 +280,17 @@
       return;
     }
     if (cmd.action) cmd.action();
-    if (cmd.panel) onOpenPanel(cmd.panel);
+    // `solve` shows its panel rather than toggling it: pressing it twice means
+    // "solve again", not "solve and hide the answer".
+    if (cmd.panel) onOpenPanel(cmd.panel, cmd.id === 'solve' ? { toggle: false } : undefined);
   }
 
   function isActive(cmd: Cmd): boolean {
     if (cmd.tool) return uiStore.currentTool === cmd.tool;
     if (cmd.diagram) return solved && resultsStore.diagramType === cmd.diagram;
+    // Solve OPENS Results but is not a state — it is an action you run, and a
+    // lit Solve while the panel happens to be open would read as "solving".
+    if (cmd.id === 'solve') return false;
     if (cmd.panel) return activePanel === cmd.panel;
     return false;  // `dim` is a switch, not a state: it never lights up.
   }
@@ -309,14 +349,14 @@
           title={t('ribbon.project')}
           aria-label={t('ribbon.project')}
           data-testid="hdr-project"
-        ><Icon name="project" size={16} /></button>
+        ><Icon name="project" size={21} /></button>
         <button
           class="rb-quick-btn"
           onclick={() => saveProject()}
           title="{t('project.saveTab')} ({mod}+S)"
           aria-label={t('project.saveTab')}
           data-testid="rb-save"
-        ><Icon name="save" size={16} /></button>
+        ><Icon name="save" size={21} /></button>
       </div>
       <div class="rb-quick-row">
         <button
@@ -409,6 +449,21 @@
     transition: background 0.12s, color 0.12s, border-color 0.12s;
   }
 
+  /*
+     The lone command of a group has to read as one, so it takes the height the
+     icon-plus-label pairs beside it occupy and a larger glyph to fill it.
+  */
+  .rb-cmd.prominent {
+    justify-content: center;
+    align-self: stretch;
+    padding: 0.45rem 0.7rem;
+  }
+
+  .rb-cmd.prominent :global(svg) {
+    width: 30px;
+    height: 30px;
+  }
+
   .rb-cmd:hover:not(:disabled) { background: var(--st-surface-3); color: var(--st-text); }
 
   .rb-cmd.active {
@@ -465,34 +520,73 @@
      between themselves — so it reads as a peer of the groups rather than as
      part of View, which is what it would look like sitting flush against it.
   */
+  /*
+     Ruled like the groups beside it, not merely spaced.
+     ───────────────────────────────────────────────────
+     The four commands read as one undifferentiated block of glyphs. The ribbon
+     already has a vocabulary for "these belong together but are not the same
+     thing" — the hairline between View and Draw — so the block uses it: a rule
+     between Project and Save, and one under both separating the document pair
+     from the history pair.
+
+     The rules are borders on cells that already existed, so the block is the
+     same width it was; nothing here widens the ribbon.
+  */
+  /*
+     A 2×2 grid filling the block, so the rules are edges rather than segments.
+     ─────────────────────────────────────────────────────────────────────────
+     As a centred column the two rows occupied only their own height and left a
+     gap above and below, so the vertical rule stopped short of the top and the
+     horizontal one stopped short of the sides — two lines floating inside a box
+     rather than dividing it. A grid stretched to the block's full height makes
+     each rule the full edge of the cell it belongs to.
+
+     `margin-left: -0.5rem` cancels the row's own left padding so the block sits
+     flush against the window edge and the horizontal rule reaches it. The
+     ribbon's height is unchanged: the block still fits between the row padding
+     and the group labels.
+  */
   .rb-quick {
-    display: flex;
-    flex-direction: column;
-    justify-content: center;
-    gap: 0.12rem;
-    padding: 0 0.5rem 0 0.2rem;
-    margin-right: 0.35rem;
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    grid-template-rows: 1fr 1fr;
+    padding: 0;
+    margin: -0.3rem 0.3rem 0 -0.5rem;
     border-right: 1px solid var(--st-hair);
     align-self: stretch;
     flex: none;
   }
 
+  /* The grid places the four cells; the rows are transparent wrappers. */
   .rb-quick-row {
-    display: flex;
-    gap: 0.12rem;
+    display: contents;
   }
+
+  /*
+     The document pair carries the dividers; history sits plain beneath it.
+     `--st-hair-strong` rather than `--st-hair`: the group separators run the
+     ribbon's full height, so they read at a low alpha — these are short
+     segments and disappear at the same value.
+
+     With `display: contents` the rows vanish from the box model but remain in
+     the DOM, so the rules are still addressed through them — `:nth-child` on
+     the buttons would count within each row and hit both.
+  */
+  .rb-quick-row:first-child .rb-quick-btn { border-bottom: 1px solid var(--st-hair-strong); }
+  .rb-quick-row:first-child .rb-quick-btn:first-child { border-right: 1px solid var(--st-hair-strong); }
 
 
   .rb-quick-btn {
     display: flex;
     align-items: center;
+    justify-content: center;
     background: none;
-    border: 1px solid transparent;
-    border-radius: var(--st-radius);
+    /* Square cells: the dividers are cell edges, and a radius would round them. */
+    border: none;
     color: var(--st-text-2);
     font-size: 1rem;
     line-height: 1;
-    padding: 0.35rem 0.5rem;
+    padding: 0.3rem 0.55rem;
     cursor: pointer;
     transition: background 0.12s, color 0.12s;
   }

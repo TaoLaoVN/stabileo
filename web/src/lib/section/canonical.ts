@@ -316,8 +316,25 @@ export function resolveCanonicalSection(sec: Section): ResolvedSection {
   // ── User-parametric section ───────────────────────────────────
   // Sharp corners are the declared shape here, not an approximation of a
   // rolled profile, so no radius is required — but every other dimension is.
+  /*
+   * A dimension of zero is a missing dimension, not a dimension of zero.
+   *
+   * This only rejected null and NaN, so `t: 0` on a tube reached the geometry
+   * builder, which correctly refuses a wall with no thickness — by throwing.
+   * The throw escaped the whole load, so ONE malformed section emptied the
+   * entire model: the 3D industrial-building example opened to a blank canvas
+   * and an error in the console. Treating it as missing routes it to the
+   * properties-only path this module already has for incomplete sections, so
+   * the model still opens and still solves, and only that section goes
+   * undrawn.
+   */
   const need = (...keys: Array<keyof Section>): string[] =>
-    keys.filter((k) => sec[k] == null || !Number.isFinite(sec[k] as number)).map(String);
+    keys
+      .filter((k) => {
+        const v = sec[k] as number | null | undefined;
+        return v == null || !Number.isFinite(v) || v <= 0;
+      })
+      .map(String);
 
   switch (sec.shape) {
     case 'rect': {

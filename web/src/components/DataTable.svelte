@@ -13,6 +13,17 @@
   type TabId = 'nodes' | 'elements' | 'supports' | 'loads' | 'materials' | 'sections' | 'combos' | 'results';
   let activeTab = $state<TabId>('nodes');
 
+  const solved = $derived(resultsStore.results != null || resultsStore.results3D != null);
+
+  /*
+   * A solve going away must not leave the panel on a tab with nothing in it.
+   * The tab used to vanish, which moved the user off it as a side effect;
+   * greying it means the move has to be explicit.
+   */
+  $effect(() => {
+    if (!solved && activeTab === 'results') activeTab = 'nodes';
+  });
+
   function handleKeydown(e: KeyboardEvent) {
     e.stopPropagation();
   }
@@ -41,11 +52,20 @@
     <button class:active={activeTab === 'combos'} onclick={() => activeTab = 'combos'}>
       {t('data.combinations')}
     </button>
-    {#if resultsStore.results || resultsStore.results3D}
-      <button class="results-tab" class:active={activeTab === 'results'} onclick={() => activeTab = 'results'}>
-        {t('data.results')}
-      </button>
-    {/if}
+    <!--
+      Always present, greyed until there is something in it — the same rule the
+      ribbon's Results group follows. Appearing only after a solve made the tab
+      strip change length under the cursor and gave a new user no clue that the
+      panel had a results view at all.
+    -->
+    <button
+      class:active={activeTab === 'results'}
+      disabled={!solved}
+      title={solved ? undefined : t('ribbon.needsSolve')}
+      onclick={() => activeTab = 'results'}
+    >
+      {t('data.results')}
+    </button>
   </div>
 
   <div class="table-wrapper">
@@ -63,7 +83,7 @@
       <SectionsTable />
     {:else if activeTab === 'combos'}
       <CombosTable />
-    {:else if activeTab === 'results' && (resultsStore.results || resultsStore.results3D)}
+    {:else if activeTab === 'results' && solved}
       <ResultsTable />
     {/if}
   </div>
@@ -101,18 +121,23 @@
     color: var(--st-text);
   }
 
+  /*
+     Accent, matching the sub-tabs inside Results and every other active control
+     in the shell. Turquoise on a blue underline was two colours for one state,
+     and turquoise is what this palette uses for a computed VALUE — which is
+     what fills the cells directly below these tabs.
+  */
   .tabs button.active {
-    color: var(--st-value);
-    border-bottom-color: var(--st-interactive);
+    color: var(--st-accent);
+    border-bottom-color: var(--st-accent);
   }
 
-  .results-tab {
-    color: var(--st-warn) !important;
+  .tabs button:disabled {
+    opacity: 0.4;
+    cursor: not-allowed;
   }
-  .results-tab.active {
-    color: var(--st-warn) !important;
-    border-bottom-color: var(--st-warn) !important;
-  }
+
+  .tabs button:disabled:hover { color: var(--st-text-3); }
 
   .table-wrapper {
     flex: 1;

@@ -662,7 +662,7 @@
 {/if}
 
 <div class="app-container" class:embed-mode={uiStore.embedMode} class:hidden-behind-landing={showLanding}>
-  <header class="app-header">
+  <header class="app-header" class:has-autosave={showAutosaveBanner}>
     <div class="logo">
       <button class="logo-home" onclick={() => { showLanding = true; history.pushState(null, '', '/'); }} title="Back to home">
         <span class="logo-icon">△</span>
@@ -686,6 +686,25 @@
     </div>
     <span class="separator">|</span>
     <TabBar />
+
+    <!--
+      "A saved project was found — Restore / Discard", beside the tabs.
+      ────────────────────────────────────────────────────────────────
+      This used to be a full-width banner under the header, which pushed the
+      whole application down by its own height the moment the page loaded. It
+      was replaced with an inline prompt next to the tab strip — the tabs are
+      what it is about, since restoring opens one — but only the styles landed:
+      the markup was deleted with the banner and never put back, so the offer to
+      restore your last session simply stopped appearing.
+    -->
+    {#if showAutosaveBanner}
+      <div class="autosave-inline" data-testid="autosave-prompt">
+        <span class="autosave-text">{t('app.autosaveFound')} <strong>{autosaveData?.name}</strong></span>
+        <button class="banner-btn restore" onclick={restoreAutosave}>{t('app.restore')}</button>
+        <button class="banner-btn discard" onclick={discardAutosave}>{t('app.discard')}</button>
+      </div>
+    {/if}
+
     <div class="header-actions">
       <button class="btn btn-help" onclick={() => uiStore.showHelp = true} title={t('app.keyboardShortcuts')}>
         ?
@@ -1640,17 +1659,25 @@
     color: var(--st-value);
   }
 
+  /*
+     `.btn` sets no background, so a button that does not set one of its own
+     falls back to the browser's native ButtonFace — a light grey slab in a dark
+     shell. Every other button here declares its own; this one had only a colour.
+  */
   .btn-settings {
     display: flex;
     align-items: center;
     justify-content: center;
-    width: 28px;
+    width: 26px;
     height: 26px;
     padding: 0;
-    color: var(--st-text-2);
+    background: transparent;
+    border: 1px solid var(--st-hair-strong);
+    border-radius: 50%;
+    color: var(--st-text-3);
   }
 
-  .btn-settings:hover { color: var(--st-text); }
+  .btn-settings:hover { color: var(--st-text); border-color: var(--st-hair-strong); }
   .btn-settings.on { color: var(--st-accent); border-color: var(--st-accent); }
 
   .lang-select {
@@ -2283,6 +2310,30 @@
 
   /* ── Autosave prompt, inline with the tabs ──────────────────────────── */
 
+  .autosave-inline :global(.banner-btn),
+  .autosave-inline .banner-btn {
+    padding: 0.18rem 0.5rem;
+    font-size: 0.72rem;
+    border-radius: var(--st-radius);
+  }
+
+  /* The name is the only part that may give way when the tabs get long. */
+  .autosave-text {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    min-width: 0;
+  }
+
+  /*
+     `.tab-bar` is `flex: 1`, so it eats the header's spare width and pushes
+     anything after it to the far right — the prompt landed beside the help
+     button rather than beside the tabs it is about. While the prompt is up the
+     tabs take their natural width and the prompt absorbs the slack instead, so
+     it sits directly against them and the right-hand controls stay put. The
+     tabs get their growth back the moment the prompt is answered.
+  */
+  .app-header.has-autosave :global(.tab-bar) { flex: 0 1 auto; }
+  .autosave-inline { margin-right: auto; }
   .autosave-inline {
     display: flex;
     align-items: center;

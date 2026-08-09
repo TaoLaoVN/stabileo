@@ -175,27 +175,27 @@
   th {
     text-align: left;
     padding: 0.25rem 0.35rem;
-    color: #888;
+    color: var(--st-text-3);
     font-weight: 500;
     font-size: 0.65rem;
     text-transform: uppercase;
     letter-spacing: 0.03em;
-    border-bottom: 1px solid #0f3460;
+    border-bottom: 1px solid var(--st-surface-3);
     position: sticky;
     top: 0;
-    background: #16213e;
+    background: var(--st-surface-2);
     white-space: nowrap;
   }
 
   td {
     padding: 0.2rem 0.35rem;
-    border-bottom: 1px solid #0a1a30;
-    color: #ccc;
+    border-bottom: 1px solid var(--st-bg);
+    color: var(--st-text-2);
     white-space: nowrap;
   }
 
   .id-cell {
-    color: #4ecdc4;
+    color: var(--st-value);
     font-weight: 600;
   }
 
@@ -208,10 +208,10 @@
   td input[type="text"] {
     width: 55px;
     padding: 0.1rem 0.2rem;
-    background: #0f3460;
-    border: 1px solid #1a4a7a;
+    background: var(--st-surface-3);
+    border: 1px solid var(--st-surface-3);
     border-radius: 3px;
-    color: #eee;
+    color: var(--st-text);
     font-size: 0.7rem;
   }
 
@@ -237,10 +237,10 @@
   }
 
   .row-action-btn {
-    background: #0f3460;
-    border: 1px solid #1a4a7a;
+    background: var(--st-surface-3);
+    border: 1px solid var(--st-surface-3);
     border-radius: 3px;
-    color: #4ecdc4;
+    color: var(--st-value);
     cursor: pointer;
     font-size: 0.8rem;
     padding: 0.1rem 0.3rem;
@@ -249,51 +249,51 @@
   }
 
   .row-action-btn:hover {
-    background: #1a4a7a;
+    background: var(--st-surface-3);
     color: white;
   }
 
   .del {
     background: none;
     border: none;
-    color: #666;
+    color: var(--st-text-3);
     cursor: pointer;
     font-size: 0.8rem;
     padding: 0.1rem 0.3rem;
   }
   .del:hover {
-    color: #e94560;
+    color: var(--st-accent);
   }
 
   tr:hover {
-    background: rgba(78, 205, 196, 0.05);
+    background: rgba(127, 212, 204, 0.05);
   }
 
   .table-footer {
     padding: 0.5rem;
-    border-top: 1px solid #0a1a30;
+    border-top: 1px solid var(--st-bg);
   }
 
   .add-btn {
     width: 100%;
     padding: 0.4rem 0.5rem;
-    background: #0f3460;
-    border: 1px solid #1a4a7a;
+    background: var(--st-surface-3);
+    border: 1px solid var(--st-surface-3);
     border-radius: 4px;
-    color: #4ecdc4;
+    color: var(--st-value);
     cursor: pointer;
     font-size: 0.8rem;
     transition: all 0.2s;
   }
 
   .add-btn:hover {
-    background: #1a4a7a;
+    background: var(--st-surface-3);
     color: white;
   }
 
   .ro-val {
     font-size: 0.7rem;
-    color: #999;
+    color: var(--st-text-3);
     font-family: monospace;
     user-select: text;
   }

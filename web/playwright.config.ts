@@ -25,7 +25,15 @@ import { defineConfig, devices } from '@playwright/test';
  */
 
 const HOST = '127.0.0.1';
-const PORT = 4173;
+/*
+ * Overridable, because 4173 is Vite's default preview port and every worktree
+ * of this repo would claim it. With `reuseExistingServer` on locally, a run
+ * silently attaches to whichever worktree got there first — and then tests a
+ * different branch's build, one without VITE_E2E=1, so every PRO fixture times
+ * out waiting for `window.__stabileo` that this build was never asked to emit.
+ * Set E2E_PORT to give a worktree its own.
+ */
+const PORT = Number(process.env.E2E_PORT ?? 4173);
 const BASE_URL = `http://${HOST}:${PORT}`;
 
 export default defineConfig({
