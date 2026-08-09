@@ -28,9 +28,10 @@
   import { detailingStore } from '../../../lib/store/detailing.svelte';
   import { rebarWorkspace, SOLID_KINDS } from '../../../lib/store/rebar-workspace.svelte';
   import {
-    buildSceneModel, filterScene, summariseScene, type SceneFilter,
+    filterScene, summariseScene, type SceneFilter,
   } from '../../../lib/engine/detailing/scene-model';
   import { membersFromModel } from '../../../lib/engine/detailing/member-geometry';
+  import { cachedSceneModel } from '../../../lib/engine/detailing/scene-cache';
   import {
     reportElementStatus, type DesignOutcomeSummary,
   } from '../../../lib/engine/detailing/element-status';
@@ -61,7 +62,15 @@
       elements: [...modelStore.model.elements.values()],
       sections: [...modelStore.model.sections.values()],
     });
-    return { scene: buildSceneModel(doc, { members }), refused };
+    /**
+       * Cached against the document and the member geometry.
+       *
+       * Sampling 20 917 bars is the expensive step, and it was repeated on every reactive
+       * touch because `membersFromModel` returns a fresh array each call. The cache answers
+       * the only question that matters — same document, same members — so a checkbox, a
+       * slider or a selection no longer rebuilds the projection.
+       */
+      return { scene: cachedSceneModel(doc, members), refused };
   });
 
   /**
