@@ -589,13 +589,40 @@ export interface SceneFilter {
    * the cage is a reasonable next thing to want.
    */
   hideUnreinforced?: boolean;
+  /**
+   * Which concrete families to draw, as LAYERS of one model.
+   *
+   * ── Why foundations are not a separate route ───────────────────
+   *
+   * A footing exists to carry a column, and a user checking whether the dowels line up with
+   * the column bars above them needs both in one picture. Giving foundations their own view
+   * makes the one question that matters — do these two agree — impossible to ask.
+   *
+   * So they are a layer here, alongside beams, columns, slabs and walls, switched the same
+   * way. Absent means every family; an empty array means none, which is a real state and not
+   * the same as absent.
+   */
+  solidKinds?: readonly SceneSolidKind[];
+  /** Hide all reinforcement, leaving the concrete shell. */
+  hideBars?: boolean;
+  /** Show only these members. Used when the user isolates one element from the list. */
+  elementIds?: readonly number[];
 }
 
 export function barMatchesFilter(b: SceneBar, f: SceneFilter): boolean {
+  if (f.hideBars) return false;
   if (f.assemblyIds && !f.assemblyIds.includes(b.assemblyId)) return false;
   if (f.roles && !f.roles.includes(b.role)) return false;
   if (f.layerIds && (b.layerId === undefined || !f.layerIds.includes(b.layerId))) return false;
   if (f.conflictedOnly && !b.conflicted) return false;
+  /**
+   * Isolating members isolates their steel too.
+   *
+   * A bar owned by several members survives while ANY of them is shown: a bar continuous over
+   * a support belongs to both spans, and dropping it when the user isolates one of them would
+   * cut the bar in the picture at a point where it is not cut in the cage.
+   */
+  if (f.elementIds && !b.elementIds.some((id) => f.elementIds!.includes(id))) return false;
   /**
    * A bar with no family passes a family filter only when the filter is absent.
    *
@@ -615,29 +642,51 @@ export function barMatchesFilter(b: SceneBar, f: SceneFilter): boolean {
  * both ways of producing a picture that answers a question the user did not ask. Bounds are
  * recomputed so the camera frames what is left.
  */
+export function solidMatchesFilter(s: SceneSolid, f: SceneFilter): boolean {
+  if (f.solidKinds && !f.solidKinds.includes(s.kind)) return false;
+  if (f.elementIds && !s.elementIds.some((id) => f.elementIds!.includes(id))) return false;
+  if (f.hideUnreinforced && !s.reinforced) return false;
+  /**
+   * An assembly filter cannot exclude concrete that belongs to no assembly.
+   *
+   * A member whose design was refused is exactly that member, and `new Set(...).has(undefined)`
+   * is false — so deriving solid visibility from the visible assemblies put it back in the
+   * dark the instant a checkbox was touched. It is governed by `hideUnreinforced` above.
+   */
+  if (f.assemblyIds && s.assemblyId !== undefined && !f.assemblyIds.includes(s.assemblyId)) {
+    return false;
+  }
+  return true;
+}
+
 export function filterScene(scene: SceneModel, f: SceneFilter): SceneModel {
   const bars = scene.bars.filter((b) => barMatchesFilter(b, f));
-  const visibleAssemblies = new Set(bars.map((b) => b.assemblyId));
   const visibleBarIds = new Set(bars.map((b) => b.barId));
 
   /**
-   * Concrete follows the visible assemblies — except the concrete that belongs to none.
+   * Concrete is filtered on its OWN terms, not inferred from which bars survived.
    *
-   * A member whose design was refused has no assembly, so an assembly filter can neither
-   * include nor exclude it. Dropping it would put it back in the dark the moment the user
-   * touched a checkbox, which is exactly the failure this whole change is about. It is
-   * governed by its own switch instead.
+   * The earlier version derived solid visibility from the assemblies the visible bars
+   * belonged to, which read as "the concrete follows the steel". It has two failure modes and
+   * the workspace hits both: turning every bar off emptied the picture completely rather than
+   * leaving the concrete shell the user asked to look at, and there was no way to switch
+   * foundations or slabs on and off as layers because nothing but a bar could reach a solid.
+   *
+   * Filtering each on its own terms is also simply what the controls say they do. "Hide
+   * reinforcement" hides reinforcement; it does not hide the building.
    */
-  const anyFilter = f.assemblyIds || f.families || f.roles || f.layerIds || f.conflictedOnly;
-  const solids = scene.solids.filter((s) => {
-    if (s.assemblyId === undefined) return f.hideUnreinforced !== true;
-    if (!s.reinforced && f.hideUnreinforced === true) return false;
-    return anyFilter ? visibleAssemblies.has(s.assemblyId) : true;
-  });
+  const solids = scene.solids.filter((s) => solidMatchesFilter(s, f));
   const conflicts = scene.conflicts.filter(
     (c) => visibleBarIds.has(c.barIds[0]) || visibleBarIds.has(c.barIds[1]));
 
-  return { ...scene, bars, solids, conflicts, bounds: boundsOf(bars, solids) };
+  return {
+    ...scene, bars, solids, conflicts,
+    bounds: boundsOf(bars, solids),
+    unreinforcedMembers: solids
+      .filter((s) => !s.reinforced && (s.kind === 'beam' || s.kind === 'column'))
+      .flatMap((s) => s.elementIds)
+      .sort((x, y) => x - y),
+  };
 }
 
 // ─── Summary ─────────────────────────────────────────────────────

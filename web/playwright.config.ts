@@ -25,7 +25,24 @@ import { defineConfig, devices } from '@playwright/test';
  */
 
 const HOST = '127.0.0.1';
-const PORT = 4173;
+/**
+ * The preview port, overridable with `E2E_PORT`.
+ *
+ * ── The failure this exists to make escapable ──────────────────────
+ *
+ * `reuseExistingServer: !CI` reuses whatever is already listening on this port, and it cannot
+ * tell whose it is. A preview server left running by ANOTHER worktree — a sibling checkout of
+ * this repo building the landing site, say — is therefore adopted silently, and the whole
+ * suite runs against that build. The symptom is not a connection error: it is tests failing
+ * on missing test ids for controls that exist perfectly well in the source you are looking at.
+ *
+ * It has now cost two debugging sessions. The port stays reusable, because a developer's own
+ * running server is the case that flag is for, but a collision is now escapable without
+ * touching anyone else's checkout:
+ *
+ *     E2E_PORT=4273 npx playwright test
+ */
+const PORT = Number(process.env.E2E_PORT ?? 4173);
 const BASE_URL = `http://${HOST}:${PORT}`;
 
 export default defineConfig({

@@ -18,24 +18,34 @@
   import { onMount } from 'svelte';
   import * as THREE from 'three';
   import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
-  import { createRebarScene, frameBounds, type RebarScene }
+  import { createRebarScene, frameBounds, frameExtent, elementExtent, type RebarScene }
     from '../../../lib/three/rebar-scene';
   import type { SceneModel } from '../../../lib/engine/detailing/scene-model';
   import { t } from '../../../lib/i18n';
+
+  /** What the user clicked: a bar, a piece of concrete, or empty space. */
+  export interface ScenePick {
+    barId?: string;
+    solidId?: string;
+    elementIds: number[];
+  }
 
   interface Props {
     scene: SceneModel;
     diameterScale?: number;
     showConcrete?: boolean;
     showConflicts?: boolean;
+    concreteOpacity?: number;
     selectedBarId?: string | null;
-    onselect?: (barId: string | null) => void;
+    /** A section plane through the model, in model coordinates. */
+    section?: { axis: 'x' | 'y' | 'z'; at: number; flip?: boolean } | null;
+    onselect?: (pick: ScenePick | null) => void;
     height?: string;
   }
 
   const {
     scene, diameterScale = 1, showConcrete = true, showConflicts = true,
-    selectedBarId = null, onselect, height = '460px',
+    concreteOpacity = 1, selectedBarId = null, section = null, onselect, height = '460px',
   }: Props = $props();
 
   let host = $state<HTMLDivElement | null>(null);
@@ -92,11 +102,27 @@
   function rebuild() {
     if (!root) return;
     if (built) { root.remove(built.group); built.dispose(); built = null; }
-    built = createRebarScene(scene, { diameterScale, showConcrete, showConflicts });
+    built = createRebarScene(scene, {
+      diameterScale, showConcrete, showConflicts, concreteOpacity,
+      section: section ?? undefined,
+    });
     root.add(built.group);
     invalidate(2);
   }
 
+  /**
+   * Resolve a click to a bar or a member.
+   *
+   * ── Why the nearest hit is not simply taken ────────────────────
+   *
+   * Concrete is translucent and encloses the steel, so the nearest surface under the cursor is
+   * almost always concrete — and taking it would make bars unselectable everywhere except at
+   * the ends where they poke out. The hits are sorted by distance, so the first BAR is
+   * preferred and concrete answers only when no bar was under the cursor at all.
+   *
+   * That ordering is also what makes a member with no steel selectable: nothing else is there
+   * to win, and those are precisely the members the user most needs to interrogate.
+   */
   function pick(ev: PointerEvent) {
     if (!renderer || !camera || !built || !onselect) return;
     const rect = renderer.domElement.getBoundingClientRect();
@@ -106,12 +132,49 @@
     );
     const ray = new THREE.Raycaster();
     ray.setFromCamera(ndc, camera);
-    const meshes = built.bars.map((b) => b.mesh);
-    const hits = ray.intersectObjects(meshes, false);
-    if (hits.length === 0) { onselect(null); return; }
-    // `faceIndex` is nullable on an intersection with a non-indexed or point geometry; the
-    // picking map treats absent as "no bar" rather than as face zero.
-    onselect(built.barIdAt(hits[0].object, hits[0].faceIndex ?? undefined));
+    const hits = ray.intersectObjects(built.pickable(), false);
+
+    for (const hit of hits) {
+      // `faceIndex` is nullable on a non-indexed or point geometry; the picking maps treat
+      // absent as "nothing here" rather than as face zero.
+      const barId = built.barIdAt(hit.object, hit.faceIndex ?? undefined);
+      if (barId) {
+        const bar = scene.bars.find((b) => b.barId === barId);
+        onselect({ barId, elementIds: bar?.elementIds ?? [] });
+        return;
+      }
+    }
+    for (const hit of hits) {
+      const solidId = built.solidIdAt(hit.object, hit.faceIndex ?? undefined);
+      if (solidId) {
+        const solid = scene.solids.find((s) => s.id === solidId);
+        onselect({ solidId, elementIds: solid?.elementIds ?? [] });
+        return;
+      }
+    }
+    onselect(null);
+  }
+
+  /**
+   * Centre the camera on one member without changing the viewing direction.
+   *
+   * Keeping the direction is the point: a user who has orbited to look along a beam line and
+   * then clicks the next member expects to arrive there facing the same way. Re-deriving an
+   * isometric each time throws away the orientation they just chose.
+   */
+  export function focusElement(elementId: number): boolean {
+    if (!camera || !controls) return false;
+    const extent = elementExtent(scene, elementId);
+    const f = frameExtent(extent, camera.fov, camera.aspect);
+    if (!f) return false;
+    const dir = new THREE.Vector3()
+      .subVectors(camera.position, controls.target).normalize();
+    controls.target.copy(f.centre);
+    camera.position.copy(f.centre).addScaledVector(dir, Math.max(f.distance, 0.5));
+    camera.updateProjectionMatrix();
+    controls.update();
+    invalidate(20);
+    return true;
   }
 
   /**
@@ -156,6 +219,9 @@
       return;
     }
     renderer.setPixelRatio(Math.min(2, window.devicePixelRatio || 1));
+    // Material-level clipping planes do nothing unless the renderer opts in. Local rather
+    // than global so the section belongs to this scene and cannot leak into another view.
+    renderer.localClippingEnabled = true;
     host.appendChild(renderer.domElement);
     renderer.domElement.style.width = '100%';
     renderer.domElement.style.height = '100%';
@@ -211,12 +277,24 @@
       resize.disconnect();
       controls?.dispose();
       built?.dispose();
+      /**
+       * Release the GPU context, not just the JS objects.
+       *
+       * `dispose()` frees the renderer's own resources and leaves the WebGL context alive.
+       * A browser allows a small number of live contexts — around sixteen in Chromium — and
+       * drops the oldest without warning once that is exceeded. This workspace is an overlay
+       * the user opens and closes repeatedly, so a leaked context per open is a viewport that
+       * silently stops rendering after a dozen visits, and a test run that starts failing
+       * partway through for no reason visible in the test that fails.
+       */
+      renderer?.forceContextLoss();
       renderer?.dispose();
       renderer?.domElement.remove();
       renderer = null;
       camera = null;
       root = null;
       built = null;
+      highlight = null;
     };
   });
 
@@ -225,7 +303,8 @@
   let lastScene: SceneModel | null = null;
   $effect(() => {
     // Touch the options so the effect re-runs when any of them changes.
-    void diameterScale; void showConcrete; void showConflicts;
+    void diameterScale; void showConcrete; void showConflicts; void section;
+    void concreteOpacity;
     if (!root) return;
     const changed = lastScene !== scene;
     lastScene = scene;

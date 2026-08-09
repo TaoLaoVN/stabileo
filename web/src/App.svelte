@@ -31,6 +31,7 @@
   import TabBar from './components/TabBar.svelte';
   import MobileResultsPanel from './components/MobileResultsPanel.svelte';
   import ProPanel from './components/pro/ProPanel.svelte';
+  import RebarWorkspace from './components/pro/design/RebarWorkspace.svelte';
   import ProProjectFileActions from './components/pro/ProProjectFileActions.svelte';
   import ToolbarConfig from './components/toolbar/ToolbarConfig.svelte';
   import EducativePanel from './components/edu/EducativePanel.svelte';
@@ -954,6 +955,19 @@
 <DespieceInspector />
 <MaterialEditor />
 <SectionEditor />
+
+<!--
+  The 3-D reinforcement workspace.
+
+  Mounted HERE, at the root, and not inside the PRO sidebar where its launcher lives. The
+  sidebar is `aside.pro-sidebar` with a fixed pixel width, so anything nested in it is capped
+  by that width no matter what it asks for — which is the entire reason the viewer was a few
+  hundred pixels wide. An overlay at this level is bounded by the window instead.
+
+  It renders nothing at all until opened, and its state lives in `rebarWorkspace`, so opening
+  and closing costs the model nothing.
+-->
+<RebarWorkspace />
 
 {#if uiStore.toasts.length > 0}
   <div class="toast-container">

@@ -22,6 +22,7 @@
   } from '../../../lib/engine/detailing/document-render';
   import { exportToExcel } from '../../../lib/export/excel';
   import RebarScenePanel from './RebarScenePanel.svelte';
+  import { rebarWorkspace } from '../../../lib/store/rebar-workspace.svelte';
 
   let engineer = $state('');
   let docError = $state<string | null>(null);
@@ -85,7 +86,12 @@
    * projections of the same instance rather than of two documents that happen to agree.
    */
   function open3d() {
-    if (currentDoc()) show3d = true;
+    if (!currentDoc()) return;
+    show3d = true;
+    // Straight into the workspace. The sidebar panel keeps the summary and the export; the
+    // inspection surface is the overlay, and making the user find a second button to reach it
+    // is the friction this pass exists to remove.
+    rebarWorkspace.openWorkspace();
   }
 
   function exportXlsx() {

@@ -336,14 +336,92 @@ describe('an absent filter and an empty filter are different states', () => {
     expect(filterScene(all, { roles: ['longitudinal'] }).solids).toHaveLength(2);
   });
 
-  it('reframes the bounds around what is left, and frames nothing as null', () => {
+  it('hiding every bar leaves the concrete shell, not an empty screen', () => {
+    /**
+     * This used to empty the picture completely, and that was wrong.
+     *
+     * Solid visibility was derived from the assemblies the surviving BARS belonged to, so
+     * turning the last bar off took the building with it. "Hide reinforcement" hides
+     * reinforcement; a user who wants to look at the concrete on its own is asking a normal
+     * question and used to get a blank canvas.
+     */
     const all = buildSceneModel(doc(), { members: MEMBERS });
-    // The column reaches z = 3, so the unfiltered scene is framed on the concrete.
+    const noBars = filterScene(all, { roles: [] });
+    expect(noBars.bars).toHaveLength(0);
+    expect(noBars.solids).toHaveLength(2);
+    expect(noBars.bounds).not.toBeNull();
+  });
+
+  it('frames nothing as null when there is genuinely nothing', () => {
+    const all = buildSceneModel(doc(), { members: MEMBERS });
     expect(all.bounds!.max.z).toBeCloseTo(3, 9);
-    // With no assembly visible there is no solid either, and a camera cannot frame nothing.
-    const empty = filterScene(all, { roles: [] });
+    // A camera cannot frame nothing, and this is the only way to reach nothing.
+    const empty = filterScene(all, { roles: [], solidKinds: [] });
     expect(empty.solids).toEqual([]);
     expect(empty.bounds).toBeNull();
+  });
+});
+
+// ─── Layers ──────────────────────────────────────────────────────
+
+describe('concrete families are layers of one model', () => {
+  const dowel = bar('d1', {
+    diameterMm: 20, start: { x: 3, y: 2, z: -0.6 }, end: { x: 3, y: 2, z: 1.2 },
+    axis: UP, hookNormal: X, ownerElementIds: [9], layerId: 'f1:dowel:0',
+  });
+  const record = {
+    family: 'footing', ownerId: 'F1', ownerElementIds: [9], barIds: ['d1'],
+    certificate: {
+      family: 'footing', recordId: 'footing:F1', ownerId: 'F1', ownerElementIds: [9],
+      inputHash: 'i', geometryHash: 'g',
+      revisions: { analysis: 1, loads: 1, regulation: 1, entity: 1 },
+      edition: '2025', governingChecks: [], status: 'CERTIFIED', maturity: 'VALIDATED',
+      assumptions: [], reinforcementHash: 'r', finalGeometryHash: 'f',
+    },
+    geometryHash: 'g', inputHash: 'i',
+    geometry: {
+      footingId: 9, name: 'Z1', kind: 'isolated', B: 2.5, L: 2.0, thickness: 0.6,
+      rotationDeg: 0, eccentricityB: 0, eccentricityL: 0, cover: 0.05,
+      foundingElevation: -1.2, d: 0.52,
+    },
+    dowels: { count: 1, diameterMm: 20, ldFooting: 0.5, lapAbove: 0.6, hooked: false, barIds: ['d1'] },
+  } as unknown as FootingDesignRecord;
+
+  const scene = buildSceneModel(
+    doc({
+      assemblies: [
+        assembly({ state: 'ISSUED' }),
+        assembly({ id: 'FLOOR', elementIds: [], bars: [dowel], marks: [], families: [record] }),
+      ],
+    }),
+    { members: MEMBERS });
+
+  it('puts the footing in the SAME scene as the frame it carries', () => {
+    // Not a separate view: a user checking that dowels line up with the column above them
+    // needs both, and a foundations-only route makes that question impossible to ask.
+    expect(scene.solids.map((s) => s.kind).sort())
+      .toEqual(['beam', 'column', 'footing']);
+  });
+
+  it('switches a family off without touching the others', () => {
+    const noFoundations = filterScene(scene, { solidKinds: ['beam', 'column'] });
+    expect(noFoundations.solids.map((s) => s.kind).sort()).toEqual(['beam', 'column']);
+    // And the frame's own steel is untouched by a concrete-layer switch.
+    expect(noFoundations.bars.length).toBe(scene.bars.length);
+  });
+
+  it('isolates one member, keeping a bar that is continuous into another', () => {
+    const only1 = filterScene(scene, { elementIds: [1] });
+    expect(only1.solids.map((s) => s.id)).toEqual(['member:1']);
+    // Both frame bars are owned by element 1, so both survive.
+    expect(only1.bars.every((b) => b.elementIds.includes(1))).toBe(true);
+    expect(only1.bars.length).toBeGreaterThan(0);
+  });
+
+  it('hides all reinforcement with one switch, keeping every solid', () => {
+    const shell = filterScene(scene, { hideBars: true });
+    expect(shell.bars).toEqual([]);
+    expect(shell.solids).toHaveLength(scene.solids.length);
   });
 });
 

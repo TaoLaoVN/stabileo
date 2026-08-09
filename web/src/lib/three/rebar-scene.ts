@@ -209,6 +209,25 @@ function appendPrism(
 /** Where a picked triangle came from. */
 export interface BarRange { barId: string; firstTri: number; triCount: number }
 
+/** The same, for the concrete batch: which solid a picked triangle belongs to. */
+export interface SolidRange { solidId: string; firstTri: number; triCount: number }
+
+/** Binary search over ascending, contiguous triangle ranges. */
+function rangeAt<T extends { firstTri: number; triCount: number }>(
+  ranges: readonly T[], faceIndex: number,
+): T | null {
+  let lo = 0;
+  let hi = ranges.length - 1;
+  while (lo <= hi) {
+    const mid = (lo + hi) >> 1;
+    const r = ranges[mid];
+    if (faceIndex < r.firstTri) hi = mid - 1;
+    else if (faceIndex >= r.firstTri + r.triCount) lo = mid + 1;
+    else return r;
+  }
+  return null;
+}
+
 export interface RebarSceneOptions {
   /**
    * Multiplier on the true bar radius.
@@ -224,14 +243,63 @@ export interface RebarSceneOptions {
   showConcrete?: boolean;
   /** Draw a marker at each unresolved conflict. */
   showConflicts?: boolean;
+  /**
+   * Multiplier on the concrete's opacity.
+   *
+   * 1 keeps the defaults tuned for seeing steel through the shell. The control exists because
+   * "how transparent" is genuinely a per-question preference: reading a cage wants it faint,
+   * checking that a beam meets a column wants it solid.
+   */
+  concreteOpacity?: number;
+  /**
+   * A section plane, as an axis and a position along it in model coordinates.
+   *
+   * ── Why a plane rather than a box ──────────────────────────────
+   *
+   * The question a section answers is "what is inside here", and one plane answers it. A
+   * clipping BOX adds five more numbers to steer and, in a cage, mostly produces views where
+   * the thing you were looking at is outside one of the other faces.
+   *
+   * Applied through Three's material clipping, so it cuts the merged batches without
+   * rebuilding any geometry — which matters because the batches are the whole reason a floor
+   * of thousands of bars renders at all.
+   */
+  section?: { axis: 'x' | 'y' | 'z'; at: number; flip?: boolean };
+}
+
+const AXIS_NORMALS = {
+  x: new THREE.Vector3(-1, 0, 0),
+  y: new THREE.Vector3(0, -1, 0),
+  z: new THREE.Vector3(0, 0, -1),
+} as const;
+
+function planesFor(section: RebarSceneOptions['section']): THREE.Plane[] {
+  if (!section) return [];
+  const n = AXIS_NORMALS[section.axis].clone();
+  if (section.flip) n.negate();
+  // `constant` is the signed distance from the origin along the normal.
+  return [new THREE.Plane(n, section.flip ? -section.at : section.at)];
 }
 
 export interface RebarScene {
   group: THREE.Group;
   /** Merged bar meshes, by category, with the map back to individual bars. */
   bars: Array<{ category: RebarCategory; mesh: THREE.Mesh; ranges: BarRange[] }>;
+  /** Merged concrete meshes, with the map back to individual solids. */
+  solids: Array<{ reinforced: boolean; mesh: THREE.Mesh; ranges: SolidRange[] }>;
   /** Which bar a raycast hit, or null when the hit was concrete or a marker. */
   barIdAt(mesh: THREE.Object3D, faceIndex: number | undefined): string | null;
+  /**
+   * Which concrete solid a raycast hit.
+   *
+   * Concrete is pickable for the same reason bars are: the user's question is usually about
+   * a MEMBER — what is this beam, why has it no steel — and requiring them to hit a 16 mm
+   * tube to ask it makes the members with no steel the hardest ones to interrogate. Which
+   * are, of course, exactly the ones they need to interrogate.
+   */
+  solidIdAt(mesh: THREE.Object3D, faceIndex: number | undefined): string | null;
+  /** Every mesh a raycast should consider, bars and concrete alike. */
+  pickable(): THREE.Mesh[];
   dispose(): void;
 }
 
@@ -244,6 +312,7 @@ export function createRebarScene(
   const scale = options.diameterScale ?? DEFAULTS.diameterScale;
   const group = new THREE.Group();
   group.name = 'rebar-scene';
+  const clippingPlanes = planesFor(options.section);
 
   const byCategory = new Map<RebarCategory, SceneBar[]>();
   for (const b of scene.bars) {
@@ -253,6 +322,7 @@ export function createRebarScene(
   }
 
   const bars: RebarScene['bars'] = [];
+  const solidMeshes: RebarScene['solids'] = [];
   const disposables: Array<{ dispose(): void }> = [];
 
   for (const [category, list] of byCategory) {
@@ -279,6 +349,7 @@ export function createRebarScene(
 
     const mat = new THREE.MeshStandardMaterial({
       color: REBAR_COLORS[category], roughness: 0.55, metalness: 0.35,
+      clippingPlanes, clipShadows: true,
     });
     const mesh = new THREE.Mesh(geom, mat);
     mesh.name = `rebar-${category}`;
@@ -303,11 +374,18 @@ export function createRebarScene(
       const pos: number[] = [];
       const nor: number[] = [];
       const idx: number[] = [];
+      const ranges: SolidRange[] = [];
+      let tri = 0;
       for (const s of subset) {
+        const before = idx.length / 3;
         appendPrism(
           s.base.map((p) => new THREE.Vector3(p.x, p.y, p.z)),
           new THREE.Vector3(s.extrude.x, s.extrude.y, s.extrude.z),
           pos, nor, idx);
+        const written = idx.length / 3 - before;
+        if (written === 0) continue;
+        ranges.push({ solidId: s.id, firstTri: tri, triCount: written });
+        tri += written;
       }
       if (pos.length === 0) continue;
 
@@ -321,15 +399,19 @@ export function createRebarScene(
         // Translucent and not depth-writing, because the entire point of this view is to see
         // the steel THROUGH the concrete. Opaque concrete would hide the feature.
         transparent: true,
-        opacity: reinforced ? 0.22 : 0.45,
+        // Clamped below 1: fully opaque concrete would hide the reinforcement, which is the
+        // one thing this view exists to show.
+        opacity: Math.min(0.92, (reinforced ? 0.22 : 0.45) * (options.concreteOpacity ?? 1)),
         depthWrite: false,
         side: THREE.DoubleSide, roughness: 0.95, metalness: 0,
+        clippingPlanes,
       });
       const mesh = new THREE.Mesh(geom, mat);
       mesh.name = reinforced ? 'rebar-concrete' : 'rebar-concrete-unreinforced';
       mesh.renderOrder = 1;
       group.add(mesh);
       disposables.push(geom, mat);
+      solidMeshes.push({ reinforced, mesh, ranges });
     }
   }
 
@@ -363,21 +445,27 @@ export function createRebarScene(
   return {
     group,
     bars,
+    solids: solidMeshes,
     barIdAt(mesh, faceIndex) {
       if (faceIndex === undefined) return null;
       const entry = bars.find((b) => b.mesh === mesh);
-      if (!entry) return null;
-      // Ranges are in ascending, contiguous triangle order, so a binary search is exact.
-      let lo = 0;
-      let hi = entry.ranges.length - 1;
-      while (lo <= hi) {
-        const mid = (lo + hi) >> 1;
-        const r = entry.ranges[mid];
-        if (faceIndex < r.firstTri) hi = mid - 1;
-        else if (faceIndex >= r.firstTri + r.triCount) lo = mid + 1;
-        else return r.barId;
-      }
-      return null;
+      return entry ? rangeAt(entry.ranges, faceIndex)?.barId ?? null : null;
+    },
+    solidIdAt(mesh, faceIndex) {
+      if (faceIndex === undefined) return null;
+      const entry = solidMeshes.find((s) => s.mesh === mesh);
+      return entry ? rangeAt(entry.ranges, faceIndex)?.solidId ?? null : null;
+    },
+    /**
+     * Bars first, then concrete.
+     *
+     * The raycaster returns hits sorted by distance, so ordering here does not decide what
+     * wins — but the caller resolves a hit by asking the bar map first, and a bar inside
+     * translucent concrete must be selectable THROUGH it. Listing both is what makes that
+     * possible; leaving the concrete out is what made members with no steel unpickable.
+     */
+    pickable() {
+      return [...bars.map((b) => b.mesh), ...solidMeshes.map((s) => s.mesh)];
     },
     dispose() {
       for (const d of disposables) d.dispose();
@@ -406,8 +494,52 @@ export function createRebarScene(
 export function frameBounds(
   scene: SceneModel, fovDeg = 50, aspect = 1,
 ): { centre: THREE.Vector3; distance: number } | null {
-  if (!scene.bounds) return null;
-  const { min, max } = scene.bounds;
+  return frameExtent(scene.bounds, fovDeg, aspect);
+}
+
+/**
+ * The extent of ONE member, for centring the camera on it.
+ *
+ * Returns null when the member is not in the scene — which is a real answer, not a failure:
+ * the user may have filtered it out, and the caller should leave the camera alone rather than
+ * fly it to the origin.
+ */
+export function elementExtent(
+  scene: SceneModel, elementId: number,
+): { min: THREE.Vector3; max: THREE.Vector3 } | null {
+  let min: THREE.Vector3 | null = null;
+  let max: THREE.Vector3 | null = null;
+  const eat = (p: { x: number; y: number; z: number }) => {
+    if (!min || !max) {
+      min = new THREE.Vector3(p.x, p.y, p.z);
+      max = new THREE.Vector3(p.x, p.y, p.z);
+      return;
+    }
+    min.min(new THREE.Vector3(p.x, p.y, p.z));
+    max.max(new THREE.Vector3(p.x, p.y, p.z));
+  };
+
+  for (const s of scene.solids) {
+    if (!s.elementIds.includes(elementId)) continue;
+    for (const p of s.base) {
+      eat(p);
+      eat({ x: p.x + s.extrude.x, y: p.y + s.extrude.y, z: p.z + s.extrude.z });
+    }
+  }
+  for (const b of scene.bars) {
+    if (!b.elementIds.includes(elementId)) continue;
+    for (const p of b.polyline) eat(p);
+  }
+  return min && max ? { min, max } : null;
+}
+
+/** A framing for an arbitrary extent, shared by the whole-scene and per-member cases. */
+export function frameExtent(
+  extent: { min: { x: number; y: number; z: number }; max: { x: number; y: number; z: number } } | null,
+  fovDeg = 50, aspect = 1,
+): { centre: THREE.Vector3; distance: number } | null {
+  if (!extent) return null;
+  const { min, max } = extent;
   const centre = new THREE.Vector3(
     (min.x + max.x) / 2, (min.y + max.y) / 2, (min.z + max.z) / 2);
   const span = Math.max(max.x - min.x, max.y - min.y, max.z - min.z, 0.5);
