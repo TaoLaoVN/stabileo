@@ -317,6 +317,13 @@ export function isSolverReady(): boolean {
   return wasmReady;
 }
 
+/** Check if the canonical-section-geometry export is present. Older WASM
+ *  builds (or builds from branches that predate the section engine) do not
+ *  have it, and `buildSectionGeometry` would throw on call. */
+export function hasCanonicalGeometryExport(): boolean {
+  return wasmBuildSectionGeometry !== null;
+}
+
 // ─── Serialization helpers ──────────────────────────────────────
 
 /** Convert Map<number, T> to { "key": T } for JSON serialization. */

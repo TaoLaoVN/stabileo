@@ -16,9 +16,15 @@ import {
   drawingGeometry,
 } from '../drawing';
 import { resolveSectionState } from '../state';
-import { analyzeSectionBending } from '../../engine/wasm-solver';
+import { analyzeSectionBending, hasCanonicalGeometryExport } from '../../engine/wasm-solver';
 import { ALL_PROFILES } from '../../data/steel-profiles';
 import type { Section } from '../../store/model.svelte';
+
+// These tests exercise the canonical-geometry WASM export. A build from a
+// branch that predates the section engine does not have it, so skip rather
+// than fail with "WASM solver not initialized".
+const hasCanonical = hasCanonicalGeometryExport();
+const describeCanonical = hasCanonical ? describe : describe.skip;
 
 function sec(over: Partial<Section> & { id?: number }): Section {
   return { id: 1, name: '', a: 0.01, iz: 1e-5, ...over } as Section;
@@ -33,7 +39,7 @@ function resolved(s: Section): Section {
 
 // ─── The drawing renders the analysed geometry ─────────────────────
 
-describe('drawing consumes the canonical polygons', () => {
+describeCanonical('drawing consumes the canonical polygons', () => {
   it('an IPE outline carries its root fillets, not a sharp box', () => {
     const r = resolveDrawingGeometry(resolved(fromCatalogue('IPE 300')));
     expect(r.ok).toBe(true);
@@ -81,7 +87,7 @@ describe('drawing consumes the canonical polygons', () => {
 
 // ─── Identity enforcement ──────────────────────────────────────────
 
-describe('digest identity is enforced, and the guard can actually fail', () => {
+describeCanonical('digest identity is enforced, and the guard can actually fail', () => {
   it('the drawing and the bending result agree for the same section', () => {
     const s = resolved(fromCatalogue('IPE 300'));
     const r = resolveDrawingGeometry(s);
@@ -128,7 +134,7 @@ describe('digest identity is enforced, and the guard can actually fail', () => {
 
 // ─── Properties-only sections are refused, never schematised ───────
 
-describe('properties-only sections get no detailed drawing', () => {
+describeCanonical('properties-only sections get no detailed drawing', () => {
   for (const spec of [
     { name: 'Losa equivalente', a: 0.05, iy: 4e-4, iz: 1e-4 },
     { name: 'Sección compuesta', a: 0.02, iy: 9e-5, iz: 3e-5 },
@@ -157,7 +163,7 @@ describe('properties-only sections get no detailed drawing', () => {
 
 // ─── Renaming ──────────────────────────────────────────────────────
 
-describe('the drawing does not depend on the display name', () => {
+describeCanonical('the drawing does not depend on the display name', () => {
   it('renaming a profile leaves the drawn outline byte-identical', () => {
     const a = resolved(fromCatalogue('IPE 300'));
     const renamed = resolved({ ...fromCatalogue('IPE 300'), name: 'IPE 300' });
@@ -171,7 +177,7 @@ describe('the drawing does not depend on the display name', () => {
 
 // ─── The drawn path must live in the SVG's frame ───────────────────
 
-describe('canonical geometry maps into the drawing frame', () => {
+describeCanonical('canonical geometry maps into the drawing frame', () => {
   /**
    * Mirror of `canonicalPath` in CrossSectionDrawing.svelte.
    *
