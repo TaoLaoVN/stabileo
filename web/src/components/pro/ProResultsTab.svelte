@@ -325,20 +325,30 @@
     <!-- 3D Visualization controls -->
     <div class="pro-viz-section">
       <div class="pro-viz-row">
-        <label class="pro-viz-label">{t('pro.diagramLabel')}</label>
-        <select class="pro-viz-sel" bind:value={resultsStore.diagramType}>
-          <option value="none">{t('pro.diagNone')}</option>
-          <option value="deformed">{t('pro.diagDeformed')}</option>
-          <option value="momentY">My</option>
-          <option value="momentZ">Mz</option>
-          <option value="shearY">Vy</option>
-          <option value="shearZ">Vz</option>
-          <option value="axial">N</option>
-          <option value="torsion">T</option>
-          <option value="axialColor">{t('pro.diagAxialColor')}</option>
-          <option value="colorMap">{t('pro.diagColorMap')}</option>
-          <option value="verification">{t('pro.diagVerification')}</option>
-        </select>
+        <!--
+          The diagram moved to the ribbon, where Basic keeps it and where it is
+          one click away instead of eleven entries down a dropdown. What stays
+          here is the part that is NOT a quantity: how axial gets drawn.
+        -->
+        {#if resultsStore.diagramType === 'axial' || resultsStore.diagramType === 'axialColor'}
+          <label class="pro-viz-label">{t('results.axialShownAs')}</label>
+          <div class="pro-seg" role="group" aria-label={t('results.axialShownAs')}>
+            <button
+              class="pro-seg-btn"
+              class:on={resultsStore.diagramType === 'axial'}
+              onclick={() => (resultsStore.diagramType = 'axial')}
+              data-testid="pro-axial-as-diagram"
+            >{t('results.asDiagram')}</button>
+            <button
+              class="pro-seg-btn"
+              class:on={resultsStore.diagramType === 'axialColor'}
+              onclick={() => (resultsStore.diagramType = 'axialColor')}
+              data-testid="pro-axial-as-colour"
+            >{t('results.asMemberColour')}</button>
+          </div>
+        {:else}
+          <span class="pro-viz-hint">{t('proResults.diagramInRibbon')}</span>
+        {/if}
       </div>
 
       {#if resultsStore.diagramType === 'colorMap'}
@@ -811,6 +821,35 @@
 </div>
 
 <style>
+  /* A two-state choice reads as one control, not two buttons. */
+  .pro-viz-hint {
+    font-size: 0.7rem;
+    color: var(--st-text-3);
+    font-style: italic;
+  }
+
+  .pro-seg {
+    display: inline-flex;
+    border: 1px solid var(--st-hair);
+    border-radius: var(--st-radius);
+    overflow: hidden;
+  }
+
+  .pro-seg-btn {
+    background: none;
+    border: none;
+    color: var(--st-text-2);
+    font-family: var(--st-sans);
+    font-size: 0.72rem;
+    padding: 0.22rem 0.5rem;
+    cursor: pointer;
+    white-space: nowrap;
+  }
+
+  .pro-seg-btn + .pro-seg-btn { border-left: 1px solid var(--st-hair); }
+  .pro-seg-btn:hover { background: var(--st-surface-3); color: var(--st-text); }
+  .pro-seg-btn.on { background: var(--st-selected-bg); color: var(--st-accent); }
+
   .pro-res { display: flex; flex-direction: column; height: 100%; overflow: hidden; }
 
   .pro-res-header {

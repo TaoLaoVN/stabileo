@@ -16,6 +16,7 @@
   import { runGlobalSolve } from '../../lib/engine/live-calc';
   import ProReportDialog from './ProReportDialog.svelte';
   import ProNodesTab from './ProNodesTab.svelte';
+  import ProProjectTab from './ProProjectTab.svelte';
   import ProElementsTab from './ProElementsTab.svelte';
   import ProMaterialsTab from './ProMaterialsTab.svelte';
   import ProSectionsTab from './ProSectionsTab.svelte';
@@ -32,7 +33,7 @@
   import { checkModel } from '../../lib/engine/model-diagnostics';
   import { get2DDisplayNodalLoadMoment, get2DDisplayNodalLoadVertical } from '../../lib/geometry/coordinate-system';
 
-  type ProTab = 'nodes' | 'elements' | 'shells' | 'materials' | 'sections' | 'supports' | 'constraints' | 'loads' | 'advanced' | 'results' | 'design' | 'connections' | 'diagnostics';
+  type ProTab = 'project' | 'nodes' | 'elements' | 'shells' | 'materials' | 'sections' | 'supports' | 'constraints' | 'loads' | 'advanced' | 'results' | 'design' | 'connections' | 'diagnostics';
 
   // Group tabs into logical categories
   interface TabGroup {
@@ -98,6 +99,15 @@
   export function isSolving() { return solving; }
   export function canSolve() { return hasModel && !solving; }
   export function canReport() { return modelStore.nodes.size > 0; }
+  /**
+   * The model's error count, for the ribbon's stage badge.
+   *
+   * The banner at the top of this panel already knows it, but only this panel
+   * shows the banner — so the count was invisible from any other stage. The
+   * ribbon needs it to say whether MODEL is clean without the user going to
+   * Diagnostics to find out.
+   */
+  export function errorCount() { return modelErrorCount; }
 
   type ExampleGroup = 'buildings' | 'industrial' | 'foundations' | 'longspan' | 'energy' | 'xl';
   type ExamplePreset = 'default' | 'xl' | 'clean-shell' | 'bridge';
@@ -786,7 +796,9 @@
       </div>
     {:else}
       <svelte:boundary onerror={(e) => { tabError = String(e); console.error('ProPanel tab error:', e); }}>
-        {#if activeTab === 'nodes'}
+        {#if activeTab === 'project'}
+          <ProProjectTab onOpenExamples={(btn) => { exampleButtonEl = btn; toggleExampleMenu(); }} />
+        {:else if activeTab === 'nodes'}
           <ProNodesTab />
         {:else if activeTab === 'elements'}
           <ProElementsTab />

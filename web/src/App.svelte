@@ -112,6 +112,7 @@
   import RebarWorkspace from './components/pro/design/RebarWorkspace.svelte';
   import ProProjectFileActions from './components/pro/ProProjectFileActions.svelte';
   import ToolbarConfig from './components/toolbar/ToolbarConfig.svelte';
+  import ProRibbon from './components/pro/ProRibbon.svelte';
   import EducativePanel from './components/edu/EducativePanel.svelte';
   import { eduStore } from './components/edu/edu-store.svelte';
   import TourOverlay from './components/TourOverlay.svelte';
@@ -832,6 +833,17 @@
           data-testid="rb-settings"
         ><Icon name="settings" size={16} /></button>
       {/if}
+      <!-- PRO puts settings in the same corner, for the same reason. -->
+      {#if uiStore.appMode === 'pro' && !uiStore.isMobile}
+        <button
+          class="btn btn-settings"
+          class:on={proSettingsOpen}
+          onclick={() => (proSettingsOpen = !proSettingsOpen)}
+          title={t('config.title')}
+          aria-label={t('config.title')}
+          data-testid="pro-settings"
+        ><Icon name="settings" size={16} /></button>
+      {/if}
     </div>
   </header>
 
@@ -852,103 +864,22 @@
 
     {#if uiStore.appMode === 'pro' && !uiStore.isMobile}
       <!-- svelte-ignore a11y_no_static_element_interactions -->
-      <nav class="pro-bar" onclick={(e) => e.stopPropagation()}>
-        <!-- Pan -->
-        <button class="pb-tool" class:active={uiStore.currentTool === 'pan'} onclick={() => { uiStore.currentTool = 'pan'; openDropdown = null; }} title="{t('float.pan')} (H)">✋</button>
-        <!-- Select with dropdown -->
-        <!-- Undo / Redo -->
-        <button class="pb-undo" onclick={() => historyStore.undo()} disabled={!historyStore.canUndo} title="{t('toolbar.undo')} ({navigator?.platform?.includes('Mac') ? '⌘' : 'Ctrl'}+Z)">↶</button>
-        <button class="pb-undo" onclick={() => historyStore.redo()} disabled={!historyStore.canRedo} title="{t('toolbar.redo')} ({navigator?.platform?.includes('Mac') ? '⌘' : 'Ctrl'}+Y)">↷</button>
-        <div class="pb-dd-wrap">
-          <button class="pb-tool" class:active={uiStore.currentTool === 'select'} onclick={() => { uiStore.currentTool = 'select'; toggleDropdown('select'); }}>↖ <span class="pb-caret">▾</span></button>
-          {#if openDropdown === 'select'}
-            <div class="pb-dropdown">
-              {#each [
-                { id: 'nodes', key: 'float.selectNodes' },
-                { id: 'elements', key: 'float.selectElements' },
-                { id: 'shells', key: 'float.selectShells' },
-                { id: 'supports', key: 'float.selectSupports' },
-                { id: 'loads', key: 'float.selectLoads' },
-              ] as const as sm}
-                <button class="pb-dd-item" class:active={uiStore.selectMode === sm.id} onclick={() => { uiStore.selectMode = sm.id; openDropdown = null; }}>{t(sm.key)}</button>
-              {/each}
-            </div>
-          {/if}
-        </div>
-
-        <span class="pb-divider"></span>
-
-        <!-- Geometry -->
-        <div class="pb-dd-wrap">
-          <button class="pb-group" class:group-active={['nodes','elements','shells'].includes(uiStore.proActiveTab)} data-testid="pb-group-geometry" onclick={() => toggleDropdown('geometry')}>{t('pro.groupGeometry')} <span class="pb-caret">▾</span></button>
-          {#if openDropdown === 'geometry'}
-            <div class="pb-dropdown">
-              <button class="pb-dd-item" data-testid="pb-tab-nodes" class:active={uiStore.proActiveTab === 'nodes'} onclick={() => { uiStore.proActiveTab = 'nodes'; openDropdown = null; }}>{t('pro.tabNodes')}</button>
-              <button class="pb-dd-item" data-testid="pb-tab-elements" class:active={uiStore.proActiveTab === 'elements'} onclick={() => { uiStore.proActiveTab = 'elements'; openDropdown = null; }}>{t('pro.tabElements')}</button>
-              <button class="pb-dd-item" data-testid="pb-tab-shells" class:active={uiStore.proActiveTab === 'shells'} onclick={() => { uiStore.proActiveTab = 'shells'; openDropdown = null; }}>{t('pro.tabShells')}</button>
-            </div>
-          {/if}
-        </div>
-        <!-- Properties -->
-        <div class="pb-dd-wrap">
-          <button class="pb-group" class:group-active={['materials','sections'].includes(uiStore.proActiveTab)} data-testid="pb-group-properties" onclick={() => toggleDropdown('properties')}>{t('pro.groupProperties')} <span class="pb-caret">▾</span></button>
-          {#if openDropdown === 'properties'}
-            <div class="pb-dropdown">
-              <button class="pb-dd-item" data-testid="pb-tab-materials" class:active={uiStore.proActiveTab === 'materials'} onclick={() => { uiStore.proActiveTab = 'materials'; openDropdown = null; }}>{t('pro.tabMaterials')}</button>
-              <button class="pb-dd-item" data-testid="pb-tab-sections" class:active={uiStore.proActiveTab === 'sections'} onclick={() => { uiStore.proActiveTab = 'sections'; openDropdown = null; }}>{t('pro.tabSections')}</button>
-            </div>
-          {/if}
-        </div>
-        <!-- Conditions -->
-        <div class="pb-dd-wrap">
-          <button class="pb-group" class:group-active={['supports','constraints','loads'].includes(uiStore.proActiveTab)} data-testid="pb-group-conditions" onclick={() => toggleDropdown('conditions')}>{t('pro.groupConditions')} <span class="pb-caret">▾</span></button>
-          {#if openDropdown === 'conditions'}
-            <div class="pb-dropdown">
-              <button class="pb-dd-item" data-testid="pb-tab-supports" class:active={uiStore.proActiveTab === 'supports'} onclick={() => { uiStore.proActiveTab = 'supports'; openDropdown = null; }}>{t('pro.tabSupports')}</button>
-              <button class="pb-dd-item" data-testid="pb-tab-constraints" class:active={uiStore.proActiveTab === 'constraints'} onclick={() => { uiStore.proActiveTab = 'constraints'; openDropdown = null; }}>{t('pro.tabConstraints')}</button>
-              <button class="pb-dd-item" data-testid="pb-tab-loads" class:active={uiStore.proActiveTab === 'loads'} onclick={() => { uiStore.proActiveTab = 'loads'; openDropdown = null; }}>{t('pro.tabLoads')}</button>
-            </div>
-          {/if}
-        </div>
-        <!-- Analysis -->
-        <div class="pb-dd-wrap">
-          <button class="pb-group" class:group-active={['advanced','results','design','connections','diagnostics'].includes(uiStore.proActiveTab)} data-testid="pb-group-analysis" onclick={() => toggleDropdown('analysis')}>{t('pro.groupAnalysis')} <span class="pb-caret">▾</span></button>
-          {#if openDropdown === 'analysis'}
-            <div class="pb-dropdown">
-              <button class="pb-dd-item" data-testid="pb-tab-advanced" class:active={uiStore.proActiveTab === 'advanced'} onclick={() => { uiStore.proActiveTab = 'advanced'; openDropdown = null; }}>{t('pro.tabAdvanced')}</button>
-              <button class="pb-dd-item" data-testid="pb-tab-results" class:active={uiStore.proActiveTab === 'results'} onclick={() => { uiStore.proActiveTab = 'results'; openDropdown = null; }}>{t('pro.tabResults')}</button>
-              <button class="pb-dd-item" data-testid="pb-tab-design" class:active={uiStore.proActiveTab === 'design'} onclick={() => { uiStore.proActiveTab = 'design'; openDropdown = null; }}>{t('pro.tabDesign')}</button>
-              <button class="pb-dd-item" data-testid="pb-tab-connections" class:active={uiStore.proActiveTab === 'connections'} onclick={() => { uiStore.proActiveTab = 'connections'; openDropdown = null; }}>{t('pro.tabConnections')}</button>
-              <button class="pb-dd-item" data-testid="pb-tab-diagnostics" class:active={uiStore.proActiveTab === 'diagnostics'} onclick={() => { uiStore.proActiveTab = 'diagnostics'; openDropdown = null; }}>{t('pro.tabDiagnostics')}</button>
-            </div>
-          {/if}
-        </div>
-
-        <span class="pb-divider"></span>
-
-        <!-- Actions -->
-        <!--
-          Project file controls live here, beside the other PRO actions, because a PRO user
-          must not have to switch to Básico to open or save. They are the same `file.ts`
-          entry points the Básico toolbar drives.
-        -->
-        <ProProjectFileActions shortcuts={true} />
-        <button class="pn-action pn-example" bind:this={proExBtnEl} onclick={() => proPanelRef?.examples(proExBtnEl)}>{t('pro.exampleBtn')}</button>
-        <button class="pn-action pn-cad" onclick={() => window.dispatchEvent(new Event('stabileo-import-dxf'))} title={t('project.openDxfCadTooltip')}>{t('cad.proBarBtn')}</button>
-        <button class="pn-action pn-solve" onclick={() => proPanelRef?.solve()} disabled={!proPanelRef?.canSolve()}>{proPanelRef?.isSolving() ? t('pro.solving') : t('pro.solve')}</button>
-        <button class="pn-action pn-report" onclick={() => proPanelRef?.report()} disabled={!proPanelRef?.canReport()}>{t('pro.reportBtn')}</button>
-
-        <span class="pb-spacer"></span>
-
-        <!-- Controls -->
-        <button class="pn-toggle" onclick={() => { uiStore.proPanelVisible = !uiStore.proPanelVisible; setTimeout(() => window.dispatchEvent(new Event('resize')), 50); }} title={uiStore.proPanelVisible ? 'Hide panel' : 'Show panel'}>{uiStore.proPanelVisible ? '\u25E5' : '\u25E3'}</button>
-        <button class="pn-toggle pn-settings-gear" onclick={() => proSettingsOpen = !proSettingsOpen} title={t('config.title')}>&#9881;</button>
+        <ProRibbon
+          onExamples={(btn) => proPanelRef?.examples(btn)}
+          onSolve={() => proPanelRef?.solve()}
+          onReport={() => proPanelRef?.report()}
+          canSolve={proPanelRef?.canSolve() ?? false}
+          canReport={proPanelRef?.canReport() ?? false}
+          isSolving={proPanelRef?.isSolving() ?? false}
+          errorCount={proPanelRef?.errorCount() ?? 0}
+          proPanel={uiStore.proActiveTab}
+          onOpenProject={() => (uiStore.proActiveTab = 'project')}
+        />
         {#if proSettingsOpen}
           <div class="pro-settings-dropdown">
             <ToolbarConfig inline={true} />
           </div>
         {/if}
-      </nav>
     {/if}
 
     {#if uiStore.appMode === 'pro' && uiStore.isMobile}
@@ -1053,8 +984,34 @@
         <aside class="sidebar right pro-sidebar" style:width="{uiStore.proPanelWidth}px" style:overflow="visible">
           <!-- svelte-ignore a11y_no_static_element_interactions -->
           <div class="pro-resize-handle" onmousedown={(e) => startProResize(e)}></div>
+          <!--
+            The panel closes from its own top-right corner.
+            ─────────────────────────────────────────────
+            Closing it used to be a `▧` button in the command bar, three metres
+            of screen away from the thing it closed and next to controls that do
+            something else entirely. A ✕ in the panel's own corner is where every
+            panel in the application is dismissed, including Basic's.
+
+            Width still comes from dragging the left edge, which is the gesture
+            already there and the one that lets you see the result as you drag.
+          -->
+          <button
+            class="pro-panel-close"
+            onclick={() => { uiStore.proPanelVisible = false; setTimeout(() => window.dispatchEvent(new Event('resize')), 50); }}
+            title={t('ribbon.close')}
+            aria-label={t('ribbon.close')}
+            data-testid="pro-panel-close"
+          >×</button>
           <ProPanel bind:this={proPanelRef} />
         </aside>
+      {:else if uiStore.appMode === 'pro' && !uiStore.proPanelVisible && !uiStore.isMobile}
+        <!-- A closed panel has to be reopenable from where it closed. -->
+        <button
+          class="pro-panel-reopen"
+          onclick={() => { uiStore.proPanelVisible = true; setTimeout(() => window.dispatchEvent(new Event('resize')), 50); }}
+          title={t('resize')}
+          data-testid="pro-panel-reopen"
+        >‹</button>
       {:else if uiStore.appMode === 'educativo'}
         <aside class="sidebar right edu-sidebar">
           <EducativePanel />
@@ -1452,6 +1409,36 @@
     background: rgba(255,255,255,0.2);
     color: rgba(255,255,255,0.85);
   }
+
+  .pro-panel-close {
+    position: absolute;
+    top: 4px;
+    right: 6px;
+    z-index: 3;
+    background: none;
+    border: none;
+    color: var(--st-text-2);
+    font-size: 1.2rem;
+    line-height: 1;
+    padding: 0.1rem 0.35rem;
+    cursor: pointer;
+    border-radius: var(--st-radius);
+  }
+
+  .pro-panel-close:hover { background: var(--st-surface-3); color: var(--st-text); }
+
+  .pro-panel-reopen {
+    align-self: stretch;
+    width: 16px;
+    background: var(--st-surface-2);
+    border: none;
+    border-left: 1px solid var(--st-hair);
+    color: var(--st-text-3);
+    cursor: pointer;
+    font-size: 0.85rem;
+  }
+
+  .pro-panel-reopen:hover { background: var(--st-surface-3); color: var(--st-text); }
 
   .pro-sidebar {
     overflow: visible;
