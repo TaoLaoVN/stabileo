@@ -86,7 +86,16 @@ describe('a provisional proposal, across every projection', () => {
     for (const [id] of modelStore.model.elements) {
       const o = verificationStore.outcomeFor(id);
       if (!o) continue;
-      outcomes.set(id, { outcome: o.outcome, limiting: o.limiting, reasonKey: o.reasons?.[0]?.key });
+      const v = verificationStore.providedFor(id);
+      outcomes.set(id, {
+        outcome: o.outcome,
+        verificationStatus: v?.overallStatus,
+        verificationLimiting: (v?.checks ?? [])
+          .filter((c) => c.status === 'fail')
+          .flatMap((c) => (c.limiting ? [String(c.limiting)] : [])),
+        limiting: o.limiting,
+        reasonKey: o.reasons?.[0]?.key,
+      });
     }
     const report = reportElementStatus(scene, outcomes);
     const provisionalEntries = report.entries.filter((e) => e.status === 'PROVISIONAL');

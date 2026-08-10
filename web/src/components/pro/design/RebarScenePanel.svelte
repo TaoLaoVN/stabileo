@@ -20,6 +20,7 @@
    * exist — that was the original defect and closing the overlay must not bring it back.
    */
   import { t, tp, i18n } from '../../../lib/i18n';
+  import { buildOutcomeSummaries } from '../../../lib/store/element-status-join';
   import { modelStore } from '../../../lib/store/model.svelte';
   import { verificationStore } from '../../../lib/store/verification.svelte';
   import { rebarWorkspace } from '../../../lib/store/rebar-workspace.svelte';
@@ -63,21 +64,8 @@
 
   const summary = $derived(built ? summariseScene(built.scene) : null);
 
-  const report = $derived.by(() => {
-    if (!built) return null;
-    const m = new Map<number, DesignOutcomeSummary>();
-    for (const id of modelStore.model.elements.keys()) {
-      const o = verificationStore.outcomeFor(id);
-      const v = verificationStore.providedFor(id);
-      if (!o && !v) continue;
-      m.set(id, {
-        outcome: o?.outcome,
-        verificationStatus: v?.overallStatus,
-        limiting: o?.limiting ?? [],
-      });
-    }
-    return reportElementStatus(built.scene, m);
-  });
+  const report = $derived(
+    built ? reportElementStatus(built.scene, buildOutcomeSummaries()) : null);
 
   /** Why each unreinforced member has no steel, joined from its design outcome. */
   const unreinforced = $derived.by(() => {

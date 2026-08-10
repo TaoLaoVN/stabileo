@@ -80,6 +80,13 @@ async function compute(example: string): Promise<WorkspaceScene> {
     outcomes.set(id, {
       outcome: o?.outcome,
       verificationStatus: v?.overallStatus,
+      // Threaded exactly as `RebarWorkspace` threads it. Omitting it here made the helper's
+      // join easier than the app's and hid a real difference: a proposal's steel FAILS the
+      // authoritative verifier, so a test that never supplied the verification status could
+      // not see the app reporting FAILED where the screen shows PROVISIONAL.
+      verificationLimiting: (v?.checks ?? [])
+        .filter((c) => c.status === 'fail')
+        .flatMap((c) => (c.limiting ? [String(c.limiting)] : [])),
       limiting: o?.limiting ?? [],
       reasonKey: o?.reasons?.[0]?.key,
       secondaryRatio: o?.axes?.secondaryRatio,

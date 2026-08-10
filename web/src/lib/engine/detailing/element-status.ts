@@ -92,6 +92,19 @@ export interface DesignOutcomeSummary {
    * no verification comes to look verified.
    */
   verificationStatus?: 'ok' | 'warn' | 'fail' | 'notRun' | 'none';
+  /**
+   * What the FAILING checks of that verification were limited by, when it failed.
+   *
+   * Needed to tell two failures apart that are otherwise identical from here. A member
+   * carrying a PROVISIONAL_BIAXIAL proposal genuinely fails the authoritative verifier — on
+   * the biaxial refusal, which is the same fact the outcome already names, better. A member
+   * that ALSO fails on flexure or shear is a different situation and must not inherit the
+   * proposal's calmer state.
+   *
+   * Empty or absent means the caller did not supply it, which is read as "no idea", not as
+   * "nothing else failed".
+   */
+  verificationLimiting?: readonly string[];
   /** The constraints that stopped it, for the reason line. */
   limiting?: readonly string[];
   /**
@@ -205,13 +218,31 @@ export function statusOf(
   hasSteel: boolean, summary: DesignOutcomeSummary | undefined,
 ): ElementStatus {
   /**
-   * A failing verification outranks everything below it.
+   * A failing verification outranks everything below it — with one exception.
    *
    * Checked first because a member can carry steel, have a VERIFIED design outcome from an
    * earlier run, and still fail verification now — an edit to the section or the loads does
    * exactly that. Reporting MODELLED there would show a green member the app knows is not.
+   *
+   * ── The exception, and why it is not a softening ───────────────
+   *
+   * A PROVISIONAL_BIAXIAL member's steel fails the authoritative verifier BY CONSTRUCTION:
+   * the verifier pushes the biaxial refusal for exactly these members, which is the same fact
+   * the outcome already carries and names far better. Reporting FAILED there would collapse
+   * every proposal into the generic failure bucket and lose the distinction the state exists
+   * to make — "the primary axis was designed and verified, the secondary one is not checked"
+   * versus "this member does not pass".
+   *
+   * The exception is narrow on purpose. It applies only when EVERY failing check is the
+   * biaxial one. A proposal that also fails on flexure or shear is a different situation and
+   * keeps FAILED, because then there is something wrong beyond the known limitation.
    */
-  if (summary?.verificationStatus === 'fail') return 'FAILED';
+  if (summary?.verificationStatus === 'fail') {
+    const onlyBiaxial = summary.outcome === 'PROVISIONAL_BIAXIAL'
+      && (summary.verificationLimiting?.length ?? 0) > 0
+      && summary.verificationLimiting!.every((x) => x === 'biaxial');
+    if (!onlyBiaxial) return 'FAILED';
+  }
 
   if (!summary?.outcome) {
     /**

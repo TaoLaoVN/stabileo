@@ -39,6 +39,7 @@
   import RebarStatusPanel from './RebarStatusPanel.svelte';
   import ProvisionalBanner from './ProvisionalBanner.svelte';
   import SelectionDetails from './SelectionDetails.svelte';
+  import { buildOutcomeSummaries } from '../../../lib/store/element-status-join';
   import RebarLayersPanel from './RebarLayersPanel.svelte';
   import { markOpenPhase } from '../../../lib/utils/open-timeline';
 
@@ -86,22 +87,7 @@
    * Read here rather than inside the scene, because the scene is a projection of the document
    * and a design outcome is not in it. This is the one place the two halves meet.
    */
-  const outcomes = $derived.by(() => {
-    const m = new Map<number, DesignOutcomeSummary>();
-    for (const id of modelStore.model.elements.keys()) {
-      const o = verificationStore.outcomeFor(id);
-      const v = verificationStore.providedFor(id);
-      if (!o && !v) continue;
-      m.set(id, {
-        outcome: o?.outcome,
-        verificationStatus: v?.overallStatus,
-        limiting: o?.limiting ?? [],
-        reasonKey: o?.reasons?.[0]?.key,
-        secondaryRatio: o?.axes?.secondaryRatio,
-      });
-    }
-    return m;
-  });
+  const outcomes = $derived(buildOutcomeSummaries());
 
   const report = $derived(built ? reportElementStatus(built.scene, outcomes) : null);
 

@@ -160,3 +160,59 @@ describe('the report covers what is on screen', () => {
     expect(r.entries).toHaveLength(1);
   });
 });
+
+/**
+ * A proposal fails the verifier BY CONSTRUCTION, and that must not turn it into a failure.
+ *
+ * ── The gap this closes ────────────────────────────────────────────
+ *
+ * `statusOf` checks `verificationStatus === 'fail'` first, which is right: a member can carry
+ * steel, hold a VERIFIED outcome from an earlier run, and fail now because the section moved.
+ *
+ * A PROVISIONAL_BIAXIAL member fails that check every time. The authoritative verifier pushes
+ * the biaxial refusal for exactly these members — it is the same fact the outcome carries and
+ * names far better — so the first rule swallowed every proposal into FAILED. The workspace
+ * showed 117 failures where the design had produced 117 marked proposals, and the distinction
+ * the whole state exists to make was gone from the one screen it was built for.
+ *
+ * It was invisible to the unit suite because the tests built their outcome maps WITHOUT a
+ * verification status, which made the join easier than the app's. Only the browser saw it.
+ */
+describe('a provisional proposal against a failing verification', () => {
+  const provisional = (over: Partial<DesignOutcomeSummary> = {}): DesignOutcomeSummary => ({
+    outcome: 'PROVISIONAL_BIAXIAL',
+    verificationStatus: 'fail',
+    verificationLimiting: ['biaxial'],
+    limiting: ['biaxial'],
+    ...over,
+  });
+
+  it('stays PROVISIONAL when the only failing check is the biaxial refusal', () => {
+    expect(statusOf(true, provisional())).toBe('PROVISIONAL');
+  });
+
+  it('becomes FAILED when something else fails alongside it', () => {
+    // A proposal that ALSO fails on flexure is not a known limitation any more; there is
+    // something wrong beyond it, and it must not inherit the proposal's calmer state.
+    expect(statusOf(true, provisional({ verificationLimiting: ['biaxial', 'flexure'] })))
+      .toBe('FAILED');
+    expect(statusOf(true, provisional({ verificationLimiting: ['shear'] }))).toBe('FAILED');
+  });
+
+  it('becomes FAILED when the caller cannot say what failed', () => {
+    // Absent is "no idea", not "nothing else". Reading silence as agreement is how a real
+    // failure would come to wear the proposal's colour.
+    expect(statusOf(true, provisional({ verificationLimiting: [] }))).toBe('FAILED');
+    expect(statusOf(true, provisional({ verificationLimiting: undefined }))).toBe('FAILED');
+  });
+
+  it('never lets the exception reach a member that is not a proposal', () => {
+    expect(statusOf(true, {
+      outcome: 'VERIFIED', verificationStatus: 'fail', verificationLimiting: ['biaxial'],
+    })).toBe('FAILED');
+  });
+
+  it('is UNSUPPORTED rather than PROVISIONAL when the proposal produced no steel', () => {
+    expect(statusOf(false, provisional())).toBe('UNSUPPORTED');
+  });
+});

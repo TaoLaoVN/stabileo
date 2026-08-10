@@ -299,8 +299,9 @@ test.describe('nothing is hidden because it has no steel', () => {
       // members the whole change exists to surface.
       await expect(page.getByTestId('rebar-panel-state-PROVISIONAL')).toBeVisible();
       // `rebar-unreinforced` is now EMPTY on this fixture, and that is the improvement: the
-      // four beams have steel. What must still be visible is that the steel is a proposal.
-      await expect(page.getByTestId('rebar-provisional-banner')).toBeVisible();
+      // four beams have steel. What the sidebar must still say is that the steel is a
+      // proposal — the workspace banner is not on screen, because the workspace is closed.
+      await expect(page.getByTestId('rebar-panel-state-PROVISIONAL')).toContainText('4');
     });
 });
 

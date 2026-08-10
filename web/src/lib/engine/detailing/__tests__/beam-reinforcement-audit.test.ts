@@ -239,8 +239,16 @@ describe('beam reinforcement audit — pro-edificio-7p', () => {
     for (const [id] of modelStore.model.elements) {
       const o = verificationStore.outcomeFor(id);
       if (!o) continue;
+      const v = verificationStore.providedFor(id);
       outcomes.set(id, {
         outcome: o.outcome,
+        // Threaded exactly as the workspace threads it: a proposal's steel FAILS the
+        // authoritative verifier on the biaxial refusal, and a test that omitted the
+        // verification status would not see the app reporting FAILED.
+        verificationStatus: v?.overallStatus,
+        verificationLimiting: (v?.checks ?? [])
+          .filter((c) => c.status === 'fail')
+          .flatMap((c) => (c.limiting ? [String(c.limiting)] : [])),
         limiting: o.limiting,
         reasonKey: o.reasons?.[0]?.key,
         secondaryRatio: o.axes?.secondaryRatio,
