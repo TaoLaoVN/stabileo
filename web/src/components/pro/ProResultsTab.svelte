@@ -304,15 +304,44 @@
     downloadText(csv, `stabileo-query-${queryComponent}-${exportMeta.sourceKind}.csv`, 'text/csv;charset=utf-8;');
   }
 
+
+  /*
+   * Which output is being read. Query first: it is the one that answers a
+   * question about a specific point, and the others are there to browse.
+   */
+  let resSection = $state('query');
+
+  const RES_SECTIONS = $derived([
+    { id: 'query', labelKey: 'pro.queryTitle', count: () => 1 },
+    { id: 'reactions', labelKey: 'pro.reactionsTitle', count: () => results?.reactions.length ?? 0 },
+    { id: 'forces', labelKey: 'pro.forcesTitle', count: () => results?.elementForces.length ?? 0 },
+    { id: 'displacements', labelKey: 'pro.displacementsTitle', count: () => results?.displacements.length ?? 0 },
+    { id: 'shells', labelKey: 'pro.shellStresses', count: () => shellRows.length },
+    // These two are computed inside the markup as `{@const}`, so the counts are
+    // taken from the same source rather than from a binding that is not in
+    // scope here.
+    { id: 'nodalShells', labelKey: 'pro.nodalShellStresses',
+      count: () => results?.quadStresses?.filter(qs => qs.nodalVonMises?.length).length ?? 0 },
+    { id: 'constraints', labelKey: 'pro.constraintForces',
+      count: () => (results?.constraintForces?.length ?? 0) || resultsStore.constraintForces3D.length },
+    { id: 'diagnostics', labelKey: 'pro.diagnosticsTitle', count: () => results?.diagnostics?.length ?? 0 },
+  ]);
+
+  /* A section that empties under you is not somewhere to be left standing. */
+  $effect(() => {
+    const cur = RES_SECTIONS.find(x => x.id === resSection);
+    if (cur && cur.id !== 'query' && cur.count() === 0) resSection = 'query';
+  });
 </script>
 
 <div class="pro-res">
   <div class="pro-res-header">
-    <div class="pro-res-solve-row">
-      <button class="pro-solve-btn" onclick={handleSolve} disabled={!hasModel || solving}>
-        {solving ? t('pro.solving') : t('pro.solve')}
-      </button>
-    </div>
+    <!--
+      Solve lives in the ribbon, once. It was here too — a filled slab at the
+      top of the panel — so the command that runs the analysis existed twice
+      on screen with two different appearances, and the panel copy sat above
+      the results it would replace.
+    -->
     {#if solveError}
       <div class="pro-solve-error">{solveError}</div>
     {/if}
@@ -447,8 +476,46 @@
     <div class="pro-res-scroll">
 
       <!-- Result query / extraction -->
-      <details class="res-detail" open>
-        <summary class="pro-res-section-title">{t('pro.queryTitle')}</summary>
+      <!--
+        One result table at a time, chosen from a strip that shows the counts.
+        ─────────────────────────────────────────────────────────────────────
+        These were eight collapsible sections, all open by default, stacked in
+        one column: reactions, forces, displacements, shell stresses, nodal
+        shell stresses, constraint forces, diagnostics and the query. On a real
+        model that is thousands of rows in a single scroll, so reading the
+        reactions meant scrolling past the query and reading the forces meant
+        scrolling past the reactions — and every table got a sliver of the
+        panel's height because it was sharing with seven others.
+
+        They are not eight things to see at once; they are eight answers to
+        "which output am I reading", which is one question. The strip asks it
+        once, carries each answer's row count so the shape of the results is
+        visible without opening anything, and disables what this model has none
+        of rather than hiding it — a model with no shells should still say that
+        shell stresses exist.
+
+        The chosen table then gets the whole panel, which is more rows than any
+        of them had before.
+      -->
+      <div class="res-tabs" role="tablist">
+        {#each RES_SECTIONS as sec (sec.id)}
+          {@const n = sec.count()}
+          <button
+            class="res-tab"
+            class:on={resSection === sec.id}
+            role="tab"
+            aria-selected={resSection === sec.id}
+            disabled={n === 0 && sec.id !== 'query'}
+            onclick={() => (resSection = sec.id)}
+            data-testid="res-tab-{sec.id}"
+          >
+            {t(sec.labelKey)}
+            {#if sec.id !== 'query'}<span class="res-tab-n">{n}</span>{/if}
+          </button>
+        {/each}
+      </div>
+
+      {#if resSection === 'query'}
         <div class="pro-query">
           {#if !isForceDiagram}
             <div class="pro-query-empty">{t('pro.querySelectForceDiagram')}</div>
@@ -532,10 +599,9 @@
             {/if}
           {/if}
         </div>
-      </details>
+      {/if}
 
-      <details class="res-detail" open>
-        <summary class="pro-res-section-title">{t('pro.reactionsTitle')} <span class="res-count">({results.reactions.length})</span></summary>
+      {#if resSection === 'reactions'}
         <div class="pro-res-table-wrap">
           <table class="pro-res-table">
             <thead>
@@ -564,10 +630,9 @@
             </tbody>
           </table>
         </div>
-      </details>
+      {/if}
 
-      <details class="res-detail" open>
-        <summary class="pro-res-section-title">{t('pro.forcesTitle')} <span class="res-count">({results.elementForces.length})</span></summary>
+      {#if resSection === 'forces'}
         <div class="pro-res-table-wrap">
           <table class="pro-res-table">
             <thead>
@@ -607,10 +672,9 @@
             </tbody>
           </table>
         </div>
-      </details>
+      {/if}
 
-      <details class="res-detail">
-        <summary class="pro-res-section-title">{t('pro.displacementsTitle')} <span class="res-count">({results.displacements.length})</span></summary>
+      {#if resSection === 'displacements'}
         <div class="pro-res-table-wrap">
           <table class="pro-res-table">
             <thead>
@@ -639,11 +703,11 @@
             </tbody>
           </table>
         </div>
-      </details>
+      {/if}
 
+      
       {#if shellRows.length}
-        <details class="res-detail" open>
-          <summary class="pro-res-section-title">{t('pro.shellStresses')} <span class="res-count">({shellRows.length})</span></summary>
+      {#if resSection === 'shells'}
           <div class="shell-table-legend">{t('pro.shellTableLegend')}</div>
           <div class="pro-res-table-wrap">
             <!-- Membrane + principal stresses -->
@@ -704,13 +768,12 @@
               </tr></tfoot>
             </table>
           </div>
-        </details>
+      {/if}
       {/if}
 
       {#if results.quadStresses?.some(qs => qs.nodalVonMises?.length)}
         {@const nodalQuads = results.quadStresses!.filter(qs => qs.nodalVonMises?.length)}
-        <details class="res-detail">
-          <summary class="pro-res-section-title">{t('pro.nodalShellStresses')} <span class="res-count">({nodalQuads.length})</span></summary>
+      {#if resSection === 'nodalShells'}
           <div class="pro-res-table-wrap">
             <table class="pro-res-table">
               <thead><tr>
@@ -756,13 +819,12 @@
               </tbody>
             </table>
           </div>
-        </details>
+      {/if}
       {/if}
 
       {#if (results.constraintForces?.length ?? 0) > 0 || resultsStore.constraintForces3D.length > 0}
         {@const cForces = results.constraintForces?.length ? results.constraintForces : resultsStore.constraintForces3D}
-        <details class="res-detail">
-          <summary class="pro-res-section-title">{t('pro.constraintForces')} <span class="res-count">({cForces.length})</span></summary>
+      {#if resSection === 'constraints'}
           <div class="pro-res-table-wrap">
             <table class="pro-res-table">
               <thead><tr>
@@ -779,12 +841,12 @@
               </tbody>
             </table>
           </div>
-        </details>
+      {/if}
       {/if}
 
+      
       {#if results.diagnostics?.length}
-        <details class="res-detail">
-          <summary class="pro-res-section-title">{t('pro.diagnosticsTitle')} <span class="res-count">({results.diagnostics.length})</span></summary>
+      {#if resSection === 'diagnostics'}
           <div class="pro-res-table-wrap">
             <table class="pro-res-table">
               <thead><tr>
@@ -803,7 +865,7 @@
               </tbody>
             </table>
           </div>
-        </details>
+      {/if}
       {/if}
 
     </div>
@@ -821,6 +883,47 @@
 </div>
 
 <style>
+  /* ── The output selector ───────────────────────────────────────────── */
+
+  .res-tabs {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.15rem;
+    padding: 0.35rem 0 0.4rem;
+    border-bottom: 1px solid var(--st-hair);
+    margin-bottom: 0.4rem;
+  }
+
+  .res-tab {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.3rem;
+    background: none;
+    border: 1px solid transparent;
+    border-radius: var(--st-radius);
+    color: var(--st-text-3);
+    font-family: var(--st-sans);
+    font-size: 0.72rem;
+    padding: 0.18rem 0.45rem;
+    cursor: pointer;
+    white-space: nowrap;
+    transition: background 0.12s, color 0.12s, border-color 0.12s;
+  }
+
+  .res-tab:hover:not(:disabled) { background: var(--st-surface-3); color: var(--st-text); }
+  .res-tab:disabled { opacity: 0.35; cursor: not-allowed; }
+  .res-tab.on { color: var(--st-accent); border-color: var(--st-accent); }
+
+  /* The count is a value, so it takes the value colour and the mono face. */
+  .res-tab-n {
+    font-family: var(--st-mono);
+    font-size: 0.62rem;
+    color: var(--st-value);
+  }
+
+  .res-tab.on .res-tab-n { color: var(--st-accent); }
+  .res-tab:disabled .res-tab-n { color: var(--st-text-3); }
+
   /* A two-state choice reads as one control, not two buttons. */
   .pro-viz-hint {
     font-size: 0.7rem;
