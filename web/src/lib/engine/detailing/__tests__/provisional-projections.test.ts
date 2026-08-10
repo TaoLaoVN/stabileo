@@ -37,7 +37,19 @@ const RENDER = { projectName: 'Provisional QA', locale: 'es' } as const;
 /** Every warning must contain this phrase, in Spanish, wherever it appears. */
 const NOT_FOR_CONSTRUCTION = /NO APTO PARA EMISI/i;
 
-describe('a provisional proposal, across every projection', () => {
+/**
+ * A generous per-test ceiling, because these tests render a WHOLE BUILDING.
+ *
+ * Vitest's default is 5 s and these run in a pool of 271 files. Each of the assertions below
+ * renders the 203-member document — the report, the sheets, the schedule — which takes about
+ * 1,9 s on an idle machine and rather more when fifteen workers are competing for the same
+ * cores. Three of them timed out in a full-suite run while every assertion in them passed,
+ * which is the worst kind of red: it says "broken" and means "busy".
+ *
+ * A ceiling rather than no ceiling: 30 s is still an order of magnitude below anything that
+ * would indicate a real regression, so a genuine slowdown is still caught.
+ */
+describe('a provisional proposal, across every projection', { timeout: 30_000 }, () => {
   let scene: SceneModel;
   let doc: DocumentModel;
   let provisional: number[];

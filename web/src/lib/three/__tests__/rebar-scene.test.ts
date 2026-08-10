@@ -32,6 +32,7 @@ function scene(over: Partial<SceneModel> = {}): SceneModel {
     facets: { assemblies: [], families: [], roles: ['longitudinal'], layers: [] },
     bounds: { min: { x: 0, y: 0, z: 0 }, max: { x: 3, y: 0, z: 0 } },
     unresolvedMembers: [], unreinforcedMembers: [], provisionalMembers: [],
+    torsionUnevaluatedMembers: [],
     ...over,
   };
 }

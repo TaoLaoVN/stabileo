@@ -13,6 +13,34 @@ import { test as base, expect, type Page } from '@playwright/test';
 
 export const PRO_URL = '/app/pro?e2e=1';
 
+/**
+ * The bar and concrete families the 3-D scene batches by.
+ *
+ * Restated here rather than imported: `e2e/` is compiled by Playwright, not by the app's Vite
+ * pipeline, and reaching into `src/lib/three` from a spec would drag Three.js into the test
+ * process to read six strings. `rebar-toggles.spec.ts` asserts that this list matches the
+ * renderer's own, so a family added on one side cannot go unnoticed on the other.
+ */
+export const SOLID_FAMILIES = [
+  'column', 'beam', 'slab', 'wall', 'footing', 'pedestal',
+] as const;
+
+export type SolidFamily = typeof SOLID_FAMILIES[number];
+
+/** What the renderer is drawing right now, per family. See `rebarSceneCensus`. */
+export interface RebarSceneCensus {
+  /** Bars drawn, per family — plus `unknown` for steel no family could claim. */
+  bars: Record<SolidFamily | 'unknown', number>;
+  /** Concrete solids drawn, per family. */
+  solids: Record<SolidFamily, number>;
+  /** Conflict markers on screen. */
+  markers: number;
+  /** Triangles drawn, bars and concrete together. */
+  triangles: number;
+  /** Meshes a raycast would consider — what is selectable. */
+  pickable: number;
+}
+
 export interface TestHooks {
   version: number;
   solverReady(): boolean;
@@ -39,6 +67,15 @@ export interface TestHooks {
   canvasInkRatio(): number;
   /** How many times the 3-D viewport has built its tube geometry. */
   rebarSceneBuilds(): number;
+  /**
+   * What the open 3-D workspace is DRAWING, per family. Null when none is open.
+   *
+   * Read off the meshes, not off the filter. The on-screen tally is the filter's own account of
+   * itself and was updating perfectly while every layer switch reached nothing.
+   */
+  rebarSceneCensus(): RebarSceneCensus | null;
+  /** Canvases in the page, of any kind. A layer switch must not add one. */
+  canvasCount(): number;
   /** Scene-projection cache hits and misses. */
   sceneCacheStats(): { hits: number; misses: number };
   /** Every autosave revision currently stored in IndexedDB, newest first. */
@@ -77,6 +114,9 @@ export interface TestActions {
 declare global {
   interface Window {
     __stabileo: TestHooks;
+    // Declared alongside the hooks because specs drive it. It was missing, and Playwright does
+    // not typecheck, so nothing said so.
+    __stabileoActions: TestActions;
     __stabileoCommands: {
       computeDemands(): unknown;
       codeCheck(): unknown;

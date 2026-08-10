@@ -38,6 +38,7 @@
   import RebarViewport3D from './RebarViewport3D.svelte';
   import RebarStatusPanel from './RebarStatusPanel.svelte';
   import ProvisionalBanner from './ProvisionalBanner.svelte';
+  import TorsionBanner from './TorsionBanner.svelte';
   import SelectionDetails from './SelectionDetails.svelte';
   import { buildOutcomeSummaries } from '../../../lib/store/element-status-join';
   import RebarLayersPanel from './RebarLayersPanel.svelte';
@@ -149,18 +150,15 @@
       .map((e) => e.elementId);
   });
 
-  const filter = $derived.by<SceneFilter>(() => {
-    const f: SceneFilter = {};
-    const kinds = rebarWorkspace.visibleKinds();
-    if (kinds.length !== SOLID_KINDS.length) f.solidKinds = kinds;
-    if (!rebarWorkspace.showBars) f.hideBars = true;
-    if (rebarWorkspace.hideUnreinforced) f.hideUnreinforced = true;
-    // Isolation wins over the status filter: it is the more specific gesture, and the user
-    // performed it more recently.
-    if (rebarWorkspace.isolated.length > 0) f.elementIds = rebarWorkspace.isolated;
-    else if (statusElementIds) f.elementIds = statusElementIds;
-    return f;
-  });
+  /**
+   * The eight switches, as one filter.
+   *
+   * The translation itself lives in the store, as a pure function of the switch positions.
+   * It was inline here, and that is exactly where the unit suite could not reach it: this
+   * component cannot be mounted in the test environment, so every toggle test had to restate
+   * the translation instead of exercising it.
+   */
+  const filter = $derived<SceneFilter>(rebarWorkspace.filterFor(statusElementIds));
 
   const visible = $derived(built ? filterScene(built.scene, filter) : null);
   const summary = $derived(visible ? summariseScene(visible) : null);
@@ -310,6 +308,7 @@
     </header>
 
     <ProvisionalBanner count={built?.scene.provisionalMembers.length ?? 0} />
+    <TorsionBanner count={built?.scene.torsionUnevaluatedMembers.length ?? 0} />
 
     <div class="body" class:rail-open={railOpen}>
       <aside class="rail" data-testid="rebar-rail" aria-hidden={!railOpen}>
@@ -385,6 +384,8 @@
             elementIds={selectedElementIds}
             status={selectedStatus}
             reason={selectedStatus ? reasons.get(selectedStatus.elementId) ?? null : null}
+            torsionUnevaluated={selectedElementIds.some(
+              (id) => built?.scene.torsionUnevaluatedMembers.includes(id) ?? false)}
           />
         </div>
       </main>
@@ -430,6 +431,28 @@
     border-right: 1px solid #232a35; padding: 0.6rem;
     display: flex; flex-direction: column; gap: 0.7rem;
   }
+  /**
+   * The rail's sections keep their own height. The RAIL scrolls.
+   *
+   * ── The section that vanished ──────────────────────────────────
+   *
+   * A flex column shrinks its items when they do not fit, and `.status` carries
+   * `min-height: 0` — a leftover from when the member list had a scroller of its own. That
+   * removes its automatic minimum size, so it is the one item in this column that can be
+   * crushed to nothing, and it is the LAST one, so it absorbs every pixel the others do not
+   * give up.
+   *
+   * Adding a second banner above the body took about 40 px off the rail, and on a 1280 × 720
+   * window that was enough: the whole status panel — the state counts, the causes, the member
+   * list — collapsed to zero height. Not scrolled out of view, which the rail's own scrollbar
+   * would have answered: gone, with the scrollbar reporting nothing to scroll.
+   *
+   * Stated on the CHILDREN rather than by deleting one `min-height`, because the property that
+   * has to hold is about the rail and not about that panel: this is a scrolling sidebar, and a
+   * scrolling sidebar's sections are their own height by definition. Any section added later
+   * inherits it.
+   */
+  .rail > :global(*) { flex: 0 0 auto; }
   .body:not(.rail-open) .rail { display: none; }
   .stage { flex: 1 1 auto; min-width: 0; display: flex; flex-direction: column; position: relative; }
   /* Over the canvas, not in the layout: appearing must not resize the viewport, because a

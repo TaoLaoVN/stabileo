@@ -30,8 +30,19 @@
     status: ElementStatusEntry | null | undefined;
     /** The design's own sentence for this member, already translated. */
     reason: string | null;
+    /**
+     * True when the selected member carries torsion this application does not evaluate.
+     *
+     * Beside the member's STATE rather than folded into it. The state is what the design
+     * achieved and it is unchanged — a MODELLED member with unevaluated torsion is still
+     * modelled — and the missing verification is a separate fact the reader has to be given
+     * next to it. See `torsion-notice.ts`.
+     */
+    torsionUnevaluated?: boolean;
   }
-  const { bar, solid, conflict, elementIds, status, reason }: Props = $props();
+  const {
+    bar, solid, conflict, elementIds, status, reason, torsionUnevaluated = false,
+  }: Props = $props();
 
   const fmt = (n: number, d = 2): string => n.toFixed(d);
 </script>
@@ -84,6 +95,12 @@
       {t('detailing.scene.reason')}: {reason}
     </p>
   {/if}
+  {#if torsionUnevaluated}
+    <p class="sel-torsion" data-testid="rebar-sel-torsion">
+      <strong>{t('detailing.scene.torsionLabel')}</strong>
+      {t('detailing.scene.torsionMember')}
+    </p>
+  {/if}
   <div class="sel-actions">
     {#if rebarWorkspace.isolated.length > 0}
       <button type="button" data-testid="rebar-clear-isolation"
@@ -108,6 +125,9 @@
   dd { margin: 0; }
   .hint { margin: 0; font-size: 0.72rem; color: var(--text-muted, #8b93a3); }
   .sel-status { margin: 0.3rem 0 0; font-size: 0.74rem; }
+  /* The same amber the workspace banner uses. One colour, one meaning. */
+  .sel-torsion { margin: 0.25rem 0 0; font-size: 0.74rem; color: #f2ddc6; }
+  .sel-torsion strong { color: #ffbe7a; }
   .lim { color: var(--text-muted, #8b93a3); }
   .sel-reason {
     margin: 0.15rem 0 0; font-size: 0.7rem; line-height: 1.35;

@@ -148,6 +148,32 @@ export function renderReportHtml(
       + '</p>');
   }
 
+  /**
+   * Unevaluated torsion, in the same two places and for the same reason.
+   *
+   * A separate banner rather than a clause inside the provisional one, because they are
+   * different facts about different members: a proposal is steel whose SECONDARY BENDING was
+   * never checked, and this is steel whose TORSION was never checked. A member can be either,
+   * both, or neither, and one sentence covering both would be a sentence that tells a reader
+   * neither which members nor which action.
+   */
+  const torsionAll = [...new Set(
+    doc.assemblies.flatMap((a) => a.source.torsionUnevaluatedMembers ?? []))]
+    .sort((x, y) => x - y);
+  if (torsionAll.length > 0) {
+    rows.push('<p class="banner draft torsion">'
+      + esc(L(
+        `TORSIÓN NO EVALUADA — función en desarrollo. ${torsionAll.length} elemento(s) reciben `
+        + 'torsión según el análisis y ninguna comprobación de esta aplicación la verifica. La '
+        + 'armadura de este documento NO contempla torsión: no usar como verificación final. '
+        + 'Se corregirá en PR21.',
+        `TORSION NOT EVALUATED — feature in development. ${torsionAll.length} member(s) carry `
+        + 'torsion according to the analysis and no check in this application verifies it. The '
+        + 'reinforcement in this document does NOT account for torsion: do not use as a final '
+        + 'verification. To be addressed in PR21.'))
+      + '</p>');
+  }
+
   // ── Revision block ──
   rows.push(`<h2>${L('Revisión', 'Revision')}</h2><table><tbody>`);
   rows.push(`<tr><th>${L('Revisión', 'Revision')}</th><td>${doc.revision.number}</td></tr>`);
@@ -214,6 +240,38 @@ export function renderReportHtml(
         rows.push(`<tr><td>${id}</td><td>${esc(a.id)}</td><td>${bars}</td>`
           + `<td class="bad">${esc(L('PROVISIONAL — eje secundario sin verificar',
             'PROVISIONAL — secondary axis unverified'))}</td></tr>`);
+      }
+    }
+    rows.push('</tbody></table>');
+  }
+
+  // ── Unevaluated torsion, member by member ──
+  if (torsionAll.length > 0) {
+    rows.push(`<h2>${L('Torsión no evaluada', 'Torsion not evaluated')}</h2>`);
+    rows.push(`<p>${esc(L(
+      'El análisis reporta torsión en estos elementos. Ninguna comprobación de esta aplicación '
+      + 'verifica torsión — el adaptador de código en uso lo declara explícitamente — de modo '
+      + 'que la armadura mostrada resuelve flexión y corte y NO contempla torsión. La geometría '
+      + 'y la armadura son las que el diseño produjo; lo que falta es la verificación. '
+      + 'Verificar la torsión por fuera de esta aplicación antes de emitir. Función en '
+      + 'desarrollo: se corregirá en PR21.',
+      'The analysis reports torsion in these members. No check in this application verifies '
+      + 'torsion — the code adapter in use declares so explicitly — so the reinforcement shown '
+      + 'resolves flexure and shear and does NOT account for torsion. The geometry and the '
+      + 'reinforcement are what the design produced; what is missing is the verification. Verify '
+      + 'torsion outside this application before issuing. Feature in development: to be '
+      + 'addressed in PR21.'))}</p>`);
+    rows.push('<table><thead><tr>'
+      + `<th>${L('Elemento', 'Member')}</th>`
+      + `<th>${L('Conjunto', 'Assembly')}</th>`
+      + `<th>${L('Barras', 'Bars')}</th>`
+      + `<th>${L('Estado', 'Status')}</th></tr></thead><tbody>`);
+    for (const a of doc.assemblies) {
+      for (const id of a.source.torsionUnevaluatedMembers ?? []) {
+        const bars = a.bars.filter((b) => b.ownerElementIds.includes(id)).length;
+        rows.push(`<tr><td>${id}</td><td>${esc(a.id)}</td><td>${bars}</td>`
+          + `<td class="bad">${esc(L('TORSIÓN NO EVALUADA — en desarrollo',
+            'TORSION NOT EVALUATED — in development'))}</td></tr>`);
       }
     }
     rows.push('</tbody></table>');
@@ -1295,6 +1353,7 @@ export function renderSchedule(
     const barById = new Map(a.bars.map((b) => [b.id, b]));
     const header = aoa.findIndex((r) =>
       typeof r[0] === 'string' && /^(marca|mark)$/i.test(String(r[0]).trim()));
+    const torsionMembers = new Set(a.source.torsionUnevaluatedMembers ?? []);
     if (header >= 0) {
       aoa[header] = [...aoa[header],
         L('Masa (kg)', 'Mass (kg)'), L('Elementos', 'Members'), L('Capa', 'Layer'),
@@ -1312,15 +1371,31 @@ export function renderSchedule(
           .flatMap((id) => barById.get(id)?.ownerElementIds ?? []))].sort((x, y) => x - y);
         const area = Math.PI * (m.diameterMm / 2000) ** 2;
         const provisional = bars.some((b) => b?.provisional);
+        /**
+         * A bar is flagged when ANY member it runs through has unevaluated torsion.
+         *
+         * The same rule the provisional flag uses, and for the same reason: a bar continuous
+         * over a support is fabricated once, and a schedule row that says nothing because only
+         * one of its two members is affected is a row that misleads the person ordering it.
+         */
+        const torsion = members.some((id) => torsionMembers.has(id));
+        // Both, when both. Two independent gaps in the verification are not one warning, and a
+        // row that reported only the first would let the second reach site unnoticed.
+        const status = [
+          provisional
+            ? L('PROVISIONAL — no apto para emisión', 'PROVISIONAL — not for issue')
+            : '',
+          torsion
+            ? L('TORSIÓN NO EVALUADA', 'TORSION NOT EVALUATED')
+            : '',
+        ].filter(Boolean).join(' · ');
         aoa[header + 1 + i] = [...row,
           m.massKg > 0
             ? Math.round(m.massKg * 1000) / 1000
             : Math.round(area * m.cuttingLength * m.quantity * density * 1000) / 1000,
           members.join(', '),
           first?.layerId ?? '',
-          provisional
-            ? L('PROVISIONAL — no apto para emisión', 'PROVISIONAL — not for issue')
-            : ''];
+          status];
       }
     }
 
@@ -1337,6 +1412,18 @@ export function renderSchedule(
         + `elemento(s): ${provisionalMembers.join(', ')}. Eje secundario sin verificar.`,
         `PROVISIONAL PROPOSAL — NOT VALID FOR CONSTRUCTION. ${provisionalMembers.length} `
         + `member(s): ${provisionalMembers.join(', ')}. Secondary axis unverified.`)]);
+    }
+    if (torsionMembers.size > 0) {
+      // After the provisional line when both are present, so the strongest statement — "not
+      // valid for construction" — stays the first thing on the sheet.
+      const ids = [...torsionMembers].sort((x, y) => x - y);
+      aoa.splice(provisionalMembers.length > 0 ? 2 : 1, 0, [L(
+        `TORSIÓN NO EVALUADA — función en desarrollo. ${ids.length} elemento(s): `
+        + `${ids.join(', ')}. Esta armadura no contempla torsión; no usar como verificación `
+        + 'final. Se corregirá en PR21.',
+        `TORSION NOT EVALUATED — feature in development. ${ids.length} member(s): `
+        + `${ids.join(', ')}. This reinforcement does not account for torsion; do not use as a `
+        + 'final verification. To be addressed in PR21.')]);
     }
 
     // Laps get their own block: the fabricator has to know a bar is spliced, not merely

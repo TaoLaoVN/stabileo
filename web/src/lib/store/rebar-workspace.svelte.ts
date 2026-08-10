@@ -11,6 +11,25 @@
  * The MODEL is never touched by any of this. Nothing here writes to `modelStore`; opening and
  * closing the workspace is a view operation and the project is identical either side of it.
  *
+ * ── What survives what: the persistence policy ─────────────────────
+ *
+ * Stated here because "does it remember my layers" has three different right answers depending
+ * on what happened, and a viewer that is vague about which is which reads as broken:
+ *
+ *   CLOSING the workspace keeps everything — layers, section, selection, isolation, history.
+ *   The user is stepping out to look at the model, not abandoning the inspection.
+ *
+ *   RELOADING the page resets every switch to its default: all families on, reinforcement on,
+ *   concrete on, conflicts on, nothing isolated. Nothing here is written to storage, and that is
+ *   deliberate rather than unfinished. The autosave restores the PROJECT, which is the user's
+ *   work; the switch positions are a view of it, and a restore that brought back "columns
+ *   hidden" would hand a returning user an incomplete picture of their own building with no
+ *   indication that anything was missing. A default open shows everything the document contains.
+ *
+ *   A DOCUMENT CHANGE under the workspace calls `reset()`, which drops the selection, the
+ *   isolation, the status filter and the section — they name things that may no longer exist —
+ *   and leaves the LAYER switches alone, because a family is a family whatever the revision.
+ *
  * ── Why the selection history is a stack ───────────────────────────
  *
  * Inspecting a cage is a walk: this column, then the footing under it, then back. A single
@@ -19,7 +38,7 @@
  */
 
 import {
-  SCENE_SOLID_KINDS, type SceneConflictMarker, type SceneSolidKind,
+  SCENE_SOLID_KINDS, type SceneConflictMarker, type SceneFilter, type SceneSolidKind,
 } from '../engine/detailing/scene-model';
 import type { ElementStatus } from '../engine/detailing/element-status';
 
@@ -58,6 +77,61 @@ export const SOLID_KINDS: readonly SceneSolidKind[] = SCENE_SOLID_KINDS;
 
 /** How deep the "go back" stack goes. */
 const HISTORY_LIMIT = 20;
+
+/**
+ * The switch positions the scene filter is derived from.
+ *
+ * A plain record rather than the store itself, so the derivation below is a pure function of
+ * its inputs and can be exercised without a component, a rune or a browser.
+ */
+export interface WorkspaceLayerState {
+  /** Families the user has switched OFF. */
+  hiddenKinds: readonly SceneSolidKind[];
+  showBars: boolean;
+  hideUnreinforced: boolean;
+  /** Members the user has isolated. Empty means no isolation. */
+  isolated: readonly number[];
+  /**
+   * Members a status filter admits, or null when no status filter is active.
+   *
+   * Null and `[]` are different states: `[]` means "no member matches" and must show nothing.
+   * Passed in rather than read here because it is a join between the scene and the design
+   * outcomes, and this module knows about neither.
+   */
+  statusElementIds: readonly number[] | null;
+}
+
+/**
+ * The switch positions that are filter-shaped, as one `SceneFilter`.
+ *
+ * ── Why this is a function and not four lines in the component ─────
+ *
+ * It was four lines in the component, and that is where it was unreachable. This is the whole
+ * translation from "what the user clicked" into "what the renderer draws", and the unit suite
+ * could not see it: `RebarWorkspace.svelte` cannot be mounted in this project's test
+ * environment, so every test that wanted to assert a toggle had to restate the translation
+ * itself — and a test that restates the thing under test cannot fail when the thing under test
+ * is wrong.
+ *
+ * `showConcrete` and `showConflicts` are deliberately NOT here. They are not filter axes: the
+ * renderer answers them with a flag on a mesh, and folding them into the filter would make the
+ * concrete's own switch a reason to recompute which bars are drawn.
+ */
+export function workspaceFilter(s: WorkspaceLayerState): SceneFilter {
+  const f: SceneFilter = {};
+  const kinds = SOLID_KINDS.filter((k) => !s.hiddenKinds.includes(k));
+  // Absent means "no restriction". Writing the full list instead would make every switch-on
+  // state look like a restriction to `needsPerBar`, which is the difference between a flag and
+  // an index rewrite on a scene of 20 917 bars.
+  if (kinds.length !== SOLID_KINDS.length) f.solidKinds = kinds;
+  if (!s.showBars) f.hideBars = true;
+  if (s.hideUnreinforced) f.hideUnreinforced = true;
+  // Isolation wins over the status filter: it is the more specific gesture, and the user
+  // performed it more recently.
+  if (s.isolated.length > 0) f.elementIds = [...s.isolated];
+  else if (s.statusElementIds) f.elementIds = [...s.statusElementIds];
+  return f;
+}
 
 /**
  * Whether two selections point at the same thing.
@@ -135,6 +209,19 @@ function createRebarWorkspace() {
     /** The kinds to DRAW, which is what the scene filter wants. */
     visibleKinds(): SceneSolidKind[] {
       return SOLID_KINDS.filter((k) => !hiddenKinds.includes(k));
+    },
+
+    /**
+     * The scene filter these switches describe.
+     *
+     * Every field it reads is `$state`, so a `$derived` that calls this subscribes to all of
+     * them — the switches stay reactive and the translation stays testable, which is the point
+     * of it being a function at all.
+     */
+    filterFor(statusElementIds: readonly number[] | null): SceneFilter {
+      return workspaceFilter({
+        hiddenKinds, showBars, hideUnreinforced, isolated, statusElementIds,
+      });
     },
 
     openWorkspace() { open = true; },

@@ -1059,6 +1059,15 @@ function createDetailingStore() {
             elementId, loss, outcomes.get(elementId)?.accepted),
           lockedBars: store.assemblies.flatMap((a) => a.bars.filter((b) => b.locked)),
           bentUp: bentUpPolicy(),
+          /**
+           * Whether the adapter that ran actually verifies torsion on beams.
+           *
+           * Read off the adapter rather than assumed, so the warning disappears by itself the
+           * day a code adapter gains the check — and so nothing in the detailing layer has to
+           * know which codes do. With no adapter there is no claim to read, and the safe
+           * reading of silence about a verification is that it did not happen.
+           */
+          checksTorsion: adapter?.capabilities.beams.torsion === true,
         });
 
         // Detailing used to take its EDITION from Project Regulations and its ADAPTER from

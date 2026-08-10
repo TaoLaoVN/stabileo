@@ -222,6 +222,18 @@ export interface DetailingAssembly {
    */
   provisionalMembers?: number[];
   /**
+   * Members in this assembly carrying torsion that no check in this application evaluates.
+   *
+   * A WARNING, not a state. These members keep their geometry, their reinforcement and their
+   * proposal if they have one; what changes is that every projection of this assembly says the
+   * torsion was not verified. See `torsion-notice.ts` for why that is the only honest option
+   * and for why it is not a refusal.
+   *
+   * Recorded next to `provisionalMembers` and read the same way, so the report, the sheets, the
+   * schedule and the 3-D view cannot form four opinions about which members they are.
+   */
+  torsionUnevaluatedMembers?: number[];
+  /**
    * Bumped whenever this assembly is regenerated. Per-assembly, so editing one line does
    * not mark an untouched line stale.
    */

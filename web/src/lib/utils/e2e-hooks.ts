@@ -33,7 +33,9 @@ import { designRunStore } from '../store/design-run.svelte';
 import { isSolverReady } from '../engine/wasm-solver';
 import { getStructuralSolveCount } from './solve-counter';
 import { runGlobalSolve } from '../engine/live-calc';
-import { rebarSceneBuilds } from '../three/rebar-scene';
+import {
+  liveRebarSceneCensus, rebarSceneBuilds, type RebarSceneCensus,
+} from '../three/rebar-scene';
 import { sceneCacheStats } from '../engine/detailing/scene-cache';
 import { openTimeline, type OpenPhase } from './open-timeline';
 import { autosaveRevisions as storedAutosaveRevisions } from '../store/autosave-db';
@@ -103,6 +105,23 @@ export interface StabileoTestHooks {
    * always be explained away as a busy runner; a counter that went up cannot.
    */
   rebarSceneBuilds(): number;
+  /**
+   * What the 3-D workspace is actually DRAWING, per family. Null when none is open.
+   *
+   * The counterpart of the on-screen tally, and deliberately a different observable. The tally
+   * is derived in Svelte from the filter; this is read off the meshes. Every layer switch in the
+   * rail once stopped reaching the meshes at all — the store changed, the filter recomputed, the
+   * tally updated, the scene did not — and the whole suite stayed green because nothing could
+   * see this side of the line.
+   */
+  rebarSceneCensus(): RebarSceneCensus | null;
+  /**
+   * Canvases in the page, of any kind. A layer switch must not add one.
+   *
+   * Every canvas, not only the WebGL ones: the 2-D viewport has one too, and a hook that
+   * counted a subset would report "nothing added" about the half it was not looking at.
+   */
+  canvasCount(): number;
   /** Scene-projection cache hits and misses. A toggle must not produce a miss. */
   sceneCacheStats(): { hits: number; misses: number };
   /**
@@ -242,6 +261,8 @@ export function installE2EHooks(): void {
       JSON.parse(JSON.stringify(modelStore.model.detailing?.assemblies ?? [])),
     detailingSchedule: () => JSON.parse(JSON.stringify(detailingStore.schedule ?? null)),
     rebarSceneBuilds,
+    rebarSceneCensus: liveRebarSceneCensus,
+    canvasCount: () => document.querySelectorAll('canvas').length,
     sceneCacheStats,
     openTimeline,
     autosaveRevisions: async () => (await storedAutosaveRevisions())

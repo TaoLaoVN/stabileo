@@ -199,6 +199,7 @@ export function buildTitleBlock(opts: {
 function noteLines(
   conflicts: readonly BarConflict[], unsupported: readonly UnsupportedCondition[],
   provisionalMembers: readonly number[] = [],
+  torsionUnevaluatedMembers: readonly number[] = [],
 ): string[] {
   const out: string[] = [];
   /**
@@ -214,6 +215,23 @@ function noteLines(
       + `${provisionalMembers.length} elemento(s) de esta lámina (${provisionalMembers.join(', ')}) `
       + 'llevan armadura del diseño del eje principal; su eje secundario no lo verifica ninguna '
       + 'comprobación de esta aplicación. Diseñar ese eje antes de emitir.');
+  }
+  /**
+   * The torsion warning, immediately after it, and for the same reason.
+   *
+   * It is a WARNING and not a refusal: the geometry on this sheet is real, the reinforcement is
+   * the reinforcement the design produced, and nothing about either was changed by the fact
+   * that the torsion was never checked. What the reader must not be able to do is take the
+   * sheet as a complete verification. See `torsion-notice.ts`.
+   */
+  if (torsionUnevaluatedMembers.length > 0) {
+    out.push(
+      'TORSIÓN NO EVALUADA — función en desarrollo. '
+      + `${torsionUnevaluatedMembers.length} elemento(s) de esta lámina `
+      + `(${torsionUnevaluatedMembers.join(', ')}) reciben torsión según el análisis, y ninguna `
+      + 'comprobación de esta aplicación la verifica. La armadura indicada NO contempla torsión. '
+      + 'No usar como verificación final; verificar la torsión aparte antes de emitir. '
+      + 'Se corregirá en PR21.');
   }
   for (const u of unsupported) {
     out.push(`NO VERIFICADO — ${u.key}: ${u.message}`);
@@ -334,7 +352,8 @@ export function drawElevation(input: ElevationInput): Sheet {
     }),
     polylines, circles, texts, dimensions,
     notes: noteLines(input.assembly.conflicts, input.assembly.unsupported,
-      input.assembly.provisionalMembers ?? []),
+      input.assembly.provisionalMembers ?? [],
+      input.assembly.torsionUnevaluatedMembers ?? []),
     extents: extentsOf(polylines, circles),
   };
 }
@@ -426,7 +445,8 @@ export function drawSection(input: SectionInput): Sheet {
     }),
     polylines, circles, texts, dimensions: [],
     notes: noteLines(input.assembly.conflicts, input.assembly.unsupported,
-      input.assembly.provisionalMembers ?? []),
+      input.assembly.provisionalMembers ?? [],
+      input.assembly.torsionUnevaluatedMembers ?? []),
     extents: extentsOf(polylines, circles),
   };
 }

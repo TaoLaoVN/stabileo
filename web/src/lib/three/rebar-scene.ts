@@ -456,6 +456,39 @@ export interface RebarSceneStats {
   markerTrianglesTotal: number;
 }
 
+/**
+ * What is DRAWN right now, counted per family.
+ *
+ * ── Why this exists, and why it is not the tally ───────────────────
+ *
+ * The rail already shows a per-family tally, and it is computed in Svelte from `filterScene`.
+ * That is a statement about the FILTER. This is a statement about the SCENE — how many of this
+ * family's bars the renderer is currently putting on screen — and the two are not the same
+ * observable.
+ *
+ * They came apart, silently and completely: a defect in the viewport's visibility effect meant
+ * the store changed, the filter recomputed, the tally updated, and `mesh.visible` was never
+ * touched. Every switch in the rail governed nothing, and every test in the suite was green,
+ * because none of them could see this side of the line. A test that asserts a count nobody
+ * renders from is a test that passes while the feature is dead.
+ *
+ * Zero-filled over every family the build could produce, so "this family has nothing on screen"
+ * is the number 0 rather than an absent key — a caller comparing before and after must not have
+ * to distinguish those two.
+ */
+export interface RebarSceneCensus {
+  /** Bars drawn, per family. */
+  bars: Record<RebarFamily, number>;
+  /** Concrete solids drawn, per family. */
+  solids: Record<SceneSolidKind, number>;
+  /** Conflict markers on screen. */
+  markers: number;
+  /** Triangles drawn, bars and concrete together. */
+  triangles: number;
+  /** Meshes a raycast would consider — what is selectable. */
+  pickable: number;
+}
+
 export interface RebarScene {
   group: THREE.Group;
   /** Merged bar meshes, by family and colour, with the map back to individual bars. */
@@ -541,7 +574,34 @@ export interface RebarScene {
   visibility(): Required<RebarVisibility>;
   /** Triangles currently drawn, bars and concrete together. Zero when everything is off. */
   drawnTriangles(): number;
+  /** What is on screen, per family. See `RebarSceneCensus` for why this is not the tally. */
+  census(): RebarSceneCensus;
   dispose(): void;
+}
+
+/**
+ * The scene the open workspace is currently rendering, or null when none is.
+ *
+ * ── Why a module-level handle ──────────────────────────────────────
+ *
+ * So a browser test can ask the RENDERER what it is drawing, rather than asking the panel what
+ * it has filtered. There is exactly one 3-D workspace at a time — it is a full-window overlay —
+ * so one handle is the whole truth, and the viewport clears it on teardown so a closed workspace
+ * cannot answer for a scene that no longer exists.
+ *
+ * Read-only from the outside: `census()` allocates a fresh object and no caller can reach the
+ * meshes through it.
+ */
+let liveScene: RebarScene | null = null;
+
+/** Called by the viewport when it builds a scene, and with null when it tears one down. */
+export function setLiveRebarScene(scene: RebarScene | null): void {
+  liveScene = scene;
+}
+
+/** What the open workspace is drawing, per family. Null when no workspace is open. */
+export function liveRebarSceneCensus(): RebarSceneCensus | null {
+  return liveScene?.census() ?? null;
 }
 
 const DEFAULTS = { diameterScale: 1, radialSegments: 6 };
@@ -1138,6 +1198,37 @@ export function createRebarScene(
       for (const b of bars) if (b.mesh.visible) for (const r of b.drawn) n += r.triCount;
       for (const s of solidMeshes) if (s.mesh.visible) for (const r of s.drawn) n += r.triCount;
       return n;
+    },
+    census() {
+      const barsBy = Object.fromEntries(
+        REBAR_FAMILIES.map((f) => [f, 0])) as Record<RebarFamily, number>;
+      const solidsBy = Object.fromEntries(
+        SCENE_SOLID_KINDS.map((k) => [k, 0])) as Record<SceneSolidKind, number>;
+      let triangles = 0;
+      // `visible` AND `drawn`: a batch switched off keeps its ranges, and counting those would
+      // report steel that is not on screen — which is precisely the lie this census exists to
+      // make impossible.
+      for (const b of bars) {
+        if (!b.mesh.visible) continue;
+        barsBy[b.family] += b.drawn.length;
+        for (const r of b.drawn) triangles += r.triCount;
+      }
+      for (const s of solidMeshes) {
+        if (!s.mesh.visible) continue;
+        solidsBy[s.kind] += s.drawn.length;
+        for (const r of s.drawn) triangles += r.triCount;
+      }
+      // Counted rather than read off `pickable()`, so a caller who has destructured this method
+      // off the scene still gets an answer.
+      const pickable = bars.filter((b) => b.mesh.visible && b.drawn.length > 0).length
+        + solidMeshes.filter((s) => s.mesh.visible && s.drawn.length > 0).length;
+      return {
+        bars: barsBy,
+        solids: solidsBy,
+        markers: markers && markers.visible ? markers.count : 0,
+        triangles,
+        pickable,
+      };
     },
     setConcreteOpacity(scale) {
       for (const { reinforced, mesh } of solidMeshes) {

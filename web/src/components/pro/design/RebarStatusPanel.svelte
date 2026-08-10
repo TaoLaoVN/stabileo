@@ -168,7 +168,11 @@
 </section>
 
 <style>
-  .status { display: flex; flex-direction: column; gap: 0.45rem; min-height: 0; }
+  /* No `min-height: 0` here. It dated from the member list having its own scroller, and
+     with that gone it only meant this section could be crushed out of existence by a
+     rail one row too short — which is exactly what happened. The rail scrolls; see the
+     `.rail > *` rule in `RebarWorkspace.svelte`. */
+  .status { display: flex; flex-direction: column; gap: 0.45rem; }
   h4, h5 { margin: 0; font-size: 0.82rem; }
   .hint { margin: 0; font-size: 0.72rem; color: var(--text-muted, #8b93a3); }
   ul { list-style: none; margin: 0; padding: 0; }

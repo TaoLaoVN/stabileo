@@ -123,6 +123,7 @@ function everyFamily(): SceneModel {
     bounds: { min: { x: 0, y: -0.1, z: -0.2 }, max: { x: 2, y: 4, z: 1 } },
     unresolvedMembers: [], unreinforcedMembers: [3],
   provisionalMembers: [],
+    torsionUnevaluatedMembers: [],
   };
 }
 
@@ -819,7 +820,10 @@ for (const [label, example] of [
 
 // ─── The counts the QA session pinned ────────────────────────────
 
-describe('the 7-storey building keeps its steel where it belongs', () => {
+// A whole-building test: 30 s rather than Vitest's 5 s default, for the reason set out in
+// `provisional-projections.test.ts` — under a full-suite pool these were failing on
+// contention with every assertion passing.
+describe('the 7-storey building keeps its steel where it belongs', { timeout: 30_000 }, () => {
   let scene: SceneModel;
   let built: RebarScene;
 

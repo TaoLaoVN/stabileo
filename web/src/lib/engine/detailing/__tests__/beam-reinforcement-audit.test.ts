@@ -103,7 +103,10 @@ function categorise(r: BeamRow): Category {
   return 'workflow-error';
 }
 
-describe('beam reinforcement audit — pro-edificio-7p', () => {
+// A whole-building test: 30 s rather than Vitest's 5 s default, for the reason set out in
+// `provisional-projections.test.ts` — under a full-suite pool these were failing on
+// contention with every assertion passing.
+describe('beam reinforcement audit — pro-edificio-7p', { timeout: 30_000 }, () => {
   let rows: BeamRow[];
   let byCategory: Map<Category, BeamRow[]>;
   let scene: SceneModel;

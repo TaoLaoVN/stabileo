@@ -146,7 +146,10 @@ describe('conflict inventory — the classification rules', () => {
   });
 });
 
-describe('conflict inventory — over the real building', () => {
+// A whole-building test: 30 s rather than Vitest's 5 s default, for the reason set out in
+// `provisional-projections.test.ts` — under a full-suite pool these were failing on
+// contention with every assertion passing.
+describe('conflict inventory — over the real building', { timeout: 30_000 }, () => {
   let doc: DocumentModel;
 
   beforeAll(async () => {

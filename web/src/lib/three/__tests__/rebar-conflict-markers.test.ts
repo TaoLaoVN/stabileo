@@ -71,7 +71,10 @@ function instanceAt(marks: THREE.InstancedMesh, i: number) {
   };
 }
 
-describe('the marker got cheaper, not different', () => {
+// A whole-building test: 30 s rather than Vitest's 5 s default, for the reason set out in
+// `provisional-projections.test.ts` — under a full-suite pool these were failing on
+// contention with every assertion passing.
+describe('the marker got cheaper, not different', { timeout: 30_000 }, () => {
   let scene: SceneModel;
   let built: RebarScene;
 

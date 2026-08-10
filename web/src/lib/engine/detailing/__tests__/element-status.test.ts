@@ -44,6 +44,7 @@ function scene(solids: SceneSolid[], bars: SceneBar[] = []): SceneModel {
     facets: { assemblies: [], families: [], roles: [], layers: [] },
     bounds: null, unresolvedMembers: [], unreinforcedMembers: [],
   provisionalMembers: [],
+    torsionUnevaluatedMembers: [],
   };
 }
 

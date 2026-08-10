@@ -18,8 +18,9 @@
   import { onMount } from 'svelte';
   import * as THREE from 'three';
   import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
-  import { createRebarScene, frameExtent, elementExtent, type RebarScene }
-    from '../../../lib/three/rebar-scene';
+  import {
+    createRebarScene, frameExtent, elementExtent, setLiveRebarScene, type RebarScene,
+  } from '../../../lib/three/rebar-scene';
   import {
     barMatchesFilter, kindByElement, sceneSignature, visibleBounds,
     type SceneFilter, type SceneModel,
@@ -175,6 +176,9 @@
     built.setConcreteOpacity(concreteOpacity);
     built.setSection(section ?? undefined);
     root.add(built.group);
+    // Published so a browser test can ask the RENDERER what it draws rather than asking the
+    // panel what it filtered. Those two agreed for months while one of them was doing nothing.
+    setLiveRebarScene(built);
     invalidate(2);
   }
 
@@ -397,6 +401,9 @@
       }
       resize.disconnect();
       controls?.dispose();
+      // Cleared BEFORE the dispose, so nothing can read a census off meshes that are being
+      // torn down. A closed workspace answers "no scene", which is the truth.
+      setLiveRebarScene(null);
       built?.dispose();
       /**
        * Release the GPU context, not just the JS objects.
@@ -487,9 +494,35 @@
    *
    * This is the effect that used to be a rebuild. A family switch reaches `mesh.visible`; an
    * isolate or a status filter re-selects which of the already-built triangles are drawn.
+   *
+   * ── Why the three inputs are read into a local FIRST ───────────────
+   *
+   * Because they were not, and that is why every switch in the rail stopped working.
+   *
+   * This body used to be one line: `built?.setVisibility({ filter, concrete: showConcrete,
+   * conflicts: showConflicts })`. `a?.b(c)` short-circuits the WHOLE call expression when `a`
+   * is nullish — the arguments are never evaluated — and `built` is nullish on this effect's
+   * first run, because the first geometry build is deliberately deferred by two frames so the
+   * browser paints the workspace before the cage is materialised.
+   *
+   * A Svelte effect subscribes to what it actually READ on its last pass. Having read nothing,
+   * this one had no dependencies and was never re-run again for the life of the workspace. The
+   * initial picture was still right — `rebuild()` applies the visibility itself — so the scene
+   * came up correct and then froze: the checkbox flipped, the store changed, the derived filter
+   * recomputed, the tally beside the canvas updated, and `mesh.visible` was never touched. All
+   * eight switches, one line, no error anywhere.
+   *
+   * It survived the unit suite because every one of those tests calls `setVisibility` directly,
+   * and it survived the browser suite because those assertions read the TALLY — which is derived
+   * in Svelte and was updating perfectly. What nothing asserted was the scene.
+   *
+   * Reading into `next` first is not a style preference: it is the subscription. The two effects
+   * below already do the same thing with a bare `void`, which is what made the omission here a
+   * single missing line rather than an unknown mechanism.
    */
   $effect(() => {
-    built?.setVisibility({ filter, concrete: showConcrete, conflicts: showConflicts });
+    const next = { filter, concrete: showConcrete, conflicts: showConflicts };
+    built?.setVisibility(next);
     invalidate(2);
   });
 
@@ -507,7 +540,17 @@
   });
 
   $effect(() => {
+    /**
+     * The filter is a dependency of the RING as much as the selection is.
+     *
+     * `syncHighlight` reads it — a ring is not drawn on a bar the user has switched off — but it
+     * reads it INSIDE a conditional, so with nothing selected the effect subscribed only to
+     * `selectedBarId`. That happened to be harmless, because with no selection there is no ring
+     * to take down. Stating the dependency here makes it a property rather than a coincidence:
+     * the same conditional-read shape one line up is what broke every switch in the rail.
+     */
     void selectedBarId;
+    void filter;
     syncHighlight();
   });
 </script>

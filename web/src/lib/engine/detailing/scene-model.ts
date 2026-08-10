@@ -326,6 +326,19 @@ export interface SceneModel {
    * unfinished one.
    */
   provisionalMembers: number[];
+  /**
+   * Members carrying torsion no check in this application evaluates, ascending.
+   *
+   * A third list beside the other two, and a third kind of incompleteness: `unreinforcedMembers`
+   * is "no steel", `provisionalMembers` is "steel you may not build from", and this is "steel
+   * that may be right and was never checked against an action the model says is there".
+   *
+   * The geometry stays. A member with unevaluated torsion is drawn exactly as it would be
+   * otherwise, keeps its proposal if it has one, and is named here so the viewer can warn about
+   * it. Hiding it, or turning it into a failure, would take away the picture the engineer needs
+   * in order to make the judgement the application is declining to make for them.
+   */
+  torsionUnevaluatedMembers: number[];
 }
 
 export interface SceneOptions {
@@ -625,7 +638,23 @@ export function buildSceneModel(doc: DocumentModel, opts: SceneOptions = {}): Sc
       .flatMap((s) => s.elementIds)
       .sort((x, y) => x - y),
     provisionalMembers: provisionalMembersOf(doc),
+    torsionUnevaluatedMembers: torsionUnevaluatedOf(doc),
   };
+}
+
+/**
+ * Members the DOCUMENT declares to carry unevaluated torsion, ascending and unique.
+ *
+ * Read from the assemblies' own record for the same reason `provisionalMembersOf` is: it is a
+ * statement the detailing run made once, and re-deriving it here would be a second opinion
+ * about which members the warning applies to.
+ */
+function torsionUnevaluatedOf(doc: DocumentModel): number[] {
+  const out = new Set<number>();
+  for (const a of doc.assemblies) {
+    for (const id of a.source.torsionUnevaluatedMembers ?? []) out.add(id);
+  }
+  return [...out].sort((a, b) => a - b);
 }
 
 /**
@@ -880,8 +909,10 @@ export function filterScene(scene: SceneModel, f: SceneFilter): SceneModel {
       .sort((x, y) => x - y),
     // Carried through the filter unchanged. Hiding a member's steel does not make its design
     // certified, and a legend that stopped saying "provisional" because a layer was switched
-    // off would be telling the user what they had just asked not to see.
+    // off would be telling the user what they had just asked not to see. The torsion warning
+    // rides with it, for exactly the same reason.
     provisionalMembers: scene.provisionalMembers,
+    torsionUnevaluatedMembers: scene.torsionUnevaluatedMembers,
   };
 }
 

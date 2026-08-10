@@ -57,6 +57,9 @@ import {
 import { DEFAULT_TOLERANCES } from './collision';
 import { planSplice, transitionExists } from './splice';
 import { classifyPair } from './classify';
+import {
+  torsionUnevaluatedMembers, type TorsionNotice,
+} from './torsion-notice';
 import { detectCollisions } from './collision';
 import { assessConstructibility } from './constructibility';
 import { noFloorFamilies } from './family-record';
@@ -139,6 +142,19 @@ export interface RunDetailingInput {
   bentUp?: BentUpPolicy;
   /** Members whose bars belong to the lateral-force-resisting system. */
   lateralSystem?: ReadonlySet<number>;
+  /**
+   * Whether the code adapter that ran actually verifies torsion on beams.
+   *
+   * Supplied by the caller, which reads it off the adapter, so this module stays free of the
+   * design layer — the same arrangement `reverify` uses and for the same reason.
+   *
+   * Absent means FALSE, deliberately. A run whose caller did not state a torsion capability is
+   * a run in which nothing here can show that torsion was checked, and the safe reading of
+   * silence about a verification is that it did not happen. The cost of the conservative
+   * default is a warning on a member that was in fact checked; the cost of the other default is
+   * a member with unverified torsion presented as complete.
+   */
+  checksTorsion?: boolean;
 }
 
 // ─── Prerequisites ───────────────────────────────────────────────
@@ -353,6 +369,14 @@ export interface RunDetailingResult {
    */
   provisionalMembers: number[];
   /**
+   * Members carrying torsion this application does not evaluate, with the numbers.
+   *
+   * Reported on the run for the same reason `provisionalMembers` is: a caller that never looks
+   * at a bar must not be able to miss it. It changes no outcome and no state — see
+   * `torsion-notice.ts`.
+   */
+  torsionUnevaluated: TorsionNotice[];
+  /**
    * The global layout search: outcome, statistics and infeasible joints.
    *
    * Reported rather than folded into a pass/fail, because "no assignment exists"
@@ -441,6 +465,7 @@ export function runDetailing(input: RunDetailingInput): RunDetailingResult {
   if (!readiness.ready) {
     return {
       assemblies: [], readiness, coordination: [], skipped, provisionalMembers: [],
+      torsionUnevaluated: [],
       lapping: { laps: [], fused: 0, unmaterialised: [] },
       reverification: [],
       layoutSearch: {
@@ -2195,9 +2220,37 @@ export function runDetailing(input: RunDetailingInput): RunDetailingResult {
     a.provisionalMembers = [...ownProvisional].sort((x, y) => x - y);
   }
 
+  /**
+   * The torsion warning, stamped the same way and in the same place.
+   *
+   * A post-pass over the CONTEXTS, which is where the demands are, rather than over the
+   * outcomes: a member's torsion is a property of the analysis and not of whether its design
+   * succeeded, and reading it off the outcome would silently drop every member that did not
+   * reach one. Nothing about a member's state, certificate or geometry is touched here — see
+   * `torsion-notice.ts` for why this is a warning and not a refusal.
+   */
+  const torsionUnevaluated = torsionUnevaluatedMembers(
+    [...input.contexts.values()].map((c) => ({
+      elementId: c.elementId, elementType: c.elementType, demands: c.demands,
+    })),
+    { beams: input.checksTorsion === true },
+  );
+  const torsionIds = new Set(torsionUnevaluated.map((n) => n.elementId));
+  for (const a of assemblies) {
+    // Intersected against the bars' OWNERS, exactly as the provisional pass is, and for the
+    // same reason: `elementIds` names the members the assembly was built around and misses
+    // members that only contribute bars to it.
+    const own = new Set<number>();
+    for (const bar of a.bars) {
+      for (const id of bar.ownerElementIds) if (torsionIds.has(id)) own.add(id);
+    }
+    a.torsionUnevaluatedMembers = [...own].sort((x, y) => x - y);
+  }
+
   return {
     assemblies, readiness, coordination, skipped,
     provisionalMembers: [...provisionalMembers].sort((a, b) => a - b),
+    torsionUnevaluated,
     reverification: reverificationRecords,
     layoutSearch: layoutChoice.result,
     layering: layerDiagnostics ? {
