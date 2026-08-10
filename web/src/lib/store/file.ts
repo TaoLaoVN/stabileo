@@ -10,6 +10,12 @@ import { exportToExcel } from '../export/excel';
 import { tabManager } from './tabs.svelte';
 import type { TabState } from './tabs.svelte';
 import { t } from '../i18n';
+import { plainDeepCopy, findUncloneablePath } from '../utils/plain-deep-copy';
+import {
+  LEGACY_AUTOSAVE_KEY,
+  autosaveClear, autosaveRead, autosaveStatus, autosaveWrite,
+  type AutosaveFingerprint, type AutosavePolicy, type AutosaveReadResult, type AutosaveWriteResult,
+} from './autosave-db';
 import {
   TWO_D_DISPLACEMENT_LABELS,
   TWO_D_REACTION_LABELS,
@@ -94,8 +100,19 @@ export function downloadText(content: string, filename: string, mime: string): v
 
 // ─── Serialize / Deserialize ────────────────────────────────────
 
-export function serializeProject(): string {
-  const data: DedalFile = {
+/**
+ * The current project as a plain, structured-cloneable `DedalFile`.
+ *
+ * `plainDeepCopy` rather than trusting `modelStore.snapshot()` alone: the snapshot is built
+ * with `$state.snapshot`, which is the right tool inside a component and is the IDENTITY
+ * FUNCTION when the module is compiled for the server — so the "no reactive proxies" property
+ * holds in the browser and evaporates under Vitest, which is where it is asserted. It also
+ * matters more than it used to: `localStorage` took a string, so a proxy could only ever have
+ * cost a slower `JSON.stringify`, whereas IndexedDB takes the object itself and structured
+ * clone refuses a proxy outright with `DataCloneError`.
+ */
+export function buildProjectFile(): DedalFile {
+  return plainDeepCopy<DedalFile>({
     version: DEDAL_FILE_VERSION,
     name: modelStore.model.name,
     timestamp: new Date().toISOString(),
@@ -104,8 +121,11 @@ export function serializeProject(): string {
     analysisMode: uiStore.analysisMode,
     axisConvention3D: uiStore.axisConvention3D,
     viewportPresentation3D: uiStore.viewportPresentation3D,
-  };
-  return JSON.stringify(data, null, 2);
+  });
+}
+
+export function serializeProject(): string {
+  return JSON.stringify(buildProjectFile(), null, 2);
 }
 
 /**
@@ -814,36 +834,101 @@ export function openPDFReport(): void {
   setTimeout(() => w.print(), 400);
 }
 
-// ─── AutoSave (localStorage) ────────────────────────────────────
+// ─── AutoSave ───────────────────────────────────────────────────
 
-// Migrate old storage key
 function hasLocalStorage(): boolean {
   try {
     return typeof localStorage !== 'undefined' && typeof localStorage.getItem === 'function';
   } catch { return false; }
 }
 
+/**
+ * The oldest storage key, from before the rename.
+ *
+ * Still migrated forward: `autosave-db` imports the `stabileo-autosave` slot into IndexedDB
+ * once and then removes it, so a project last saved under the original name still survives
+ * two migrations rather than one.
+ */
 if (hasLocalStorage()) {
-  if (localStorage.getItem('dedaliano-autosave') !== null && localStorage.getItem('stabileo-autosave') === null) {
-    localStorage.setItem('stabileo-autosave', localStorage.getItem('dedaliano-autosave')!);
+  if (localStorage.getItem('dedaliano-autosave') !== null && localStorage.getItem(LEGACY_AUTOSAVE_KEY) === null) {
+    localStorage.setItem(LEGACY_AUTOSAVE_KEY, localStorage.getItem('dedaliano-autosave')!);
     localStorage.removeItem('dedaliano-autosave');
   }
 }
 
-const AUTOSAVE_KEY = 'stabileo-autosave';
 const WORKSPACE_KEY = 'stabileo-workspace';
 
-/**
- * Whether the user has already been told that the autosave is not keeping up.
- *
- * Once per session, not once per attempt: the timer runs every 30 s, and a warning that
- * repeats every 30 s is one the user turns off in their head within two minutes.
- */
-let autosaveOverflowReported = false;
+// ─── AutoSave (IndexedDB) ───────────────────────────────────────
 
-/** Test seam: forget that the warning was shown, so a spec can observe it again. */
-export function resetAutosaveOverflowNotice(): void {
-  autosaveOverflowReported = false;
+/**
+ * Validate and migrate one stored autosave payload, or refuse it.
+ *
+ * Same gate as opening a `.ded`, deliberately: the migrations, the version allow-list and the
+ * referential-integrity checks are the project's, not the storage layer's, and a payload that
+ * would be rejected as a file has no business being restored as an autosave.
+ */
+export function acceptAutosavePayload(raw: unknown): DedalFile | null {
+  if (!raw || typeof raw !== 'object') return null;
+  // Copied before migrating: `migrateSnapshotV1ToV2` rewrites in place, and mutating a record
+  // that is still sitting in IndexedDB would make a read a write.
+  const data = plainDeepCopy(raw) as Record<string, unknown>;
+  if (typeof data.version !== 'string' || !KNOWN_VERSIONS.has(data.version)) return null;
+  if (data.version === '1.0' && data.snapshot) {
+    migrateSnapshotV1ToV2(data.snapshot as Record<string, unknown>);
+    data.version = DEDAL_FILE_VERSION;
+  }
+  if (!validateDedalFile(data)) return null;
+  return data as unknown as DedalFile;
+}
+
+/**
+ * Structural census of a stored project.
+ *
+ * A count per family, not a hash — see the note in `autosave-db.ts`. It is here rather than
+ * there because only this module knows what families a project has.
+ */
+export function autosaveFingerprint(raw: unknown): AutosaveFingerprint {
+  const snap = (raw as { snapshot?: Record<string, unknown> } | null)?.snapshot;
+  const n = (k: string): number => {
+    const v = snap?.[k];
+    return Array.isArray(v) ? v.length : 0;
+  };
+  return {
+    nodes: n('nodes'),
+    elements: n('elements'),
+    materials: n('materials'),
+    sections: n('sections'),
+    supports: n('supports'),
+    loads: n('loads'),
+    plates: n('plates'),
+    quads: n('quads'),
+    footings: n('footings'),
+    // Reinforcement is the payload that overflowed localStorage in the first place, so it is
+    // the one whose disappearance between write and read must not go unnoticed.
+    reinforced: Array.isArray(snap?.elements)
+      ? (snap.elements as Array<[number, { reinforcement?: unknown }]>)
+        .filter((e) => Array.isArray(e) && !!e[1]?.reinforcement).length
+      : 0,
+  };
+}
+
+export const projectAutosavePolicy: AutosavePolicy<DedalFile> = {
+  accept: acceptAutosavePayload,
+  fingerprint: autosaveFingerprint,
+};
+
+/** Reported once per session per kind — a warning on a 30 s timer is a warning nobody reads. */
+const autosaveNoticesShown = new Set<string>();
+
+/** Test seam: forget which notices have already been shown. */
+export function resetAutosaveNotices(): void {
+  autosaveNoticesShown.clear();
+}
+
+function noticeOnce(kind: string, message: string, type: 'error' | 'info' = 'error'): void {
+  if (autosaveNoticesShown.has(kind)) return;
+  autosaveNoticesShown.add(kind);
+  uiStore.toast(message, type);
 }
 
 /**
@@ -855,69 +940,88 @@ export function resetAutosaveOverflowNotice(): void {
  * model once every member carries reinforcement and a coordinated detailing does not. Measured
  * on `Edificio H.A. 7 pisos — PRO`: 172 kB before the design, over quota after `designAll`.
  *
- * The write therefore starts throwing `QuotaExceededError` at exactly the moment the project
- * becomes worth saving, and it used to be swallowed whole. The consequence is not a missing
- * feature, it is lost work presented as saved work: the key still holds the PRE-DESIGN
- * snapshot, so a reload offers a restore banner, the user presses Restaurar believing they are
- * getting their afternoon back, and they get the model as it was before they designed
- * anything — with no error, then or ever.
+ * The write therefore started throwing `QuotaExceededError` at exactly the moment the project
+ * became worth saving. The consequence was not a missing feature, it was lost work presented
+ * as saved work: the key still held the PRE-DESIGN snapshot, so a reload offered a restore
+ * banner, the user pressed Restaurar believing they were getting their afternoon back, and
+ * they got the model as it was before they designed anything.
  *
- * Reporting it does not make the project fit. It makes the failure visible while there is
- * still something to save, and it names the way out, which is the .ded file. Raising the
- * ceiling — compressing the payload, or moving the autosave to IndexedDB, which has no
- * comparable limit — is a change to how this app persists work and is not made here.
- *
- * @returns true when the project was written.
+ * IndexedDB removes the ceiling. It does not remove the obligation, which is why this returns
+ * the write result rather than a bare boolean: a caller — the timer, a post-design hook, a
+ * test — can tell "saved as revision 7" from "refused for quota" from "this browser has no
+ * storage at all". Nothing here ever reports a save that did not happen.
  */
-export function saveToLocalStorage(): boolean {
+export async function saveAutosave(): Promise<AutosaveWriteResult> {
+  let payload: DedalFile;
   try {
-    const json = serializeProject();
-    localStorage.setItem(AUTOSAVE_KEY, json);
-    return true;
+    payload = buildProjectFile();
   } catch (err) {
-    // A quota failure is the interesting one: the project outgrew the store and the user is
-    // now working without a net. Anything else (private mode, storage disabled) is a
-    // condition of the browser rather than of their project, and stays quiet.
-    if (isQuotaError(err) && !autosaveOverflowReported) {
-      autosaveOverflowReported = true;
-      uiStore.toast(t('file.autosaveTooLarge'), 'error');
-    }
-    return false;
+    noticeOnce('build', t('file.autosaveFailed'));
+    return {
+      ok: false, backend: 'none', revision: null,
+      failure: { kind: 'unknown', detail: err instanceof Error ? err.message : String(err) },
+    };
   }
+
+  const result = await autosaveWrite(payload, projectAutosavePolicy);
+  if (result.ok) {
+    if (result.backend === 'localstorage') noticeOnce('degraded', t('file.autosaveDegraded'), 'info');
+    return result;
+  }
+
+  switch (result.failure?.kind) {
+    case 'quota':
+      noticeOnce('quota', t('file.autosaveTooLarge'));
+      break;
+    case 'clone':
+      // A payload the browser refuses to clone is a defect in this app, not in the project.
+      // Name the field so the report is actionable instead of `[object Array]`.
+      console.error('[stabileo] autosave payload is not structured-cloneable:',
+        findUncloneablePath(payload, 'project'));
+      noticeOnce('clone', t('file.autosaveFailed'));
+      break;
+    case 'unavailable':
+      noticeOnce('unavailable', t('file.autosaveUnavailable'));
+      break;
+    default:
+      noticeOnce('unknown', t('file.autosaveFailed'));
+  }
+  return result;
 }
 
-/** A storage write refused for size, across the spellings browsers use for it. */
-function isQuotaError(err: unknown): boolean {
-  if (!(err instanceof Error)) return false;
-  return err.name === 'QuotaExceededError'
-    || err.name === 'NS_ERROR_DOM_QUOTA_REACHED'
-    || /quota/i.test(err.message);
+/**
+ * The newest autosave that survives every check — and a plain statement of what did not.
+ *
+ * A caller that ignores `rejected` and `unfinishedRevision` gets the old behaviour, which is
+ * why they are on the result rather than in a log: handing back an older save without saying
+ * so is the exact defect this whole change exists to remove.
+ */
+export async function loadAutosave(): Promise<AutosaveReadResult<DedalFile>> {
+  const result = await autosaveRead(projectAutosavePolicy);
+
+  if (result.unfinishedRevision !== null) {
+    noticeOnce('unfinished', t('file.autosaveUnfinished'));
+  }
+  if (result.rejected.length > 0) {
+    console.warn('[stabileo] autosave revisions refused on read:', result.rejected);
+    noticeOnce('rejected', result.value
+      ? t('file.autosaveOlderRestored')
+      : t('file.autosaveCorrupt'));
+  }
+  if (result.backend === 'localstorage') {
+    noticeOnce('degraded', t('file.autosaveDegraded'), 'info');
+  } else if (result.backend === 'none') {
+    noticeOnce('unavailable', t('file.autosaveUnavailable'));
+  }
+  return result;
 }
 
-export function loadFromLocalStorage(): DedalFile | null {
-  try {
-    const raw = localStorage.getItem(AUTOSAVE_KEY);
-    if (!raw) return null;
-    const data = JSON.parse(raw) as Record<string, unknown>;
-    if (typeof data.version !== 'string' || !KNOWN_VERSIONS.has(data.version)) return null;
-    if (data.version === '1.0' && data.snapshot) {
-      migrateSnapshotV1ToV2(data.snapshot as Record<string, unknown>);
-      data.version = DEDAL_FILE_VERSION;
-    }
-    if (!validateDedalFile(data)) return null;
-    return data as unknown as DedalFile;
-  } catch {
-    return null;
-  }
+/** Drop every stored autosave revision. Used by Descartar and by "new project". */
+export async function clearAutosave(): Promise<void> {
+  await autosaveClear();
 }
 
-export function clearLocalStorage(): void {
-  try {
-    localStorage.removeItem(AUTOSAVE_KEY);
-  } catch {
-    // ignore
-  }
-}
+export { autosaveStatus };
 
 export function saveWorkspaceToLocalStorage(): void {
   try {
@@ -974,9 +1078,9 @@ export const fileOps = {
   downloadExcel,
   generateReportHTML,
   openPDFReport,
-  saveToLocalStorage,
-  loadFromLocalStorage,
-  clearLocalStorage,
+  saveAutosave,
+  loadAutosave,
+  clearAutosave,
   saveWorkspaceToLocalStorage,
   loadWorkspaceFromLocalStorage,
   clearWorkspaceFromLocalStorage,

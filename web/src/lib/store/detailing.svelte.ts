@@ -11,6 +11,7 @@
  */
 
 import { modelStore } from './model.svelte';
+import { requestAutosave } from './autosave-service';
 import {
   applyReview, emptyDetailingStore, invalidateAffected, isDemandStale, isReviewStale,
   type DetailingAssembly, type DetailingStore, type ReviewRecord,
@@ -1102,6 +1103,9 @@ function createDetailingStore() {
         // preserves the loads, the analysis and the design, and invalidates only the
         // detailing and the document — no solve is required.
         regulationsStore.noteChange('reinforcementEdit');
+        // Detailing geometry is expensive computed state produced by one click, so it asks
+        // to be saved now rather than at the next 30 s tick.
+        void requestAutosave('detailing');
         return result;
       } catch (e) {
         lastError = String(e instanceof Error ? e.message : e);
@@ -1267,6 +1271,8 @@ function createDetailingStore() {
         // Downstream of reinforcement, like beam detailing: loads, analysis and design are
         // preserved, detailing and the document are invalidated, no solve is required.
         regulationsStore.noteChange('reinforcementEdit');
+        // Same reason as the beam pass: a floor design is minutes of work behind one button.
+        void requestAutosave('floorDesign');
         return result;
       } catch (e) {
         lastError = String(e instanceof Error ? e.message : e);

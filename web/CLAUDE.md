@@ -291,7 +291,11 @@ Key test patterns:
 - DXF import/export (`src/lib/dxf/`) — **R12 (AC1009) format** using POLYLINE/VERTEX/SEQEND (not LWPOLYLINE)
 - URL sharing via LZ-compressed base64 hash
 - PNG viewport export
-- Autosave to localStorage
+- Autosave to **IndexedDB** (`src/lib/store/autosave-db.ts`): revisions with timestamps, a
+  structural fingerprint per record, an unfinished-write marker, and a localStorage fallback
+  that is reported as degraded rather than used silently. `.ded` remains the explicit save.
+  Writes are asked for by `requestAutosave()` after every expensive operation (solve, design,
+  floor design, detailing), not only by the 30 s timer.
 - IFC import (3D only, via web-ifc WASM — dynamic import)
 
 ## Feedback System

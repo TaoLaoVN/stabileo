@@ -2226,6 +2226,12 @@ const en: Record<string, string> = {
   // ─── File operations (file.ts) ───
   'file.invalidJson': 'The file is not valid JSON',
   'file.autosaveTooLarge': 'This project is now too large to save automatically in the browser. Your work since the design ran is NOT in the saved copy — use Save project to keep it as a .ded file.',
+  'file.autosaveFailed': 'The automatic save failed and your recent work is NOT stored. Use Save project to keep it as a .ded file.',
+  'file.autosaveDegraded': 'IndexedDB is unavailable, so the automatic save fell back to browser storage, which has a few-megabyte limit. A designed project may not fit — use Save project for a .ded file.',
+  'file.autosaveUnavailable': 'This browser offers no storage the app can use, so there is NO automatic save at all. Use Save project regularly to keep a .ded file.',
+  'file.autosaveUnfinished': 'The last automatic save started and never finished — the tab probably closed mid-write. The restore below is an earlier one.',
+  'file.autosaveOlderRestored': 'The newest automatic save could not be read, so an earlier one is offered instead. Check the project date before continuing.',
+  'file.autosaveCorrupt': 'An automatic save was found but could not be read, so nothing was restored from it. Open your .ded file instead.',
   'file.invalidFormat': 'Invalid file format. Make sure it is a .ded file from Stabileo.',
   'file.loadedNoAxisConvention': 'Loaded without local-axis convention metadata — now evaluated with the corrected Z-up local-axis convention. Re-solve and review member diagrams/checks.',
   'file.supportFixed': 'Fixed',

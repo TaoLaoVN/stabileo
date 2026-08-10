@@ -26,17 +26,17 @@
  * does not return once.
  *
  * The second pass was written expecting to restore a snapshot carrying the whole design, and
- * that is not what the app can offer. `localStorage` gives an origin a few megabytes, and this
- * project stops fitting the moment `designAll` finishes: the autosave is written normally
- * after the load and after the solve, and from the design onwards every write throws
- * `QuotaExceededError`. It used to throw in silence, which is worse than not saving — the key
- * still held the PRE-DESIGN snapshot, so a reload offered a restore banner that handed back
- * the model as it was before the design ran, with nothing reporting the difference.
+ * for a long time that is not what the app could offer. `localStorage` gives an origin a few
+ * megabytes, and this project stopped fitting the moment `designAll` finished: the autosave was
+ * written normally after the load and after the solve, and from the design onwards every write
+ * threw `QuotaExceededError`. It threw in silence, which is worse than not saving — the key
+ * still held the PRE-DESIGN snapshot, so a reload offered a restore banner that handed back the
+ * model as it was before the design ran, with nothing reporting the difference.
  *
- * That is now reported to the user (see `autosave-overflow.test.ts`), and this journey asserts
- * it: the warning appears, and the second restore is performed against the snapshot the app
- * genuinely has. Making the project fit — compressing it, or moving the autosave to IndexedDB
- * — is a change to how this app persists work and is not made here.
+ * The autosave now lives in IndexedDB, which has no comparable ceiling and stores the object
+ * rather than a string. So the second pass asserts what it was written to assert in the first
+ * place: the stored project CONTAINS the reinforcement, the restore brings it back, no
+ * over-quota warning appears, and the save that happened is the save that is reported.
  *
  * ── Nothing here is a timing ───────────────────────────────────────
  *
@@ -52,7 +52,6 @@ import { test, expect } from '@playwright/test';
 type Page = import('@playwright/test').Page;
 
 const PRO_URL = '/app/pro?e2e=1';
-const AUTOSAVE_KEY = 'stabileo-autosave';
 const EXAMPLE = 'pro-edificio-7p';
 
 /**
@@ -105,21 +104,35 @@ async function assertClean(page: Page, w: Watch, step: string) {
   expect(w.fallbacks, `${step}: the parallel solve fell back\n${w.fallbacks.join('\n')}`).toEqual([]);
 }
 
-/** Boot the PRO app in a known locale, optionally seeding an autosave. */
-async function boot(page: Page, autosave: string | null) {
-  await page.addInitScript((saved) => {
+/**
+ * Boot the PRO app in a known locale.
+ *
+ * The autosave is no longer a string a spec can carry from one page load to the next: it lives
+ * in IndexedDB, which survives a reload of the same origin by itself. That is closer to what a
+ * returning user experiences than seeding a key ever was — nothing is handed to the app, it
+ * finds its own save.
+ *
+ * `localStorage` is still cleared, for the locale and the workspace session; the workspace key
+ * has to go because a restored tab session bypasses the autosave banner entirely.
+ */
+async function boot(page: Page) {
+  await page.addInitScript(() => {
     try {
       localStorage.clear();
       localStorage.setItem('stabileo-lang', 'es');
       localStorage.setItem('stabileo-lang-manual', '1');
-      if (saved) localStorage.setItem('stabileo-autosave', saved as string);
     } catch { /* private mode */ }
-  }, autosave);
+  });
   await page.goto(PRO_URL);
   await page.waitForFunction(() => !!window.__stabileo, null, { timeout: 60_000 });
   await expect
     .poll(() => page.evaluate(() => window.__stabileo.solverReady()), { timeout: 60_000 })
     .toBe(true);
+}
+
+/** The census of what the autosave actually holds right now. */
+async function stored(page: Page) {
+  return page.evaluate(() => window.__stabileo.autosaveStored());
 }
 
 /** Press Restaurar on the banner the app shows for a saved project. */
@@ -219,7 +232,11 @@ test('@slow restore, design, view in 3-D — then reload and do it again', async
   const w = watchPage(page);
 
   // ── 1. Open the example ──────────────────────────────────────────
-  await boot(page, null);
+  await boot(page);
+  // Nothing carried over from an earlier run of this file: the database survives a reload by
+  // design, which is the point, and a stale revision would make step 11 assert on the wrong
+  // vintage of the project.
+  await page.evaluate(() => window.__stabileoActions.autosaveDiscard());
   await page.evaluate(() => window.__stabileoActions.openDesignTab());
   await page.evaluate((name) => window.__stabileoActions.loadExample(name), EXAMPLE);
   await expect.poll(() => page.evaluate(() => window.__stabileo.elementIds().length))
@@ -228,13 +245,16 @@ test('@slow restore, design, view in 3-D — then reload and do it again', async
   // The autosave is written by the app's own 30 s timer. Waited for rather than faked: the
   // defect lived in what that timer wrote and in what the banner did with it.
   await expect
-    .poll(() => page.evaluate((k) => localStorage.getItem(k)?.length ?? 0, AUTOSAVE_KEY),
-      { timeout: 90_000, intervals: [1000] })
+    .poll(async () => (await stored(page)).revision, { timeout: 90_000, intervals: [1000] })
     .toBeGreaterThan(0);
-  const firstSave = await page.evaluate((k) => localStorage.getItem(k), AUTOSAVE_KEY);
+  const firstSave = await stored(page);
+  expect(firstSave.backend, 'the autosave is on IndexedDB, not the few-megabyte fallback')
+    .toBe('indexeddb');
+  expect(firstSave.fingerprint.elements, 'and it holds the model').toBeGreaterThan(0);
+  expect(firstSave.fingerprint.reinforced, 'nothing is designed yet').toBe(0);
 
   // ── 2–4. Reload, find the banner, restore ────────────────────────
-  await boot(page, firstSave);
+  await boot(page);
   await page.evaluate(() => window.__stabileoActions.openDesignTab());
   await restoreFromBanner(page);
   await assertClean(page, w, 'restore');
@@ -313,34 +333,51 @@ test('@slow restore, design, view in 3-D — then reload and do it again', async
 
   // ── 11–13. Reload, restore again, calculate again, open again ────
   /**
-   * The designed project does not fit in `localStorage`, and the app must say so.
+   * The stored project now CONTAINS the design. This is the assertion the whole file was
+   * written for and could not make.
    *
-   * Waited for rather than asserted immediately: the write is on the app's own 30 s timer, so
-   * the warning arrives when the timer next fires and finds the project over quota. What is
-   * NOT acceptable — and is what this asserts against — is the failure passing unremarked
-   * while the stored snapshot silently stays at its pre-design state.
+   * The design run asks for a save itself, so this does not wait on the 30 s timer — and the
+   * outcome hook says which trigger it was, so a save that happened by accident thirty seconds
+   * later would not satisfy it.
    */
-  await expect
-    .poll(async () => (await page.locator('[class*=toast]').allTextContents()).join(' | '),
-      { timeout: 120_000, intervals: [1000] })
-    .toMatch(/demasiado grande para el guardado autom/i);
+  const designedSave = await stored(page);
+  expect(designedSave.backend).toBe('indexeddb');
+  expect(designedSave.revision, 'the design produced a newer revision')
+    .toBeGreaterThan(firstSave.revision!);
+  expect(designedSave.fingerprint.reinforced,
+    'the stored snapshot carries the reinforcement the design produced').toBeGreaterThan(0);
+  expect(designedSave.rejected, 'nothing had to be refused on read').toBe(0);
+  expect(designedSave.unfinishedRevision, 'no write started and vanished').toBeNull();
 
-  const designedSave = await page.evaluate((k) => localStorage.getItem(k), AUTOSAVE_KEY);
-  expect(designedSave, 'the stored snapshot is the one from before the design')
-    .toBe(firstSave);
-  expect(firstSave, 'and it carries no reinforcement, which is exactly the problem reported')
-    .not.toContain('"reinforcement"');
+  const outcome = await page.evaluate(() => window.__stabileo.autosaveOutcome());
+  expect(outcome?.ok, 'the app reports the save that actually happened').toBe(true);
+  expect(outcome?.backend).toBe('indexeddb');
 
-  await boot(page, designedSave);
+  // The over-quota warning belonged to the localStorage autosave. Its appearance now would
+  // mean the app had silently fallen back to it.
+  const toastsNow = (await page.locator('[class*=toast]').allTextContents()).join(' | ');
+  expect(toastsNow, 'no over-quota warning, because there is no quota to exceed')
+    .not.toMatch(/demasiado grande para el guardado autom/i);
+
+  await boot(page);
   await page.evaluate(() => window.__stabileoActions.openDesignTab());
   w.errors.length = 0; w.fallbacks.length = 0; w.forbidden.length = 0;
   await restoreFromBanner(page);
+
+  // The restored model carries the design. Under the old autosave this was the morning's
+  // model: reinforcement count zero, with nothing on screen saying so.
+  const restoredReinforced = await page.evaluate(() =>
+    window.__stabileo.elementIds().filter((id) => !!window.__stabileo.reinforcement(id)).length);
+  expect(restoredReinforced, 'the restore hands back the afternoon, not the morning')
+    .toBeGreaterThan(0);
+
   await calculate(page);
   await assertClean(page, w, 'calculate after the second restore');
 
   // The detailing has to be regenerated after a restore — the document is not persisted — so
   // the viewer is opened on the same path a user would take.
   await page.evaluate(() => window.__stabileoActions.computeDemands());
+  await page.evaluate(() => window.__stabileoActions.codeCheck());
   await page.evaluate(() => window.__stabileoActions.designAll());
   await expect.poll(() => page.evaluate(() => window.__stabileo.runCounts()?.total ?? 0),
     { timeout: 180_000 }).toBeGreaterThan(0);

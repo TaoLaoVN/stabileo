@@ -36,6 +36,9 @@ import { runGlobalSolve } from '../engine/live-calc';
 import { rebarSceneBuilds } from '../three/rebar-scene';
 import { sceneCacheStats } from '../engine/detailing/scene-cache';
 import { openTimeline, type OpenPhase } from './open-timeline';
+import { autosaveRevisions as storedAutosaveRevisions } from '../store/autosave-db';
+import { autosaveFingerprint, clearAutosave, loadAutosave } from '../store/file';
+import { lastAutosaveOutcome, requestAutosave } from '../store/autosave-service';
 
 export const E2E_QUERY_FLAG = 'e2e';
 
@@ -109,6 +112,25 @@ export interface StabileoTestHooks {
    * twice — see `open-timeline.ts`.
    */
   openTimeline(): Partial<Record<OpenPhase, number>>;
+  /**
+   * Every autosave revision currently stored, newest first.
+   *
+   * The autosave moved to IndexedDB, which a spec cannot read the way it read a
+   * `localStorage` string. These three hooks are how a journey asserts the property that
+   * matters — that what is STORED after a design run contains the design — without reaching
+   * into the database's private layout.
+   */
+  autosaveRevisions(): Promise<Array<{ revision: number; timestamp: string; status: string }>>;
+  /** The family census of the newest readable stored project, plus how it was read. */
+  autosaveStored(): Promise<{
+    revision: number | null;
+    fingerprint: Record<string, number>;
+    backend: string;
+    rejected: number;
+    unfinishedRevision: number | null;
+  }>;
+  /** The last write attempt: what triggered it, whether it landed, and on which backend. */
+  autosaveOutcome(): unknown;
 }
 
 /**
@@ -130,6 +152,10 @@ export interface StabileoTestActions {
   autoDesign(ids: number[]): unknown;
   designAll(): unknown;
   cancel(): void;
+  /** The same save the 30 s timer and every post-design hook ask for. */
+  autosaveNow(): Promise<unknown>;
+  /** The same clear the restore banner's Descartar button performs. */
+  autosaveDiscard(): Promise<void>;
 }
 
 function rebarSummary(elementId: number): string {
@@ -218,6 +244,19 @@ export function installE2EHooks(): void {
     rebarSceneBuilds,
     sceneCacheStats,
     openTimeline,
+    autosaveRevisions: async () => (await storedAutosaveRevisions())
+      .map(({ revision, timestamp, status }) => ({ revision, timestamp, status })),
+    autosaveStored: async () => {
+      const read = await loadAutosave();
+      return {
+        revision: read.revision,
+        fingerprint: autosaveFingerprint(read.value),
+        backend: read.backend,
+        rejected: read.rejected.length,
+        unfinishedRevision: read.unfinishedRevision,
+      };
+    },
+    autosaveOutcome: () => JSON.parse(JSON.stringify(lastAutosaveOutcome())),
   };
   const actions: StabileoTestActions = {
     /** Seed a coordinated assembly — the same shape the pipeline writes. */
@@ -238,6 +277,8 @@ export function installE2EHooks(): void {
     autoDesign: (ids: number[]) => designRunStore.autoDesign(ids),
     designAll: () => designRunStore.designAll(),
     cancel: () => designRunStore.cancel(),
+    autosaveNow: () => requestAutosave('manual'),
+    autosaveDiscard: () => clearAutosave(),
   };
   // Frozen so a spec (or anything else) cannot substitute a hook implementation.
   (window as unknown as { __stabileo?: StabileoTestHooks }).__stabileo = Object.freeze(hooks);

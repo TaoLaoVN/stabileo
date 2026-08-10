@@ -14,6 +14,7 @@
 // so one command is one undo step, results survive, and no structural solve fires.
 
 import { modelStore } from './model.svelte';
+import { requestAutosave } from './autosave-service';
 import { regulationsStore } from './regulations.svelte';
 import type { RegulationEdition } from '../codes/regulation';
 import { detailingStore } from './detailing.svelte';
@@ -236,6 +237,12 @@ function createDesignRunStore() {
       // so the automatic path is a convenience, never the only way in.
       if (detailingStore.autoGenerate) detailingStore.generate();
     }
+
+    // A design run is the operation that made the old autosave fail — it is both the most
+    // expensive state the app produces and the point at which the project outgrew
+    // localStorage. It asks for a save immediately rather than waiting up to 30 s for the
+    // timer, which is how the run got lost.
+    void requestAutosave('design');
   }
 
   function recount(s: DesignRunSummary) {

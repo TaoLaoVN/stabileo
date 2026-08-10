@@ -41,6 +41,21 @@ export interface TestHooks {
   rebarSceneBuilds(): number;
   /** Scene-projection cache hits and misses. */
   sceneCacheStats(): { hits: number; misses: number };
+  /** Every autosave revision currently stored in IndexedDB, newest first. */
+  autosaveRevisions(): Promise<Array<{ revision: number; timestamp: string; status: string }>>;
+  /** The family census of the newest readable stored project, plus how it was read. */
+  autosaveStored(): Promise<{
+    revision: number | null;
+    fingerprint: Record<string, number>;
+    backend: string;
+    rejected: number;
+    unfinishedRevision: number | null;
+  }>;
+  /** The last write attempt: trigger, outcome, backend, revision. */
+  autosaveOutcome(): {
+    reason: string; at: string; ok: boolean; backend: string;
+    revision: number | null; failureKind: string | null;
+  } | null;
 }
 
 /** Actions a spec may drive — the same operations the UI controls perform. */
@@ -53,6 +68,10 @@ export interface TestActions {
   autoDesign(ids: number[]): unknown;
   designAll(): unknown;
   cancel(): void;
+  /** The same save the 30 s timer and every post-design hook ask for. */
+  autosaveNow(): Promise<unknown>;
+  /** The same clear the restore banner's Descartar button performs. */
+  autosaveDiscard(): Promise<void>;
 }
 
 declare global {

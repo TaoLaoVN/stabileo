@@ -16,10 +16,12 @@
   import StepWizard from './components/dsm/StepWizard.svelte';
   import { resolveDeleteTargets } from './lib/store/delete-selection';
   import {
-    loadFromLocalStorage, saveToLocalStorage, clearLocalStorage,
+    loadAutosave, clearAutosave,
     loadWorkspaceFromLocalStorage, saveWorkspaceToLocalStorage,
     downloadCanvasPNG, noteAxisConventionMigrationIfNeeded,
+    type DedalFile,
   } from './lib/store/file';
+  import { requestAutosave } from './lib/store/autosave-service';
   import { loadFromURLHash } from './lib/utils/url-sharing';
   import DxfImportDialog from './components/DxfImportDialog.svelte';
   import CadImportWizard from './components/CadImportWizard.svelte';
@@ -196,7 +198,9 @@
   const showResults = $derived(resultsStore.results !== null || resultsStore.results3D !== null);
   let showImportDialog = $state(false);
   let importText = $state('');
-  let autosaveData = $state<ReturnType<typeof loadFromLocalStorage>>(null);
+  let autosaveData = $state<DedalFile | null>(null);
+  /** When the offered save was written, and whether it is the newest one that exists. */
+  let autosaveStamp = $state<{ timestamp: string | null; older: boolean }>({ timestamp: null, older: false });
   /** True once the user has explicitly Restored or Discarded the pending save. */
   let autosaveDismissed = $state(false);
   let autosaveInterval: ReturnType<typeof setInterval> | null = null;
@@ -243,7 +247,7 @@
   }
 
   function discardAutosave() {
-    clearLocalStorage();
+    void clearAutosave();
     autosaveDismissed = true;
   }
 
@@ -437,20 +441,32 @@
       // Load autosave data if no workspace was restored.
       // Banner visibility is derived — it checks mode match, dismiss state,
       // and whether the user has started editing a different project.
+      //
+      // IndexedDB is asynchronous, so this cannot block the mount the way the
+      // localStorage read did. It resolves into `$state` instead, and the banner —
+      // already derived — appears when it arrives. `loadAutosave` has already told the
+      // user about anything it had to refuse; `autosaveStamp` carries the same fact into
+      // the banner, so "this is not your newest save" is on screen and not only in a toast.
       if (!savedWorkspace) {
-        const loaded = loadFromLocalStorage();
-        if (loaded && loaded.snapshot.nodes.length > 0) {
-          autosaveData = loaded;
-        }
+        void loadAutosave().then((result) => {
+          if (result.value && result.value.snapshot.nodes.length > 0) {
+            autosaveData = result.value;
+            autosaveStamp = { timestamp: result.timestamp, older: result.rejected.length > 0 };
+          }
+        });
       }
     }
 
     // Setup autosave every 30s. Never overwrite the (single, mode-shared)
-    // autosave key with an empty model: the loader ignores empty snapshots
-    // anyway, and an empty write would destroy a pending save from another
-    // mode whose restore banner is currently hidden by the mode-match gate.
+    // autosave with an empty model: the loader ignores empty snapshots anyway, and an
+    // empty write would destroy a pending save from another mode whose restore banner
+    // is currently hidden by the mode-match gate. `requestAutosave` enforces that.
+    //
+    // The timer is the FLOOR, not the mechanism. Every operation that produces minutes of
+    // computed state — solve, design, floor design, detailing — asks for a save when it
+    // finishes, because losing one of those to a 30 s window is losing the run.
     autosaveInterval = setInterval(() => {
-      if (modelStore.nodes.size > 0) saveToLocalStorage();
+      void requestAutosave('timer');
       saveWorkspaceToLocalStorage();
     }, 30_000);
 
@@ -672,8 +688,18 @@
   </header>
 
   {#if showAutosaveBanner}
-    <div class="autosave-banner">
-      <span>{t('app.autosaveFound')} <strong>{autosaveData?.name}</strong></span>
+    <div class="autosave-banner" class:autosave-banner-older={autosaveStamp.older}>
+      <span>
+        {t('app.autosaveFound')} <strong>{autosaveData?.name}</strong>
+        {#if autosaveStamp.timestamp}
+          <span class="autosave-stamp">({new Date(autosaveStamp.timestamp).toLocaleString()})</span>
+        {/if}
+      </span>
+      {#if autosaveStamp.older}
+        <!-- The banner says it, not only a toast: a user who dismissed the toast must still
+             be able to see that what they are about to restore is not their newest save. -->
+        <span class="autosave-warning">{t('file.autosaveOlderRestored')}</span>
+      {/if}
       <button class="banner-btn restore" onclick={restoreAutosave}>{t('app.restore')}</button>
       <button class="banner-btn discard" onclick={discardAutosave}>{t('app.discard')}</button>
     </div>
@@ -1450,6 +1476,22 @@
     border-bottom: 1px solid #4a2a6e;
     font-size: 0.875rem;
     color: #ddd;
+  }
+
+  /* An older-than-newest save is not the normal case and must not look like it. */
+  .autosave-banner-older {
+    background: #3e2a1a;
+    border-bottom-color: #6e4a2a;
+  }
+
+  .autosave-stamp {
+    color: #999;
+    font-variant-numeric: tabular-nums;
+  }
+
+  .autosave-warning {
+    color: #ffb347;
+    max-width: 46rem;
   }
 
   .banner-btn {

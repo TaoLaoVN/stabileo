@@ -137,7 +137,10 @@ describe('the marker got cheaper, not different', () => {
       expect(Number.isFinite(c.required)).toBe(true);
       expect(Number.isFinite(c.at.x + c.at.y + c.at.z)).toBe(true);
     }
-  });
+    // Eight assertions across 39 240 conflicts is 314 000 of them. That is the point — a
+    // sample cannot prove "none was lost" — but it does not fit Vitest's 5 s default on a
+    // loaded machine, and a gate that fails on machine load is a gate nobody trusts.
+  }, 60_000);
 
   it('places every marker at its own conflict, at its own size', () => {
     // Every one of them, not a sample: a single marker at the wrong place is a red dot on a bar
@@ -152,7 +155,7 @@ describe('the marker got cheaper, not different', () => {
       expect(position.z, `marker ${i} z`).toBeCloseTo(c.at.z, 4);
       expect(scale.x, `marker ${i} radius`).toBeCloseTo(radiusFor(c), 5);
     }
-  });
+  }, 60_000);
 
   it('still floors the smallest marker and caps the largest, so size keeps meaning size', () => {
     // The size is the severity. A tessellation change must not touch the scale rule.

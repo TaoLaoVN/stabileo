@@ -2188,6 +2188,12 @@ const es: Record<string, string> = {
   // ─── File operations (file.ts) ───
   'file.invalidJson': 'El archivo no es JSON válido',
   'file.autosaveTooLarge': 'Este proyecto ya es demasiado grande para el guardado automático del navegador. Lo que hiciste desde que corriste el diseño NO está en la copia guardada — usá Guardar proyecto para conservarlo como archivo .ded.',
+  'file.autosaveFailed': 'El guardado automático falló y tu trabajo reciente NO quedó almacenado. Usá Guardar proyecto para conservarlo como archivo .ded.',
+  'file.autosaveDegraded': 'IndexedDB no está disponible, así que el guardado automático cayó al almacenamiento del navegador, que tiene un límite de pocos megabytes. Un proyecto diseñado puede no entrar — usá Guardar proyecto para tener un .ded.',
+  'file.autosaveUnavailable': 'Este navegador no ofrece ningún almacenamiento que la app pueda usar, así que NO hay guardado automático. Usá Guardar proyecto seguido para conservar un .ded.',
+  'file.autosaveUnfinished': 'El último guardado automático empezó y nunca terminó — probablemente se cerró la pestaña mientras escribía. Lo que se ofrece restaurar es anterior.',
+  'file.autosaveOlderRestored': 'El guardado automático más reciente no se pudo leer, así que se ofrece uno anterior. Verificá la fecha del proyecto antes de seguir.',
+  'file.autosaveCorrupt': 'Se encontró un guardado automático pero no se pudo leer, así que no se restauró nada de él. Abrí tu archivo .ded en su lugar.',
   'file.invalidFormat': 'Formato de archivo inválido. Verificá que sea un archivo .ded de Stabileo.',
   'file.loadedNoAxisConvention': 'Cargado sin metadatos de convención de ejes locales — ahora se evalúa con la convención corregida de ejes locales Z-up. Recalculá y revisá los diagramas/verificaciones de las barras.',
   'file.supportFixed': 'Empotrado',
