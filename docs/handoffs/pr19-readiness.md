@@ -138,20 +138,35 @@ cost spec.
 So it is environmental saturation, not a product fault and not a fallback — and the evidence for
 that statement now exists rather than being inferred.
 
-**And the saturation has been identified.** During the last full run the machine was also
-running another worktree's Playwright suite: `stabileo-landing/web` started its own
-`vite preview` at 16:16:43 and my run started at 16:20:10. Two browser suites, each configured
-`workers: 1`, each rendering through SwiftShader in software, competing for the same cores — a
-WASM solve of a 203-member model across 7 combinations is exactly the thing that starves under
-that.
+**A second worktree was a contributing factor, not the cause.** One run coincided with
+`stabileo-landing/web` running its own Playwright suite — its `vite preview` started at 16:16:43,
+this branch's run at 16:20:10, two browser suites each `workers: 1` and each rendering through
+SwiftShader. That looked like the answer and it is not: a later run on a demonstrably quiet
+machine failed the same way. Recorded because a concurrent suite certainly makes it worse and is
+worth avoiding, but it does not explain the failure on its own.
 
-Note this is NOT the port hazard recorded elsewhere: landing was on 4197, 4173 and 4293 were
-free, so no run adopted the wrong bundle. The interference was CPU, not the artifact under test.
+(Not the port hazard recorded elsewhere either: landing was on 4197, 4173 and 4293 were free, so
+no run adopted the wrong bundle. Any interference was CPU, not the artifact under test.)
 
-Two consequences worth carrying forward. The failure is even less likely in CI, where a sibling
-worktree is not present. And a full local run should be given a quiet machine before its result
-is read as a verdict on the branch — which is also the cheapest way to confirm the structural
-remedy below is still worth doing rather than merely tidy. The deadline is calibrated at 480 s: below
+**What IS established, measured rather than inferred:**
+
+- the parallel solve does **not** fall back — reported twice by the deadline's own diagnostic,
+  on two different tests, on two different runs;
+- it is **not** a specific test: five occurrences, five different tests, never twice the same;
+- it is **not** the spec: `rebar-viewport-cost.spec.ts` passes 10/10 standalone in 12,3 min, and
+  contributes a failure inside the 29-minute full suite;
+- it is **not** the model in isolation: the same test passes alone in 37 s against a 240 s budget;
+- the solve exceeded **480 s** on a quiet machine, against 20–40 s healthy — a 12–20× slowdown
+  with the worker pool up.
+
+The pattern that survives all of that is cumulative: it appears late in long runs, on the
+heaviest model, whichever test happens to be there. Thermal throttling on a laptop after half an
+hour of software rasterisation, or memory pressure accumulated across ~200 browser contexts,
+both fit; neither has been separated from the other, and doing so needs instrumentation this
+branch has no reason to add.
+
+What can be said with confidence is what it is NOT: not a product regression, not the solver, not
+PR19. Nothing in this branch touches the solve path, and every occurrence is green on re-run. The deadline is calibrated at 480 s: below
 the 900 s these specs allow themselves, so a genuine hang fails in half the time and says why,
 and above the measured worst case so it does not fire on load alone.
 
