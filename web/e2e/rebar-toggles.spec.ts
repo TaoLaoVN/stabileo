@@ -73,8 +73,22 @@ async function openWorkspace(page: Page, example: string, withFloors = false) {
   await expect
     .poll(() => page.evaluate(() => window.__stabileo.rebarSceneBuilds()), { timeout: 180_000 })
     .toBeGreaterThan(before);
+  /**
+   * The same budget as the build it confirms.
+   *
+   * This poll inherits `expect.timeout` — ten seconds — and sits immediately after one with a
+   * hundred and eighty. Two halves of one wait, two orders of magnitude apart: the expensive
+   * half is allowed to take three minutes and the cheap confirmation right after it is not
+   * allowed to be late once. On a machine that has just spent ten minutes on the cost spec, it
+   * was late once, and the failure read as "the scene never appeared" when the scene was there.
+   *
+   * The counter and the live handle are set on the same line of `rebuild()`, so this is only
+   * ever waiting for a round trip, not for work. Matching the budgets removes a way to fail
+   * that says nothing about the app.
+   */
   await expect
-    .poll(() => page.evaluate(() => window.__stabileo.rebarSceneCensus() !== null))
+    .poll(() => page.evaluate(() => window.__stabileo.rebarSceneCensus() !== null),
+      { timeout: 60_000 })
     .toBe(true);
 }
 

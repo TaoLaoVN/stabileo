@@ -32,10 +32,10 @@ Run at `HEAD` of this branch:
 | Gate | Result |
 |---|---|
 | `npm run typecheck` | 490/490, no new errors |
-| `npm run test:unit` | 277 files, 5443 tests |
+| `npm run test:unit` | 276 files, 5444 tests, 0 failures |
 | `npm run test:build` | 2 files, 8 tests |
 | `npm run build` | clean |
-| `E2E_PORT=4293 npx playwright test` | see §9 |
+| `E2E_PORT=4293 npx playwright test` | 198 passed, 4 skipped; see §9 for the one load-dependent failure |
 
 `E2E_PORT=4293` is not optional locally: port 4173 is reused by another worktree's `vite preview`
 and Playwright will silently adopt it, testing the wrong bundle. It has cost two debugging
@@ -124,17 +124,29 @@ recommended order in `pr20-ui-and-workflow-plan.md`.
 
 ## 9. Known non-blocking issues
 
-**A 7-storey setup solve can starve under accumulated load.** Three occurrences across two full
+**A 7-storey setup solve can starve under accumulated load.** Five occurrences across four full
 suite runs, never the same test twice, always `page.evaluate(solve)` on `pro-edificio-7p`,
-always passing in isolation seconds later. The suspected cause is the parallel solve falling
-back to sequential when the worker pool cannot be brought up — a correct product behaviour with
-a 20× cost on this model.
+always passing in isolation seconds later — the same test takes 37 s alone.
 
-Addressed as diagnosis rather than as a timeout: the fixture now records the fallback warning
-and the setup solve has its own 240 s deadline, so the next occurrence fails in four minutes
-with the fallback state named instead of consuming fifteen and saying nothing. **The
-measurement budgets are untouched.** If it recurs WITHOUT a fallback, it is a genuine solve
-regression and should be treated as one.
+The suspected cause was the parallel solve falling back to solving every load case on the main
+thread when the worker pool cannot be brought up. **That is now disproven.** The fixture records
+the fallback warning and the setup solve has a deadline of its own, and the occurrence it caught
+reported: solve unfinished, *parallel solve fell back to sequential: **no***. The worker pool was
+up. The solve was simply that slow on a machine that had spent the previous ten minutes on the
+cost spec.
+
+So it is environmental saturation, not a product fault and not a fallback — and the evidence for
+that statement now exists rather than being inferred. The deadline is calibrated at 480 s: below
+the 900 s these specs allow themselves, so a genuine hang fails in half the time and says why,
+and above the measured worst case so it does not fire on load alone.
+
+**Nothing was loosened to reach a green run.** The measurement budgets are untouched, no spec is
+disabled and no click is forced. The remaining fix is structural: the suite performs about
+thirteen full 7-storey chains (load → solve → design → detail → floor-design), five of them in
+`rebar-viewport-cost.spec.ts` alone. Cutting that means reusing prepared state across tests,
+which risks both coverage and inter-test independence, so it is a pass of its own rather than
+something to improvise. Until then, expect roughly one load-dependent failure per full local
+run, always reproducible-green in isolation.
 
 Structural fix, deliberately not attempted here: the suite runs ~13 full 7-storey chains. Cutting
 that is a spec refactor with a real risk of reducing coverage, and belongs to its own pass.

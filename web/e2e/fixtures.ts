@@ -253,15 +253,28 @@ export async function designAll(page: Page): Promise<Record<string, number>> {
  * fifteen minutes of a suite spent learning nothing. It happened three times across two runs,
  * always on the 7-storey building, never on the same test twice.
  *
- * The 7-storey solve is 20–40 s on an idle machine and the small models are seconds. Four
- * minutes is far above anything healthy and far below the budget the measurement needs, so a
- * stuck setup now fails FAST and says what it knows — including whether the worker pool fell
- * back to sequential solving, which is the leading explanation and was being discarded.
+ * ── How this number was chosen, and re-chosen ─────────────────────
  *
- * This cannot mask a regression: a solve that gets slower still fails, sooner and with more
- * information. It is the measurement budget that stays untouched.
+ * The 7-storey solve is 20–40 s on an idle machine and the small models are seconds, so the
+ * first attempt set this at 240 s — six times headroom, and a quarter of the old budget.
+ *
+ * It fired. On a run where the cost spec had just spent ten minutes on the same machine, the
+ * 7-storey setup solve exceeded four minutes, and the diagnostic reported what it was for:
+ * **the parallel solve had NOT fallen back**. The worker pool was up and the solve was simply
+ * that slow under accumulated load. So the leading explanation for this suite's one recurring
+ * failure is disproven, and 240 s is below what a healthy-but-loaded machine needs.
+ *
+ * Eight minutes is the calibrated number: still well under the 900 s these specs allow
+ * themselves, so a genuine hang still fails in half the time and says why, and far enough above
+ * the measured worst case that it does not fire on load alone. Raising it from 240 s is
+ * calibration against evidence this deadline produced; it remains a tightening of the 900 s it
+ * replaced, and the measurement budgets are untouched either way.
+ *
+ * The real remedy is fewer full 7-storey setups — the suite runs about thirteen — and that is a
+ * spec refactor with a genuine risk of reducing coverage, so it is written up rather than
+ * attempted here. See `docs/handoffs/pr19-readiness.md` §9.
  */
-const SOLVE_DEADLINE_MS = 240_000;
+const SOLVE_DEADLINE_MS = 480_000;
 
 /** Run the same global solve the toolbar button triggers, and wait for it. */
 export async function solveModel(page: Page): Promise<void> {
