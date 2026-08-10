@@ -201,12 +201,17 @@ export function syncElements(ctx: SceneSyncContext): void {
     // mesh keeps the default COLORS.frame for every element on first load
     // and trusses look identical to frames until syncSelection runs.
     // Mirror the wireframe-vs-solid color choice from syncSelection.
+    // Skip the write when the color is already right: setBaseColor marks the
+    // whole buffer dirty, and on a 2476-element model that forced a GPU upload
+    // per sync even when nothing had changed.
     {
       const isTruss = elem.type === 'truss';
       const baseColor = (renderMode === 'wireframe')
         ? (isTruss ? 0xf0b848 : 0x6cb4ff)
         : (isTruss ? COLORS.truss : COLORS.frame);
-      eb.setBaseColor(id, baseColor);
+      if (eb.getBaseColor(id) !== baseColor) {
+        eb.setBaseColor(id, baseColor);
+      }
     }
     // BVH-accelerated picking surface (invisible) — kept in sync with positions.
     ep.upsert(id, posI, posJ);
