@@ -223,6 +223,9 @@ fn check_single_timber_member(
         let fc_actual = (-n) / area;
         let e_min = m.e_min.unwrap_or(m.e * 0.58);
         let kce = 0.822; // NDS Table 3.3.3
+        // NDS 3.9.2 amplifies by FcE1 — buckling *in the plane of bending*.
+        // `m` is strong-axis bending (S = b·d²/6), so this is le1/d1 = le/d,
+        // not the governing le/min(b,d) used for CP.
         let le_d = m.le / m.d;
         let fce = kce * e_min * cm * ct * ci / (le_d * le_d);
         let fc_ratio = if fc_prime > 0.0 {
@@ -286,6 +289,16 @@ fn check_single_timber_member(
     }
 }
 
+/// NDS 3.7.1.4: the slenderness ratio governing column buckling is the *larger*
+/// of le1/d1 and le2/d2. With `le` applied about both axes that is
+/// le/min(b, d) — for the usual b < d section the weak axis controls, and
+/// checking only le/d overstates FcE and so overstates CP.
+fn governing_slenderness(m: &TimberMemberData) -> f64 {
+    let about_d = if m.d > 0.0 { m.le / m.d } else { 0.0 };
+    let about_b = if m.b > 0.0 { m.le / m.b } else { 0.0 };
+    about_d.max(about_b)
+}
+
 /// NDS 3.7.1: Column stability factor CP.
 fn column_stability_factor(
     m: &TimberMemberData,
@@ -305,7 +318,7 @@ fn column_stability_factor(
     }
 
     // FcE = KcE * Emin' / (le/d)²
-    let le_d = m.le / m.d;
+    let le_d = governing_slenderness(m);
     if le_d <= 0.0 {
         return 1.0;
     }

@@ -139,20 +139,23 @@ fn check_single_masonry(m: &MasonryMemberData, f: &MasonryDesignForces) -> Mason
 
     // ==================== Axial Compression (TMS 402 Sec 9.3.5) ====================
 
-    // Slenderness reduction factor
-    let pn = if slenderness <= 99.0 {
+    // Radius of gyration of the solid rectangular section.
+    let r_gyr = m.t / (12.0_f64).sqrt();
+    // TMS 402 9.3.5.4 selects the branch on h/r, not h/t. With r = t/sqrt(12)
+    // the two differ by a factor of 3.46, so comparing h/t against 99 keeps the
+    // parabolic branch far past its range — where it goes negative, clamps to
+    // zero, and reports a wall with no capacity as one with no demand.
+    let h_over_r = if r_gyr > 0.0 { h_eff / r_gyr } else { f64::INFINITY };
+
+    let squash = 0.80 * (0.80 * m.fm * (an - m.as_tension) + m.fy * m.as_tension);
+    let pn = if h_over_r <= 99.0 {
         // Pn = 0.80 * [0.80 * f'm * (An - As) + fy * As] * [1 - (h/(140r))²]
-        // Simplified: r ≈ t/sqrt(12)
-        let r = m.t / (12.0_f64).sqrt();
-        let hr = h_eff / (140.0 * r);
-        let slenderness_factor = (1.0 - hr * hr).max(0.0);
-        0.80 * (0.80 * m.fm * (an - m.as_tension) + m.fy * m.as_tension) * slenderness_factor
+        let hr = h_eff / (140.0 * r_gyr);
+        squash * (1.0 - hr * hr).max(0.0)
     } else {
         // Very slender: Euler buckling governs
         // Pn = 0.80 * [0.80 * f'm * (An - As) + fy * As] * (70r/h)²
-        let r = m.t / (12.0_f64).sqrt();
-        let factor = (70.0 * r / h_eff).powi(2);
-        0.80 * (0.80 * m.fm * (an - m.as_tension) + m.fy * m.as_tension) * factor
+        squash * (70.0 * r_gyr / h_eff).powi(2)
     };
 
     let mut ledger = CheckLedger::new();

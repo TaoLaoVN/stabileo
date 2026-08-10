@@ -185,8 +185,11 @@ fn ec3_nan_slenderness_does_not_become_full_capacity() {
             fy: -275e6, // negative strength makes lambda_bar NaN
             e: None,
             a: 5.38e-3,
+            a_eff: None,
             wpl_y: 628e-6, wel_y: 557e-6,
+            weff_y: None,
             wpl_z: 125e-6, wel_z: 80.5e-6,
+            weff_z: None,
             iy: 8356e-8, iz: 604e-8, it: 20.1e-8, iw: 126e-9,
             lcr_y: 4.0, lcr_z: 4.0, lb: 4.0,
             section_class: SectionClass::Class1,

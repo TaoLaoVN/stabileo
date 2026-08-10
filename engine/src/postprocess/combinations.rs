@@ -95,6 +95,16 @@ pub struct EnvelopeInput3D {
 
 const N_POINTS: usize = 21;
 
+/// Map each id to its slot index. Later duplicates keep the first slot, which
+/// matches the previous positional behavior for well-formed inputs.
+fn index_by_id(ids: impl Iterator<Item = usize>) -> std::collections::HashMap<usize, usize> {
+    let mut map = std::collections::HashMap::new();
+    for (i, id) in ids.enumerate() {
+        map.entry(id).or_insert(i);
+    }
+    map
+}
+
 // ==================== 2D Combination ====================
 
 /// Linearly combine AnalysisResults from multiple load cases.
@@ -127,44 +137,59 @@ pub fn combine_results_refs(factors: &[CombinationFactor], cases: &[(usize, &Ana
         })
         .collect();
 
+    // Slots are addressed by id, never by position: cases are free to list
+    // their nodes/elements in any order, and a case missing an entry simply
+    // contributes nothing to that slot instead of shifting every later one.
+    let disp_slot = index_by_id(displacements.iter().map(|d| d.node_id));
+    let reaction_slot = index_by_id(reactions.iter().map(|r| r.node_id));
+    let element_slot = index_by_id(element_forces.iter().map(|e| e.element_id));
+    let case_slot = index_by_id(cases.iter().map(|c| c.0));
+
     for cf in factors {
-        let case = cases.iter().find(|c| c.0 == cf.case_id);
-        let r = match case {
-            Some(c) => c.1,
+        let r = match case_slot.get(&cf.case_id) {
+            Some(&i) => cases[i].1,
             None => continue,
         };
         let f = cf.factor;
 
-        for (i, d) in r.displacements.iter().enumerate() {
-            if i < displacements.len() {
-                displacements[i].ux += f * d.ux;
-                displacements[i].uz += f * d.uz;
-                displacements[i].ry += f * d.ry;
-            }
+        for d in &r.displacements {
+            let Some(&i) = disp_slot.get(&d.node_id) else { continue };
+            displacements[i].ux += f * d.ux;
+            displacements[i].uz += f * d.uz;
+            displacements[i].ry += f * d.ry;
         }
-        for (i, rx) in r.reactions.iter().enumerate() {
-            if i < reactions.len() {
-                reactions[i].rx += f * rx.rx;
-                reactions[i].rz += f * rx.rz;
-                reactions[i].my += f * rx.my;
-            }
+        for rx in &r.reactions {
+            let Some(&i) = reaction_slot.get(&rx.node_id) else { continue };
+            reactions[i].rx += f * rx.rx;
+            reactions[i].rz += f * rx.rz;
+            reactions[i].my += f * rx.my;
         }
-        for (i, ef) in r.element_forces.iter().enumerate() {
-            if i < element_forces.len() {
-                let out = &mut element_forces[i];
-                out.n_start += f * ef.n_start;
-                out.n_end += f * ef.n_end;
-                out.v_start += f * ef.v_start;
-                out.v_end += f * ef.v_end;
-                out.m_start += f * ef.m_start;
-                out.m_end += f * ef.m_end;
-                out.q_i += f * ef.q_i;
-                out.q_j += f * ef.q_j;
-                for dl in &ef.distributed_loads {
-                    out.distributed_loads.push(DistributedLoadInfo {
-                        q_i: dl.q_i * f, q_j: dl.q_j * f, a: dl.a, b: dl.b,
-                    });
-                }
+        for ef in &r.element_forces {
+            let Some(&i) = element_slot.get(&ef.element_id) else { continue };
+            let out = &mut element_forces[i];
+            out.n_start += f * ef.n_start;
+            out.n_end += f * ef.n_end;
+            out.v_start += f * ef.v_start;
+            out.v_end += f * ef.v_end;
+            out.m_start += f * ef.m_start;
+            out.m_end += f * ef.m_end;
+            out.q_i += f * ef.q_i;
+            out.q_j += f * ef.q_j;
+            for dl in &ef.distributed_loads {
+                out.distributed_loads.push(DistributedLoadInfo {
+                    q_i: dl.q_i * f, q_j: dl.q_j * f, a: dl.a, b: dl.b,
+                });
+            }
+            // The diagram evaluator reconstructs interior values from these;
+            // dropping them leaves the end forces right and everything between
+            // them wrong.
+            for pl in &ef.point_loads {
+                out.point_loads.push(PointLoadInfo {
+                    a: pl.a,
+                    p: pl.p * f,
+                    px: pl.px.map(|v| v * f),
+                    my: pl.my.map(|v| v * f),
+                });
             }
         }
     }
@@ -303,62 +328,66 @@ pub fn combine_results_3d_refs(factors: &[CombinationFactor], cases: &[(usize, &
             distributed_loads_z: Vec::new(), point_loads_z: Vec::new(), bimoment_start: None, bimoment_end: None })
         .collect();
 
+    let disp_slot = index_by_id(displacements.iter().map(|d| d.node_id));
+    let reaction_slot = index_by_id(reactions.iter().map(|r| r.node_id));
+    let element_slot = index_by_id(element_forces.iter().map(|e| e.element_id));
+    let case_slot = index_by_id(cases.iter().map(|c| c.0));
+
     for cf in factors {
-        let case = cases.iter().find(|c| c.0 == cf.case_id);
-        let r = match case { Some(c) => c.1, None => continue };
+        let r = match case_slot.get(&cf.case_id) {
+            Some(&i) => cases[i].1,
+            None => continue,
+        };
         let f = cf.factor;
 
-        for (i, d) in r.displacements.iter().enumerate() {
-            if i < displacements.len() {
-                displacements[i].ux += f * d.ux;
-                displacements[i].uy += f * d.uy;
-                displacements[i].uz += f * d.uz;
-                displacements[i].rx += f * d.rx;
-                displacements[i].ry += f * d.ry;
-                displacements[i].rz += f * d.rz;
-            }
+        for d in &r.displacements {
+            let Some(&i) = disp_slot.get(&d.node_id) else { continue };
+            displacements[i].ux += f * d.ux;
+            displacements[i].uy += f * d.uy;
+            displacements[i].uz += f * d.uz;
+            displacements[i].rx += f * d.rx;
+            displacements[i].ry += f * d.ry;
+            displacements[i].rz += f * d.rz;
         }
-        for (i, rx) in r.reactions.iter().enumerate() {
-            if i < reactions.len() {
-                reactions[i].fx += f * rx.fx;
-                reactions[i].fy += f * rx.fy;
-                reactions[i].fz += f * rx.fz;
-                reactions[i].mx += f * rx.mx;
-                reactions[i].my += f * rx.my;
-                reactions[i].mz += f * rx.mz;
-            }
+        for rx in &r.reactions {
+            let Some(&i) = reaction_slot.get(&rx.node_id) else { continue };
+            reactions[i].fx += f * rx.fx;
+            reactions[i].fy += f * rx.fy;
+            reactions[i].fz += f * rx.fz;
+            reactions[i].mx += f * rx.mx;
+            reactions[i].my += f * rx.my;
+            reactions[i].mz += f * rx.mz;
         }
-        for (i, ef) in r.element_forces.iter().enumerate() {
-            if i < element_forces.len() {
-                let out = &mut element_forces[i];
-                out.n_start += f * ef.n_start;
-                out.n_end += f * ef.n_end;
-                out.vy_start += f * ef.vy_start;
-                out.vy_end += f * ef.vy_end;
-                out.vz_start += f * ef.vz_start;
-                out.vz_end += f * ef.vz_end;
-                out.mx_start += f * ef.mx_start;
-                out.mx_end += f * ef.mx_end;
-                out.my_start += f * ef.my_start;
-                out.my_end += f * ef.my_end;
-                out.mz_start += f * ef.mz_start;
-                out.mz_end += f * ef.mz_end;
-                out.q_yi += f * ef.q_yi;
-                out.q_yj += f * ef.q_yj;
-                out.q_zi += f * ef.q_zi;
-                out.q_zj += f * ef.q_zj;
-                for dl in &ef.distributed_loads_y {
-                    out.distributed_loads_y.push(DistributedLoadInfo { q_i: dl.q_i * f, q_j: dl.q_j * f, a: dl.a, b: dl.b });
-                }
-                for dl in &ef.distributed_loads_z {
-                    out.distributed_loads_z.push(DistributedLoadInfo { q_i: dl.q_i * f, q_j: dl.q_j * f, a: dl.a, b: dl.b });
-                }
-                for pl in &ef.point_loads_y {
-                    out.point_loads_y.push(PointLoadInfo3D { a: pl.a, p: pl.p * f });
-                }
-                for pl in &ef.point_loads_z {
-                    out.point_loads_z.push(PointLoadInfo3D { a: pl.a, p: pl.p * f });
-                }
+        for ef in &r.element_forces {
+            let Some(&i) = element_slot.get(&ef.element_id) else { continue };
+            let out = &mut element_forces[i];
+            out.n_start += f * ef.n_start;
+            out.n_end += f * ef.n_end;
+            out.vy_start += f * ef.vy_start;
+            out.vy_end += f * ef.vy_end;
+            out.vz_start += f * ef.vz_start;
+            out.vz_end += f * ef.vz_end;
+            out.mx_start += f * ef.mx_start;
+            out.mx_end += f * ef.mx_end;
+            out.my_start += f * ef.my_start;
+            out.my_end += f * ef.my_end;
+            out.mz_start += f * ef.mz_start;
+            out.mz_end += f * ef.mz_end;
+            out.q_yi += f * ef.q_yi;
+            out.q_yj += f * ef.q_yj;
+            out.q_zi += f * ef.q_zi;
+            out.q_zj += f * ef.q_zj;
+            for dl in &ef.distributed_loads_y {
+                out.distributed_loads_y.push(DistributedLoadInfo { q_i: dl.q_i * f, q_j: dl.q_j * f, a: dl.a, b: dl.b });
+            }
+            for dl in &ef.distributed_loads_z {
+                out.distributed_loads_z.push(DistributedLoadInfo { q_i: dl.q_i * f, q_j: dl.q_j * f, a: dl.a, b: dl.b });
+            }
+            for pl in &ef.point_loads_y {
+                out.point_loads_y.push(PointLoadInfo3D { a: pl.a, p: pl.p * f });
+            }
+            for pl in &ef.point_loads_z {
+                out.point_loads_z.push(PointLoadInfo3D { a: pl.a, p: pl.p * f });
             }
         }
     }
