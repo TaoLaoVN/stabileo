@@ -3024,6 +3024,7 @@ const ar: Translations = {
   'design.status.fail': 'غير مطابق',
   'design.status.unavailable': 'غير محقَّق',
   'design.status.stale': 'الأساس قديم',
+  'design.status.provisional': 'اقتراح مؤقت',
   'design.badge.edited': 'معدَّل',
   'design.badge.auto': 'تلقائي',
   'design.badge.provisional': 'مؤقت',

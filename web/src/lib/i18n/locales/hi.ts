@@ -3036,6 +3036,7 @@ const hi: Translations = {
   'design.status.fail': 'असफल',
   'design.status.unavailable': 'असत्यापित',
   'design.status.stale': 'आधार पुराना',
+  'design.status.provisional': 'अनंतिम प्रस्ताव',
   'design.badge.edited': 'संपादित',
   'design.badge.auto': 'स्वतः',
   'design.badge.provisional': 'अस्थायी',

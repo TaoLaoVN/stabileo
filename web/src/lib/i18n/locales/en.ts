@@ -3855,6 +3855,7 @@ const en: Record<string, string> = {
   'design.status.fail': 'Failing',
   'design.status.unavailable': 'Not verified',
   'design.status.stale': 'Baseline stale',
+  'design.status.provisional': 'Provisional proposal',
   'design.badge.edited': 'edited',
   'design.badge.auto': 'auto',
   'design.badge.provisional': 'provisional',

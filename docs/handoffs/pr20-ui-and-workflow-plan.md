@@ -115,38 +115,77 @@ pipeline now has real, distinguishable states at every stage.
 
 ### 5.2 Accessibility
 
-Not audited in PR19 and not free. Known gaps introduced or inherited:
+Not audited in PR19 and not free. Ordered by how badly it fails a keyboard user.
 
-- the 3-D workspace is `role="dialog" aria-modal="true"` with **no focus trap and no focus
-  restore**; Escape closes it, which is the only keyboard affordance it has;
-- the layer switches are real checkboxes with labels — good — but the rail has no landmark and
-  no heading structure a screen reader can navigate;
-- the canvas has no text alternative and no keyboard route to selection, so every inspection
-  gesture is pointer-only;
-- colour is currently the ONLY carrier of several distinctions (provisional violet, conflict
-  red, unreinforced orange). The banners and the status rows carry text, the 3-D geometry does
-  not.
+**1. The 3-D workspace has no focus management at all.** It is
+`role="dialog" aria-modal="true"`, `position: fixed`, `z-index: 900`, and:
 
-The last one is a real WCAG 1.4.1 failure in the viewport and the honest fix is not a palette
-change; it is that the *panel beside the picture* must always be able to answer what a colour
-says. Today it can, via the tally and the inspector — which is worth stating as a design rule
-before someone removes them.
+- **no focus trap.** Tab from inside the overlay walks straight into the page behind it, which
+  `aria-modal` has just told a screen reader does not exist. The user is then typing into
+  controls they cannot see, and the reading order and the visual order disagree completely.
+- **no initial focus.** Opening it leaves focus on the button that opened it — a button now
+  underneath a full-window overlay — so the first Tab lands somewhere arbitrary.
+- **no focus restore on close.** Escape closes the overlay and focus goes to `<body>`. The user
+  is returned to the top of the document rather than to the control they left.
+- Escape is the only keyboard affordance the overlay has.
+
+The fix is the standard one and it is small: remember `document.activeElement` on open, move
+focus to the dialog, cycle Tab/Shift+Tab within it, restore on close. It is listed first
+because it is the only item here that makes the feature *unusable* rather than *degraded*, and
+because `aria-modal="true"` on a dialog that does not trap focus is worse than no ARIA at all —
+it actively lies to the assistive technology.
+
+**2. No keyboard route to selection.** Every inspection gesture in the viewport is pointer-only:
+picking a bar, picking a solid, picking a conflict marker. The member list beside the canvas IS
+keyboard-reachable and selects and focuses the camera, so the *capability* exists — what is
+missing is a route to the things that are only in the picture, chiefly the conflict markers.
+Cheapest honest answer: make the conflict list in the detailing panel selectable the way the
+member list is, so every clickable thing in the 3-D view has a keyboard twin outside it. That is
+a smaller job than making the canvas itself focusable and it satisfies the same requirement.
+
+**3. The rail has no landmark and no heading structure.** The layer switches are real checkboxes
+with real labels, which is the part that usually goes wrong and here does not. But the rail is a
+bare `<aside>` with `<h4>`s and no accessible name, so a screen-reader user cannot jump to
+"layers" or "model status"; they arrive by walking.
+
+**4. The canvas has no text alternative.** Not "add alt text" — the honest fix is the rule
+below.
+
+**5. Colour is the only carrier of several distinctions IN THE GEOMETRY.** Provisional violet,
+conflict red, unreinforced orange, selection yellow. Every one of them is also stated as text
+somewhere — the banners, the tally, the status rows, the inspector — but not in the picture.
+
+That last one is a real WCAG 1.4.1 exposure and the fix is not a palette change. It is a design
+rule worth writing down before someone removes the thing that satisfies it:
+
+> **Anything the 3-D view says with colour, the panel beside it must also say in words.**
+
+Today that holds — the tally counts each family, the status panel names each state, the banners
+name each warning, the inspector names the selected member's state. It holds by accident of good
+design rather than by contract, and a PR20 that tidies panels could break it without noticing.
+
+**Consistency of provisional states across the shell (PR19 finished this, PR20 must not undo
+it).** `PROVISIONAL` is now expressible on every status channel: the design `DisplayStatus`, the
+detailing `ElementStatus`, the summary bar, the row badge, the row filter, the 3-D bar colour and
+the workspace banner. All of them are violet `#a066d3` and all of them carry a glyph and text as
+well as the colour. Two invariants to preserve through the token migration:
+
+- the violet must survive as ONE token, not be nearest-matched onto the failure red or a generic
+  accent — the whole point of the state is that it is neither a pass nor a failure;
+- `OutcomeBadge` renders glyph + text + `sr-only` text for every state. A visual pass that
+  reduces a badge to a coloured dot removes the only non-colour carrier on the design surface.
 
 ### 5.3 Design workflow
 
-One inconsistency found during PR19's audit and deliberately **not** fixed there, because it
-belongs here:
+The inconsistency this section used to carry — a proposal displaying as `fail` in the summary
+bar — **was fixed in PR19** once it was explicitly authorised. `DisplayStatus` gained a
+`provisional` value, applied under the same narrow predicate the detailing status uses. Nothing
+is left open here; what remains is the instruction in §5.2 not to undo it.
 
-> A `PROVISIONAL_BIAXIAL` member displays as **`fail`** in the summary bar and in the row
-> status, because `getDisplayStatus` verifies the steel actually written to the member and the
-> authoritative verifier refuses it on the biaxial check — by construction, every time.
-
-Per-row the design table is honest (each carries a provisional badge and has its own filter),
-and the run cluster now names them (`◐ N provisional`, added in PR19). But the aggregate still
-reads `✗ N fail` beside it. Whether `DisplayStatus` should gain a `provisional` value is a UI
-decision with a wide blast radius — the 2-D and 3-D viewport colour maps, `getStatus`,
-`getMaxRatio` and every row filter read it — which is why PR19 reported it instead of changing
-it. **This is the first thing to decide in PR20's workflow slice.**
+One smaller thing does remain, and it is a wording call rather than a defect: the three status
+channels use three phrasings for the same state — `design.status.provisional`
+("Propuesta provisional"), `design.counts.provisional` ("provisorio") and
+`detailing.scene.status.PROVISIONAL` ("Propuesta provisional"). Worth unifying in a copy pass.
 
 ### 5.4 Viewer
 
@@ -168,6 +207,27 @@ PR19 leaves the viewer functional and measured. What PR20 should pick up:
 
 After PR125, run one audit pass over the RC surfaces it never saw (§2 table) and migrate them
 with the meanings intact. The six colours listed there are the contract; the hexes are not.
+
+## 5.6 Integrating PR125 AFTER PR19 — the specific risks
+
+Stated separately from §6 because this is the ordering the plan recommends, and it is worth
+being explicit about what that ordering costs.
+
+1. **PR125's sweep predates seven RC components and one status state.** Re-running it (if it can
+   be re-run) picks them up; merging its diff does not. If it is merged rather than re-run, the
+   3-D workspace, both banners, the layers rail, the status panel, the selection details and the
+   new provisional badge stay on literal hexes while everything around them moves to tokens.
+2. **The provisional violet is now load-bearing in six places** and three of them are new since
+   PR125 was written (`summary-count-provisional`, `.badge-provisional`, `TorsionBanner`'s amber
+   sibling). A nearest-colour rule that has never seen them will map them by hue alone.
+3. **`App.svelte` is the one structural clash** and PR19 grew it further this pass. Resolve by
+   hand with both suites green either side; do not accept a mechanical merge.
+4. **PR125's shell proposal interacts with the overlay.** The tab rail assumes the panel owns
+   navigation; the 3-D workspace deliberately escapes the panel because the panel's fixed pixel
+   width is what made the old in-panel viewer unusable. Decide this before building, not during.
+5. **PR125 targets #124, not `main`.** Anything that lands before #124 changes what PR125 has to
+   rebase onto. PR19 landing first is therefore a decision about #124's queue too, not only
+   about these two branches.
 
 ## 6. Risks, ranked
 

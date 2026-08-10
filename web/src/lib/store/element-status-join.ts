@@ -15,7 +15,8 @@
 
 import { modelStore } from './model.svelte';
 import { verificationStore } from './verification.svelte';
-import type { DesignOutcomeSummary } from '../engine/detailing/element-status';
+import { failingLimits, type DesignOutcomeSummary }
+  from '../engine/detailing/element-status';
 
 /**
  * Every member the design run or the verification knows about, summarised.
@@ -41,9 +42,7 @@ export function buildOutcomeSummaries(): Map<number, DesignOutcomeSummary> {
        * this field `statusOf` cannot tell that case from a proposal that ALSO fails on
        * flexure, and it collapses every proposal into the generic failure bucket.
        */
-      verificationLimiting: (v?.checks ?? [])
-        .filter((c) => c.status === 'fail')
-        .flatMap((c) => (c.limiting ? [String(c.limiting)] : [])),
+      verificationLimiting: failingLimits(v?.checks),
       limiting: o?.limiting ?? [],
       reasonKey: o?.reasons?.[0]?.key,
       secondaryRatio: o?.axes?.secondaryRatio,

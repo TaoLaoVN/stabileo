@@ -3039,6 +3039,7 @@ const de: Translations = {
   'design.status.fail': 'Nicht erfüllt',
   'design.status.unavailable': 'Nicht verifiziert',
   'design.status.stale': 'Basis veraltet',
+  'design.status.provisional': 'Vorläufiger Vorschlag',
   'design.badge.edited': 'bearbeitet',
   'design.badge.auto': 'automatisch',
   'design.badge.provisional': 'provisorisch',

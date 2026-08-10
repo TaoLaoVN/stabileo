@@ -3817,6 +3817,7 @@ const es: Record<string, string> = {
   'design.status.fail': 'No verifica',
   'design.status.unavailable': 'Sin verificar',
   'design.status.stale': 'Base desactualizada',
+  'design.status.provisional': 'Propuesta provisional',
   'design.badge.edited': 'editada',
   'design.badge.auto': 'automática',
   'design.badge.provisional': 'provisoria',

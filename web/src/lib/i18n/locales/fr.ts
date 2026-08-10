@@ -3037,6 +3037,7 @@ const fr: Translations = {
   'design.status.fail': 'Non vérifié',
   'design.status.unavailable': 'Non vérifié',
   'design.status.stale': 'Base obsolète',
+  'design.status.provisional': 'Proposition provisoire',
   'design.badge.edited': 'modifié',
   'design.badge.auto': 'auto',
   'design.badge.provisional': 'provisoire',

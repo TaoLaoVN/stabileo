@@ -468,42 +468,55 @@ test.describe('@slow RC design at scale', () => {
      * authoritative verifier then refuses them on the biaxial check, by construction, every
      * time. So they read `fail`.
      *
-     * That is a true statement about the STEEL and a poor label for the MEMBER, and it is
-     * why the run-outcome chip asserted above matters: the bar reads "✗ 22 fail · ◐ 22
-     * provisional", and the table gives each of those rows a provisional badge and its own
-     * filter. Whether the display status itself should gain a `provisional` value is a UI
-     * decision with a wide blast radius — the viewport colour map and every row filter read
-     * it — and it belongs to the UI pass, not here. What this test pins is that the number
-     * is accounted for and named somewhere a reader will see, rather than silently absent.
+     * That was a true statement about the STEEL and a poor label for the MEMBER: it put 22 red
+     * crosses meaning "we did not look" beside crosses meaning "we looked and it does not
+     * hold". `DisplayStatus` now has a `provisional` value of its own, applied under the same
+     * narrow predicate the detailing status uses — only when EVERY failing check is the
+     * biaxial one — so a proposal that also failed on flexure would still read `fail`.
      *
-     * Measured, not assumed: 22 `fail`, 0 `unavailable`.
+     * Nothing about the engineering moved with it: the outcome, the verdict, the certificate
+     * and the utilisation are what they were, and the assertions above still hold unchanged.
+     *
+     * Measured, not assumed: 386 checked, 22 provisional, 0 fail, 0 unavailable.
      */
     const display = await page.evaluate(() => window.__stabileo.counts());
     expect(display.ok + display.warn, 'the fully checked members').toBe(386);
-    expect(display.fail, 'the proposals, whose written steel the verifier refuses').toBe(22);
+    expect(display.provisional, 'the proposals, named as proposals').toBe(22);
+    expect(display.fail, 'and nothing is called a failure that is not one').toBe(0);
     expect(display.unavailable, 'nothing is left without a status at all').toBe(0);
+    // A proposal is never folded into the passes. This is the assertion that would catch the
+    // exception being widened into a way of making red things green.
+    expect(display.ok + display.warn, 'proposals are not counted as verified').toBe(386);
     // Every member lands in exactly one display bucket. A member missing from all of them
     // would be a row the summary bar does not describe.
-    expect(display.ok + display.warn + display.fail + display.unavailable + display.stale,
-      'every member is described by the summary bar').toBe(408);
+    expect(display.ok + display.warn + display.fail + display.provisional
+      + display.unavailable + display.stale,
+    'every member is described by the summary bar').toBe(408);
+    // The per-member view agrees with the aggregate: each proposal reports `provisional`.
+    const perMember = await page.evaluate(() => {
+      const h = window.__stabileo;
+      return h.elementIds().map((id) => ({ id, display: h.displayStatus(id) }));
+    });
+    for (const p of proposals) {
+      expect(perMember.find((x) => x.id === p.id)!.display, `member ${p.id} display status`)
+        .toBe('provisional');
+    }
     await expect(page.getByTestId('summary-count-verified')).toContainText(String(display.ok));
     await expect(page.getByTestId('summary-count-warn')).toContainText(String(display.warn));
     await expect(page.getByTestId('summary-count-fail')).toContainText(String(display.fail));
     await expect(page.getByTestId('summary-count-unavailable')).toContainText(String(display.unavailable));
     /**
-     * The 22 proposals are surfaced in the run-outcome cluster, under the chip that describes
-     * them NOW.
+     * And the bar itself says so.
      *
-     * Each chip hides at zero, so a reclassification either moves the badge or deletes it, and
-     * this one deleted it: the biaxial fallback moved these members out of `unsupported` and
-     * the cluster had no chip for where they went, so the bar simply stopped mentioning them.
-     * Asserting all three is the point — that nothing is exhausted, that nothing is refused
-     * outright, and that the members are still counted somewhere a reader will see.
+     * The run-outcome chips hide at zero, so `exhausted` and `unsupported` are gone because
+     * nothing landed in them. The provisional chip lives with the DISPLAY counts, which are
+     * always rendered — it reports what the members ARE rather than what the last run decided,
+     * and those two can diverge the moment a user edits a member's steel.
      */
     await expect(page.getByTestId('summary-count-exhausted')).toHaveCount(0);
     await expect(page.getByTestId('summary-count-unsupported')).toHaveCount(0);
     await expect(page.getByTestId('summary-count-provisional'))
-      .toContainText(String(counts.provisionalBiaxial));
+      .toContainText(String(display.provisional));
 
     // Auto-design selected is the default scope; all-un-designed is explicit.
     await expect(page.getByTestId('cmd-autodesign')).toBeVisible();

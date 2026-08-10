@@ -2992,6 +2992,7 @@ const ja: Translations = {
   'design.status.fail': '不合格',
   'design.status.unavailable': '未検証',
   'design.status.stale': '基準が古い',
+  'design.status.provisional': '暫定案',
   'design.badge.edited': '編集済み',
   'design.badge.auto': '自動',
   'design.badge.provisional': '暫定',

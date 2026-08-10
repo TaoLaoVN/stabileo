@@ -3025,6 +3025,7 @@ const zh: Translations = {
   'design.status.fail': '不满足',
   'design.status.unavailable': '未验证',
   'design.status.stale': '基线已过时',
+  'design.status.provisional': '暂定方案',
   'design.badge.edited': '已编辑',
   'design.badge.auto': '自动',
   'design.badge.provisional': '暂定',

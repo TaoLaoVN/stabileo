@@ -3026,6 +3026,7 @@ const id: Translations = {
   'design.status.fail': 'Tidak memenuhi',
   'design.status.unavailable': 'Belum diverifikasi',
   'design.status.stale': 'Basis kedaluwarsa',
+  'design.status.provisional': 'Usulan sementara',
   'design.badge.edited': 'diedit',
   'design.badge.auto': 'otomatis',
   'design.badge.provisional': 'sementara',

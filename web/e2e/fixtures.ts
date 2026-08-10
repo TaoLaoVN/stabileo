@@ -145,6 +145,16 @@ declare global {
   }
 }
 
+/**
+ * Parallel-solve fallbacks seen in the current page, newest last.
+ *
+ * Module-level because `solveModel` is a free function that only receives a `Page`, and
+ * threading a per-test collector through every call site would touch every spec to serve one
+ * diagnostic. Cleared when the `pro` fixture hands out a page, and this project runs
+ * `workers: 1` with `fullyParallel: false`, so there is exactly one page in flight at a time.
+ */
+const solveFallbacks: string[] = [];
+
 /** Evaluate a hook in the page. */
 export function hook<T>(page: Page, fn: (h: TestHooks) => T): Promise<T> {
   return page.evaluate(fn as never, undefined as never) as never;
@@ -163,14 +173,32 @@ export const test = base.extend<{ pro: Page; appLocale: string }>({
     const consoleErrors: string[] = [];
     const pageErrors: string[] = [];
     page.on('console', (m) => {
-      if (m.type() !== 'error') return;
       const text = m.text();
+      /**
+       * The one WARNING worth keeping, and why it is kept rather than asserted on.
+       *
+       * `solveCombinations3D` runs the load cases across web workers and falls back to solving
+       * them one after another on the main thread if the worker pool cannot be brought up. That
+       * fallback is correct behaviour and this suite must not fail because it happened.
+       *
+       * But it is also the difference between a solve that takes half a minute and one that
+       * takes many, and it is the leading explanation for the only failure this suite has
+       * produced that nobody could account for: a `page.evaluate(solve)` on the 7-storey
+       * building sitting for fifteen minutes and then timing out. Nothing recorded whether the
+       * fallback had fired, because it is a `console.warn` and this listener only kept errors —
+       * so the evidence that would have settled it was thrown away on every run.
+       *
+       * Recorded here, surfaced by `solveModel` when a solve overruns. Diagnosis, not a gate.
+       */
+      if (/Parallel solve failed/i.test(text)) { solveFallbacks.push(text); return; }
+      if (m.type() !== 'error') return;
       // WebGL software-rasteriser chatter is expected under SwiftShader.
       if (/SwiftShader|WebGL|GroupMarkerNotSet|Automatic fallback/i.test(text)) return;
       consoleErrors.push(text);
     });
     page.on('pageerror', (e) => pageErrors.push(String(e)));
 
+    solveFallbacks.length = 0;
     await page.addInitScript((loc) => {
       try {
         localStorage.clear();
@@ -214,10 +242,69 @@ export async function designAll(page: Page): Promise<Record<string, number>> {
   return (await page.evaluate(() => window.__stabileo.runCounts()))!;
 }
 
+/**
+ * How long a solve may take before the setup is declared stuck.
+ *
+ * ── Why this is a tightening, not a loosening ──────────────────────
+ *
+ * `page.evaluate` inherits the TEST's timeout, and the heavy specs set that to 900 s so the
+ * measurements they take have room. So a solve that never finished consumed the whole
+ * fifteen minutes and then failed pointing at the `evaluate` line — no cause, no evidence, and
+ * fifteen minutes of a suite spent learning nothing. It happened three times across two runs,
+ * always on the 7-storey building, never on the same test twice.
+ *
+ * The 7-storey solve is 20–40 s on an idle machine and the small models are seconds. Four
+ * minutes is far above anything healthy and far below the budget the measurement needs, so a
+ * stuck setup now fails FAST and says what it knows — including whether the worker pool fell
+ * back to sequential solving, which is the leading explanation and was being discarded.
+ *
+ * This cannot mask a regression: a solve that gets slower still fails, sooner and with more
+ * information. It is the measurement budget that stays untouched.
+ */
+const SOLVE_DEADLINE_MS = 240_000;
+
 /** Run the same global solve the toolbar button triggers, and wait for it. */
 export async function solveModel(page: Page): Promise<void> {
   const before = await page.evaluate(() => window.__stabileo.solveCount());
-  await page.evaluate(async () => { await window.__stabileoActions.solve(); });
+  const started = Date.now();
+  /**
+   * The solve is invoked and awaited exactly as it always was, and RACED against a deadline.
+   *
+   * The first attempt at this fired the action without awaiting it and polled the counter
+   * instead, so the wait could carry its own timeout. That was worse: it changed how the solve
+   * is invoked, and it turned any immediate failure inside the page into "did not finish in
+   * 0 s" — a message that reads like a hang and means the opposite. The evidence for that is
+   * that it produced exactly one, on the fourth 7-storey setup of a run.
+   *
+   * Racing keeps the original call — awaited, its rejection still propagating — and adds only a
+   * clock beside it. `page.evaluate` cannot be cancelled, so the losing promise is left with a
+   * catch attached: the solve will finish or the page will be torn down under it, and neither
+   * may surface later as an unhandled rejection.
+   */
+  const solved = page.evaluate(async () => { await window.__stabileoActions.solve(); })
+    .then(() => 'done' as const);
+  solved.catch(() => { /* reported below, or irrelevant once the page is gone */ });
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const deadline = new Promise<'timeout'>((resolve) => {
+    timer = setTimeout(() => resolve('timeout'), SOLVE_DEADLINE_MS);
+  });
+  const outcome = await Promise.race([solved, deadline]);
+  clearTimeout(timer);
+
+  if (outcome === 'timeout') {
+    const elapsed = Math.round((Date.now() - started) / 1000);
+    const fellBack = solveFallbacks.length > 0;
+    throw new Error(
+      `the solve did not finish in ${elapsed} s (deadline ${SOLVE_DEADLINE_MS / 1000} s).\n`
+      + `Parallel solve fell back to sequential: ${fellBack ? 'YES' : 'no'}`
+      + (fellBack ? `\n  ${solveFallbacks.join('\n  ')}` : '')
+      + '\nA fallback means the worker pool could not be brought up and every load case was '
+      + 'solved one after another on the main thread, which on the 7-storey building is the '
+      + 'difference between half a minute and many. Without a fallback this is a genuine '
+      + 'slowdown in the solve and should be treated as a regression.',
+    );
+  }
+
   await expect.poll(() => page.evaluate(() => window.__stabileo.solveCount()), { timeout: 90_000 })
     .toBeGreaterThan(before);
 }

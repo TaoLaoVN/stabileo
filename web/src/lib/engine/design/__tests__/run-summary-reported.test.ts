@@ -68,6 +68,12 @@ const REPORTED_ELSEWHERE: Record<string, string> = {
   demandUnavailable:
     'a member with no demands gets no reinforcement, so it is counted by '
     + 'summary-count-unavailable',
+  provisionalBiaxial:
+    'counted by summary-count-provisional, which is now a DISPLAY status — the same '
+    + 'arrangement `verified` has, and the right one: the display cluster reports what each '
+    + 'member currently is, and a proposal is now one of the things it can say. It briefly '
+    + 'had a run-cluster chip of its own, which was the stopgap for a display status that '
+    + 'could not express it',
 };
 
 describe('every design-run bucket reaches the user', () => {
@@ -85,7 +91,7 @@ describe('every design-run bucket reaches the user', () => {
       if (REPORTED_ELSEWHERE[field]) {
         // Still asserted: the excuse has to name a chip that exists.
         expect(toolbarSrc, `${field}: ${REPORTED_ELSEWHERE[field]}`)
-          .toMatch(/summary-count-(verified|unavailable)/);
+          .toMatch(/summary-count-(verified|unavailable|provisional)/);
         return;
       }
       expect(
@@ -107,5 +113,19 @@ describe('every design-run bucket reaches the user', () => {
     expect(toolbarSrc).toContain('data-testid="summary-count-provisional"');
     expect(toolbarSrc).toContain("t('design.counts.provisional')");
     expect(toolbarSrc).toContain('#a066d3');
+  });
+
+  it('drives that chip from the DISPLAY count, not from the run outcome', () => {
+    /**
+     * The distinction is the whole reason the display status gained the state.
+     *
+     * `run.provisionalBiaxial` is what the last design run decided. `counts.provisional` is
+     * what the members ARE now, which is the question the rest of that cluster answers and
+     * the one that changes when a user edits a member's steel afterwards. Reading the run
+     * counter here would freeze the chip at whatever the last run said.
+     */
+    expect(toolbarSrc).toContain('{counts.provisional}');
+    expect(toolbarSrc, 'the run counter no longer drives a chip of its own')
+      .not.toContain('run.provisionalBiaxial');
   });
 });

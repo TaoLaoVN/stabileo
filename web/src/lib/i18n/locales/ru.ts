@@ -3028,6 +3028,7 @@ const ru: Translations = {
   'design.status.fail': 'Не проходит',
   'design.status.unavailable': 'Не проверено',
   'design.status.stale': 'База устарела',
+  'design.status.provisional': 'Предварительное предложение',
   'design.badge.edited': 'изменено',
   'design.badge.auto': 'авто',
   'design.badge.provisional': 'предварительно',

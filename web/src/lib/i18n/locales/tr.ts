@@ -3036,6 +3036,7 @@ const tr: Translations = {
   'design.status.fail': 'Sağlamıyor',
   'design.status.unavailable': 'Doğrulanmadı',
   'design.status.stale': 'Referans eskimiş',
+  'design.status.provisional': 'Geçici öneri',
   'design.badge.edited': 'düzenlendi',
   'design.badge.auto': 'otomatik',
   'design.badge.provisional': 'geçici',

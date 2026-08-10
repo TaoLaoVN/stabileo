@@ -214,6 +214,49 @@ export function summariseStatusReasons(
  * document. Everything else names the specific gap rather than falling through to a generic
  * "not ready".
  */
+/**
+ * The failing checks' constraints, from a provided-reinforcement verdict.
+ *
+ * One derivation, because two callers need it and they used to be one: the join that feeds
+ * `statusOf` built it inline, and when the design surface needed the same fact it had no way
+ * to ask for it without writing the filter a second time. A second reading of "what failed" is
+ * how one screen comes to call a member a proposal while another calls it a failure.
+ */
+export function failingLimits(
+  checks: ReadonlyArray<{ status: string; limiting?: unknown }> | undefined,
+): string[] {
+  return (checks ?? [])
+    .filter((c) => c.status === 'fail')
+    .flatMap((c) => (c.limiting ? [String(c.limiting)] : []));
+}
+
+/**
+ * Whether a member's verification failure is ENTIRELY the biaxial limitation it already
+ * declares.
+ *
+ * ── Why this is one exported predicate ─────────────────────────────
+ *
+ * A PROVISIONAL_BIAXIAL member's steel fails the authoritative verifier BY CONSTRUCTION: the
+ * verifier pushes the biaxial refusal for exactly these members, which is the same fact the
+ * outcome already carries and names far better. Every surface that reports a status has to
+ * make the same exception or the app contradicts itself — and it did, for a while, in both
+ * directions: the detailing panel said FAILED until that was fixed, and the design summary bar
+ * went on saying `fail` for a release after it.
+ *
+ * The exception is narrow on purpose and this is the only place it is stated. It applies only
+ * when EVERY failing check is the biaxial one. A proposal that also fails on flexure or shear
+ * is a different situation and stays a failure, because then something is wrong beyond the
+ * known limitation. An ABSENT list reads as "no idea", not "nothing else": silence is not
+ * agreement, which is why the length test is there.
+ */
+export function isKnownBiaxialLimitation(
+  summary: DesignOutcomeSummary | undefined,
+): boolean {
+  return summary?.outcome === 'PROVISIONAL_BIAXIAL'
+    && (summary.verificationLimiting?.length ?? 0) > 0
+    && summary.verificationLimiting!.every((x) => x === 'biaxial');
+}
+
 export function statusOf(
   hasSteel: boolean, summary: DesignOutcomeSummary | undefined,
 ): ElementStatus {
@@ -237,11 +280,8 @@ export function statusOf(
    * biaxial one. A proposal that also fails on flexure or shear is a different situation and
    * keeps FAILED, because then there is something wrong beyond the known limitation.
    */
-  if (summary?.verificationStatus === 'fail') {
-    const onlyBiaxial = summary.outcome === 'PROVISIONAL_BIAXIAL'
-      && (summary.verificationLimiting?.length ?? 0) > 0
-      && summary.verificationLimiting!.every((x) => x === 'biaxial');
-    if (!onlyBiaxial) return 'FAILED';
+  if (summary?.verificationStatus === 'fail' && !isKnownBiaxialLimitation(summary)) {
+    return 'FAILED';
   }
 
   if (!summary?.outcome) {

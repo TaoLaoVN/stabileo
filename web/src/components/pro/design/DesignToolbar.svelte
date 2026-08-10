@@ -184,6 +184,18 @@
     <span class="count c-ok" data-testid="summary-count-verified">✓ {counts.ok} {t('design.counts.verified')}</span>
     <span class="count c-warn" data-testid="summary-count-warn">⚠ {counts.warn} {t('design.counts.warn')}</span>
     <span class="count c-fail" data-testid="summary-count-fail">✗ {counts.fail} {t('design.counts.fail')}</span>
+    <!--
+      Beside `fail`, and no longer inside it.
+
+      These members' steel does fail the authoritative verifier — by construction, on the
+      biaxial refusal the outcome already declares. Reporting that as "✗ N no verifica" put
+      twenty-two red crosses on the bar that meant "we did not look" next to crosses that mean
+      "we looked and it does not hold". Same glyph, opposite claims.
+
+      Always rendered, like every other display chip, so "0 provisional" is a visible zero
+      rather than an absent count: the run-outcome chips below hide at zero, these do not.
+    -->
+    <span class="count c-prov" data-testid="summary-count-provisional">◐ {counts.provisional} {t('design.counts.provisional')}</span>
     <span class="count c-unavail" data-testid="summary-count-unavailable">○ {counts.unavailable} {t('design.counts.unavailable')}</span>
     <span class="count c-stale" data-testid="summary-count-stale">⌛ {counts.stale} {t('design.counts.stale')}</span>
     {#if run}
@@ -201,26 +213,6 @@
       {#if run.unsupported > 0}
         <span class="count c-unsup" data-testid="summary-count-unsupported">
           — {run.unsupported} {t('design.counts.unsupported')}
-        </span>
-      {/if}
-      <!--
-        The proposals, which this cluster had stopped reporting.
-
-        When the biaxial fallback landed, the members it covers moved out of `unsupported` and
-        into `provisionalBiaxial` — and this cluster has a chip for the first and never gained
-        one for the second. Each chip hides at zero, so the reclassification did not move the
-        badge, it deleted it: on the flagship the run went from "— 22 unsupported" to saying
-        nothing at all about those members, on the one bar that reports what a run produced.
-
-        `design.counts.provisional` was already translated into all fourteen locales and used
-        by nothing, which is the shape of a chip that was intended and never wired.
-
-        Violet, matching the colour the 3-D view paints provisional steel and the state row in
-        the detailing panel. One colour, one meaning, across every surface that names it.
-      -->
-      {#if run.provisionalBiaxial > 0}
-        <span class="count c-prov" data-testid="summary-count-provisional">
-          ◐ {run.provisionalBiaxial} {t('design.counts.provisional')}
         </span>
       {/if}
       {#if run.aborted}

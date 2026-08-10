@@ -3023,6 +3023,7 @@ const ko: Translations = {
   'design.status.fail': '불합격',
   'design.status.unavailable': '미검증',
   'design.status.stale': '기준 정보 오래됨',
+  'design.status.provisional': '잠정 제안',
   'design.badge.edited': '수정됨',
   'design.badge.auto': '자동',
   'design.badge.provisional': '임시',
