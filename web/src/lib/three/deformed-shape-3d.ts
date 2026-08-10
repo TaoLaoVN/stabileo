@@ -155,6 +155,155 @@ function computeParticular(
 /**
  * Compute deformed shape for one 3D element.
  *
+ * Returns BOTH the base positions (scale=0) and the displaced positions
+ * (scale=1) in a single pass. The previous design called this function twice
+ * per element — once per scale — duplicating the local-axes, Hermite and
+ * particular-solution work. On a 2476-element model that is ~5000 redundant
+ * evaluations per deformed rebuild.
+ */
+export function computeDeformedShape3DPair(
+  nodeI: { id: number; x: number; y: number; z: number },
+  nodeJ: { id: number; x: number; y: number; z: number },
+  dispI: Displacement3D,
+  dispJ: Displacement3D,
+  ef: ElementForces3D,
+  eiData?: ElementEI,
+  localY?: { x: number; y: number; z: number },
+  rollAngle?: number,
+  leftHand?: boolean,
+): { p0: THREE.Vector3[]; p1: THREE.Vector3[] } {
+  const solverNodeI = { id: 0, x: nodeI.x, y: nodeI.y, z: nodeI.z };
+  const solverNodeJ = { id: 1, x: nodeJ.x, y: nodeJ.y, z: nodeJ.z };
+
+  let axes;
+  try {
+    axes = computeLocalAxes3D(solverNodeI, solverNodeJ, localY, rollAngle, leftHand);
+  } catch {
+    return { p0: [], p1: [] }; // zero-length element
+  }
+
+  const L = axes.L;
+  const { ex, ey, ez } = axes;
+
+  // Transform displacements global → local
+  const uI_local = ex[0] * dispI.ux + ex[1] * dispI.uy + ex[2] * dispI.uz;
+  const vI_local = ey[0] * dispI.ux + ey[1] * dispI.uy + ey[2] * dispI.uz;
+  const wI_local = ez[0] * dispI.ux + ez[1] * dispI.uy + ez[2] * dispI.uz;
+
+  const uJ_local = ex[0] * dispJ.ux + ex[1] * dispJ.uy + ex[2] * dispJ.uz;
+  const vJ_local = ey[0] * dispJ.ux + ey[1] * dispJ.uy + ey[2] * dispJ.uz;
+  const wJ_local = ez[0] * dispJ.ux + ez[1] * dispJ.uy + ez[2] * dispJ.uz;
+
+  // Transform rotations global → local
+  const thetaYI = ey[0] * dispI.rx + ey[1] * dispI.ry + ey[2] * dispI.rz;
+  const thetaZI = ez[0] * dispI.rx + ez[1] * dispI.ry + ez[2] * dispI.rz;
+  const thetaYJ = ey[0] * dispJ.rx + ey[1] * dispJ.ry + ey[2] * dispJ.rz;
+  const thetaZJ = ez[0] * dispJ.rx + ez[1] * dispJ.ry + ez[2] * dispJ.rz;
+
+  // ── Local Y plane ──
+  const EIz = eiData?.EIz;
+  const hasYLoads = EIz && EIz > 0 && (
+    ef.distributedLoadsY.length > 0 || ef.pointLoadsY.length > 0
+  );
+
+  let vpp_Y0 = 0, vpp_YL = 0;
+  if (hasYLoads) {
+    const r = computeParticularvpp(ef.distributedLoadsY, ef.pointLoadsY, L, EIz!);
+    vpp_Y0 = r.vpp0;
+    vpp_YL = r.vppL;
+  }
+
+  let thetaZI_adj = thetaZI;
+  let thetaZJ_adj = thetaZJ;
+  const dvY = vJ_local - vI_local;
+
+  if (ef.releaseMzStart && ef.releaseMzEnd) {
+    thetaZI_adj = dvY / L + L * vpp_Y0 / 3 + L * vpp_YL / 6;
+    thetaZJ_adj = dvY / L - L * vpp_Y0 / 6 - L * vpp_YL / 3;
+  } else if (ef.releaseMzStart) {
+    thetaZI_adj = 3 * dvY / (2 * L) - thetaZJ / 2 + L * vpp_Y0 / 4;
+  } else if (ef.releaseMzEnd) {
+    thetaZJ_adj = 3 * dvY / (2 * L) - thetaZI / 2 - L * vpp_YL / 4;
+  }
+
+  // ── Z-plane (weak axis: My, Vz) ──
+  const EIy = eiData?.EIy;
+  const hasZLoads = EIy && EIy > 0 && (
+    ef.distributedLoadsZ.length > 0 || ef.pointLoadsZ.length > 0
+  );
+
+  let vpp_Z0 = 0, vpp_ZL = 0;
+  if (hasZLoads) {
+    const r = computeParticularvpp(ef.distributedLoadsZ, ef.pointLoadsZ, L, EIy!);
+    vpp_Z0 = r.vpp0;
+    vpp_ZL = r.vppL;
+  }
+
+  let slopeZI = -thetaYI;
+  let slopeZJ = -thetaYJ;
+  const dvZ = wJ_local - wI_local;
+
+  if (ef.releaseMyStart && ef.releaseMyEnd) {
+    slopeZI = dvZ / L + L * vpp_Z0 / 3 + L * vpp_ZL / 6;
+    slopeZJ = dvZ / L - L * vpp_Z0 / 6 - L * vpp_ZL / 3;
+  } else if (ef.releaseMyStart) {
+    slopeZI = 3 * dvZ / (2 * L) - (-thetaYJ) / 2 + L * vpp_Z0 / 4;
+  } else if (ef.releaseMyEnd) {
+    slopeZJ = 3 * dvZ / (2 * L) - (-thetaYI) / 2 - L * vpp_ZL / 4;
+  }
+
+  // ── Sample points along element ──
+  const p0: THREE.Vector3[] = [];
+  const p1: THREE.Vector3[] = [];
+  const nPts = SEGMENTS_PER_ELEMENT + 1;
+
+  for (let i = 0; i < nPts; i++) {
+    const xi = i / (nPts - 1);
+    const x = xi * L;
+    const xi2 = xi * xi;
+    const xi3 = xi2 * xi;
+
+    // Hermite shape functions
+    const N1 = 1 - 3 * xi2 + 2 * xi3;
+    const N2 = (xi - 2 * xi2 + xi3) * L;
+    const N3 = 3 * xi2 - 2 * xi3;
+    const N4 = (-xi2 + xi3) * L;
+
+    // Axial (linear)
+    const uLocal = uI_local + xi * (uJ_local - uI_local);
+
+    // Y-plane: transverse v (local Y direction)
+    let vLocal = N1 * vI_local + N2 * thetaZI_adj + N3 * vJ_local + N4 * thetaZJ_adj;
+    if (hasYLoads) {
+      vLocal += computeParticular(x, ef.distributedLoadsY, ef.pointLoadsY, L, EIz!);
+    }
+
+    // Z-plane: transverse w (local Z direction)
+    let wLocal = N1 * wI_local + N2 * slopeZI + N3 * wJ_local + N4 * slopeZJ;
+    if (hasZLoads) {
+      wLocal += computeParticular(x, ef.distributedLoadsZ, ef.pointLoadsZ, L, EIy!);
+    }
+
+    // Transform local displacement [uLocal, vLocal, wLocal] to global
+    const dxGlobal = ex[0] * uLocal + ey[0] * vLocal + ez[0] * wLocal;
+    const dyGlobal = ex[1] * uLocal + ey[1] * vLocal + ez[1] * wLocal;
+    const dzGlobal = ex[2] * uLocal + ey[2] * vLocal + ez[2] * wLocal;
+
+    // Original position (linear interpolation along element axis)
+    const baseX = nodeI.x + xi * (nodeJ.x - nodeI.x);
+    const baseY = nodeI.y + xi * (nodeJ.y - nodeI.y);
+    const baseZ = nodeI.z + xi * (nodeJ.z - nodeI.z);
+
+    p0.push(new THREE.Vector3(baseX, baseY, baseZ));
+    p1.push(new THREE.Vector3(baseX + dxGlobal, baseY + dyGlobal, baseZ + dzGlobal));
+  }
+
+  return { p0, p1 };
+}
+
+/**
+ * Compute deformed shape for one 3D element.
+ *
  * @returns Array of global XYZ points for the deformed curve
  */
 export function computeDeformedShape3D(
@@ -388,18 +537,14 @@ export function createDeformedLines(
       const secRot = sections?.get(elem.sectionId)?.rotation ?? 0;
       const rollAngle = (elem.rollAngle ?? 0) + secRot;
       try {
-        p0 = computeDeformedShape3D(
+        const pair = computeDeformedShape3DPair(
           { id: elem.nodeI, x: nI.x, y: nI.y, z: nI.z ?? 0 },
           { id: elem.nodeJ, x: nJ.x, y: nJ.y, z: nJ.z ?? 0 },
-          dI, dJ, ef, 0, eiEntry,
+          dI, dJ, ef, eiEntry,
           localY, rollAngle, _leftHand,
         );
-        p1 = computeDeformedShape3D(
-          { id: elem.nodeI, x: nI.x, y: nI.y, z: nI.z ?? 0 },
-          { id: elem.nodeJ, x: nJ.x, y: nJ.y, z: nJ.z ?? 0 },
-          dI, dJ, ef, 1, eiEntry,
-          localY, rollAngle, _leftHand,
-        );
+        p0 = pair.p0;
+        p1 = pair.p1;
       } catch {
         p0 = []; p1 = [];
       }
