@@ -18,7 +18,7 @@ export function drawModeShape(
   dc: DrawContext,
   _zoom: number,
   scale: number,
-  color: string = '#4ecdc4',
+  color: string = '#7fd4cc',
 ): void {
   const { ctx, worldToScreen, nodes, elements } = dc;
 
@@ -109,7 +109,7 @@ export function drawPlasticHinges(
   const autoScale = maxDisp > 0 ? Math.min(50 / zoom / maxDisp, 200) : 1;
 
   // Draw elements
-  ctx.strokeStyle = '#e9e944';
+  ctx.strokeStyle = '#d9a441';
   ctx.lineWidth = 2;
   for (const [, elem] of elements) {
     const ni = nodes.get(elem.nodeI);

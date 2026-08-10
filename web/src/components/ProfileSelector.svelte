@@ -1,9 +1,9 @@
 <script lang="ts">
   import {
-    FAMILY_LIST, PROFILE_FAMILIES, searchProfiles, profileToSection, familyToShape,
+    FAMILY_LIST, PROFILE_FAMILIES, searchProfiles, profileToSection,
     type ProfileFamily, type SteelProfile,
   } from '../lib/data/steel-profiles';
-  import { crossSectionPath } from '../lib/utils/section-drawing';
+  import { profileOutline } from '../lib/section/outline';
   import { t } from '../lib/i18n';
 
   interface Props {
@@ -25,15 +25,10 @@
     if (!profiles || profiles.length === 0) return null;
     // Pick a representative profile (middle of the list) for good proportions
     const rep = profiles[Math.floor(profiles.length / 2)];
-    const shape = familyToShape(activeFamily);
-    return crossSectionPath({
-      shape,
-      h: rep.h,
-      b: rep.b,
-      tw: rep.tw ?? 0,
-      tf: rep.tf ?? 0,
-      t: rep.t ?? 0,
-    });
+    // Canonical geometry, so the family thumbnail shows the profile's real
+    // outline — tapered flanges and rolled fillets included — rather than the
+    // sharp parallel-flange caricature every family used to share.
+    return profileOutline(rep).d;
   });
 
   function handleSelect(p: SteelProfile) {

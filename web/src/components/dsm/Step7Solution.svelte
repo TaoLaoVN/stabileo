@@ -51,7 +51,7 @@
 
 <style>
   .step { display: flex; flex-direction: column; gap: 0.6rem; }
-  .explanation { font-size: 0.72rem; color: #bbb; line-height: 1.5; }
+  .explanation { font-size: 0.72rem; color: var(--st-text-2); line-height: 1.5; }
   .explanation p { margin: 0; }
-  .separator { border-top: 1px solid #0f3460; margin: 0.2rem 0; }
+  .separator { border-top: 1px solid var(--st-surface-3); margin: 0.2rem 0; }
 </style>

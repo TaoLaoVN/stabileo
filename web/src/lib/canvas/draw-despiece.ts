@@ -93,7 +93,7 @@ export function despieceScales(forces: Iterable<DespieceElementForces>): { maxF:
 
 // ─── Vector model (pure, unit-tested) ───────────────────────────────
 
-const COL = { axial: '#ff7070', shear: '#4ecdc4', moment: '#ffd166', reaction: '#00e676', member: '#9aa7c7', remnant: '#5a6478' };
+const COL = { axial: '#ff7070', shear: '#7fd4cc', moment: '#ffd166', reaction: '#00e676', member: '#9aa7c7', remnant: '#5a6478' };
 const AXIAL_PX = 34, SHEAR_PX = 34, ARC_R = 16;
 const ARC_A0 = -Math.PI * 0.75, ARC_A1 = Math.PI * 0.25;
 
@@ -258,7 +258,7 @@ export function computeDespieceSegments(args: Pick<ComputeArgs, 'elements' | 'ge
 // ─── Loads in free-body mode (external actions, drawn once) ─────────
 
 /** Distinct load color — separate from axial/shear/moment/reaction. */
-export const DESPIECE_LOAD_COLOR = '#ffa726';
+export const DESPIECE_LOAD_COLOR = '#d9a441';
 
 export interface DespieceElementSpan { aI: DespieceNode; aJ: DespieceNode; lenOrig: number; lenShrunk: number; }
 

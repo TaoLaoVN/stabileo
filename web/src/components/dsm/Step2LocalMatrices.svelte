@@ -86,30 +86,30 @@
 
 <style>
   .step { display: flex; flex-direction: column; gap: 0.6rem; }
-  .explanation { font-size: 0.72rem; color: #bbb; line-height: 1.5; }
+  .explanation { font-size: 0.72rem; color: var(--st-text-2); line-height: 1.5; }
   .explanation p { margin: 0; }
 
   .elem-selector {
     display: flex; align-items: center; gap: 0.5rem;
-    font-size: 0.7rem; color: #ccc;
+    font-size: 0.7rem; color: var(--st-text-2);
   }
   .elem-selector select {
-    background: #16213e; color: #eee; border: 1px solid #0f3460;
+    background: var(--st-surface-2); color: var(--st-text); border: 1px solid var(--st-surface-3);
     border-radius: 3px; padding: 0.2rem 0.4rem; font-size: 0.65rem;
   }
 
   .props-row { display: flex; gap: 0.3rem; flex-wrap: wrap; }
   .prop {
-    background: #16213e; border: 1px solid #0f3460; border-radius: 3px;
+    background: var(--st-surface-2); border: 1px solid var(--st-surface-3); border-radius: 3px;
     padding: 0.2rem 0.4rem; display: flex; flex-direction: column; align-items: center;
   }
-  .prop-label { font-size: 0.5rem; color: #888; }
-  .prop-val { font-size: 0.65rem; color: #eee; font-family: 'Courier New', monospace; }
+  .prop-label { font-size: 0.5rem; color: var(--st-text-3); }
+  .prop-val { font-size: 0.65rem; color: var(--st-text); font-family: 'Courier New', monospace; }
 
   .formula-note {
-    font-size: 0.65rem; color: #7cb3f0;
-    background: #16213e; padding: 0.4rem 0.6rem;
-    border-radius: 4px; border-left: 3px solid #3a7bd5;
+    font-size: 0.65rem; color: var(--st-info);
+    background: var(--st-surface-2); padding: 0.4rem 0.6rem;
+    border-radius: 4px; border-left: 3px solid var(--st-info);
     line-height: 1.4;
   }
 </style>

@@ -7,7 +7,7 @@ import {
   checkFailure,
   analyzeSectionStress,
   suggestCriticalSections,
-  resolveSectionGeometry,
+  resolveSectionGeometryLegacy,
   inferSectionShape,
   computeCentralCore,
 } from '../section-stress';
@@ -154,20 +154,20 @@ describe('normalStress', () => {
 
 describe('shearStress — rectangular', () => {
   it('τ_max = 1.5·V/A at neutral axis (y=0)', () => {
-    const rs = resolveSectionGeometry(rectSection(0.1, 0.2));
+    const rs = resolveSectionGeometryLegacy(rectSection(0.1, 0.2));
     // τ_max = 1.5 * 30 / 0.02 / 1000 = 2.25 MPa
     expect(shearStress(30, 0, rs)).toBeCloseTo(2.25, 1);
   });
 
   it('τ = 0 at extreme fibers (±h/2)', () => {
-    const rs = resolveSectionGeometry(rectSection(0.1, 0.2));
+    const rs = resolveSectionGeometryLegacy(rectSection(0.1, 0.2));
     expect(shearStress(30, 0.1, rs)).toBeCloseTo(0, 2);
     expect(shearStress(30, -0.1, rs)).toBeCloseTo(0, 2);
   });
 
   it('parabolic distribution: τ(h/4) ≈ 0.75·τ_max', () => {
     const b = 0.1, h = 0.2;
-    const rs = resolveSectionGeometry(rectSection(b, h));
+    const rs = resolveSectionGeometryLegacy(rectSection(b, h));
     const tauMax = shearStress(30, 0, rs);
     const tauQuarter = shearStress(30, h / 4, rs);
     // Q(h/4) = b/2 · (h²/4 - h²/16) = b/2 · 3h²/16 → ratio = 3/4 of Q(0)
@@ -175,14 +175,14 @@ describe('shearStress — rectangular', () => {
   });
 
   it('symmetric about neutral axis', () => {
-    const rs = resolveSectionGeometry(rectSection(0.1, 0.2));
+    const rs = resolveSectionGeometryLegacy(rectSection(0.1, 0.2));
     const tauPos = shearStress(50, 0.04, rs);
     const tauNeg = shearStress(50, -0.04, rs);
     expect(tauPos).toBeCloseTo(tauNeg, 5);
   });
 
   it('scales linearly with V', () => {
-    const rs = resolveSectionGeometry(rectSection(0.1, 0.2));
+    const rs = resolveSectionGeometryLegacy(rectSection(0.1, 0.2));
     const tau1 = shearStress(10, 0, rs);
     const tau2 = shearStress(30, 0, rs);
     expect(tau2 / tau1).toBeCloseTo(3, 5);
@@ -195,7 +195,7 @@ describe('shearStress — rectangular', () => {
 
 describe('shearStress — I section', () => {
   const sec = iSection();
-  const rs = resolveSectionGeometry(sec);
+  const rs = resolveSectionGeometryLegacy(sec);
 
   it('τ in web > τ in flange', () => {
     const tauWeb = shearStress(100, 0, rs);
@@ -242,7 +242,7 @@ describe('shearStress — I section', () => {
 
 describe('shearStress — RHS', () => {
   const sec = rhsSection();
-  const rs = resolveSectionGeometry(sec);
+  const rs = resolveSectionGeometryLegacy(sec);
 
   it('τ_max at neutral axis', () => {
     const tauNA = shearStress(50, 0, rs);
@@ -268,7 +268,7 @@ describe('shearStress — RHS', () => {
 
 describe('shearStress — CHS', () => {
   const sec = chsSection();
-  const rs = resolveSectionGeometry(sec);
+  const rs = resolveSectionGeometryLegacy(sec);
 
   it('τ_max at neutral axis', () => {
     const tau = shearStress(50, 0, rs);
@@ -292,7 +292,7 @@ describe('shearStress — CHS', () => {
 
 describe('shearStress — L section', () => {
   const sec = lSection();
-  const rs = resolveSectionGeometry(sec);
+  const rs = resolveSectionGeometryLegacy(sec);
 
   it('τ > 0 at neutral axis', () => {
     expect(shearStress(20, 0, rs)).toBeGreaterThan(0);
@@ -310,19 +310,19 @@ describe('shearStress — L section', () => {
 
 describe('computeStressDistribution', () => {
   it('returns 31 points', () => {
-    const rs = resolveSectionGeometry(rectSection(0.1, 0.2));
+    const rs = resolveSectionGeometryLegacy(rectSection(0.1, 0.2));
     expect(computeStressDistribution(0, 30, 50, rs).length).toBe(31);
   });
 
   it('sigma is linear for pure bending (rect)', () => {
-    const rs = resolveSectionGeometry(rectSection(0.1, 0.2));
+    const rs = resolveSectionGeometryLegacy(rectSection(0.1, 0.2));
     const dist = computeStressDistribution(0, 0, 50, rs);
     expect(dist[0].sigma * dist[dist.length - 1].sigma).toBeLessThan(0);
     expect(Math.abs(dist[15].sigma)).toBeLessThan(1);
   });
 
   it('tau is parabolic for rect (max at center, zero at edges)', () => {
-    const rs = resolveSectionGeometry(rectSection(0.1, 0.2));
+    const rs = resolveSectionGeometryLegacy(rectSection(0.1, 0.2));
     const dist = computeStressDistribution(0, 30, 0, rs);
     const midTau = dist[15].tau;
     const edgeTau = dist[0].tau;
@@ -332,14 +332,14 @@ describe('computeStressDistribution', () => {
 
   it('y values span from -h/2 to +h/2', () => {
     const h = 0.3;
-    const rs = resolveSectionGeometry(rectSection(0.1, h));
+    const rs = resolveSectionGeometryLegacy(rectSection(0.1, h));
     const dist = computeStressDistribution(0, 0, 50, rs);
     expect(dist[0].y).toBeCloseTo(-h / 2, 5);
     expect(dist[dist.length - 1].y).toBeCloseTo(h / 2, 5);
   });
 
   it('tau sign follows V sign', () => {
-    const rs = resolveSectionGeometry(rectSection(0.1, 0.2));
+    const rs = resolveSectionGeometryLegacy(rectSection(0.1, 0.2));
     // Negative V → negative tau (interior points)
     const distNeg = computeStressDistribution(0, -50, 0, rs);
     const interiorNeg = distNeg.filter(pt => Math.abs(pt.tau) > 1e-6);
@@ -355,7 +355,7 @@ describe('computeStressDistribution', () => {
   });
 
   it('I-section shows tau jump at web-flange junction', () => {
-    const rs = resolveSectionGeometry(iSection());
+    const rs = resolveSectionGeometryLegacy(iSection());
     const dist = computeStressDistribution(0, 100, 0, rs);
     // Find points near the junction
     const yJunction = 0.15 - 0.0107;
@@ -550,23 +550,23 @@ describe('inferSectionShape', () => {
 // RESOLVE SECTION GEOMETRY
 // ═══════════════════════════════════════════════════════════════════════
 
-describe('resolveSectionGeometry', () => {
+describe('resolveSectionGeometryLegacy', () => {
   it('rect section keeps b and h', () => {
-    const rs = resolveSectionGeometry(rectSection(0.15, 0.3));
+    const rs = resolveSectionGeometryLegacy(rectSection(0.15, 0.3));
     expect(rs.b).toBeCloseTo(0.15, 5);
     expect(rs.h).toBeCloseTo(0.3, 5);
     expect(rs.shape).toBe('rect');
   });
 
   it('I section keeps tw and tf', () => {
-    const rs = resolveSectionGeometry(iSection());
+    const rs = resolveSectionGeometryLegacy(iSection());
     expect(rs.tw).toBeCloseTo(0.0071, 5);
     expect(rs.tf).toBeCloseTo(0.0107, 5);
     expect(rs.shape).toBe('I');
   });
 
   it('RHS section keeps t', () => {
-    const rs = resolveSectionGeometry(rhsSection());
+    const rs = resolveSectionGeometryLegacy(rhsSection());
     expect(rs.t).toBeCloseTo(0.006, 5);
     expect(rs.shape).toBe('RHS');
   });
@@ -574,7 +574,7 @@ describe('resolveSectionGeometry', () => {
   it('estimates h from Iy and A when missing', () => {
     // iy (about Y, h³ term) used for height estimation
     const sec: Section = { id: 1, name: 'generic', a: 0.02, iz: 1.667e-5, iy: 6.667e-5 };
-    const rs = resolveSectionGeometry(sec);
+    const rs = resolveSectionGeometryLegacy(sec);
     // h = √(12·Iy/A) = √(12*6.667e-5/0.02) = √(0.04) = 0.2
     expect(rs.h).toBeCloseTo(0.2, 1);
   });
@@ -582,7 +582,7 @@ describe('resolveSectionGeometry', () => {
   it('falls back to profile catalog for known names', () => {
     // A section with IPE 300 name but missing tw/tf should look it up
     const sec: Section = { id: 1, name: 'IPE 300', a: 5.38e-3, iz: 6.04e-6, iy: 8.356e-5, b: 0.15, h: 0.3 };
-    const rs = resolveSectionGeometry(sec);
+    const rs = resolveSectionGeometryLegacy(sec);
     // Should have found tw/tf from the catalog
     expect(rs.tw).toBeGreaterThan(0.005); // IPE 300 tw ≈ 7.1mm
     expect(rs.tf).toBeGreaterThan(0.008); // IPE 300 tf ≈ 10.7mm
@@ -781,7 +781,7 @@ describe('analyzeSectionStress — integration', () => {
 describe('ResolvedSection Iy and J', () => {
   it('resolves about-Z inertia for rectangular section: h·b³/12', () => {
     const sec = rectSection(0.1, 0.2);
-    const rs = resolveSectionGeometry(sec);
+    const rs = resolveSectionGeometryLegacy(sec);
     const expected = 0.2 * 0.1 ** 3 / 12; // h·b³/12 = about Z vertical
     expect(rs.iz).toBeCloseTo(expected, 10);
   });
@@ -789,21 +789,21 @@ describe('ResolvedSection Iy and J', () => {
   it('resolves about-Y from profile catalog for IPE 200', () => {
     // sec.iy not set → should look up profile.iy (about Y horizontal)
     const sec: Section = { id: 1, name: 'IPE 200', a: 28.5e-4, iz: 142e-8, shape: 'I' };
-    const rs = resolveSectionGeometry(sec);
+    const rs = resolveSectionGeometryLegacy(sec);
     // IPE 200 catalog: iy = 1943 cm⁴ (about Y) → resolved.iy (primary bending)
     expect(rs.iy).toBeCloseTo(1943e-8, 10);
   });
 
   it('resolves about-Y from user-provided sec.iy (takes priority)', () => {
     const sec: Section = { id: 1, name: 'IPE 200', a: 28.5e-4, iz: 142e-8, shape: 'I', iy: 999e-8 };
-    const rs = resolveSectionGeometry(sec);
+    const rs = resolveSectionGeometryLegacy(sec);
     // sec.iy (about Y) → rs.iy (primary bending)
     expect(rs.iy).toBeCloseTo(999e-8, 12);
   });
 
   it('estimates J for I/H section: (1/3)·(2bf·tf³ + hw·tw³)', () => {
     const sec = iSection();
-    const rs = resolveSectionGeometry(sec);
+    const rs = resolveSectionGeometryLegacy(sec);
     const hw = 0.3 - 2 * 0.0107;
     const expected = (2 * 0.15 * 0.0107 ** 3 + hw * 0.0071 ** 3) / 3;
     expect(rs.j).toBeCloseTo(expected, 12);
@@ -811,14 +811,14 @@ describe('ResolvedSection Iy and J', () => {
 
   it('estimates J for RHS: 2·t·(b-t)²·(h-t)²/(b+h-2t)', () => {
     const sec = rhsSection();
-    const rs = resolveSectionGeometry(sec);
+    const rs = resolveSectionGeometryLegacy(sec);
     const t = 0.006, bm = 0.1 - t, hm = 0.2 - t;
     const expected = 2 * t * bm ** 2 * hm ** 2 / (0.1 + 0.2 - 2 * t);
     expect(rs.j).toBeCloseTo(expected, 12);
   });
 
   it('resolves zMin/zMax for symmetric sections', () => {
-    const rs = resolveSectionGeometry(rectSection(0.1, 0.2));
+    const rs = resolveSectionGeometryLegacy(rectSection(0.1, 0.2));
     expect(rs.zMin).toBeCloseTo(-0.05, 10);
     expect(rs.zMax).toBeCloseTo(0.05, 10);
   });
@@ -909,7 +909,7 @@ describe('neutralAxisY (2D)', () => {
 describe('computeCentralCore', () => {
   it('rectangular section: diamond with h/6 and b/6', () => {
     const sec = rectSection(0.1, 0.2);
-    const rs = resolveSectionGeometry(sec);
+    const rs = resolveSectionGeometryLegacy(sec);
     const core = computeCentralCore(rs);
 
     // For rectangle: eyMax = h/6, ezMax = b/6
@@ -922,7 +922,7 @@ describe('computeCentralCore', () => {
   it('rectangular section: vertices at (0,±h/6) and (±b/6,0)', () => {
     const b = 0.1, h = 0.2;
     const sec = rectSection(b, h);
-    const rs = resolveSectionGeometry(sec);
+    const rs = resolveSectionGeometryLegacy(sec);
     const core = computeCentralCore(rs);
 
     // Find top vertex (ez=0, ey>0) and right vertex (ez>0, ey=0)
@@ -934,7 +934,7 @@ describe('computeCentralCore', () => {
 
   it('CHS section: circular core', () => {
     const sec = chsSection();
-    const rs = resolveSectionGeometry(sec);
+    const rs = resolveSectionGeometryLegacy(sec);
     const core = computeCentralCore(rs);
 
     // Core is a circle → 24 vertices
@@ -949,7 +949,7 @@ describe('computeCentralCore', () => {
 
   it('I-section: diamond core (4 vertices, same as rectangle)', () => {
     const sec = iSection();
-    const rs = resolveSectionGeometry(sec);
+    const rs = resolveSectionGeometryLegacy(sec);
     const core = computeCentralCore(rs);
 
     // I/H sections have diamond core (flange corners constrain it)
@@ -964,7 +964,7 @@ describe('computeCentralCore', () => {
   it('I-section: core vertex does not produce tension at flange corners', () => {
     // Verify that every core vertex satisfies σ ≥ 0 at all material points
     const sec = iSection();
-    const rs = resolveSectionGeometry(sec);
+    const rs = resolveSectionGeometryLegacy(sec);
     const core = computeCentralCore(rs);
 
     // Material corners of I-section (flange corners are the critical ones)
@@ -989,7 +989,7 @@ describe('computeCentralCore', () => {
   it('generic (diamond) core: σ = 0 at extreme fiber for each vertex', () => {
     // At each diamond vertex, exactly one extreme fiber has σ = 0
     const sec = rectSection(0.1, 0.2);
-    const rs = resolveSectionGeometry(sec);
+    const rs = resolveSectionGeometryLegacy(sec);
     const core = computeCentralCore(rs);
 
     // Top vertex (0, eyPos): σ = 0 at y = yMin (bottom fiber)
@@ -1006,7 +1006,7 @@ describe('computeCentralCore', () => {
   it('all shapes produce convex core with vertices inside section bounds', () => {
     const sections = [rectSection(0.1, 0.2), iSection(), rhsSection(), chsSection()];
     for (const sec of sections) {
-      const rs = resolveSectionGeometry(sec);
+      const rs = resolveSectionGeometryLegacy(sec);
       const core = computeCentralCore(rs);
       expect(core.vertices.length).toBeGreaterThanOrEqual(4);
       // All core vertices should be within section bounds
@@ -1089,7 +1089,7 @@ describe('Pressure center sign convention (3D)', () => {
   it('CP on opposite side from EN along y-axis for biaxial bending', () => {
     // IPN 200 with N=-100kN, Mz=-10kN·m, My=0
     const sec = iSection();
-    const rs = resolveSectionGeometry(sec);
+    const rs = resolveSectionGeometryLegacy(sec);
     const A = rs.a;
     const Iz = rs.iy; // LARGE (Iyy = about Y horizontal)
     const N = -100, Mz = -10;
@@ -1107,7 +1107,7 @@ describe('Pressure center sign convention (3D)', () => {
     // For pure Mz (My=0): yEN = -N·Iyy/(A·Mz), yCP = Mz/N
     // Product: yEN·yCP = -Iyy/A
     const sec = iSection();
-    const rs = resolveSectionGeometry(sec);
+    const rs = resolveSectionGeometryLegacy(sec);
     const Iyy = rs.iy; // LARGE
     const Izz = rs.iz; // SMALL
     const A = rs.a;
@@ -1138,7 +1138,7 @@ describe('Pressure center sign convention (3D)', () => {
 describe('ResolvedSection iy/iz naming consistency', () => {
   it('rs.iy = sec.iy = strong axis (about Y horizontal, LARGE for IPN)', () => {
     const sec = iSection(); // IPE 300: iy=8.356e-5 (strong), iz=6.04e-6 (weak)
-    const rs = resolveSectionGeometry(sec);
+    const rs = resolveSectionGeometryLegacy(sec);
     // resolved.iy must equal raw sec.iy (about Y horizontal = strong axis)
     expect(rs.iy).toBeCloseTo(sec.iy!, 12);
     // Strong axis must be much larger than weak axis
@@ -1147,7 +1147,7 @@ describe('ResolvedSection iy/iz naming consistency', () => {
 
   it('rs.iz = sec.iz = weak axis (about Z vertical, SMALL for IPN)', () => {
     const sec = iSection();
-    const rs = resolveSectionGeometry(sec);
+    const rs = resolveSectionGeometryLegacy(sec);
     // resolved.iz must equal raw sec.iz (about Z vertical = weak axis)
     expect(rs.iz).toBeCloseTo(sec.iz, 12);
   });
@@ -1155,7 +1155,7 @@ describe('ResolvedSection iy/iz naming consistency', () => {
   it('rect section: rs.iy has h³ term (LARGE when h > b), rs.iz has b³ term (SMALL)', () => {
     // b=0.1m (width), h=0.3m (height) → iy = b·h³/12 >> iz = h·b³/12
     const sec = rectSection(0.1, 0.3);
-    const rs = resolveSectionGeometry(sec);
+    const rs = resolveSectionGeometryLegacy(sec);
     const expectedIy = 0.1 * 0.3 ** 3 / 12; // about Y horizontal (h³)
     const expectedIz = 0.3 * 0.1 ** 3 / 12; // about Z vertical (b³)
     expect(rs.iy).toBeCloseTo(expectedIy, 12);
@@ -1171,7 +1171,7 @@ describe('ResolvedSection iy/iz naming consistency', () => {
       iz: 0.00000451,  // 451 cm⁴ → m⁴ (about Z vertical = weak)
       shape: 'I',
     };
-    const rs = resolveSectionGeometry(sec);
+    const rs = resolveSectionGeometryLegacy(sec);
     // Direct mapping: rs.iy = sec.iy, rs.iz = sec.iz
     expect(rs.iy).toBeCloseTo(0.00009800, 10);
     expect(rs.iz).toBeCloseTo(0.00000451, 10);
@@ -1181,7 +1181,7 @@ describe('ResolvedSection iy/iz naming consistency', () => {
 
   it('Jourawski shear stress uses rs.iy (strong axis) in denominator', () => {
     const sec = rectSection(0.1, 0.2); // b=0.1, h=0.2
-    const rs = resolveSectionGeometry(sec);
+    const rs = resolveSectionGeometryLegacy(sec);
     const V = 10; // kN
     // At centroid (y=0), τ_max = 1.5·V/A for rectangle
     const tau = shearStress(V, 0, rs);

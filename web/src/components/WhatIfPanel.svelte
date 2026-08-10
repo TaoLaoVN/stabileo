@@ -1,4 +1,18 @@
 <script lang="ts">
+
+  /**
+   * `docked` renders this panel inside the right-hand panel instead of floating
+   * over the canvas.
+   *
+   * Floating was the old shell's answer to "where does an analysis put its
+   * output": a box pinned to a corner of the drawing area. With several
+   * analyses open it stopped being an answer — Kinematic sat over the left of
+   * the model, Explore over the right, and the structure they describe was
+   * behind them. The new shell already has one place for anything that needs
+   * area and outlives a single click, so that is where this goes; the floating
+   * form is kept for mobile, which has no right panel to dock into.
+   */
+  let { docked = false }: { docked?: boolean } = $props();
   import { uiStore, modelStore, resultsStore } from '../lib/store';
   import { solve } from '../lib/engine/wasm-solver';
   import type { ModelSnapshot } from '../lib/store/history.svelte';
@@ -214,7 +228,7 @@
 </script>
 
 {#if uiStore.showWhatIf}
-  <div class="wif-panel">
+  <div class="wif-panel" class:docked={docked}>
     <div class="wif-header">
       <span class="wif-title">{t('whatif.title')}</span>
       <button class="wif-reset" onclick={resetAll} title={t('whatif.restoreOriginals')}>Reset</button>
@@ -291,14 +305,50 @@
 {/if}
 
 <style>
+  /*
+     Docked, this panel's header is a section heading inside the right panel,
+     not the title bar of a window: the rule above separates it from the
+     analysis list it belongs to, and the type matches every other heading in
+     the panel so the eye reads one column, not a widget dropped into one.
+  */
+  .wif-panel.docked .wif-header {
+    background: none;
+    padding: 0.5rem 0 0.35rem;
+    margin-top: 0.5rem;
+    border-top: 1px solid var(--st-hair);
+    border-bottom: none;
+  }
+
+  .wif-panel.docked .wif-title {
+    font-family: var(--st-mono);
+    font-size: 0.68rem;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: var(--st-text-2);
+    font-weight: 400;
+  }
+
+  /* Docked: no chrome of its own — the right panel already supplies the frame. */
+  .wif-panel.docked {
+    position: static;
+    width: auto;
+    max-height: none;
+    border: none;
+    border-radius: 0;
+    box-shadow: none;
+    backdrop-filter: none;
+    background: transparent;
+    z-index: auto;
+  }
+
   .wif-panel {
     position: absolute;
     top: 50px;
     right: 8px;
     z-index: 110;
     width: 220px;
-    background: rgba(22, 33, 62, 0.96);
-    border: 1px solid #1a4a7a;
+    background: rgba(19, 33, 45, 0.96);
+    border: 1px solid var(--st-surface-3);
     border-radius: 8px;
     backdrop-filter: blur(8px);
     box-shadow: 0 4px 16px rgba(0, 0, 0, 0.4);
@@ -312,27 +362,27 @@
     align-items: center;
     gap: 6px;
     padding: 6px 10px;
-    border-bottom: 1px solid #1a4a7a;
+    border-bottom: 1px solid var(--st-surface-3);
   }
 
   .wif-title {
     flex: 1;
     font-size: 0.78rem;
     font-weight: 600;
-    color: #4ecdc4;
+    color: var(--st-value);
   }
 
   .wif-reset {
     padding: 2px 6px;
-    background: #0f3460;
-    border: 1px solid #1a4a7a;
+    background: var(--st-surface-3);
+    border: 1px solid var(--st-surface-3);
     border-radius: 3px;
-    color: #aaa;
+    color: var(--st-text-2);
     cursor: pointer;
     font-size: 0.65rem;
   }
 
-  .wif-reset:hover { background: #1a4a7a; color: #eee; }
+  .wif-reset:hover { background: var(--st-surface-3); color: var(--st-text); }
 
   .wif-close {
     width: 20px;
@@ -340,7 +390,7 @@
     background: transparent;
     border: none;
     border-radius: 3px;
-    color: #666;
+    color: var(--st-text-3);
     cursor: pointer;
     font-size: 0.7rem;
     display: flex;
@@ -348,7 +398,7 @@
     justify-content: center;
   }
 
-  .wif-close:hover { background: #e94560; color: white; }
+  .wif-close:hover { background: var(--st-accent); color: white; }
 
   .wif-body {
     overflow-y: auto;
@@ -361,7 +411,7 @@
 
   .wif-section-title {
     font-size: 0.68rem;
-    color: #888;
+    color: var(--st-text-3);
     text-transform: uppercase;
     letter-spacing: 0.5px;
     margin-bottom: 4px;
@@ -378,7 +428,7 @@
 
   .wif-label {
     font-size: 0.65rem;
-    color: #aaa;
+    color: var(--st-text-2);
     min-width: 28px;
     white-space: nowrap;
     overflow: hidden;
@@ -391,7 +441,7 @@
     height: 4px;
     -webkit-appearance: none;
     appearance: none;
-    background: #1a4a7a;
+    background: var(--st-surface-3);
     border-radius: 2px;
     outline: none;
   }
@@ -401,7 +451,7 @@
     width: 12px;
     height: 12px;
     border-radius: 50%;
-    background: #4ecdc4;
+    background: var(--st-value);
     cursor: pointer;
     border: none;
   }
@@ -410,14 +460,14 @@
     width: 12px;
     height: 12px;
     border-radius: 50%;
-    background: #4ecdc4;
+    background: var(--st-value);
     cursor: pointer;
     border: none;
   }
 
   .wif-val {
     font-size: 0.65rem;
-    color: #ccc;
+    color: var(--st-text-2);
     min-width: 35px;
     text-align: right;
     font-family: 'Courier New', monospace;
@@ -425,7 +475,7 @@
 
   .wif-current {
     font-size: 0.6rem;
-    color: #777;
+    color: var(--st-text-3);
     margin-bottom: 4px;
     font-family: 'Courier New', monospace;
     padding-left: 32px;

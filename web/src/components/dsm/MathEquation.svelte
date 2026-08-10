@@ -16,7 +16,7 @@
 
 <style>
   .math-eq {
-    color: #eee;
+    color: var(--st-text);
   }
   .math-eq.display {
     display: block;

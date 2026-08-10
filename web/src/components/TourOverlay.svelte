@@ -345,8 +345,8 @@
   /* ─── Card ─── */
   .tour-card {
     position: absolute;
-    background: #16213e;
-    border: 1px solid #1a4a7a;
+    background: var(--st-surface);
+    border: 1px solid var(--st-hair-strong);
     border-radius: 12px;
     box-shadow:
       0 8px 40px rgba(0, 0, 0, 0.6),
@@ -366,7 +366,7 @@
 
   .tour-progress {
     height: 3px;
-    background: #0f3460;
+    background: var(--st-surface-2);
   }
 
   .tour-progress-fill {
@@ -393,7 +393,7 @@
   .tour-title {
     font-size: 1.1rem;
     font-weight: 700;
-    color: #4ecdc4;
+    color: var(--st-value);
     margin: 0 0 0.6rem;
     line-height: 1.3;
   }
@@ -404,8 +404,8 @@
     line-height: 1.6;
   }
 
-  .tour-desc :global(strong) { color: #eee; }
-  .tour-desc :global(em) { color: #4ecdc4; font-style: normal; font-weight: 600; }
+  .tour-desc :global(strong) { color: var(--st-text); }
+  .tour-desc :global(em) { color: var(--st-value); font-style: normal; font-weight: 600; }
 
   /* ─── Footer ─── */
   .tour-footer {
@@ -415,7 +415,7 @@
     align-items: center;
     gap: 0.4rem;
     padding: 0.6rem 1rem 1rem;
-    border-top: 1px solid #0f3460;
+    border-top: 1px solid var(--st-hair);
   }
 
   .tour-skip {
@@ -427,7 +427,7 @@
     padding: 0.3rem 0;
     transition: color 0.15s;
   }
-  .tour-skip:hover { color: #aaa; }
+  .tour-skip:hover { color: var(--st-text-2); }
 
   .tour-nav {
     display: flex;
@@ -436,19 +436,19 @@
   }
 
   .tour-prev {
-    background: #0f3460;
-    border: 1px solid #1a4a7a;
-    color: #aaa;
+    background: var(--st-surface-2);
+    border: 1px solid var(--st-hair-strong);
+    color: var(--st-text-2);
     padding: 0.4rem 0.9rem;
     border-radius: 6px;
     font-size: 0.8rem;
     cursor: pointer;
     transition: all 0.15s;
   }
-  .tour-prev:hover { background: #1a4a7a; color: #eee; }
+  .tour-prev:hover { background: var(--st-surface-3); color: var(--st-text); }
 
   .tour-next {
-    background: #e94560;
+    background: var(--st-accent);
     border: 1px solid transparent;
     color: white;
     padding: 0.4rem 1.1rem;
@@ -458,7 +458,7 @@
     cursor: pointer;
     transition: all 0.15s;
   }
-  .tour-next:hover:not(:disabled) { background: #ff6b6b; }
+  .tour-next:hover:not(:disabled) { background: var(--st-danger); }
   .tour-next:disabled { opacity: 0.45; cursor: not-allowed; }
 
   .tour-finish {

@@ -1,3 +1,4 @@
+import './styles/tokens.css';
 import 'katex/dist/katex.min.css';
 import App from './App.svelte';
 import { mount } from 'svelte';

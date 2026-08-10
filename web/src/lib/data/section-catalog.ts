@@ -1,43 +1,154 @@
-// Lightweight SectionCatalog classification layer.
-//
-// ARCHITECTURE ONLY — this does NOT add or alter any profile data. It classifies
-// the existing steel families (steel-profiles.ts) by standard / country /
-// material / series so the section picker and future catalogs (CIRSOC, AISC,
-// cold-formed, aluminium, wood, …) can be grouped and extended without churn.
-//
-// Honest status: the existing tables are European/Euronorm dimensions. No real
-// CIRSOC tables are included here; `code: 'CIRSOC 301'` labelling would require
-// importing the actual normalized Argentine profile dimensions first.
+/**
+ * section-catalog.ts — how the profile catalogue is organised for picking.
+ *
+ * # The distinction this file exists to keep straight
+ *
+ * A **design code** (CIRSOC 301, Eurocode 3, AISC 360) does not define
+ * profiles. It defines how you verify a member. The *dimensions* come from a
+ * separate **dimensional standard** (DIN 1025-1, EN 10365, IRAM-IAS U 500-42,
+ * ASTM A6). One design code references several dimensional standards, and one
+ * dimensional standard is referenced by several design codes.
+ *
+ * Collapsing the two — labelling a family "CIRSOC" — is what makes a catalogue
+ * impossible to extend later, because the day you add a second code you
+ * discover the families were never owned by the first one. So families here
+ * carry the dimensional standard their numbers actually came from, which is
+ * checkable, and design codes are a separate index built on top.
+ *
+ * # What the standards below are, and what backs them
+ *
+ * Every dimensional standard named here was verified numerically, not asserted:
+ * the canonical outline is built from it and integrated, and the result must
+ * reproduce the published area and inertias. See
+ * `engine/src/section/catalogue.rs` and the header of `steel-profiles.ts`.
+ */
 
 import type { ProfileFamily } from './steel-profiles';
 
 export type SectionMaterial = 'hot-rolled-steel' | 'cold-formed-steel';
-export type SectionSeries = 'i-beam' | 'channel' | 'angle' | 'hollow';
+export type SectionSeries = 'i-beam' | 'channel' | 'angle' | 'tee' | 'hollow';
+
+/** How faithfully the app can draw and analyse a family's real outline. */
+export type GeometryFidelity =
+  /** Exact outline: fillets, tapers and all, verified against published data. */
+  | 'exact'
+  /**
+   * The outline is the right SHAPE, but it does not reproduce the published
+   * area and inertias, because the source table is itself inconsistent: it
+   * marks its dimensions "nominal" and derives the area from nominal mass.
+   * The section is fully analysable; the deviation is measured per profile and
+   * shown, never hidden.
+   */
+  | 'nominalDimensions'
+  /** Properties are right; the outline is not available, so no detailed stress. */
+  | 'propertiesOnly';
 
 export interface FamilyClassification {
   family: ProfileFamily;
-  /** Standard the dimensions come from (honest: current data is Euronorm). */
+  /** The dimensional standard the numbers come from. Not a design code. */
   standard: string;
+  /** Body that publishes that standard, for grouping in the picker. */
+  standardsBody: 'DIN' | 'CEN' | 'IRAM-IAS' | 'ASTM/AISC';
   country: string;
   material: SectionMaterial;
   series: SectionSeries;
+  fidelity: GeometryFidelity;
 }
 
 /**
- * Classification of the 8 currently-shipped families. Per Bauti's call, RHS/CHS
- * are treated as cold-formed for now; the rest are hot-rolled. This is the seam
- * a future CIRSOC/AISC catalog plugs into (add entries with their own standard).
+ * The eight families currently shipped.
+ *
+ * `standard` used to read "Euronorm" for all eight, which was a placeholder.
+ * These are the specific standards each family's dimensions and fillets were
+ * validated against this cycle.
  */
 export const FAMILY_CLASSIFICATION: Record<ProfileFamily, FamilyClassification> = {
-  IPE: { family: 'IPE', standard: 'Euronorm', country: 'EU', material: 'hot-rolled-steel', series: 'i-beam' },
-  IPN: { family: 'IPN', standard: 'Euronorm', country: 'EU', material: 'hot-rolled-steel', series: 'i-beam' },
-  HEB: { family: 'HEB', standard: 'Euronorm', country: 'EU', material: 'hot-rolled-steel', series: 'i-beam' },
-  HEA: { family: 'HEA', standard: 'Euronorm', country: 'EU', material: 'hot-rolled-steel', series: 'i-beam' },
-  UPN: { family: 'UPN', standard: 'Euronorm', country: 'EU', material: 'hot-rolled-steel', series: 'channel' },
-  L:   { family: 'L',   standard: 'Euronorm', country: 'EU', material: 'hot-rolled-steel', series: 'angle' },
-  RHS: { family: 'RHS', standard: 'Euronorm', country: 'EU', material: 'cold-formed-steel', series: 'hollow' },
-  CHS: { family: 'CHS', standard: 'Euronorm', country: 'EU', material: 'cold-formed-steel', series: 'hollow' },
+  IPE: { family: 'IPE', standard: 'EN 10365', standardsBody: 'CEN', country: 'EU', material: 'hot-rolled-steel', series: 'i-beam', fidelity: 'exact' },
+  HEA: { family: 'HEA', standard: 'EN 10365', standardsBody: 'CEN', country: 'EU', material: 'hot-rolled-steel', series: 'i-beam', fidelity: 'exact' },
+  HEB: { family: 'HEB', standard: 'EN 10365', standardsBody: 'CEN', country: 'EU', material: 'hot-rolled-steel', series: 'i-beam', fidelity: 'exact' },
+  W:   { family: 'W',   standard: 'IRAM-IAS U 500-215-6', standardsBody: 'IRAM-IAS', country: 'AR', material: 'hot-rolled-steel', series: 'i-beam', fidelity: 'nominalDimensions' },
+  HP:  { family: 'HP',  standard: 'IRAM-IAS U 500-215-7', standardsBody: 'IRAM-IAS', country: 'AR', material: 'hot-rolled-steel', series: 'i-beam', fidelity: 'nominalDimensions' },
+  M:   { family: 'M',   standard: 'IRAM-IAS U 500-215-8', standardsBody: 'IRAM-IAS', country: 'AR', material: 'hot-rolled-steel', series: 'i-beam', fidelity: 'nominalDimensions' },
+  IPN: { family: 'IPN', standard: 'DIN 1025-1', standardsBody: 'DIN', country: 'DE', material: 'hot-rolled-steel', series: 'i-beam', fidelity: 'exact' },
+  UPN: { family: 'UPN', standard: 'DIN 1025-5', standardsBody: 'DIN', country: 'DE', material: 'hot-rolled-steel', series: 'channel', fidelity: 'exact' },
+  C:   { family: 'C',   standard: 'IRAM-IAS U 500-509-4', standardsBody: 'IRAM-IAS', country: 'AR', material: 'hot-rolled-steel', series: 'channel', fidelity: 'nominalDimensions' },
+  T:   { family: 'T',   standard: 'IRAM-IAS U 500-561', standardsBody: 'IRAM-IAS', country: 'AR', material: 'hot-rolled-steel', series: 'tee', fidelity: 'exact' },
+  MC:  { family: 'MC',  standard: 'IRAM-IAS U 500-509-4', standardsBody: 'IRAM-IAS', country: 'AR', material: 'hot-rolled-steel', series: 'channel', fidelity: 'propertiesOnly' },
+  L:   { family: 'L',   standard: 'EN 10056-1', standardsBody: 'CEN', country: 'EU', material: 'hot-rolled-steel', series: 'angle', fidelity: 'exact' },
+  CHS: { family: 'CHS', standard: 'IRAM-IAS U 500-218', standardsBody: 'IRAM-IAS', country: 'AR', material: 'cold-formed-steel', series: 'hollow', fidelity: 'exact' },
+  RHS: { family: 'RHS', standard: 'IRAM-IAS U 500-218', standardsBody: 'IRAM-IAS', country: 'AR', material: 'cold-formed-steel', series: 'hollow', fidelity: 'exact' },
+  SHS: { family: 'SHS', standard: 'IRAM-IAS U 500-218', standardsBody: 'IRAM-IAS', country: 'AR', material: 'cold-formed-steel', series: 'hollow', fidelity: 'exact' },
 };
+
+// ─── Design codes ──────────────────────────────────────────────────
+
+export interface DesignCode {
+  id: string;
+  /** Short label for the picker. */
+  label: string;
+  region: string;
+  /**
+   * Families whose dimensional standard this code's practice actually uses.
+   *
+   * A family appears here only when the shipped dimensions are the ones that
+   * code's practice specifies — never merely because the shape is plausible.
+   */
+  families: ProfileFamily[];
+  /**
+   * Families the code's practice uses that are NOT shipped yet, so the picker
+   * can say what is missing instead of implying the list is complete.
+   */
+  missingFamilies?: string[];
+  note?: string;
+}
+
+/**
+ * CIRSOC 301 is the Argentine steel design code. It is a *verification* code —
+ * it adopts AISC's method — and takes its profiles from whatever is
+ * commercially normalised locally. The IPN and UPN series below are the DIN
+ * 1025 "normal" sections that Argentine tables carry, so those two families are
+ * genuinely usable under it. The wide-flange (W), American channel (C),
+ * unequal-leg angle and cold-formed C/Z series that local practice also uses
+ * are not shipped, and are listed as missing rather than approximated by a
+ * European family of similar shape.
+ */
+export const DESIGN_CODES: DesignCode[] = [
+  {
+    id: 'cirsoc-301',
+    label: 'CIRSOC 301',
+    region: 'AR',
+    families: ['W', 'HP', 'M', 'IPN', 'UPN', 'C', 'MC', 'L', 'T', 'CHS', 'RHS', 'SHS'],
+    missingFamilies: [ 'L de alas desiguales', 'C/Z conformados en frío (CIRSOC 303)'],
+    note: 'cat.note.cirsoc',
+  },
+  {
+    id: 'eurocode-3',
+    label: 'Eurocode 3',
+    region: 'EU',
+    families: ['IPE', 'HEA', 'HEB', 'IPN', 'UPN', 'L'],
+    note: 'cat.note.eurocodeTubes',
+  },
+];
+
+/** Every family the app ships, in picker order. */
+export const ALL_FAMILIES: ProfileFamily[] = ['IPE', 'HEA', 'HEB', 'W', 'HP', 'M', 'IPN', 'UPN', 'C', 'MC', 'L', 'T', 'CHS', 'RHS', 'SHS'];
+
+/** Design code by id. */
+export function designCode(id: string): DesignCode | undefined {
+  return DESIGN_CODES.find((c) => c.id === id);
+}
+
+/**
+ * Families to offer for a code, or all of them when no code is selected.
+ *
+ * An unknown id returns everything rather than nothing: a picker that silently
+ * empties itself is worse than one that over-offers.
+ */
+export function familiesForCode(codeId: string | null): ProfileFamily[] {
+  if (!codeId) return ALL_FAMILIES;
+  const code = designCode(codeId);
+  return code ? code.families : ALL_FAMILIES;
+}
 
 /** All families belonging to a material class (for grouped pickers). */
 export function familiesByMaterial(material: SectionMaterial): ProfileFamily[] {
@@ -49,4 +160,15 @@ export function familiesByMaterial(material: SectionMaterial): ProfileFamily[] {
 /** Classification for a family, or undefined if not registered. */
 export function classifyFamily(family: ProfileFamily): FamilyClassification | undefined {
   return FAMILY_CLASSIFICATION[family];
+}
+
+/** Families grouped by series, preserving picker order, for a set of families. */
+export function groupBySeries(families: ProfileFamily[]): Array<{ series: SectionSeries; families: ProfileFamily[] }> {
+  const order: SectionSeries[] = ['i-beam', 'channel', 'angle', 'tee', 'hollow'];
+  return order
+    .map((series) => ({
+      series,
+      families: families.filter((f) => FAMILY_CLASSIFICATION[f]?.series === series),
+    }))
+    .filter((g) => g.families.length > 0);
 }

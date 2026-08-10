@@ -79,6 +79,13 @@
   });
 </script>
 
+<!--
+  What is left after the ribbon took the rest.
+  Tool and build guidance moved to the options bar under the ribbon, next to
+  the work; repeating them down here was two places to read one fact. This
+  keeps only what is genuinely unique to the bottom edge — where the cursor is,
+  what scale is on screen, how big the model is, what is selected.
+-->
 <div class="status-bar">
   {#if modelStore.model.provenance?.status === 'cad-draft-unreviewed'}
     <button
@@ -92,10 +99,6 @@
     </button>
   {/if}
   <CadProvenancePanel open={showProvenance} onclose={() => { showProvenance = false; }} />
-  <div class="status-item">
-    <span class="status-label">{t('status.tool')}:</span>
-    <span class="status-value">{getToolName(uiStore.currentTool)}</span>
-  </div>
   <div class="status-item">
     <span class="status-label">{t('status.pos')}:</span>
     <span class="status-value">
@@ -122,29 +125,28 @@
       <span class="status-value">{toDisplay(uiStore.gridSize, 'length', uiStore.unitSystem).toFixed(2)} {unitLabel('length', uiStore.unitSystem)}</span>
     </div>
   {/if}
-  <div class="status-item">
-    <span class="status-hint" style="color: {hint.color}">{hint.text}</span>
-  </div>
 </div>
 
 <style>
   .status-bar {
     display: flex;
-    gap: 1.5rem;
-    padding: 0.35rem 1rem;
-    font-size: 0.75rem;
+    align-items: center;
+    gap: 1.1rem;
+    padding: 0.3rem 0.9rem;
+    font-size: 0.72rem;
+    font-family: var(--st-sans);
   }
 
   .draft-badge {
-    background: rgba(240, 165, 0, 0.15);
-    border: 1px solid #f0a500;
-    color: #f0a500;
+    background: transparent;
+    border: 1px solid var(--st-warn);
+    color: var(--st-warn);
     border-radius: 4px;
     font-size: 0.7rem;
     padding: 0.1rem 0.5rem;
     cursor: pointer;
   }
-  .draft-badge:hover { background: rgba(240, 165, 0, 0.3); }
+  .draft-badge:hover { background: var(--st-surface-3); }
 
   .status-item {
     display: flex;
@@ -152,12 +154,28 @@
     white-space: nowrap;
   }
 
+  /*
+     The label is a quiet caption and the value is the data, so they stop
+     reading as equal weight. Values take the mono face for the same reason the
+     ribbon's symbols do: they are numbers that change in place, and a
+     proportional face makes them jitter.
+  */
   .status-label {
-    color: #888;
+    color: var(--st-text-3);
+    font-size: 0.66rem;
+    text-transform: lowercase;
+    letter-spacing: 0.02em;
   }
 
   .status-value {
-    color: #4ecdc4;
+    font-family: var(--st-mono);
+    /*
+       Neutral. `--st-value` is the cyan reserved for a COMPUTED number — a
+       force, a displacement — and spending it on the cursor position and the
+       grid size made the quietest strip on screen the brightest, competing
+       with results it has nothing to do with.
+    */
+    color: var(--st-text-2);
     font-family: monospace;
   }
 

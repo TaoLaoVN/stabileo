@@ -78,18 +78,18 @@
 
 <style>
   .step { display: flex; flex-direction: column; gap: 0.6rem; }
-  .explanation { font-size: 0.72rem; color: #bbb; line-height: 1.5; }
+  .explanation { font-size: 0.72rem; color: var(--st-text-2); line-height: 1.5; }
   .explanation p { margin: 0; }
 
   .info-row { display: flex; gap: 0.4rem; flex-wrap: wrap; }
   .info-card {
-    background: #16213e; border: 1px solid #0f3460; border-radius: 4px;
+    background: var(--st-surface-2); border: 1px solid var(--st-surface-3); border-radius: 4px;
     padding: 0.3rem 0.5rem; display: flex; flex-direction: column; align-items: center; flex: 1;
   }
-  .info-label { font-size: 0.55rem; color: #888; }
-  .info-value { font-size: 0.9rem; font-weight: 700; color: #eee; }
-  .info-value.free { color: #4ecdc4; }
-  .info-value.restr { color: #e94560; }
+  .info-label { font-size: 0.55rem; color: var(--st-text-3); }
+  .info-value { font-size: 0.9rem; font-weight: 700; color: var(--st-text); }
+  .info-value.free { color: var(--st-value); }
+  .info-value.restr { color: var(--st-accent); }
 
-  .separator { border-top: 1px solid #0f3460; margin: 0.2rem 0; }
+  .separator { border-top: 1px solid var(--st-surface-3); margin: 0.2rem 0; }
 </style>

@@ -234,112 +234,8 @@
     }
   }
 
-  function zoomToFit() {
-    if (modelStore.nodes.size === 0) return;
-    const canvas = document.querySelector('.viewport-container canvas') as HTMLCanvasElement | null;
-    if (!canvas) return;
-    uiStore.zoomToFit(modelStore.nodes.values(), canvas.width, canvas.height);
-  }
 
-  function handleCopy() {
-    // Collect selected nodes + nodes from selected elements
-    const nodeIds = new Set<number>(uiStore.selectedNodes);
-    for (const elemId of uiStore.selectedElements) {
-      const elem = modelStore.elements.get(elemId);
-      if (elem) {
-        nodeIds.add(elem.nodeI);
-        nodeIds.add(elem.nodeJ);
-      }
-    }
-    if (nodeIds.size === 0) return;
 
-    const nodes: ClipboardData['nodes'] = [];
-    for (const id of nodeIds) {
-      const n = modelStore.getNode(id);
-      if (n) nodes.push({ origId: n.id, x: n.x, y: n.y, z: n.z ?? 0 });
-    }
-
-    // Collect elements where both nodes are in the set
-    const elements: ClipboardData['elements'] = [];
-    for (const elem of modelStore.elements.values()) {
-      if (nodeIds.has(elem.nodeI) && nodeIds.has(elem.nodeJ)) {
-        elements.push({
-          origNodeI: elem.nodeI,
-          origNodeJ: elem.nodeJ,
-          type: elem.type,
-          materialId: elem.materialId,
-          sectionId: elem.sectionId,
-          releaseI: elem.releaseI,
-          releaseJ: elem.releaseJ,
-          ...pickElement3DMetadata(elem),
-        });
-      }
-    }
-
-    // Collect supports on copied nodes
-    const supports: ClipboardData['supports'] = [];
-    for (const sup of modelStore.supports.values()) {
-      if (nodeIds.has(sup.nodeId)) {
-        supports.push({ origNodeId: sup.nodeId, type: sup.type as any });
-      }
-    }
-
-    uiStore.clipboard = { nodes, elements, supports };
-  }
-
-  function handlePaste() {
-    const clip = uiStore.clipboard;
-    if (!clip || clip.nodes.length === 0) return;
-
-    // Offset: in 3D mode offset in Z, in 2D offset in XY
-    const is3D = uiStore.analysisMode === '3d' || uiStore.analysisMode === 'pro';
-    const ox = is3D ? 0 : 1;
-    const oy = is3D ? 0 : 1;
-    const oz = is3D ? 3 : 0;
-
-    const idMap = new Map<number, number>();
-    const pastedElements: number[] = [];
-
-    modelStore.batch(() => {
-      // Create new nodes
-      for (const n of clip.nodes) {
-        const newId = modelStore.addNode(n.x + ox, n.y + oy, (n.z ?? 0) + oz);
-        idMap.set(n.origId, newId);
-      }
-
-      // Create new elements
-      for (const el of clip.elements) {
-        const ni = idMap.get(el.origNodeI);
-        const nj = idMap.get(el.origNodeJ);
-        if (ni == null || nj == null) return;
-        const matId = modelStore.materials.has(el.materialId) ? el.materialId : 1;
-        const secId = modelStore.sections.has(el.sectionId) ? el.sectionId : 1;
-        const newElemId = modelStore.addElement(ni, nj, el.type);
-        modelStore.updateElementMaterial(newElemId, matId);
-        modelStore.updateElementSection(newElemId, secId);
-        if (el.releaseI?.mz === true) modelStore.toggleHinge(newElemId, 'start');
-        if (el.releaseJ?.mz === true) modelStore.toggleHinge(newElemId, 'end');
-        if (hasExplicitLocalY(el)) {
-          modelStore.updateElementLocalY(newElemId, el.localYx, el.localYy, el.localYz);
-        }
-        if (el.rollAngle !== undefined && Math.abs(el.rollAngle) > 1e-9) {
-          modelStore.rotateElementLocalAxes(newElemId, el.rollAngle);
-        }
-        pastedElements.push(newElemId);
-      }
-
-      // Create supports
-      for (const s of clip.supports) {
-        const newNodeId = idMap.get(s.origNodeId);
-        if (newNodeId != null) {
-          modelStore.addSupport(newNodeId, s.type);
-        }
-      }
-    });
-
-    // Select pasted items
-    uiStore.setSelection(new Set(idMap.values()), new Set(pastedElements), true);
-  }
 
   async function handleLoadFile(e: Event) {
     const input = e.target as HTMLInputElement;
@@ -356,215 +252,8 @@
     input.value = ''; // reset so same file can be loaded again
   }
 
-  function handleKeydown(e: KeyboardEvent) {
-    // Ignore if typing in an input or textarea
-    if ((e.target as HTMLElement).tagName === 'INPUT' || (e.target as HTMLElement).tagName === 'SELECT' || (e.target as HTMLElement).tagName === 'TEXTAREA') return;
-
-    const key = e.key.toUpperCase();
-
-    // Ctrl+Shift+S: Save session (all tabs)
-    if ((e.ctrlKey || e.metaKey) && key === 'S' && e.shiftKey) {
-      e.preventDefault();
-      saveSession();
-      return;
-    }
-
-    // Ctrl+S: Save project (current tab)
-    if ((e.ctrlKey || e.metaKey) && key === 'S' && !e.shiftKey) {
-      e.preventDefault();
-      saveProject();
-      return;
-    }
-
-    // Ctrl+O: Open/Load
-    if ((e.ctrlKey || e.metaKey) && key === 'O') {
-      e.preventDefault();
-      fileInput?.click();
-      return;
-    }
-
-    // Ctrl+Z: Undo
-    if ((e.ctrlKey || e.metaKey) && key === 'Z' && !e.shiftKey) {
-      e.preventDefault();
-      historyStore.undo();
-      return;
-    }
-
-    // Ctrl+Y or Ctrl+Shift+Z: Redo
-    if ((e.ctrlKey || e.metaKey) && (key === 'Y' || (key === 'Z' && e.shiftKey))) {
-      e.preventDefault();
-      historyStore.redo();
-      return;
-    }
-
-    // Ctrl+A: Select all
-    if ((e.ctrlKey || e.metaKey) && key === 'A') {
-      e.preventDefault();
-      uiStore.setSelection(new Set(modelStore.nodes.keys()), new Set(modelStore.elements.keys()), true);
-      return;
-    }
-
-    // Ctrl+C: Copy
-    if ((e.ctrlKey || e.metaKey) && key === 'C') {
-      e.preventDefault();
-      handleCopy();
-      return;
-    }
-
-    // Ctrl+X: Cut
-    if ((e.ctrlKey || e.metaKey) && key === 'X') {
-      e.preventDefault();
-      handleCopy();
-      const nodesToDelete = [...uiStore.selectedNodes];
-      const elemsToDelete = [...uiStore.selectedElements];
-      modelStore.batch(() => {
-        for (const nodeId of nodesToDelete) modelStore.removeNode(nodeId);
-        for (const elemId of elemsToDelete) modelStore.removeElement(elemId);
-      });
-      uiStore.clearSelection();
-      return;
-    }
-
-    // Ctrl+V: Paste
-    if ((e.ctrlKey || e.metaKey) && key === 'V') {
-      e.preventDefault();
-      handlePaste();
-      return;
-    }
-
-    // +/=: Zoom in
-    if (e.key === '+' || e.key === '=') {
-      uiStore.zoom *= 1.2;
-      return;
-    }
-
-    // -: Zoom out
-    if (e.key === '-') {
-      uiStore.zoom *= 0.8;
-      return;
-    }
-
-    // F: Zoom to fit
-    if (key === 'F') {
-      if (uiStore.analysisMode === '3d') {
-        window.dispatchEvent(new Event('stabileo-zoom-to-fit'));
-      } else {
-        zoomToFit();
-      }
-      return;
-    }
-
-    // Tool shortcuts (only without Ctrl/Meta to avoid conflicts with Ctrl+A, etc.)
-    const tool = !e.ctrlKey && !e.metaKey ? tools.find(tl => tl.key === key) : undefined;
-    if (tool) {
-      e.preventDefault();
-      uiStore.currentTool = tool.id;
-      return;
-    }
-
-    // Diagram shortcuts (0-9)
-    if (resultsStore.results || resultsStore.results3D) {
-      const is3D = uiStore.analysisMode === '3d';
-      switch (e.key) {
-        case '0': resultsStore.diagramType = 'none'; return;
-        case '1': resultsStore.diagramType = 'deformed'; return;
-        case '2': resultsStore.diagramType = is3D ? 'shearZ' : 'shear'; return;
-        case '3': resultsStore.diagramType = is3D ? 'momentY' : 'moment'; return;
-        case '4': if (is3D) { resultsStore.diagramType = 'shearY'; } return;
-        case '5': if (is3D) { resultsStore.diagramType = 'momentZ'; } return;
-        case '6': if (is3D) { resultsStore.diagramType = 'torsion'; } return;
-        case '7': resultsStore.diagramType = 'axial'; return;
-        case '8': resultsStore.diagramType = 'axialColor'; return;
-        case '9': resultsStore.diagramType = 'colorMap'; return;
-      }
-    }
-
-    // Delete selected supports/nodes/elements/loads
-    if (e.key === 'Delete' || e.key === 'Backspace') {
-      if (uiStore.selectedSupports.size > 0) {
-        const supToDelete = [...uiStore.selectedSupports];
-        modelStore.batch(() => {
-          for (const supId of supToDelete) modelStore.removeSupport(supId);
-        });
-        uiStore.clearSelectedSupports();
-        resultsStore.clear();
-        return;
-      }
-      if (uiStore.selectedLoads.size > 0) {
-        // selectedLoads holds load data ids (the 2D viewport selects by data.id)
-        const ids = [...uiStore.selectedLoads];
-        modelStore.batch(() => {
-          for (const id of ids) modelStore.removeLoad(id);
-        });
-        uiStore.clearSelectedLoads();
-        resultsStore.clear();
-      } else if (uiStore.selectedNodes.size > 0 || uiStore.selectedElements.size > 0 || uiStore.selectedShells.size > 0) {
-        // Delete strictly from the EXPLICIT selection channels — never infer an
-        // entity kind from a numeric id. Frame elements, plates and quads have
-        // INDEPENDENT id spaces (all count from 1), so a frame id can collide
-        // with an unrelated quad/plate id. `selectedElements` only ever holds
-        // FRAME ids (box-select, element-row clicks); shells are selected and
-        // highlighted ONLY via `selectedShells` ("p<id>"/"q<id>"). The old code
-        // re-derived shells from `selectedElements` numeric ids in shell mode,
-        // which deleted unselected (any-floor) shells whose id happened to match
-        // a selected frame id. Highlight == delete target now.
-        const targets = resolveDeleteTargets(
-          { nodes: uiStore.selectedNodes, elements: uiStore.selectedElements, shells: uiStore.selectedShells },
-          (id) => modelStore.elements.has(id),
-        );
-        modelStore.deleteEntities(targets);
-        uiStore.clearSelection();
-        resultsStore.clear();
-      }
-      return;
-    }
-
-    // ESC: cancel / clear selection / close editors
-    if (e.key === 'Escape') {
-      uiStore.currentTool = 'select';
-      uiStore.clearSelection();
-      uiStore.editingNodeId = null;
-      uiStore.editingElementId = null;
-      return;
-    }
-
-    // ?: toggle help
-    if (e.key === '?' || (e.shiftKey && key === '/')) {
-      uiStore.showHelp = !uiStore.showHelp;
-      return;
-    }
-
-    // G: toggle grid (2D and 3D)
-    if (key === 'G') {
-      if (uiStore.analysisMode === '3d') {
-        uiStore.showGrid3D = !uiStore.showGrid3D;
-      } else {
-        uiStore.showGrid = !uiStore.showGrid;
-      }
-      return;
-    }
-
-    // H: toggle axes (2D and 3D)
-    if (key === 'H' && !e.ctrlKey && !e.metaKey) {
-      if (uiStore.analysisMode === '3d') {
-        uiStore.showAxes3D = !uiStore.showAxes3D;
-      } else {
-        uiStore.showAxes = !uiStore.showAxes;
-      }
-      return;
-    }
-
-    // Enter: solve (both 2D and 3D)
-    if (e.key === 'Enter') {
-      e.preventDefault();
-      handleSolve();
-      return;
-    }
-
-  }
 </script>
 
-<svelte:window onkeydown={handleKeydown} />
 
 <div class="toolbar">
   <div class="toolbar-section">
@@ -659,7 +348,7 @@
   .toolbar-section h3 {
     font-size: 0.75rem;
     text-transform: uppercase;
-    color: #888;
+    color: var(--st-text-3);
     letter-spacing: 0.05em;
   }
 
@@ -671,10 +360,10 @@
 
   .undo-redo-btn {
     padding: 0.35rem 0.4rem;
-    background: #0f3460;
-    border: 1px solid #1a4a7a;
+    background: var(--st-surface-2);
+    border: 1px solid var(--st-hair-strong);
     border-radius: 4px;
-    color: #ccc;
+    color: var(--st-text);
     cursor: pointer;
     font-size: 0.75rem;
     text-align: center;
@@ -682,7 +371,7 @@
   }
 
   .undo-redo-btn:hover:not(:disabled) {
-    background: #1a4a7a;
+    background: var(--st-surface-3);
     color: white;
   }
 
@@ -702,11 +391,11 @@
     gap: 0;
     border-radius: 4px;
     overflow: hidden;
-    border: 1px solid #1a4a7a;
+    border: 1px solid var(--st-hair-strong);
   }
 
   .dim-toggle button {
-    background: #0a1a30;
+    background: var(--st-surface-2);
     border: none;
     color: #778;
     font-size: 0.75rem;
@@ -718,24 +407,24 @@
   }
 
   .dim-toggle button:first-child {
-    border-right: 1px solid #1a4a7a;
+    border-right: 1px solid var(--st-hair-strong);
   }
 
   .dim-toggle button:hover {
     background: #1a3860;
-    color: #ccc;
+    color: var(--st-text);
   }
 
   .dim-toggle button.active {
-    background: #e94560;
+    background: var(--st-accent);
     color: white;
   }
 
   .solve-btn {
     width: 100%;
     padding: 0.5rem 0.5rem;
-    background: #e94560;
-    border: 1px solid #ff6b6b;
+    background: var(--st-accent);
+    border: 1px solid var(--st-danger);
     border-radius: 4px;
     color: white;
     cursor: pointer;
@@ -746,7 +435,7 @@
   }
 
   .solve-btn:hover:not(:disabled) {
-    background: #ff6b6b;
+    background: var(--st-danger);
   }
 
   .solve-btn:disabled {
@@ -768,13 +457,13 @@
   }
 
   .solve-btn.solve-steps {
-    background: #0f3460;
-    border-color: #f0a500;
-    color: #f0a500;
+    background: var(--st-surface-2);
+    border-color: var(--st-warn);
+    color: var(--st-warn);
   }
 
   .solve-btn.solve-steps:hover {
-    background: #1a4a7a;
+    background: var(--st-surface-3);
     color: white;
   }
 
@@ -797,8 +486,8 @@
     justify-content: center;
   }
   .plane-modal {
-    background: #0d1b2e;
-    border: 1px solid #1a4a7a;
+    background: var(--st-surface);
+    border: 1px solid var(--st-hair-strong);
     border-radius: 8px;
     padding: 1.5rem;
     width: 320px;
@@ -809,7 +498,7 @@
   .plane-modal h3 {
     margin: 0;
     font-size: 0.95rem;
-    color: #eee;
+    color: var(--st-text);
   }
   .plane-modal p {
     margin: 0;
@@ -824,10 +513,10 @@
   .plane-btn {
     flex: 1;
     padding: 0.6rem 0.4rem;
-    background: #0f3460;
-    border: 1px solid #1a4a7a;
+    background: var(--st-surface-2);
+    border: 1px solid var(--st-hair-strong);
     border-radius: 5px;
-    color: #ccc;
+    color: var(--st-text);
     cursor: pointer;
     display: flex;
     flex-direction: column;
@@ -836,30 +525,30 @@
     transition: all 0.15s;
   }
   .plane-btn:hover {
-    background: #1a4a7a;
+    background: var(--st-surface-3);
     color: white;
-    border-color: #4ecdc4;
+    border-color: var(--st-interactive);
   }
   .plane-label {
     font-size: 1rem;
     font-weight: 700;
-    color: #4ecdc4;
+    color: var(--st-value);
   }
   .plane-desc {
     font-size: 0.6rem;
-    color: #888;
+    color: var(--st-text-3);
   }
   .plane-btn:hover .plane-desc { color: #bbb; }
   .plane-btn-warn .plane-desc { color: #e9a045; font-weight: 500; font-size: 0.55rem; }
   .plane-btn-destructive {
     background: #2a1520;
-    border-color: #e94560;
-    color: #e94560;
+    border-color: var(--st-accent);
+    color: var(--st-accent);
     font-size: 0.68rem;
     flex: unset;
   }
   .plane-btn-destructive:hover {
-    background: #e94560;
+    background: var(--st-accent);
     color: white;
   }
   .plane-modal-footer {
@@ -869,13 +558,13 @@
   }
   .plane-btn-secondary {
     background: #12192e;
-    border-color: #333;
-    color: #888;
+    border-color: var(--st-hair);
+    color: var(--st-text-3);
     font-size: 0.75rem;
   }
   .plane-btn-secondary:hover {
-    background: #1a1a2e;
-    color: #ccc;
-    border-color: #555;
+    background: var(--st-bg);
+    color: var(--st-text);
+    border-color: var(--st-hair-strong);
   }
 </style>

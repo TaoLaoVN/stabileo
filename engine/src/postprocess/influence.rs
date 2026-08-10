@@ -192,7 +192,14 @@ pub fn extract_value(
     result: &AnalysisResults,
 ) -> f64 {
     match quantity {
-        "Ry" | "Rx" | "Mz" => {
+        // The Z-up names belong here too. The inner match below already knows
+        // both spellings and folds them onto `rz` and `my`, but this outer gate
+        // was left listing only the pre-migration Y-up names — so a caller that
+        // asked for the correct "Rz" or "My" fell through to the `_ => 0.0`
+        // arm and got a flat, silent zero rather than an influence line. That
+        // is exactly what `uiStore.ilQuantity`'s own default, 'Rz', would have
+        // produced. Y-up stays accepted so saved models keep working.
+        "Ry" | "Rz" | "Rx" | "Mz" | "My" => {
             if let Some(node_id) = target_node_id {
                 if let Some(reaction) = result.reactions.iter().find(|r| r.node_id == node_id) {
                     match quantity {

@@ -132,7 +132,7 @@ export function drawDistributedLoads(
     const loadScreenLen = elemScreenLen * (tEnd - tStart);
     const nArrows = Math.max(3, Math.round(loadScreenLen / 30));
 
-    const loadColor = load.caseColor ?? '#ff6644';
+    const loadColor = load.caseColor ?? '#e5482a';
     ctx.strokeStyle = loadColor;
     ctx.fillStyle = loadColor;
     ctx.lineWidth = 1.5;
@@ -384,7 +384,7 @@ export function drawPointLoadsOnElements(
     const loadIsGlobal = load.isGlobal ?? false;
 
     const base = dc.worldToScreen(wx, wy);
-    const ptColor = load.caseColor ?? '#ff4444';
+    const ptColor = load.caseColor ?? '#e5482a';
     const ptCasePrefix = load.caseName ? `${load.caseName}: ` : '';
     const ptYOff = load.labelYOffset ?? 0;
     const coordLabel = loadIsGlobal ? ' [Y]' : (loadAngle !== 0 ? ` [⊥ ${loadAngle}°]` : '');
@@ -512,7 +512,7 @@ export function drawThermalLoads(
     // Draw uniform ΔT: same sign on both sides
     if (Math.abs(load.dtUniform) > 0.01) {
       const sign = load.dtUniform > 0 ? '+' : '−';
-      ctx.fillStyle = load.dtUniform > 0 ? '#ff6b35' : '#4ea8de';
+      ctx.fillStyle = load.dtUniform > 0 ? '#e5482a' : '#4a8fd4';
       ctx.strokeStyle = ctx.fillStyle;
 
       for (let i = 0; i <= nSymbols; i++) {
@@ -544,8 +544,8 @@ export function drawThermalLoads(
     if (Math.abs(load.dtGradient) > 0.01) {
       const topSign = load.dtGradient > 0 ? '+' : '−';
       const botSign = load.dtGradient > 0 ? '−' : '+';
-      const topColor = load.dtGradient > 0 ? '#ff6b35' : '#4ea8de';
-      const botColor = load.dtGradient > 0 ? '#4ea8de' : '#ff6b35';
+      const topColor = load.dtGradient > 0 ? '#e5482a' : '#4a8fd4';
+      const botColor = load.dtGradient > 0 ? '#4a8fd4' : '#e5482a';
 
       const gradOffset = Math.abs(load.dtUniform) > 0.01 ? OFFSET_PX + 12 : OFFSET_PX;
 
@@ -573,7 +573,7 @@ export function drawThermalLoads(
       const labelOffset = Math.abs(load.dtUniform) > 0.01 ? gradOffset + 14 : OFFSET_PX + 14;
       const midX = sI.x + 0.5 * sDx - nx * labelOffset;
       const midY = sI.y + 0.5 * sDy - ny * labelOffset;
-      ctx.fillStyle = '#b366ff';
+      ctx.fillStyle = '#a88fd4';
       ctx.font = '11px sans-serif';
       const gradPrefix = load.caseName ? `${load.caseName}: ` : '';
       const gradYOff = load.labelYOffset ?? 0;
@@ -594,8 +594,8 @@ export interface MovingLoadAxleInfo {
   sinTheta: number;
 }
 
-const AXLE_COLOR = '#ffaa00';      // amber/orange — distinct from regular load red
-const AXLE_LABEL_COLOR = '#ffcc44';
+const AXLE_COLOR = '#d9a441';      // amber/orange — distinct from regular load red
+const AXLE_LABEL_COLOR = '#d9a441';
 
 /**
  * Draw moving load axles as amber arrows perpendicular to their host element.

@@ -39,7 +39,7 @@
   >
     <svg viewBox="0 0 24 24" width="20" height="20" fill="none">
       <line x1="2" y1="17" x2="22" y2="17" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"/>
-      <path d="M2,17 Q7,5 12,17 Q17,5 22,17" stroke="#e94560" stroke-width="1.8" fill="none"/>
+      <path d="M2,17 Q7,5 12,17 Q17,5 22,17" stroke="var(--st-accent)" stroke-width="1.8" fill="none"/>
     </svg>
   </button>
 {/if}
@@ -150,10 +150,10 @@
     z-index: 90;
     width: 36px;
     height: 36px;
-    background: rgba(22, 33, 62, 0.9);
-    border: 1px solid #445;
+    background: rgba(19, 33, 45, 0.9);
+    border: 1px solid var(--st-hair);
     border-radius: 6px;
-    color: #aabbcc;
+    color: var(--st-text-2);
     cursor: pointer;
     display: flex;
     align-items: center;
@@ -163,8 +163,8 @@
   }
 
   .mrp-reopen:hover, .mrp-reopen:active {
-    background: rgba(40, 60, 100, 0.95);
-    color: #ddeeff;
+    background: rgba(23, 41, 58, 0.95);
+    color: var(--st-text);
   }
 
   /* Floating panel */
@@ -174,8 +174,8 @@
     z-index: 90;
     width: min(240px, calc(100vw - 60px));
     max-height: calc(100% - 80px);
-    background: rgba(22, 33, 62, 0.96);
-    border: 1px solid #1a4a7a;
+    background: rgba(19, 33, 45, 0.96);
+    border: 1px solid var(--st-hair-strong);
     border-radius: 8px;
     backdrop-filter: blur(8px);
     box-shadow: 0 4px 16px rgba(0, 0, 0, 0.4);
@@ -200,14 +200,14 @@
     align-items: center;
     justify-content: space-between;
     padding: 6px 10px;
-    border-bottom: 1px solid #1a4a7a;
+    border-bottom: 1px solid var(--st-hair-strong);
     flex-shrink: 0;
   }
 
   .mrp-title {
     font-size: 0.75rem;
     font-weight: 600;
-    color: #aabbcc;
+    color: var(--st-text-2);
     text-transform: uppercase;
     letter-spacing: 0.5px;
   }
@@ -215,7 +215,7 @@
   .mrp-close {
     background: none;
     border: none;
-    color: #888;
+    color: var(--st-text-3);
     font-size: 1.2rem;
     cursor: pointer;
     padding: 0 2px;
@@ -223,7 +223,7 @@
   }
 
   .mrp-close:hover, .mrp-close:active {
-    color: #e94560;
+    color: var(--st-accent);
   }
 
   .mrp-body {
@@ -238,7 +238,7 @@
   .mrp-solve {
     width: 100%;
     padding: 8px;
-    background: #e94560;
+    background: var(--st-accent);
     border: none;
     border-radius: 6px;
     color: white;
@@ -249,12 +249,12 @@
   }
 
   .mrp-solve:active {
-    background: #d63851;
+    background: var(--st-accent);
   }
 
   .mrp-solve:disabled {
-    background: #555;
-    color: #888;
+    background: var(--st-hair);
+    color: var(--st-text-3);
     cursor: not-allowed;
   }
 
@@ -267,10 +267,10 @@
 
   .mrp-btn {
     padding: 6px 4px;
-    background: #0f3460;
-    border: 1px solid #1a4a7a;
+    background: var(--st-surface-2);
+    border: 1px solid var(--st-hair-strong);
     border-radius: 4px;
-    color: #aaa;
+    color: var(--st-text-2);
     cursor: pointer;
     font-size: 0.68rem;
     text-align: center;
@@ -285,8 +285,8 @@
   }
 
   .mrp-btn.active {
-    background: #e94560;
-    border-color: #ff6b6b;
+    background: var(--st-accent);
+    border-color: var(--st-danger);
     color: white;
   }
 
@@ -299,7 +299,7 @@
 
   .mrp-scale-label {
     font-size: 0.65rem;
-    color: #888;
+    color: var(--st-text-3);
     flex-shrink: 0;
     min-width: 40px;
   }
@@ -308,14 +308,14 @@
     flex: 1;
     min-width: 0;
     height: 4px;
-    accent-color: #e94560;
+    accent-color: var(--st-accent);
   }
 
   .mrp-step {
-    background: #0f3460;
-    border: 1px solid #1a4a7a;
+    background: var(--st-surface-2);
+    border: 1px solid var(--st-hair-strong);
     border-radius: 3px;
-    color: #aaa;
+    color: var(--st-text-2);
     width: 22px;
     height: 22px;
     font-size: 0.6rem;
@@ -327,13 +327,13 @@
   }
 
   .mrp-step:active {
-    background: #1a4a7a;
+    background: var(--st-surface-3);
     color: white;
   }
 
   .mrp-scale-val {
     font-size: 0.6rem;
-    color: #888;
+    color: var(--st-text-3);
     min-width: 28px;
     text-align: right;
     flex-shrink: 0;
@@ -345,13 +345,13 @@
     align-items: center;
     gap: 6px;
     font-size: 0.7rem;
-    color: #aaa;
+    color: var(--st-text-2);
     cursor: pointer;
     padding: 2px 0;
   }
 
   .mrp-check input {
-    accent-color: #e94560;
+    accent-color: var(--st-accent);
   }
 
   /* Select row */
@@ -363,10 +363,10 @@
 
   .mrp-select-row select {
     flex: 1;
-    background: #0f3460;
-    border: 1px solid #1a4a7a;
+    background: var(--st-surface-2);
+    border: 1px solid var(--st-hair-strong);
     border-radius: 4px;
-    color: #ccc;
+    color: var(--st-text);
     font-size: 0.7rem;
     padding: 4px 6px;
   }
@@ -374,7 +374,7 @@
   /* Hint text when no results */
   .mrp-hint {
     font-size: 0.7rem;
-    color: #667;
+    color: var(--st-text-3);
     margin: 4px 0;
     text-align: center;
     font-style: italic;

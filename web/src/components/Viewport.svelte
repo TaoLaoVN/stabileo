@@ -38,6 +38,7 @@
     snapWithMidpoint as _snapWithMidpoint,
     segmentIntersectsRect,
   } from '../lib/viewport/spatial-queries';
+  import { canvasTheme } from '../lib/canvas/theme';
 
   let canvas: HTMLCanvasElement;
   let ctx: CanvasRenderingContext2D | null = null;
@@ -331,7 +332,8 @@
     ctx.clearRect(0, 0, width, height);
 
     // Background
-    ctx.fillStyle = '#1a1a2e';
+    // Same ground as the shell: the model sits on the page, not in a box on it.
+    ctx.fillStyle = canvasTheme().surface;
     ctx.fillRect(0, 0, width, height);
 
     // Draw grid
@@ -357,15 +359,29 @@
         for (const ef of resultsStore.results.elementForces) {
           const avgN = (ef.nStart + ef.nEnd) / 2;
           const intensity = Math.min(Math.abs(avgN) / globalMaxN, 1.0);
-          const bright = Math.round(100 + intensity * 155); // 100..255
+          /*
+           * Tension and compression are the palette's, not screen primaries.
+           *
+           * These ramped toward `rgb(255,0,0)` and `rgb(0,0,255)` — colours
+           * that appear nowhere else in the application and read as a
+           * different program's output beside the vermillion and steel blue
+           * the landing's truss figure, the 3D axial map and the diagrams all
+           * use. Magnitude still drives intensity; it now fades the palette
+           * hue toward the neutral member instead of toward black.
+           */
+          const mix = (hex: string, k: number) => {
+            const n = 0.35 + 0.65 * k;
+            const c = (i: number) => parseInt(hex.slice(1 + i * 2, 3 + i * 2), 16);
+            const g = (i: number, base: number) => Math.round(c(i) * n + base * (1 - n));
+            return `rgb(${g(0, 143)},${g(1, 163)},${g(2, 179)})`;
+          };
+          const axTheme = canvasTheme();
           if (avgN > 0.001) {
-            // Tension → red
-            colorMapOverrides.set(ef.elementId, `rgb(${bright},${Math.round(40 * (1 - intensity))},${Math.round(40 * (1 - intensity))})`);
+            colorMapOverrides.set(ef.elementId, mix(axTheme.tension, intensity));
           } else if (avgN < -0.001) {
-            // Compression → blue
-            colorMapOverrides.set(ef.elementId, `rgb(${Math.round(40 * (1 - intensity))},${Math.round(80 * (1 - intensity))},${bright})`);
+            colorMapOverrides.set(ef.elementId, mix(axTheme.compression, intensity));
           } else {
-            colorMapOverrides.set(ef.elementId, '#ccc'); // ~zero → white/light
+            colorMapOverrides.set(ef.elementId, axTheme.neutralMember);
           }
         }
       }
@@ -1035,11 +1051,11 @@
         ctx.font = 'bold 10px sans-serif';
         ctx.fillText(t('viewport.axial'), lx, ly);
         ctx.font = '10px sans-serif';
-        ctx.fillStyle = 'rgb(255,40,40)';
+        ctx.fillStyle = canvasTheme().tension;
         ctx.fillRect(lx, ly + 6, 12, 12);
         ctx.fillStyle = '#ccc';
         ctx.fillText(t('viewport.tension'), lx + 16, ly + 16);
-        ctx.fillStyle = 'rgb(40,80,255)';
+        ctx.fillStyle = canvasTheme().compression;
         ctx.fillRect(lx, ly + 22, 12, 12);
         ctx.fillStyle = '#ccc';
         ctx.fillText(t('viewport.compression'), lx + 16, ly + 32);
@@ -1702,22 +1718,22 @@
         }
       }
     } else if (uiStore.currentTool === 'influenceLine') {
-      // Influence line: click node for Ry/Rx/Mz, click element for V/M
+      // Influence line: click node for Rz/Rx/My, click element for V/M
       const q = uiStore.ilQuantity;
       const nearNode = findNearestNode(world.x, world.y, 0.5);
       const nearElem = findNearestElement(world.x, world.y, 0.5);
 
       let result: any;
-      if ((q === 'Ry' || q === 'Rx' || q === 'Mz') && nearNode) {
+      if ((q === 'Rz' || q === 'Rx' || q === 'My') && nearNode) {
         result = modelStore.computeInfluenceLine(q, nearNode.id);
       } else if ((q === 'V' || q === 'M') && nearElem) {
         result = modelStore.computeInfluenceLine(q, undefined, nearElem.id, 0.5);
       } else if (nearNode) {
-        // Clicked node but quantity is V/M → switch to Ry
-        result = modelStore.computeInfluenceLine('Ry', nearNode.id);
-        uiStore.ilQuantity = 'Ry';
+        // Clicked node but quantity is V/M → switch to Rz
+        result = modelStore.computeInfluenceLine('Rz', nearNode.id);
+        uiStore.ilQuantity = 'Rz';
       } else if (nearElem) {
-        // Clicked element but quantity is Ry/Rx/Mz → switch to M
+        // Clicked element but quantity is Rz/Rx/My → switch to M
         result = modelStore.computeInfluenceLine('M', undefined, nearElem.id, 0.5);
         uiStore.ilQuantity = 'M';
       } else {
@@ -2397,6 +2413,9 @@
     height: 100%;
     position: relative;
     overflow: hidden;
+    /* The drawing surface is the same ground as the shell, so the model sits
+       on the page rather than in a differently-coloured box inside it. */
+    background: var(--st-bg);
   }
 
   canvas {
