@@ -448,7 +448,7 @@
                 title={t(c.labelKey)}
                 data-testid="pr-cmd-{c.id}"
               >
-                <span class="pr-icon"><Icon name={c.icon ?? 'data'} rotate={c.rotate ?? 0} size={22} /></span>
+                <span class="pr-icon"><Icon name={c.icon ?? 'data'} rotate={c.rotate ?? 0} size={20} /></span>
                 <span class="pr-cmd-label" class:symbol={!!c.label}>
                   {c.label ?? (c.id === 'solve' && isSolving ? t('pro.solving') : t(c.labelKey))}
                 </span>
@@ -529,7 +529,7 @@
     gap: 0.15rem;
     padding: 0 0.4rem;
     border-bottom: 1px solid var(--st-hair);
-    min-height: 30px;
+    min-height: 26px;
   }
 
   .pr-tools {
@@ -609,7 +609,7 @@
   .pr-groups {
     display: flex;
     align-items: stretch;
-    padding: 0.3rem 0.4rem 0;
+    padding: 0.2rem 0.4rem 0;
     overflow-x: auto;
     scrollbar-width: thin;
   }
@@ -618,7 +618,7 @@
     display: flex;
     flex-direction: column;
     justify-content: space-between;
-    padding: 0 0.55rem 0.2rem;
+    padding: 0 0.5rem 0.15rem;
     border-right: 1px solid var(--st-hair);
     flex: none;
   }
@@ -639,7 +639,7 @@
     color: var(--st-text-2);
     font-family: var(--st-sans);
     font-size: 0.68rem;
-    padding: 0.25rem 0.35rem;
+    padding: 0.18rem 0.35rem;
     cursor: pointer;
     transition: background 0.12s, color 0.12s, border-color 0.12s;
   }
