@@ -17,12 +17,13 @@
 //!   J  = 8.66e-8 m⁴   Cw = 8.43e-8 m⁶   d  = 0.348 m
 //!
 //! Derived once and reused below:
-//!   Lp   = 1.76·ry·sqrt(E/Fy)  = 1.76·0.02642·24.0772       = 1.11963 m
+//!   Lp   = 1.76·ry·sqrt(E/Fy)  = 1.76·0.02642·24.0772       = 1.11957 m
 //!   rts  = sqrt(sqrt(Iy·Cw)/Sx)
 //!        = sqrt(sqrt(2.91e-6·8.43e-8)/4.75e-4)              = 0.0322911 m
-//!   Jc/(Sx·ho) with ho = d       = 8.66e-8/(4.75e-4·0.348)  = 5.23896e-4
+//!   ho   = 2·sqrt(Cw/Iy) = 2·sqrt(8.43e-8/2.91e-6)          = 0.3404061 m
+//!   Jc/(Sx·ho)                   = 8.66e-8/(4.75e-4·0.340406) = 5.35586e-4
 //!   Lr   = 1.95·rts·(E/0.7Fy)·sqrt(Jc/(Sx·ho) + sqrt((Jc/(Sx·ho))² + 6.76(0.7Fy/E)²))
-//!        = 1.95·0.0322911·828.157·0.0608841                 = 3.17488 m
+//!        = 1.95·0.0322911·828.157·0.0609954                 = 3.18074 m
 //!   Mp   = Fy·Zx = 345e6·5.44e-4                            = 187.68 kN·m
 //!   4.71·sqrt(E/Fy) = 4.71·24.0772                          = 113.40
 
@@ -114,30 +115,30 @@ fn steel_inelastic_buckling_capacity() {
 
 /// F2-2, inelastic lateral-torsional buckling at Lb = 2 m (Lp < Lb < Lr).
 ///   Mn = Cb·[Mp - (Mp - 0.7·Fy·Sx)·(Lb - Lp)/(Lr - Lp)]
-///      = 187_680 - (187_680 - 114_712.5)·(2.0 - 1.11963)/(3.17488 - 1.11963)
-///      = 187_680 - 72_967.5·0.428364                = 156_423 N·m
-///   phi·Mn = 0.90 · 156_423                         = 140_781 N·m
-///   ratio  = 80 kN·m / 140.781 kN·m                 = 0.56825
+///      = 187_680 - (187_680 - 114_712.5)·(2.0 - 1.11957)/(3.18074 - 1.11957)
+///      = 187_680 - 72_967.5·0.427157                = 156_512 N·m
+///   phi·Mn = 0.90 · 156_512                         = 140_861 N·m
+///   ratio  = 80 kN·m / 140.861 kN·m                 = 0.56794
 #[test]
 fn steel_inelastic_ltb_capacity() {
     let r = run(2.0, ElementDesignForces { element_id: 1, n: 0.0, my: 80e3, mz: None, vy: None });
 
-    close(r.phi_mn_y, 140_780.8, "phi·Mn_y (inelastic LTB)");
-    close(r.flexure_y_ratio, 0.568254, "flexure-y ratio");
+    close(r.phi_mn_y, 140_860.7, "phi·Mn_y (inelastic LTB)");
+    close(r.flexure_y_ratio, 0.567937, "flexure-y ratio");
     assert!(r.phi_mn_y < 0.9 * 187_680.0, "LTB must reduce below phi·Mp");
 }
 
 /// F2-3/F2-4, elastic lateral-torsional buckling at Lb = 4 m (Lb > Lr).
 ///   Lb/rts = 4.0/0.0322911 = 123.873
 ///   Fcr = Cb·pi²E/(Lb/rts)² · sqrt(1 + 0.078·Jc/(Sx·ho)·(Lb/rts)²)
-///       = 128.638e6 · sqrt(1 + 0.627105) = 128.638e6 · 1.275580 = 164.088 MPa
-///   Mn  = Fcr·Sx = 164.088e6 · 4.75e-4   = 77_942 N·m  (< Mp)
-///   phi·Mn = 0.90 · 77_942                = 70_148 N·m
+///       = 128.638e6 · sqrt(1 + 0.641097) = 128.638e6 · 1.281053 = 164.792 MPa
+///   Mn  = Fcr·Sx = 164.792e6 · 4.75e-4   = 78_276 N·m  (< Mp)
+///   phi·Mn = 0.90 · 78_276                = 70_448 N·m
 #[test]
 fn steel_elastic_ltb_capacity() {
     let r = run(4.0, ElementDesignForces { element_id: 1, n: 0.0, my: 50e3, mz: None, vy: None });
 
-    close(r.phi_mn_y, 70_147.6, "phi·Mn_y (elastic LTB)");
+    close(r.phi_mn_y, 70_448.2, "phi·Mn_y (elastic LTB)");
 }
 
 /// F6-1, minor-axis flexure: Mn = min(Mp, 1.6·Fy·Sy).
@@ -157,32 +158,32 @@ fn steel_minor_axis_flexure_capacity() {
 
 /// H1-1a, combined compression and biaxial bending at Lb = 4 m.
 ///   Pr/Pc      = 200 kN / 284.799 kN   = 0.702250   (>= 0.2, so H1-1a)
-///   Mry/Mcy    = 50 kN·m / 70.148 kN·m = 0.712788
+///   Mry/Mcy    = 50 kN·m / 70.448 kN·m = 0.709741
 ///   Mrz/Mcz    = 10 kN·m / 22.325 kN·m = 0.447929
 ///   Pr/Pc + (8/9)(Mry/Mcy + Mrz/Mcz)
-///     = 0.702250 + 0.888889·1.160717   = 1.733998   -> over unity
+///     = 0.702261 + 0.888889·1.157670   = 1.731301   -> over unity
 #[test]
 fn steel_h1_interaction_ratio() {
     let r = run(4.0, ElementDesignForces {
         element_id: 1, n: -200e3, my: 50e3, mz: Some(10e3), vy: None,
     });
 
-    close(r.compression_ratio, 0.702250, "compression ratio");
-    close(r.flexure_y_ratio, 0.712788, "flexure-y ratio");
+    close(r.compression_ratio, 0.702261, "compression ratio");
+    close(r.flexure_y_ratio, 0.709741, "flexure-y ratio");
     close(r.flexure_z_ratio, 0.447929, "flexure-z ratio");
-    close(r.interaction_ratio, 1.733998, "H1-1a interaction");
+    close(r.interaction_ratio, 1.731301, "H1-1a interaction");
 
     assert_eq!(r.governing_check, "Interaction H1");
-    close(r.unity_ratio, 1.733998, "unity ratio");
+    close(r.unity_ratio, 1.731301, "unity ratio");
 }
 
 /// H1-1b applies below Pr/Pc = 0.2: Pr/(2Pc) + (Mry/Mcy + Mrz/Mcz).
 ///   At Lb = 5 m, phi·Pn = 182_268 N. Pr = 30 kN -> Pr/Pc = 0.164592 < 0.2
 ///   phi·Mn_y at Lb = 5 m (elastic LTB, Lb/rts = 154.841, squared 23_975.8):
-///     0.078·Jc/(Sx·ho)·(Lb/rts)² = 0.078·5.23896e-4·23_975.8 = 0.979745
-///     Fcr = 82.330e6·sqrt(1.979745) = 82.330e6·1.407034       = 115.841 MPa
-///     phi·Mn_y = 0.90·115.841e6·4.75e-4                       = 49_521.9 N·m
-///   0.164592/2 + 20_000/49_521.9 = 0.082296 + 0.403862        = 0.486158
+///     0.078·Jc/(Sx·ho)·(Lb/rts)² = 0.078·5.35586e-4·23_975.8 = 1.001603
+///     Fcr = 82.330e6·sqrt(2.001603) = 82.330e6·1.414780       = 116.479 MPa
+///     phi·Mn_y = 0.90·116.479e6·4.75e-4                       = 49_794.5 N·m
+///   0.164592/2 + 20_000/49_794.5 = 0.082296 + 0.401651        = 0.483947
 #[test]
 fn steel_h1b_interaction_below_the_transition() {
     let r = run(5.0, ElementDesignForces {
@@ -190,8 +191,8 @@ fn steel_h1b_interaction_below_the_transition() {
     });
 
     assert!(r.compression_ratio < 0.2, "must be on the H1-1b branch: {:.4}", r.compression_ratio);
-    close(r.phi_mn_y, 49_521.9, "phi·Mn_y at Lb = 5 m");
-    close(r.interaction_ratio, 0.486158, "H1-1b interaction");
+    close(r.phi_mn_y, 49_794.5, "phi·Mn_y at Lb = 5 m");
+    close(r.interaction_ratio, 0.483947, "H1-1b interaction");
 }
 
 /// A short member develops the full plastic moment: Lb = 1 m < Lp = 1.11963 m,
@@ -229,6 +230,6 @@ fn steel_check_multiple_members() {
     // Element 1 is below Lp; 2 is in the inelastic band; 3 is elastic. Capacity
     // must fall monotonically with unbraced length.
     close(results[0].phi_mn_y, 0.90 * 187_680.0, "element 1 phi·Mn_y");
-    close(results[1].phi_mn_y, 140_780.8, "element 2 phi·Mn_y");
-    close(results[2].phi_mn_y, 49_521.9, "element 3 phi·Mn_y");
+    close(results[1].phi_mn_y, 140_860.7, "element 2 phi·Mn_y");
+    close(results[2].phi_mn_y, 49_794.5, "element 3 phi·Mn_y");
 }
