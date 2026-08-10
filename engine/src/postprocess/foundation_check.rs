@@ -180,20 +180,39 @@ fn check_single_footing(
         f64::INFINITY
     };
 
-    // One-way shear (beam shear) — critical section at d from column face
-    // Vu = q * B * (L/2 - col_L/2 - d)
-    let oneway_dist = l / 2.0 - ftg.col_length / 2.0 - d;
-    let vu_oneway = if oneway_dist > 0.0 && area > 0.0 {
-        (p / area) * b * oneway_dist
-    } else {
-        0.0
-    };
+    // One-way shear (beam shear) — critical section at d from the column face.
+    // Both directions must be checked: on a footing that cantilevers further
+    // across its width than along its length, the width direction governs and
+    // checking only the length direction misses it entirely.
+    let fc_mpa = ftg.fc / 1e6;
+    let d_mm = d * 1000.0;
 
     // phi*Vc = phi * 0.17 * sqrt(f'c_MPa) * bw_mm * d_mm (ACI 318 metric)
-    let fc_mpa = ftg.fc / 1e6;
-    let bw_mm = b * 1000.0;
-    let d_mm = d * 1000.0;
-    let phi_vc_oneway = PHI_SHEAR * 0.17 * fc_mpa.sqrt() * bw_mm * d_mm;
+    // Demand and capacity for one direction: the strip cantilevering past the
+    // critical section, resisted by the perpendicular width.
+    let oneway = |cantilever: f64, loaded_width: f64, resisting_width: f64| -> (f64, f64) {
+        let vu = if cantilever > 0.0 && area > 0.0 {
+            (p / area) * loaded_width * cantilever
+        } else {
+            0.0
+        };
+        // phi*Vc = phi * 0.17 * sqrt(f'c_MPa) * bw_mm * d_mm (ACI 318 metric)
+        let phi_vc = PHI_SHEAR * 0.17 * fc_mpa.sqrt() * (resisting_width * 1000.0) * d_mm;
+        (vu, phi_vc)
+    };
+
+    // Cantilever along the length, resisted by the full width, and vice versa.
+    let along = oneway(l / 2.0 - ftg.col_length / 2.0 - d, b, b);
+    let across = oneway(b / 2.0 - ftg.col_width / 2.0 - d, l, l);
+    // Report the direction that governs — the higher demand/capacity — so the
+    // ledger still sees a real (demand, capacity) pair and can flag a footing
+    // whose capacity could not be evaluated.
+    let (vu_oneway, phi_vc_oneway) = match (along.1 > 0.0, across.1 > 0.0) {
+        (true, true) if across.0 / across.1 > along.0 / along.1 => across,
+        (true, _) => along,
+        (false, true) => across,
+        (false, false) => along,
+    };
     let oneway_shear_ratio = ledger.ratio("One-way shear", vu_oneway, phi_vc_oneway);
 
     // Two-way (punching) shear — critical section at d/2 from column face

@@ -10,6 +10,7 @@ mod corotational_3d;
 mod design_check_defaults;
 mod design_check_axial;
 mod design_check_evaluability;
+mod design_check_limit_states;
 mod design_check_quantities;
 mod eccentric_connections;
 mod ec2_check;
