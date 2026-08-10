@@ -134,24 +134,25 @@ fn check_single_footing(
     let ex = if p.abs() > 0.0 { my / p } else { 0.0 };
     let ey = if p.abs() > 0.0 { mx / p } else { 0.0 };
 
-    // Bearing pressure (Meyerhof effective area for eccentric loads)
-    // q = P / A' where A' = L' * B'
-    // L' = L - 2*ey, B' = B - 2*ex
-    let l_eff = (l - 2.0 * ey.abs()).max(0.0);
-    let b_eff = (b - 2.0 * ex.abs()).max(0.0);
+    // Bearing pressure (Meyerhof effective area for eccentric loads).
+    // `ex` offsets the load along the length, so it shortens L; `ey` offsets it
+    // across the width, so it shortens B.
+    // q = P / A' where A' = L' * B',  L' = L - 2*ex,  B' = B - 2*ey
+    let l_eff = (l - 2.0 * ex.abs()).max(0.0);
+    let b_eff = (b - 2.0 * ey.abs()).max(0.0);
     let a_eff = l_eff * b_eff;
 
     let max_bearing = if a_eff > 0.0 { p / a_eff } else { f64::INFINITY };
     let bearing_ratio = max_bearing / ftg.q_allowable;
 
-    // Overturning stability
-    // Resisting moment = P * L/2 (or B/2)
-    // Overturning moment = Mx or My + H * depth
-    let mr_x = p * l / 2.0;
+    // Overturning stability. Tipping about the length axis (driven by `mx`)
+    // rotates the footing across its width, so the stabilising arm is B/2;
+    // tipping about the width axis (`my`) rotates it along the length: L/2.
+    let mr_x = p * b / 2.0;
     let mo_x = mx.abs() + h.abs() * ftg.depth;
     let overturning_sf_x = if mo_x > 0.0 { mr_x / mo_x } else { f64::INFINITY };
 
-    let mr_y = p * b / 2.0;
+    let mr_y = p * l / 2.0;
     let mo_y = my.abs() + h.abs() * ftg.depth;
     let overturning_sf_y = if mo_y > 0.0 { mr_y / mo_y } else { f64::INFINITY };
 

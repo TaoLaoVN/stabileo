@@ -72,10 +72,13 @@ fn foundation_eccentric_bearing() {
     // ey = Mx/P = 60000/600000 = 0.10 m
     assert!((r.eccentricity_y - 0.10).abs() < 1e-6);
 
-    // L' = L - 2*|ey| = 2.5 - 0.20 = 2.30 m
-    // A' = 2.30 * 2.0 = 4.60 m²
-    // q = 600000 / 4.60 = 130435 Pa
-    let expected_q = 600_000.0 / (2.30 * 2.0);
+    // Mx acts about the length axis, so the load is offset across the *width*
+    // and it is B that shrinks. (This test previously applied ey to L, matching
+    // the swapped implementation rather than Meyerhof.)
+    // B' = B - 2*|ey| = 2.0 - 0.20 = 1.80 m
+    // A' = 2.5 * 1.80 = 4.50 m²
+    // q = 600000 / 4.50 = 133333 Pa
+    let expected_q = 600_000.0 / (2.5 * 1.80);
     assert!(
         (r.max_bearing_pressure - expected_q).abs() / expected_q < 1e-3,
         "Bearing: {:.0} vs {:.0}",
@@ -149,10 +152,13 @@ fn foundation_overturning() {
     let results = check_spread_footings(&input);
     let r = &results[0];
 
-    // Resisting moment about length axis: P * L/2 = 800000 * 1.5 = 1200000 N-m
-    // Overturning moment about length axis: |Mx| + |H|*D = 100000 + 50000*1.5 = 175000 N-m
-    // SF = 1200000/175000 = 6.86
-    let expected_sf_x = 1_200_000.0 / 175_000.0;
+    // Tipping about the length axis rotates the footing across its width, so
+    // the stabilising arm is B/2, not L/2. (This test previously used L/2,
+    // matching the swapped implementation.)
+    // Resisting moment: P * B/2 = 800000 * 1.0 = 800000 N-m
+    // Overturning moment: |Mx| + |H|*D = 100000 + 50000*1.5 = 175000 N-m
+    // SF = 800000/175000 = 4.57
+    let expected_sf_x = 800_000.0 / 175_000.0;
     assert!(
         (r.overturning_sf_x - expected_sf_x).abs() / expected_sf_x < 1e-3,
         "OT SF_x: {:.2} vs {:.2}",
