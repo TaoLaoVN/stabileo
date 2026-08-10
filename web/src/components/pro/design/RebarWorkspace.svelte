@@ -33,13 +33,16 @@
   import { membersFromModel } from '../../../lib/engine/detailing/member-geometry';
   import { cachedSceneModel } from '../../../lib/engine/detailing/scene-cache';
   import {
-    reportElementStatus, type DesignOutcomeSummary,
+    reportElementStatus, summariseStatusReasons, type DesignOutcomeSummary,
   } from '../../../lib/engine/detailing/element-status';
   import RebarViewport3D from './RebarViewport3D.svelte';
   import RebarStatusPanel from './RebarStatusPanel.svelte';
   import RebarLayersPanel from './RebarLayersPanel.svelte';
+  import { markOpenPhase } from '../../../lib/utils/open-timeline';
 
   let viewport = $state<RebarViewport3D | null>(null);
+  /** True while the viewport's first geometry build is still pending. */
+  let building = $state(false);
   /**
    * The rail starts closed on a small screen.
    *
@@ -70,7 +73,9 @@
        * the only question that matters — same document, same members — so a checkbox, a
        * slider or a selection no longer rebuilds the projection.
        */
-      return { scene: cachedSceneModel(doc, members), refused };
+      const scene = cachedSceneModel(doc, members);
+      markOpenPhase('scene');
+      return { scene, refused };
   });
 
   /**
@@ -89,12 +94,24 @@
         outcome: o?.outcome,
         verificationStatus: v?.overallStatus,
         limiting: o?.limiting ?? [],
+        reasonKey: o?.reasons?.[0]?.key,
+        secondaryRatio: o?.axes?.secondaryRatio,
       });
     }
     return m;
   });
 
   const report = $derived(built ? reportElementStatus(built.scene, outcomes) : null);
+
+  /**
+   * The shared causes behind the states, commonest first.
+   *
+   * On the 7-storey example 117 of 119 beams land in UNSUPPORTED for ONE reason. Without this
+   * the panel reports "UNSUPPORTED 117" and the user has to open members one at a time to
+   * discover that — or, worse, concludes the viewer lost their steel. See
+   * `summariseStatusReasons` for why the grouping is on the reason KEY.
+   */
+  const reasonGroups = $derived(report ? summariseStatusReasons(report.entries) : []);
 
   /**
    * The design's own sentence for each member, translated once.
@@ -309,7 +326,7 @@
         <RebarLayersPanel {summary} {emptyKinds} {pieces} bounds={built?.scene.bounds ?? null} />
 
         {#if report}
-          <RebarStatusPanel {report} {reasons} />
+          <RebarStatusPanel {report} {reasons} {reasonGroups} />
         {/if}
       </aside>
 
@@ -339,7 +356,27 @@
             section={rebarWorkspace.section}
             height="100%"
             onselect={(pick) => rebarWorkspace.select(pick)}
+            onbuildstate={(b) => { building = b; }}
           />
+          {#if building}
+            <!--
+              What the user sees INSTEAD of a frozen window.
+
+              The cage is 20 917 tubes and 39 240 conflict markers once the floors are designed,
+              and materialising that on the GPU takes seconds no matter how it is scheduled. What
+              is not acceptable is spending those seconds with nothing on screen, which is what
+              "the button does not respond" was: the build ran inside `onMount`, before the
+              browser's first paint, so the click produced no visible change at all.
+
+              The viewport now paints first and reports that it is still building, so this says
+              so. It is a STATEMENT, not a decoration: while it is up, what is behind it is not
+              the finished scene and is not presented as one.
+            -->
+            <div class="building" data-testid="rebar-workspace-building" role="status">
+              <span class="spinner" aria-hidden="true"></span>
+              <span>{tp('detailing.scene.building', { bars: built.scene.bars.length })}</span>
+            </div>
+          {/if}
         {:else}
           <p class="empty" data-testid="rebar-workspace-empty">
             {t('detailing.scene.empty')}
@@ -457,7 +494,23 @@
     display: flex; flex-direction: column; gap: 0.7rem;
   }
   .body:not(.rail-open) .rail { display: none; }
-  .stage { flex: 1 1 auto; min-width: 0; display: flex; flex-direction: column; }
+  .stage { flex: 1 1 auto; min-width: 0; display: flex; flex-direction: column; position: relative; }
+  /* Over the canvas, not in the layout: appearing must not resize the viewport, because a
+     resize reallocates the drawing buffer and that is the cost this is announcing. */
+  .building {
+    position: absolute; inset: auto 0 1rem 0; margin: 0 auto; width: max-content;
+    display: flex; align-items: center; gap: 0.5rem;
+    padding: 0.4rem 0.8rem; border-radius: 999px;
+    background: var(--st-surface-2, #1b2130); border: 1px solid var(--st-border, #2c3444);
+    color: var(--text, #d7dce6); font-size: 0.76rem; pointer-events: none; z-index: 2;
+  }
+  .spinner {
+    width: 0.8rem; height: 0.8rem; border-radius: 50%;
+    border: 2px solid var(--st-border, #2c3444); border-top-color: #6fa8ff;
+    animation: spin 0.8s linear infinite;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  @media (prefers-reduced-motion: reduce) { .spinner { animation: none; } }
   .stage :global(.rebar-viewport) { flex: 1 1 auto; border: none; border-radius: 0; }
 
   h4 { margin: 0 0 0.25rem; font-size: 0.8rem; }

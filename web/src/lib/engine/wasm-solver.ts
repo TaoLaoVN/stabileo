@@ -7,6 +7,7 @@
 
 import type { SolverInput, AnalysisResults, FullEnvelope } from './types';
 import type { SolverInput3D, AnalysisResults3D, FullEnvelope3D } from './types-3d';
+import { plainDeepCopy, findUncloneablePath } from '../utils/plain-deep-copy';
 
 let wasmReady = false;
 let wasmInitPromise: Promise<void> | null = null;
@@ -315,6 +316,20 @@ export function mapToObj<T>(map: Map<number, T>): Record<string, T> {
 }
 
 /**
+ * Re-exported so callers reach them through the solver boundary they belong to rather than
+ * through a utility path. The implementations are shared with the store, which carries the
+ * same "no foreign proxies" obligation on the way in.
+ */
+export { plainDeepCopy, findUncloneablePath };
+
+/** `plainDeepCopy` over a Map's values, emitting the `{ "id": value }` wire form. */
+function mapToPlainObj<T>(map: Map<number, T>): Record<string, T> {
+  const obj: Record<string, T> = {};
+  for (const [k, v] of map) obj[String(k)] = plainDeepCopy(v);
+  return obj;
+}
+
+/**
  * Guard for the JsValue boundary: `JSON.stringify` used to coerce NaN/Infinity
  * to `null`, which serde_json then rejected — non-finite inputs never reached
  * the solver. serde-wasm-bindgen would pass them through as f64. This walk
@@ -346,8 +361,8 @@ export function input2DToWireObject(input: SolverInput): Record<string, any> {
     elements: mapToObj(input.elements),
     supports: mapToObj(input.supports),
     loads: input.loads,
-    constraints: input.constraints ?? [],
-    connectors: input.connectors ? mapToObj(input.connectors) : {},
+    constraints: plainDeepCopy(input.constraints ?? []),
+    connectors: input.connectors ? mapToPlainObj(input.connectors) : {},
   };
 }
 
@@ -356,8 +371,30 @@ function serializeInput2D(input: SolverInput): string {
   return JSON.stringify(input2DToWireObject(input));
 }
 
-/** Convert SolverInput3D (with Maps) to the plain JSON-ready wire object,
- *  without a string round trip. */
+/**
+ * Convert SolverInput3D (with Maps) to the plain JSON-ready wire object, without a string
+ * round trip.
+ *
+ * ── Why the small collections are COPIED and the big ones are not ──
+ *
+ * This object is handed to two consumers that both refuse a reactive proxy:
+ * `worker.postMessage` (the structured-clone algorithm rejects an exotic object outright) and
+ * serde-wasm-bindgen. `buildSolverInput3D` assembles nodes, elements, sections and supports as
+ * fresh literals, so those are already plain — and they are the big ones, which is why they
+ * are not copied again here.
+ *
+ * The rest used to be passed straight through BY REFERENCE: `constraints`, the `nodes` list of
+ * every plate/quad/curved shell, and the connector records. Every one of those is read off a
+ * reactive store, so every one of them could be a proxy. That was not hypothetical — it made
+ * `solveCombinations3DParallel` throw `DataCloneError` on EVERY solve of any model carrying a
+ * constraint, the sequential fallback swallowed the throw, and the worker pool had therefore
+ * quietly stopped being used at all while the app still produced correct answers, just slower.
+ * (Measured on the 7-storey building: 2,4 s sequential against 478 ms across the pool.)
+ *
+ * Copying HERE rather than at each call site is deliberate: this is the last common point
+ * before both consumers, so "the payload is plain data" holds for every caller, present and
+ * future.
+ */
 export function input3DToWireObject(input: SolverInput3D): Record<string, any> {
   return {
     nodes: mapToObj(input.nodes),
@@ -366,11 +403,11 @@ export function input3DToWireObject(input: SolverInput3D): Record<string, any> {
     elements: mapToObj(input.elements),
     supports: mapToObj(input.supports),
     loads: input.loads,
-    plates: input.plates ? mapToObj(input.plates) : {},
-    quads: input.quads ? mapToObj(input.quads) : {},
-    curvedShells: input.curvedShells ? mapToObj(input.curvedShells) : {},
-    constraints: input.constraints ?? [],
-    connectors: input.connectors ? mapToObj(input.connectors) : {},
+    plates: input.plates ? mapToPlainObj(input.plates) : {},
+    quads: input.quads ? mapToPlainObj(input.quads) : {},
+    curvedShells: input.curvedShells ? mapToPlainObj(input.curvedShells) : {},
+    constraints: plainDeepCopy(input.constraints ?? []),
+    connectors: input.connectors ? mapToPlainObj(input.connectors) : {},
     leftHand: input.leftHand ?? false,
   };
 }

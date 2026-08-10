@@ -23,6 +23,7 @@
   import { exportToExcel } from '../../../lib/export/excel';
   import RebarScenePanel from './RebarScenePanel.svelte';
   import { rebarWorkspace } from '../../../lib/store/rebar-workspace.svelte';
+  import { markOpenPhase } from '../../../lib/utils/open-timeline';
 
   let engineer = $state('');
   let docError = $state<string | null>(null);
@@ -86,7 +87,11 @@
    * projections of the same instance rather than of two documents that happen to agree.
    */
   function open3d() {
+    // The phases of an open are recorded where they happen — see `open-timeline.ts` for why
+    // attributing this from the outside got it wrong twice.
+    markOpenPhase('click');
     if (!currentDoc()) return;
+    markOpenPhase('document');
     show3d = true;
     // Straight into the workspace. The sidebar panel keeps the summary and the export; the
     // inspection surface is the overlay, and making the user find a second button to reach it

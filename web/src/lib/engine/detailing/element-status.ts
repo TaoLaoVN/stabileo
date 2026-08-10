@@ -74,6 +74,23 @@ export interface DesignOutcomeSummary {
   verificationStatus?: 'ok' | 'warn' | 'fail' | 'notRun' | 'none';
   /** The constraints that stopped it, for the reason line. */
   limiting?: readonly string[];
+  /**
+   * Translation key of the design's own first reason, e.g. `design.reason.secondaryAxisUnchecked`.
+   *
+   * The KEY, not the sentence: 117 members refused for one shared cause must be recognisable
+   * as one cause, and the rendered sentences differ from each other (they carry the member id
+   * and its own ratio). Grouping on rendered text would produce 117 groups of one.
+   */
+  reasonKey?: string;
+  /**
+   * `secondaryRatio` from the design axes, when the run resolved them.
+   *
+   * Carried so a grouped reason can state the RANGE it covers. "117 members refused" invites
+   * the suspicion that the threshold is being tripped by numerical noise; "between 11 % and
+   * 266 % of the primary moment" answers that on sight, and answers it with the model's own
+   * numbers rather than with reassurance.
+   */
+  secondaryRatio?: number;
 }
 
 export interface ElementStatusEntry {
@@ -84,6 +101,76 @@ export interface ElementStatusEntry {
   /** What the design run said, carried through unchanged. */
   outcome?: DesignOutcomeSummary['outcome'];
   limiting: readonly string[];
+  /** The design's own reason key, carried through unchanged. */
+  reasonKey?: string;
+  /** Secondary/primary moment ratio, carried through unchanged. */
+  secondaryRatio?: number;
+}
+
+/**
+ * One cause, and every member it accounts for.
+ *
+ * ── Why the workspace needs this and not just counts ───────────────
+ *
+ * On the 7-storey example the design refuses 117 of the 119 beams, all for the SAME reason:
+ * the verifier does not implement the biaxial check, and every one of those beams carries
+ * real bending about both axes. The workspace already held that sentence — but only per
+ * member, and only while that member was selected. So the screen said "UNSUPPORTED 117",
+ * which reads as 117 separate problems, or as a broken viewer, and the user's next move was
+ * to click 117 members to find out it was one problem all along.
+ *
+ * The distinction this makes possible is the one the whole investigation turned on: a
+ * legitimate, uniform limitation of the biaxial design path is a very different report from
+ * 117 members whose steel went missing somewhere between the design and the screen. Stating
+ * the shared cause and the span of ratios behind it is what lets a reviewer tell them apart
+ * without opening a single member.
+ */
+export interface StatusReasonGroup {
+  status: ElementStatus;
+  /** Translation key shared by every member in the group. */
+  reasonKey: string;
+  count: number;
+  /** Ascending. The workspace uses these to isolate the group in the viewport. */
+  elementIds: number[];
+  /** Span of `secondaryRatio` across the group, when any member carried one. */
+  ratioRange?: { min: number; max: number };
+}
+
+/**
+ * Group a report's members by (state, reason), commonest first.
+ *
+ * Members whose outcome carried no reason are omitted rather than bucketed under a
+ * placeholder: a group called "unknown" is not a cause and would dilute the ones that are.
+ * They remain visible in the per-state counts, which are computed from every member.
+ */
+export function summariseStatusReasons(
+  entries: readonly ElementStatusEntry[],
+): StatusReasonGroup[] {
+  const byKey = new Map<string, StatusReasonGroup>();
+  for (const e of entries) {
+    if (!e.reasonKey) continue;
+    const k = `${e.status}::${e.reasonKey}`;
+    let g = byKey.get(k);
+    if (!g) {
+      g = { status: e.status, reasonKey: e.reasonKey, count: 0, elementIds: [] };
+      byKey.set(k, g);
+    }
+    g.count += 1;
+    g.elementIds.push(e.elementId);
+    if (typeof e.secondaryRatio === 'number') {
+      g.ratioRange = g.ratioRange
+        ? { min: Math.min(g.ratioRange.min, e.secondaryRatio), max: Math.max(g.ratioRange.max, e.secondaryRatio) }
+        : { min: e.secondaryRatio, max: e.secondaryRatio };
+    }
+  }
+  const groups = [...byKey.values()];
+  for (const g of groups) g.elementIds.sort((a, b) => a - b);
+  // Commonest first, then by state severity, then by key — a total order, so the panel does
+  // not reshuffle between renders of the same model.
+  return groups.sort((a, b) =>
+    b.count - a.count
+    || ELEMENT_STATUS_ORDER.indexOf(a.status) - ELEMENT_STATUS_ORDER.indexOf(b.status)
+    || a.reasonKey.localeCompare(b.reasonKey));
 }
 
 /**
@@ -170,6 +257,8 @@ export function reportElementStatus(
         hasSteel,
         outcome: summary?.outcome,
         limiting: summary?.limiting ?? [],
+        reasonKey: summary?.reasonKey,
+        secondaryRatio: summary?.secondaryRatio,
       });
     }
   }

@@ -20,6 +20,7 @@
   import { rebarWorkspace } from '../../../lib/store/rebar-workspace.svelte';
   import {
     ELEMENT_STATUS_ORDER, type ElementStatus, type ElementStatusReport,
+    type StatusReasonGroup,
   } from '../../../lib/engine/detailing/element-status';
 
   interface Props {
@@ -33,8 +34,46 @@
      * this component stays free of stores.
      */
     reasons?: ReadonlyMap<number, string>;
+    /**
+     * The shared causes, commonest first.
+     *
+     * A per-member sentence answers "why is THIS one orange". It does not answer "why are
+     * 117 of them orange", and that is the question a reviewer actually opens this panel
+     * with. On the 7-storey example the honest answer is one sentence — the verifier does
+     * not implement the biaxial check and these beams bend about both axes — and until it
+     * was stated once, at the top, the screen was indistinguishable from a viewer that had
+     * lost the steel. Each group isolates its members in the viewport on click, so the
+     * statement is also a way in.
+     */
+    reasonGroups?: readonly StatusReasonGroup[];
   }
-  const { report, reasons }: Props = $props();
+  const { report, reasons, reasonGroups = [] }: Props = $props();
+
+  /** Groups for one state, in the order `summariseStatusReasons` produced. */
+  function groupsFor(s: ElementStatus): readonly StatusReasonGroup[] {
+    return reasonGroups.filter((g) => g.status === s);
+  }
+
+  /** `0.105` → `11` — the ratio as the percentage the design's own reason line quotes. */
+  function pct(r: number): number {
+    return Math.round(r * 100);
+  }
+
+  /**
+   * One sentence for a whole group.
+   *
+   * Prefers a purpose-written aggregate line, because the per-member reason opens with
+   * "Member 86:" and a heading that names one arbitrary member of 117 reads as if the other
+   * 116 were something else. Where no aggregate line exists the per-member sentence is used
+   * verbatim rather than dropping the group: an imperfect explanation beats a bare count,
+   * and `t()` returning the key itself would put a dotted identifier on screen.
+   */
+  function causeText(g: StatusReasonGroup): string {
+    const aggregateKey = `detailing.scene.cause.${g.reasonKey.replace('design.reason.', '')}`;
+    const aggregate = t(aggregateKey);
+    if (aggregate !== aggregateKey) return aggregate;
+    return reasons?.get(g.elementIds[0]) ?? t(`detailing.scene.status.${g.status}`);
+  }
 
   const filtered = $derived.by(() => {
     const f = rebarWorkspace.statusFilter;
@@ -70,6 +109,26 @@
             <span class="label">{t(`detailing.scene.status.${s}`)}</span>
             <span class="n">{report.counts[s]}</span>
           </button>
+          {#each groupsFor(s) as g (g.reasonKey)}
+            <button
+              type="button"
+              class="cause"
+              data-testid={`rebar-status-cause-${s}`}
+              data-reason-key={g.reasonKey}
+              title={t('detailing.scene.cause.isolate')}
+              onclick={() => rebarWorkspace.isolate(g.elementIds)}
+            >
+              <span class="cause-n">{g.count}</span>
+              <span class="cause-text">
+                {causeText(g)}
+                {#if g.ratioRange}
+                  {tp('detailing.scene.cause.ratioRange', {
+                    min: pct(g.ratioRange.min), max: pct(g.ratioRange.max),
+                  })}
+                {/if}
+              </span>
+            </button>
+          {/each}
         </li>
       {/if}
     {/each}
@@ -149,6 +208,18 @@
     margin: 0 0 0.25rem 1.4rem; font-size: 0.7rem;
     color: var(--text-muted, #8b93a3);
   }
+  /* The shared cause sits UNDER its state row and indented to it, so it reads as an
+     explanation of that count rather than as another state. */
+  .cause {
+    display: flex; align-items: baseline; gap: 0.35rem; width: 100%;
+    margin: 0 0 0.2rem 1.4rem; padding: 0.1rem 0.3rem;
+    background: none; border: none; border-left: 2px solid var(--st-border, #2c3444);
+    color: var(--text-muted, #8b93a3); font-size: 0.7rem; line-height: 1.35;
+    text-align: left; cursor: pointer;
+  }
+  .cause:hover { color: var(--text, #d7dce6); border-left-color: #6fa8ff; }
+  .cause-n { flex: none; font-variant-numeric: tabular-nums; font-weight: 600; }
+  .cause-text { min-width: 0; }
   .link {
     background: none; border: none; padding: 0; color: #6fa8ff;
     font-size: 0.74rem; cursor: pointer; text-align: left;

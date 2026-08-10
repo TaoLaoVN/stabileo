@@ -25,6 +25,7 @@
     type SceneFilter, type SceneModel,
   } from '../../../lib/engine/detailing/scene-model';
   import { t } from '../../../lib/i18n';
+  import { markOpenPhase } from '../../../lib/utils/open-timeline';
 
   /** What the user clicked: a bar, a piece of concrete, or empty space. */
   export interface ScenePick {
@@ -57,12 +58,21 @@
     /** A section plane through the model, in model coordinates. */
     section?: { axis: 'x' | 'y' | 'z'; at: number; flip?: boolean } | null;
     onselect?: (pick: ScenePick | null) => void;
+    /**
+     * Called `true` when the first geometry build is pending and `false` once it is on screen.
+     *
+     * The workspace uses it to say the scene is still being built. Reported rather than
+     * inferred from a timer, because "is the cage there yet" is a fact this component holds
+     * and nothing outside it can observe without guessing.
+     */
+    onbuildstate?: (building: boolean) => void;
     height?: string;
   }
 
   const {
     scene, filter = {}, diameterScale = 1, showConcrete = true, showConflicts = true,
-    concreteOpacity = 1, selectedBarId = null, section = null, onselect, height = '460px',
+    concreteOpacity = 1, selectedBarId = null, section = null, onselect, onbuildstate,
+    height = '460px',
   }: Props = $props();
 
   /**
@@ -83,6 +93,8 @@
   let built: RebarScene | null = null;
   let highlight: THREE.Mesh | null = null;
 
+  /** Marked once per mount: the first frame is the one the user waited for. */
+  let firstFrameMarked = false;
   /** Frames still owed to damping. Counted, so the tail ends rather than running forever. */
   let pending = 0;
   let running = false;
@@ -98,6 +110,10 @@
     if (!renderer || !camera || !root) { running = false; return; }
     controls?.update();
     renderer.render(root, camera);
+    // The first frame that shows the CAGE, not the first frame at all: the resize observer
+    // draws an empty scene before the geometry exists, and marking that one would report the
+    // open as finished while the window was still blank.
+    if (!firstFrameMarked && built) { firstFrameMarked = true; markOpenPhase('frame'); }
     pending -= 1;
     if (pending > 0) requestAnimationFrame(tick);
     else running = false;
@@ -324,22 +340,96 @@
      * is allowed to move it.
      */
     let measured = false;
+    /**
+     * The size the drawing buffer is currently at.
+     *
+     * ── Why a resize that changes nothing must do nothing ──────────────
+     *
+     * `ResizeObserver` fires on OBSERVE and again for every layout pass the overlay's own
+     * appearance provokes, so opening the workspace delivers several callbacks — most of them
+     * reporting the size the canvas already has. `setSize` assigns `canvas.width`/
+     * `canvas.height`, and assigning either RESETS and reallocates the drawing buffer even
+     * when the value is identical, which then costs a full redraw of whatever is in the scene.
+     *
+     * Honest about what this did and did not buy: a profile of the open blamed
+     * `WebGLRenderer.setSize` for 1 694 ms, and the guard did not remove them — the marks
+     * added afterwards showed a SINGLE call, and that time was the driver flushing the newly
+     * uploaded geometry inside the first GL call that forced it. What the guard removes is the
+     * reallocation on every LATER no-op callback, which is real but was never the reported
+     * failure. It stays because reallocating a framebuffer to arrive at the same framebuffer
+     * cannot be right, and it costs two integer reads to avoid.
+     *
+     * The guard is on the SIZE, not on a "first time" flag, because a genuine resize must
+     * still be honoured: dragging the rail, rotating a tablet, or opening the console all
+     * change these numbers and all must re-fit the buffer.
+     */
+    let bufferW = 0;
+    let bufferH = 0;
     const resize = new ResizeObserver(() => {
       if (!renderer || !camera || !host) return;
       const w = host.clientWidth || 1;
       const h = host.clientHeight || 1;
-      renderer.setSize(w, h, false);
-      camera.aspect = w / h;
-      camera.updateProjectionMatrix();
-      if (!measured && host.clientWidth > 0) { measured = true; fit(); }
-      invalidate(2);
+      const changed = w !== bufferW || h !== bufferH;
+      if (changed) {
+        bufferW = w;
+        bufferH = h;
+        renderer.setSize(w, h, false);
+        camera.aspect = w / h;
+        camera.updateProjectionMatrix();
+      }
+      const firstMeasure = !measured && host.clientWidth > 0;
+      if (firstMeasure) { measured = true; fit(); }
+      // Redraw on a real resize, and on the first callback — that one is "the canvas now
+      // exists", and the frame it asks for is the first one the user sees.
+      if (changed || firstMeasure) invalidate(2);
     });
     resize.observe(host);
 
-    rebuild();
-    fit();
+    /**
+     * Build AFTER the browser has painted the workspace once.
+     *
+     * ── Why the first build is deferred by two frames ──────────────────
+     *
+     * Building the cage is not free and cannot be made free: on the 7-storey building with its
+     * floors designed it is 20 917 tubes and 39 240 conflict markers, and materialising them on
+     * the GPU costs a couple of seconds on a software rasteriser. Doing that inside `onMount` —
+     * which runs before the browser paints — meant the click on "3-D" produced NOTHING on
+     * screen until it was over. The button looked dead, the app looked hung, and a user who
+     * clicked again got a second open queued behind the first.
+     *
+     * Two `requestAnimationFrame`s, not one: the first is scheduled before the paint that
+     * follows this mount, so its callback still lands in the frame the user is waiting on. The
+     * second is guaranteed to run after that paint has happened, which is the property being
+     * bought here — the overlay, its rail and its "building" state are on screen before the
+     * expensive work starts.
+     *
+     * This changes WHEN the geometry is built, never WHETHER: `building` is reported so the
+     * workspace can say the scene is still coming, so nothing incomplete is presented as
+     * final, and `rebuild()` is the same single build it always was — no second pass, no second
+     * scene, no second context. A cancelled mount clears the handle so a workspace closed
+     * inside those two frames never builds into a torn-down renderer.
+     */
+    markOpenPhase('renderer');
+    onbuildstate?.(true);
+    initialBuildPending = true;
+    let firstBuild: number | null = requestAnimationFrame(() => {
+      firstBuild = requestAnimationFrame(() => {
+        firstBuild = null;
+        initialBuildPending = false;
+        if (!root) return;
+        rebuild();
+        markOpenPhase('geometry');
+        fit();
+        onbuildstate?.(false);
+      });
+    });
 
     return () => {
+      if (firstBuild !== null) {
+        cancelAnimationFrame(firstBuild);
+        initialBuildPending = false;
+        onbuildstate?.(false);
+      }
       resize.disconnect();
       controls?.dispose();
       built?.dispose();
@@ -384,6 +474,20 @@
    */
   let lastSignature: string | null = null;
   let lastGeometryOptions = '';
+  /**
+   * True between the mount and the deferred first build.
+   *
+   * Without it this effect wins the race and builds the cage itself — it runs before the
+   * deferred callback and has no recorded signature, so it sees "the scene changed" and does
+   * the whole 20 917-tube pass, which the deferred build then repeats. That is not a slower
+   * open, it is TWO opens: `rebarSceneBuilds` moved by two per visit, measured.
+   *
+   * Suppressing rather than reordering, because the deferred build must stay deferred — the
+   * whole point is that the browser paints before it starts. The scene the deferred build reads
+   * is whatever the props say at that moment, so an edit landing inside those two frames is
+   * picked up by it rather than lost.
+   */
+  let initialBuildPending = false;
   $effect(() => {
     /**
      * Only the options that change VERTICES belong here — and by now there is one.
@@ -401,8 +505,12 @@
      * which is the one case where the tubes really are wrong and must be rebuilt.
      */
     const geometryOptions = `${diameterScale}`;
-    if (!root) return;
+    // Read BEFORE any early return. An effect only re-runs for the dependencies it actually
+    // read on its last pass, so returning above this line would unsubscribe the effect from
+    // the scene — and a document rebuilt while the first build was still pending would then
+    // never re-tube. Costs about a millisecond.
     const signature = sceneSignature(scene);
+    if (!root || initialBuildPending) return;
     if (signature === lastSignature && geometryOptions === lastGeometryOptions) return;
     const sceneChanged = signature !== lastSignature;
     rebuild();

@@ -35,6 +35,7 @@ import { getStructuralSolveCount } from './solve-counter';
 import { runGlobalSolve } from '../engine/live-calc';
 import { rebarSceneBuilds } from '../three/rebar-scene';
 import { sceneCacheStats } from '../engine/detailing/scene-cache';
+import { openTimeline, type OpenPhase } from './open-timeline';
 
 export const E2E_QUERY_FLAG = 'e2e';
 
@@ -101,6 +102,13 @@ export interface StabileoTestHooks {
   rebarSceneBuilds(): number;
   /** Scene-projection cache hits and misses. A toggle must not produce a miss. */
   sceneCacheStats(): { hits: number; misses: number };
+  /**
+   * Milliseconds from the "3-D" click to the end of each phase of the last open.
+   *
+   * The benchmark reports this as a table. Attributing an open from the outside guessed wrong
+   * twice — see `open-timeline.ts`.
+   */
+  openTimeline(): Partial<Record<OpenPhase, number>>;
 }
 
 /**
@@ -209,6 +217,7 @@ export function installE2EHooks(): void {
     detailingSchedule: () => JSON.parse(JSON.stringify(detailingStore.schedule ?? null)),
     rebarSceneBuilds,
     sceneCacheStats,
+    openTimeline,
   };
   const actions: StabileoTestActions = {
     /** Seed a coordinated assembly — the same shape the pipeline writes. */

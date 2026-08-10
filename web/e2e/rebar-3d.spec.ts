@@ -55,8 +55,30 @@ async function openWorkspace(
     await expect(page.getByTestId('floor-families')).toBeVisible();
   }
 
+  const buildsBefore = await page.evaluate(() => window.__stabileo.rebarSceneBuilds());
   await page.getByTestId('doc-3d').click();
   await expect(page.getByTestId('rebar-workspace')).toBeVisible();
+  /**
+   * Visible is no longer the same thing as settled.
+   *
+   * The workspace now paints BEFORE it builds its geometry — that is what stops the "3-D"
+   * click looking dead on a model whose floors have been designed — so `toBeVisible` returns
+   * while the build is still to come, and anything the caller does in that window competes
+   * with it. The phone-layout test caught this exactly: it resized the viewport between the
+   * paint and the build, the window `resize` handler then ran AFTER the click that followed
+   * it, and the rail toggle appeared not to toggle.
+   *
+   * Waited on the BUILD COUNTER, not on the "building" status: on a small model the build
+   * takes two frames and that status may never be painted at all, so `toBeHidden` would pass
+   * on an element that was never there and guarantee nothing. The counter moves exactly once
+   * per build, whatever the model's size.
+   *
+   * This restores what `openWorkspace` has always meant to its callers: an open workspace with
+   * its scene in it. Tests that want to observe the build itself do not use this helper.
+   */
+  await expect
+    .poll(() => page.evaluate(() => window.__stabileo.rebarSceneBuilds()), { timeout: 120_000 })
+    .toBeGreaterThan(buildsBefore);
 }
 
 /** How much of the window the workspace covers, as a fraction of its area. */
@@ -127,11 +149,26 @@ test.describe('the workspace is the workspace, not a corner of one', () => {
       expect(canvas!.width).toBeGreaterThan(300);
 
       /**
+       * Wait for the FOLD before touching the toggle.
+       *
+       * Crossing the breakpoint folds the rail away — `onResize` sets `railOpen = wide`, and
+       * on a 390 px window that is false. Reading `aria-expanded` before that handler has run
+       * captures the desktop value, and the click that follows then races it: the state settles
+       * to closed and the click reopens it, so the attribute ends where it started and the
+       * toggle looks broken when it is not. (Deferring the first geometry build made the race
+       * land on the losing side every time, which is how it was found.)
+       *
+       * Asserting the fold rather than sleeping through it also makes this test do what its
+       * name says: the rail folding away on a phone was in the title and in none of the
+       * assertions.
+       */
+      await expect(toggle).toHaveAttribute('aria-expanded', 'false');
+
+      /**
        * Assert the toggle TOGGLES, not that it opens.
        *
-       * The rail's initial state is decided at mount from the window width, and this test
-       * mounts at desktop size before resizing — so pinning a direction here would be pinning
-       * an artefact of the test's own setup rather than the control's behaviour.
+       * The direction is still read rather than assumed, so this stays a statement about the
+       * control and not about the state it happens to start in.
        */
       const before = await toggle.getAttribute('aria-expanded');
       await toggle.click();
