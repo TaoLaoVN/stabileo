@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { applyLowDetail, isHeavyModel, HEAVY_MODEL_VISUALS, HEAVY_MODEL_VISUALS_SECTIONS, type LowDetailGroups } from '../lod';
+import { applyLowDetail, isHeavyModel, HEAVY_MODEL_VISUALS, HEAVY_MODEL_VISUALS_SECTIONS, SUPPORT_VISUAL_COST, type LowDetailGroups } from '../lod';
 
 function mkGroups(renderMode: 'wireframe' | 'solid' | 'sections' = 'wireframe'): LowDetailGroups {
   return {
@@ -80,6 +80,40 @@ describe('applyLowDetail — heavy-model fallback', () => {
 });
 
 describe('isHeavyModel — single LOD policy point', () => {
+  // Supports were missing from the budget entirely, and they dominate it: each
+  // one is a Group of ~8 Lines/Meshes, while all the frame elements together
+  // are a single batched draw call. La Bombonera — 2476 elements, 120 shells,
+  // 205 supports — put 1640 of its 1763 scene objects (93 %) into supports and
+  // still scored 2596 against a 3000 threshold, so the LOD never engaged
+  // during a zoom. In `sections` the same model *did* qualify, which made the
+  // lightest render mode the one that stuttered.
+  const BOMBONERA = { elements: 2476, shells: 120, supports: 205 };
+
+  it('counts supports toward the budget', () => {
+    expect(isHeavyModel(BOMBONERA, 'wireframe')).toBe(true);
+    // Without them the same model reads as light.
+    expect(isHeavyModel({ elements: 2476, shells: 120 }, 'wireframe')).toBe(false);
+  });
+
+  it('weights a support by the objects it actually creates', () => {
+    // 8 objects per gizmo: one over the threshold on its own.
+    const justOver = Math.ceil((HEAVY_MODEL_VISUALS + 1) / SUPPORT_VISUAL_COST);
+    expect(isHeavyModel({ elements: 0, supports: justOver }, 'wireframe')).toBe(true);
+    expect(isHeavyModel({ elements: 0, supports: justOver - 1 }, 'wireframe')).toBe(false);
+  });
+
+  it('leaves models without supports exactly where they were', () => {
+    expect(isHeavyModel({ elements: HEAVY_MODEL_VISUALS + 1 }, 'wireframe')).toBe(true);
+    expect(isHeavyModel({ elements: HEAVY_MODEL_VISUALS }, 'wireframe')).toBe(false);
+    expect(isHeavyModel({ elements: HEAVY_MODEL_VISUALS, supports: 0 }, 'wireframe')).toBe(false);
+  });
+
+  it('a support-only model is heavy while a support-free one is not', () => {
+    // Same element count, opposite verdicts — the dimension that was missing.
+    expect(isHeavyModel({ elements: 500, supports: 400 }, 'wireframe')).toBe(true);
+    expect(isHeavyModel({ elements: 500, supports: 0 }, 'wireframe')).toBe(false);
+  });
+
   it('counts shells toward the visual budget', () => {
     expect(isHeavyModel({ elements: 200, shells: HEAVY_MODEL_VISUALS }, 'wireframe')).toBe(true);
     expect(isHeavyModel({ elements: 200 }, 'wireframe')).toBe(false);
