@@ -136,7 +136,22 @@ up. The solve was simply that slow on a machine that had spent the previous ten 
 cost spec.
 
 So it is environmental saturation, not a product fault and not a fallback — and the evidence for
-that statement now exists rather than being inferred. The deadline is calibrated at 480 s: below
+that statement now exists rather than being inferred.
+
+**And the saturation has been identified.** During the last full run the machine was also
+running another worktree's Playwright suite: `stabileo-landing/web` started its own
+`vite preview` at 16:16:43 and my run started at 16:20:10. Two browser suites, each configured
+`workers: 1`, each rendering through SwiftShader in software, competing for the same cores — a
+WASM solve of a 203-member model across 7 combinations is exactly the thing that starves under
+that.
+
+Note this is NOT the port hazard recorded elsewhere: landing was on 4197, 4173 and 4293 were
+free, so no run adopted the wrong bundle. The interference was CPU, not the artifact under test.
+
+Two consequences worth carrying forward. The failure is even less likely in CI, where a sibling
+worktree is not present. And a full local run should be given a quiet machine before its result
+is read as a verdict on the branch — which is also the cheapest way to confirm the structural
+remedy below is still worth doing rather than merely tidy. The deadline is calibrated at 480 s: below
 the 900 s these specs allow themselves, so a genuine hang fails in half the time and says why,
 and above the measured worst case so it does not fire on load alone.
 
