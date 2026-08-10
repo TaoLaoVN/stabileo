@@ -224,19 +224,19 @@
   .jurisdiction { display: grid; grid-template-columns: auto 1fr auto 1fr; gap: 0.4rem 0.6rem; align-items: center; margin-bottom: 0.7rem; }
   .jurisdiction input, .jurisdiction select { width: 100%; padding: 0.25rem 0.4rem; }
   ul.roles { list-style: none; margin: 0; padding: 0; }
-  ul.roles > li { border-top: 1px solid rgba(128,128,128,0.25); padding: 0.4rem 0; }
+  ul.roles > li { border-top: 1px solid rgba(143, 163, 179,0.25); padding: 0.4rem 0; }
   .row { display: flex; flex-wrap: wrap; gap: 0.45rem; align-items: center; }
   .role-name { min-width: 11rem; font-weight: 500; }
   .row select { min-width: 15rem; padding: 0.25rem 0.4rem; }
-  .badge { font-size: 0.7rem; font-weight: 600; padding: 0.1rem 0.4rem; border-radius: 3px; background: rgba(128,128,128,0.28); }
-  .state-applied { background: #14532d; color: #dcfce7; }
+  .badge { font-size: 0.7rem; font-weight: 600; padding: 0.1rem 0.4rem; border-radius: 3px; background: rgba(143, 163, 179,0.28); }
+  .state-applied { background: var(--st-surface-3); color: var(--st-text); }
   /* Pending and stale are never green. */
-  .state-pending { background: #7a5b00; color: #fff6dd; }
-  .state-stale { background: #7a1f1f; color: #ffe3e3; }
-  .maturity-implemented_provisional { background: #7a5b00; color: #fff6dd; }
-  .maturity-unsupported { background: #7a1f1f; color: #ffe3e3; }
-  .maturity-validated { background: #14532d; color: #dcfce7; }
-  .affects { background: #1e3a5f; color: #dbeafe; }
+  .state-pending { background: var(--st-surface-3); color: var(--st-text); }
+  .state-stale { background: var(--st-accent); color: var(--st-text); }
+  .maturity-implemented_provisional { background: var(--st-surface-3); color: var(--st-text); }
+  .maturity-unsupported { background: var(--st-accent); color: var(--st-text); }
+  .maturity-validated { background: var(--st-surface-3); color: var(--st-text); }
+  .affects { background: var(--st-hair-strong); color: var(--st-text); }
   details.advanced { margin: 0.3rem 0 0 11.4rem; }
   details.advanced summary { cursor: pointer; font-size: 0.78rem; opacity: 0.8; }
   dl { display: grid; grid-template-columns: auto 1fr; gap: 0.15rem 0.6rem; margin: 0.3rem 0 0; font-size: 0.78rem; }
@@ -244,16 +244,16 @@
   dd { margin: 0; }
   .note { font-size: 0.78rem; opacity: 0.8; margin: 0.3rem 0 0; }
   .notice { margin: 0.5rem 0; padding: 0.5rem 0.6rem; border-radius: 4px; line-height: 1.4; }
-  .notice.warning { background: #7a5b00; color: #fff6dd; }
-  .notice.error { background: #7a1f1f; color: #ffe3e3; }
+  .notice.warning { background: var(--st-surface-3); color: var(--st-text); }
+  .notice.error { background: var(--st-accent); color: var(--st-text); }
   .notice p { margin: 0.3rem 0; }
   .req-solve { font-weight: 600; }
   .actions { display: flex; gap: 0.5rem; margin-top: 0.4rem; }
   .actions button.secondary { background: transparent; border: 1px solid currentColor; color: inherit; }
-  .crossref { margin-top: 0.8rem; padding: 0.5rem 0.6rem; border: 1px dashed rgba(128,128,128,0.5); border-radius: 4px; }
+  .crossref { margin-top: 0.8rem; padding: 0.5rem 0.6rem; border: 1px dashed rgba(143, 163, 179,0.5); border-radius: 4px; }
   .crossref p { margin: 0.25rem 0 0.4rem; font-size: 0.8rem; opacity: 0.85; }
-  li.error { color: #fca5a5; }
-  li.warning { color: #fde68a; }
+  li.error { color: var(--st-text-2); }
+  li.warning { color: var(--st-warn); }
   @media (max-width: 820px) {
     .jurisdiction { grid-template-columns: 1fr; }
     .role-name { min-width: 0; }

@@ -1499,8 +1499,8 @@
     text-transform: uppercase;
     letter-spacing: 0.03em;
   }
-  .pb-group:hover { color: var(--st-text); background: rgba(26, 74, 122, 0.3); border-color: var(--st-hair-strong); }
-  .pb-group.group-active { color: var(--st-text); border-color: var(--st-accent); background: rgba(233, 69, 96, 0.12); }
+  .pb-group:hover { color: var(--st-text); background: var(--st-surface-3); border-color: var(--st-hair-strong); }
+  .pb-group.group-active { color: var(--st-accent); border-color: var(--st-accent); background: var(--st-selected-bg); }
   .pb-caret { font-size: 0.55rem; opacity: 0.6; }
   .pb-undo {
     display: flex; align-items: center; justify-content: center;
@@ -1610,14 +1610,48 @@
     white-space: nowrap;
   }
   .pn-action:disabled { opacity: 0.35; cursor: not-allowed; }
-  .pn-example { color: var(--st-text); background: var(--st-warn); border-color: var(--st-warn); }
-  .pn-example:hover { background: var(--st-amber-text); }
-  .pn-cad { color: var(--st-value); border-color: var(--st-interactive); background: rgba(78, 205, 196, 0.08); }
-  .pn-cad:hover { background: rgba(78, 205, 196, 0.2); }
-  .pn-solve { color: var(--st-text); background: var(--st-accent); border-color: var(--st-interactive); }
-  .pn-solve:hover { background: var(--st-accent-hover); }
-  .pn-report { color: var(--st-text); background: var(--st-accent); border-color: var(--st-accent); }
-  .pn-report:hover { background: linear-gradient(135deg, var(--st-accent-hover), var(--st-accent)); }
+  /*
+     Four commands, four fills, four meanings — none of them stated.
+     ───────────────────────────────────────────────────────────────
+     Examples was amber, DXF plan turquoise-outlined, Solve and Report solid
+     red. Amber is this palette's warning, turquoise its computed value, and
+     solid accent is what the shell reserves for the ONE thing you are acting
+     on — so a row of four permanent buttons claimed to be a warning, a
+     read-out and two active states at once, all before the user had done
+     anything.
+
+     They are commands, so they take the shell's command: hairline, no fill
+     until hover. Solve keeps the accent, because among these four it is the
+     one that acts on the model and the one the whole bar builds toward — and
+     it is the only one, so the accent means something again.
+  */
+  .pn-example,
+  .pn-cad,
+  .pn-report {
+    color: var(--st-text-2);
+    background: none;
+    border-color: var(--st-hair);
+  }
+
+  .pn-example:hover:not(:disabled),
+  .pn-cad:hover:not(:disabled),
+  .pn-report:hover:not(:disabled) {
+    background: var(--st-surface-3);
+    color: var(--st-text);
+    border-color: var(--st-hair-strong);
+  }
+
+  .pn-solve {
+    color: var(--st-accent);
+    background: none;
+    border-color: var(--st-accent);
+  }
+
+  .pn-solve:hover:not(:disabled) {
+    background: var(--st-selected-bg);
+    color: var(--st-accent-hover);
+    border-color: var(--st-accent-hover);
+  }
 
   .pro-resize-handle {
     position: absolute;

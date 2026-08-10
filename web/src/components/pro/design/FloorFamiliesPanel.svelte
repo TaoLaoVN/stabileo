@@ -349,30 +349,30 @@
   .primary { font-weight: 600; padding: 0.3rem 0.7rem; }
   .code { font-size: 0.75rem; opacity: 0.9; }
   /* An unresolved code is never green. */
-  .warn { padding: 0.1rem 0.35rem; border-radius: 3px; background: #7a5b00; color: #fff6dd; }
-  .families { display: flex; gap: 0.3rem; border-bottom: 1px solid rgba(128,128,128,0.3); }
+  .warn { padding: 0.1rem 0.35rem; border-radius: 3px; background: var(--st-surface-3); color: var(--st-text); }
+  .families { display: flex; gap: 0.3rem; border-bottom: 1px solid rgba(143, 163, 179,0.3); }
   .families button {
-    background: none; border: none; border-bottom: 2px solid transparent; color: inherit;
+    background: none; border:  1px solid var(--st-hair); border-bottom: 2px solid transparent; color: inherit;
     padding: 0.3rem 0.6rem; display: flex; align-items: center; gap: 0.35rem;
   }
   .families button.active { border-bottom-color: currentColor; font-weight: 600; }
-  .n { font-size: 0.7rem; font-weight: 600; padding: 0.05rem 0.3rem; border-radius: 3px; background: rgba(128,128,128,0.3); }
+  .n { font-size: 0.7rem; font-weight: 600; padding: 0.05rem 0.3rem; border-radius: 3px; background: rgba(143, 163, 179,0.3); }
   .empty { opacity: 0.75; font-style: italic; }
   table { border-collapse: collapse; width: 100%; font-size: 0.78rem; }
-  th, td { text-align: left; padding: 0.2rem 0.4rem; border-bottom: 1px solid rgba(128,128,128,0.2); }
+  th, td { text-align: left; padding: 0.2rem 0.4rem; border-bottom: 1px solid rgba(143, 163, 179,0.2); }
   .num { text-align: right; font-variant-numeric: tabular-nums; }
   /* Over-utilised is never green. */
-  .num.over { color: #ffb4b4; font-weight: 600; }
+  .num.over { color: var(--st-text); font-weight: 600; }
   .ceiling {
     margin-left: 0.3rem; font-size: 0.68rem; font-weight: 600; padding: 0.05rem 0.3rem;
-    border-radius: 3px; background: #5c1a1a; color: #ffe4e4;
+    border-radius: 3px; background: var(--st-surface-2); color: var(--st-text);
   }
   ul { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 0.15rem; }
   .prereqs li, .unsupported li, .assumptions li { font-size: 0.75rem; opacity: 0.9; }
   .issues > li { font-size: 0.75rem; padding: 0.2rem 0.4rem; border-radius: 3px; }
-  .issues > li.blocking { background: #5c1a1a; color: #ffe4e4; }
+  .issues > li.blocking { background: var(--st-surface-2); color: var(--st-text); }
   .issues ul { margin-left: 0.6rem; }
-  .assumptions li { background: #7a5b00; color: #fff6dd; padding: 0.15rem 0.4rem; border-radius: 3px; }
-  .err { color: #ffb4b4; }
+  .assumptions li { background: var(--st-surface-3); color: var(--st-text); padding: 0.15rem 0.4rem; border-radius: 3px; }
+  .err { color: var(--st-text); }
   summary { cursor: pointer; font-size: 0.78rem; }
 </style>

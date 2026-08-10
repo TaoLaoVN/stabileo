@@ -285,69 +285,72 @@
 
 <style>
   .toolbar { display: flex; flex-direction: column; gap: 6px; padding: 8px 12px;
-    background: #0a1a30; border-bottom: 1px solid #1a4a7a; flex-shrink: 0; }
+    background: var(--st-surface); border-bottom: 1px solid var(--st-surface-3); flex-shrink: 0; }
   .cmd-row { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
   .code-indicator {
     display: inline-flex; align-items: baseline; gap: 6px;
-    padding: 4px 8px; border: 1px solid #1a4a7a; border-radius: 4px;
-    background: #0d2440; font-size: 0.78rem; white-space: nowrap;
+    padding: 4px 8px; border: 1px solid var(--st-surface-3); border-radius: 4px;
+    background: var(--st-surface-3); font-size: 0.78rem; white-space: nowrap;
   }
-  .code-indicator.unbound { border-color: #7a4a1a; background: #33210d; }
+  .code-indicator.unbound { border-color: var(--st-hair-strong); background: var(--st-bg); }
   .code-role { opacity: 0.7; }
   .code-gate {
     display: inline-flex; align-items: center; gap: 6px;
-    font-size: 0.78rem; color: #ffb870;
+    font-size: 0.78rem; color: var(--st-warn);
   }
   .code-gate-link {
-    background: none; border: none; padding: 0; color: #7ec4ff;
+    background: none; border:  1px solid var(--st-hair); padding: 0; color: var(--st-info);
     text-decoration: underline; cursor: pointer; font-size: inherit;
   }
   .code-name { font-weight: 600; }
-  .cmd { padding: 4px 10px; background: #14304f; border: 1px solid #2a5a8a;
-    border-radius: 4px; color: #dde; font-size: 0.75rem; font-weight: 600; cursor: pointer; }
-  .cmd:hover:not(:disabled) { background: #1e4a78; }
+  .cmd { padding: 4px 10px; background: var(--st-surface-3); border: 1px solid var(--st-info);
+    border-radius: 4px; color: var(--st-text); font-size: 0.75rem; font-weight: 600; cursor: pointer; }
+  .cmd:hover:not(:disabled) { background: var(--st-hair-strong); }
   .cmd:disabled { opacity: 0.4; cursor: not-allowed; }
-  .cmd:focus-visible { outline: 2px solid #4ecdc4; outline-offset: 1px; }
-  .cmd-primary { background: #1a4a7a; border-color: #2a6ab0; color: #fff; }
-  .cmd-all { background: #1d5a3a; border-color: #2a8a55; color: #fff; }
-  .cmd-cancel { background: #6a2222; border-color: #a03333; color: #fff; }
+  .cmd:focus-visible { outline: 2px solid var(--st-value); outline-offset: 1px; }
+  .cmd-primary { background: var(--st-surface-3); border-color: var(--st-info); color: var(--st-text); }
+  .cmd-all { background: var(--st-hair-strong); border-color: var(--st-ok); color: var(--st-text); }
+  .cmd-cancel { background: var(--st-hair-strong); border-color: var(--st-accent); color: var(--st-text); }
   .split { position: relative; display: flex; }
   .cmd-caret { border-left: none; border-top-left-radius: 0; border-bottom-left-radius: 0; padding: 4px 6px; }
   .split .cmd-primary { border-top-right-radius: 0; border-bottom-right-radius: 0; }
   .menu { position: absolute; top: 100%; left: 0; z-index: 40; margin-top: 2px;
-    background: #0f2540; border: 1px solid #2a5a8a; border-radius: 4px;
+    background: var(--st-surface-3); border: 1px solid var(--st-info); border-radius: 4px;
     box-shadow: 0 4px 12px rgba(0,0,0,0.5); min-width: 220px; }
   .menu button { display: block; width: 100%; text-align: left; padding: 6px 10px;
-    background: none; border: none; color: #dde; font-size: 0.75rem; cursor: pointer; }
-  .menu button:hover { background: #1a3a5c; }
+    background: none; border:  1px solid var(--st-hair); color: var(--st-text); font-size: 0.75rem; cursor: pointer; }
+  .menu button:hover { background: var(--st-surface-3); }
 
   .progress { display: flex; align-items: center; gap: 8px; }
-  .progress-bar { flex: 1; height: 5px; background: #14243c; border-radius: 3px; overflow: hidden; }
-  .progress-fill { height: 100%; background: #4ecdc4; transition: width 0.15s linear; }
-  .progress-text { font-size: 0.7rem; color: #9ab; font-family: monospace; }
+  .progress-bar { flex: 1; height: 5px; background: var(--st-surface-3); border-radius: 3px; overflow: hidden; }
+  .progress-fill { height: 100%; background: none; transition: width 0.15s linear; }
+  .progress-text { font-size: 0.7rem; color: var(--st-text-2); font-family: monospace; }
 
-  .cmd-detailing { background: #1e4570; }
+  .cmd-detailing { background: var(--st-hair-strong); }
   .detailing-blockers { margin: 0.3rem 0 0; font-size: 0.76rem; opacity: 0.85; }
   .detailing-auto { display: inline-flex; gap: 0.3rem; align-items: center; font-size: 0.76rem; margin-top: 0.3rem; }
   .counts { display: flex; gap: 9px; flex-wrap: wrap; font-size: 0.72rem; font-family: monospace; }
-  .count { color: #aab; }
-  .count-sep { color: #445; }
-  .c-ok { color: #7ee2a8; } .c-warn { color: #f0cc66; } .c-fail { color: #ff8a8a; }
-  .c-unavail { color: #99a; } .c-stale { color: #d8d4bb; }
-  .c-sect { color: #ffb37a; } .c-exh { color: #d3b0e8; } .c-unsup { color: #99a; }
-  /* The same violet the 3-D view paints a proposal with. */
+  .count { color: var(--st-text-2); }
+  .count-sep { color: var(--st-text-3); }
+  .c-ok { color: var(--st-ok); } .c-warn { color: var(--st-warn); } .c-fail { color: var(--st-accent); }
+  .c-unavail { color: var(--st-text-2); } .c-stale { color: var(--st-text); }
+  .c-sect { color: var(--st-accent); } .c-exh { color: var(--st-text); } .c-unsup { color: var(--st-text-2); }
+  /* The same violet the 3-D view paints a proposal with. Deliberately still a literal while
+     its neighbours are tokens: `three/rebar-scene.ts` owns this colour as a numeric hex for a
+     Three.js material, and `run-summary-reported.test.ts` asserts that this file agrees with
+     it by value. A `var()` here would break that agreement without replacing it. */
   .c-prov { color: #a066d3; }
 
   .banner { display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
     padding: 5px 9px; border-radius: 4px; font-size: 0.73rem; line-height: 1.45; }
-  .banner-block { background: rgba(238,34,34,0.14); border: 1px solid #8a2a2a; color: #ffb3b3; }
-  .banner-warn { background: rgba(255,102,0,0.13); border: 1px solid #8a4a10; color: #ffcc9a; }
-  .banner-info { background: rgba(78,205,196,0.11); border: 1px solid #2a6a66; color: #b7e8e4; }
-  .banner-stale { border: 1px solid #6a6a55; color: #e2ddc4;
+  .banner-block { background: rgba(238,34,34,0.14); border: 1px solid var(--st-accent); color: var(--st-text); }
+  .banner-warn { background: rgba(255,102,0,0.13); border: 1px solid var(--st-warn); color: var(--st-text); }
+  .banner-info { background: rgba(127, 212, 204,0.11); border: 1px solid var(--st-hair-strong); color: var(--st-text); }
+  .banner-stale { border: 1px solid var(--st-text-3); color: var(--st-text);
     background: repeating-linear-gradient(45deg, rgba(138,143,122,0.16) 0 6px, rgba(93,97,84,0.16) 6px 12px); }
   .banner-btn { padding: 2px 8px; background: rgba(255,255,255,0.08);
     border: 1px solid rgba(255,255,255,0.18); border-radius: 3px; color: inherit;
     font-size: 0.7rem; font-weight: 600; cursor: pointer; }
   .banner-btn:hover { background: rgba(255,255,255,0.16); }
-  .banner-btn:focus-visible { outline: 2px solid #4ecdc4; outline-offset: 1px; }
+  .banner-btn:focus-visible { outline: 2px solid var(--st-value); outline-offset: 1px; }
 </style>

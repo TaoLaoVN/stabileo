@@ -213,13 +213,13 @@
     align-items: center;
     justify-content: space-between;
     padding: 6px 10px;
-    border-bottom: 1px solid #1a3050;
+    border-bottom: 1px solid var(--st-surface-3);
     flex-shrink: 0;
   }
 
   .diag-auto-label {
     font-size: 0.68rem;
-    color: #888;
+    color: var(--st-text-3);
   }
 
   .diag-empty {
@@ -229,20 +229,20 @@
     justify-content: center;
     gap: 8px;
     padding: 40px 10px;
-    color: #4ecdc4;
+    color: var(--st-value);
     font-size: 0.8rem;
   }
 
   .diag-check {
     font-size: 2rem;
-    color: #4ecdc4;
+    color: var(--st-value);
   }
 
   .diag-summary {
     display: flex;
     gap: 8px;
     padding: 8px 10px;
-    border-bottom: 1px solid #1a3050;
+    border-bottom: 1px solid var(--st-surface-3);
     flex-shrink: 0;
     flex-wrap: wrap;
   }
@@ -265,10 +265,10 @@
     border-color: currentColor;
   }
 
-  .diag-badge.sev-error { background: rgba(233, 69, 96, 0.2); color: #e94560; }
-  .diag-badge.sev-warning { background: rgba(240, 165, 0, 0.2); color: #f0a500; }
-  .diag-badge.sev-info { background: rgba(78, 205, 196, 0.2); color: #4ecdc4; }
-  .diag-badge.sev-all { background: rgba(255, 255, 255, 0.08); color: #888; }
+  .diag-badge.sev-error { background: rgba(229, 72, 42, 0.2); color: var(--st-accent); }
+  .diag-badge.sev-warning { background: rgba(217, 164, 65, 0.2); color: var(--st-warn); }
+  .diag-badge.sev-info { background: rgba(127, 212, 204, 0.2); color: var(--st-value); }
+  .diag-badge.sev-all { background: rgba(255, 255, 255, 0.08); color: var(--st-text-3); }
 
   .diag-list {
     display: flex;
@@ -286,14 +286,14 @@
     background: transparent;
     text-align: left;
     cursor: pointer;
-    color: #ccc;
+    color: var(--st-text-2);
     font-size: 0.75rem;
-    border-bottom: 1px solid #0f2030;
+    border-bottom: 1px solid var(--st-surface-2);
     width: 100%;
   }
 
   .diag-item:hover {
-    background: rgba(78, 205, 196, 0.05);
+    background: rgba(127, 212, 204, 0.05);
   }
 
   .diag-icon {
@@ -303,9 +303,9 @@
     text-align: center;
   }
 
-  .diag-icon.sev-error { color: #e94560; }
-  .diag-icon.sev-warning { color: #f0a500; }
-  .diag-icon.sev-info { color: #4ecdc4; }
+  .diag-icon.sev-error { color: var(--st-accent); }
+  .diag-icon.sev-warning { color: var(--st-warn); }
+  .diag-icon.sev-info { color: var(--st-value); }
 
   .diag-source {
     padding: 2px 8px;
@@ -314,7 +314,7 @@
     font-weight: 600;
     text-transform: uppercase;
     background: rgba(255, 255, 255, 0.05);
-    color: #888;
+    color: var(--st-text-3);
     flex-shrink: 0;
   }
 
@@ -332,21 +332,21 @@
 
   .diag-tooltip-text {
     font-size: 0.65rem;
-    color: #777;
+    color: var(--st-text-3);
     font-style: italic;
   }
 
   .diag-refs {
     font-family: monospace;
     font-size: 0.68rem;
-    color: #666;
+    color: var(--st-text-3);
   }
 
   .diag-details {
     width: 100%;
     font-family: monospace;
     font-size: 0.65rem;
-    color: #555;
+    color: var(--st-text-3);
     padding-left: 26px;
   }
 </style>

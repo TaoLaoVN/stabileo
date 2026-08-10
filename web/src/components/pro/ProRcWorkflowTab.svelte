@@ -108,11 +108,11 @@
   .rc-workflow > :global(*:last-child) { flex: 1 1 auto; min-height: 18rem; overflow: hidden; }
   .code-settings-disclosure,
   .detailing-disclosure,
-  .floors-disclosure { flex: 0 0 auto; min-height: 0; border-bottom: 1px solid rgba(128, 128, 128, 0.3); }
+  .floors-disclosure { flex: 0 0 auto; min-height: 0; border-bottom: 1px solid rgba(143, 163, 179, 0.3); }
   .code-settings-disclosure[open] { max-height: 55vh; overflow: auto; }
   .detailing-disclosure[open] { max-height: 70vh; overflow: auto; }
   .floors-disclosure[open] { max-height: 70vh; overflow: auto; }
-  .count { font-size: 0.72rem; font-weight: 600; padding: 0.1rem 0.4rem; border-radius: 3px; background: rgba(128,128,128,0.3); }
+  .count { font-size: 0.72rem; font-weight: 600; padding: 0.1rem 0.4rem; border-radius: 3px; background: rgba(143, 163, 179,0.3); }
   summary {
     cursor: pointer;
     padding: 0.45rem 1rem;
@@ -129,7 +129,7 @@
     font-weight: 600;
     padding: 0.1rem 0.4rem;
     border-radius: 3px;
-    background: #7a5b00;
-    color: #fff6dd;
+    background: var(--st-surface-3);
+    color: var(--st-text);
   }
 </style>
