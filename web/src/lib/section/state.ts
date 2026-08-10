@@ -31,7 +31,7 @@ import type { Section } from '../store/model.svelte';
 import { ALL_PROFILES } from '../data/steel-profiles';
 import { resolveCanonicalSection, type PropertiesOnlyReason } from './canonical';
 import type { CanonicalGeometry } from '../engine/wasm-solver';
-import { isSolverReady, analyzeSectionTorsion } from '../engine/wasm-solver';
+import { isSolverReady, hasCanonicalGeometryExport, analyzeSectionTorsion } from '../engine/wasm-solver';
 import { CANONICAL_STATE_VERSION } from './version';
 
 /** Where a torsional constant came from. Never inferred, never fabricated. */
@@ -165,7 +165,11 @@ export interface ResolveOptions {
 }
 
 export function resolveSectionState(sec: Section, opts: ResolveOptions = {}): SectionState {
-  if (!isSolverReady()) {
+  // The canonical-geometry WASM export may be absent even when the solver is
+  // ready (older builds, or a build from a branch that predates the section
+  // engine). resolveCanonicalSection throws in that case; treat it the same as
+  // "engine not ready" — properties-only, never a throw.
+  if (!isSolverReady() || !hasCanonicalGeometryExport()) {
     const torsion = resolveTorsion(sec, null, null);
     return {
       kind: 'properties-only',

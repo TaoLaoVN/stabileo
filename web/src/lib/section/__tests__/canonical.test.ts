@@ -17,9 +17,15 @@ import {
   isGeometryBacked,
   type ResolvedSection,
 } from '../canonical';
-import { analyzeSectionBending, sectionGeometryDigest } from '../../engine/wasm-solver';
+import { analyzeSectionBending, hasCanonicalGeometryExport, sectionGeometryDigest } from '../../engine/wasm-solver';
 import { ALL_PROFILES } from '../../data/steel-profiles';
 import type { Section } from '../../store/model.svelte';
+
+// These tests exercise the canonical-geometry WASM export. A build from a
+// branch that predates the section engine does not have it, so skip rather
+// than fail with "WASM solver not initialized".
+const hasCanonical = hasCanonicalGeometryExport();
+const describeCanonical = hasCanonical ? describe : describe.skip;
 
 /** Build a stored section as the app would hold it. */
 function sec(over: Partial<Section> & { id?: number }): Section {
@@ -48,7 +54,7 @@ function backed(r: ResolvedSection) {
 
 // ─── Geometry-backed catalogue families ────────────────────────────
 
-describe('IPE / HEA / HEB resolve to canonical geometry with root fillets', () => {
+describeCanonical('IPE / HEA / HEB resolve to canonical geometry with root fillets', () => {
   const CASES: Array<[string, number, number, number]> = [
     // name, published A (cm2), Iy (cm4), Iz (cm4)
     ['IPE 300', 53.8, 8356, 604],
@@ -86,7 +92,7 @@ describe('IPE / HEA / HEB resolve to canonical geometry with root fillets', () =
   });
 });
 
-describe('CHS resolves to the exact annulus', () => {
+describeCanonical('CHS resolves to the exact annulus', () => {
   it('every CHS profile resolves and is isotropic in bending', () => {
     const chs = ALL_PROFILES.filter((p) => p.family === 'CHS');
     expect(chs.length).toBeGreaterThan(90);   // IRAM-IAS ships 95
@@ -112,7 +118,7 @@ describe('CHS resolves to the exact annulus', () => {
 
 // ─── Properties-only families ──────────────────────────────────────
 
-describe('incomplete rolled families stay properties-only', () => {
+describeCanonical('incomplete rolled families stay properties-only', () => {
   // MC is the only family here, and it earns the place: its page prints a
   // 16.66 % flange slope shared with the C series, but at that slope the built
   // outline misses MC's published properties by 14.6 % median, and no quoting
@@ -162,7 +168,7 @@ describe('incomplete rolled families stay properties-only', () => {
 
 // ─── Identity: name must not touch geometry ────────────────────────
 
-describe('identity is dimensional, never the display name', () => {
+describeCanonical('identity is dimensional, never the display name', () => {
   it('renaming a catalogue section changes neither geometry nor digest', () => {
     const original = backed(resolveCanonicalSection(fromCatalogue('IPE 300')));
     // Same dimensions, different display name — resolved as a parametric
@@ -194,7 +200,7 @@ describe('identity is dimensional, never the display name', () => {
 
 // ─── Digest identity between drawing and numbers ───────────────────
 
-describe('drawing and numerical analysis prove they share one geometry', () => {
+describeCanonical('drawing and numerical analysis prove they share one geometry', () => {
   it('the bending result echoes the geometry digest', () => {
     const r = backed(resolveCanonicalSection(fromCatalogue('IPE 300')));
     const stress = analyzeSectionBending({ geometry: r.geometry, n: 100, my: 50, mz: 10 });
@@ -224,7 +230,7 @@ describe('drawing and numerical analysis prove they share one geometry', () => {
 
 // ─── Unsymmetrical bending reaches the web layer ───────────────────
 
-describe('axial and unsymmetrical bending through the web boundary', () => {
+describeCanonical('axial and unsymmetrical bending through the web boundary', () => {
   it('an equal-leg angle reports non-principal geometric axes', () => {
     const r = backed(resolveCanonicalSection(sec({ shape: 'L', h: 0.1, b: 0.1, t: 0.01 })));
     expect(Math.abs(r.properties.iyz)).toBeGreaterThan(1e-9);
@@ -269,7 +275,7 @@ describe('axial and unsymmetrical bending through the web boundary', () => {
 
 // ─── Custom geometry ───────────────────────────────────────────────
 
-describe('custom geometry is canonical by definition', () => {
+describeCanonical('custom geometry is canonical by definition', () => {
   it('an explicit polygon with a hole resolves and subtracts the void', () => {
     const r = backed(
       resolveCanonicalSection(
@@ -305,7 +311,7 @@ describe('custom geometry is canonical by definition', () => {
  * not hold. The refusal reason is what the panel selects its wording from, so
  * the distinction is pinned here rather than left to the component.
  */
-describe('a properties-only refusal distinguishes a data gap from a shapeless section', () => {
+describeCanonical('a properties-only refusal distinguishes a data gap from a shapeless section', () => {
   const dataGap: Array<[string, string]> = [];
 
   for (const [name, kind] of dataGap) {
@@ -337,7 +343,7 @@ describe('a properties-only refusal distinguishes a data gap from a shapeless se
  * shape, engine call — delivers the same thing, which is where a silently
  * dropped field or a millimetre/metre slip would show up instead.
  */
-describe('IPN, UPN and L are geometry-backed and reproduce their published properties', () => {
+describeCanonical('IPN, UPN and L are geometry-backed and reproduce their published properties', () => {
   for (const family of ['IPN', 'UPN', 'L'] as const) {
     it(`every ${family} builds an outline that integrates to its catalogue row`, () => {
       const profiles = ALL_PROFILES.filter((p) => p.family === family);
@@ -396,7 +402,7 @@ describe('IPN, UPN and L are geometry-backed and reproduce their published prope
  * would fail here immediately, instead of quietly reaching a user as a refusal
  * in the section panel.
  */
-describe('every profile in the catalogue has exact geometry', () => {
+describeCanonical('every profile in the catalogue has exact geometry', () => {
   it('resolves geometry-backed and reproduces its own published properties', () => {
     const failures: string[] = [];
     // The American series (W, HP, M) is excluded deliberately and checked

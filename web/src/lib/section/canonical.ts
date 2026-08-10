@@ -31,6 +31,7 @@ import type { SteelProfile } from '../data/steel-profiles';
 import { ALL_PROFILES } from '../data/steel-profiles';
 import {
   buildSectionGeometry,
+  hasCanonicalGeometryExport,
   sectionGeometryDigest,
   type CanonicalGeometryResponse,
 } from '../engine/wasm-solver';
@@ -133,6 +134,13 @@ const propertiesOnly = (
  * digest or results. A test pins that.
  */
 export function resolveCanonicalSection(sec: Section): ResolvedSection {
+  // Older WASM builds (or builds from branches that predate the section engine)
+  // do not export buildSectionGeometry. Treat the missing export the same as an
+  // unknown geometry: properties-only, never a throw.
+  if (!hasCanonicalGeometryExport()) {
+    return propertiesOnly(sec, { kind: 'noGeometry' });
+  }
+
   const backed = (r: CanonicalGeometryResponse, profileId?: string): GeometryBackedSection => {
     // Section rotation is part of the geometry's identity, not a view setting:
     // it changes which moment component the section sees and therefore the
