@@ -1,14 +1,11 @@
 <script lang="ts">
   import { uiStore, resultsStore, modelStore, historyStore } from '../lib/store';
   import { saveProject, loadFile, saveSession } from '../lib/store/file';
-  import { resolveDeleteTargets } from '../lib/store/delete-selection';
-  import type { ClipboardData } from '../lib/store/ui.svelte.ts';
   import { t } from '../lib/i18n';
   import { hasInvalid2DDisplacements, hasInvalid3DDisplacements } from '../lib/geometry/coordinate-system';
   import { countCollapsedElements, buildSimplified2DModel, type DrawPlane } from '../lib/geometry/plane-projection';
   import { initSolver, isWasmReady } from '../lib/engine/wasm-solver';
   import { transverseOnTrussWarnings } from '../lib/engine/model-diagnostics';
-  import { hasExplicitLocalY, pickElement3DMetadata } from '../lib/model/element-3d-metadata';
 
   import ToolbarResults from './toolbar/ToolbarResults.svelte';
   import ToolbarAdvanced from './toolbar/ToolbarAdvanced.svelte';

@@ -84,11 +84,11 @@ describeCanonical('canonical engine vs published tables', () => {
   it('principal axes of a symmetric section align with geometric axes', () => {
     const r = resolveCanonicalSection(fromCatalogue('HEB 200'));
     if (!isGeometryBacked(r)) throw new Error('HEB 200 did not resolve');
-    // For a doubly symmetric section iyz ≈ 0 and iy ≈ iz, so theta_p is either
+    // For a doubly symmetric section iyz ≈ 0 and iy ≈ iz, so thetaP is either
     // exactly 0 (the engine's explicit guard) or NaN from atan2(0, 0) — both
     // mean "no preferred direction", which is the correct answer here. A NaN
     // fails every numeric comparison, so guard first.
-    const theta = r.properties.theta_p;
+    const theta = r.properties.thetaP;
     if (!Number.isFinite(theta)) return;
     // Normalise to [0, π/2] — the axis is undirected, so θ and θ+π/2 are the same.
     const norm = Math.abs(theta) % (Math.PI / 2);

@@ -125,8 +125,18 @@ export function sectionOutline(sec: Section): SectionOutline {
  * Resolving through the same entry point the model uses means the thumbnail in
  * the picker and the drawing after the click are the same geometry by
  * construction, not by two code paths agreeing.
+ *
+ * Memoized per profile: the picker renders one row per catalogue entry and
+ * re-renders on every search keystroke, and an uncached call here is a full
+ * canonical resolution (a WASM round trip) PER ROW PER KEYSTROKE. The
+ * catalogue is static data, so the cache never needs invalidation.
  */
+const profileOutlineCache = new Map<string, SectionOutline>();
+
 export function profileOutline(profile: SteelProfile): SectionOutline {
+  const cached = profileOutlineCache.get(profile.name);
+  if (cached) return cached;
+
   const mm = (v: number) => v / 1000;
   const probe = {
     id: -1,
@@ -147,5 +157,7 @@ export function profileOutline(profile: SteelProfile): SectionOutline {
   // the profile is actually chosen — so the thumbnail and the committed
   // section cannot disagree.
   const state = resolveSectionState(probe);
-  return sectionOutline({ ...probe, canonical: state } as Section);
+  const outline = sectionOutline({ ...probe, canonical: state } as Section);
+  profileOutlineCache.set(profile.name, outline);
+  return outline;
 }
