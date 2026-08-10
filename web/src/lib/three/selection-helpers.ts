@@ -24,19 +24,6 @@ export const COLORS: Record<string, number> = {
   background:      0x1a1a2e,
 };
 
-/** Set emissive+color on a single Mesh's material (MeshStandard or LineMaterial) */
-export function setMeshColor(mesh: THREE.Mesh, color: number): void {
-  const mat = mesh.material;
-  if (mat instanceof THREE.MeshStandardMaterial) {
-    mat.color.setHex(color);
-    mat.needsUpdate = true;
-  } else if (mat instanceof LineMaterial) {
-    mat.color.setHex(color);
-    mat.needsUpdate = true;
-  }
-}
-
-/** Set color on all Mesh children of a Group */
 /** Give `obj` a private copy of a shared material before it gets recoloured.
  *
  *  Gizmo materials are shared across every instance of a support type, and the
@@ -67,6 +54,20 @@ function privatiseMaterial(obj: THREE.Mesh | THREE.Line): void {
   if (mat?.userData?.shared) obj.material = privatise(mat);
 }
 
+/** Set emissive+color on a single Mesh's material (MeshStandard or LineMaterial) */
+export function setMeshColor(mesh: THREE.Mesh, color: number): void {
+  privatiseMaterial(mesh);
+  const mat = mesh.material;
+  if (mat instanceof THREE.MeshStandardMaterial) {
+    mat.color.setHex(color);
+    mat.needsUpdate = true;
+  } else if (mat instanceof LineMaterial) {
+    mat.color.setHex(color);
+    mat.needsUpdate = true;
+  }
+}
+
+/** Set color on all Mesh children of a Group */
 export function setGroupColor(group: THREE.Group, color: number): void {
   group.traverse((child) => {
     // Skip invisible picking helpers
@@ -77,8 +78,7 @@ export function setGroupColor(group: THREE.Group, color: number): void {
     // release stays visible while the element is selected.
     if (child.userData?.jointGlyph) return;
     if (child instanceof THREE.Mesh) {
-      privatiseMaterial(child);
-      setMeshColor(child, color);
+      setMeshColor(child, color); // privatises internally
     }
     if (child instanceof THREE.Line) {
       privatiseMaterial(child);
