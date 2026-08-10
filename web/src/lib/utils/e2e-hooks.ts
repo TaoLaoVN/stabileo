@@ -81,6 +81,27 @@ export interface StabileoTestHooks {
   hasCertificate(elementId: number): boolean;
   counts(): Record<string, number>;
   runCounts(): Record<string, number> | null;
+  /**
+   * The proposal a PROVISIONAL_BIAXIAL member carries, and the reason that qualifies it.
+   *
+   * Null for any member that is not a proposal — which is itself the assertion a spec makes
+   * about the other 386. Every field a reader needs in order to triage the member is here:
+   * WHICH axis nobody checked, how big its moment is in kN·m, what fraction of the primary
+   * that is, and which combination governs it. A ratio alone cannot be triaged — 12 % between
+   * 4,3 and 1,0 kN·m and 12 % between 430 and 100 kN·m are the same number and completely
+   * different engineering situations — which is why the absolute values travel with it.
+   */
+  provisionalBasis(elementId: number): {
+    method: string;
+    designedAxis: string;
+    uncheckedAxis: string;
+    uncheckedShear: string;
+    secondaryRatio: number;
+    primaryMoment: number;
+    secondaryMoment: number;
+    secondaryCombo: string | null;
+    reasonKeys: string[];
+  } | null;
   selection(): number[];
   reinforcement(elementId: number): unknown;
   rebarSummary(elementId: number): string;
@@ -243,8 +264,34 @@ export function installE2EHooks(): void {
       return {
         total: s.total, verified: s.verified, sectionInadequate: s.sectionInadequate,
         demandUnavailable: s.demandUnavailable, searchExhausted: s.searchExhausted,
-        unsupported: s.unsupported, provisionalRetained: s.provisionalRetained,
+        unsupported: s.unsupported,
+        /**
+         * The proposals, counted apart from everything else.
+         *
+         * It was missing here while the summary carried it, so a browser spec had no way to
+         * see the outcome that replaced UNSUPPORTED for these members and went on asserting
+         * the count that used to hold. A hook that omits a bucket makes the bucket invisible
+         * rather than absent.
+         */
+        provisionalBiaxial: s.provisionalBiaxial,
+        provisionalRetained: s.provisionalRetained,
         notReached: s.notReached, aborted: s.aborted ? 1 : 0,
+      };
+    },
+    provisionalBasis: (id: number) => {
+      const o = verificationStore.outcomeFor(id);
+      const b = o?.provisionalBasis;
+      if (!b) return null;
+      return {
+        method: b.method,
+        designedAxis: b.designedAxis,
+        uncheckedAxis: b.uncheckedAxis,
+        uncheckedShear: b.uncheckedShear,
+        secondaryRatio: b.secondaryRatio,
+        primaryMoment: b.primaryMoment,
+        secondaryMoment: b.secondaryMoment,
+        secondaryCombo: b.secondaryCombo,
+        reasonKeys: (o?.reasons ?? []).map((r) => r.key),
       };
     },
     selection: () => [...uiStore.selectedElements].sort((a, b) => a - b),

@@ -203,6 +203,26 @@
           — {run.unsupported} {t('design.counts.unsupported')}
         </span>
       {/if}
+      <!--
+        The proposals, which this cluster had stopped reporting.
+
+        When the biaxial fallback landed, the members it covers moved out of `unsupported` and
+        into `provisionalBiaxial` — and this cluster has a chip for the first and never gained
+        one for the second. Each chip hides at zero, so the reclassification did not move the
+        badge, it deleted it: on the flagship the run went from "— 22 unsupported" to saying
+        nothing at all about those members, on the one bar that reports what a run produced.
+
+        `design.counts.provisional` was already translated into all fourteen locales and used
+        by nothing, which is the shape of a chip that was intended and never wired.
+
+        Violet, matching the colour the 3-D view paints provisional steel and the state row in
+        the detailing panel. One colour, one meaning, across every surface that names it.
+      -->
+      {#if run.provisionalBiaxial > 0}
+        <span class="count c-prov" data-testid="summary-count-provisional">
+          ◐ {run.provisionalBiaxial} {t('design.counts.provisional')}
+        </span>
+      {/if}
       {#if run.aborted}
         <span class="count c-fail" data-testid="summary-aborted">{t('design.cmd.aborted')}</span>
       {/if}
@@ -323,6 +343,8 @@
   .c-ok { color: #7ee2a8; } .c-warn { color: #f0cc66; } .c-fail { color: #ff8a8a; }
   .c-unavail { color: #99a; } .c-stale { color: #d8d4bb; }
   .c-sect { color: #ffb37a; } .c-exh { color: #d3b0e8; } .c-unsup { color: #99a; }
+  /* The same violet the 3-D view paints a proposal with. */
+  .c-prov { color: #a066d3; }
 
   .banner { display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
     padding: 5px 9px; border-radius: 4px; font-size: 0.73rem; line-height: 1.45; }

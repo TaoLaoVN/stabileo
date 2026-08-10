@@ -365,61 +365,145 @@ test.describe('@slow RC design at scale', () => {
       .toBe(408);
     expect(await page.evaluate(() => window.__stabileo.designRunId())).not.toBe(runIdBefore);
 
-    // 22 of the flagship's 408 members are BEAM-Y elements whose Mz/Vy secondary
-    // demand under the wind combos is 10.4%-17.1% of the governing My/Vz — above
-    // resolveDesignAxes' 10% biaxial threshold. This verifier only ever checks the
-    // PRIMARY axis for beams, so (PR78 review fix, commit 3c54d81) it honestly
-    // refuses those 22 rather than certify an axis it never checked. Pre-fix they
-    // were silently certified VERIFIED with Mz/Vy never inspected — a false pass
-    // baked into an earlier "408/408" figure. See the sibling vitest regression
-    // test ("refuses the 22 BEAM-Y members with unchecked biaxial (Mz/Vy) demand"
-    // in autodesign-regression.test.ts) for the same rationale and the per-member
-    // classification this test mirrors.
+    /**
+     * 22 of the flagship's 408 members are BEAM-Y elements whose Mz/Vy secondary demand under
+     * the wind combos is 10,4 %–17,1 % of the governing My/Vz — above `resolveDesignAxes`'
+     * 10 % biaxial threshold. This verifier only ever checks the PRIMARY axis for beams.
+     *
+     * ── What these 22 have been, in order ──────────────────────────
+     *
+     * VERIFIED, wrongly: certified with Mz/Vy never inspected — a false pass baked into an
+     * earlier "408/408" figure.
+     *
+     * UNSUPPORTED, honestly but unhelpfully: the refusal was accurate about the CHECK and
+     * produced no geometry at all, which on screen is indistinguishable from steel that went
+     * missing.
+     *
+     * PROVISIONAL_BIAXIAL, now: they carry their primary-axis design as an explicit proposal.
+     * Same threshold, same verifier, same bounded search — nothing assumed for the axis nobody
+     * checks, and nothing hidden either.
+     *
+     * This test asserted the middle one and went on passing until the browser hook started
+     * reporting the bucket that replaced it. What follows is the CURRENT contract, asserted
+     * harder than the old one was: not merely "22 somewhere else", but 22 proposals each
+     * carrying the four numbers a reader needs to triage it, none of them certified.
+     *
+     * The sibling vitest test in `autodesign-regression.test.ts` makes the same claims against
+     * the engine; this one makes them through the browser, against what the UI reports.
+     */
     const counts = (await page.evaluate(() => window.__stabileo.runCounts()))!;
     expect(counts.verified).toBe(386);
-    /**
-     * UNSUPPORTED, not SEARCH_EXHAUSTED — the refusal moved to the capability gate.
-     *
-     * No arrangement can satisfy a check the verifier does not perform, so the search could
-     * not succeed and learnt nothing by running: it spent its full candidate budget on every
-     * one of these members to reach an answer available before the first candidate.
-     * `SEARCH_EXHAUSTED` also told the engineer the envelope had been explored, which invites
-     * a section change that cannot help. `UNSUPPORTED` is the accurate claim.
-     */
-    expect(counts.searchExhausted).toBe(0);
-    expect(counts.unsupported).toBe(22);
+    expect(counts.searchExhausted, 'nothing was exhausted').toBe(0);
+    expect(counts.unsupported, 'and nothing is refused outright any more').toBe(0);
+    expect(counts.provisionalBiaxial, 'the 22 are proposals').toBe(22);
     expect(counts.aborted).toBe(0);
     expect(counts.notReached).toBe(0);
+    // Every member is accounted for by exactly one bucket. A member that fell out of the
+    // classification would otherwise hide inside the 408.
+    expect(counts.verified + counts.provisionalBiaxial, 'nothing unclassified').toBe(408);
 
-    // The summary bar counts DISPLAY status, which is PROVIDED-reinforcement-first
-    // (verification.svelte.ts getDisplayStatus): it reads what's actually written
-    // to the member, not the design run's internal outcome. The 386 genuinely
-    // VERIFIED members split into ok (u <= 0.95) and warn (0.95 < u <= 1.00); the
-    // 22 refused members never had reinforcement ACCEPTED (only a provisional
-    // candidate retained internally for the detail view), so
-    // reinforcementProvider() sees nothing for them and they display as
-    // `unavailable`, not `fail` — measured empirically, not assumed.
+    /**
+     * The proposals, member by member.
+     *
+     * A count is not the contract. What makes a proposal honest is that a reader can act on
+     * it, and that requires naming the axis nobody checked, its moment in kN·m, what fraction
+     * of the primary that is, and which combination governs it — plus the sentence that says
+     * the whole thing is a proposal. Asserting only "22" would let every one of those fields
+     * go empty without a test noticing.
+     */
+    const outcomes = await page.evaluate(() => {
+      const h = window.__stabileo;
+      return h.elementIds().map((id) => ({
+        id,
+        outcome: h.outcome(id),
+        certificate: h.hasCertificate(id),
+        basis: h.provisionalBasis(id),
+      }));
+    });
+    const proposals = outcomes.filter((o) => o.outcome === 'PROVISIONAL_BIAXIAL');
+    expect(proposals.length, 'proposals per member match the run count').toBe(22);
+
+    for (const p of proposals) {
+      const where = `member ${p.id}`;
+      // The two things a proposal may never be.
+      expect(p.outcome, `${where} is not verified`).not.toBe('VERIFIED');
+      expect(p.certificate, `${where} holds no certificate`).toBe(false);
+      // …and the five it must carry.
+      const b = p.basis!;
+      expect(b, `${where} states its basis`).not.toBeNull();
+      expect(b.method, `${where} came from the ordinary search`).toBe('primaryAxisDesign');
+      expect(b.uncheckedAxis, `${where} names the unchecked axis`).toMatch(/^M[yz]$/);
+      expect(b.uncheckedAxis, `${where}'s unchecked axis is not the one it designed`)
+        .not.toBe(b.designedAxis);
+      expect(b.secondaryMoment, `${where} states the secondary moment`).toBeGreaterThan(0);
+      expect(b.primaryMoment, `${where} states the primary it is measured against`)
+        .toBeGreaterThan(0);
+      // Above the threshold that made it a proposal, and below unity by construction.
+      expect(b.secondaryRatio, `${where} ratio is above the biaxial threshold`)
+        .toBeGreaterThan(0.10);
+      expect(b.secondaryRatio, `${where} ratio is a real fraction`).toBeLessThan(1);
+      expect(b.secondaryCombo, `${where} names the governing combination`).toBeTruthy();
+      // The warning itself — the sentence the panels, the report and the sheets all render.
+      expect(b.reasonKeys, `${where} carries the proposal warning`)
+        .toContain('design.reason.provisionalBiaxial');
+      expect(b.reasonKeys, `${where} says which axis went unchecked`)
+        .toContain('design.reason.secondaryAxisUnchecked');
+    }
+
+    // And the converse: nothing that IS verified may carry a proposal's basis, and every
+    // verified member must hold the certificate the proposals do not.
+    for (const o of outcomes.filter((x) => x.outcome === 'VERIFIED')) {
+      expect(o.basis, `verified member ${o.id} carries no proposal`).toBeNull();
+      expect(o.certificate, `verified member ${o.id} holds a certificate`).toBe(true);
+    }
+
+    /**
+     * The summary bar counts DISPLAY status, which is a different question from the run
+     * outcome and now gives a different answer for these 22.
+     *
+     * `getDisplayStatus` is PROVIDED-reinforcement-first: it verifies the steel actually
+     * written to the member rather than reporting what the design run decided. Under
+     * UNSUPPORTED these members had no steel written at all, so they read `unavailable`. A
+     * proposal DOES write its bars — that is what makes it inspectable in 3-D — and the
+     * authoritative verifier then refuses them on the biaxial check, by construction, every
+     * time. So they read `fail`.
+     *
+     * That is a true statement about the STEEL and a poor label for the MEMBER, and it is
+     * why the run-outcome chip asserted above matters: the bar reads "✗ 22 fail · ◐ 22
+     * provisional", and the table gives each of those rows a provisional badge and its own
+     * filter. Whether the display status itself should gain a `provisional` value is a UI
+     * decision with a wide blast radius — the viewport colour map and every row filter read
+     * it — and it belongs to the UI pass, not here. What this test pins is that the number
+     * is accounted for and named somewhere a reader will see, rather than silently absent.
+     *
+     * Measured, not assumed: 22 `fail`, 0 `unavailable`.
+     */
     const display = await page.evaluate(() => window.__stabileo.counts());
-    expect(display.ok + display.warn).toBe(386);
-    expect(display.fail).toBe(0);
-    expect(display.unavailable).toBe(22);
+    expect(display.ok + display.warn, 'the fully checked members').toBe(386);
+    expect(display.fail, 'the proposals, whose written steel the verifier refuses').toBe(22);
+    expect(display.unavailable, 'nothing is left without a status at all').toBe(0);
+    // Every member lands in exactly one display bucket. A member missing from all of them
+    // would be a row the summary bar does not describe.
+    expect(display.ok + display.warn + display.fail + display.unavailable + display.stale,
+      'every member is described by the summary bar').toBe(408);
     await expect(page.getByTestId('summary-count-verified')).toContainText(String(display.ok));
     await expect(page.getByTestId('summary-count-warn')).toContainText(String(display.warn));
     await expect(page.getByTestId('summary-count-fail')).toContainText(String(display.fail));
     await expect(page.getByTestId('summary-count-unavailable')).toContainText(String(display.unavailable));
     /**
-     * The 22 refusals are surfaced in the run-outcome cluster, under the chip that now
-     * describes them.
+     * The 22 proposals are surfaced in the run-outcome cluster, under the chip that describes
+     * them NOW.
      *
-     * Each chip hides at zero, so the reclassification moves the badge rather than losing it:
-     * `summary-count-exhausted` is gone because nothing was exhausted, and
-     * `summary-count-unsupported` carries the 22. Asserting BOTH is the point — a chip that
-     * silently vanished would have made the reclassification a regression in the UI even
-     * while it was a correction in the engine.
+     * Each chip hides at zero, so a reclassification either moves the badge or deletes it, and
+     * this one deleted it: the biaxial fallback moved these members out of `unsupported` and
+     * the cluster had no chip for where they went, so the bar simply stopped mentioning them.
+     * Asserting all three is the point — that nothing is exhausted, that nothing is refused
+     * outright, and that the members are still counted somewhere a reader will see.
      */
     await expect(page.getByTestId('summary-count-exhausted')).toHaveCount(0);
-    await expect(page.getByTestId('summary-count-unsupported'))
-      .toContainText(String(counts.unsupported));
+    await expect(page.getByTestId('summary-count-unsupported')).toHaveCount(0);
+    await expect(page.getByTestId('summary-count-provisional'))
+      .toContainText(String(counts.provisionalBiaxial));
 
     // Auto-design selected is the default scope; all-un-designed is explicit.
     await expect(page.getByTestId('cmd-autodesign')).toBeVisible();

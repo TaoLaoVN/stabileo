@@ -58,6 +58,24 @@ export interface TestHooks {
   hasCertificate(id: number): boolean;
   counts(): Record<string, number>;
   runCounts(): Record<string, number> | null;
+  /**
+   * The proposal a PROVISIONAL_BIAXIAL member carries, or null when it is not one.
+   *
+   * Everything a reader needs in order to triage the member: which axis nobody checked, its
+   * moment in kN·m, what fraction of the primary that is, the combination that governs it, and
+   * the warning keys the panels render. A ratio alone cannot be triaged.
+   */
+  provisionalBasis(elementId: number): {
+    method: string;
+    designedAxis: string;
+    uncheckedAxis: string;
+    uncheckedShear: string;
+    secondaryRatio: number;
+    primaryMoment: number;
+    secondaryMoment: number;
+    secondaryCombo: string | null;
+    reasonKeys: string[];
+  } | null;
   selection(): number[];
   reinforcement(id: number): unknown;
   rebarSummary(id: number): string;
