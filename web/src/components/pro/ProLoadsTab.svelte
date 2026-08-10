@@ -485,6 +485,12 @@
     const n = parseFloat(String(value).replace(',', '.'));
     return Number.isFinite(n) ? n : fallback;
   }
+
+  /*
+   * Which part of the load definition is being edited. Cases first: a load
+   * belongs to a case, so the case is chosen before the load exists.
+   */
+  let loadSection = $state('cases');
 </script>
 
 <div class="pro-loads">
@@ -498,8 +504,38 @@
 
   <!-- Load Cases Management (collapsible) -->
   <div class="pro-cases-section">
-    <details open>
-      <summary class="pro-section-label">{t('pro.loadCases')} ({loadCases.length})</summary>
+    <!--
+      One question — which part of the load definition am I editing — asked
+      once.
+      ────────────────────────────────────────────────────────────────────
+      Load cases, combinations and the load-entry form were three collapsible
+      sections stacked in one column, the first and third open by default. So
+      the case table and the entry form competed for the same height while the
+      combinations sat between them, and adding a load to a case you had just
+      selected meant scrolling past twelve combinations to reach the form.
+
+      They are three stages of one task, not three things to watch at once. The
+      strip carries each one's count, so you can see there are ten cases and
+      twelve combinations without opening either.
+    -->
+    <div class="load-tabs" role="tablist">
+      {#each [
+        { id: 'cases', labelKey: 'pro.loadCases', n: loadCases.length },
+        { id: 'combos', labelKey: 'pro.combos', n: combinations.length },
+        { id: 'add', labelKey: 'pro.addLoad', n: caseLoads.length },
+      ] as sec (sec.id)}
+        <button
+          class="load-tab"
+          class:on={loadSection === sec.id}
+          role="tab"
+          aria-selected={loadSection === sec.id}
+          onclick={() => (loadSection = sec.id)}
+          data-testid="load-tab-{sec.id}"
+        >{t(sec.labelKey)}<span class="load-tab-n">{sec.n}</span></button>
+      {/each}
+    </div>
+
+    {#if loadSection === 'cases'}
     <div class="pro-section-content">
     <!-- Load visibility controls -->
     <div class="pro-vis-bar">
@@ -557,13 +593,12 @@
       <button class="pro-btn-sm" onclick={addLoadCase}>+</button>
     </div>
     </div>
-    </details>
+    {/if}
   </div>
 
   <!-- Combinations -->
   <div class="pro-combos-section">
-    <details>
-      <summary class="pro-section-label">{t('pro.combos')} ({combinations.length})</summary>
+    {#if loadSection === 'combos'}
       <div class="pro-combos-list">
         {#each combinations as combo}
           <div class="pro-combo-card">
@@ -612,13 +647,12 @@
           </button>
         </div>
       </div>
-    </details>
+    {/if}
   </div>
 
   <!-- Add Load (collapsible) -->
   <div class="pro-addload-section">
-    <details open>
-      <summary class="pro-section-label">{t('pro.addLoad')} ({caseLoads.length} {t('pro.inCase')} {loadCases.find(c => c.id === activeCaseId)?.name ?? '?'})</summary>
+    {#if loadSection === 'add'}
   <div class="pro-section-content">
 
   <!-- Load kind selector -->
@@ -718,7 +752,7 @@
     {/if}
   </div>
   </div>
-    </details>
+    {/if}
   </div>
 
   <!-- Loads table for active case -->
@@ -872,6 +906,37 @@
 {/if}
 
 <style>
+  /* ── The load-definition selector ──────────────────────────────────── */
+
+  .load-tabs {
+    display: flex;
+    gap: 0.15rem;
+    padding: 0.35rem 0 0.4rem;
+    border-bottom: 1px solid var(--st-hair);
+    margin-bottom: 0.5rem;
+  }
+
+  .load-tab {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.3rem;
+    background: none;
+    border: 1px solid transparent;
+    border-radius: var(--st-radius);
+    color: var(--st-text-3);
+    font-family: var(--st-sans);
+    font-size: 0.74rem;
+    padding: 0.2rem 0.5rem;
+    cursor: pointer;
+    white-space: nowrap;
+  }
+
+  .load-tab:hover { background: var(--st-surface-3); color: var(--st-text); }
+  .load-tab.on { color: var(--st-accent); border-color: var(--st-accent); }
+
+  .load-tab-n { font-family: var(--st-mono); font-size: 0.62rem; color: var(--st-value); }
+  .load-tab.on .load-tab-n { color: var(--st-accent); }
+
   .pro-loads { display: flex; flex-direction: column; }
   .pro-sw-bar {
     display: flex; align-items: center; padding: 6px 10px;
