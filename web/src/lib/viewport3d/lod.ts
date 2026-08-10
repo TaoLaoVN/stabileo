@@ -96,8 +96,14 @@ export function applyLowDetail(
 export const HEAVY_MODEL_VISUALS = 3000;
 export const HEAVY_MODEL_VISUALS_SECTIONS = 1200;
 
-/** Objects a single support gizmo puts in the scene — a Group of roughly eight
- *  Lines/Meshes, depending on the support type.
+/** Objects a single support gizmo puts in the scene.
+ *
+ *  Measured per type: spring 3, pinned 4, roller 6, custom 6, fixed 8,
+ *  rollerXY 8. This is the WORST case, chosen deliberately — for an LOD budget
+ *  the safe error is to overestimate. Overshooting engages the LOD a little
+ *  early and costs some detail during motion; undershooting is what produced
+ *  the stutter this constant exists to fix. Fixed and pinned dominate real
+ *  models, so the typical error is small.
  *
  *  Supports were missing from the budget, and on a real model they dominate it:
  *  la Bombonera has 2476 elements, 120 shells and 205 supports, and 1640 of its

@@ -46,14 +46,25 @@ export function setMeshColor(mesh: THREE.Mesh, color: number): void {
  *  actually being highlighted. The clone is private, so `disposeObject` frees
  *  it normally. */
 function privatiseMaterial(obj: THREE.Mesh | THREE.Line): void {
+  // THREE.Material.clone() deep-copies userData, so the clone inherits
+  // `shared: true` unless it is cleared. Leaving it set would defeat the whole
+  // point twice over: disposeObject skips shared materials, so the private
+  // clone would never be freed, and the next recolour would clone it again —
+  // one leaked material per recolour, and syncSelection runs often.
+  const privatise = (m: THREE.Material): THREE.Material => {
+    const c = m.clone();
+    delete c.userData.shared;
+    return c;
+  };
+
   const mat = obj.material;
   if (Array.isArray(mat)) {
     if (mat.some(m => m.userData?.shared)) {
-      obj.material = mat.map(m => (m.userData?.shared ? m.clone() : m));
+      obj.material = mat.map(m => (m.userData?.shared ? privatise(m) : m));
     }
     return;
   }
-  if (mat?.userData?.shared) obj.material = mat.clone();
+  if (mat?.userData?.shared) obj.material = privatise(mat);
 }
 
 export function setGroupColor(group: THREE.Group, color: number): void {

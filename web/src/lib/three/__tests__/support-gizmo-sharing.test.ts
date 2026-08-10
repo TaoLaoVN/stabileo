@@ -169,3 +169,42 @@ describe('shared materials survive per-gizmo recolouring', () => {
     expect(lineColour(a)).toBe(original);
   });
 });
+
+describe('the private clone is genuinely private', () => {
+  function firstLine(o: THREE.Object3D): THREE.Line | null {
+    let found: THREE.Line | null = null;
+    o.traverse((c) => { if (!found && c instanceof THREE.Line) found = c as THREE.Line; });
+    return found;
+  }
+
+  it('does not inherit the shared flag', () => {
+    // THREE.Material.clone() deep-copies userData. If `shared` rode along,
+    // disposeObject would skip the clone forever and every later recolour
+    // would clone again.
+    const [g] = makeMany(1, 'fixed3d');
+    setGroupColor(g, 0xff0000);
+    const mat = (firstLine(g)!.material as THREE.Material);
+    expect(mat.userData?.shared).toBeUndefined();
+  });
+
+  it('recolouring repeatedly reuses the same private material', () => {
+    const [g] = makeMany(1, 'fixed3d');
+    setGroupColor(g, 0xff0000);
+    const first = firstLine(g)!.material;
+    setGroupColor(g, 0x00ff00);
+    setGroupColor(g, 0x0000ff);
+    expect(firstLine(g)!.material).toBe(first); // no new clone per recolour
+  });
+
+  it('the private clone is disposed with the gizmo', () => {
+    const [g] = makeMany(1, 'fixed3d');
+    setGroupColor(g, 0xff0000);
+    const mat = firstLine(g)!.material as THREE.Material;
+    let disposed = false;
+    mat.addEventListener('dispose', () => { disposed = true; });
+
+    disposeObject(g);
+
+    expect(disposed).toBe(true); // the shared original is still protected
+  });
+});
