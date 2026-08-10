@@ -103,6 +103,12 @@
    * ends it. Nothing is nested that does not belong to the running analysis:
    * the train selector appears when Moving Load is running, not before.
    *
+   * The three analyses that exist in both modes read and clear the store slot
+   * for the mode they are IN. `isActive` was already mode-aware; `close` was
+   * not, so in 3D the ✕ on P-Δ, Pcr or Dynamic cleared the 2D slot, the 3D one
+   * stayed set, the header came straight back and there was no way out of the
+   * analysis at all.
+   *
    * `isActive` is read from the stores rather than from a local flag, so the
    * panel reflects what is actually running — including analyses started from
    * a toast action or restored with a saved model — and closing goes through
@@ -122,13 +128,13 @@
       close: () => { uiStore.selectMode = 'elements'; resultsStore.stressQuery = null; } },
     { key: 'pdelta', labelKey: 'advanced.pdelta',
       isActive: () => !!(is3D ? resultsStore.pdeltaResult3D : resultsStore.pdeltaResult),
-      close: () => resultsStore.clearPDelta() },
+      close: () => (is3D ? resultsStore.clearPDelta3D() : resultsStore.clearPDelta()) },
     { key: 'buckling', labelKey: 'advanced.buckling',
       isActive: () => !!(is3D ? resultsStore.bucklingResult3D : resultsStore.bucklingResult),
-      close: () => resultsStore.clearBuckling() },
+      close: () => (is3D ? resultsStore.clearBuckling3D() : resultsStore.clearBuckling()) },
     { key: 'modal', labelKey: 'advanced.dynamic',
       isActive: () => !!(is3D ? resultsStore.modalResult3D : resultsStore.modalResult),
-      close: () => resultsStore.clearModal() },
+      close: () => (is3D ? resultsStore.clearModal3D() : resultsStore.clearModal()) },
     { key: 'plastic', labelKey: 'advanced.plasticCollapse',
       isActive: () => !!resultsStore.plasticResult,
       close: () => resultsStore.clearPlastic() },

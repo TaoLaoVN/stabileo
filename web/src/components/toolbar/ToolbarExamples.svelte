@@ -98,7 +98,16 @@
   <div class="examples-list">
     {#each items as ex}
       <button class="example-item" onclick={async () => {
-        if (to3D && uiStore.analysisMode !== '3d') uiStore.analysisMode = '3d';
+        /*
+         * The example decides the mode, in BOTH directions.
+         *
+         * Switching to 3D for a 3D example but never back left a planar model
+         * opened from 2D-in-3D: a three-hinge arch has no out-of-plane
+         * restraint, so the 3D solver correctly called it a mechanism and the
+         * example looked broken. An example carries the mode it was built for.
+         */
+        const want = to3D ? '3d' : '2d';
+        if (uiStore.analysisMode !== want) uiStore.analysisMode = want;
         await modelStore.loadExample(ex.id);
         resultsStore.clear();
         resultsStore.clear3D();
