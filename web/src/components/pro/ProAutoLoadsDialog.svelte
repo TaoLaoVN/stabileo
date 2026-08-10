@@ -697,7 +697,7 @@
     margin-top: 8px; padding: 8px; background: var(--st-bg); border-radius: 4px; font-size: 10px;
     font-family: monospace;
   }
-  .al-preview-title { color: var(--st-value); font-weight: 600; margin-bottom: 4px; }
+  .al-preview-title { color: var(--st-text-2); font-weight: 600; margin-bottom: 4px; }
   .al-preview-row { color: var(--st-text-2); margin-bottom: 2px; }
   .al-preview-floor { color: var(--st-text-2); padding-left: 8px; }
   .al-footer {

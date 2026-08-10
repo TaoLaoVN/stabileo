@@ -1949,7 +1949,7 @@
   .pro-verif-title {
     font-size: 0.8rem;
     font-weight: 600;
-    color: var(--st-value);
+    color: var(--st-text-2);
   }
 
   .normative-sel {
@@ -1981,7 +1981,7 @@
     font-size: 0.6rem;
     color: var(--st-text-3);
   }
-  .mix-cat-label { color: var(--st-value); font-weight: 600; }
+  .mix-cat-label { color: var(--st-text-2); font-weight: 600; }
   .mix-sel { min-width: 100px; }
 
   .pro-wasm-notice {
@@ -2154,7 +2154,7 @@
   .memo-title {
     font-size: 0.65rem;
     font-weight: 600;
-    color: var(--st-value);
+    color: var(--st-text-2);
     margin-bottom: 4px;
     text-transform: uppercase;
   }
@@ -2233,7 +2233,7 @@
   .gallery-title {
     font-size: 0.62rem;
     font-weight: 600;
-    color: var(--st-value);
+    color: var(--st-text-2);
     margin-bottom: 6px;
     text-transform: uppercase;
   }
@@ -2311,7 +2311,7 @@
   .override-title {
     font-size: 0.6rem;
     font-weight: 600;
-    color: var(--st-value);
+    color: var(--st-text-2);
     text-transform: uppercase;
   }
   .override-revert {
@@ -2418,7 +2418,7 @@
 
   /* ── Connections tab ── */
   .conn-details { margin-bottom: 6px; }
-  .conn-summary { font-size: 0.72rem; color: var(--st-value); font-weight: 600; cursor: pointer; padding: 4px 8px; background: var(--st-surface); border-radius: 4px; }
+  .conn-summary { font-size: 0.72rem; color: var(--st-text-2); font-weight: 600; cursor: pointer; padding: 4px 8px; background: var(--st-surface); border-radius: 4px; }
   .conn-summary:hover { background: var(--st-surface-3); }
   .conn-panel { padding: 6px 8px; display: flex; flex-direction: column; gap: 6px; }
   .conn-form { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }

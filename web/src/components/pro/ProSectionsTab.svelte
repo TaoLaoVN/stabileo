@@ -351,7 +351,7 @@
     padding: 8px 12px;
     font-size: 0.78rem;
     font-weight: 600;
-    color: var(--st-value);
+    color: var(--st-text-2);
     cursor: pointer;
     user-select: none;
     list-style: none;
@@ -363,7 +363,7 @@
   .add-panel[open] > .add-panel-summary::before {
     content: '− ';
   }
-  .add-panel-summary:hover { color: var(--st-value); }
+  .add-panel-summary:hover { color: var(--st-text-2); }
   .add-panel-body {
     flex: 1;
     min-height: 0;

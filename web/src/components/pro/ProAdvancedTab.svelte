@@ -885,6 +885,32 @@
     }
     solving = false;
   }
+
+  /*
+   * Which advanced analysis owns the panel. Null is a real state: the strip
+   * alone, so the seventeen are browsable without any of their forms open.
+   */
+  let advView = $state<string | null>(null);
+
+  const ADV_VIEWS = $derived([
+        { id: 'timehistory', label: 'Time History' },
+        { id: 'harmonic', label: t('pro.harmonicTitle') },
+        { id: 'nolineal', label: 'No lineal' },
+        { id: 'arclength', label: t('pro.arcLengthTitle') },
+        { id: 'dispcontrol', label: t('pro.dispControlTitle') },
+        { id: 'imperfections', label: t('pro.imperfectionsTitle') },
+        { id: 't', label: t('pro.winklerFoundation') },
+        { id: 'ssi', label: t('pro.ssiTitle') },
+        { id: 't8', label: t('pro.contactGap') },
+        { id: 't9', label: t('pro.stagedConstruction') },
+        { id: 't10', label: t('pro.creepShrinkage') },
+        { id: 'cable', label: t('pro.cableTitle') },
+        { id: 'influenceline3d', label: t('pro.influenceLine3dTitle') },
+        { id: 'modelreduction', label: t('pro.modelReductionTitle') },
+        { id: 'multicase', label: t('pro.multiCaseTitle') },
+        { id: 'sectionanalyzer', label: t('pro.sectionAnalyzerTitle') },
+        { id: 'constrained', label: t('pro.constrainedTitle') },
+  ]);
 </script>
 
 <div class="adv-tab">
@@ -1040,8 +1066,34 @@
     </div>
 
     <!-- ── 5. Time History ── -->
-    <details class="adv-group-details">
-      <summary class="adv-title">Time History</summary>
+      <!--
+        One analysis at a time, chosen from a strip.
+        ───────────────────────────────────────────
+        Seventeen collapsibles in one column — time history, harmonic,
+        non-linear, arc length, displacement control, imperfections, Winkler,
+        SSI, contact, staged construction, creep, cables, 3D influence lines,
+        model reduction, multi-case, the section analyser and constrained
+        modes. Each carries a form and most carry a results table, so finding
+        one meant scrolling a list of seventeen titles, and opening two put
+        their forms far enough apart that neither could be compared with the
+        other anyway.
+
+        Same treatment as the Results and Loads panels, and the same reasoning
+        as Basic's Advanced: these are not seventeen things to configure at
+        once, they are seventeen answers to "which analysis am I setting up".
+      -->
+      <div class="adv-picker">
+        {#each ADV_VIEWS as v (v.id)}
+          <button
+            class="adv-chip"
+            class:on={advView === v.id}
+            onclick={() => (advView = advView === v.id ? null : v.id)}
+            data-testid="adv-chip-{v.id}"
+          >{v.label}</button>
+        {/each}
+      </div>
+
+      {#if advView === 'timehistory'}
       <div class="adv-panel">
         <div class="adv-form">
           <label class="adv-label">dt (s): <input type="number" class="adv-num" bind:value={thDt} min={0.001} max={1} step={0.001} /></label>
@@ -1074,11 +1126,10 @@
           {#if thResult.timeAtPeak != null} — t={fmtNum(thResult.timeAtPeak)} s{/if}
         </div>
       {/if}
-    </details>
+      {/if}
 
     <!-- ── 6b. Harmonic Response ── -->
-    <details class="adv-group-details">
-      <summary class="adv-title">{t('pro.harmonicTitle')}</summary>
+      {#if advView === 'harmonic'}
       <div class="adv-panel">
         <div class="adv-form">
           <label class="adv-label">f min (Hz): <input type="number" class="adv-num" bind:value={harmFMin} min={0.01} max={100} step={0.1} /></label>
@@ -1112,11 +1163,10 @@
           </details>
         {/if}
       {/if}
-    </details>
+      {/if}
 
     <!-- ── 7. Nonlinear ── -->
-    <details class="adv-group-details">
-      <summary class="adv-title">No lineal</summary>
+      {#if advView === 'nolineal'}
       <div class="adv-panel">
         <div class="adv-form">
           <label class="adv-label">Tipo: <select class="adv-sel" bind:value={nlType}><option value="pushover">Pushover</option><option value="corotational">Corotacional</option><option value="fiber">Fibra</option></select></label>
@@ -1141,11 +1191,10 @@
           {#if nlResult.numHinges != null} — {nlResult.numHinges} {t('pro.hinges')}{/if}
         </div>
       {/if}
-    </details>
+      {/if}
 
     <!-- ── 7b. Arc-Length ── -->
-    <details class="adv-group-details">
-      <summary class="adv-title">{t('pro.arcLengthTitle')}</summary>
+      {#if advView === 'arclength'}
       <div class="adv-panel">
         <div class="adv-form">
           <label class="adv-label">Max iter: <input type="number" class="adv-num" bind:value={arcMaxIter} min={1} max={500} /></label>
@@ -1162,11 +1211,10 @@
           {#if arcResult.steps != null} — {arcResult.steps.length} {t('pro.steps')}{/if}
         </div>
       {/if}
-    </details>
+      {/if}
 
     <!-- ── 7c. Displacement Control ── -->
-    <details class="adv-group-details">
-      <summary class="adv-title">{t('pro.dispControlTitle')}</summary>
+      {#if advView === 'dispcontrol'}
       <div class="adv-panel">
         <div class="adv-form">
           <label class="adv-label">{t('pro.nodeLabel')}:
@@ -1188,11 +1236,10 @@
           {#if dcResult.maxDisplacement != null} — δmax={fmtNum(dcResult.maxDisplacement)} m{/if}
         </div>
       {/if}
-    </details>
+      {/if}
 
     <!-- ── 7d. Imperfections ── -->
-    <details class="adv-group-details">
-      <summary class="adv-title">{t('pro.imperfectionsTitle')}</summary>
+      {#if advView === 'imperfections'}
       <div class="adv-panel">
         <div class="adv-form">
           <label class="adv-label">{t('pro.imperfType')}:
@@ -1212,14 +1259,13 @@
           {#if imperfResult.imperfectionShape != null} — {imperfResult.imperfectionShape.length} {t('pro.nodes')}{/if}
         </div>
       {/if}
-    </details>
+      {/if}
 
     <!-- ─── Divider: Modelado especial ─── -->
     <div class="adv-divider">Modelado especial</div>
 
     <!-- ── 8. Winkler Foundation ── -->
-    <details class="adv-group-details">
-      <summary class="adv-title">{t('pro.winklerFoundation')}</summary>
+      {#if advView === 't'}
       <div class="adv-panel">
         <div class="adv-form">
           <label class="adv-label">{t('pro.element')}:
@@ -1256,11 +1302,10 @@
           {#if winklerResult.maxDisplacement != null} — <span>{t('pro.maxDisp')}: {fmtNum(winklerResult.maxDisplacement)} m</span>{/if}
         </div>
       {/if}
-    </details>
+      {/if}
 
     <!-- ── 9. SSI ── -->
-    <details class="adv-group-details">
-      <summary class="adv-title">{t('pro.ssiTitle')}</summary>
+      {#if advView === 'ssi'}
       <div class="adv-panel">
         <div class="adv-form">
           <label class="adv-label">{t('pro.ssiNode')}:
@@ -1327,11 +1372,10 @@
           {#if ssiResult.maxDisplacement != null} — <span>{t('pro.maxDisp')}: {fmtNum(ssiResult.maxDisplacement)} m</span>{/if}
         </div>
       {/if}
-    </details>
+      {/if}
 
     <!-- ── 10. Contact / Gap ── -->
-    <details class="adv-group-details">
-      <summary class="adv-title">{t('pro.contactGap')}</summary>
+      {#if advView === 't8'}
       <div class="adv-panel">
         <div class="adv-form">
           <label class="adv-label">{t('pro.element')}:
@@ -1372,11 +1416,10 @@
           {#if contactResult.deactivated} — <span>{t('pro.deactivatedElems')}: {contactResult.deactivated.length}</span>{/if}
         </div>
       {/if}
-    </details>
+      {/if}
 
     <!-- ── 11. Staged Construction ── -->
-    <details class="adv-group-details">
-      <summary class="adv-title">{t('pro.stagedConstruction')}</summary>
+      {#if advView === 't9'}
       <div class="adv-panel">
         <button class="adv-btn-sm" onclick={addStage}>{t('pro.addStage')}</button>
         {#each stages as stage, i}
@@ -1409,11 +1452,10 @@
           {#if stagedResult.totalDisplacement != null} <span>{t('pro.totalMaxDisp')}: {fmtNum(stagedResult.totalDisplacement)} m</span>{/if}
         </div>
       {/if}
-    </details>
+      {/if}
 
     <!-- ── 12. Creep & Shrinkage ── -->
-    <details class="adv-group-details">
-      <summary class="adv-title">{t('pro.creepShrinkage')}</summary>
+      {#if advView === 't10'}
       <div class="adv-panel">
         <div class="adv-form">
           <label class="adv-label">f'c (MPa): <input type="number" class="adv-num" bind:value={creepFc} min={10} max={100} step={5} /></label>
@@ -1443,14 +1485,13 @@
           {#if creepResult.maxDisplacement != null} — {t('pro.finalMaxDisp')}: {fmtNum(creepResult.maxDisplacement)} m{/if}
         </div>
       {/if}
-    </details>
+      {/if}
 
     <!-- ─── Divider: Herramientas avanzadas ─── -->
     <div class="adv-divider">{t('pro.advancedTools')}</div>
 
     <!-- ── 13. Cable (2D) ── -->
-    <details class="adv-group-details">
-      <summary class="adv-title">{t('pro.cableTitle')}</summary>
+      {#if advView === 'cable'}
       <div class="adv-panel">
         <div class="adv-form">
           <label class="adv-label">{t('pro.maxIter')}: <input type="number" class="adv-num" bind:value={cableMaxIter} min={1} max={500} /></label>
@@ -1466,11 +1507,10 @@
           {#if cableResult.maxTension != null} — T_max={fmtNum(cableResult.maxTension)} kN{/if}
         </div>
       {/if}
-    </details>
+      {/if}
 
     <!-- ── 14. Influence Lines 3D ── -->
-    <details class="adv-group-details">
-      <summary class="adv-title">{t('pro.influenceLine3dTitle')}</summary>
+      {#if advView === 'influenceline3d'}
       <div class="adv-panel">
         <div class="adv-form">
           <label class="adv-label">{t('pro.element')}:
@@ -1511,11 +1551,10 @@
           </details>
         {/if}
       {/if}
-    </details>
+      {/if}
 
     <!-- ── 15. Model Reduction ── -->
-    <details class="adv-group-details">
-      <summary class="adv-title">{t('pro.modelReductionTitle')}</summary>
+      {#if advView === 'modelreduction'}
       <div class="adv-panel">
         <div class="adv-form">
           <label class="adv-label">{t('pro.method')}:
@@ -1543,11 +1582,10 @@
           {#if reductionResult.ratio != null} ({(reductionResult.ratio * 100).toFixed(0)}%){/if}
         </div>
       {/if}
-    </details>
+      {/if}
 
     <!-- ── 16. Multi-Case Solver ── -->
-    <details class="adv-group-details">
-      <summary class="adv-title">{t('pro.multiCaseTitle')}</summary>
+      {#if advView === 'multicase'}
       <div class="adv-panel">
         <p class="adv-hint">{t('pro.multiCaseHint')}</p>
         <button class="adv-run-btn" onclick={handleMultiCase} disabled={!hasModel || solving || !wasmAvailable}>{solving ? t('pro.solving') : t('pro.solveMultiCase')}</button>
@@ -1558,11 +1596,10 @@
           {#if multiCaseResult.maxDisplacement != null} — δmax={fmtNum(multiCaseResult.maxDisplacement)} m{/if}
         </div>
       {/if}
-    </details>
+      {/if}
 
     <!-- ── 17. Section Analyzer ── -->
-    <details class="adv-group-details">
-      <summary class="adv-title">{t('pro.sectionAnalyzerTitle')}</summary>
+      {#if advView === 'sectionanalyzer'}
       <div class="adv-panel">
         <div class="adv-form">
           <label class="adv-label">{t('pro.shape')}:
@@ -1622,11 +1659,10 @@
           </div>
         {/if}
       {/if}
-    </details>
+      {/if}
 
     <!-- ── 18. Constrained Solver ── -->
-    <details class="adv-group-details">
-      <summary class="adv-title">{t('pro.constrainedTitle')}</summary>
+      {#if advView === 'constrained'}
       <div class="adv-panel">
         <div class="adv-form">
           <label class="adv-label">{t('pro.constraintMethod')}:
@@ -1650,12 +1686,39 @@
           {#if constrainedResult.constraintForces?.length} — {constrainedResult.constraintForces.length} {t('pro.constraintForcesCount')}{/if}
         </div>
       {/if}
-    </details>
+      {/if}
 
   </div>
 </div>
 
 <style>
+  /* ── The analysis picker ───────────────────────────────────────────── */
+
+  .adv-picker {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.15rem;
+    padding: 0.35rem 0 0.45rem;
+    border-bottom: 1px solid var(--st-hair);
+    margin-bottom: 0.5rem;
+  }
+
+  .adv-chip {
+    background: none;
+    border: 1px solid var(--st-hair);
+    border-radius: var(--st-radius);
+    color: var(--st-text-2);
+    font-family: var(--st-sans);
+    font-size: 0.71rem;
+    padding: 0.18rem 0.45rem;
+    cursor: pointer;
+    white-space: nowrap;
+    transition: background 0.12s, color 0.12s, border-color 0.12s;
+  }
+
+  .adv-chip:hover { background: var(--st-surface-3); color: var(--st-text); }
+  .adv-chip.on { color: var(--st-accent); border-color: var(--st-accent); background: var(--st-selected-bg); }
+
   .adv-tab {
     display: flex;
     flex-direction: column;
@@ -1784,7 +1847,7 @@
   .adv-title {
     font-size: 0.72rem;
     font-weight: 600;
-    color: var(--st-value);
+    color: var(--st-text-2);
     user-select: none;
   }
 

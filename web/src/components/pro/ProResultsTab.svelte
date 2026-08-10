@@ -1167,7 +1167,7 @@
   .col-type { font-size: 0.62rem; color: var(--st-info); text-align: center; width: 40px; }
 
   .shell-table-label {
-    font-size: 0.66rem; font-weight: 600; color: var(--st-value);
+    font-size: 0.66rem; font-weight: 600; color: var(--st-text-2);
     margin: 8px 0 3px; display: flex; gap: 6px; align-items: baseline;
   }
   .shell-table-label:first-child { margin-top: 0; }

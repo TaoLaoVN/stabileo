@@ -259,7 +259,7 @@
   .conn-tab { display: flex; flex-direction: column; height: 100%; overflow-y: auto; }
   .conn-section { border-bottom: 1px solid var(--st-surface-3); }
   .conn-section-header { padding: 8px 10px; }
-  .conn-label-title { font-size: 0.78rem; color: var(--st-value); font-weight: 600; }
+  .conn-label-title { font-size: 0.78rem; color: var(--st-text-2); font-weight: 600; }
   .conn-empty { text-align: center; color: var(--st-text-3); font-style: italic; padding: 20px 10px; font-size: 0.78rem; }
 
   .conn-joint-list { max-height: 180px; overflow-y: auto; }
@@ -304,7 +304,7 @@
   }
   .conn-sel:focus { border-color: var(--st-value); outline: none; }
   .conn-check-label { font-size: 0.68rem; color: var(--st-text-3); display: flex; align-items: center; gap: 4px; cursor: pointer; }
-  .conn-check-label input { accent-color: var(--st-value); }
+  .conn-check-label input { accent-color: var(--st-text-2); }
 
   .conn-force-inputs { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; margin-bottom: 6px; }
   .conn-force-inputs label { font-size: 0.68rem; color: var(--st-text-3); display: flex; align-items: center; gap: 4px; }
