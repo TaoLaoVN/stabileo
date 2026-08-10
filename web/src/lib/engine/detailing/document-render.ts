@@ -28,6 +28,7 @@ import type { ElementStatus } from './element-status';
 import {
   drawColumnDetail, drawGeneralPlan, drawHorizontalSection, drawLevelPlan, levelsOf,
 } from './structure-drawings';
+import { blockingCount, buildConflictInventory } from './conflict-inventory';
 import { drawFooting } from './family-drawings';
 import { drawSlab, drawWall } from './slab-wall-drawings';
 
@@ -262,16 +263,78 @@ export function renderReportHtml(
 
   // ── Unresolved conflicts. On a draft this is the point of the document. ──
   if (doc.openConflicts.length > 0) {
-    rows.push(`<h2 class="bad">${L('Conflictos sin resolver', 'Unresolved conflicts')} `
-      + `(${doc.openConflicts.length})</h2>`);
+    /**
+     * Three statements, in this order, because they answer three different questions.
+     *
+     *   1. what the geometry IS — it was generated, it is real, it is drawn;
+     *   2. what is wrong with it — a constructibility problem, sorted by kind;
+     *   3. what that means — this document may not be issued.
+     *
+     * The per-conflict table below used to be the whole section. On the 7-storey building
+     * that is 40 065 rows, which nobody reads and which says nothing about SHAPE: those
+     * 40 065 turn out to be two causes — 38 486 interpenetrations with a median of 4 mm, and
+     * 1 579 cross-member spacing questions with a median of 9,6 mm. The inventory states that
+     * before the list, so the list is something a reader consults rather than something they
+     * give up on.
+     *
+     * Nothing is filtered. `total` equals the conflict count and the table below still holds
+     * every row.
+     */
+    const inv = buildConflictInventory(doc.openConflicts);
+    const blocking = blockingCount(inv);
+
+    rows.push(`<h2 class="bad">${L('Conflictos de constructibilidad', 'Constructibility conflicts')} `
+      + `(${inv.total})</h2>`);
+    rows.push(`<p>${esc(L(
+      'El armado que sigue FUE GENERADO y está dibujado: la geometría existe. Lo que estos '
+      + 'conflictos reportan es que, tal como está, no es constructible sin revisión — no que '
+      + 'falte armadura. Un conflicto no oculta el elemento ni impide el plano; impide la '
+      + 'emisión.',
+      'The reinforcement below WAS GENERATED and is drawn: the geometry exists. What these '
+      + 'conflicts report is that as it stands it is not constructible without review — not '
+      + 'that steel is missing. A conflict hides no element and blocks no drawing; it blocks '
+      + 'issue.'))}</p>`);
+    rows.push(`<p class="bad"><strong>${esc(L(
+      `${blocking} de ${inv.total} son bloqueantes (interpenetración o separación real). `
+      + 'RESULTADO NO APTO PARA EMISIÓN FINAL.',
+      `${blocking} of ${inv.total} are blocking (interpenetration or a real spacing shortfall). `
+      + 'RESULT NOT VALID FOR FINAL ISSUE.'))}</strong></p>`);
+
+    rows.push(`<h3>${L('Inventario por categoría', 'Inventory by category')}</h3>`);
+    rows.push(`<table><thead><tr>`
+      + `<th>${L('Categoría', 'Category')}</th><th>${L('Cantidad', 'Count')}</th>`
+      + `<th>${L('Barras', 'Bars')}</th><th>${L('Elementos', 'Members')}</th>`
+      + `<th>${L('Déficit mediano (mm)', 'Median shortfall (mm)')}</th>`
+      + `<th>${L('Peor (mm)', 'Worst (mm)')}</th>`
+      + `<th>${L('Bloqueante', 'Blocking')}</th>`
+      + `<th>${L('Clases de par', 'Pair classes')}</th></tr></thead><tbody>`);
+    for (const c of inv.summary) {
+      const isBlocking = inv.blocking.includes(c.category);
+      rows.push(`<tr class="${isBlocking ? 'bad' : ''}"><td>${esc(c.category)}</td>`
+        + `<td>${c.count}</td><td>${c.bars}</td><td>${c.members}</td>`
+        + `<td>${(c.medianShortfall * 1000).toFixed(1)}</td>`
+        + `<td>${(c.worstShortfall * 1000).toFixed(1)}</td>`
+        + `<td>${isBlocking ? L('Sí', 'Yes') : L('No', 'No')}</td>`
+        + `<td>${esc(c.byPairClass.map((k) => `${k.pairClass} ×${k.count}`).join(', '))}</td></tr>`);
+    }
+    rows.push('</tbody></table>');
+
+    rows.push(`<h3>${L('Detalle, conflicto por conflicto', 'Detail, conflict by conflict')}</h3>`);
     rows.push(`<table><thead><tr>`
       + `<th>${L('Conjunto', 'Assembly')}</th><th>${L('Elementos', 'Members')}</th>`
-      + `<th>${L('Barras', 'Bars')}</th><th>${L('Clase', 'Class')}</th>`
+      + `<th>${L('Barra A', 'Bar A')}</th><th>${L('Barra B', 'Bar B')}</th>`
+      + `<th>${L('Clase', 'Class')}</th><th>${L('Severidad', 'Severity')}</th>`
+      + `<th>${L('Categoría', 'Category')}</th>`
       + `<th>${L('Medido (mm)', 'Measured (mm)')}</th><th>${L('Requerido (mm)', 'Required (mm)')}</th>`
       + `<th>${L('Acción sugerida', 'Suggested action')}</th></tr></thead><tbody>`);
-    for (const c of doc.openConflicts) {
+    for (let i = 0; i < doc.openConflicts.length; i++) {
+      const c = doc.openConflicts[i];
+      // Both bars stay named and separately addressable, which is the traceability
+      // requirement: a conflict nobody can follow back to two real bars is a number.
       rows.push(`<tr><td>${esc(c.assemblyId)}</td><td>${c.elementIds.join(', ')}</td>`
-        + `<td>${esc(c.barIds[0])} / ${esc(c.barIds[1])}</td><td>${esc(c.pairClass)}</td>`
+        + `<td>${esc(c.barIds[0])}</td><td>${esc(c.barIds[1])}</td>`
+        + `<td>${esc(c.pairClass)}</td><td>${esc(c.severity)}</td>`
+        + `<td>${esc(inv.rows[i].category)}</td>`
         + `<td>${Math.round(c.clearance * 1000)}</td><td>${Math.round(c.required * 1000)}</td>`
         + `<td>${esc(translate(c.suggestedAction.key, c.suggestedAction.params))}</td></tr>`);
     }

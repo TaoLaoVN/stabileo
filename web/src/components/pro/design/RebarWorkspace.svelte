@@ -38,6 +38,7 @@
   import RebarViewport3D from './RebarViewport3D.svelte';
   import RebarStatusPanel from './RebarStatusPanel.svelte';
   import ProvisionalBanner from './ProvisionalBanner.svelte';
+  import SelectionDetails from './SelectionDetails.svelte';
   import RebarLayersPanel from './RebarLayersPanel.svelte';
   import { markOpenPhase } from '../../../lib/utils/open-timeline';
 
@@ -391,67 +392,14 @@
           data-testid="rebar-inspector"
           data-focused={focusedElement ?? ''}
         >
-          {#if selectedBar}
-            <dl>
-              <dt>{t('detailing.scene.mark')}</dt>
-              <dd data-testid="rebar-sel-mark">
-                {selectedBar.mark ?? t('detailing.scene.unmarked')}
-              </dd>
-              <dt>{t('detailing.scene.diameter')}</dt>
-              <dd>Ø{selectedBar.diameterMm}</dd>
-              <dt>{t('detailing.scene.pieces.title')}</dt>
-              <dd data-testid="rebar-sel-piece">
-                {t(`detailing.scene.piece.${selectedBar.piece}`)}
-              </dd>
-              <dt>{t('detailing.scene.cuttingLength')}</dt>
-              <dd>{fmt(selectedBar.cuttingLength)} m</dd>
-              <dt>{t('detailing.scene.parentElement')}</dt>
-              <dd data-testid="rebar-sel-parent">{selectedBar.elementIds.join(', ') || '—'}</dd>
-              <dt>{t('detailing.scene.layer')}</dt>
-              <dd>{selectedBar.layerId ?? '—'}</dd>
-              <dt>{t('detailing.scene.assembly')}</dt>
-              <dd>{selectedBar.assemblyId}</dd>
-            </dl>
-          {:else if selectedElementIds.length > 0}
-            <dl>
-              <dt>{t('detailing.scene.selectedElement')}</dt>
-              <dd data-testid="rebar-sel-parent">{selectedElementIds.join(', ')}</dd>
-              {#if selectedSolid}
-                <dt>{t('detailing.scene.families')}</dt>
-                <dd>{t(`detailing.scene.kind.${selectedSolid.kind}`)}</dd>
-              {/if}
-            </dl>
-          {:else}
-            <p class="hint">{t('detailing.scene.noSelection')}</p>
-          {/if}
-
-          {#if selectedStatus}
-            <p class="sel-status" data-testid="rebar-sel-status">
-              {t(`detailing.scene.status.${selectedStatus.status}`)}
-              {#if selectedStatus.limiting.length > 0}
-                <span class="lim">({selectedStatus.limiting.join(', ')})</span>
-              {/if}
-            </p>
-            {#if reasons.get(selectedStatus.elementId)}
-              <p class="sel-reason" data-testid="rebar-sel-reason">
-                {t('detailing.scene.reason')}: {reasons.get(selectedStatus.elementId)}
-              </p>
-            {/if}
-            <div class="sel-actions">
-              {#if rebarWorkspace.isolated.length > 0}
-                <button type="button" data-testid="rebar-clear-isolation"
-                        onclick={() => rebarWorkspace.clearIsolation()}>
-                  {t('detailing.scene.clearIsolation')}
-                </button>
-              {:else}
-                <button type="button" data-testid="rebar-isolate"
-                        onclick={() => rebarWorkspace.isolate(
-                          rebarWorkspace.selection?.elementIds ?? [])}>
-                  {t('detailing.scene.isolate')}
-                </button>
-              {/if}
-            </div>
-          {/if}
+          <SelectionDetails
+            bar={selectedBar}
+            solid={selectedSolid}
+            conflict={rebarWorkspace.selection?.conflict ?? null}
+            elementIds={selectedElementIds}
+            status={selectedStatus}
+            reason={selectedStatus ? reasons.get(selectedStatus.elementId) ?? null : null}
+          />
         </div>
       </main>
     </div>

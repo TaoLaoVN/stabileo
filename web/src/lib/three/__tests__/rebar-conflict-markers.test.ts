@@ -18,21 +18,22 @@
  * visible. Those are what this file pins, one assertion each, because a performance change that
  * quietly drops a warning is worse than the slow frame it replaced.
  *
- * ── What this file does NOT test, and why ──────────────────────────
+ * ── Selecting one ──────────────────────────────────────────────────
  *
- * "Selecting a marker" and "isolating one conflict" do not exist. `pickable()` lists the bar and
- * concrete batches; a raycast never reaches the instanced mesh, and there is no per-conflict
- * isolate gesture. Writing tests that appeared to cover them would be worse than not having them.
+ * Markers are now pickable, through `pickableConflicts()` and `conflictAt(slot)`. Those two are
+ * deliberately not `pickable()`: a marker is a small sphere sitting inside the cage at exactly
+ * the places where bars are densest, and letting it compete by distance in the same hit list
+ * would take clicks away from every bar around it. The caller raycasts markers first and
+ * separately, and treats a hit as the deliberate act it is.
  *
- * What DOES exist is `conflictAt`, the map from a drawn instance slot back to its conflict, and that
- * is tested here — because the filter COMPACTS the instance buffer, so slot 3 holding the conflict
- * it held a moment ago is a property, not an obvious truth. It is also exactly the map a clickable
- * marker would need on the day one is wanted.
+ * `conflictAt` is the piece that makes a click mean anything, because the filter COMPACTS the
+ * instance buffer: slot 3 holding the conflict it held a moment ago is a property, not an
+ * obvious truth, and a picker that assumed otherwise would open an inspector on the wrong
+ * conflict. That is tested here at length.
  *
- * Severity, class, measured clearance and requirement are not in the marker at all: they live on
- * `SceneConflictMarker` and reach the user through the detailing panel's own conflict navigator,
- * which never reads this geometry. So they are pinned on the PROJECTION — the thing the panel
- * reads — rather than on the mesh.
+ * Severity, class, measured clearance and requirement are not in the marker geometry at all:
+ * they live on `SceneConflictMarker`, which is what the inspector reads. So they are pinned on
+ * the PROJECTION rather than on the mesh.
  */
 
 import { describe, expect, it, beforeAll } from 'vitest';
@@ -211,6 +212,77 @@ describe('the marker got cheaper, not different', () => {
     for (let i = 0; i < scene.conflicts.length; i++) {
       expect(built.conflictAt(i)).toBe(scene.conflicts[i]);
     }
+  });
+
+  // ─── Picking ──────────────────────────────────────────────────
+
+  it('offers the marker mesh for picking, separately from the bars', () => {
+    built.setVisibility({ filter: {} });
+    const pickable = built.pickableConflicts();
+    expect(pickable, 'the marker mesh is offered').toEqual([built.markers]);
+    // Separately: a marker in the bar/concrete list would win by distance inside the cage and
+    // take clicks away from the steel it is sitting among.
+    expect(built.pickable()).not.toContain(built.markers);
+  });
+
+  it('offers nothing to pick when the markers are switched off', () => {
+    built.setVisibility({ conflicts: false });
+    expect(built.pickableConflicts(), 'a hidden marker cannot be clicked').toEqual([]);
+    built.setVisibility({ conflicts: true });
+    expect(built.pickableConflicts()).toEqual([built.markers]);
+  });
+
+  it('resolves a picked slot to the conflict actually drawn there, filter or no filter', () => {
+    /**
+     * The whole point of picking, stated as the property it depends on.
+     *
+     * A raycast reports an `instanceId` in the COMPACTED buffer. Resolving that through the
+     * conflict array directly — `scene.conflicts[instanceId]` — is the obvious wrong thing, and
+     * it would silently open the inspector on a different conflict the moment any layer switch
+     * was on. So the slot is resolved through `conflictAt`, and this checks that the identity
+     * it returns is the one whose geometry is in that slot, under a filter and without one.
+     */
+    for (const f of [{}, { solidKinds: ['slab'] }, { solidKinds: ['column'] }] as SceneFilter[]) {
+      built.setVisibility({ filter: f, conflicts: true });
+      const marks = built.markers!;
+      expect(marks.count).toBeGreaterThan(0);
+      // Sample across the buffer rather than all 40 000: the compaction is uniform, and the
+      // exhaustive pass over every slot already runs in the compaction test above.
+      const step = Math.max(1, Math.floor(marks.count / 50));
+      for (let i = 0; i < marks.count; i += step) {
+        const c = built.conflictAt(i)!;
+        expect(c, `slot ${i} under ${JSON.stringify(f)}`).toBeTruthy();
+        const { position } = instanceAt(marks, i);
+        expect(position.x, `slot ${i} geometry matches its identity`).toBeCloseTo(c.at.x, 4);
+        expect(position.y).toBeCloseTo(c.at.y, 4);
+        expect(position.z).toBeCloseTo(c.at.z, 4);
+        // Everything the inspector shows must be present on what a pick resolves to.
+        expect(c.barIds[0]).toBeTruthy();
+        expect(c.barIds[1]).toBeTruthy();
+        expect(c.barIds[0]).not.toBe(c.barIds[1]);
+        expect(Number.isFinite(c.clearance)).toBe(true);
+        expect(Number.isFinite(c.required)).toBe(true);
+        expect(Number.isFinite(c.shortfall)).toBe(true);
+        expect(c.severity).toBeTruthy();
+        expect(c.pairClass).toBeTruthy();
+        expect(c.assemblyId).toBeTruthy();
+        expect(c.elementIds.length, 'the parent member is reachable from a pick')
+          .toBeGreaterThan(0);
+      }
+    }
+    built.setVisibility({ filter: {} });
+  }, 60_000);
+
+  it('does not rebuild the tubes to make a marker selectable', () => {
+    // Picking is a read. A selection that re-tubed 22 817 bars would be the three-second
+    // freeze this whole viewport was rebuilt to remove.
+    const before = rebarSceneBuilds();
+    built.pickableConflicts();
+    built.conflictAt(0);
+    built.setVisibility({ filter: { solidKinds: ['column'] } });
+    built.conflictAt(0);
+    built.setVisibility({ filter: {} });
+    expect(rebarSceneBuilds()).toBe(before);
   });
 
   // ─── Filters ──────────────────────────────────────────────────

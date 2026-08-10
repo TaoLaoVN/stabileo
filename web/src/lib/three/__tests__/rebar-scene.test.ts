@@ -236,7 +236,7 @@ describe('a conflict is a thing you can point at', () => {
   const s = scene({
     conflicts: [{
       assemblyId: 'a', at: { x: 1, y: 0, z: 0 }, barIds: ['b1', 'b2'],
-      clearance: -0.006, required: 0.025, pairClass: 'prohibitedOverlap',
+      clearance: -0.006, required: 0.025, pairClass: 'prohibitedOverlap', shortfall: 0.01, severity: 'clearance' as const, elementIds: [1],
     }],
   });
 
@@ -251,7 +251,7 @@ describe('a conflict is a thing you can point at', () => {
     const built = createRebarScene(scene({
       conflicts: [{
         assemblyId: 'a', at: { x: 0, y: 0, z: 0 }, barIds: ['b1', 'b2'],
-        clearance: 0.0249, required: 0.025, pairClass: 'x',
+        clearance: 0.0249, required: 0.025, pairClass: 'x', shortfall: 0.01, severity: 'clearance' as const, elementIds: [1],
       }],
     }));
     const marks = built.group.getObjectByName('rebar-conflicts') as THREE.InstancedMesh;

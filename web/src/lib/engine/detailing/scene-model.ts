@@ -255,7 +255,20 @@ export interface SceneConflictMarker {
   clearance: number;
   /** What the rule demanded, m. */
   required: number;
+  /** How far short, m. */
+  shortfall: number;
+  /** `overlap` is interpenetration; `clearance` is a shortfall against a spacing rule. */
+  severity: 'overlap' | 'clearance' | 'marginal';
   pairClass: string;
+  /**
+   * The members the two bars belong to.
+   *
+   * Carried so a marker picked in the viewport can name its PARENT without a second lookup
+   * into the document. "Bar c12-4 and bar b31-2, 14 mm apart against 25 mm required" is a
+   * measurement; "…in beam 88 at the joint with column 12" is something an engineer can go
+   * and look at.
+   */
+  elementIds: number[];
 }
 
 // ─── The scene ───────────────────────────────────────────────────
@@ -590,7 +603,10 @@ export function buildSceneModel(doc: DocumentModel, opts: SceneOptions = {}): Sc
     barIds: [c.barIds[0], c.barIds[1]],
     clearance: c.clearance,
     required: c.required,
+    shortfall: c.shortfall,
+    severity: c.severity,
     pairClass: c.pairClass,
+    elementIds: [...c.elementIds],
   }));
 
   return {

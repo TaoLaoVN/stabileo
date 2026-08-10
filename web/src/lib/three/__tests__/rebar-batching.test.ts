@@ -475,15 +475,15 @@ describe('nothing rebuilds a tube', () => {
     s.conflicts = [
       {
         assemblyId: 'a', at: { x: 0, y: 0, z: 0 }, barIds: ['col-1:main', 'col-1:ties'],
-        clearance: -0.005, required: 0.025, pairClass: 'x',
+        clearance: -0.005, required: 0.025, pairClass: 'x', shortfall: 0.01, severity: 'clearance' as const, elementIds: [1],
       },
       {
         assemblyId: 'a', at: { x: 1, y: 2, z: 0 }, barIds: ['slab-1:x', 'slab-1:x'],
-        clearance: 0, required: 0.025, pairClass: 'x',
+        clearance: 0, required: 0.025, pairClass: 'x', shortfall: 0.01, severity: 'clearance' as const, elementIds: [1],
       },
       {
         assemblyId: 'a', at: { x: 2, y: 3, z: 0 }, barIds: ['wall-1:v', 'wall-1:v'],
-        clearance: 0, required: 0.025, pairClass: 'x',
+        clearance: 0, required: 0.025, pairClass: 'x', shortfall: 0.01, severity: 'clearance' as const, elementIds: [1],
       },
     ];
     const built = createRebarScene(s);

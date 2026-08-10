@@ -11,8 +11,9 @@
  * warning: a feature that was present in the code and absent from the screen.
  */
 
-import { describe, expect, it } from 'vitest';
-import { sameSelection } from '../rebar-workspace.svelte';
+import { beforeEach, describe, expect, it } from 'vitest';
+import { rebarWorkspace, sameSelection } from '../rebar-workspace.svelte';
+import type { SceneConflictMarker } from '../../engine/detailing/scene-model';
 
 describe('two selections are the same thing only when they are', () => {
   it('tells two MEMBERS apart when neither names a bar or a solid', () => {
@@ -54,5 +55,91 @@ describe('two selections are the same thing only when they are', () => {
     expect(sameSelection(null, null)).toBe(true);
     expect(sameSelection(null, { elementIds: [1] })).toBe(false);
     expect(sameSelection({ elementIds: [1] }, null)).toBe(false);
+  });
+});
+
+/**
+ * Clicking a red dot in a cage of twenty thousand bars.
+ *
+ * ── Why one call and not three ─────────────────────────────────────
+ *
+ * A user who clicks a conflict marker is asking two things at once: what is this, and where am
+ * I. Answering only the first leaves them with a fuller panel and the same wall of steel, so
+ * `selectConflict` selects, points the camera, and — when asked — isolates the two members the
+ * conflict names.
+ *
+ * The isolation is opt-in because the same conflict is also reached from the detailing panel's
+ * list, where a user stepping through rows would not thank a viewport that changes what it
+ * shows between one row and the next.
+ */
+describe('selecting a conflict marker', () => {
+  function marker(over: Partial<SceneConflictMarker> = {}): SceneConflictMarker {
+    return {
+      assemblyId: 'line-1',
+      at: { x: 1, y: 2, z: 3 },
+      barIds: ['bar-a', 'bar-b'],
+      clearance: 0.011,
+      required: 0.025,
+      shortfall: 0.014,
+      severity: 'clearance',
+      pairClass: 'sameLayerSpacing',
+      elementIds: [88, 12],
+      ...over,
+    };
+  }
+
+  beforeEach(() => {
+    rebarWorkspace.reset();
+  });
+
+  it('carries the whole conflict on the selection, not an index into a buffer', () => {
+    const c = marker();
+    rebarWorkspace.selectConflict(c);
+    // An instance slot means nothing outside the render that produced it — the filter
+    // compacts the buffer. The conflict itself is what downstream needs.
+    expect(rebarWorkspace.selection?.conflict).toBe(c);
+    expect(rebarWorkspace.selection?.elementIds).toEqual([88, 12]);
+  });
+
+  it('points the camera at the conflict without being asked twice', () => {
+    rebarWorkspace.selectConflict(marker());
+    expect(rebarWorkspace.focusRequest?.elementId).toBe(88);
+  });
+
+  it('re-focuses when the same conflict is picked again', () => {
+    const c = marker();
+    rebarWorkspace.selectConflict(c);
+    const first = rebarWorkspace.focusRequest!.nonce;
+    rebarWorkspace.selectConflict(c);
+    // Picking the same marker twice is a real request — the user has moved the camera since.
+    expect(rebarWorkspace.focusRequest!.nonce).toBeGreaterThan(first);
+  });
+
+  it('isolates the two members only when asked', () => {
+    rebarWorkspace.selectConflict(marker());
+    expect(rebarWorkspace.isolated, 'a plain pick changes nothing about visibility').toEqual([]);
+
+    rebarWorkspace.selectConflict(marker(), { isolateMembers: true });
+    expect(rebarWorkspace.isolated).toEqual([88, 12]);
+
+    rebarWorkspace.clearIsolation();
+    expect(rebarWorkspace.isolated).toEqual([]);
+  });
+
+  it('survives a conflict whose members are unknown', () => {
+    // A conflict between two family bars carries no frame member. It must still be selectable
+    // rather than throwing on the way to the inspector.
+    rebarWorkspace.selectConflict(marker({ elementIds: [] }));
+    expect(rebarWorkspace.selection?.conflict).toBeTruthy();
+    expect(rebarWorkspace.focusRequest).toBeNull();
+    expect(rebarWorkspace.isolated).toEqual([]);
+  });
+
+  it('goes back to what was selected before the marker', () => {
+    rebarWorkspace.select({ barId: 'b1', elementIds: [1] });
+    rebarWorkspace.selectConflict(marker());
+    rebarWorkspace.goBack();
+    expect(rebarWorkspace.selection?.barId).toBe('b1');
+    expect(rebarWorkspace.selection?.conflict).toBeUndefined();
   });
 });

@@ -199,14 +199,23 @@ describe('a conflicted floor prints, and every file says it is a draft', () => {
     expect(d.readiness).toBe('REVIEW_DRAFT');
   });
 
-  it('the report carries the banner and the conflict table', () => {
+  it('the report carries the banner, the inventory and the conflict table', () => {
     const html = renderReportHtml(d, OPTS, T);
     expect(html).toContain('NOT FOR CONSTRUCTION');
-    expect(html).toContain('Unresolved conflicts');
+    expect(html).toContain('Constructibility conflicts');
     expect(html).toContain('prohibitedOverlap');
     // Measured against required, both present.
     expect(html).toContain('-6');
     expect(html).toContain('25');
+    // The three statements the section makes, in the order it makes them: the geometry
+    // exists, the conflict is a constructibility problem, and the result may not be issued.
+    expect(html).toContain('WAS GENERATED');
+    expect(html).toContain('Inventory by category');
+    expect(html).toContain('interpenetration');
+    expect(html).toContain('NOT VALID FOR FINAL ISSUE');
+    // Both bars stay separately addressable — the traceability requirement.
+    expect(html).toContain('Bar A');
+    expect(html).toContain('Bar B');
   });
 
   it('the DXF carries the banner and a conflict annotation', () => {

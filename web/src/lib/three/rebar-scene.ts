@@ -468,13 +468,26 @@ export interface RebarScene {
   /**
    * Which conflict is drawn in a marker slot, or null when that slot is not drawn.
    *
-   * The markers are not pickable today — `pickable()` lists bars and concrete, and a raycast never
-   * reaches the instanced mesh — so nothing in the app calls this yet. It exists because the
-   * compaction MOVES markers between slots, and "slot 3 is still the same conflict it was" is a
-   * property that has to be checkable rather than assumed. It is also exactly the map a clickable
-   * marker would need.
+   * The compaction MOVES markers between slots — slot 0 is not conflict 0 once a filter is on —
+   * so "the marker I clicked is the conflict I think it is" is a property that has to be
+   * resolved through this map rather than assumed from an index. It is what
+   * `pickableConflicts()` exists to be used with.
    */
   conflictAt(instanceIndex: number): SceneConflictMarker | null;
+  /**
+   * The marker mesh, when there is one to pick.
+   *
+   * Separate from `pickable()` on purpose, and this is not tidiness. Markers are small spheres
+   * sitting INSIDE the cage, at exactly the places where bars are densest. Putting them in the
+   * same list would make every hit list start with a marker and would take clicks away from the
+   * bars around them — the picker resolves bars, then concrete, and a marker that won by
+   * distance would be a bar the user could no longer select.
+   *
+   * So the caller raycasts markers FIRST and separately, and treats a marker hit as a
+   * deliberate act: a marker is a thing the app put there to be clicked, and a click within its
+   * radius means the conflict, not the steel behind it.
+   */
+  pickableConflicts(): THREE.InstancedMesh[];
   /** Which bar a raycast hit, or null when the hit was concrete or a marker. */
   barIdAt(mesh: THREE.Object3D, faceIndex: number | undefined): string | null;
   /**
@@ -1097,6 +1110,19 @@ export function createRebarScene(
         ...bars.filter((b) => b.mesh.visible && b.drawn.length > 0).map((b) => b.mesh),
         ...solidMeshes.filter((s) => s.mesh.visible && s.drawn.length > 0).map((s) => s.mesh),
       ];
+    },
+    /**
+     * The marker mesh, only while it is actually on screen.
+     *
+     * Same rule as `pickable()`, and for the same correctness reason: `Mesh.raycast` does not
+     * consult `visible`, so a hidden marker left in the list would let a click select a
+     * conflict the user has switched off — and then centre the camera on it.
+     *
+     * `markers.count` is the compacted count, and `InstancedMesh.raycast` respects it, so a
+     * filtered-out marker cannot be hit even though its matrix is still in the buffer.
+     */
+    pickableConflicts() {
+      return markers && markers.visible && markers.count > 0 ? [markers] : [];
     },
     setVisibility(next) {
       if (next.filter !== undefined) shown.filter = next.filter;

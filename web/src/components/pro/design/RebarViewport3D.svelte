@@ -24,15 +24,12 @@
     barMatchesFilter, kindByElement, sceneSignature, visibleBounds,
     type SceneFilter, type SceneModel,
   } from '../../../lib/engine/detailing/scene-model';
+  import { resolvePick } from '../../../lib/three/rebar-pick';
   import { t } from '../../../lib/i18n';
   import { markOpenPhase } from '../../../lib/utils/open-timeline';
 
   /** What the user clicked: a bar, a piece of concrete, or empty space. */
-  export interface ScenePick {
-    barId?: string;
-    solidId?: string;
-    elementIds: number[];
-  }
+  export type { ScenePick } from '../../../lib/three/rebar-pick';
 
   interface Props {
     /**
@@ -181,19 +178,7 @@
     invalidate(2);
   }
 
-  /**
-   * Resolve a click to a bar or a member.
-   *
-   * ── Why the nearest hit is not simply taken ────────────────────
-   *
-   * Concrete is translucent and encloses the steel, so the nearest surface under the cursor is
-   * almost always concrete — and taking it would make bars unselectable everywhere except at
-   * the ends where they poke out. The hits are sorted by distance, so the first BAR is
-   * preferred and concrete answers only when no bar was under the cursor at all.
-   *
-   * That ordering is also what makes a member with no steel selectable: nothing else is there
-   * to win, and those are precisely the members the user most needs to interrogate.
-   */
+  /** Resolve a click. The ordering rules live in `rebar-pick.ts`, where they are testable. */
   function pick(ev: PointerEvent) {
     if (!renderer || !camera || !built || !onselect) return;
     const rect = renderer.domElement.getBoundingClientRect();
@@ -203,27 +188,7 @@
     );
     const ray = new THREE.Raycaster();
     ray.setFromCamera(ndc, camera);
-    const hits = ray.intersectObjects(built.pickable(), false);
-
-    for (const hit of hits) {
-      // `faceIndex` is nullable on a non-indexed or point geometry; the picking maps treat
-      // absent as "nothing here" rather than as face zero.
-      const barId = built.barIdAt(hit.object, hit.faceIndex ?? undefined);
-      if (barId) {
-        const bar = scene.bars.find((b) => b.barId === barId);
-        onselect({ barId, elementIds: bar?.elementIds ?? [] });
-        return;
-      }
-    }
-    for (const hit of hits) {
-      const solidId = built.solidIdAt(hit.object, hit.faceIndex ?? undefined);
-      if (solidId) {
-        const solid = scene.solids.find((s) => s.id === solidId);
-        onselect({ solidId, elementIds: solid?.elementIds ?? [] });
-        return;
-      }
-    }
-    onselect(null);
+    onselect(resolvePick(built, scene, ray));
   }
 
   /**

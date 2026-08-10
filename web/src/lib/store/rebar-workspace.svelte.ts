@@ -18,13 +18,23 @@
  * handles the walk and cannot grow without limit.
  */
 
-import { SCENE_SOLID_KINDS, type SceneSolidKind } from '../engine/detailing/scene-model';
+import {
+  SCENE_SOLID_KINDS, type SceneConflictMarker, type SceneSolidKind,
+} from '../engine/detailing/scene-model';
 import type { ElementStatus } from '../engine/detailing/element-status';
 
 /** What the user has selected, however they selected it. */
 export interface WorkspaceSelection {
   barId?: string;
   solidId?: string;
+  /**
+   * The conflict marker that was clicked, when the selection came from one.
+   *
+   * Carried on the selection rather than in a channel of its own so that "what is selected"
+   * has exactly one answer. A second selection channel is how a panel comes to highlight one
+   * thing while the viewport highlights another.
+   */
+  conflict?: SceneConflictMarker;
   /** The members involved. A bar continuous over a support names both. */
   elementIds: number[];
 }
@@ -152,6 +162,29 @@ function createRebarWorkspace() {
 
     isolate(elementIds: number[]) { isolated = [...elementIds]; },
     clearIsolation() { isolated = []; },
+
+    /**
+     * Select a conflict, isolate the two members it names, and point the camera at it.
+     *
+     * One call, because these three are one intent. A user who clicks a red dot in a cage of
+     * twenty thousand bars is asking "what is this and where am I" — answering only the first
+     * leaves them looking at the same wall of steel with a fuller panel.
+     *
+     * `isolateMembers` is optional because the same conflict is also reached from the detailing
+     * panel's row, where the user may be stepping through a list and would not thank an
+     * isolation that changes what they can see between rows.
+     */
+    selectConflict(conflict: SceneConflictMarker, opts: { isolateMembers?: boolean } = {}) {
+      this.select({ conflict, elementIds: [...conflict.elementIds] });
+      if (opts.isolateMembers && conflict.elementIds.length > 0) {
+        isolated = [...conflict.elementIds];
+      }
+      const first = conflict.elementIds[0];
+      if (first !== undefined) {
+        nonce += 1;
+        focusRequest = { elementId: first, nonce };
+      }
+    },
 
     setSection(next: WorkspaceSection | null) { section = next; },
 

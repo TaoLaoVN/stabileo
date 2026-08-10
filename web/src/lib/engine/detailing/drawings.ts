@@ -218,15 +218,50 @@ function noteLines(
   for (const u of unsupported) {
     out.push(`NO VERIFICADO — ${u.key}: ${u.message}`);
   }
-  for (const c of conflicts) {
-    if (c.severity === 'marginal') continue;
+  /**
+   * Conflicts: a legend, then a bounded list.
+   *
+   * This used to emit one line per conflict, unbounded. On `Edificio H.A. 7 pisos — PRO` that
+   * is 40 065 lines, which is not a note block — it is a sheet with no drawing on it, and the
+   * one line that mattered is on page 300.
+   *
+   * Bounding it is not hiding it. The count is stated first, the breakdown by severity is
+   * stated, the warning that the cage is not constructible is stated, and then the worst
+   * `MAX_CONFLICT_NOTES` are listed in full with both bar ids, the measured clearance and the
+   * requirement. The remainder is named as a remainder — `… y N más` — never silently
+   * dropped, and the complete list is what the detailing panel and the conflict inventory are
+   * for. Worst first, by shortfall, so the bounded list is the useful end of it.
+   */
+  const reportable = conflicts.filter((c) => c.severity !== 'marginal');
+  if (reportable.length > 0) {
+    const overlaps = reportable.filter((c) => c.severity === 'overlap').length;
     out.push(
-      `CONFLICTO ${c.severity === 'overlap' ? 'SOLAPE' : 'SEPARACIÓN'} — barras ${c.barA}/${c.barB}: ` +
-      `${(c.clearance * 1000).toFixed(0)} mm libres contra ${(c.required * 1000).toFixed(0)} mm ` +
-      'requeridos.');
+      `CONFLICTOS: ${reportable.length} sin resolver (${overlaps} interpenetración, `
+      + `${reportable.length - overlaps} separación). NO CONSTRUIBLE SIN REVISIÓN — esta lámina `
+      + 'documenta el armado y sus conflictos, no autoriza su ejecución.');
+    const worst = [...reportable].sort((a, b) => b.shortfall - a.shortfall);
+    for (const c of worst.slice(0, MAX_CONFLICT_NOTES)) {
+      out.push(
+        `CONFLICTO ${c.severity === 'overlap' ? 'SOLAPE' : 'SEPARACIÓN'} — barras ${c.barA}/${c.barB}`
+        + `${c.elementIds.length > 0 ? ` (elem. ${c.elementIds.join(', ')})` : ''}: `
+        + `${(c.clearance * 1000).toFixed(0)} mm libres contra ${(c.required * 1000).toFixed(0)} mm `
+        + `requeridos${c.pairClass ? ` — ${c.pairClass}` : ''}.`);
+    }
+    if (worst.length > MAX_CONFLICT_NOTES) {
+      out.push(`… y ${worst.length - MAX_CONFLICT_NOTES} conflicto(s) más, en la planilla de conflictos.`);
+    }
   }
   return out;
 }
+
+/**
+ * How many conflicts are listed line by line on a sheet before the rest become a count.
+ *
+ * Twelve because a note block is read, not searched: past a dozen lines a reader is scanning
+ * for the end of it rather than taking any of them in. The number that is NOT bounded is the
+ * total, which is always stated.
+ */
+export const MAX_CONFLICT_NOTES = 12;
 
 // ─── Elevations ──────────────────────────────────────────────────
 

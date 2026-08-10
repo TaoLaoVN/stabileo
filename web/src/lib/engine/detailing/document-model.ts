@@ -204,6 +204,17 @@ export interface OpenConflict {
   clearance: number;
   /** What the rule demanded, m. */
   required: number;
+  /** How far short, m. Always positive for a reported conflict. */
+  shortfall: number;
+  /**
+   * `overlap` — the bars physically interpenetrate; `clearance` — they are short of the
+   * clear distance the rule demands.
+   *
+   * Carried rather than re-derived from the sign of `clearance`: the two are different
+   * claims and the remedy differs, and a reader who has to compute the distinction from a
+   * sign is a reader who will eventually get it wrong.
+   */
+  severity: 'overlap' | 'clearance' | 'marginal';
   /** The classification, e.g. `prohibitedOverlap`. */
   pairClass: string;
   /** The clause behind `required`. Empty for classes with no spacing rule. */
@@ -293,6 +304,8 @@ export function openConflictsOf(
       at: c.at,
       clearance: c.clearance,
       required: c.required,
+      shortfall: c.shortfall,
+      severity: c.severity,
       pairClass: c.pairClass ?? 'unknown',
       refs: [],
       attempted: [...attempted],
