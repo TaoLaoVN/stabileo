@@ -140,8 +140,16 @@ that statement now exists rather than being inferred. The deadline is calibrated
 the 900 s these specs allow themselves, so a genuine hang fails in half the time and says why,
 and above the measured worst case so it does not fire on load alone.
 
+One nuance the last run exposed: the 480 s deadline only ever fires for specs that grant
+themselves 900 s. `rebar-3d.spec.ts`'s heavy tests set `test.setTimeout(240_000)`, so on a
+saturated machine THEIR budget runs out first and the failure reads "Test timeout of 240000ms
+exceeded" with no diagnostic attached. Raising that test's timeout would be loosening a gate to
+hide the problem, so it was not done.
+
 **Nothing was loosened to reach a green run.** The measurement budgets are untouched, no spec is
-disabled and no click is forced. The remaining fix is structural: the suite performs about
+disabled and no click is forced. A full local run currently ends 198 passed / 1 failed, and the
+one is load-dependent: a different test each time, never the same twice, always green when run
+on its own. The remaining fix is structural: the suite performs about
 thirteen full 7-storey chains (load → solve → design → detail → floor-design), five of them in
 `rebar-viewport-cost.spec.ts` alone. Cutting that means reusing prepared state across tests,
 which risks both coverage and inter-test independence, so it is a pass of its own rather than
