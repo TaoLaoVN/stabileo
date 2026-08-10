@@ -464,3 +464,63 @@ test.describe('@smoke E2E hook runtime gate', () => {
     expect(await page.evaluate(() => Object.isFrozen((window as unknown as Record<string, unknown>).__stabileoActions))).toBe(true);
   });
 });
+
+test.describe('@smoke the design table survives a short window', () => {
+  /**
+   * The table must be REACHABLE, not merely present.
+   *
+   * ── What this caught ───────────────────────────────────────────────
+   *
+   * Every scenario above failed for one reason, and it was not a flaky click: at 1280×720 —
+   * Chromium's own `Desktop Chrome` size, which is what this suite runs at — the tab's fixed
+   * controls wanted 550 px of the 504 it had. All of them carry `flex-shrink: 0`, so the only
+   * child that could give was the table, and it gave everything: height 0, rows laid out at
+   * y≈778 in a 720 px window, underneath the action row. Playwright reported that as
+   * "`.action-row` intercepts pointer events", which reads like a stacking bug and was a
+   * sizing one.
+   *
+   * So this asserts the property the eleven failures were really about, rather than clicking
+   * something and hoping: the table has a workable height, its first row is inside the window
+   * once scrolled to, and the point a user would click resolves to the control they aimed at.
+   * Nothing here is allowed to use `force` — a forced click proves the handler runs and says
+   * nothing about whether a person could ever reach it.
+   */
+  test('B18 — the table keeps a usable height and its rows are clickable', async ({ pro: page }) => {
+    const ids = await setupDesigned(page);
+    const id = ids[0];
+
+    const geometry = await page.evaluate(() => {
+      const scroll = document.querySelector('.table-scroll') as HTMLElement | null;
+      const tab = document.querySelector('.design-tab') as HTMLElement | null;
+      return {
+        tableHeight: scroll ? Math.round(scroll.getBoundingClientRect().height) : 0,
+        tabScrolls: tab ? tab.scrollHeight > tab.clientHeight : false,
+        windowHeight: window.innerHeight,
+      };
+    });
+    expect(geometry.tableHeight,
+      `the table collapsed to ${geometry.tableHeight} px in a ${geometry.windowHeight} px window`)
+      .toBeGreaterThan(100);
+
+    // Reachable: scrolled into view, the button is inside the window and is what is under the
+    // cursor at its own centre.
+    const expand = page.getByTestId(`row-expand-${id}`);
+    await expand.scrollIntoViewIfNeeded();
+    const hit = await page.evaluate((elementId) => {
+      const btn = document.querySelector(`[data-testid=row-expand-${elementId}]`) as HTMLElement;
+      const r = btn.getBoundingClientRect();
+      const at = document.elementFromPoint(r.x + r.width / 2, r.y + r.height / 2);
+      return {
+        insideWindow: r.top >= 0 && r.bottom <= window.innerHeight,
+        isTheButton: at === btn || btn.contains(at),
+        blockedBy: at ? `${at.tagName}.${(at.className || '').toString().split(' ')[0]}` : 'nothing',
+      };
+    }, id);
+    expect(hit.insideWindow, 'the row is inside the window once scrolled to').toBe(true);
+    expect(hit.isTheButton, `the click point resolves to ${hit.blockedBy}`).toBe(true);
+
+    // And the real gesture works, without force.
+    await expand.click();
+    await expect(expand).toHaveAttribute('aria-expanded', 'true');
+  });
+});

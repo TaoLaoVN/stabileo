@@ -422,7 +422,32 @@
 {/if}
 
 <style>
-  .design-tab { display: flex; flex-direction: column; height: 100%; overflow: hidden; }
+  /**
+   * The tab scrolls when its controls do not fit, rather than crushing the table to nothing.
+   *
+   * ── The screen this makes usable again ─────────────────────────────
+   *
+   * At 1280×720 — Chromium's own `Desktop Chrome` size, which is what this suite actually runs
+   * at — the tab has 504 px to work with and its fixed controls want 550: toolbar 147,
+   * families 146, filter bar 204 (it wraps to three lines at this width), action row 53. All
+   * four carry `flex-shrink: 0`, so the only child that could give was `.table-scroll`, and it
+   * gave everything: measured height 0, with its rows laid out BELOW the fold at y≈778 in a
+   * 720 px window.
+   *
+   * That is not a test artefact. The design table — the entire point of this tab — was
+   * unreachable on a laptop screen, and the rows were not merely off-screen but underneath the
+   * action row, which is why every click on one was intercepted. It looked like a stacking
+   * problem and was a sizing one.
+   *
+   * `overflow: auto` plus a floor on the table is the whole fix: where the controls fit,
+   * nothing changes and no scrollbar appears; where they do not, the tab scrolls and every row
+   * is reachable by scrolling the thing the user is already looking at. The alternative —
+   * making the control blocks shrink and scroll internally — would have put a second scroller
+   * inside the first, which this codebase has already paid for once (see RebarStatusPanel).
+   */
+  .design-tab { display: flex; flex-direction: column; height: 100%; overflow: auto; }
+  /* A table shorter than this is not a table you can work in; below it, the tab scrolls. */
+  .design-tab :global(.table-scroll) { min-height: 14rem; }
   .placeholder { padding: 20px; text-align: center; color: #667; font-size: 0.78rem; font-style: italic; }
   .action-row { display: flex; align-items: center; gap: 6px; flex-wrap: wrap;
     padding: 4px 12px; background: #081524; border-bottom: 1px solid #14304f; flex-shrink: 0; }

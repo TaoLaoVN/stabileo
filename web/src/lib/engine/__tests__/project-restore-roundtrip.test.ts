@@ -94,8 +94,25 @@ function perCaseWires(): Array<{ name: string; wire: Record<string, unknown> }> 
   });
 }
 
+/** Nodes, quads and constraints in a form two runs can be compared by. */
+function structureFingerprint(): string {
+  const m = modelStore.model;
+  const nodes = [...m.nodes.entries()]
+    .map(([id, n]) => `${id}:${n.x},${n.y},${n.z ?? 0}`).sort();
+  const quads = [...m.quads.entries()]
+    .map(([id, q]) => `${id}:${[...q.nodes].join('-')}:${q.materialId}:${q.thickness}`).sort();
+  const constraints = m.constraints
+    .map((c) => JSON.stringify(c, Object.keys(c).sort())).sort();
+  return [
+    `nodes(${nodes.length})`, ...nodes,
+    `quads(${quads.length})`, ...quads,
+    `constraints(${constraints.length})`, ...constraints,
+  ].join('\n');
+}
+
 describe('project restore round-trip', () => {
   let beforeFingerprint: string;
+  let beforeStructure: string;
   let beforeCases: number;
   let restoredOk = false;
 
@@ -103,6 +120,7 @@ describe('project restore round-trip', () => {
     await modelStore.loadExample(EXAMPLE);
     expect(isSolverReady(), 'real WASM solver, not the Vite stub').toBe(true);
     beforeFingerprint = loadFingerprint(modelStore.model.loads, modelStore.model.loadCases);
+    beforeStructure = structureFingerprint();
     beforeCases = modelStore.model.loadCases.length;
 
     // Save exactly as autosave does, reload exactly as the banner does: the parsed
@@ -187,6 +205,32 @@ describe('project restore round-trip', () => {
     }
   });
 
+  it('restores the nodes, the quads and the constraints unchanged', () => {
+    // The load cases are checked above; this is the STRUCTURE they act on. Compared as a
+    // whole rather than by counts: a restore that kept 250 nodes and moved one of them would
+    // pass a count check and produce a different building.
+    expect(structureFingerprint()).toBe(beforeStructure);
+  });
+
+  it('restores twice without accumulating state', () => {
+    // Restoring is how undo, tab switching and the autosave banner all work, so it runs many
+    // times per session. A restore that appended instead of replacing — or that migrated an
+    // already-migrated field a second time — would grow the model on every pass, and the
+    // growth would look like a slow leak rather than like a restore bug.
+    const stored = JSON.parse(serializeProject());
+    modelStore.restore(deepProxy(stored.snapshot));
+    const once = { structure: structureFingerprint(), loads: loadFingerprint(modelStore.model.loads, modelStore.model.loadCases) };
+    modelStore.restore(deepProxy(stored.snapshot));
+    const twice = { structure: structureFingerprint(), loads: loadFingerprint(modelStore.model.loads, modelStore.model.loadCases) };
+    expect(twice.structure).toBe(once.structure);
+    expect(twice.loads).toBe(once.loads);
+    // And it is still the project that was saved, not a drifted copy of it.
+    expect(twice.structure).toBe(beforeStructure);
+    expect(twice.loads).toBe(beforeFingerprint);
+    // Idempotent all the way to the wire the solver would receive.
+    expect(findUncloneablePath(perCaseWires()[0].wire)).toBeNull();
+  });
+
   it('solves every restored load case', () => {
     const m = modelStore.model;
     for (const lc of m.loadCases) {
@@ -214,5 +258,104 @@ describe('findUncloneablePath', () => {
 
   it('returns null for a payload that clones', () => {
     expect(findUncloneablePath({ a: [1, 2], b: { c: 'x' } })).toBeNull();
+  });
+});
+
+/**
+ * Constraint migration, one stored shape at a time.
+ *
+ * ── Why these four cases and not a round trip ──────────────────────
+ *
+ * The round trip above proves the flagship project survives, and it would keep passing if the
+ * migration were right for the one shape that project happens to store. `dofs` has four
+ * distinct stored shapes and they do NOT mean the same thing to the solver:
+ *
+ *   absent      → the field is missing, `#[serde(default)]` supplies an empty Vec
+ *   []          → present and empty, which the Rust doc-comment defines as "all translational"
+ *   undefined   → present and UNIT, which serde rejects outright: "expected a sequence"
+ *   ['ux','uz'] → the pre-rename spelling, which must become [0, 2]
+ *
+ * The third is the defect this file was opened for, and the difference between it and the
+ * first is invisible in a JSON dump — `JSON.stringify` drops both. It is only visible in what
+ * `Object.keys` returns, which is exactly what serde-wasm-bindgen walks.
+ *
+ * Driven through `restore()` rather than by importing the migration: the migration is private
+ * to the store, and the property that matters is what the MODEL ends up holding.
+ */
+describe('constraint migration', () => {
+  /** The flagship snapshot with its constraint list replaced. */
+  function restoreWithConstraints(constraints: unknown[]): void {
+    const stored = JSON.parse(serializeProject());
+    stored.snapshot.constraints = constraints;
+    modelStore.restore(deepProxy(stored.snapshot));
+  }
+
+  const first = () => modelStore.model.constraints[0] as unknown as Record<string, unknown>;
+
+  beforeAll(async () => {
+    if (modelStore.model.elements.size === 0) await modelStore.loadExample(EXAMPLE);
+  }, 300_000);
+
+  it('omits `dofs` entirely when the stored link has none', () => {
+    restoreWithConstraints([{ type: 'rigidLink', masterNode: 13, slaveNode: 121 }]);
+    expect(modelStore.model.constraints).toHaveLength(1);
+    // `in`, not `=== undefined`: an own property holding undefined is the bug, and it reads
+    // identically to an absent one under `?.` and under JSON.
+    expect('dofs' in first()).toBe(false);
+    expect(Object.keys(first())).not.toContain('dofs');
+  });
+
+  it('keeps an explicitly empty `dofs`, which is not the same as none', () => {
+    restoreWithConstraints([{ type: 'rigidLink', masterNode: 13, slaveNode: 121, dofs: [] }]);
+    expect(first().dofs).toEqual([]);
+  });
+
+  it('drops a `dofs` that was stored as undefined rather than passing it on', () => {
+    // JSON cannot carry `undefined`, but a hand-edited file, a share link built from a live
+    // object, or a future writer can — and this is the shape that made serde abort the first
+    // load case of the whole project.
+    restoreWithConstraints([
+      { type: 'rigidLink', masterNode: 13, slaveNode: 121, dofs: undefined },
+    ]);
+    expect('dofs' in first()).toBe(false);
+  });
+
+  it('maps the pre-rename DOF names to indices', () => {
+    restoreWithConstraints([
+      { type: 'rigidLink', masterNode: 13, slaveNode: 121, dofs: ['ux', 'uz', 'ry'] },
+    ]);
+    expect(first().dofs).toEqual([0, 2, 4]);
+  });
+
+  it('gives an equalDOF the empty list the solver requires, never undefined', () => {
+    // `EqualDOFConstraint.dofs` is a plain `Vec<usize>` with NO serde default, so the field
+    // must be present. Absent and undefined are both rejected; empty is not.
+    restoreWithConstraints([{ type: 'equalDOF', masterNode: 13, slaveNode: 121 }]);
+    expect(first().dofs).toEqual([]);
+  });
+
+  it('drops a constraint kind the solver does not know instead of shipping it', () => {
+    restoreWithConstraints([
+      { type: 'rigidLink', masterNode: 13, slaveNode: 121 },
+      { type: 'somethingElse', masterNode: 13, slaveNode: 121 },
+    ]);
+    expect(modelStore.model.constraints).toHaveLength(1);
+    expect(first().type).toBe('rigidLink');
+  });
+
+  it('leaves every migrated constraint structured-cloneable', () => {
+    restoreWithConstraints([
+      { type: 'rigidLink', masterNode: 13, slaveNode: 121 },
+      { type: 'diaphragm', masterNode: 13, slaveNodes: [14, 15, 16], plane: 'XY' },
+      { type: 'equalDOF', masterNode: 13, slaveNode: 121, dofs: ['ux'] },
+    ]);
+    const input = buildSolverInput3D({ ...modelStore.model, loads: [] } as never, false, false);
+    const wire = input3DToWireObject(input!);
+    expect(findUncloneablePath(wire)).toBeNull();
+    expect(() => structuredClone(wire)).not.toThrow();
+    // The diaphragm's sequence survived the migration rather than being flattened away.
+    const diaphragm = (wire.constraints as Array<Record<string, unknown>>)
+      .find((c) => c.type === 'diaphragm')!;
+    expect(diaphragm.slaveNodes).toEqual([14, 15, 16]);
   });
 });

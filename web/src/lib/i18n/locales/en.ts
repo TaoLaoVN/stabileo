@@ -2225,6 +2225,7 @@ const en: Record<string, string> = {
 
   // ─── File operations (file.ts) ───
   'file.invalidJson': 'The file is not valid JSON',
+  'file.autosaveTooLarge': 'This project is now too large to save automatically in the browser. Your work since the design ran is NOT in the saved copy — use Save project to keep it as a .ded file.',
   'file.invalidFormat': 'Invalid file format. Make sure it is a .ded file from Stabileo.',
   'file.loadedNoAxisConvention': 'Loaded without local-axis convention metadata — now evaluated with the corrected Z-up local-axis convention. Re-solve and review member diagrams/checks.',
   'file.supportFixed': 'Fixed',

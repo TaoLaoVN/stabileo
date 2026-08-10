@@ -833,13 +833,65 @@ if (hasLocalStorage()) {
 const AUTOSAVE_KEY = 'stabileo-autosave';
 const WORKSPACE_KEY = 'stabileo-workspace';
 
-export function saveToLocalStorage(): void {
+/**
+ * Whether the user has already been told that the autosave is not keeping up.
+ *
+ * Once per session, not once per attempt: the timer runs every 30 s, and a warning that
+ * repeats every 30 s is one the user turns off in their head within two minutes.
+ */
+let autosaveOverflowReported = false;
+
+/** Test seam: forget that the warning was shown, so a spec can observe it again. */
+export function resetAutosaveOverflowNotice(): void {
+  autosaveOverflowReported = false;
+}
+
+/**
+ * Autosave the project, and SAY SO when it cannot.
+ *
+ * ── The silence this removes ───────────────────────────────────────
+ *
+ * `localStorage` gives an origin a few megabytes. A structural model fits easily; the same
+ * model once every member carries reinforcement and a coordinated detailing does not. Measured
+ * on `Edificio H.A. 7 pisos — PRO`: 172 kB before the design, over quota after `designAll`.
+ *
+ * The write therefore starts throwing `QuotaExceededError` at exactly the moment the project
+ * becomes worth saving, and it used to be swallowed whole. The consequence is not a missing
+ * feature, it is lost work presented as saved work: the key still holds the PRE-DESIGN
+ * snapshot, so a reload offers a restore banner, the user presses Restaurar believing they are
+ * getting their afternoon back, and they get the model as it was before they designed
+ * anything — with no error, then or ever.
+ *
+ * Reporting it does not make the project fit. It makes the failure visible while there is
+ * still something to save, and it names the way out, which is the .ded file. Raising the
+ * ceiling — compressing the payload, or moving the autosave to IndexedDB, which has no
+ * comparable limit — is a change to how this app persists work and is not made here.
+ *
+ * @returns true when the project was written.
+ */
+export function saveToLocalStorage(): boolean {
   try {
     const json = serializeProject();
     localStorage.setItem(AUTOSAVE_KEY, json);
-  } catch {
-    // localStorage might be full or unavailable — silently ignore
+    return true;
+  } catch (err) {
+    // A quota failure is the interesting one: the project outgrew the store and the user is
+    // now working without a net. Anything else (private mode, storage disabled) is a
+    // condition of the browser rather than of their project, and stays quiet.
+    if (isQuotaError(err) && !autosaveOverflowReported) {
+      autosaveOverflowReported = true;
+      uiStore.toast(t('file.autosaveTooLarge'), 'error');
+    }
+    return false;
   }
+}
+
+/** A storage write refused for size, across the spellings browsers use for it. */
+function isQuotaError(err: unknown): boolean {
+  if (!(err instanceof Error)) return false;
+  return err.name === 'QuotaExceededError'
+    || err.name === 'NS_ERROR_DOM_QUOTA_REACHED'
+    || /quota/i.test(err.message);
 }
 
 export function loadFromLocalStorage(): DedalFile | null {

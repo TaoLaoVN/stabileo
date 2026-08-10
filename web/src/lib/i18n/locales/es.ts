@@ -2187,6 +2187,7 @@ const es: Record<string, string> = {
 
   // ─── File operations (file.ts) ───
   'file.invalidJson': 'El archivo no es JSON válido',
+  'file.autosaveTooLarge': 'Este proyecto ya es demasiado grande para el guardado automático del navegador. Lo que hiciste desde que corriste el diseño NO está en la copia guardada — usá Guardar proyecto para conservarlo como archivo .ded.',
   'file.invalidFormat': 'Formato de archivo inválido. Verificá que sea un archivo .ded de Stabileo.',
   'file.loadedNoAxisConvention': 'Cargado sin metadatos de convención de ejes locales — ahora se evalúa con la convención corregida de ejes locales Z-up. Recalculá y revisá los diagramas/verificaciones de las barras.',
   'file.supportFixed': 'Empotrado',
