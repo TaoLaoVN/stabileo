@@ -287,7 +287,17 @@
 
   function isActive(cmd: Cmd): boolean {
     if (cmd.tool) return uiStore.currentTool === cmd.tool;
-    if (cmd.diagram) return solved && resultsStore.diagramType === cmd.diagram;
+    if (cmd.diagram) {
+      /*
+       * Axial stays lit whichever way it is being drawn. `axialColor` is the
+       * same quantity as `axial` presented differently — the choice lives in
+       * the panel — so treating it as a different diagram would leave N dark
+       * while the members are coloured by exactly N.
+       */
+      const shown = resultsStore.diagramType;
+      if (cmd.diagram === 'axial') return solved && (shown === 'axial' || shown === 'axialColor');
+      return solved && shown === cmd.diagram;
+    }
     // Solve OPENS Results but is not a state — it is an action you run, and a
     // lit Solve while the panel happens to be open would read as "solving".
     if (cmd.id === 'solve') return false;

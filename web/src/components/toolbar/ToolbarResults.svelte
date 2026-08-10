@@ -201,6 +201,39 @@
           </select>
         </div>
       {/if}
+        <!--
+          How the axial result is DRAWN, next to the result itself.
+          ──────────────────────────────────────────────────────────
+          Axial has two presentations: the diagram plotted along each member,
+          and the members themselves coloured by sign — red in tension, blue in
+          compression — which for a truss is the reading most engineers want
+          first. They used to be two separate entries in a diagram grid, so the
+          ribbon, which lists QUANTITIES, had nowhere to put the second one and
+          it became unreachable.
+
+          It is not a quantity, it is a way of showing one, so it belongs here
+          beside the scale rather than up in the ribbon. Only axial has it, so
+          it only appears for axial.
+        -->
+        {#if resultsStore.diagramType === 'axial' || resultsStore.diagramType === 'axialColor'}
+          <div class="input-group">
+            <label>{t('results.axialShownAs')}:</label>
+            <div class="seg" role="group" aria-label={t('results.axialShownAs')}>
+              <button
+                class="seg-btn"
+                class:on={resultsStore.diagramType === 'axial'}
+                onclick={() => (resultsStore.diagramType = 'axial')}
+                data-testid="axial-as-diagram"
+              >{t('results.asDiagram')}</button>
+              <button
+                class="seg-btn"
+                class:on={resultsStore.diagramType === 'axialColor'}
+                onclick={() => (resultsStore.diagramType = 'axialColor')}
+                data-testid="axial-as-colour"
+              >{t('results.asMemberColour')}</button>
+            </div>
+          </div>
+        {/if}
       {#if resultsStore.hasCombinations && (resultsStore.diagramType === 'moment' || resultsStore.diagramType === 'shear' || resultsStore.diagramType === 'axial' || resultsStore.diagramType === 'momentY' || resultsStore.diagramType === 'momentZ' || resultsStore.diagramType === 'shearY' || resultsStore.diagramType === 'shearZ' || resultsStore.diagramType === 'torsion' || resultsStore.diagramType === 'deformed' || resultsStore.diagramType === 'axialColor')}
         {@const is3D = uiStore.analysisMode === '3d'}
         {@const caseKeys = is3D ? [...resultsStore.perCase3D.keys()] : [...resultsStore.perCase.keys()]}
@@ -465,6 +498,30 @@
       box-shadow: 0 0 8px 2px rgba(233, 69, 96, 0.4);
     }
   }
+
+  /* A two-state choice reads as one control, not two buttons. */
+  .seg {
+    display: inline-flex;
+    border: 1px solid var(--st-hair);
+    border-radius: var(--st-radius);
+    overflow: hidden;
+  }
+
+  .seg-btn {
+    background: none;
+    border: none;
+    color: var(--st-text-2);
+    font-family: var(--st-sans);
+    font-size: 0.72rem;
+    padding: 0.22rem 0.5rem;
+    cursor: pointer;
+    white-space: nowrap;
+    transition: background 0.12s, color 0.12s;
+  }
+
+  .seg-btn + .seg-btn { border-left: 1px solid var(--st-hair); }
+  .seg-btn:hover { background: var(--st-surface-3); color: var(--st-text); }
+  .seg-btn.on { background: var(--st-selected-bg); color: var(--st-accent); }
 
   .sub-heading {
     display: block;

@@ -33,6 +33,8 @@ const FALLBACK = {
   member: '#c7d3dd',
   memberTruss: '#9fb2c2',
   node: '#8fa3b3',
+  /* A member carrying ~nothing, in the axial colour map. */
+  neutralMember: '#8fa3b3',
   support: '#8fa3b3',
   selected: '#e5482a',
   /*
@@ -73,6 +75,7 @@ export function canvasTheme(): CanvasTheme {
     member: read('--st-model-member', FALLBACK.member),
     memberTruss: read('--st-model-truss', FALLBACK.memberTruss),
     node: read('--st-model-node', FALLBACK.node),
+    neutralMember: read('--st-neutral', FALLBACK.neutralMember),
     support: read('--st-model-support', FALLBACK.support),
     selected: read('--st-selected', FALLBACK.selected),
     deformed: read('--st-model-deformed', FALLBACK.deformed),
