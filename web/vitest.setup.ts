@@ -1,6 +1,6 @@
 import { existsSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
-import { initSolver, solve } from './src/lib/engine/wasm-solver';
+import { initSolver, solve, hasCanonicalGeometryExport } from './src/lib/engine/wasm-solver';
 import type { SolverInput } from './src/lib/engine/types';
 
 /**
@@ -93,4 +93,27 @@ try {
       '',
     ].join('\n'),
   );
+}
+
+// Canonical-section export check. The section engine tests skip themselves
+// when the export is absent (so an old WASM build does not fail the suite),
+// but a skip in CI means the section engine went untested. Fail loudly in CI;
+// warn locally so a contributor without a fresh build can still work.
+if (!hasCanonicalGeometryExport()) {
+  const msg = [
+    '',
+    '  The WASM engine is present but STALE: it does not export the canonical',
+    '  section geometry functions (build_section_geometry, etc.).',
+    '',
+    '  The section-engine tests will SKIP themselves, which means they pass',
+    '  without verifying anything. Rebuild the WASM to run them for real:',
+    '',
+    '    rm -rf src/lib/wasm && npm run wasm',
+    '',
+  ].join('\n');
+  if (process.env.CI) {
+    throw new Error(msg);
+  } else {
+    console.warn(msg);
+  }
 }
