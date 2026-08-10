@@ -208,6 +208,20 @@ export interface BarPath {
   /** Members this bar belongs to. A continuous bar over a support belongs to both. */
   ownerElementIds: number[];
   /**
+   * Set when this bar is part of a PROPOSAL rather than a certified design.
+   *
+   * `'biaxial'` is the only value today: the owning beam's primary axis was designed and
+   * verified by the ordinary search, and its secondary axis is not evaluated by any verifier
+   * in this app. The bar is real geometry — it was produced by the same generators as every
+   * other bar — and it may not be presented as documentation.
+   *
+   * Carried on the BAR, not only on the member, because a bar is what a drawing draws and
+   * what a schedule lists. Both of those iterate bars, and a marking that lived only on the
+   * member would have to be re-joined at every such site, which is a join somebody eventually
+   * forgets on the one sheet that gets issued.
+   */
+  provisional?: 'biaxial';
+  /**
    * Stable physical layer identity, e.g. `e184:bottom:0`.
    *
    * ── Why an ID rather than a computed elevation ─────────────────────

@@ -208,6 +208,20 @@ export interface DetailingAssembly {
   conflicts: BarConflict[];
   unsupported: UnsupportedCondition[];
   /**
+   * Members in this assembly whose OWN design is a proposal, not a certified design.
+   *
+   * Distinct from "owns a provisional bar", which is a different and wider set: a bar
+   * continuous over a support belongs to the beam it was designed for AND to the column it
+   * passes through, so a fully verified column adjacent to a provisional beam owns a
+   * provisional bar without itself being provisional. The bar is unbuildable either way — it
+   * runs through a proposal — but the COLUMN's design is certified, and reporting otherwise
+   * would understate what the app actually achieved.
+   *
+   * Recorded on the assembly so the document, and every projection of it, can state the
+   * member-level fact without re-deriving it from bar ownership.
+   */
+  provisionalMembers?: number[];
+  /**
    * Bumped whenever this assembly is regenerated. Per-assembly, so editing one line does
    * not mark an untouched line stale.
    */

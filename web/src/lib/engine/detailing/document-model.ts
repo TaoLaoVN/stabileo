@@ -83,6 +83,17 @@ export interface CertificateEntry {
   matches: boolean;
   verifierId: string;
   status: 'ok' | 'warn' | 'fail' | 'notRun';
+  /**
+   * True when this member's design is a PROPOSAL rather than a certified design.
+   *
+   * Carried because `matches` cannot be read as certification and used to be the only signal
+   * on the row. It answers "does the verification on record still describe the steel in the
+   * model" — a staleness question — so a member whose steel was verified and REFUSED can
+   * legitimately show `matches: true`. On a table headed "verification certificates" that is
+   * one glance away from being read as certified, and a provisional member is exactly the
+   * case where the glance would be wrong.
+   */
+  provisional?: boolean;
 }
 
 export interface DocumentAssembly {

@@ -40,7 +40,7 @@ import {
   centrelineRadius, minMandrelDiameter, type BarPath, type Point3,
 } from '../../codes/cirsoc201/bar-geometry';
 import type { MemberContext } from '../design/member-context';
-import type { MemberDesignOutcome } from '../design/outcome';
+import { detailableReinforcement, isProvisionalOutcome, type MemberDesignOutcome } from '../design/outcome';
 import {
   generateBeamBars, type BentUpPolicy, type MomentStation, type SupportKind,
 } from './generate-beam';
@@ -188,8 +188,26 @@ export function detailingReadiness(input: {
   for (const [id, ctx] of input.contexts) {
     if (ctx.elementType === 'wall') continue;   // PR18 owns walls.
     const outcome = input.outcomes.get(id);
-    if (!outcome || outcome.outcome !== 'VERIFIED') { unverified.push(id); continue; }
-    if (!outcome.accepted) { noReinforcement.push(id); continue; }
+    /**
+     * A PROVISIONAL_BIAXIAL member is detailed, and is not thereby verified.
+     *
+     * The gate used to be `outcome === 'VERIFIED'`, which is why 117 of the 119 beams in the
+     * flagship example had no bars in the document, no steel in the 3-D view and no rows on
+     * any schedule: their design was refused at the biaxial capability gate, so nothing
+     * downstream ever saw them. Bare orange concrete is not an honest report of "we designed
+     * the axis we can and cannot check the other one" — it is indistinguishable from steel
+     * that went missing.
+     *
+     * Detailing them changes nothing about what may be CLAIMED. They carry no certificate, so
+     * `allMembersReverified` and `certificatesMatchGeometry` still fail and CONSTRUCTIBLE
+     * remains unreachable; their bars are stamped `provisional` below; and every projection
+     * gives them the PROVISIONAL state rather than MODELLED.
+     */
+    const offered = detailableReinforcement(outcome);
+    if (!outcome || (outcome.outcome !== 'VERIFIED' && outcome.outcome !== 'PROVISIONAL_BIAXIAL')) {
+      unverified.push(id); continue;
+    }
+    if (!offered) { noReinforcement.push(id); continue; }
     if (ctx.elementType === 'beam' && !ctx.stations) { noStations.push(id); continue; }
     if (ctx.orientationSuspect) { suspect.push(id); continue; }
     detailable.push(id);
@@ -327,6 +345,14 @@ export interface RunDetailingResult {
   /** Members skipped, with the reason, so nothing disappears silently. */
   skipped: Array<{ elementId: number; key: string }>;
   /**
+   * Members whose bars are a PROPOSAL rather than certified reinforcement, ascending.
+   *
+   * Reported on the run — not only stamped on the bars — so a panel can say "8 of 119 beams
+   * carry a provisional proposal" without walking every bar of every assembly, and so a
+   * caller that never looks at a bar still cannot miss the fact.
+   */
+  provisionalMembers: number[];
+  /**
    * The global layout search: outcome, statistics and infeasible joints.
    *
    * Reported rather than folded into a pass/fail, because "no assignment exists"
@@ -414,7 +440,7 @@ export function runDetailing(input: RunDetailingInput): RunDetailingResult {
   const skipped: Array<{ elementId: number; key: string }> = [];
   if (!readiness.ready) {
     return {
-      assemblies: [], readiness, coordination: [], skipped,
+      assemblies: [], readiness, coordination: [], skipped, provisionalMembers: [],
       lapping: { laps: [], fused: 0, unmaterialised: [] },
       reverification: [],
       layoutSearch: {
@@ -448,7 +474,7 @@ export function runDetailing(input: RunDetailingInput): RunDetailingResult {
   for (const id of columns) {
     const ctx = input.contexts.get(id)!;
     const el = input.elements.get(id);
-    const accepted = input.outcomes.get(id)?.accepted;
+    const accepted = detailableReinforcement(input.outcomes.get(id))?.rebar;
     const bars = accepted ? columnBars(accepted) : null;
     if (!el || !bars) { skipped.push({ elementId: id, key: 'detailing.skip.noColumnBars' }); continue; }
     const nI = input.nodes.get(el.nodeI);
@@ -700,7 +726,7 @@ export function runDetailing(input: RunDetailingInput): RunDetailingResult {
       for (const bid of incident) {
         const bctx = input.contexts.get(bid);
         const bel = input.elements.get(bid);
-        const accepted = input.outcomes.get(bid)?.accepted;
+        const accepted = detailableReinforcement(input.outcomes.get(bid))?.rebar;
         const groups = accepted ? beamGroups(accepted) : null;
         if (!bctx || !bel || !groups) continue;
         const nI = input.nodes.get(bel.nodeI);
@@ -998,7 +1024,7 @@ export function runDetailing(input: RunDetailingInput): RunDetailingResult {
     for (const id of beams) {
       const ctx = input.contexts.get(id);
       const el = input.elements.get(id);
-      const accepted = input.outcomes.get(id)?.accepted;
+      const accepted = detailableReinforcement(input.outcomes.get(id))?.rebar;
       const groups = accepted ? beamGroups(accepted) : null;
       if (!ctx || !el || !groups) continue;
       const nI = input.nodes.get(el.nodeI);
@@ -1450,7 +1476,7 @@ export function runDetailing(input: RunDetailingInput): RunDetailingResult {
   for (const id of beams) {
     const ctx = input.contexts.get(id)!;
     const el = input.elements.get(id);
-    const accepted = input.outcomes.get(id)?.accepted;
+    const accepted = detailableReinforcement(input.outcomes.get(id))?.rebar;
     const groups = accepted ? beamGroups(accepted) : null;
     if (!el || !groups) { skipped.push({ elementId: id, key: 'detailing.skip.noBeamBars' }); continue; }
     const nI = input.nodes.get(el.nodeI);
@@ -1718,7 +1744,7 @@ export function runDetailing(input: RunDetailingInput): RunDetailingResult {
     }
     if (depth <= 0) continue;   // a column with no beam at its top has no joint.
 
-    const cAccepted = input.outcomes.get(cid)?.accepted;
+    const cAccepted = detailableReinforcement(input.outcomes.get(cid))?.rebar;
     const longDia = (cAccepted ? columnBars(cAccepted)?.diameterMm : undefined)
       ?? cCtx.material.stirrupDia;
     const ts = tieSpacing(longDia, cCtx.material.stirrupDia,
@@ -2133,8 +2159,45 @@ export function runDetailing(input: RunDetailingInput): RunDetailingResult {
     coordination.push(result);
   }
 
+  /**
+   * Stamp the proposal's bars, in ONE place, after every generator has run.
+   *
+   * Deliberately a post-pass rather than a flag threaded through the eight sites that build
+   * bars. A bar is provisional because of the MEMBER it belongs to — a fact known here and
+   * nowhere else more reliably — and stamping it centrally makes the property total: no
+   * generator can be added later that forgets to set it, because no generator sets it.
+   *
+   * A bar continuous over two members is provisional if EITHER owner is. It cannot be built
+   * from a certified drawing while one of the members it runs through is a proposal.
+   */
+  const provisionalMembers = new Set<number>();
+  for (const [id, o] of input.outcomes) if (isProvisionalOutcome(o)) provisionalMembers.add(id);
+  for (const a of assemblies) {
+    for (const bar of a.bars) {
+      if (bar.ownerElementIds.some((id) => provisionalMembers.has(id))) {
+        bar.provisional = 'biaxial';
+      }
+    }
+    /**
+     * The member-level fact, recorded separately from the bar-level one.
+     *
+     * Intersected against the bars' OWNERS rather than against `a.elementIds`. The two are
+     * not the same list: `elementIds` names the members the assembly was built around, and on
+     * the 7-storey building it reached only 55 of the 117 provisional beams, because a beam
+     * can contribute bars to a line assembly it is not itself listed on. Taking the owners
+     * makes the claim exactly "this assembly carries steel for these provisional members",
+     * which is what a projection of it needs and all it can honestly say.
+     */
+    const ownProvisional = new Set<number>();
+    for (const bar of a.bars) {
+      for (const id of bar.ownerElementIds) if (provisionalMembers.has(id)) ownProvisional.add(id);
+    }
+    a.provisionalMembers = [...ownProvisional].sort((x, y) => x - y);
+  }
+
   return {
     assemblies, readiness, coordination, skipped,
+    provisionalMembers: [...provisionalMembers].sort((a, b) => a - b),
     reverification: reverificationRecords,
     layoutSearch: layoutChoice.result,
     layering: layerDiagnostics ? {
@@ -2180,7 +2243,7 @@ function buildJoints(
       const far = bEl.nodeI === top.id ? bJ : bI;
       const dx = far.x - at.x, dy = far.y - at.y;
       const L = Math.hypot(dx, dy) || 1;
-      const accepted = input.outcomes.get(bid)?.accepted;
+      const accepted = detailableReinforcement(input.outcomes.get(bid))?.rebar;
       const g = accepted ? beamGroups(accepted) : null;
       incident.push({
         elementId: bid,

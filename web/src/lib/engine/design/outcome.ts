@@ -11,11 +11,24 @@
 
 import type { ProvidedReinforcement } from '../../store/model.svelte';
 import type { ProvidedRebarResult } from '../station-design-forces';
-import type { DesignAxes } from './design-axes';
+import type { DesignAxes, MomentAxis, ShearAxis } from './design-axes';
 
 export type DesignOutcomeKind =
   /** The final assigned reinforcement passes every applicable check. */
   | 'VERIFIED'
+  /**
+   * A PROPOSAL, produced by a check that does not cover every significant action.
+   *
+   * Today there is exactly one such case: a beam bending about both axes, whose secondary
+   * axis this app cannot verify. The proposal is the real, authoritative design of the
+   * PRIMARY axis — nothing about it is invented — and it is offered because the alternative
+   * was a bare orange beam and 117 members with no geometry anywhere in the model.
+   *
+   * It is not a weaker VERIFIED. It carries no certificate, it is never counted as a pass,
+   * it cannot satisfy the constructibility gate (which counts certificates), and every
+   * projection that renders it must say what it is. See `ProvisionalBasis`.
+   */
+  | 'PROVISIONAL_BIAXIAL'
   /** No permitted arrangement can satisfy the checks or physically fit. Exhaustive. */
   | 'SECTION_INADEQUATE'
   /** Combinations / forces / material / section data absent. Never a pass. */
@@ -24,6 +37,42 @@ export type DesignOutcomeKind =
   | 'SEARCH_EXHAUSTED'
   /** Selected code or a required check is not implemented for this member. */
   | 'UNSUPPORTED';
+
+/**
+ * What a provisional proposal is, and precisely what it is not.
+ *
+ * Every field here exists so that the sentence "this beam has bars" can never be read
+ * without the sentence that qualifies it. `method` names how the bars were obtained,
+ * `uncheckedAxis` names what nobody checked, and the two moments are given in kN·m and not
+ * only as a ratio — a 12 % ratio between 4,3 and 1,0 kN·m and a 12 % ratio between 430 and
+ * 100 kN·m are the same number and completely different engineering situations.
+ */
+export interface ProvisionalBasis {
+  /**
+   * `primaryAxisDesign` — the ordinary, authoritative bounded search, run against the
+   * primary flexural axis exactly as it is for a uniaxial beam. No threshold was raised, no
+   * check was skipped on the axis that WAS designed, and no capacity was invented for the
+   * axis that was not.
+   */
+  method: 'primaryAxisDesign';
+  /** The axis the proposal was designed and verified against. */
+  designedAxis: MomentAxis;
+  designedShear: ShearAxis;
+  /** The axis no verifier in this app evaluates for a beam. */
+  uncheckedAxis: MomentAxis;
+  uncheckedShear: ShearAxis;
+  /** secondary/primary governing moment, as `resolveDesignAxes` measured it. */
+  secondaryRatio: number;
+  /** kN·m. Stated absolutely, because a ratio alone cannot be triaged. */
+  primaryMoment: number;
+  secondaryMoment: number;
+  /** Load combination governing the UNCHECKED moment, when the demands name one. */
+  secondaryCombo: string | null;
+  /** demand/capacity on the axis that was checked. Evidence, never a certificate. */
+  primaryUtilization: number;
+  /** Which force components the verifier actually evaluated. */
+  checkedAxes: string[];
+}
 
 export type LimitingConstraint =
   | 'flexure' | 'shear' | 'axialFlexure' | 'biaxial' | 'torsion'
@@ -149,10 +198,18 @@ export interface MemberDesignOutcome {
    */
   finalGeometryCertificate?: DesignCertificate & { finalGeometryHash: string };
   /**
-   * Best failing candidate (O3). Clearly provisional: never certified, never
-   * counted as passing, always listed in the review UI.
+   * Best failing candidate (O3), or — for `PROVISIONAL_BIAXIAL` — the proposal itself.
+   *
+   * One field for both because they are the same claim: a reinforcement arrangement that
+   * was NOT certified. Giving the proposal its own field would have created a second
+   * channel with the same meaning and a different name, and the first consumer to read one
+   * and not the other would have shipped an uncertified arrangement as a designed one.
+   *
+   * Never certified, never counted as passing, always listed in the review UI.
    */
   provisional?: DesignAttempt;
+  /** Present exactly when outcome === 'PROVISIONAL_BIAXIAL'. */
+  provisionalBasis?: ProvisionalBasis;
   limiting: LimitingConstraint[];
   reasons: DesignReason[];
   sectionAdvice?: SectionRecommendation;
@@ -169,6 +226,8 @@ export interface DesignRunSummary {
   demandUnavailable: number;
   searchExhausted: number;
   unsupported: number;
+  /** Members carrying a provisional biaxial PROPOSAL. Never counted as verified. */
+  provisionalBiaxial: number;
   /** Members whose provisional candidate was retained (subset of the failures). */
   provisionalRetained: number;
   outcomes: Map<number, MemberDesignOutcome>;
@@ -182,7 +241,8 @@ export interface DesignRunSummary {
 export function emptyRunSummary(codeId: string, codeVersion: string): DesignRunSummary {
   return {
     codeId, codeVersion, total: 0, verified: 0, sectionInadequate: 0,
-    demandUnavailable: 0, searchExhausted: 0, unsupported: 0, provisionalRetained: 0,
+    demandUnavailable: 0, searchExhausted: 0, unsupported: 0,
+    provisionalBiaxial: 0, provisionalRetained: 0,
     outcomes: new Map(), wallMs: 0, aborted: false, notReached: 0,
   };
 }
@@ -202,6 +262,7 @@ export function tallyRunSummary(
     if (o.provisional && o.outcome !== 'VERIFIED') s.provisionalRetained++;
     switch (o.outcome) {
       case 'VERIFIED': s.verified++; break;
+      case 'PROVISIONAL_BIAXIAL': s.provisionalBiaxial++; break;
       case 'SECTION_INADEQUATE': s.sectionInadequate++; break;
       case 'DEMAND_UNAVAILABLE': s.demandUnavailable++; break;
       case 'SEARCH_EXHAUSTED': s.searchExhausted++; break;
@@ -237,6 +298,22 @@ export function assertOutcomeInvariants(o: MemberDesignOutcome): void {
     if (o.limiting.length === 0) throw new Error(`${where}: ${o.outcome} without a limiting constraint`);
     if (o.reasons.length === 0) throw new Error(`${where}: ${o.outcome} without a reason`);
   }
+  if (o.outcome === 'PROVISIONAL_BIAXIAL') {
+    // The whole point of the state is that it carries geometry WITHOUT a certificate. Both
+    // halves are invariants: a proposal with nothing to propose is a mislabelled refusal,
+    // and one that acquired a certificate is a false pass wearing an honest name.
+    if (!o.provisional) throw new Error(`${where}: PROVISIONAL_BIAXIAL without a proposal`);
+    if (!o.provisionalBasis) throw new Error(`${where}: PROVISIONAL_BIAXIAL without its basis`);
+    if (!o.limiting.includes('biaxial')) {
+      throw new Error(`${where}: PROVISIONAL_BIAXIAL must name 'biaxial' as its limiting constraint`);
+    }
+    if (o.provisionalBasis.designedAxis === o.provisionalBasis.uncheckedAxis) {
+      throw new Error(`${where}: PROVISIONAL_BIAXIAL claims the unchecked axis is the designed one`);
+    }
+  }
+  if (o.provisionalBasis && o.outcome !== 'PROVISIONAL_BIAXIAL') {
+    throw new Error(`${where}: ${o.outcome} carries a provisional basis it cannot have earned`);
+  }
   if (o.outcome === 'SECTION_INADEQUATE') {
     if (!o.searchStats.envelopeExhausted) {
       throw new Error(`${where}: SECTION_INADEQUATE claimed without exhausting the permitted envelope`);
@@ -252,4 +329,32 @@ export function assertOutcomeInvariants(o: MemberDesignOutcome): void {
 /** True when the outcome may be shown with a passing (green) treatment. */
 export function isPassing(o: MemberDesignOutcome | undefined): boolean {
   return o?.outcome === 'VERIFIED';
+}
+
+/**
+ * The reinforcement an outcome offers to the detailing pipeline, and what it is worth.
+ *
+ * ── Why one function rather than eight reads of `.accepted` ────────
+ *
+ * `run-detailing` read `outcomes.get(id)?.accepted` in eight places. Adding a second source of
+ * bars by editing eight call sites is how one of them gets missed, and a missed one is not a
+ * crash — it is a member that silently has bars in the elevation and none in the section.
+ *
+ * `certified: false` is returned WITH the bars rather than instead of them, so a caller
+ * cannot obtain the geometry without also obtaining the fact that it is a proposal.
+ */
+export function detailableReinforcement(
+  o: MemberDesignOutcome | undefined,
+): { rebar: ProvidedReinforcement; certified: boolean } | null {
+  if (!o) return null;
+  if (o.outcome === 'VERIFIED' && o.accepted) return { rebar: o.accepted, certified: true };
+  if (o.outcome === 'PROVISIONAL_BIAXIAL' && o.provisional) {
+    return { rebar: o.provisional.candidate, certified: false };
+  }
+  return null;
+}
+
+/** True when this member's bars are a proposal rather than certified reinforcement. */
+export function isProvisionalOutcome(o: MemberDesignOutcome | undefined): boolean {
+  return o?.outcome === 'PROVISIONAL_BIAXIAL';
 }

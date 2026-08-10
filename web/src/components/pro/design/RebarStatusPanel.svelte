@@ -188,6 +188,9 @@
   /* One colour per state, and never two states sharing one. */
   .st-failed .dot { background: #e0444a; }
   .st-unsupported .dot { background: #b06ad6; }
+  /* The same violet the 3-D view paints provisional steel with — one colour, one meaning,
+     across the panel and the viewport. */
+  .st-provisional .dot { background: #a066d3; }
   .st-refused .dot { background: #d4762a; }
   .st-designed-not-modelled .dot { background: #d9c04a; }
   .st-not-evaluated .dot { background: #8b93a3; }

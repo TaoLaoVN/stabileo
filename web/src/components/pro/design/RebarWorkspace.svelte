@@ -37,6 +37,7 @@
   } from '../../../lib/engine/detailing/element-status';
   import RebarViewport3D from './RebarViewport3D.svelte';
   import RebarStatusPanel from './RebarStatusPanel.svelte';
+  import ProvisionalBanner from './ProvisionalBanner.svelte';
   import RebarLayersPanel from './RebarLayersPanel.svelte';
   import { markOpenPhase } from '../../../lib/utils/open-timeline';
 
@@ -320,6 +321,8 @@
         onclick={() => rebarWorkspace.close()}
       >✕ {t('detailing.scene.workspace.close')}</button>
     </header>
+
+    <ProvisionalBanner count={built?.scene.provisionalMembers.length ?? 0} />
 
     <div class="body" class:rail-open={railOpen}>
       <aside class="rail" data-testid="rebar-rail" aria-hidden={!railOpen}>

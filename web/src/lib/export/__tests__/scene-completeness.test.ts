@@ -123,18 +123,26 @@ describe('the 7-storey building is more than column longitudinals', () => {
     expect(familyOf(s, 'wall').longitudinal, 'wall bars').toBeGreaterThan(50);
   });
 
-  it('reports beams honestly when their design was refused', async () => {
+  it('reports beams honestly when their design is only a proposal', async () => {
     /**
-     * On this model 117 of 119 beams are refused by the verifier's secondary-axis refusal, so
-     * they carry no steel. That is a design outcome, not a scene gap, and the test asserts the
-     * HONEST shape: the concrete is present and the absence of steel is reported.
+     * On this model 117 of 119 beams are refused certification by the verifier's
+     * secondary-axis refusal. They used to carry no steel at all, and this test asserted
+     * exactly that — concrete drawn, absence of steel reported.
      *
-     * It deliberately does not require beam bars here. Requiring them would only be
-     * satisfiable by inventing reinforcement the design never calculated.
+     * They now carry a PROVISIONAL_BIAXIAL proposal: the primary-axis design, produced by the
+     * ordinary search, marked on every bar. So the honest shape has changed and the assertion
+     * changes with it. What has NOT changed is the rule the old assertion protected: the scene
+     * may not invent reinforcement the design never calculated. It does not — every one of
+     * these bars came from a real search whose primary-axis verdict passed — and it may not
+     * present them as certified, which is what `provisionalMembers` is checked for.
      */
-    expect(built.scene.unreinforcedMembers.length).toBeGreaterThan(50);
+    expect(built.scene.provisionalMembers.length, 'the proposals are named').toBeGreaterThan(50);
+    expect(built.scene.bars.some((b) => b.provisional), 'and their steel is marked').toBe(true);
+    // Every beam is drawn, which was true before and stays true.
     const beamSolids = built.scene.solids.filter((s) => s.kind === 'beam');
-    expect(beamSolids.some((s) => !s.reinforced), 'refused beams are drawn').toBe(true);
+    expect(beamSolids.length).toBeGreaterThan(50);
+    // A member with a proposal is not a member with nothing: the old population is now empty.
+    expect(built.scene.unreinforcedMembers, 'no beam is left bare').toEqual([]);
   });
 });
 
@@ -459,7 +467,20 @@ describe('every beam’s state is explained, and none loses its steel on the way
       }
     }
     expect(armed, 'some beams are armed').toBeGreaterThan(0);
-    expect(refused, 'the rest are refused with a reason').toBeGreaterThan(0);
+    /**
+     * `refused` is now zero on this fixture, and that is the improvement rather than a hole.
+     *
+     * Every beam reaches the document — the verified two as certified steel, the other 117 as
+     * a marked proposal — so the "no bars in the document" branch has nothing to count. The
+     * branch stays, because a member CAN still legitimately have no bars (a demand-unavailable
+     * member, a wall with no geometry), and when that happens it must still state a reason.
+     * What is asserted here is the total, which is what a lost member would break.
+     */
+    expect(armed + refused, 'every beam is accounted for').toBe(beamIds.length);
+    for (const id of beamIds) {
+      const o = verificationStore.outcomeFor(id);
+      expect(o, `member ${id} has an outcome`).toBeTruthy();
+    }
   }, 120_000);
 });
 

@@ -43,18 +43,28 @@ describe('the 408/373 discrepancy', () => {
     const notVerified = [...summary.outcomes.values()].filter((o) => o.outcome !== 'VERIFIED');
     expect(notVerified).toHaveLength(22);
     /**
-     * UNSUPPORTED, not SEARCH_EXHAUSTED.
+     * PROVISIONAL_BIAXIAL, not UNSUPPORTED and not SEARCH_EXHAUSTED.
      *
-     * The refusal was moved to the adapter's capability gate. `SEARCH_EXHAUSTED` means a
-     * bounded search explored the envelope and found nothing, which invites the engineer to
-     * try a larger section or a longer run; neither can help, because no arrangement is
-     * checked on the secondary axis. `UNSUPPORTED` is the accurate claim — a required check
-     * is not implemented for this member — and it also stops the search burning its whole
-     * candidate budget to rediscover a fact known before the first candidate.
+     * `SEARCH_EXHAUSTED` would mean a bounded search explored the envelope and found nothing,
+     * which invites the engineer to try a larger section or a longer run; neither can help,
+     * because no arrangement is checked on the secondary axis.
+     *
+     * `UNSUPPORTED` was accurate about the CHECK and produced nothing at all — no steel in
+     * the model, no bars in the document, no rows on any schedule — which is
+     * indistinguishable from reinforcement that went missing. These members now carry the
+     * primary-axis design as an explicit PROPOSAL, with the same threshold, the same verifier
+     * and no capacity assumed for the axis nobody checks. The refusal is still stated; what
+     * changed is that it now comes with the geometry it refused to certify.
      */
-    expect([...new Set(notVerified.map((o) => o.outcome))]).toEqual(['UNSUPPORTED']);
+    expect([...new Set(notVerified.map((o) => o.outcome))]).toEqual(['PROVISIONAL_BIAXIAL']);
     // And the cause is named, not left to the outcome kind alone.
     expect([...new Set(notVerified.flatMap((o) => o.limiting))]).toEqual(['biaxial']);
+    // A proposal is never a pass, whatever else it carries.
+    for (const o of notVerified) {
+      expect(o.certificate, `member ${o.elementId} carries no certificate`).toBeUndefined();
+      expect(o.accepted, `member ${o.elementId} assigns no certified steel`).toBeUndefined();
+      expect(o.provisional, `member ${o.elementId} carries its proposal`).toBeTruthy();
+    }
   }, 300_000);
 
   it('detailing keys off the OUTCOME, so compliant warning members are not lost', () => {
@@ -64,14 +74,26 @@ describe('the 408/373 discrepancy', () => {
       outcomes: summary.outcomes as ReadonlyMap<number, MemberDesignOutcome>,
     });
     // Walls are PR18's; this fixture carries none, so the detailable population is exactly the
-    // VERIFIED one. Asserted against `summary.verified` rather than a literal so the tie
-    // between the two is what is being checked, not a number that happens to match.
+    // VERIFIED members PLUS the provisional proposals. Asserted against the summary's own
+    // counters rather than literals so the tie between them is what is being checked.
     expect(membersOfKind('wall')).toHaveLength(0);
-    expect(readiness.detailable.length).toBe(summary.verified);
-    // Nothing compliant is dropped: every VERIFIED member is detailable.
-    const verifiedIds = [...summary.outcomes.values()]
-      .filter((o) => o.outcome === 'VERIFIED').map((o) => o.elementId).sort((a, b) => a - b);
+    expect(readiness.detailable.length).toBe(summary.verified + summary.provisionalBiaxial);
+    /**
+     * Detailing a proposal is not certifying it.
+     *
+     * The gate used to be `outcome === 'VERIFIED'`, and that is exactly why a refused member
+     * had no geometry anywhere. Widening it changes what can be SEEN, not what can be
+     * claimed: a proposal carries no certificate, so `allMembersReverified` and
+     * `certificatesMatchGeometry` still fail and CONSTRUCTIBLE stays unreachable.
+     */
+    const detailableIds = [...summary.outcomes.values()]
+      .filter((o) => o.outcome === 'VERIFIED' || o.outcome === 'PROVISIONAL_BIAXIAL')
+      .map((o) => o.elementId).sort((a, b) => a - b);
     // `detailable` is a sorted id list, so this is an id-for-id comparison.
-    expect([...readiness.detailable].sort((a, b) => a - b)).toEqual(verifiedIds);
+    expect([...readiness.detailable].sort((a, b) => a - b)).toEqual(detailableIds);
+    // Nothing compliant is dropped: every VERIFIED member is still detailable.
+    const verifiedIds = [...summary.outcomes.values()]
+      .filter((o) => o.outcome === 'VERIFIED').map((o) => o.elementId);
+    for (const id of verifiedIds) expect(readiness.detailable).toContain(id);
   }, 300_000);
 });

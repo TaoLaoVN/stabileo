@@ -81,6 +81,8 @@ async function compute(example: string): Promise<WorkspaceScene> {
       outcome: o?.outcome,
       verificationStatus: v?.overallStatus,
       limiting: o?.limiting ?? [],
+      reasonKey: o?.reasons?.[0]?.key,
+      secondaryRatio: o?.axes?.secondaryRatio,
     });
   }
 

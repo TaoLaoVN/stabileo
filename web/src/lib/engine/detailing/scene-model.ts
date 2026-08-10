@@ -90,6 +90,14 @@ export interface SceneBar {
    */
   ownerScope: 'frame' | 'family';
   /**
+   * Set when this bar belongs to a PROPOSAL rather than a certified design.
+   *
+   * Carried into the scene verbatim from the document, so the viewport can colour it and the
+   * legend can name it. The 3-D view must not hide a provisional member — hiding it is the
+   * state that was already wrong — and must not draw it like a verified one either.
+   */
+  provisional?: 'biaxial';
+  /**
    * What KIND of piece this is, beyond longitudinal-or-transverse.
    *
    * ── Why `role` was not enough ──────────────────────────────────
@@ -296,6 +304,15 @@ export interface SceneModel {
    * the projection pure and still gets the user a complete answer.
    */
   unreinforcedMembers: number[];
+  /**
+   * Members whose steel in THIS document is a proposal, ascending.
+   *
+   * The counterpart of `unreinforcedMembers`: that list answers "which members have no steel",
+   * this one answers "which members have steel you may not build from". A viewer that shows
+   * one and not the other still leaves the user unable to tell a finished cage from an
+   * unfinished one.
+   */
+  provisionalMembers: number[];
 }
 
 export interface SceneOptions {
@@ -515,6 +532,7 @@ export function buildSceneModel(doc: DocumentModel, opts: SceneOptions = {}): Sc
         polyline: samplePath(bar),
         cuttingLength: bar.cuttingLength,
         conflicted: conflictedBars.has(bar.id),
+        provisional: bar.provisional,
       });
     }
 
@@ -590,7 +608,23 @@ export function buildSceneModel(doc: DocumentModel, opts: SceneOptions = {}): Sc
       .filter((s) => !s.reinforced && (s.kind === 'beam' || s.kind === 'column'))
       .flatMap((s) => s.elementIds)
       .sort((x, y) => x - y),
+    provisionalMembers: provisionalMembersOf(doc),
   };
+}
+
+/**
+ * Members the DOCUMENT declares provisional, ascending and unique.
+ *
+ * Read from the assemblies' own record rather than inferred from which bars carry the mark.
+ * Inferring it counted 202 members on the 7-storey building against 117 provisional beams,
+ * because a bar continuous over a support belongs to the column it passes through as well as
+ * to the beam it was designed for. The bar is correctly marked in both; the COLUMN's design
+ * is certified, and calling it provisional would understate what was actually verified.
+ */
+function provisionalMembersOf(doc: DocumentModel): number[] {
+  const out = new Set<number>();
+  for (const a of doc.assemblies) for (const id of a.source.provisionalMembers ?? []) out.add(id);
+  return [...out].sort((a, b) => a - b);
 }
 
 function buildFacets(doc: DocumentModel, bars: readonly SceneBar[]): SceneFacets {
@@ -828,6 +862,10 @@ export function filterScene(scene: SceneModel, f: SceneFilter): SceneModel {
       .filter((s) => !s.reinforced && (s.kind === 'beam' || s.kind === 'column'))
       .flatMap((s) => s.elementIds)
       .sort((x, y) => x - y),
+    // Carried through the filter unchanged. Hiding a member's steel does not make its design
+    // certified, and a legend that stopped saying "provisional" because a layer was switched
+    // off would be telling the user what they had just asked not to see.
+    provisionalMembers: scene.provisionalMembers,
   };
 }
 

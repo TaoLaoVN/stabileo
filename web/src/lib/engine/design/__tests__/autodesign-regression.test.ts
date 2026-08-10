@@ -44,8 +44,8 @@ describe('flagship 408-member RC frame designs completely', () => {
     expect(solved.orientationIssues).toEqual([]);
   });
 
-  it('produces VERIFIED for every member whose axes are fully checked, and honestly ' +
-     'refuses the 22 BEAM-Y members with unchecked biaxial (Mz/Vy) demand', () => {
+  it('produces VERIFIED for every member whose axes are fully checked, and a marked ' +
+     'PROPOSAL for the 22 BEAM-Y members with unchecked biaxial (Mz/Vy) demand', () => {
     const s = runDesign(cirsoc201Adapter, solved.contexts.values(), { maxRunMs: 120_000 });
     expect(s.total).toBe(408);
     // 22 BEAM-Y members carry Mz/Vy secondary demand above the 10% biaxial
@@ -54,19 +54,26 @@ describe('flagship 408-member RC frame designs completely', () => {
     expect(s.verified).toBe(386);
     expect(s.sectionInadequate).toBe(0);
     expect(s.demandUnavailable).toBe(0);
-    // The refusal moved to the adapter's capability gate, so it is UNSUPPORTED — a required
-    // check is not implemented for this member — rather than SEARCH_EXHAUSTED, which would
-    // claim the envelope was explored and invite a section change that cannot help.
-    expect(s.searchExhausted).toBe(0);
-    expect(s.unsupported).toBe(22);
     /**
-     * And no provisional is retained, which is the point rather than a loss.
+     * PROVISIONAL_BIAXIAL, not UNSUPPORTED and not SEARCH_EXHAUSTED.
      *
-     * A provisional is the BEST FAILING CANDIDATE: a design that was evaluated and fell
-     * short. These members had no candidate evaluated at all, so there is nothing that
-     * earned the name. Offering one would imply an assessment that never happened.
+     * `SEARCH_EXHAUSTED` would claim the envelope was explored and invite a section change
+     * that cannot help. `UNSUPPORTED` was accurate about the CHECK and produced no geometry
+     * at all, which is indistinguishable on screen from steel that went missing. These 22
+     * now carry their primary-axis design as an explicit proposal — same threshold, same
+     * verifier, nothing assumed for the axis nobody checks.
      */
-    expect(s.provisionalRetained).toBe(0);
+    expect(s.searchExhausted).toBe(0);
+    expect(s.unsupported).toBe(0);
+    expect(s.provisionalBiaxial).toBe(22);
+    /**
+     * `provisionalRetained` counts a different thing and must not move.
+     *
+     * It counts the BEST FAILING CANDIDATE of a member whose design was evaluated and fell
+     * short. A biaxial proposal is a member whose primary axis PASSED. Merging the two
+     * counters would let a failing member inherit a proposal's treatment.
+     */
+    expect(s.provisionalRetained).toBe(22);
     expect(s.aborted).toBe(false);
     expect(s.notReached).toBe(0);
 
@@ -77,13 +84,17 @@ describe('flagship 408-member RC frame designs completely', () => {
         // The refused members must be exactly the honest-refusal case: never a
         // certificate, always a reason, and the biaxial constraint recorded.
         expect(o.elementType, `element ${id}`).toBe('beam');
-        expect(o.outcome, `element ${id}`).toBe('UNSUPPORTED');
-        // Refused before the search, so the stats must show no candidate was tried. A
-        // non-zero count here would mean the gate leaked and the budget was spent anyway.
-        expect(o.searchStats.candidatesTried, `element ${id} candidates`).toBe(0);
+        expect(o.outcome, `element ${id}`).toBe('PROVISIONAL_BIAXIAL');
+        // The proposal cost a real search — of the PRIMARY axis. A zero here would mean the
+        // geometry came from somewhere other than the ordinary candidate search.
+        expect(o.searchStats.candidatesTried, `element ${id} candidates`).toBeGreaterThan(0);
         expect(o.limiting, `element ${id}`).toContain('biaxial');
+        // The two things a proposal may never acquire.
         expect(o.certificate, `element ${id} certificate`).toBeUndefined();
         expect(o.accepted, `element ${id} accepted rebar`).toBeUndefined();
+        // …and the two it must carry.
+        expect(o.provisional, `element ${id} proposal`).toBeDefined();
+        expect(o.provisionalBasis?.method, `element ${id} basis`).toBe('primaryAxisDesign');
         refused++;
         continue;
       }

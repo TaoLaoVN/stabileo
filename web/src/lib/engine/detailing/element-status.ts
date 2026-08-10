@@ -34,12 +34,21 @@
 
 import type { SceneModel } from './scene-model';
 
-/** The six states the workspace distinguishes, worst last. */
+/** The seven states the workspace distinguishes, worst last. */
 export type ElementStatus =
   /** Designed, verified, and physical bars exist in the document. */
   | 'MODELLED'
   /** Verified, but no bar geometry was produced — the checks stand, the schedule cannot. */
   | 'DESIGNED_NOT_MODELLED'
+  /**
+   * Bars exist and are a PROPOSAL: the primary axis was designed and verified, the secondary
+   * axis is not evaluated by any verifier in this app.
+   *
+   * Deliberately its own state and not a shade of MODELLED. The two look identical in a
+   * viewport — concrete with steel inside it — and mean opposite things to somebody about to
+   * issue a drawing, so they may never share a colour, a count or a filter.
+   */
+  | 'PROVISIONAL'
   /** A required check is not implemented for this member. No arrangement can pass. */
   | 'UNSUPPORTED'
   /** The design ran and could not find a passing arrangement. */
@@ -56,14 +65,25 @@ export type ElementStatus =
  * buried under the ones that do not.
  */
 export const ELEMENT_STATUS_ORDER: readonly ElementStatus[] = [
-  'FAILED', 'UNSUPPORTED', 'REFUSED', 'DESIGNED_NOT_MODELLED', 'NOT_EVALUATED', 'MODELLED',
+  'FAILED', 'UNSUPPORTED', 'REFUSED', 'PROVISIONAL', 'DESIGNED_NOT_MODELLED',
+  'NOT_EVALUATED', 'MODELLED',
+];
+
+/**
+ * States whose members must never be presented as finished work.
+ *
+ * One list, consumed by the viewport legend, the drawing sheets, the schedule and the report,
+ * so "not for construction" cannot be true on one projection and forgotten on another.
+ */
+export const NOT_FOR_CONSTRUCTION_STATUSES: readonly ElementStatus[] = [
+  'FAILED', 'UNSUPPORTED', 'REFUSED', 'PROVISIONAL',
 ];
 
 /** The half of the answer that comes from the design run, per element. */
 export interface DesignOutcomeSummary {
   /** The outcome kind, verbatim. Absent means the member was never designed. */
-  outcome?: 'VERIFIED' | 'SECTION_INADEQUATE' | 'DEMAND_UNAVAILABLE'
-    | 'SEARCH_EXHAUSTED' | 'UNSUPPORTED';
+  outcome?: 'VERIFIED' | 'PROVISIONAL_BIAXIAL' | 'SECTION_INADEQUATE'
+    | 'DEMAND_UNAVAILABLE' | 'SEARCH_EXHAUSTED' | 'UNSUPPORTED';
   /**
    * Whether the member's provided reinforcement passes verification, when that ran.
    *
@@ -207,6 +227,16 @@ export function statusOf(
   }
 
   switch (summary.outcome) {
+    case 'PROVISIONAL_BIAXIAL':
+      /**
+       * A proposal with no bars is not a proposal.
+       *
+       * `proposeOnPrimaryAxis` only returns PROVISIONAL_BIAXIAL when the primary-axis search
+       * verified something, so steel should always exist — but if it did not survive
+       * detailing, saying PROVISIONAL over an empty member would claim geometry the user
+       * cannot see. UNSUPPORTED is what that member actually is.
+       */
+      return hasSteel ? 'PROVISIONAL' : 'UNSUPPORTED';
     case 'UNSUPPORTED':
       return 'UNSUPPORTED';
     case 'SECTION_INADEQUATE':
@@ -265,7 +295,7 @@ export function reportElementStatus(
   entries.sort((a, b) => a.elementId - b.elementId);
 
   const counts = {
-    MODELLED: 0, DESIGNED_NOT_MODELLED: 0, UNSUPPORTED: 0,
+    MODELLED: 0, DESIGNED_NOT_MODELLED: 0, PROVISIONAL: 0, UNSUPPORTED: 0,
     REFUSED: 0, FAILED: 0, NOT_EVALUATED: 0,
   } as Record<ElementStatus, number>;
   for (const e of entries) counts[e.status] += 1;

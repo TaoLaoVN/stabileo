@@ -126,6 +126,27 @@ export function renderReportHtml(
   rows.push(`<p class="banner ${draft ? 'draft' : 'ok'}">${esc(readinessBanner(doc, opts.locale))}</p>`);
   rows.push(`<p class="summary">${esc(translate(doc.summary.key, doc.summary.params))}</p>`);
 
+  /**
+   * Provisional members, at the TOP of the report and again in their own section.
+   *
+   * Twice on purpose. The banner is what a reader sees before deciding whether to read on,
+   * and the section is what they act from. A report that carried the fact only in a table
+   * halfway down would be a report somebody prints, skims and issues.
+   */
+  const provisionalAll = [...new Set(
+    doc.assemblies.flatMap((a) => a.source.provisionalMembers ?? []))].sort((x, y) => x - y);
+  if (provisionalAll.length > 0) {
+    rows.push(`<p class="banner draft provisional">`
+      + esc(L(
+        `PROPUESTA PROVISIONAL — NO APTO PARA EMISIÓN CONSTRUCTIVA. ${provisionalAll.length} `
+        + 'elemento(s) llevan armadura del diseño de su eje principal; su eje secundario no lo '
+        + 'verifica ninguna comprobación de esta aplicación.',
+        `PROVISIONAL PROPOSAL — NOT VALID FOR CONSTRUCTION. ${provisionalAll.length} member(s) `
+        + 'carry reinforcement from their primary-axis design; their secondary axis is not '
+        + 'evaluated by any check in this application.'))
+      + '</p>');
+  }
+
   // ── Revision block ──
   rows.push(`<h2>${L('Revisión', 'Revision')}</h2><table><tbody>`);
   rows.push(`<tr><th>${L('Revisión', 'Revision')}</th><td>${doc.revision.number}</td></tr>`);
@@ -156,11 +177,46 @@ export function renderReportHtml(
     + `<th>${L('Estado', 'Status')}</th><th>${L('Coincide con la geometría', 'Matches geometry')}</th>`
     + `</tr></thead><tbody>`);
   for (const c of doc.certificates) {
-    rows.push(`<tr><td>${c.elementId}</td><td>${esc(c.verifierId)}</td>`
-      + `<td>${esc(c.status)}</td>`
-      + `<td class="${c.matches ? 'ok' : 'bad'}">${c.matches ? L('Sí', 'Yes') : L('No', 'No')}</td></tr>`);
+    // The provisional label goes in the STATUS cell, beside the verdict, not in a column of
+    // its own at the far right where the eye does not go.
+    const status = c.provisional
+      ? `${esc(c.status)} — ${esc(L('PROVISIONAL, sin certificar', 'PROVISIONAL, uncertified'))}`
+      : esc(c.status);
+    rows.push(`<tr class="${c.provisional ? 'provisional' : ''}"><td>${c.elementId}</td>`
+      + `<td>${esc(c.verifierId)}</td>`
+      + `<td>${status}</td>`
+      + `<td class="${c.matches && !c.provisional ? 'ok' : 'bad'}">`
+      + `${c.matches ? L('Sí', 'Yes') : L('No', 'No')}</td></tr>`);
   }
   rows.push('</tbody></table>');
+
+  // ── Provisional proposals, member by member ──
+  if (provisionalAll.length > 0) {
+    rows.push(`<h2>${L('Propuestas provisionales', 'Provisional proposals')}</h2>`);
+    rows.push(`<p>${esc(L(
+      'Estos elementos NO están verificados en su eje secundario y no pueden presentarse como '
+      + 'documentación final. La armadura mostrada proviene del diseño del eje principal, con la '
+      + 'búsqueda y el verificador habituales; no se supuso capacidad para el eje sin verificar '
+      + 'ni se relajó ningún umbral.',
+      'These members are NOT verified about their secondary axis and may not be presented as '
+      + 'final documentation. The reinforcement shown comes from the primary-axis design, using '
+      + 'the ordinary search and verifier; no capacity was assumed for the unchecked axis and no '
+      + 'threshold was relaxed.'))}</p>`);
+    rows.push(`<table><thead><tr>`
+      + `<th>${L('Elemento', 'Member')}</th>`
+      + `<th>${L('Conjunto', 'Assembly')}</th>`
+      + `<th>${L('Barras', 'Bars')}</th>`
+      + `<th>${L('Estado', 'Status')}</th></tr></thead><tbody>`);
+    for (const a of doc.assemblies) {
+      for (const id of a.source.provisionalMembers ?? []) {
+        const bars = a.bars.filter((b) => b.ownerElementIds.includes(id)).length;
+        rows.push(`<tr><td>${id}</td><td>${esc(a.id)}</td><td>${bars}</td>`
+          + `<td class="bad">${esc(L('PROVISIONAL — eje secundario sin verificar',
+            'PROVISIONAL — secondary axis unverified'))}</td></tr>`);
+      }
+    }
+    rows.push('</tbody></table>');
+  }
 
   // ── Assemblies: beam lines and column stacks ──
   for (const a of doc.assemblies) {
@@ -1178,22 +1234,46 @@ export function renderSchedule(
       typeof r[0] === 'string' && /^(marca|mark)$/i.test(String(r[0]).trim()));
     if (header >= 0) {
       aoa[header] = [...aoa[header],
-        L('Masa (kg)', 'Mass (kg)'), L('Elementos', 'Members'), L('Capa', 'Layer')];
+        L('Masa (kg)', 'Mass (kg)'), L('Elementos', 'Members'), L('Capa', 'Layer'),
+        // A column, not a footnote. A schedule is read row by row by somebody ordering
+        // steel, and a warning that lives only in the note block is a warning that is not
+        // beside the bar they are about to order.
+        L('Estado', 'Status')];
       for (let i = 0; i < marks.length; i++) {
         const row = aoa[header + 1 + i];
         if (!row) break;
         const m = marks[i];
-        const first = m.barIds.map((id) => barById.get(id)).find(Boolean);
+        const bars = m.barIds.map((id) => barById.get(id)).filter(Boolean);
+        const first = bars[0];
         const members = [...new Set(m.barIds
           .flatMap((id) => barById.get(id)?.ownerElementIds ?? []))].sort((x, y) => x - y);
         const area = Math.PI * (m.diameterMm / 2000) ** 2;
+        const provisional = bars.some((b) => b?.provisional);
         aoa[header + 1 + i] = [...row,
           m.massKg > 0
             ? Math.round(m.massKg * 1000) / 1000
             : Math.round(area * m.cuttingLength * m.quantity * density * 1000) / 1000,
           members.join(', '),
-          first?.layerId ?? ''];
+          first?.layerId ?? '',
+          provisional
+            ? L('PROVISIONAL — no apto para emisión', 'PROVISIONAL — not for issue')
+            : ''];
       }
+    }
+
+    /**
+     * The sheet-level statement, above the rows and not only beside them.
+     *
+     * The per-row column answers "is THIS bar a proposal". It does not answer "may I order
+     * from this schedule at all", and that is the question somebody printing it is asking.
+     */
+    const provisionalMembers = a.source.provisionalMembers ?? [];
+    if (provisionalMembers.length > 0) {
+      aoa.splice(1, 0, [L(
+        `PROPUESTA PROVISIONAL — NO APTO PARA EMISIÓN CONSTRUCTIVA. ${provisionalMembers.length} `
+        + `elemento(s): ${provisionalMembers.join(', ')}. Eje secundario sin verificar.`,
+        `PROVISIONAL PROPOSAL — NOT VALID FOR CONSTRUCTION. ${provisionalMembers.length} `
+        + `member(s): ${provisionalMembers.join(', ')}. Secondary axis unverified.`)]);
     }
 
     // Laps get their own block: the fabricator has to know a bar is spliced, not merely

@@ -271,22 +271,24 @@ test.describe('nothing is hidden because it has no steel', () => {
     await openWorkspace(page, 'rc-qa-diagnostic');
     const counts = page.getByTestId('rebar-status-counts');
     await expect(counts).toBeVisible();
-    // This fixture has four beams the verifier refuses. They are a state of their own, not
-    // folded into a generic "not ready" and not absent.
-    await expect(page.getByTestId('rebar-status-UNSUPPORTED')).toBeVisible();
+    // This fixture has four beams the verifier refuses to certify about their secondary
+    // axis. They carry a PROVISIONAL proposal — a state of their own, not folded into
+    // MODELLED, not folded into a generic "not ready", and not absent.
+    await expect(page.getByTestId('rebar-status-PROVISIONAL')).toBeVisible();
     await expect(page.getByTestId('rebar-status-MODELLED')).toBeVisible();
   });
 
-  test('filtering to a refused state lists exactly those members',
+  test('filtering to the provisional state lists exactly those members',
     async ({ pro: page }) => {
       await openWorkspace(page, 'rc-qa-diagnostic');
-      await page.getByTestId('rebar-status-UNSUPPORTED').click();
+      await page.getByTestId('rebar-status-PROVISIONAL').click();
       const rows = page.getByTestId('rebar-element-list').locator('button');
       await expect(rows).toHaveCount(4);
-      // And they can still be selected and looked at — being refused does not make a member
-      // unreachable, which was the original defect.
+      // And they can still be selected and looked at — carrying a proposal does not make a
+      // member unreachable, which was the original defect.
       await rows.first().click();
-      await expect(page.getByTestId('rebar-sel-status')).toContainText(/No soportado|Unsupported/);
+      await expect(page.getByTestId('rebar-sel-status'))
+        .toContainText(/Propuesta provisional|Provisional proposal/);
     });
 
   test('the sidebar states the same counts without opening the workspace',
@@ -295,8 +297,10 @@ test.describe('nothing is hidden because it has no steel', () => {
       await page.getByTestId('rebar-workspace-close').click();
       // A user who never opens the overlay must still be told. Closing it cannot re-hide the
       // members the whole change exists to surface.
-      await expect(page.getByTestId('rebar-panel-state-UNSUPPORTED')).toBeVisible();
-      await expect(page.getByTestId('rebar-unreinforced')).toContainText('4');
+      await expect(page.getByTestId('rebar-panel-state-PROVISIONAL')).toBeVisible();
+      // `rebar-unreinforced` is now EMPTY on this fixture, and that is the improvement: the
+      // four beams have steel. What must still be visible is that the steel is a proposal.
+      await expect(page.getByTestId('rebar-provisional-banner')).toBeVisible();
     });
 });
 
@@ -397,9 +401,9 @@ test.describe('the cage is legible and the refusals are explained', () => {
       await expect(pieces.getByTestId('rebar-piece-crosstie')).toBeVisible();
     });
 
-  test('a refused member states its reason in words', async ({ pro: page }) => {
+  test('a provisional member states its reason in words', async ({ pro: page }) => {
     await openWorkspace(page, 'rc-qa-diagnostic');
-    await page.getByTestId('rebar-status-UNSUPPORTED').click();
+    await page.getByTestId('rebar-status-PROVISIONAL').click();
     await page.getByTestId('rebar-element-list').locator('button').first().click();
     const reason = page.getByTestId('rebar-sel-reason');
     await expect(reason).toBeVisible();

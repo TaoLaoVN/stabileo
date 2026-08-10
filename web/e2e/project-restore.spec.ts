@@ -313,13 +313,16 @@ test('@slow restore, design, view in 3-D — then reload and do it again', async
     if (emptyFamilies) expect(emptyFamilies).not.toContain(family);
   }
 
-  // Beam states: the 117 biaxial refusals are reported, not hidden, and their cause is stated
-  // once rather than 117 times.
-  const unsupported = page.getByTestId('rebar-status-UNSUPPORTED');
-  await expect(unsupported, 'refused members keep their own row').toBeVisible();
-  const cause = page.getByTestId('rebar-status-cause-UNSUPPORTED');
+  // Beam states: the 117 biaxial proposals are reported, not hidden, their cause is stated
+  // once rather than 117 times, and the sheet-level consequence is on screen.
+  const provisional = page.getByTestId('rebar-status-PROVISIONAL');
+  await expect(provisional, 'provisional members keep their own row').toBeVisible();
+  const cause = page.getByTestId('rebar-status-cause-PROVISIONAL');
   await expect(cause, 'the shared cause is stated').toBeVisible();
-  await expect(cause).toHaveAttribute('data-reason-key', 'design.reason.secondaryAxisUnchecked');
+  await expect(cause).toHaveAttribute('data-reason-key', 'design.reason.provisionalBiaxial');
+  // A proposal that looks like a design is the one failure this state exists to prevent.
+  await expect(page.getByTestId('rebar-provisional-banner'), 'and it says it is not for issue')
+    .toContainText(/NO APTO PARA/i);
 
   // Selection: a member picked from the list becomes the selection.
   const firstMember = page.getByTestId('rebar-element-list').locator('button.element').first();

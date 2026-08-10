@@ -28,7 +28,7 @@ import {
 import { runOrientationDiagnostic } from '../engine/design/orientation-diagnostic';
 import { runDesign, designMember, DEFAULT_RUN_MS } from '../engine/design/candidate-search';
 import { getDesignCode, type DesignCodeId } from '../engine/design/code-adapter';
-import type { DesignRunSummary, MemberDesignOutcome } from '../engine/design/outcome';
+import { emptyRunSummary, type DesignRunSummary, type MemberDesignOutcome } from '../engine/design/outcome';
 import type { RunProgress } from '../engine/design/candidate-search';
 import {
   DESIGN_FAMILIES, FLOOR_FAMILIES, FRAME_FAMILIES, emptyFamilyResult, isFrameFamily,
@@ -65,6 +65,16 @@ function createDesignRunStore() {
   let autoDesigned = $state<Set<number>>(new Set());
   /** Members whose provisional (failing) candidate was retained for review. */
   let provisionalIds = $state<Set<number>>(new Set());
+  /**
+   * Members carrying a PROVISIONAL_BIAXIAL proposal — steel in the model, no certificate.
+   *
+   * Separate from `provisionalIds`, which holds "the best candidate we could not make pass",
+   * because these two mean opposite things: one is a member whose design FAILED and whose best
+   * attempt is kept for review, the other is a member whose primary axis was designed and
+   * verified and whose secondary axis nobody checks. Merging them would let a failing member
+   * inherit a proposal's treatment.
+   */
+  let provisionalBiaxialIds = $state<Set<number>>(new Set());
 
   /**
    * The design adapter, from the project's `concrete` role binding and nowhere else.
@@ -213,18 +223,42 @@ function createDesignRunStore() {
     recount(merged);
     verificationStore.setDesignOutcomes(merged);
 
-    const verified: MemberDesignOutcome[] = [];
+    /**
+     * Two populations get steel written into the model, and they are not the same claim.
+     *
+     * VERIFIED members carry certified reinforcement. PROVISIONAL_BIAXIAL members carry a
+     * PROPOSAL: the primary axis designed by the ordinary search, with the secondary axis
+     * unchecked. Both are written, because a beam with no bars anywhere in the model is
+     * invisible to the viewer, the drawings, the schedule and the report alike — which is
+     * exactly the state 117 of the 119 beams in the flagship example were in.
+     *
+     * What keeps them apart is not the model, it is the OUTCOME: `provisionalBiaxialIds`
+     * here, `PROVISIONAL_BIAXIAL` on the outcome, no certificate anywhere, and a status of
+     * PROVISIONAL — never MODELLED — on every projection.
+     */
+    const withSteel: Array<{ id: number; rebar: NonNullable<MemberDesignOutcome['accepted']> }> = [];
     const provisional = new Set(provisionalIds);
+    const biaxial = new Set(provisionalBiaxialIds);
     for (const [, o] of summary.outcomes) {
-      if (o.outcome === 'VERIFIED' && o.accepted) verified.push(o);
-      if (o.outcome !== 'VERIFIED' && o.provisional) provisional.add(o.elementId);
-      else provisional.delete(o.elementId);
+      if (o.outcome === 'VERIFIED' && o.accepted) withSteel.push({ id: o.elementId, rebar: o.accepted });
+      if (o.outcome === 'PROVISIONAL_BIAXIAL' && o.provisional) {
+        withSteel.push({ id: o.elementId, rebar: o.provisional.candidate });
+        biaxial.add(o.elementId);
+      } else {
+        biaxial.delete(o.elementId);
+      }
+      if (o.outcome !== 'VERIFIED' && o.outcome !== 'PROVISIONAL_BIAXIAL' && o.provisional) {
+        provisional.add(o.elementId);
+      } else {
+        provisional.delete(o.elementId);
+      }
     }
     provisionalIds = provisional;
+    provisionalBiaxialIds = biaxial;
 
-    if (verified.length > 0) {
+    if (withSteel.length > 0) {
       const written = modelStore.reinforcementTransaction((api) => {
-        for (const o of verified) api.setReinforcement(o.elementId, o.accepted);
+        for (const w of withSteel) api.setReinforcement(w.id, w.rebar);
       });
       const auto = new Set(autoDesigned);
       const manual = new Set(manualOverrides);
@@ -249,10 +283,12 @@ function createDesignRunStore() {
     s.total = s.outcomes.size;
     s.verified = 0; s.sectionInadequate = 0; s.demandUnavailable = 0;
     s.searchExhausted = 0; s.unsupported = 0; s.provisionalRetained = 0;
+    s.provisionalBiaxial = 0;
     for (const [, o] of s.outcomes) {
       if (o.provisional && o.outcome !== 'VERIFIED') s.provisionalRetained++;
       switch (o.outcome) {
         case 'VERIFIED': s.verified++; break;
+        case 'PROVISIONAL_BIAXIAL': s.provisionalBiaxial++; break;
         case 'SECTION_INADEQUATE': s.sectionInadequate++; break;
         case 'DEMAND_UNAVAILABLE': s.demandUnavailable++; break;
         case 'SEARCH_EXHAUSTED': s.searchExhausted++; break;
@@ -398,11 +434,10 @@ function createDesignRunStore() {
     outcomes.set(elementId, o);
     const s: DesignRunSummary = prev
       ? { ...prev, outcomes }
-      : {
-          codeId: a.id, codeVersion: a.version, total: 0, verified: 0, sectionInadequate: 0,
-          demandUnavailable: 0, searchExhausted: 0, unsupported: 0, provisionalRetained: 0,
-          outcomes, wallMs: o.searchStats.ms, aborted: false, notReached: 0,
-        };
+      // `emptyRunSummary` rather than a literal: a counter added to the summary must not be
+      // silently absent on the single-member path, which is how `provisionalBiaxial` would
+      // have read zero after re-designing one member.
+      : { ...emptyRunSummary(a.id, a.version), outcomes, wallMs: o.searchStats.ms };
     recount(s);
     verificationStore.setDesignOutcomes(s);
     // Keep provisionalIds in sync like publishOutcomes does — otherwise a
@@ -412,8 +447,15 @@ function createDesignRunStore() {
     if (o.outcome !== 'VERIFIED' && o.provisional) prov.add(elementId);
     else prov.delete(elementId);
     provisionalIds = prov;
-    if (o.outcome === 'VERIFIED' && o.accepted) {
-      modelStore.reinforcementTransaction((api) => api.setReinforcement(elementId, o.accepted));
+
+    const biax = new Set(provisionalBiaxialIds);
+    if (o.outcome === 'PROVISIONAL_BIAXIAL') biax.add(elementId); else biax.delete(elementId);
+    provisionalBiaxialIds = biax;
+
+    const steel = o.outcome === 'VERIFIED' ? o.accepted
+      : o.outcome === 'PROVISIONAL_BIAXIAL' ? o.provisional?.candidate : undefined;
+    if (steel) {
+      modelStore.reinforcementTransaction((api) => api.setReinforcement(elementId, steel));
       const auto = new Set(autoDesigned); auto.add(elementId); autoDesigned = auto;
       const manual = new Set(manualOverrides); manual.delete(elementId); manualOverrides = manual;
     }
@@ -494,6 +536,7 @@ function createDesignRunStore() {
     get manualOverrides() { return manualOverrides; },
     get autoDesigned() { return autoDesigned; },
     get provisionalIds() { return provisionalIds; },
+    get provisionalBiaxialIds() { return provisionalBiaxialIds; },
     markManual(ids: Iterable<number>) {
       const m = new Set(manualOverrides);
       const a = new Set(autoDesigned);
@@ -508,7 +551,12 @@ function createDesignRunStore() {
       manualOverrides = m;
       autoDesigned = a;
     },
-    resetMarks() { manualOverrides = new Set(); autoDesigned = new Set(); provisionalIds = new Set(); },
+    resetMarks() {
+      manualOverrides = new Set();
+      autoDesigned = new Set();
+      provisionalIds = new Set();
+      provisionalBiaxialIds = new Set();
+    },
 
     computeDemands,
     runCodeCheck,

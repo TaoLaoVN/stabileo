@@ -20,7 +20,7 @@
 
 import { LAYERS, PLAN, project, type DrawnPolyline, type DrawnText, type Projection, type Sheet, type TitleBlock } from './drawings';
 import type { SceneBar, SceneModel, SceneSolid, SceneSolidKind } from './scene-model';
-import type { ElementStatus } from './element-status';
+import { NOT_FOR_CONSTRUCTION_STATUSES, type ElementStatus } from './element-status';
 
 /** Layers for the pieces these sheets add, alongside the existing ones. */
 export const STRUCTURE_LAYERS = {
@@ -96,7 +96,20 @@ function statusNotes(
   }
   return [...byStatus.entries()]
     .sort()
-    .map(([st, ids]) => `${st}: ${ids.sort((a, b) => a - b).join(', ')}`);
+    .map(([st, ids]) => {
+      const list = ids.sort((a, b) => a - b).join(', ');
+      /**
+       * The consequence, not only the label.
+       *
+       * `PROVISIONAL: 12, 13` names the members and leaves the reader to know what the word
+       * costs them. On a sheet that outlives the session — and that somebody may issue — the
+       * sentence has to be on the paper. `NOT_FOR_CONSTRUCTION_STATUSES` is the one list every
+       * projection reads, so a state added later cannot be honest here and silent elsewhere.
+       */
+      return NOT_FOR_CONSTRUCTION_STATUSES.includes(st)
+        ? `${st} — NO APTO PARA EMISIÓN CONSTRUCTIVA: ${list}`
+        : `${st}: ${list}`;
+    });
 }
 
 // ─── Levels ──────────────────────────────────────────────────────

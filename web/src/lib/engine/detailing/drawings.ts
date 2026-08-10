@@ -198,8 +198,23 @@ export function buildTitleBlock(opts: {
 
 function noteLines(
   conflicts: readonly BarConflict[], unsupported: readonly UnsupportedCondition[],
+  provisionalMembers: readonly number[] = [],
 ): string[] {
   const out: string[] = [];
+  /**
+   * The provisional note goes FIRST, above the conflicts and the unsupported conditions.
+   *
+   * Note order is read order. A conflict is a defect in one detail of an otherwise real
+   * design; a provisional member means the sheet is not documentation at all, and a reader who
+   * stops after two lines must have read that one.
+   */
+  if (provisionalMembers.length > 0) {
+    out.push(
+      `PROPUESTA PROVISIONAL — NO APTO PARA EMISIÓN CONSTRUCTIVA. `
+      + `${provisionalMembers.length} elemento(s) de esta lámina (${provisionalMembers.join(', ')}) `
+      + 'llevan armadura del diseño del eje principal; su eje secundario no lo verifica ninguna '
+      + 'comprobación de esta aplicación. Diseñar ese eje antes de emitir.');
+  }
   for (const u of unsupported) {
     out.push(`NO VERIFICADO — ${u.key}: ${u.message}`);
   }
@@ -283,7 +298,8 @@ export function drawElevation(input: ElevationInput): Sheet {
       assembly: input.assembly, clauses: input.clauses, scale: input.scale,
     }),
     polylines, circles, texts, dimensions,
-    notes: noteLines(input.assembly.conflicts, input.assembly.unsupported),
+    notes: noteLines(input.assembly.conflicts, input.assembly.unsupported,
+      input.assembly.provisionalMembers ?? []),
     extents: extentsOf(polylines, circles),
   };
 }
@@ -374,7 +390,8 @@ export function drawSection(input: SectionInput): Sheet {
       assembly: input.assembly, clauses: input.clauses, scale: input.scale ?? 20,
     }),
     polylines, circles, texts, dimensions: [],
-    notes: noteLines(input.assembly.conflicts, input.assembly.unsupported),
+    notes: noteLines(input.assembly.conflicts, input.assembly.unsupported,
+      input.assembly.provisionalMembers ?? []),
     extents: extentsOf(polylines, circles),
   };
 }

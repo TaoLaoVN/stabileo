@@ -77,16 +77,32 @@ export const REBAR_COLORS = {
   unreinforced: 0xd4762a,
   conflictMarker: 0xff2d55,
   selected: 0xffd400,
+  /**
+   * A bar belonging to a PROPOSAL rather than a certified design.
+   *
+   * Violet, which is not on the role/conflict axis at all — the two blues and the orange say
+   * WHAT a bar is, the red says a bar is in conflict, and this says the whole member is not
+   * settled. A darker blue would have read as "longitudinal, slightly different", which is
+   * exactly the confusion between a proposal and a design that must not be possible on sight.
+   *
+   * It loses to `conflicted`: a provisional bar that is ALSO in conflict is drawn red, because
+   * the conflict is the more specific and more urgent fact about that particular bar.
+   */
+  provisional: 0xa066d3,
 } as const;
 
 /** The colours bars are batched by. */
-export type RebarCategory = 'longitudinal' | 'transverse' | 'conflicted';
+export type RebarCategory = 'longitudinal' | 'transverse' | 'conflicted' | 'provisional';
 
 /** In batch order, which is also render order. */
-const REBAR_CATEGORIES: readonly RebarCategory[] = ['longitudinal', 'transverse', 'conflicted'];
+const REBAR_CATEGORIES: readonly RebarCategory[] = [
+  'longitudinal', 'transverse', 'provisional', 'conflicted',
+];
 
 function categoryOf(b: SceneBar): RebarCategory {
-  return b.conflicted ? 'conflicted' : b.role;
+  if (b.conflicted) return 'conflicted';
+  if (b.provisional) return 'provisional';
+  return b.role;
 }
 
 /**

@@ -1467,6 +1467,7 @@ function createDetailingStore() {
             status: result?.overallStatus === 'ok' ? 'ok'
               : result?.overallStatus === 'warn' ? 'warn'
                 : result?.overallStatus === 'fail' ? 'fail' : 'notRun',
+            provisional: verificationStore.outcomeFor(id)?.outcome === 'PROVISIONAL_BIAXIAL',
           });
         }
       }

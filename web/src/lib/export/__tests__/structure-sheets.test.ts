@@ -49,7 +49,11 @@ async function build7p() {
   const outcomes = new Map<number, DesignOutcomeSummary>();
   for (const id of modelStore.model.elements.keys()) {
     const o = verificationStore.outcomeFor(id);
-    if (o) outcomes.set(id, { outcome: o.outcome, limiting: o.limiting ?? [] });
+    if (o) {
+      outcomes.set(id, {
+        outcome: o.outcome, limiting: o.limiting ?? [], reasonKey: o.reasons?.[0]?.key,
+      });
+    }
   }
   const report = reportElementStatus(scene, outcomes);
   const byId = new Map(report.entries.map((e) => [e.elementId, e.status]));
@@ -149,12 +153,16 @@ describe('the four sheet kinds exist and carry real geometry', () => {
     expect(sheet.notes.join(' ')).toContain(`Elemento ${id}`);
   }, 300_000);
 
-  it('a refused member is named on the sheet, never shown as approved', () => {
-    // 117 of this building's beams are refused. A plan that drew them exactly like the verified
-    // ones is the failure the status model exists to prevent — and worse on paper, because the
-    // sheet outlives the session.
+  it('a member that is not finished is named on the sheet, never shown as approved', () => {
+    // 117 of this building's beams carry a proposal rather than a certified design. A plan
+    // that drew them exactly like the verified ones is the failure the status model exists to
+    // prevent — and worse on paper, because the sheet outlives the session.
     const sheet = drawGeneralPlan({ scene, title, statusOf });
-    expect(sheet.notes.some((n) => /UNSUPPORTED|REFUSED|NOT_EVALUATED/.test(n))).toBe(true);
+    expect(sheet.notes.some((n) => /PROVISIONAL|UNSUPPORTED|REFUSED|NOT_EVALUATED/.test(n)))
+      .toBe(true);
+    // And the note says what the state COSTS, not only what it is called. A reader who does
+    // not already know what "PROVISIONAL" means must still not issue the sheet.
+    expect(sheet.notes.some((n) => /NO APTO PARA EMISIÓN CONSTRUCTIVA/.test(n))).toBe(true);
   }, 300_000);
 
   it('a column with no steel says so instead of showing an empty box', () => {
