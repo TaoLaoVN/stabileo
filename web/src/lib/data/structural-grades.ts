@@ -267,7 +267,23 @@ export const ALL_GRADES: StructuralGrade[] = [
 // Design codes
 // ─────────────────────────────────────────────────────────────────────
 
-export const DESIGN_CODES: DesignCode[] = [
+/**
+ * Design codes, seen from the MATERIALS side.
+ *
+ * `section-catalog.ts` carries a list under the same concept, seen from the
+ * PROFILES side: which dimensional families a code can be applied to. These are
+ * two projections of one thing, and they share ids on purpose — `cirsoc-301`
+ * here and `cirsoc-301` there are the same code.
+ *
+ * They are deliberately NOT merged today. The profile list answers "which
+ * series does this code ship", the grade list answers "which metal families
+ * does it cover", and folding them together would force every profile family to
+ * declare a material family it has no opinion about. What is enforced instead
+ * is that they cannot disagree where they overlap — see the cross-check in
+ * `__tests__/structural-grades.test.ts`, which fails if the same id is given
+ * two different regions.
+ */
+export const MATERIAL_DESIGN_CODES: DesignCode[] = [
   // Hot-rolled
   { id: 'cirsoc-301', name: 'CIRSOC 301:2005', region: 'AR', families: ['hot-rolled'], format: 'LRFD' },
   { id: 'aisc-360-16', name: 'AISC 360-16', region: 'US', families: ['hot-rolled'], format: 'LRFD+ASD' },
@@ -308,7 +324,7 @@ export function gradesForFamily(family: GradeFamily): StructuralGrade[] {
 }
 
 export function codesForFamily(family: GradeFamily): DesignCode[] {
-  return DESIGN_CODES.filter((c) => c.families.includes(family));
+  return MATERIAL_DESIGN_CODES.filter((c) => c.families.includes(family));
 }
 
 export function gradeById(id: string): StructuralGrade | undefined {

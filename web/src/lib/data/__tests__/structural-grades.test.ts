@@ -12,7 +12,7 @@
 import { describe, it, expect } from 'vitest';
 import {
   ALL_GRADES,
-  DESIGN_CODES,
+  MATERIAL_DESIGN_CODES,
   HOT_ROLLED,
   ALUMINIUM,
   STAINLESS,
@@ -147,7 +147,7 @@ describe('grades and design codes are independent axes', () => {
   });
 
   it('a code never claims a family that has no grades', () => {
-    for (const c of DESIGN_CODES) {
+    for (const c of MATERIAL_DESIGN_CODES) {
       for (const f of c.families) {
         expect(gradesForFamily(f).length, `${c.name} / ${f}`).toBeGreaterThan(0);
       }
@@ -155,7 +155,7 @@ describe('grades and design codes are independent axes', () => {
   });
 
   it('code ids are unique', () => {
-    const ids = DESIGN_CODES.map((c) => c.id);
+    const ids = MATERIAL_DESIGN_CODES.map((c) => c.id);
     expect(new Set(ids).size).toBe(ids.length);
   });
 });
@@ -175,5 +175,30 @@ describe('search', () => {
 
   it('returns the whole family for an empty query', () => {
     expect(searchGrades('   ', 'stainless')).toEqual(gradesForFamily('stainless'));
+  });
+});
+
+/**
+ * The profile catalogue keeps its own view of design codes — which dimensional
+ * families each one ships. This one keeps which metal families each one covers.
+ * Same codes, two projections, joined by id.
+ *
+ * They are not merged, because neither list has an opinion about the other's
+ * axis. But they must not DISAGREE, and nothing structural stops them drifting:
+ * the ids are plain strings in two files that no import connects.
+ */
+describe('the two views of a design code agree where they overlap', () => {
+  it('an id shared with the profile catalogue names the same region', async () => {
+    const { DESIGN_CODES: PROFILE_CODES } = await import('../section-catalog');
+    const shared = PROFILE_CODES
+      .map((p) => ({ p, m: MATERIAL_DESIGN_CODES.find((m) => m.id === p.id) }))
+      .filter((x) => x.m);
+
+    // If this drops to zero the test is vacuous, which is worth catching:
+    // it would mean the ids were renamed apart rather than kept in step.
+    expect(shared.length).toBeGreaterThan(0);
+    for (const { p, m } of shared) {
+      expect(m!.region, p.id).toBe(p.region);
+    }
   });
 });
