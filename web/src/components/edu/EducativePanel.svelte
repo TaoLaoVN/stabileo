@@ -18,15 +18,24 @@
 
   $effect(() => {
     library = loadLibrary();
-    // An exercise handed out as a link opens straight into the library, so a
-    // student following it does not have to do anything but click.
+    /*
+     * A link hands over ONE exercise, so it opens it.
+     *
+     * It used to drop the exercise into the library and leave the student on
+     * the list, looking for the thing they had just been sent among a dozen
+     * built-in ones. The link is the teacher saying "solve this"; the window
+     * says the same from the first frame, and `markHandout` is what tells the
+     * rest of the shell that this is a student's workspace and not a browsing
+     * session.
+     */
     const shared = fromShareLink(location.hash);
     if (shared) {
       if (shared.ok) {
         const { library: next } = saveToLibrary(shared.exercise);
         library = next;
-        linkNotice = t('edu.author.linkLoaded');
         history.replaceState(null, '', location.pathname + location.search);
+        eduStore.markHandout();
+        loadExercise(specToExercise(shared.exercise));
       } else {
         linkNotice = shared.error;
       }
@@ -122,6 +131,9 @@
 
   function goBack() {
     eduStore.clearExercise();
+    // Leaving the exercise ends the handout: from here the window is a normal
+    // Education session again, with the list and the mode switcher back.
+    eduStore.markBrowsing();
     modelStore.clear();
     resultsStore.clear();
   }

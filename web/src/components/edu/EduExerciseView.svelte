@@ -89,6 +89,35 @@
   );
   const allCorrect = $derived(step1Complete && step2Complete && step3Complete);
 
+  // ─── Which step is on screen ───────────────────────────────
+  //
+  // One at a time. The three steps are a sequence — you cannot check a shear
+  // diagram before you know the reactions — and showing them stacked made a
+  // beam exercise a page of thirty inputs that all look equally urgent.
+  let activeStep = $state(1);
+
+  const STEPS = $derived([
+    { n: 1, label: t('edu.reactions'), done: step1Complete, prevDone: false },
+    { n: 2, label: t('edu.diagrams'), done: step2Complete, prevDone: step1Complete },
+    { n: 3, label: t('edu.values'), done: step3Complete, prevDone: step2Complete },
+  ]);
+
+  /*
+   * Finishing a step moves the student on, once.
+   *
+   * Tracked per step rather than off the completion flag alone: a student who
+   * goes back to step 1 after finishing it must not be thrown forward again on
+   * the next keystroke.
+   */
+  let advancedFrom = $state<Set<number>>(new Set());
+  $effect(() => {
+    const done = [step1Complete, step2Complete, step3Complete];
+    const i = activeStep - 1;
+    if (!done[i] || advancedFrom.has(activeStep) || activeStep === 3) return;
+    advancedFrom = new Set([...advancedFrom, activeStep]);
+    activeStep = activeStep + 1;
+  });
+
   // ─── Reaction verification ─────────────────────────────────
   /**
    * The expected value for one support/DOF, in the convention the app SHOWS.
@@ -287,22 +316,35 @@
 </script>
 
 <div class="exercise-view">
-  <!-- Progress bar -->
-  <div class="progress-bar">
-    <div class="progress-step" class:done={step1Complete}>
-      <span class="step-check">{step1Complete ? '\u2713' : '1'}</span>
-      <span class="step-label">{t('edu.reactions')}</span>
-    </div>
-    <div class="progress-line" class:done={step1Complete}></div>
-    <div class="progress-step" class:done={step2Complete}>
-      <span class="step-check">{step2Complete ? '\u2713' : '2'}</span>
-      <span class="step-label">{t('edu.diagrams')}</span>
-    </div>
-    <div class="progress-line" class:done={step2Complete}></div>
-    <div class="progress-step" class:done={step3Complete}>
-      <span class="step-check">{step3Complete ? '\u2713' : '3'}</span>
-      <span class="step-label">{t('edu.values')}</span>
-    </div>
+  <!--
+    The stepper is navigation, not decoration.
+    \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
+    It always drew three numbered dots and a tick for each finished step, and
+    then the panel showed all three steps stacked in one scroll anyway. So it
+    told the student where they were in something they could already see all
+    of, which is the one thing a progress indicator should not do.
+
+    Now it moves. One step is on screen at a time, the dots switch between
+    them, and a finished step stays reachable \u2014 a student rereading their
+    reactions while answering the diagrams is doing structural analysis, not
+    going backwards.
+  -->
+  <div class="progress-bar" role="tablist">
+    {#each STEPS as s (s.n)}
+      {#if s.n > 1}<div class="progress-line" class:done={s.prevDone}></div>{/if}
+      <button
+        class="progress-step"
+        class:done={s.done}
+        class:current={activeStep === s.n}
+        role="tab"
+        aria-selected={activeStep === s.n}
+        onclick={() => (activeStep = s.n)}
+        data-testid="edu-step-{s.n}"
+      >
+        <span class="step-check">{s.done ? '\u2713' : s.n}</span>
+        <span class="step-label">{s.label}</span>
+      </button>
+    {/each}
   </div>
 
   <div class="exercise-description">
@@ -339,6 +381,7 @@
   {/if}
 
   <!-- Step 1: Reactions -->
+  {#if activeStep === 1}
   <section class="step-section" class:completed={step1Complete}>
     <h3 class="step-title">
       {t('edu.step1Title')}
@@ -418,8 +461,10 @@
       </div>
     {/if}
   </section>
+  {/if}
 
   <!-- Step 2: Diagram questions -->
+  {#if activeStep === 2}
   <section class="step-section" class:completed={step2Complete}>
     <h3 class="step-title">
       {t('edu.step2Title')}
@@ -493,8 +538,10 @@
       <p class="step-info step-info-auto">{t('edu.noDiagramQuestions')}</p>
     {/if}
   </section>
+  {/if}
 
   <!-- Step 3: Characteristic values -->
+  {#if activeStep === 3}
   <section class="step-section" class:completed={step3Complete}>
     <h3 class="step-title">
       {t('edu.step3Title')}
@@ -539,6 +586,7 @@
       </div>
     {/if}
   </section>
+  {/if}
 
   {#if allCorrect}
     <div class="success-banner">
@@ -554,7 +602,12 @@
     flex: 1;
   }
 
-  /* ─── Progress bar ─── */
+  /* ─── The stepper ───────────────────────────────────────────────────
+     Three states, and each one has to be legible on its own: the step you
+     are on (accent), a step you finished (ok), and one you have not
+     reached (text-3). It is a row of buttons now, so it also has to reset
+     the button chrome the browser supplies.
+     ─────────────────────────────────────────────────────────────────── */
   .progress-bar {
     display: flex;
     align-items: center;
@@ -567,8 +620,16 @@
   .progress-step {
     display: flex;
     align-items: center;
-    gap: 4px;
+    gap: 5px;
+    background: none;
+    border: none;
+    padding: 2px 4px;
+    font-family: inherit;
+    cursor: pointer;
+    border-radius: var(--st-radius);
   }
+
+  .progress-step:hover .step-label { color: var(--st-text); }
 
   .step-check {
     width: 22px;
@@ -579,52 +640,55 @@
     justify-content: center;
     font-size: 0.7rem;
     font-weight: 700;
-    background: #1a2a44;
-    color: #666;
-    border: 1.5px solid #334;
-    transition: all 0.3s;
+    background: var(--st-surface-3);
+    color: var(--st-text-3);
+    border: 1.5px solid var(--st-hair);
+    transition: background 0.2s, color 0.2s, border-color 0.2s;
   }
 
   .progress-step.done .step-check {
-    background: #1a3a2a;
-    color: #4caf50;
-    border-color: #4caf50;
+    background: rgba(42, 168, 105, 0.12);
+    color: var(--st-ok);
+    border-color: var(--st-ok);
+  }
+
+  .progress-step.current .step-check {
+    background: var(--st-accent);
+    color: var(--st-text-on-accent);
+    border-color: var(--st-accent);
   }
 
   .step-label {
     font-size: 0.65rem;
-    color: #666;
-    transition: color 0.3s;
+    color: var(--st-text-3);
+    transition: color 0.2s;
   }
 
-  .progress-step.done .step-label {
-    color: #4caf50;
-  }
+  .progress-step.done .step-label { color: var(--st-ok); }
+  .progress-step.current .step-label { color: var(--st-text); font-weight: 600; }
 
   .progress-line {
     width: 30px;
     height: 2px;
-    background: #334;
+    background: var(--st-hair);
     margin: 0 6px;
-    transition: background 0.3s;
+    transition: background 0.2s;
   }
 
-  .progress-line.done {
-    background: #4caf50;
-  }
+  .progress-line.done { background: var(--st-ok); }
 
   /* ─── Exercise description ─── */
   .exercise-description {
-    background: #0f2840;
-    border: 1px solid #1a4a7a;
-    border-radius: 6px;
+    background: var(--st-surface-2);
+    border: 1px solid var(--st-hair);
+    border-radius: var(--st-radius-lg);
     padding: 10px 14px;
     margin-bottom: 16px;
   }
 
   .exercise-description p {
     font-size: 0.78rem;
-    color: #bbb;
+    color: var(--st-text-2);
     margin: 0;
     line-height: 1.5;
   }
@@ -634,70 +698,71 @@
     display: flex;
     align-items: center;
     gap: 8px;
-    background: rgba(78, 205, 196, 0.08);
-    border: 1px solid rgba(78, 205, 196, 0.2);
-    border-radius: 6px;
+    background: var(--st-surface-2);
+    border: 1px solid var(--st-hair);
+    border-radius: var(--st-radius-lg);
     padding: 8px 12px;
     margin-bottom: 16px;
     font-size: 0.72rem;
-    color: #8cc;
+    color: var(--st-text-2);
     line-height: 1.4;
   }
 
   .solver-insight-icon {
     font-size: 1rem;
-    color: #4ecdc4;
+    color: var(--st-value);
     flex-shrink: 0;
   }
 
   /* ─── Steps ─── */
   .step-section {
     margin-bottom: 20px;
-    transition: opacity 0.3s;
   }
 
-  .step-section.completed {
-    opacity: 0.7;
-  }
+  /* A finished step is no longer dimmed: it is the only thing on screen
+     when you navigate back to it, and reading your own answers through
+     70% opacity is not a reward. */
+  .step-section.completed { opacity: 1; }
 
   .step-title {
-    font-size: 0.82rem;
-    font-weight: 600;
-    color: #4ecdc4;
+    font-family: var(--st-mono);
+    font-size: 0.68rem;
+    font-weight: 400;
+    letter-spacing: 0.11em;
+    text-transform: uppercase;
+    color: var(--st-text-2);
     margin: 0 0 10px;
     padding-bottom: 4px;
-    border-bottom: 1px solid #1a3a5a;
+    border-bottom: 1px solid var(--st-hair);
     display: flex;
     align-items: center;
     gap: 8px;
   }
 
   .step-done {
-    color: #4caf50;
+    color: var(--st-ok);
     font-size: 0.9rem;
   }
 
   .step-info {
     font-size: 0.72rem;
-    color: #888;
+    color: var(--st-text-3);
     margin: 0 0 10px;
     line-height: 1.4;
   }
 
   .step-info-auto {
-    color: #4caf50;
+    color: var(--st-ok);
     font-style: italic;
   }
 
   /* ─── Inputs ─── */
-  .support-row {
-    margin-bottom: 10px;
-  }
+  .support-row { margin-bottom: 10px; }
 
   .support-label {
     font-size: 0.72rem;
     font-weight: 600;
-    color: #aaa;
+    color: var(--st-text-2);
     display: block;
     margin-bottom: 4px;
   }
@@ -722,7 +787,7 @@
   }
 
   .dof-name, .char-name {
-    color: #aaa;
+    color: var(--st-text-2);
     font-weight: 500;
     min-width: 28px;
   }
@@ -730,106 +795,109 @@
   .dof-input input, .char-input input {
     width: 70px;
     padding: 4px 6px;
-    background: #0a1628;
-    border: 1px solid #334;
-    border-radius: 4px;
-    color: #eee;
+    background: var(--st-surface-3);
+    border: 1px solid var(--st-hair);
+    border-radius: var(--st-radius);
+    color: var(--st-text);
     font-size: 0.75rem;
-    font-family: monospace;
+    font-family: var(--st-mono);
     text-align: right;
   }
 
   .dof-input input:focus, .char-input input:focus {
     outline: none;
-    border-color: #4ecdc4;
+    border-color: var(--st-focus);
   }
 
   .dof-unit, .char-unit {
-    color: #666;
+    color: var(--st-text-3);
     font-size: 0.65rem;
   }
 
-  /* ─── Verification colors ─── */
+  /* ─── Verification ───────────────────────────────────────────────────
+     Right, wrong and revealed are three OUTCOMES, so they are the three
+     semantic tokens — never colour alone: correct and incorrect also carry
+     a tick and a cross in the markup, and a revealed value is italic.
+     ─────────────────────────────────────────────────────────────────── */
   .verif-correct input, input.verif-correct {
-    border-color: #4caf50 !important;
-    background: #0a200a;
+    border-color: var(--st-ok) !important;
+    background: rgba(42, 168, 105, 0.10);
   }
 
   .verif-incorrect input, input.verif-incorrect {
-    border-color: #e94560 !important;
-    background: #200a0a;
+    border-color: var(--st-danger) !important;
+    background: rgba(232, 112, 95, 0.10);
   }
 
   input.revealed {
-    color: #f0a500 !important;
+    color: var(--st-warn) !important;
     font-style: italic;
     cursor: default;
-    background: #1a1a0a !important;
-    border-color: #f0a500 !important;
+    background: rgba(217, 164, 65, 0.10) !important;
+    border-color: var(--st-warn) !important;
   }
 
-  /* ─── Buttons ─── */
+  /* ─── Buttons ────────────────────────────────────────────────────────
+     Verifying is the action of the step, so it is the one thing on the
+     accent. Revealing the answer is the opposite of what the exercise is
+     for: hairline, quiet, and it never competes.
+     ─────────────────────────────────────────────────────────────────── */
   .verify-btn {
     margin-top: 8px;
     padding: 6px 16px;
-    background: #0f3460;
-    border: 1px solid #1a4a7a;
-    border-radius: 4px;
-    color: #4ecdc4;
+    background: var(--st-accent);
+    border: 1px solid var(--st-accent);
+    border-radius: var(--st-radius);
+    color: var(--st-text-on-accent);
+    font-family: var(--st-sans);
     font-size: 0.72rem;
     font-weight: 600;
     cursor: pointer;
-    transition: all 0.15s;
+    transition: background 0.15s, border-color 0.15s, color 0.15s;
   }
 
   .verify-btn:hover:not(:disabled) {
-    background: #1a4a7a;
+    background: var(--st-accent-hover);
+    border-color: var(--st-accent-hover);
   }
 
   .verify-btn:disabled {
-    opacity: 0.6;
+    background: none;
+    color: var(--st-ok);
+    border-color: var(--st-ok);
     cursor: default;
-    color: #4caf50;
-    border-color: #4caf50;
   }
 
   .reveal-btn {
     padding: 2px 8px;
     background: none;
-    border: 1px solid #555;
-    border-radius: 3px;
-    color: #888;
+    border: 1px solid var(--st-hair);
+    border-radius: var(--st-radius);
+    color: var(--st-text-3);
+    font-family: var(--st-sans);
     font-size: 0.6rem;
     cursor: pointer;
-    transition: all 0.15s;
+    transition: color 0.15s, border-color 0.15s;
     white-space: nowrap;
   }
 
   .reveal-btn:hover {
-    color: #f0a500;
-    border-color: #f0a500;
+    color: var(--st-warn);
+    border-color: var(--st-warn);
   }
 
   /* ─── Hints ─── */
-  .hints {
-    margin-top: 8px;
-  }
+  .hints { margin-top: 8px; }
 
   .hint {
     font-size: 0.7rem;
-    color: #f0a500;
+    color: var(--st-warn);
     margin: 2px 0;
     line-height: 1.4;
   }
 
-  /* ─── Diagram questions ─── */
-  .diagram-questions {
-    display: flex;
-    flex-direction: column;
-    gap: 8px;
-  }
-
-  .char-inputs {
+  /* ─── Question groups ─── */
+  .diagram-questions, .char-inputs {
     display: flex;
     flex-direction: column;
     gap: 8px;
@@ -837,19 +905,20 @@
 
   /* ─── Section data card ─── */
   .section-data-card {
-    background: #0f1a2e;
-    border: 1px solid #2a4a6a;
-    border-radius: 6px;
+    background: var(--st-surface-2);
+    border: 1px solid var(--st-hair);
+    border-radius: var(--st-radius-lg);
     padding: 10px 14px;
     margin-bottom: 16px;
   }
 
   .section-data-title {
-    font-size: 0.7rem;
-    font-weight: 600;
-    color: #f0a500;
+    font-family: var(--st-mono);
+    font-size: 0.66rem;
+    font-weight: 400;
+    color: var(--st-text-2);
     text-transform: uppercase;
-    letter-spacing: 0.5px;
+    letter-spacing: 0.11em;
     display: block;
     margin-bottom: 8px;
   }
@@ -868,27 +937,28 @@
   }
 
   .section-data-label {
-    color: #888;
+    color: var(--st-text-3);
     font-weight: 500;
   }
 
+  /* Given data IS a computed number — the one job of the value token. */
   .section-data-value {
-    color: #ddd;
-    font-family: monospace;
+    color: var(--st-value);
+    font-family: var(--st-mono);
   }
 
   /* ─── Kinematic classification ─── */
   .kinematic-section {
     margin: 12px 0;
     padding: 10px 12px;
-    background: #0f1a2e;
-    border: 1px solid #1a3a5a;
-    border-radius: 6px;
+    background: var(--st-surface-2);
+    border: 1px solid var(--st-hair);
+    border-radius: var(--st-radius-lg);
   }
 
   .kinematic-label {
     font-size: 0.72rem;
-    color: #aaa;
+    color: var(--st-text-2);
     font-weight: 600;
     display: block;
     margin-bottom: 8px;
@@ -911,18 +981,18 @@
   .kinematic-degree input {
     width: 50px;
     padding: 4px 6px;
-    background: #0a1628;
-    border: 1px solid #334;
-    border-radius: 4px;
-    color: #eee;
+    background: var(--st-surface-3);
+    border: 1px solid var(--st-hair);
+    border-radius: var(--st-radius);
+    color: var(--st-text);
     font-size: 0.75rem;
-    font-family: monospace;
+    font-family: var(--st-mono);
     text-align: center;
   }
 
   .kinematic-degree input:focus {
     outline: none;
-    border-color: #4ecdc4;
+    border-color: var(--st-focus);
   }
 
   /* ─── Radio options ─── */
@@ -931,33 +1001,31 @@
     align-items: center;
     gap: 4px;
     font-size: 0.72rem;
-    color: #bbb;
+    color: var(--st-text-2);
     cursor: pointer;
     padding: 3px 8px;
-    border-radius: 4px;
+    border-radius: var(--st-radius);
     border: 1px solid transparent;
-    transition: all 0.15s;
+    transition: background 0.15s, border-color 0.15s, color 0.15s;
   }
 
-  .radio-option:hover {
-    background: rgba(78, 205, 196, 0.08);
-  }
+  .radio-option:hover { background: var(--st-surface-3); }
 
   .radio-option input[type="radio"] {
-    accent-color: #4ecdc4;
+    accent-color: var(--st-accent);
     margin: 0;
   }
 
   .radio-option.verif-correct {
-    border-color: #4caf50;
-    background: #0a200a;
-    color: #4caf50;
+    border-color: var(--st-ok);
+    background: rgba(42, 168, 105, 0.10);
+    color: var(--st-ok);
   }
 
   .radio-option.verif-incorrect {
-    border-color: #e94560;
-    background: #200a0a;
-    color: #e94560;
+    border-color: var(--st-danger);
+    background: rgba(232, 112, 95, 0.10);
+    color: var(--st-danger);
   }
 
   .radio-small {
@@ -979,25 +1047,25 @@
     gap: 8px;
     flex-wrap: wrap;
     padding: 4px 8px;
-    border-radius: 4px;
+    border-radius: var(--st-radius);
     border: 1px solid transparent;
-    transition: all 0.15s;
+    transition: background 0.15s, border-color 0.15s;
   }
 
   .shape-row.verif-correct {
-    border-color: #4caf50;
-    background: rgba(76, 175, 80, 0.05);
+    border-color: var(--st-ok);
+    background: rgba(42, 168, 105, 0.08);
   }
 
   .shape-row.verif-incorrect {
-    border-color: #e94560;
-    background: rgba(233, 69, 96, 0.05);
+    border-color: var(--st-danger);
+    background: rgba(232, 112, 95, 0.08);
   }
 
   .shape-diagram-label {
     font-size: 0.72rem;
     font-weight: 600;
-    color: #aaa;
+    color: var(--st-text-2);
     min-width: 60px;
   }
 
@@ -1015,13 +1083,13 @@
 
   /* ─── Success banner ─── */
   .success-banner {
-    background: #1a3a2a;
-    border: 1px solid #4caf50;
-    border-radius: 6px;
+    background: rgba(42, 168, 105, 0.12);
+    border: 1px solid var(--st-ok);
+    border-radius: var(--st-radius-lg);
     padding: 12px 16px;
     text-align: center;
     font-size: 0.85rem;
     font-weight: 600;
-    color: #4caf50;
+    color: var(--st-ok);
   }
 </style>

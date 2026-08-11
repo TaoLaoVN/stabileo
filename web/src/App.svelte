@@ -68,6 +68,7 @@
   import ProPanel from './components/pro/ProPanel.svelte';
   import ToolbarConfig from './components/toolbar/ToolbarConfig.svelte';
   import EducativePanel from './components/edu/EducativePanel.svelte';
+  import { eduStore } from './components/edu/edu-store.svelte';
   import TourOverlay from './components/TourOverlay.svelte';
   import HelpOverlay from './components/HelpOverlay.svelte';
   import ContextMenu from './components/ContextMenu.svelte';
@@ -124,7 +125,19 @@
     } else {
       url.searchParams.delete('tab');
     }
-    history.replaceState(null, '', `${url.pathname}${url.search}`);
+    /*
+     * The fragment survives.
+     *
+     * This function's job is the path and the query, but it rewrote the URL
+     * from `pathname + search` and so silently dropped whatever was after the
+     * `#`. It runs while the mode is being resolved — before the Education
+     * panel mounts — which is how a teacher's exercise link stopped working:
+     * `#edu-ex=…` was gone by the time anything looked for it, and the student
+     * landed on the exercise list wondering what they had been sent. Shared
+     * MODEL links (`#…` from url-sharing) load from an earlier startup step, so
+     * they were not caught by the same race, which is why this went unseen.
+     */
+    history.replaceState(null, '', `${url.pathname}${url.search}${url.hash}`);
   }
 
   function findTabBySlug(tabSlug: string | null) {
@@ -668,7 +681,18 @@
         <span class="logo-icon">△</span>
         <span class="logo-text">Stabileo</span>
       </button>
-      {#if uiStore.isMobile}
+      <!--
+        A handed-out exercise is not a session with three modes in it.
+        ─────────────────────────────────────────────────────────────
+        A student who follows a teacher's link was given ONE thing to do.
+        Offering them Basic and PRO, a tab strip and a "+" for a new project
+        is offering exits from the only room they were sent to — and the tab
+        said "New Structure" while the panel said "Simply supported beam",
+        so the window disagreed with itself about what was open.
+      -->
+      {#if eduStore.isHandout}
+        <span class="handout-title" data-testid="edu-handout-title">{eduStore.exercise?.title}</span>
+      {:else if uiStore.isMobile}
         <select class="mode-select-mobile" value={uiStore.appMode} onchange={(e) => switchAppMode(e.currentTarget.value as AppMode)}>
           <option value="basico">{t('app.modeBasic')}</option>
           <option value="educativo">{t('app.modeEdu')} (Beta)</option>
@@ -684,8 +708,10 @@
         </div>
       {/if}
     </div>
-    <span class="separator">|</span>
-    <TabBar />
+    {#if !eduStore.isHandout}
+      <span class="separator">|</span>
+      <TabBar />
+    {/if}
 
     <!--
       "A saved project was found — Restore / Discard", beside the tabs.
@@ -1236,6 +1262,19 @@
     color: var(--st-text-3);
     font-size: 1.25rem;
     margin: 0 0.25rem;
+  }
+
+  /* The exercise, where the mode switcher would be: in a handout the title
+     is the one piece of identity the window has. */
+  .handout-title {
+    font-family: var(--st-display);
+    font-size: 0.9rem;
+    color: var(--st-text);
+    padding: 0 0.5rem;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    max-width: 46vw;
   }
 
   .mode-toggle {
