@@ -424,8 +424,36 @@
     z-index: 900;
     display: flex;
     flex-direction: column;
-    background: #0e1218;
-    color: var(--text, #dfe4ec);
+    background: var(--st-bg);
+    color: var(--st-text);
+
+    /*
+       ── Why the workspace looked like a different application ───────
+
+       The viewer and its four child panels make thirty `var()` calls against
+       `--text`, `--text-muted`, `--st-border` and `--panel`. None of those four custom
+       properties is defined ANYWHERE in the application. Every call therefore fell through
+       to its hard-coded fallback, and the whole 3-D surface ended up painted from a private
+       literal palette that no token could reach — not by having chosen its own colours, but
+       by pointing at a palette that was never written.
+
+       Defining them here fixes all thirty at once. Custom properties inherit through the
+       DOM rather than through component boundaries, and every child renders inside this
+       element, so `RebarLayersPanel`, `RebarStatusPanel`, `SelectionDetails` and
+       `RebarViewport3D` pick them up without a line changing in any of them.
+
+       The fallbacks stay where they are. If this element is ever bypassed, the viewer
+       renders in its old literals rather than unstyled — a worse look, not a broken one.
+
+       What is deliberately NOT aliased: the state colours. Provisional violet, conflict red,
+       unreinforced orange and selection yellow are owned by `three/rebar-scene.ts`, which
+       feeds numeric hexes to Three.js materials and cannot read a custom property. Aliasing
+       the panel's copies would let the picture and the words beside it drift apart.
+    */
+    --text: var(--st-text);
+    --text-muted: var(--st-text-2);
+    --st-border: var(--st-hair-strong);
+    --panel: var(--st-surface);
   }
 
   /* The container is `tabindex="-1"` purely as a landing pad for focus on open, so it can
@@ -502,59 +530,21 @@
   @media (prefers-reduced-motion: reduce) { .spinner { animation: none; } }
   .stage :global(.rebar-viewport) { flex: 1 1 auto; border: none; border-radius: 0; }
 
-  h4 { margin: 0 0 0.25rem; font-size: 0.8rem; }
-  label {
-    display: flex; align-items: center; gap: 0.35rem;
-    font-size: 0.76rem; padding: 0.08rem 0; cursor: pointer;
-  }
-  label.slider { flex-direction: column; align-items: stretch; gap: 0.15rem; }
-  hr { border: none; border-top: 1px solid #232a35; margin: 0.35rem 0; }
-  select, input[type='range'] { width: 100%; font-size: 0.76rem; }
-  .section-cut button {
-    font-size: 0.74rem; margin-top: 0.3rem; cursor: pointer;
-    background: #1e2733; color: inherit; border: 1px solid #2c3644; border-radius: 4px;
-    padding: 0.2rem 0.5rem;
-  }
+  /*
+     Twenty-six rules stood here and reached nothing.
 
-  .empty-families {
-    display: flex; flex-direction: column; gap: 0.05rem;
-    margin: 0.3rem 0 0; font-size: 0.7rem; color: var(--text-muted, #8b93a3);
-  }
-  .empty-families .why { opacity: 0.8; margin-top: 0.15rem; }
-  label span.empty { opacity: 0.55; }
-  label em { font-style: normal; font-size: 0.68rem; opacity: 0.8; }
-  .sel-reason { margin: 0.2rem 0 0; font-size: 0.74rem; color: var(--text-muted, #8b93a3); }
-  .tally h5 { margin: 0.35rem 0 0.15rem; font-size: 0.75rem; }
-  .tally table { width: 100%; border-collapse: collapse; font-size: 0.72rem; }
-  .tally th {
-    text-align: left; font-weight: 400; color: var(--text-muted, #8b93a3);
-    padding: 0.08rem 0;
-  }
-  .tally td { text-align: right; font-variant-numeric: tabular-nums; padding: 0.08rem 0; }
-  .tally .totals {
-    display: flex; flex-direction: column; gap: 0.05rem;
-    margin: 0 0 0.25rem; font-size: 0.72rem; color: var(--text-muted, #8b93a3);
-  }
-  .tally .totals strong { color: var(--text, #dfe4ec); float: right; }
+     They styled the rail's headings, labels, sliders, section-cut button, tally table and
+     inspector list — markup that was extracted into `RebarLayersPanel`, `RebarStatusPanel`
+     and `SelectionDetails`. Svelte scopes styles to the component that declares them, so the
+     moment the markup moved the rules stopped matching, and every one of them was reported as
+     an unused selector on every build. The children carry their own copies; nothing here was
+     the only definition of anything, which is why deleting them changes no pixel.
 
-  .inspector {
-    flex: 0 0 auto; border-top: 1px solid #232a35; padding: 0.45rem 0.7rem;
-    background: #141a23; max-height: 12rem; overflow-y: auto;
-  }
-  .inspector dl {
-    display: grid; grid-template-columns: auto 1fr auto 1fr auto 1fr;
-    gap: 0.1rem 0.55rem; margin: 0; font-size: 0.76rem;
-  }
-  .inspector dt { color: var(--text-muted, #8b93a3); }
-  .inspector dd { margin: 0; }
-  .hint { margin: 0; font-size: 0.76rem; color: var(--text-muted, #8b93a3); }
-  .sel-status { margin: 0.3rem 0 0; font-size: 0.78rem; }
-  .sel-status .lim { color: var(--text-muted, #8b93a3); }
-  .sel-actions { margin-top: 0.3rem; }
-  .sel-actions button {
-    font-size: 0.74rem; padding: 0.2rem 0.5rem; cursor: pointer;
-    background: #1e2733; color: inherit; border: 1px solid #2c3644; border-radius: 4px;
-  }
+     They are gone rather than kept "just in case" for the reason `.autosave-banner` taught:
+     a rule left behind after its markup leaves is not a spare, it is a decoy that the next
+     person edits expecting an effect.
+  */
+
   .empty { padding: 2rem; text-align: center; color: var(--text-muted, #8b93a3); }
 
   /**
@@ -574,7 +564,8 @@
       background: #141a23;
       box-shadow: 0 0 24px rgba(0, 0, 0, 0.5);
     }
-    .inspector dl { grid-template-columns: auto 1fr; }
+    /* `.inspector dl` went with the rest: the list is `SelectionDetails`' markup now, and it
+       already collapses to two columns at every width. The container is still ours. */
     .inspector { max-height: 9rem; }
   }
 </style>
