@@ -54,8 +54,13 @@ export interface RestoredSection {
  *
  * Idempotent: restoring an already-restored section yields the same state and
  * the same digest, which is what makes repeated save/open cycles stable.
+ *
+ * `opts.torsion` forwards to `resolveSectionState`: restoring WITH torsion
+ * when the engine is ready costs one Saint-Venant solve per section without a
+ * published constant, and saves the immediate `refreshCanonicalSections`
+ * re-resolve every section would otherwise pay right after the load.
  */
-export function restoreSectionState(sec: Section): RestoredSection {
+export function restoreSectionState(sec: Section, opts: { torsion?: boolean } = {}): RestoredSection {
   const stored = sec.canonical;
 
   // ── Engine not up yet ────────────────────────────────────────
@@ -72,7 +77,7 @@ export function restoreSectionState(sec: Section): RestoredSection {
   // ── Re-derive from the section's own dimensions ──────────────
   let recomputed: SectionState;
   try {
-    recomputed = resolveSectionState(sec);
+    recomputed = resolveSectionState(sec, { torsion: opts.torsion });
   } catch (err) {
     // Invalid geometry must not lose the legacy data that still lets the
     // model solve. Drop the canonical claim, keep everything else.
@@ -126,11 +131,12 @@ export function restoreSectionState(sec: Section): RestoredSection {
  */
 export function restoreSections(
   sections: Map<number, Section>,
+  opts: { torsion?: boolean } = {},
 ): { sections: Map<number, Section>; outcomes: Map<number, RestoreOutcome> } {
   const out = new Map<number, Section>();
   const outcomes = new Map<number, RestoreOutcome>();
   for (const [id, sec] of sections) {
-    const { section, outcome } = restoreSectionState(sec);
+    const { section, outcome } = restoreSectionState(sec, opts);
     out.set(id, section);
     outcomes.set(id, outcome);
   }

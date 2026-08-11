@@ -89,23 +89,22 @@ pub struct ShearInertia {
 }
 
 fn solve_one(
+    factored: &super::poisson::FactoredPoisson,
     mesh: &SectionMesh,
     centroid: [f64; 2],
     inertia: f64,
     // Which centroidal coordinate drives the bending-stress gradient: 1 for the
     // vertical `z` (a vertical force), 0 for the horizontal `y`.
     coord: usize,
-    strategy: SolveStrategy,
 ) -> Result<(ShearField, f64), String> {
     if !(inertia > 0.0) || !inertia.is_finite() {
         return Err(format!("shear needs a positive second moment, got {inertia}"));
     }
-    let mut problem = PoissonProblem::new(mesh);
     // The solver reads `-laplacian(phi) = f`, and the physics is
     // `laplacian(phi) = -c/I` with `c` the centroidal coordinate, so `f = c/I`.
     // Evaluated at each triangle's centroid, which is exact for the linear
     // source a P1 element sees.
-    problem.source = mesh
+    let source: Vec<f64> = mesh
         .triangles
         .iter()
         .map(|&t| {
@@ -115,11 +114,9 @@ fn solve_one(
             c / inertia
         })
         .collect();
-    problem.loop_bcs = vec![LoopBc::Neumann { value: 0.0 }; mesh.loop_count];
-    problem.zero_mean = true;
-    problem.strategy = strategy;
 
-    let sol = super::poisson::solve_poisson(&problem)?;
+    // No Dirichlet loops — the second element is never read.
+    let sol = factored.solve(&source, &[])?;
 
     let mut tau_max = 0.0;
     let mut tau_max_triangle = 0;
@@ -179,9 +176,19 @@ pub fn solve_shear(
     if mesh.triangles.is_empty() {
         return Err("mesh has no triangles".into());
     }
+    // Both axes solve the SAME pure-Neumann problem — identical mesh, boundary
+    // conditions and gauge pin, so identical reduced matrix — with only the
+    // source term differing. Factor once and solve twice: the factorization is
+    // the dominant cost, so this halves it.
+    let mut problem = PoissonProblem::new(mesh);
+    problem.loop_bcs = vec![LoopBc::Neumann { value: 0.0 }; mesh.loop_count];
+    problem.zero_mean = true;
+    problem.strategy = strategy;
+    let factored = super::poisson::factor_poisson(&problem)?;
+
     // A force along z bends about y, so it is driven by z and divided by Iy.
-    let (vz, r1) = solve_one(mesh, centroid, inertia.iy, 1, strategy)?;
-    let (vy, r2) = solve_one(mesh, centroid, inertia.iz, 0, strategy)?;
+    let (vz, r1) = solve_one(&factored, mesh, centroid, inertia.iy, 1)?;
+    let (vy, r2) = solve_one(&factored, mesh, centroid, inertia.iz, 0)?;
 
     // A unit force along z applied at the centroid twists the section by
     // `torque_about_centroid`; shifting its line of action along y by that

@@ -91,14 +91,22 @@ pub fn solve_torsion(mesh: &SectionMesh, strategy: SolveStrategy) -> Result<Tors
     }
     let holes = mesh.loop_count.saturating_sub(1);
 
-    // phi_0: the simply-connected field, zero on every boundary.
-    let base = {
+    // Every solve below — the base field and the k unit responses — constrains
+    // the SAME node set (every boundary loop is Dirichlet in all of them); only
+    // the prescribed values and the source differ. The reduced matrix is
+    // therefore bit-identical across all k+1 solves, so factor it once.
+    let factored = {
         let mut p = PoissonProblem::new(mesh);
-        p.source = vec![2.0; mesh.triangles.len()];
         p.loop_bcs = vec![LoopBc::Dirichlet { value: 0.0 }; mesh.loop_count];
         p.strategy = strategy;
-        super::poisson::solve_poisson(&p)?
+        super::poisson::factor_poisson(&p)?
     };
+
+    // phi_0: the simply-connected field, zero on every boundary.
+    let base = factored.solve(
+        &vec![2.0; mesh.triangles.len()],
+        &vec![0.0; mesh.loop_count],
+    )?;
 
     let sol: PoissonSolution = if holes == 0 {
         base
@@ -106,13 +114,10 @@ pub fn solve_torsion(mesh: &SectionMesh, strategy: SolveStrategy) -> Result<Tors
         // One unit response per hole.
         let mut unit = Vec::with_capacity(holes);
         for i in 0..holes {
-            let mut p = PoissonProblem::new(mesh);
-            p.source = vec![0.0; mesh.triangles.len()];
-            p.loop_bcs = (0..mesh.loop_count)
-                .map(|l| LoopBc::Dirichlet { value: if l == i + 1 { 1.0 } else { 0.0 } })
+            let dirichlet: Vec<f64> = (0..mesh.loop_count)
+                .map(|l| if l == i + 1 { 1.0 } else { 0.0 })
                 .collect();
-            p.strategy = strategy;
-            unit.push(super::poisson::solve_poisson(&p)?);
+            unit.push(factored.solve(&[], &dirichlet)?);
         }
 
         // Bredt: integral over the hole of laplacian(phi) equals the boundary

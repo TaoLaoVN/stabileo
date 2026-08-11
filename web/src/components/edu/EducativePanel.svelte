@@ -53,6 +53,10 @@
 
   /** Adapt an authored spec to the shape the exercise view consumes. */
   function specToExercise(spec: EduExerciseSpec): EduExercise {
+    // The stress resolver is built once per exercise, not per question and per
+    // click: it meshes and solves the section, which is far too costly to
+    // repeat for every verify.
+    const ctx = stressContext(spec.model.profile, spec.model.fy);
     return {
       id: spec.id,
       title: spec.title,
@@ -62,15 +66,13 @@
       solverType: spec.solverType,
       build: (api) => buildFromSpec(spec.model, api),
       supports: spec.supports,
-      // The stress resolver is built once per exercise, not per question: it
-      // meshes and solves the section, which is far too costly to repeat.
       characteristics: spec.characteristics.map((c) => ({
         label: c.label, unit: c.unit,
-        getCorrect: (f) => evaluateAnswer(c.answer, f, stressContext(spec.model.profile, spec.model.fy)) ?? 0,
+        getCorrect: (f) => evaluateAnswer(c.answer, f, ctx) ?? 0,
       })),
       diagramQuestions: spec.diagramQuestions.map((q) => ({
         question: q.question, unit: q.unit,
-        getCorrect: (f) => evaluateAnswer(q.answer, f, stressContext(spec.model.profile, spec.model.fy)) ?? 0,
+        getCorrect: (f) => evaluateAnswer(q.answer, f, ctx) ?? 0,
       })),
       kinematicQuestion: spec.kinematicQuestion,
       diagramShapeQuestions: spec.diagramShapeQuestions,

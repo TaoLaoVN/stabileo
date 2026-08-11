@@ -2907,10 +2907,12 @@ function createModelStore() {
         loadFixture(json as any, api as any);
       });
 
-      // Fixtures add their sections inside a bulk mutation, which bypasses the
-      // per-section resolve, so settle canonical state once the whole model is
-      // in place. Without this a loaded example reports every section as
-      // having no known geometry.
+      // Settle canonical state once the whole model is in place. Sections the
+      // fixture added are already resolved (addSection resolves per add, and
+      // the refresh skips those), so this repairs only sections that loaded
+      // before the engine was ready — without it those would keep reporting
+      // no known geometry for the rest of the session.
+      this.refreshCanonicalSections();
       this.refreshCanonicalSections();
 
       if (is2DFixture(name) && (uiStore.analysisMode === '3d' || uiStore.analysisMode === 'pro')) {
@@ -3025,8 +3027,12 @@ function createModelStore() {
         patch = rest;
       }
       const updated: Section = { ...sec, ...patch, id };
-      // Auto-calculate A, Iy, Iz, J from b×h ONLY for manual edits (no shape specified)
-      if (data.shape === undefined) {
+      // Auto-calculate A, Iy, Iz, J from b×h ONLY for manual edits (no shape
+      // specified) on sections WITHOUT canonical geometry: on a geometry-backed
+      // section the derived values are outputs of the polygons, and writing
+      // rectangle-formula numbers over them is how a catalogue IPE ends up
+      // displaying a rectangle's area in the table.
+      if (data.shape === undefined && sec.canonical?.kind !== 'geometry-backed') {
         const b = data.b ?? sec.b;
         const h = data.h ?? sec.h;
         if (b !== undefined && h !== undefined && b > 0 && h > 0 && (data.b !== undefined || data.h !== undefined)) {
@@ -3046,7 +3052,14 @@ function createModelStore() {
       // step. Doing it here keeps geometry and properties atomically
       // consistent: there is no window in which a section carries new
       // dimensions and stale canonical values.
-      const withCanonical = resolveOnUpdate(updated);
+      //
+      // The exception is a patch that cannot change the resolution: for a
+      // geometry-backed section a/iy/iz/j were stripped above, so an empty
+      // patch means the edit touched only derived scalars — and re-resolving
+      // would run a Saint-Venant mesh-and-solve the table's inline edit could
+      // never need.
+      const withCanonical =
+        Object.keys(patch).length === 0 && sec.canonical ? updated : resolveOnUpdate(updated);
 
       const m = new Map(model.sections);
       m.set(id, withCanonical);
