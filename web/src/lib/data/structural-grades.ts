@@ -40,6 +40,24 @@
 
 export type GradeFamily = 'hot-rolled' | 'cold-formed' | 'aluminium' | 'stainless';
 
+/** Where a grade's product standard comes from. */
+export type GradeRegion = 'AR' | 'US' | 'EU' | 'BR' | 'AU' | 'IN' | 'ZA';
+
+/**
+ * The regions Basic mode offers.
+ *
+ * European and American cover the overwhelming majority of what is specified
+ * locally, and they also cover CIRSOC by construction: CIRSOC 301 is a
+ * verification code that adopts AISC's method and takes its sections from
+ * whatever is commercially normalised, which in Argentina means IRAM grades
+ * alongside ASTM ones. So Argentina is in this list not as a third region but
+ * because it is the default, and hiding its own grades would be perverse.
+ *
+ * Everything else — Brazilian, Australian, Indian, South African — is real and
+ * loaded, just not surfaced in Basic. PRO shows the lot.
+ */
+export const BASIC_REGIONS: GradeRegion[] = ['AR', 'EU', 'US'];
+
 /** A yield/ultimate pair that applies over a thickness band. */
 export interface ThicknessBand {
   /** Lower bound, exclusive, mm. */
@@ -57,6 +75,8 @@ export interface StructuralGrade {
   designation: string;
   /** The PRODUCT standard that fixes the values below. */
   productStandard: string;
+  /** Where that standard comes from — drives which modes offer the grade. */
+  region: GradeRegion;
   family: GradeFamily;
   /** Young's modulus, MPa. */
   e: number;
@@ -86,6 +106,19 @@ export interface DesignCode {
   families: GradeFamily[];
   /** The safety format the code is written in. */
   format: 'LRFD' | 'ASD' | 'LRFD+ASD' | 'partial-factors' | 'allowable';
+  /**
+   * Which regions' grades this code is normally applied to.
+   *
+   * Not a restriction the code imposes — nothing stops an engineer checking an
+   * EN grade to AISC, and the arithmetic works. It is what the code's own
+   * tables are written around, and it is what makes the picker useful rather
+   * than exhaustive: choosing CIRSOC should surface the steels an Argentine
+   * drawing actually specifies, not all sixty-eight.
+   *
+   * CIRSOC lists two regions because that is the honest answer: it adopts
+   * AISC's method, so IRAM and ASTM grades sit side by side in local practice.
+   */
+  gradeRegions: GradeRegion[];
 }
 
 // ─────────────────────────────────────────────────────────────────────
@@ -104,55 +137,55 @@ export const HOT_ROLLED: StructuralGrade[] = [
   // The F-nn number is the yield strength in kgf/mm²: F-24 is 24 kgf/mm²,
   // i.e. 235 MPa. Worth knowing, because the designation looks like a
   // strength in MPa and is not one.
-  { id: 'iram-f24', designation: 'F-24', productStandard: 'IRAM-IAS U 500-42', family: 'hot-rolled', ...US_STEEL, fy: 235, fu: 370 },
-  { id: 'iram-f26', designation: 'F-26', productStandard: 'IRAM-IAS U 500-42', family: 'hot-rolled', ...US_STEEL, fy: 255, fu: 410 },
-  { id: 'iram-f36', designation: 'F-36', productStandard: 'IRAM-IAS U 500-42', family: 'hot-rolled', ...US_STEEL, fy: 355, fu: 510 },
+  { id: 'iram-f24', designation: 'F-24', productStandard: 'IRAM-IAS U 500-42', region: 'AR', family: 'hot-rolled', ...US_STEEL, fy: 235, fu: 370 },
+  { id: 'iram-f26', designation: 'F-26', productStandard: 'IRAM-IAS U 500-42', region: 'AR', family: 'hot-rolled', ...US_STEEL, fy: 255, fu: 410 },
+  { id: 'iram-f36', designation: 'F-36', productStandard: 'IRAM-IAS U 500-42', region: 'AR', family: 'hot-rolled', ...US_STEEL, fy: 355, fu: 510 },
 
   // ── ASTM ──
-  { id: 'astm-a36', designation: 'A36', productStandard: 'ASTM A36', family: 'hot-rolled', ...US_STEEL, fy: 250, fu: 400 },
-  { id: 'astm-a529-50', designation: 'A529 Gr.50', productStandard: 'ASTM A529', family: 'hot-rolled', ...US_STEEL, fy: 345, fu: 450 },
-  { id: 'astm-a529-55', designation: 'A529 Gr.55', productStandard: 'ASTM A529', family: 'hot-rolled', ...US_STEEL, fy: 380, fu: 485 },
-  { id: 'astm-a572-42', designation: 'A572 Gr.42', productStandard: 'ASTM A572', family: 'hot-rolled', ...US_STEEL, fy: 290, fu: 415 },
-  { id: 'astm-a572-50', designation: 'A572 Gr.50', productStandard: 'ASTM A572', family: 'hot-rolled', ...US_STEEL, fy: 345, fu: 450 },
-  { id: 'astm-a572-55', designation: 'A572 Gr.55', productStandard: 'ASTM A572', family: 'hot-rolled', ...US_STEEL, fy: 380, fu: 485 },
-  { id: 'astm-a572-60', designation: 'A572 Gr.60', productStandard: 'ASTM A572', family: 'hot-rolled', ...US_STEEL, fy: 415, fu: 520 },
-  { id: 'astm-a572-65', designation: 'A572 Gr.65', productStandard: 'ASTM A572', family: 'hot-rolled', ...US_STEEL, fy: 450, fu: 550 },
+  { id: 'astm-a36', designation: 'A36', productStandard: 'ASTM A36', region: 'US', family: 'hot-rolled', ...US_STEEL, fy: 250, fu: 400 },
+  { id: 'astm-a529-50', designation: 'A529 Gr.50', productStandard: 'ASTM A529', region: 'US', family: 'hot-rolled', ...US_STEEL, fy: 345, fu: 450 },
+  { id: 'astm-a529-55', designation: 'A529 Gr.55', productStandard: 'ASTM A529', region: 'US', family: 'hot-rolled', ...US_STEEL, fy: 380, fu: 485 },
+  { id: 'astm-a572-42', designation: 'A572 Gr.42', productStandard: 'ASTM A572', region: 'US', family: 'hot-rolled', ...US_STEEL, fy: 290, fu: 415 },
+  { id: 'astm-a572-50', designation: 'A572 Gr.50', productStandard: 'ASTM A572', region: 'US', family: 'hot-rolled', ...US_STEEL, fy: 345, fu: 450 },
+  { id: 'astm-a572-55', designation: 'A572 Gr.55', productStandard: 'ASTM A572', region: 'US', family: 'hot-rolled', ...US_STEEL, fy: 380, fu: 485 },
+  { id: 'astm-a572-60', designation: 'A572 Gr.60', productStandard: 'ASTM A572', region: 'US', family: 'hot-rolled', ...US_STEEL, fy: 415, fu: 520 },
+  { id: 'astm-a572-65', designation: 'A572 Gr.65', productStandard: 'ASTM A572', region: 'US', family: 'hot-rolled', ...US_STEEL, fy: 450, fu: 550 },
   {
-    id: 'astm-a992', designation: 'A992', productStandard: 'ASTM A992', family: 'hot-rolled', ...US_STEEL, fy: 345, fu: 450,
+    id: 'astm-a992', designation: 'A992', productStandard: 'ASTM A992', region: 'US', family: 'hot-rolled', ...US_STEEL, fy: 345, fu: 450,
     note: 'W shapes. fy is capped at 450 MPa and fy/fu is limited to 0.85 — the ductility requirement that A36 lacked.',
   },
-  { id: 'astm-a588', designation: 'A588', productStandard: 'ASTM A588', family: 'hot-rolled', ...US_STEEL, fy: 345, fu: 485, note: 'Weathering steel.' },
-  { id: 'astm-a913-50', designation: 'A913 Gr.50', productStandard: 'ASTM A913', family: 'hot-rolled', ...US_STEEL, fy: 345, fu: 450 },
-  { id: 'astm-a913-65', designation: 'A913 Gr.65', productStandard: 'ASTM A913', family: 'hot-rolled', ...US_STEEL, fy: 450, fu: 550 },
+  { id: 'astm-a588', designation: 'A588', productStandard: 'ASTM A588', region: 'US', family: 'hot-rolled', ...US_STEEL, fy: 345, fu: 485, note: 'Weathering steel.' },
+  { id: 'astm-a913-50', designation: 'A913 Gr.50', productStandard: 'ASTM A913', region: 'US', family: 'hot-rolled', ...US_STEEL, fy: 345, fu: 450 },
+  { id: 'astm-a913-65', designation: 'A913 Gr.65', productStandard: 'ASTM A913', region: 'US', family: 'hot-rolled', ...US_STEEL, fy: 450, fu: 550 },
 
   // ── EN 10025-2, with the thickness bands of EN 1993-1-1 table 3.1 ──
   {
-    id: 'en-s235', designation: 'S235', productStandard: 'EN 10025-2', family: 'hot-rolled', ...EN_STEEL, fy: 235, fu: 360,
+    id: 'en-s235', designation: 'S235', productStandard: 'EN 10025-2', region: 'EU', family: 'hot-rolled', ...EN_STEEL, fy: 235, fu: 360,
     byThickness: [{ overMm: 0, upToMm: 40, fy: 235, fu: 360 }, { overMm: 40, upToMm: 80, fy: 215, fu: 360 }],
   },
   {
-    id: 'en-s275', designation: 'S275', productStandard: 'EN 10025-2', family: 'hot-rolled', ...EN_STEEL, fy: 275, fu: 430,
+    id: 'en-s275', designation: 'S275', productStandard: 'EN 10025-2', region: 'EU', family: 'hot-rolled', ...EN_STEEL, fy: 275, fu: 430,
     byThickness: [{ overMm: 0, upToMm: 40, fy: 275, fu: 430 }, { overMm: 40, upToMm: 80, fy: 255, fu: 410 }],
   },
   {
-    id: 'en-s355', designation: 'S355', productStandard: 'EN 10025-2', family: 'hot-rolled', ...EN_STEEL, fy: 355, fu: 510,
+    id: 'en-s355', designation: 'S355', productStandard: 'EN 10025-2', region: 'EU', family: 'hot-rolled', ...EN_STEEL, fy: 355, fu: 510,
     byThickness: [{ overMm: 0, upToMm: 40, fy: 355, fu: 510 }, { overMm: 40, upToMm: 80, fy: 335, fu: 470 }],
   },
   {
-    id: 'en-s450', designation: 'S450', productStandard: 'EN 10025-2', family: 'hot-rolled', ...EN_STEEL, fy: 440, fu: 550,
+    id: 'en-s450', designation: 'S450', productStandard: 'EN 10025-2', region: 'EU', family: 'hot-rolled', ...EN_STEEL, fy: 440, fu: 550,
     byThickness: [{ overMm: 0, upToMm: 40, fy: 440, fu: 550 }, { overMm: 40, upToMm: 80, fy: 410, fu: 550 }],
   },
   // EN 10025-3, normalised fine-grain — the grades used where toughness governs.
-  { id: 'en-s275n', designation: 'S275N', productStandard: 'EN 10025-3', family: 'hot-rolled', ...EN_STEEL, fy: 275, fu: 390 },
-  { id: 'en-s355n', designation: 'S355N', productStandard: 'EN 10025-3', family: 'hot-rolled', ...EN_STEEL, fy: 355, fu: 490 },
-  { id: 'en-s420n', designation: 'S420N', productStandard: 'EN 10025-3', family: 'hot-rolled', ...EN_STEEL, fy: 420, fu: 520 },
-  { id: 'en-s460n', designation: 'S460N', productStandard: 'EN 10025-3', family: 'hot-rolled', ...EN_STEEL, fy: 460, fu: 540 },
+  { id: 'en-s275n', designation: 'S275N', productStandard: 'EN 10025-3', region: 'EU', family: 'hot-rolled', ...EN_STEEL, fy: 275, fu: 390 },
+  { id: 'en-s355n', designation: 'S355N', productStandard: 'EN 10025-3', region: 'EU', family: 'hot-rolled', ...EN_STEEL, fy: 355, fu: 490 },
+  { id: 'en-s420n', designation: 'S420N', productStandard: 'EN 10025-3', region: 'EU', family: 'hot-rolled', ...EN_STEEL, fy: 420, fu: 520 },
+  { id: 'en-s460n', designation: 'S460N', productStandard: 'EN 10025-3', region: 'EU', family: 'hot-rolled', ...EN_STEEL, fy: 460, fu: 540 },
 
   // ── Brazil — NBR 7007, the grades in the CalcSteel list ──
-  { id: 'nbr-mr250', designation: 'MR-250', productStandard: 'NBR 7007', family: 'hot-rolled', ...US_STEEL, fy: 250, fu: 400 },
-  { id: 'nbr-ar350', designation: 'AR-350', productStandard: 'NBR 7007', family: 'hot-rolled', ...US_STEEL, fy: 350, fu: 450 },
-  { id: 'nbr-ar350cor', designation: 'AR-350 COR', productStandard: 'NBR 7007', family: 'hot-rolled', ...US_STEEL, fy: 350, fu: 485, note: 'Weathering steel.' },
-  { id: 'nbr-ar415', designation: 'AR-415', productStandard: 'NBR 7007', family: 'hot-rolled', ...US_STEEL, fy: 415, fu: 520 },
+  { id: 'nbr-mr250', designation: 'MR-250', productStandard: 'NBR 7007', region: 'BR', family: 'hot-rolled', ...US_STEEL, fy: 250, fu: 400 },
+  { id: 'nbr-ar350', designation: 'AR-350', productStandard: 'NBR 7007', region: 'BR', family: 'hot-rolled', ...US_STEEL, fy: 350, fu: 450 },
+  { id: 'nbr-ar350cor', designation: 'AR-350 COR', productStandard: 'NBR 7007', region: 'BR', family: 'hot-rolled', ...US_STEEL, fy: 350, fu: 485, note: 'Weathering steel.' },
+  { id: 'nbr-ar415', designation: 'AR-415', productStandard: 'NBR 7007', region: 'BR', family: 'hot-rolled', ...US_STEEL, fy: 415, fu: 520 },
 ];
 
 // ─────────────────────────────────────────────────────────────────────
@@ -165,39 +198,39 @@ export const HOT_ROLLED: StructuralGrade[] = [
 
 export const COLD_FORMED: StructuralGrade[] = [
   // ── EN 10346, structural galvanised sheet ──
-  { id: 'en-s220gd', designation: 'S220GD+Z', productStandard: 'EN 10346', family: 'cold-formed', ...EN_STEEL, fy: 220, fu: 300 },
-  { id: 'en-s250gd', designation: 'S250GD+Z', productStandard: 'EN 10346', family: 'cold-formed', ...EN_STEEL, fy: 250, fu: 330 },
-  { id: 'en-s280gd', designation: 'S280GD+Z', productStandard: 'EN 10346', family: 'cold-formed', ...EN_STEEL, fy: 280, fu: 360 },
-  { id: 'en-s320gd', designation: 'S320GD+Z', productStandard: 'EN 10346', family: 'cold-formed', ...EN_STEEL, fy: 320, fu: 390 },
-  { id: 'en-s350gd', designation: 'S350GD+Z', productStandard: 'EN 10346', family: 'cold-formed', ...EN_STEEL, fy: 350, fu: 420 },
+  { id: 'en-s220gd', designation: 'S220GD+Z', productStandard: 'EN 10346', region: 'EU', family: 'cold-formed', ...EN_STEEL, fy: 220, fu: 300 },
+  { id: 'en-s250gd', designation: 'S250GD+Z', productStandard: 'EN 10346', region: 'EU', family: 'cold-formed', ...EN_STEEL, fy: 250, fu: 330 },
+  { id: 'en-s280gd', designation: 'S280GD+Z', productStandard: 'EN 10346', region: 'EU', family: 'cold-formed', ...EN_STEEL, fy: 280, fu: 360 },
+  { id: 'en-s320gd', designation: 'S320GD+Z', productStandard: 'EN 10346', region: 'EU', family: 'cold-formed', ...EN_STEEL, fy: 320, fu: 390 },
+  { id: 'en-s350gd', designation: 'S350GD+Z', productStandard: 'EN 10346', region: 'EU', family: 'cold-formed', ...EN_STEEL, fy: 350, fu: 420 },
   {
-    id: 'en-s550gd', designation: 'S550GD+Z', productStandard: 'EN 10346', family: 'cold-formed', ...EN_STEEL, fy: 550, fu: 560,
+    id: 'en-s550gd', designation: 'S550GD+Z', productStandard: 'EN 10346', region: 'EU', family: 'cold-formed', ...EN_STEEL, fy: 550, fu: 560,
     note: 'High strength, low ductility: fu/fy is only 1.02, so no plastic redistribution is available.',
   },
 
   // ── ASTM ──
-  { id: 'astm-a653-33', designation: 'A653 SS Gr.33', productStandard: 'ASTM A653', family: 'cold-formed', ...US_STEEL, fy: 230, fu: 310, note: 'Galvanised.' },
-  { id: 'astm-a653-37', designation: 'A653 SS Gr.37', productStandard: 'ASTM A653', family: 'cold-formed', ...US_STEEL, fy: 255, fu: 360, note: 'Galvanised.' },
-  { id: 'astm-a653-40', designation: 'A653 SS Gr.40', productStandard: 'ASTM A653', family: 'cold-formed', ...US_STEEL, fy: 275, fu: 380, note: 'Galvanised.' },
-  { id: 'astm-a653-50', designation: 'A653 SS Gr.50 Cl.1', productStandard: 'ASTM A653', family: 'cold-formed', ...US_STEEL, fy: 345, fu: 450, note: 'Galvanised.' },
-  { id: 'astm-a653-80', designation: 'A653 SS Gr.80', productStandard: 'ASTM A653', family: 'cold-formed', ...US_STEEL, fy: 550, fu: 570, note: 'Galvanised, high strength, low ductility.' },
-  { id: 'astm-a1011-50', designation: 'A1011 SS Gr.50', productStandard: 'ASTM A1011', family: 'cold-formed', ...US_STEEL, fy: 345, fu: 450 },
-  { id: 'astm-a1003-h', designation: 'A1003 Type H (ST33H)', productStandard: 'ASTM A1003', family: 'cold-formed', ...US_STEEL, fy: 230, fu: 310, note: 'Framing members.' },
+  { id: 'astm-a653-33', designation: 'A653 SS Gr.33', productStandard: 'ASTM A653', region: 'US', family: 'cold-formed', ...US_STEEL, fy: 230, fu: 310, note: 'Galvanised.' },
+  { id: 'astm-a653-37', designation: 'A653 SS Gr.37', productStandard: 'ASTM A653', region: 'US', family: 'cold-formed', ...US_STEEL, fy: 255, fu: 360, note: 'Galvanised.' },
+  { id: 'astm-a653-40', designation: 'A653 SS Gr.40', productStandard: 'ASTM A653', region: 'US', family: 'cold-formed', ...US_STEEL, fy: 275, fu: 380, note: 'Galvanised.' },
+  { id: 'astm-a653-50', designation: 'A653 SS Gr.50 Cl.1', productStandard: 'ASTM A653', region: 'US', family: 'cold-formed', ...US_STEEL, fy: 345, fu: 450, note: 'Galvanised.' },
+  { id: 'astm-a653-80', designation: 'A653 SS Gr.80', productStandard: 'ASTM A653', region: 'US', family: 'cold-formed', ...US_STEEL, fy: 550, fu: 570, note: 'Galvanised, high strength, low ductility.' },
+  { id: 'astm-a1011-50', designation: 'A1011 SS Gr.50', productStandard: 'ASTM A1011', region: 'US', family: 'cold-formed', ...US_STEEL, fy: 345, fu: 450 },
+  { id: 'astm-a1003-h', designation: 'A1003 Type H (ST33H)', productStandard: 'ASTM A1003', region: 'US', family: 'cold-formed', ...US_STEEL, fy: 230, fu: 310, note: 'Framing members.' },
 
   // ── Structural hollow sections, cold-formed ──
   //
   // A500's yield depends on the SHAPE, not only the grade: the corners of a
   // square tube are worked harder than a round one. Both are listed because
   // picking the wrong one is a 9% error on the strength.
-  { id: 'astm-a500b-round', designation: 'A500 Gr.B (circular)', productStandard: 'ASTM A500', family: 'cold-formed', ...US_STEEL, fy: 290, fu: 400 },
-  { id: 'astm-a500b-shaped', designation: 'A500 Gr.B (rect./cuadrado)', productStandard: 'ASTM A500', family: 'cold-formed', ...US_STEEL, fy: 315, fu: 400 },
-  { id: 'astm-a500c-round', designation: 'A500 Gr.C (circular)', productStandard: 'ASTM A500', family: 'cold-formed', ...US_STEEL, fy: 317, fu: 427 },
-  { id: 'astm-a500c-shaped', designation: 'A500 Gr.C (rect./cuadrado)', productStandard: 'ASTM A500', family: 'cold-formed', ...US_STEEL, fy: 345, fu: 427 },
+  { id: 'astm-a500b-round', designation: 'A500 Gr.B (circular)', productStandard: 'ASTM A500', region: 'US', family: 'cold-formed', ...US_STEEL, fy: 290, fu: 400 },
+  { id: 'astm-a500b-shaped', designation: 'A500 Gr.B (rect./cuadrado)', productStandard: 'ASTM A500', region: 'US', family: 'cold-formed', ...US_STEEL, fy: 315, fu: 400 },
+  { id: 'astm-a500c-round', designation: 'A500 Gr.C (circular)', productStandard: 'ASTM A500', region: 'US', family: 'cold-formed', ...US_STEEL, fy: 317, fu: 427 },
+  { id: 'astm-a500c-shaped', designation: 'A500 Gr.C (rect./cuadrado)', productStandard: 'ASTM A500', region: 'US', family: 'cold-formed', ...US_STEEL, fy: 345, fu: 427 },
 
   // ── Brazil — NBR 7008 (the ZAR grades NBR 14762 designs with) ──
-  { id: 'nbr-zar250', designation: 'ZAR-250', productStandard: 'NBR 7008', family: 'cold-formed', ...US_STEEL, fy: 250, fu: 360 },
-  { id: 'nbr-zar280', designation: 'ZAR-280', productStandard: 'NBR 7008', family: 'cold-formed', ...US_STEEL, fy: 280, fu: 380 },
-  { id: 'nbr-zar345', designation: 'ZAR-345', productStandard: 'NBR 7008', family: 'cold-formed', ...US_STEEL, fy: 345, fu: 430 },
+  { id: 'nbr-zar250', designation: 'ZAR-250', productStandard: 'NBR 7008', region: 'BR', family: 'cold-formed', ...US_STEEL, fy: 250, fu: 360 },
+  { id: 'nbr-zar280', designation: 'ZAR-280', productStandard: 'NBR 7008', region: 'BR', family: 'cold-formed', ...US_STEEL, fy: 280, fu: 380 },
+  { id: 'nbr-zar345', designation: 'ZAR-345', productStandard: 'NBR 7008', region: 'BR', family: 'cold-formed', ...US_STEEL, fy: 345, fu: 430 },
 ];
 
 // ─────────────────────────────────────────────────────────────────────
@@ -213,20 +246,20 @@ const EN_ALU = { e: 70000, nu: 0.3, rho: 27.0 } as const;
 
 export const ALUMINIUM: StructuralGrade[] = [
   // 5xxx — magnesium alloys: weldable, marine, work-hardened tempers.
-  { id: 'alu-5052-h32', designation: '5052-H32', productStandard: 'EN AW-5052', family: 'aluminium', ...EN_ALU, fy: 195, fu: 230 },
-  { id: 'alu-5083-h111', designation: '5083-H111', productStandard: 'EN AW-5083', family: 'aluminium', ...EN_ALU, fy: 125, fu: 275, note: 'Naval.' },
-  { id: 'alu-5083-h116', designation: '5083-H116', productStandard: 'EN AW-5083', family: 'aluminium', ...EN_ALU, fy: 215, fu: 305, note: 'Naval.' },
-  { id: 'alu-5086-h32', designation: '5086-H32', productStandard: 'EN AW-5086', family: 'aluminium', ...EN_ALU, fy: 195, fu: 275 },
-  { id: 'alu-5754-h22', designation: '5754-H22', productStandard: 'EN AW-5754', family: 'aluminium', ...EN_ALU, fy: 130, fu: 220 },
+  { id: 'alu-5052-h32', designation: '5052-H32', productStandard: 'EN AW-5052', region: 'EU', family: 'aluminium', ...EN_ALU, fy: 195, fu: 230 },
+  { id: 'alu-5083-h111', designation: '5083-H111', productStandard: 'EN AW-5083', region: 'EU', family: 'aluminium', ...EN_ALU, fy: 125, fu: 275, note: 'Naval.' },
+  { id: 'alu-5083-h116', designation: '5083-H116', productStandard: 'EN AW-5083', region: 'EU', family: 'aluminium', ...EN_ALU, fy: 215, fu: 305, note: 'Naval.' },
+  { id: 'alu-5086-h32', designation: '5086-H32', productStandard: 'EN AW-5086', region: 'EU', family: 'aluminium', ...EN_ALU, fy: 195, fu: 275 },
+  { id: 'alu-5754-h22', designation: '5754-H22', productStandard: 'EN AW-5754', region: 'EU', family: 'aluminium', ...EN_ALU, fy: 130, fu: 220 },
 
   // 6xxx — magnesium-silicon: extrudable and heat-treatable, the structural
   // workhorses. A welded 6xxx member loses roughly half its proof stress in the
   // heat-affected zone, which the design code handles and this table does not.
-  { id: 'alu-6060-t6', designation: '6060-T6', productStandard: 'EN AW-6060', family: 'aluminium', ...EN_ALU, fy: 150, fu: 190, note: 'Extrusion.' },
-  { id: 'alu-6061-t6', designation: '6061-T6', productStandard: 'EN AW-6061', family: 'aluminium', ...EN_ALU, fy: 240, fu: 260 },
-  { id: 'alu-6063-t6', designation: '6063-T6', productStandard: 'EN AW-6063', family: 'aluminium', ...EN_ALU, fy: 170, fu: 205, note: 'Extrusion.' },
-  { id: 'alu-6082-t6', designation: '6082-T6', productStandard: 'EN AW-6082', family: 'aluminium', ...EN_ALU, fy: 250, fu: 290 },
-  { id: 'alu-7020-t6', designation: '7020-T6', productStandard: 'EN AW-7020', family: 'aluminium', ...EN_ALU, fy: 280, fu: 350 },
+  { id: 'alu-6060-t6', designation: '6060-T6', productStandard: 'EN AW-6060', region: 'EU', family: 'aluminium', ...EN_ALU, fy: 150, fu: 190, note: 'Extrusion.' },
+  { id: 'alu-6061-t6', designation: '6061-T6', productStandard: 'EN AW-6061', region: 'EU', family: 'aluminium', ...EN_ALU, fy: 240, fu: 260 },
+  { id: 'alu-6063-t6', designation: '6063-T6', productStandard: 'EN AW-6063', region: 'EU', family: 'aluminium', ...EN_ALU, fy: 170, fu: 205, note: 'Extrusion.' },
+  { id: 'alu-6082-t6', designation: '6082-T6', productStandard: 'EN AW-6082', region: 'EU', family: 'aluminium', ...EN_ALU, fy: 250, fu: 290 },
+  { id: 'alu-7020-t6', designation: '7020-T6', productStandard: 'EN AW-7020', region: 'EU', family: 'aluminium', ...EN_ALU, fy: 280, fu: 350 },
 ];
 
 // ─────────────────────────────────────────────────────────────────────
@@ -243,17 +276,17 @@ const FERRITIC = { e: 220000, nu: 0.3, rho: 77.0 } as const;
 const DUPLEX = { e: 200000, nu: 0.3, rho: 78.0 } as const;
 
 export const STAINLESS: StructuralGrade[] = [
-  { id: 'ss-1.4301', designation: '1.4301 / 304', productStandard: 'EN 10088-4', family: 'stainless', ...AUSTENITIC, fy: 230, fu: 540, note: 'Austenítico.' },
-  { id: 'ss-1.4306', designation: '1.4306 / 304L', productStandard: 'EN 10088-4', family: 'stainless', ...AUSTENITIC, fy: 220, fu: 520, note: 'Austenítico, bajo carbono.' },
-  { id: 'ss-1.4318', designation: '1.4318 / 301LN', productStandard: 'EN 10088-4', family: 'stainless', ...AUSTENITIC, fy: 350, fu: 650, note: 'Austenítico al N, alta resistencia.' },
-  { id: 'ss-1.4401', designation: '1.4401 / 316', productStandard: 'EN 10088-4', family: 'stainless', ...AUSTENITIC, fy: 240, fu: 530, note: 'Austenítico al Mo.' },
-  { id: 'ss-1.4404', designation: '1.4404 / 316L', productStandard: 'EN 10088-4', family: 'stainless', ...AUSTENITIC, fy: 240, fu: 530, note: 'Austenítico al Mo, bajo carbono.' },
-  { id: 'ss-1.4541', designation: '1.4541 / 321', productStandard: 'EN 10088-4', family: 'stainless', ...AUSTENITIC, fy: 220, fu: 520, note: 'Austenítico al Ti.' },
-  { id: 'ss-1.4571', designation: '1.4571 / 316Ti', productStandard: 'EN 10088-4', family: 'stainless', ...AUSTENITIC, fy: 240, fu: 540, note: 'Austenítico al Ti.' },
-  { id: 'ss-1.4003', designation: '1.4003 / 3CR12', productStandard: 'EN 10088-4', family: 'stainless', ...FERRITIC, fy: 280, fu: 450, note: 'Ferrítico.' },
-  { id: 'ss-1.4016', designation: '1.4016 / 430', productStandard: 'EN 10088-4', family: 'stainless', ...FERRITIC, fy: 260, fu: 450, note: 'Ferrítico.' },
-  { id: 'ss-1.4362', designation: '1.4362 / 2304', productStandard: 'EN 10088-4', family: 'stainless', ...DUPLEX, fy: 400, fu: 600, note: 'Dúplex.' },
-  { id: 'ss-1.4462', designation: '1.4462 / 2205', productStandard: 'EN 10088-4', family: 'stainless', ...DUPLEX, fy: 480, fu: 660, note: 'Dúplex.' },
+  { id: 'ss-1.4301', designation: '1.4301 / 304', productStandard: 'EN 10088-4', region: 'EU', family: 'stainless', ...AUSTENITIC, fy: 230, fu: 540, note: 'Austenítico.' },
+  { id: 'ss-1.4306', designation: '1.4306 / 304L', productStandard: 'EN 10088-4', region: 'EU', family: 'stainless', ...AUSTENITIC, fy: 220, fu: 520, note: 'Austenítico, bajo carbono.' },
+  { id: 'ss-1.4318', designation: '1.4318 / 301LN', productStandard: 'EN 10088-4', region: 'EU', family: 'stainless', ...AUSTENITIC, fy: 350, fu: 650, note: 'Austenítico al N, alta resistencia.' },
+  { id: 'ss-1.4401', designation: '1.4401 / 316', productStandard: 'EN 10088-4', region: 'EU', family: 'stainless', ...AUSTENITIC, fy: 240, fu: 530, note: 'Austenítico al Mo.' },
+  { id: 'ss-1.4404', designation: '1.4404 / 316L', productStandard: 'EN 10088-4', region: 'EU', family: 'stainless', ...AUSTENITIC, fy: 240, fu: 530, note: 'Austenítico al Mo, bajo carbono.' },
+  { id: 'ss-1.4541', designation: '1.4541 / 321', productStandard: 'EN 10088-4', region: 'EU', family: 'stainless', ...AUSTENITIC, fy: 220, fu: 520, note: 'Austenítico al Ti.' },
+  { id: 'ss-1.4571', designation: '1.4571 / 316Ti', productStandard: 'EN 10088-4', region: 'EU', family: 'stainless', ...AUSTENITIC, fy: 240, fu: 540, note: 'Austenítico al Ti.' },
+  { id: 'ss-1.4003', designation: '1.4003 / 3CR12', productStandard: 'EN 10088-4', region: 'EU', family: 'stainless', ...FERRITIC, fy: 280, fu: 450, note: 'Ferrítico.' },
+  { id: 'ss-1.4016', designation: '1.4016 / 430', productStandard: 'EN 10088-4', region: 'EU', family: 'stainless', ...FERRITIC, fy: 260, fu: 450, note: 'Ferrítico.' },
+  { id: 'ss-1.4362', designation: '1.4362 / 2304', productStandard: 'EN 10088-4', region: 'EU', family: 'stainless', ...DUPLEX, fy: 400, fu: 600, note: 'Dúplex.' },
+  { id: 'ss-1.4462', designation: '1.4462 / 2205', productStandard: 'EN 10088-4', region: 'EU', family: 'stainless', ...DUPLEX, fy: 480, fu: 660, note: 'Dúplex.' },
 ];
 
 export const ALL_GRADES: StructuralGrade[] = [
@@ -285,34 +318,34 @@ export const ALL_GRADES: StructuralGrade[] = [
  */
 export const MATERIAL_DESIGN_CODES: DesignCode[] = [
   // Hot-rolled
-  { id: 'cirsoc-301', name: 'CIRSOC 301:2005', region: 'AR', families: ['hot-rolled'], format: 'LRFD' },
-  { id: 'aisc-360-16', name: 'AISC 360-16', region: 'US', families: ['hot-rolled'], format: 'LRFD+ASD' },
-  { id: 'aisc-360-22', name: 'AISC 360-22', region: 'US', families: ['hot-rolled'], format: 'LRFD+ASD' },
-  { id: 'en-1993-1-1', name: 'EN 1993-1-1:2005', region: 'EU', families: ['hot-rolled'], format: 'partial-factors' },
-  { id: 'nbr-8800', name: 'NBR 8800:2008', region: 'BR', families: ['hot-rolled'], format: 'LRFD' },
-  { id: 'as-4100', name: 'AS 4100:2020', region: 'AU', families: ['hot-rolled'], format: 'LRFD' },
-  { id: 'csa-s16', name: 'CSA S16:19', region: 'CA', families: ['hot-rolled'], format: 'LRFD' },
-  { id: 'sans-10162-1', name: 'SANS 10162-1:2011', region: 'ZA', families: ['hot-rolled'], format: 'LRFD' },
-  { id: 'is-800', name: 'IS 800:2007', region: 'IN', families: ['hot-rolled'], format: 'LRFD' },
+  { id: 'cirsoc-301', name: 'CIRSOC 301:2005', region: 'AR', families: ['hot-rolled'], format: 'LRFD', gradeRegions: ['AR', 'US'] },
+  { id: 'aisc-360-16', name: 'AISC 360-16', region: 'US', families: ['hot-rolled'], format: 'LRFD+ASD', gradeRegions: ['US'] },
+  { id: 'aisc-360-22', name: 'AISC 360-22', region: 'US', families: ['hot-rolled'], format: 'LRFD+ASD', gradeRegions: ['US'] },
+  { id: 'en-1993-1-1', name: 'EN 1993-1-1:2005', region: 'EU', families: ['hot-rolled'], format: 'partial-factors', gradeRegions: ['EU'] },
+  { id: 'nbr-8800', name: 'NBR 8800:2008', region: 'BR', families: ['hot-rolled'], format: 'LRFD', gradeRegions: ['BR'] },
+  { id: 'as-4100', name: 'AS 4100:2020', region: 'AU', families: ['hot-rolled'], format: 'LRFD', gradeRegions: ['AU', 'EU'] },
+  { id: 'csa-s16', name: 'CSA S16:19', region: 'CA', families: ['hot-rolled'], format: 'LRFD', gradeRegions: ['US'] },
+  { id: 'sans-10162-1', name: 'SANS 10162-1:2011', region: 'ZA', families: ['hot-rolled'], format: 'LRFD', gradeRegions: ['ZA', 'EU'] },
+  { id: 'is-800', name: 'IS 800:2007', region: 'IN', families: ['hot-rolled'], format: 'LRFD', gradeRegions: ['IN', 'EU'] },
 
   // Cold-formed
-  { id: 'cirsoc-303', name: 'CIRSOC 303:2009', region: 'AR', families: ['cold-formed'], format: 'LRFD' },
-  { id: 'aisi-s100-16', name: 'AISI S100-16', region: 'US', families: ['cold-formed'], format: 'LRFD+ASD' },
-  { id: 'en-1993-1-3', name: 'EN 1993-1-3:2006', region: 'EU', families: ['cold-formed'], format: 'partial-factors' },
-  { id: 'nbr-14762', name: 'NBR 14762:2010', region: 'BR', families: ['cold-formed'], format: 'LRFD' },
-  { id: 'as-nzs-4600', name: 'AS/NZS 4600:2018', region: 'AU/NZ', families: ['cold-formed'], format: 'LRFD' },
-  { id: 'is-811', name: 'IS 811:1987', region: 'IN', families: ['cold-formed'], format: 'allowable' },
+  { id: 'cirsoc-303', name: 'CIRSOC 303:2009', region: 'AR', families: ['cold-formed'], format: 'LRFD', gradeRegions: ['AR', 'US'] },
+  { id: 'aisi-s100-16', name: 'AISI S100-16', region: 'US', families: ['cold-formed'], format: 'LRFD+ASD', gradeRegions: ['US'] },
+  { id: 'en-1993-1-3', name: 'EN 1993-1-3:2006', region: 'EU', families: ['cold-formed'], format: 'partial-factors', gradeRegions: ['EU'] },
+  { id: 'nbr-14762', name: 'NBR 14762:2010', region: 'BR', families: ['cold-formed'], format: 'LRFD', gradeRegions: ['BR'] },
+  { id: 'as-nzs-4600', name: 'AS/NZS 4600:2018', region: 'AU/NZ', families: ['cold-formed'], format: 'LRFD', gradeRegions: ['AU', 'US'] },
+  { id: 'is-811', name: 'IS 811:1987', region: 'IN', families: ['cold-formed'], format: 'allowable', gradeRegions: ['IN', 'EU'] },
 
   // Aluminium
-  { id: 'en-1999-1-1', name: 'EN 1999-1-1:2007', region: 'EU', families: ['aluminium'], format: 'partial-factors' },
-  { id: 'adm-2020', name: 'ADM 2020', region: 'US', families: ['aluminium'], format: 'LRFD+ASD' },
-  { id: 'cirsoc-701', name: 'CIRSOC 701:2010', region: 'AR', families: ['aluminium'], format: 'LRFD' },
-  { id: 'as-1664-1', name: 'AS 1664.1:1997', region: 'AU', families: ['aluminium'], format: 'LRFD' },
+  { id: 'en-1999-1-1', name: 'EN 1999-1-1:2007', region: 'EU', families: ['aluminium'], format: 'partial-factors', gradeRegions: ['EU'] },
+  { id: 'adm-2020', name: 'ADM 2020', region: 'US', families: ['aluminium'], format: 'LRFD+ASD', gradeRegions: ['US', 'EU'] },
+  { id: 'cirsoc-701', name: 'CIRSOC 701:2010', region: 'AR', families: ['aluminium'], format: 'LRFD', gradeRegions: ['AR', 'EU'] },
+  { id: 'as-1664-1', name: 'AS 1664.1:1997', region: 'AU', families: ['aluminium'], format: 'LRFD', gradeRegions: ['AU', 'EU'] },
 
   // Stainless
-  { id: 'en-1993-1-4', name: 'EN 1993-1-4:2006', region: 'EU', families: ['stainless'], format: 'partial-factors' },
-  { id: 'aisc-dg27', name: 'AISC Design Guide 27', region: 'US', families: ['stainless'], format: 'LRFD+ASD' },
-  { id: 'as-nzs-4673', name: 'AS/NZS 4673:2001', region: 'AU/NZ', families: ['stainless'], format: 'LRFD' },
+  { id: 'en-1993-1-4', name: 'EN 1993-1-4:2006', region: 'EU', families: ['stainless'], format: 'partial-factors', gradeRegions: ['EU'] },
+  { id: 'aisc-dg27', name: 'AISC Design Guide 27', region: 'US', families: ['stainless'], format: 'LRFD+ASD', gradeRegions: ['US', 'EU'] },
+  { id: 'as-nzs-4673', name: 'AS/NZS 4673:2001', region: 'AU/NZ', families: ['stainless'], format: 'LRFD', gradeRegions: ['AU', 'EU'] },
 ];
 
 // ─────────────────────────────────────────────────────────────────────
@@ -321,6 +354,50 @@ export const MATERIAL_DESIGN_CODES: DesignCode[] = [
 
 export function gradesForFamily(family: GradeFamily): StructuralGrade[] {
   return ALL_GRADES.filter((g) => g.family === family);
+}
+
+/**
+ * The code a picker should start on.
+ *
+ * CIRSOC wherever the family has one — this is an Argentine tool and the local
+ * code is the right default, not an option buried among twenty-two. Families
+ * CIRSOC does not cover fall back to the first code that does, so the picker
+ * always opens on something real rather than on an empty selection.
+ */
+export function defaultCodeFor(family: GradeFamily): DesignCode | undefined {
+  const codes = codesForFamily(family);
+  return codes.find((c) => c.id.startsWith('cirsoc')) ?? codes[0];
+}
+
+/**
+ * Grades a design code would normally be applied to.
+ *
+ * A code with no match returns the whole family rather than nothing: an empty
+ * picker looks broken, and the association here is a convenience for finding
+ * grades, not a rule about which are legal.
+ */
+export function gradesForCode(code: DesignCode, family: GradeFamily): StructuralGrade[] {
+  const pool = gradesForFamily(family);
+  const matching = pool.filter((g) => code.gradeRegions.includes(g.region));
+  return matching.length > 0 ? matching : pool;
+}
+
+/**
+ * Restrict to what a mode offers.
+ *
+ * Basic ships European and American grades — plus Argentine, which is the
+ * default and cannot sensibly be hidden. PRO adds the rest, which are already
+ * loaded here rather than fetched later: the data is small, and gating it at
+ * the query keeps one database instead of two that can disagree.
+ */
+export function gradesForMode<T extends { region: GradeRegion }>(items: T[], pro: boolean): T[] {
+  return pro ? items : items.filter((g) => BASIC_REGIONS.includes(g.region));
+}
+
+/** Design codes a mode offers, by the same rule. */
+export function codesForMode(codes: DesignCode[], pro: boolean): DesignCode[] {
+  if (pro) return codes;
+  return codes.filter((c) => c.gradeRegions.some((r) => BASIC_REGIONS.includes(r)));
 }
 
 export function codesForFamily(family: GradeFamily): DesignCode[] {

@@ -21,6 +21,10 @@ import {
   gradeById,
   strengthAtThickness,
   searchGrades,
+  gradesForMode,
+  codesForMode,
+  defaultCodeFor,
+  gradesForCode,
   type GradeFamily,
 } from '../structural-grades';
 
@@ -200,5 +204,76 @@ describe('the two views of a design code agree where they overlap', () => {
     for (const { p, m } of shared) {
       expect(m!.region, p.id).toBe(p.region);
     }
+  });
+});
+
+/**
+ * Mode gating and the code association.
+ *
+ * Basic ships European and American grades; PRO adds the rest. The gate lives
+ * in the query rather than in a second database, so what is pinned here is that
+ * the gate actually bites AND that nothing is lost behind it — a filter that
+ * silently dropped Argentine grades would look identical to a working one until
+ * someone went looking for F-24.
+ */
+describe('what Basic offers versus PRO', () => {
+  it('Basic keeps European, American and Argentine grades, and hides the rest', () => {
+    const basic = gradesForMode(ALL_GRADES, false);
+    const regions = new Set(basic.map((g) => g.region));
+    expect([...regions].sort()).toEqual(['AR', 'EU', 'US']);
+    // CIRSOC is the default, so its own grades must survive the Basic filter.
+    expect(basic.some((g) => g.id === 'iram-f24')).toBe(true);
+  });
+
+  it('PRO adds regions Basic withholds, without losing any', () => {
+    const basic = gradesForMode(ALL_GRADES, false);
+    const pro = gradesForMode(ALL_GRADES, true);
+    expect(pro.length).toBe(ALL_GRADES.length);
+    expect(pro.length).toBeGreaterThan(basic.length);
+    // Nothing visible in Basic may vanish in PRO.
+    for (const g of basic) expect(pro).toContain(g);
+    // And the withheld ones are genuinely there, not absent from the database.
+    expect(pro.some((g) => g.region === 'BR')).toBe(true);
+  });
+
+  it('Basic still offers a code for every family', () => {
+    // The failure this guards: gating regions so hard that a family is left
+    // with no design code, which would render an empty picker.
+    for (const f of FAMILIES) {
+      const codes = codesForMode(codesForFamily(f), false);
+      expect(codes.length, f).toBeGreaterThan(0);
+    }
+  });
+});
+
+describe('the picker defaults to CIRSOC', () => {
+  it('chooses CIRSOC for the families it covers', () => {
+    expect(defaultCodeFor('hot-rolled')?.id).toBe('cirsoc-301');
+    expect(defaultCodeFor('cold-formed')?.id).toBe('cirsoc-303');
+    expect(defaultCodeFor('aluminium')?.id).toBe('cirsoc-701');
+  });
+
+  it('falls back to a real code where CIRSOC has none, rather than nothing', () => {
+    // There is no Argentine stainless code, and an empty default would open the
+    // picker on a blank selection.
+    const d = defaultCodeFor('stainless');
+    expect(d).toBeDefined();
+    expect(d!.families).toContain('stainless');
+  });
+
+  it('CIRSOC surfaces both IRAM and ASTM steels, because local practice uses both', () => {
+    const cirsoc = MATERIAL_DESIGN_CODES.find((c) => c.id === 'cirsoc-301')!;
+    const grades = gradesForCode(cirsoc, 'hot-rolled');
+    expect(grades.some((g) => g.region === 'AR')).toBe(true);
+    expect(grades.some((g) => g.region === 'US')).toBe(true);
+    // ...and it does not sweep in European grades it has no tables for.
+    expect(grades.some((g) => g.region === 'EU')).toBe(false);
+  });
+
+  it('a code with no matching grades returns the family rather than an empty list', () => {
+    // An empty picker reads as broken. The association is a convenience for
+    // finding grades, not a rule about which are permitted.
+    const fake = { ...MATERIAL_DESIGN_CODES[0], gradeRegions: [] as never[] };
+    expect(gradesForCode(fake, 'hot-rolled').length).toBe(gradesForFamily('hot-rolled').length);
   });
 });

@@ -1,5 +1,9 @@
 <script lang="ts">
-  import { MATERIAL_CATEGORIES, searchPresets, type MaterialPreset } from '../lib/data/material-presets';
+  import { MATERIAL_CATEGORIES, searchPresets, categoryFamily, type MaterialPreset } from '../lib/data/material-presets';
+  import {
+    MATERIAL_DESIGN_CODES, codesForFamily, codesForMode, defaultCodeFor,
+  } from '../lib/data/structural-grades';
+  import { uiStore } from '../lib/store';
   import { t } from '../lib/i18n';
 
   interface Props {
@@ -13,7 +17,44 @@
   let activeCategory = $state<string>('acero');
   let searchQuery = $state('');
 
-  let filtered = $derived(searchPresets(searchQuery, activeCategory));
+  const isPro = $derived(uiStore.analysisMode === 'pro');
+  const family = $derived(categoryFamily(activeCategory));
+
+  /** Codes offered for the active category, gated by mode. */
+  const codes = $derived(
+    family ? codesForMode(codesForFamily(family), isPro) : [],
+  );
+
+  /**
+   * The selected design code.
+   *
+   * Held as an id that may be stale — switching category can leave it pointing
+   * at a code that category has no entry for. Resolving it against the current
+   * list on every read, and falling back to the category's default, means the
+   * picker can never end up filtering by something not on screen.
+   */
+  let codeId = $state<string | null>(null);
+  const activeCode = $derived.by(() => {
+    if (!family) return null;
+    const chosen = codeId ? codes.find((c) => c.id === codeId) : undefined;
+    return chosen ?? defaultCodeFor(family) ?? null;
+  });
+
+  let filtered = $derived(
+    searchPresets(searchQuery, activeCategory, {
+      codeId: activeCode?.id,
+      pro: isPro,
+    }),
+  );
+
+  function pickCategory(id: string) {
+    activeCategory = id;
+    searchQuery = '';
+    // Reset rather than carry the code across: CIRSOC 301 governs rolled
+    // sections and CIRSOC 303 cold-formed ones, so the right code for the new
+    // category is its own default, not whatever the last one was.
+    codeId = null;
+  }
 
   function handleKeydown(e: KeyboardEvent) {
     if (e.key === 'Escape') onclose();
@@ -35,10 +76,32 @@
           <button
             class="tab-btn"
             class:active={activeCategory === cat.id}
-            onclick={() => { activeCategory = cat.id; searchQuery = ''; }}
+            onclick={() => pickCategory(cat.id)}
           >{t(cat.label)}</button>
         {/each}
       </div>
+
+      <!-- Design code. Present only for the graded metals: concrete and timber
+           have no code attached here, and an inert control would only suggest
+           it does something. -->
+      {#if family && codes.length > 0}
+        <div class="preset-code">
+          <label for="preset-code-sel">{t('matCode.label')}</label>
+          <!-- Driven by `activeCode`, not by `codeId`: the latter is null until
+               the user chooses, and binding to it would show a blank control
+               while the list is in fact filtered by the default. -->
+          <select
+            id="preset-code-sel"
+            value={activeCode?.id ?? ''}
+            onchange={(e) => codeId = (e.currentTarget as HTMLSelectElement).value}
+          >
+            {#each codes as c}
+              <option value={c.id}>{c.name}</option>
+            {/each}
+          </select>
+          <span class="preset-code-hint">{t('matCode.hint')}</span>
+        </div>
+      {/if}
 
       <div class="preset-search">
         <input type="text" placeholder={t('search.material')} bind:value={searchQuery} />
@@ -179,6 +242,35 @@
 
   .preset-name {
     font-weight: 600;
+  }
+
+  .preset-code {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 8px 16px 0;
+    flex-wrap: wrap;
+  }
+  .preset-code label {
+    font-size: 0.72rem;
+    color: #999;
+    white-space: nowrap;
+  }
+  .preset-code select {
+    flex: 1;
+    min-width: 150px;
+    padding: 4px 6px;
+    border-radius: 4px;
+    border: 1px solid #35504c;
+    background: #16211f;
+    color: #cfe3e0;
+    font-size: 0.75rem;
+  }
+  .preset-code-hint {
+    width: 100%;
+    font-size: 0.62rem;
+    color: #777;
+    line-height: 1.35;
   }
 
   /* Subordinate to the designation, but on the same line: it qualifies the

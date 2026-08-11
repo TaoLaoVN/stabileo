@@ -1282,6 +1282,8 @@ const tr: Translations = {
   'matCat.aluminum': 'Alüminyum',
   'matCat.coldFormed': "Cold-formed",
   'matCat.stainless': "Stainless",
+  'matCode.label': "Design code",
+  'matCode.hint': "Filters to the grades that code normally references. Not a restriction: any grade can be checked to any code.",
 
   // ─── Section Shape Labels ───
   'shape.hollowRect': 'Dikdörtgen kutu profil',

@@ -2,7 +2,11 @@
 // Properties in SI units: E (MPa), ν, ρ (kN/m³), fy (MPa)
 
 import { t } from '../i18n';
-import { HOT_ROLLED, COLD_FORMED, ALUMINIUM, STAINLESS, type StructuralGrade } from './structural-grades';
+import {
+  HOT_ROLLED, COLD_FORMED, ALUMINIUM, STAINLESS,
+  BASIC_REGIONS, MATERIAL_DESIGN_CODES, gradesForCode,
+  type StructuralGrade, type GradeFamily, type GradeRegion,
+} from './structural-grades';
 
 export interface MaterialPreset {
   name: string;
@@ -23,6 +27,8 @@ export interface MaterialPreset {
   fu?: number;
   /** Link back to the grade database, so a selection can be traced. */
   gradeId?: string;
+  /** Origin of the product standard — absent for concrete, timber and rebar. */
+  region?: GradeRegion;
 }
 
 /**
@@ -42,6 +48,7 @@ function fromGrade(g: StructuralGrade, category: MaterialPreset['category']): Ma
     fu: g.fu,
     standard: g.productStandard,
     gradeId: g.id,
+    region: g.region,
   };
 }
 
@@ -108,9 +115,53 @@ export const MATERIAL_CATEGORIES = [
   { id: 'madera', label: 'matCat.wood' },
 ] as const;
 
-export function searchPresets(query: string, category?: string): MaterialPreset[] {
+/**
+ * The grade family behind a picker category, or null for the non-metals.
+ *
+ * Concrete and timber have no entry in the grade database and no design code
+ * attached here, so they return null and the code filter simply does not apply
+ * to them.
+ */
+export function categoryFamily(category: string): GradeFamily | null {
+  switch (category) {
+    case 'acero': return 'hot-rolled';
+    case 'conformado': return 'cold-formed';
+    case 'inox': return 'stainless';
+    case 'aluminio': return 'aluminium';
+    default: return null;
+  }
+}
+
+export interface PresetFilter {
+  /** Design code to narrow the grades to. Omitted means no code filter. */
+  codeId?: string;
+  /** PRO shows every region; Basic shows European, American and Argentine. */
+  pro?: boolean;
+}
+
+export function searchPresets(
+  query: string,
+  category?: string,
+  filter: PresetFilter = {},
+): MaterialPreset[] {
   let source = getMaterialPresets();
   if (category) source = source.filter(p => p.category === category);
+
+  // Region gating, then the code association. Both only bite on the graded
+  // metals: a preset with no region (concrete, timber, reinforcing bar) is
+  // never filtered out by a control that has no opinion about it.
+  if (!filter.pro) {
+    source = source.filter(p => !p.region || BASIC_REGIONS.includes(p.region));
+  }
+  const family = category ? categoryFamily(category) : null;
+  if (filter.codeId && family) {
+    const code = MATERIAL_DESIGN_CODES.find(c => c.id === filter.codeId);
+    if (code) {
+      const allowed = new Set(gradesForCode(code, family).map(g => g.id));
+      source = source.filter(p => !p.gradeId || allowed.has(p.gradeId));
+    }
+  }
+
   if (!query.trim()) return source;
   const q = query.trim().toLowerCase();
   // Searching the standard as well as the name is what makes "EN 10025" or

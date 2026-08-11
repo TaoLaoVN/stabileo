@@ -1888,6 +1888,8 @@ const es: Record<string, string> = {
   'matCat.aluminum': 'Aluminio',
   'matCat.coldFormed': "Conformados en frío",
   'matCat.stainless': "Inoxidables",
+  'matCode.label': "Norma de diseño",
+  'matCode.hint': "Filtra los grados que esa norma suele referenciar. No es una restricción: cualquier grado puede verificarse por cualquier norma.",
 
   // ─── Section Shape Labels ───
   'shape.hollowRect': 'Cajón rectangular',
