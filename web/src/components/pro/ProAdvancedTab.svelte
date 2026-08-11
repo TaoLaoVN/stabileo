@@ -17,13 +17,8 @@
     solveStaged3D,
     solveCreepShrinkage3D,
     solveHarmonic3D,
-    solveArcLength,
-    solveDisplacementControl,
     solveWithImperfections3D,
     computeInfluenceLine3D,
-    solveCable2D,
-    guyanReduce2D,
-    craigBampton2D,
     solveMultiCase3D,
     analyzeSection,
     solveConstrained3D,
@@ -71,22 +66,16 @@
   // ─── Shared helpers ────────────────────────────────────────────
 
 
-  /**
-   * Four of these analyses exist only in 2D in the engine — arc-length,
-   * displacement control, cable and model reduction all deserialise a 2D
-   * `SolverInput`. Feeding them a 3D model produced a parse error that read
-   * like a bug in the model.
+  /*
+   * Not here: arc-length, displacement control, cable and model reduction.
    *
-   * `modelStore.buildSolverInput` projects onto the X–Y plane and drops z, so
-   * a model that lies in that plane maps onto it exactly and anything with
-   * depth collapses — that is where cable's "element has zero length" came
-   * from. `uiStore.analysisMode` reads 'pro' throughout this workspace and
-   * never '2d', so the gate has to be the geometry.
+   * All four deserialise a 2D `SolverInput` in the engine, so a PRO model —
+   * which is spatial — collapses on the way in (that is where cable's
+   * "element has zero length" came from). They were listed here and failed on
+   * every model this workspace can produce. Their wrappers and wire contracts
+   * are still covered by engine/__tests__/advanced-wire-contracts.test.ts for
+   * whoever surfaces them in a 2D workspace.
    */
-  const is2DModel = $derived(
-    modelStore.nodes.size > 1
-    && [...modelStore.nodes.values()].every(n => Math.abs(n.z ?? 0) < 1e-9),
-  );
 
   /** A free node worth reading a response at: the highest unsupported one,
    *  which on a building is the roof. */
@@ -471,63 +460,6 @@
     solving = false;
   }
 
-  // ─── 7b. Arc-Length ──────────────────────────────────────────
-
-  let arcMaxIter = $state(50);
-  let arcTol = $state(1e-6);
-  let arcIncrements = $state(20);
-  let arcResult = $state<any | null>(null);
-
-  function handleArcLength() {
-    solveError = null;
-    solving = true;
-    try {
-      // Engine-side this is `ArcLengthInput`, whose `solver` is a 2D
-      // SolverInput — hence the 2D build and the 2D-only gate on the button.
-      const input = modelStore.buildSolverInput(uiStore.includeSelfWeight);
-      if (!input) throw new Error(t('advanced.emptyModel'));
-      arcResult = solveArcLength({
-        solver: input,
-        maxIter: arcMaxIter,
-        tolerance: arcTol,
-        maxSteps: arcIncrements,
-      });
-    } catch (e: any) {
-      solveError = `Arc-Length: ${errorText(e, 'Error')}`;
-    }
-    solving = false;
-  }
-
-  // ─── 7c. Displacement Control ──────────────────────────────
-
-  let dcNodeId = $state<number | null>(null);
-  /** 2D control DOFs, in the engine's own order: 0=ux, 1=uz, 2=ry. */
-  let dcDof = $state(1);
-  let dcTargetDisp = $state(-0.05);
-  let dcIncrements = $state(20);
-  let dcResult = $state<any | null>(null);
-
-  function handleDispControl() {
-    solveError = null;
-    solving = true;
-    try {
-      // 2D only, like arc-length: `DisplacementControlInput.solver` is a 2D
-      // SolverInput and `controlDof` is a DOF INDEX, not a name.
-      const input = modelStore.buildSolverInput(uiStore.includeSelfWeight);
-      if (!input) throw new Error(t('advanced.emptyModel'));
-      dcResult = solveDisplacementControl({
-        solver: input,
-        controlNode: dcNodeId,
-        controlDof: dcDof,
-        targetDisplacement: dcTargetDisp,
-        nSteps: dcIncrements,
-      });
-    } catch (e: any) {
-      solveError = `Disp. Control: ${errorText(e, 'Error')}`;
-    }
-    solving = false;
-  }
-
   // ─── 7d. Imperfections ─────────────────────────────────────
 
   /**
@@ -796,28 +728,6 @@
     solving = false;
   }
 
-  // ─── 13. Cable Analysis (2D) ──────────────────────────────────
-
-  let cableMaxIter = $state(50);
-  let cableTol = $state(1e-6);
-  let cableResult = $state<any | null>(null);
-
-  function handleCable() {
-    solveError = null;
-    solving = true;
-    try {
-      // Cable analysis is 2D-only — uses buildSolverInput from modelStore
-      const input = modelStore.buildSolverInput(true); // always include self-weight for cables
-      if (!input) { solveError = t('advanced.emptyModel'); solving = false; return; }
-      const densities: Record<string, number> = {};
-      for (const [id, d] of getMaterialDensities()) densities[String(id)] = d;
-      cableResult = solveCable2D(input, cableMaxIter, cableTol, densities);
-    } catch (e: any) {
-      solveError = `Cable: ${errorText(e, 'Error')}`;
-    }
-    solving = false;
-  }
-
   // ─── 14. Influence Lines 3D ──────────────────────────────────
 
   let ilElementId = $state<number | null>(null);
@@ -851,41 +761,6 @@
       });
     } catch (e: any) {
       solveError = `Influence Line 3D: ${errorText(e, 'Error')}`;
-    }
-    solving = false;
-  }
-
-  // ─── 15. Model Reduction ─────────────────────────────────────
-
-  let reductionMethod = $state<'guyan' | 'craigBampton'>('guyan');
-  /** Boundary (retained) NODE ids — the engine condenses by node, not by raw
-   *  DOF index, and `retainedDofs` was never a field it read. */
-  let boundaryNodesText = $state('');
-  let numCBModes = $state(10);
-  let reductionResult = $state<any | null>(null);
-
-  function handleModelReduction() {
-    solveError = null;
-    solving = true;
-    try {
-      const boundaryNodes = boundaryNodesText.split(/[,\s]+/).map(Number).filter(n => !isNaN(n) && n > 0);
-      if (boundaryNodes.length === 0) {
-        solveError = t('pro.noBoundaryNodes');
-        solving = false;
-        return;
-      }
-      // Model reduction is 2D only
-      const input = modelStore.buildSolverInput(uiStore.includeSelfWeight);
-      if (!input) { solveError = t('advanced.emptyModel'); solving = false; return; }
-      if (reductionMethod === 'guyan') {
-        reductionResult = guyanReduce2D({ solver: input, boundaryNodes });
-      } else {
-        const densities: Record<string, number> = {};
-        for (const [id, d] of getMaterialDensities()) densities[String(id)] = d;
-        reductionResult = craigBampton2D({ solver: input, boundaryNodes, nModes: numCBModes, densities });
-      }
-    } catch (e: any) {
-      solveError = `Model Reduction: ${errorText(e, 'Error')}`;
     }
     solving = false;
   }
@@ -1062,17 +937,13 @@
         { id: 'timehistory', label: 'Time History' },
         { id: 'harmonic', label: t('pro.harmonicTitle') },
         { id: 'nolineal', label: 'No lineal' },
-        { id: 'arclength', label: t('pro.arcLengthTitle') },
-        { id: 'dispcontrol', label: t('pro.dispControlTitle') },
         { id: 'imperfections', label: t('pro.imperfectionsTitle') },
         { id: 't', label: t('pro.winklerFoundation') },
         { id: 'ssi', label: t('pro.ssiTitle') },
         { id: 't8', label: t('pro.contactGap') },
         { id: 't9', label: t('pro.stagedConstruction') },
         { id: 't10', label: t('pro.creepShrinkage') },
-        { id: 'cable', label: t('pro.cableTitle') },
         { id: 'influenceline3d', label: t('pro.influenceLine3dTitle') },
-        { id: 'modelreduction', label: t('pro.modelReductionTitle') },
         { id: 'multicase', label: t('pro.multiCaseTitle') },
         { id: 'sectionanalyzer', label: t('pro.sectionAnalyzerTitle') },
         { id: 'constrained', label: t('pro.constrainedTitle') },
@@ -1382,53 +1253,6 @@
       {/if}
       {/if}
 
-    <!-- ── 7b. Arc-Length ── -->
-      {#if advView === 'arclength'}
-      <div class="adv-panel">
-        <div class="adv-form">
-          <label class="adv-label">Max iter: <input type="number" class="adv-num" bind:value={arcMaxIter} min={1} max={500} /></label>
-          <label class="adv-label">Tol: <input type="number" class="adv-num adv-num-wide" bind:value={arcTol} min={1e-12} max={1} step={1e-6} /></label>
-          <label class="adv-label">{t('pro.maxSteps')}: <input type="number" class="adv-num" bind:value={arcIncrements} min={1} max={200} /></label>
-        </div>
-        {#if !is2DModel}<div class="adv-note">{t('pro.twoDOnly')}</div>{/if}
-        <button class="adv-run-btn" onclick={handleArcLength} disabled={!hasModel || solving || !wasmAvailable || !is2DModel}>{solving ? t('pro.solving') : t('pro.runArcLength')}</button>
-      </div>
-      {#if arcResult}
-        <div class="adv-inline">
-          {#if arcResult.converged != null}{arcResult.converged ? t('pro.yes') : t('pro.no')}{/if}
-          {#if arcResult.finalLoadFactor != null} — λ={fmtNum(arcResult.finalLoadFactor)}{/if}
-          {#if arcResult.totalIterations != null} — {arcResult.totalIterations} it{/if}
-          {#if arcResult.steps != null} — {arcResult.steps.length} {t('pro.steps')}{/if}
-        </div>
-      {/if}
-      {/if}
-
-    <!-- ── 7c. Displacement Control ── -->
-      {#if advView === 'dispcontrol'}
-      <div class="adv-panel">
-        <div class="adv-form">
-          <label class="adv-label">{t('pro.nodeLabel')}:
-            <select class="adv-sel" bind:value={dcNodeId}>
-              <option value={null}>--</option>
-              {#each nodeIds as nid}<option value={nid}>{nid}</option>{/each}
-            </select>
-          </label>
-          <label class="adv-label">DOF: <select class="adv-sel" bind:value={dcDof}><option value={0}>ux</option><option value={1}>uz</option><option value={2}>ry</option></select></label>
-          <label class="adv-label">δ (m): <input type="number" class="adv-num" bind:value={dcTargetDisp} step={0.001} /></label>
-          <label class="adv-label">Incr: <input type="number" class="adv-num" bind:value={dcIncrements} min={1} max={200} /></label>
-        </div>
-        {#if !is2DModel}<div class="adv-note">{t('pro.twoDOnly')}</div>{/if}
-        <button class="adv-run-btn" onclick={handleDispControl} disabled={!hasModel || solving || !wasmAvailable || dcNodeId == null || !is2DModel}>{solving ? t('pro.solving') : t('pro.runDispControl')}</button>
-      </div>
-      {#if dcResult}
-        <div class="adv-inline">
-          {#if dcResult.converged != null}{dcResult.converged ? t('pro.yes') : t('pro.no')}{/if}
-          {#if dcResult.finalLoadFactor != null} — λ={fmtNum(dcResult.finalLoadFactor)}{/if}
-          {#if dcResult.steps != null} — {dcResult.steps.length} {t('pro.steps')}{/if}
-        </div>
-      {/if}
-      {/if}
-
     <!-- ── 7d. Imperfections ── -->
       {#if advView === 'imperfections'}
       <div class="adv-panel">
@@ -1691,27 +1515,6 @@
     <!-- ─── Divider: Herramientas avanzadas ─── -->
     <div class="adv-divider">{t('pro.advancedTools')}</div>
 
-    <!-- ── 13. Cable (2D) ── -->
-      {#if advView === 'cable'}
-      <div class="adv-panel">
-        <div class="adv-form">
-          <label class="adv-label">{t('pro.maxIter')}: <input type="number" class="adv-num" bind:value={cableMaxIter} min={1} max={500} /></label>
-          <label class="adv-label">{t('pro.tolerance')}: <input type="number" class="adv-num adv-num-wide" bind:value={cableTol} min={1e-12} max={1} step={1e-6} /></label>
-        </div>
-        <p class="adv-hint">{t('pro.cableHint')}</p>
-        {#if !is2DModel}<div class="adv-note">{t('pro.twoDOnly')}</div>{/if}
-        <button class="adv-run-btn" onclick={handleCable} disabled={!hasModel || solving || !wasmAvailable || !is2DModel}>{solving ? t('pro.solving') : t('pro.solveCable')}</button>
-      </div>
-      {#if cableResult}
-        <div class="adv-inline">
-          {#if cableResult.displacements?.length}
-            δmax={fmtNum(Math.max(...cableResult.displacements.map((d: any) => Math.hypot(d.ux ?? 0, d.uy ?? 0))))} m
-            — {cableResult.displacements.length} {t('pro.nodes')}
-          {/if}
-        </div>
-      {/if}
-      {/if}
-
     <!-- ── 14. Influence Lines 3D ── -->
       {#if advView === 'influenceline3d'}
       <div class="adv-panel">
@@ -1768,37 +1571,6 @@
             </table>
           </div>
         </details>
-      {/if}
-      {/if}
-
-    <!-- ── 15. Model Reduction ── -->
-      {#if advView === 'modelreduction'}
-      <div class="adv-panel">
-        <div class="adv-form">
-          <label class="adv-label">{t('pro.method')}:
-            <select class="adv-sel" bind:value={reductionMethod}>
-              <option value="guyan">Guyan (estático)</option>
-              <option value="craigBampton">Craig-Bampton</option>
-            </select>
-          </label>
-        </div>
-        <div class="adv-form">
-          <label class="adv-label">{t('pro.boundaryNodes')}: <input type="text" class="adv-text" bind:value={boundaryNodesText} placeholder="1, 2, 5" /></label>
-        </div>
-        {#if reductionMethod === 'craigBampton'}
-          <div class="adv-form">
-            <label class="adv-label">{t('pro.numCBModes')}: <input type="number" class="adv-num" bind:value={numCBModes} min={1} max={100} /></label>
-          </div>
-        {/if}
-        <p class="adv-hint">{t('pro.reductionHint')}</p>
-        {#if !is2DModel}<div class="adv-note">{t('pro.twoDOnly')}</div>{/if}
-        <button class="adv-run-btn" onclick={handleModelReduction} disabled={!hasModel || solving || !wasmAvailable || !is2DModel}>{solving ? t('pro.solving') : t('pro.reduce')}</button>
-      </div>
-      {#if reductionResult}
-        <div class="adv-inline">
-          {#if reductionResult.nBoundary != null}DOF {t('pro.boundaryShort')}: {reductionResult.nBoundary}{/if}
-          {#if reductionResult.nInterior != null} — {t('pro.interiorShort')}: {reductionResult.nInterior}{/if}
-        </div>
       {/if}
       {/if}
 
@@ -2085,15 +1857,6 @@
     font-style: italic;
   }
 
-  /* Why a run button is off, said where the button is — a disabled control
-     with no reason beside it reads as a broken one. */
-  .adv-note {
-    font-size: 0.62rem;
-    color: var(--st-warn);
-    border-left: 2px solid var(--st-warn);
-    padding: 0.15rem 0 0.15rem 0.4rem;
-    margin: 0.2rem 0;
-  }
 
   .adv-inline {
     font-size: 0.68rem;

@@ -190,6 +190,13 @@ describe('advanced analyses: 3D payloads the engine accepts', () => {
   });
 });
 
+/**
+ * These four are NOT surfaced in PRO — the engine only has them in 2D, and a
+ * PRO model is spatial, so every one of them collapsed on the way in. The
+ * wrappers stay, and so do their contracts: whoever wires them into a 2D
+ * workspace should find them already pinned rather than guess the payload the
+ * way the PRO panel did.
+ */
 describe('advanced analyses: the four the engine only has in 2D', () => {
   /** A 2D cantilever in the X–Y plane, which is the plane the 2D build reads.
    *  Three nodes, so a reduction has both a boundary node to retain and an
