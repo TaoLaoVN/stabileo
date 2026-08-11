@@ -30,10 +30,12 @@
   interface Props {
     onclose: () => void;
     onsaved: (ex: EduExerciseSpec) => void;
+    /** Open the draft the way a student will see it, and come back after. */
+    onpreview: (ex: EduExerciseSpec) => void;
     /** An exercise being edited, or null when starting fresh. */
     editing?: EduExerciseSpec | null;
   }
-  let { onclose, onsaved, editing = null }: Props = $props();
+  let { onclose, onsaved, onpreview, editing = null }: Props = $props();
 
   // ── Metadata ───────────────────────────────────────────────
   let title = $state(editing?.title ?? '');
@@ -646,6 +648,18 @@
         <button class="btn-primary" onclick={save} disabled={problems.length > 0 || !hasQuestions}>
           {t('edu.author.saveToLibrary')}
         </button>
+        <!--
+          Seeing it as a student is not the same as seeing the answers.
+          `preview` above computes what the right values are — useful, but it
+          is the teacher's view. This opens the exercise itself: the stepper,
+          the empty inputs, the wording as it will be read.
+        -->
+        <button
+          class="btn-ghost"
+          onclick={() => draft && onpreview(draft)}
+          disabled={problems.length > 0 || !hasQuestions}
+          data-testid="edu-preview-student"
+        >{t('edu.author.previewAsStudent')}</button>
         <button class="btn-ghost" onclick={download} disabled={problems.length > 0}>{t('edu.author.download')}</button>
         <button class="btn-ghost" onclick={share} disabled={problems.length > 0}>{t('edu.author.share')}</button>
       </div>

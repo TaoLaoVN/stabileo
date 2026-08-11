@@ -45,6 +45,17 @@ let nodeIdsByIndex = $state<number[]>([]);
 export type EduSession = 'browsing' | 'handout';
 let session = $state<EduSession>('browsing');
 
+/**
+ * Whether the authoring form is open.
+ *
+ * It lives here rather than inside the panel because the SHELL has to know:
+ * authoring is the one situation in Education where a canvas needs drawing
+ * tools, and those are mounted by App. Without this the form's first option —
+ * "draw the structure, then take it" — was an instruction with nothing to
+ * carry it out, on a mode that renders no toolbar at all.
+ */
+let authoring = $state(false);
+
 // ─── Public API ────────────────────────────────────────────────────
 
 export const eduStore = {
@@ -85,4 +96,8 @@ export const eduStore = {
   /** Back to browsing — the teacher's own window, or a student who chose to
    *  leave the exercise they were given. */
   markBrowsing() { session = 'browsing'; },
+
+  // ── Authoring ─────────────────────────────────────────────────
+  get authoring() { return authoring; },
+  set authoring(v: boolean) { authoring = v; },
 };

@@ -928,7 +928,21 @@
             {/if}
           </div>
         {/if}
-        {#if uiStore.appMode === 'basico' && uiStore.isMobile}
+        <!--
+          Education gets the drawing tools while a teacher is authoring.
+          ─────────────────────────────────────────────────────────────
+          The authoring form's first and default option reads "draw the
+          structure with the usual tools, then take it" — and Education
+          mounts no ribbon, no toolbar and no floating tools, so there were
+          no tools to draw with. The form even said so two lines below, and
+          sent the teacher to Basic to build the model, save a file and come
+          back to open it.
+
+          This is the bar Basic already uses on a phone: node, element,
+          support, load and their options, and nothing about solving or
+          results, which an exercise author has no use for.
+        -->
+        {#if (uiStore.appMode === 'basico' && uiStore.isMobile) || (uiStore.appMode === 'educativo' && eduStore.authoring)}
           <FloatingTools />
         {/if}
         <!--

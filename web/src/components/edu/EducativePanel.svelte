@@ -10,9 +10,13 @@
   import { stressContext } from './exercise-stress';
   import { loadLibrary, removeFromLibrary, saveToLibrary, fromShareLink } from './exercise-library';
 
-  /** Teacher-authored exercises, restored from the library on mount. */
-  let authoring = $state(false);
+  /** Teacher-authored exercises, restored from the library on mount.
+   *  `authoring` lives in the store because the shell mounts the drawing
+   *  tools off it — see edu-store. */
   let editingSpec = $state<EduExerciseSpec | null>(null);
+  /** The draft a teacher is looking at as a student — going back returns to
+   *  the form with the same draft, not to the exercise list. */
+  let previewingSpec = $state<EduExerciseSpec | null>(null);
   let library = $state<EduExerciseSpec[]>([]);
   let linkNotice = $state('');
 
@@ -47,13 +51,13 @@
   function handleAuthored(spec: EduExerciseSpec) {
     const { library: next } = saveToLibrary(spec);
     library = next;
-    authoring = false;
+    eduStore.authoring = false;
     editingSpec = null;
   }
 
   function editExercise(spec: EduExerciseSpec) {
     editingSpec = spec;
-    authoring = true;
+    eduStore.authoring = true;
   }
 
   function deleteExercise(id: string) {
@@ -129,8 +133,24 @@
     }, 150);
   }
 
+  /** Open a draft the way a student will get it, without saving it first. */
+  function previewAsStudent(spec: EduExerciseSpec) {
+    previewingSpec = spec;
+    editingSpec = spec;
+    eduStore.authoring = false;
+    loadExercise(specToExercise(spec));
+  }
+
   function goBack() {
     eduStore.clearExercise();
+    // Coming back from a preview returns to the form that opened it.
+    if (previewingSpec) {
+      previewingSpec = null;
+      eduStore.authoring = true;
+      modelStore.clear();
+      resultsStore.clear();
+      return;
+    }
     // Leaving the exercise ends the handout: from here the window is a normal
     // Education session again, with the list and the mode switcher back.
     eduStore.markBrowsing();
@@ -140,10 +160,11 @@
 </script>
 
 <div class="edu-panel">
-  {#if authoring}
+  {#if eduStore.authoring}
     <ExerciseAuthor
-      onclose={() => { authoring = false; editingSpec = null; }}
+      onclose={() => { eduStore.authoring = false; editingSpec = null; }}
       onsaved={handleAuthored}
+      onpreview={previewAsStudent}
       editing={editingSpec}
     />
   {:else if !eduStore.hasExercise}
@@ -203,7 +224,7 @@
         <p>{t('edu.moreExercises')}</p>
         <!-- Authoring lives beside the exercise list, not behind a setting:
              a teacher looking for "how do I make one of these" looks here. -->
-        <button class="edu-author-btn" onclick={() => (authoring = true)}>
+        <button class="edu-author-btn" onclick={() => (eduStore.authoring = true)}>
           {t('edu.author.open')}
         </button>
       </div>
