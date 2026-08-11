@@ -43,6 +43,7 @@
   import { buildOutcomeSummaries } from '../../../lib/store/element-status-join';
   import RebarLayersPanel from './RebarLayersPanel.svelte';
   import { markOpenPhase } from '../../../lib/utils/open-timeline';
+  import { captureFocus, cycleTabWithin } from '../../../lib/utils/dialog-focus';
 
   let viewport = $state<RebarViewport3D | null>(null);
   /** True while the viewport's first geometry build is still pending. */
@@ -226,8 +227,29 @@
     if (viewport?.focusElement(req.elementId)) focusedElement = req.elementId;
   });
 
+  /**
+   * Focus management for a dialog that claims to be modal.
+   *
+   * `docs/handoffs/pr20-ui-and-workflow-plan.md` §5.2 lists this first among the overlay's
+   * accessibility defects, as the one that makes the feature unusable rather than degraded:
+   * the overlay declares `aria-modal="true"` and then let Tab walk straight into the page it
+   * had just told a screen reader was not there. The mechanism lives in
+   * `lib/utils/dialog-focus.ts`; what belongs here is only when it runs.
+   *
+   * The opener is the detailing panel's button, which this overlay covers — so without the
+   * restore, Escape returned the user to `<body>` rather than to the control they left.
+   */
+  let dialogEl = $state<HTMLDivElement | null>(null);
+
+  $effect(() => {
+    if (!rebarWorkspace.open) return;
+    return captureFocus(dialogEl);
+  });
+
   function onKeydown(e: KeyboardEvent) {
-    if (e.key === 'Escape') rebarWorkspace.close();
+    if (!rebarWorkspace.open) return;
+    if (e.key === 'Escape') { rebarWorkspace.close(); return; }
+    if (cycleTabWithin(dialogEl, e)) e.preventDefault();
   }
 
   /**
@@ -257,6 +279,8 @@
     role="dialog"
     aria-modal="true"
     aria-label={t('detailing.scene.workspace.title')}
+    bind:this={dialogEl}
+    tabindex="-1"
   >
     <header class="topbar">
       <button
@@ -403,6 +427,11 @@
     background: #0e1218;
     color: var(--text, #dfe4ec);
   }
+
+  /* The container is `tabindex="-1"` purely as a landing pad for focus on open, so it can
+     never be tabbed TO and a ring around the whole window would only say "something is
+     broken". Every control inside it keeps its own. */
+  .workspace:focus { outline: none; }
   .topbar {
     display: flex; align-items: center; gap: 0.6rem;
     padding: 0.45rem 0.7rem;
