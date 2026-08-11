@@ -70,7 +70,7 @@ async function focused(page: Page) {
 }
 
 test.describe('@smoke the 3-D workspace keeps the keyboard', () => {
-  test('opening moves focus into the overlay, not onto the button underneath it', async ({ page }) => {
+  test('opening moves focus into the overlay, not onto the button underneath it', async ({ pro: page }) => {
     await openWorkspace(page);
     const at = await focused(page);
     expect(at.inside, `focus landed on <${at.tag} data-testid=${at.testid}> outside the overlay`)
@@ -80,7 +80,7 @@ test.describe('@smoke the 3-D workspace keeps the keyboard', () => {
     expect(at.testid).toBe('rebar-workspace');
   });
 
-  test('Tab never leaves the overlay, forwards or backwards', async ({ page }) => {
+  test('Tab never leaves the overlay, forwards or backwards', async ({ pro: page }) => {
     await openWorkspace(page);
 
     // Forwards, far enough to pass the last control several times over. The rail is open on
@@ -102,21 +102,44 @@ test.describe('@smoke the 3-D workspace keeps the keyboard', () => {
     }
   });
 
-  test('the trap follows the rail: folding it does not open a hole', async ({ page }) => {
-    // The tabbables are asked for at the keystroke rather than captured on open, because the
-    // rail folds, banners come and go with the scene, and the details panel appears only once
-    // something is picked. A list captured on open goes stale the first time any of that
-    // happens, and a stale trap is a trap with holes in it.
+  test('the trap follows the rail: folding it does not open a hole', async ({ pro: page }) => {
+    /**
+     * The tabbables are asked for AT THE KEYSTROKE rather than captured on open, because the
+     * rail folds, both banners come and go with the scene, and the details panel appears only
+     * once something is picked. A list captured on open goes stale the first time any of that
+     * happens, and a stale trap is a trap with holes in it.
+     *
+     * The rail is driven from a window width here rather than from the toggle alone, because
+     * that is the only way to reach it: `.rail-toggle` is `display: none` above 860 px, where
+     * the rail is a column beside the canvas and there is nothing to fold. Below it the rail
+     * becomes a sheet OVER the canvas and the button appears. So the walk is: cross the
+     * breakpoint, which folds the rail on its own, then re-open it as a sheet — two changes to
+     * the tabbable set, one in each direction, with a Tab walk after each.
+     */
     await openWorkspace(page);
-    await page.getByTestId('rebar-rail-toggle').click();
+
+    await page.setViewportSize({ width: 800, height: 720 });
+    const toggle = page.getByTestId('rebar-rail-toggle');
+    await expect(toggle, 'the rail toggle appears below the breakpoint').toBeVisible();
+    await expect(toggle, 'crossing the breakpoint folds the rail by itself')
+      .toHaveAttribute('aria-expanded', 'false');
+
     for (let i = 0; i < 40; i++) {
       await page.keyboard.press('Tab');
       const at = await focused(page);
-      expect(at.inside, `Tab #${i + 1} escaped after the rail folded`).toBe(true);
+      expect(at.inside, `Tab #${i + 1} escaped with the rail folded`).toBe(true);
+    }
+
+    await toggle.click();
+    await expect(toggle).toHaveAttribute('aria-expanded', 'true');
+    for (let i = 0; i < 40; i++) {
+      await page.keyboard.press('Tab');
+      const at = await focused(page);
+      expect(at.inside, `Tab #${i + 1} escaped with the rail re-opened as a sheet`).toBe(true);
     }
   });
 
-  test('Escape closes it and hands focus back to the control that opened it', async ({ page }) => {
+  test('Escape closes it and hands focus back to the control that opened it', async ({ pro: page }) => {
     await openWorkspace(page);
     await page.keyboard.press('Escape');
     await expect(page.getByTestId('rebar-workspace')).toHaveCount(0);
@@ -128,7 +151,7 @@ test.describe('@smoke the 3-D workspace keeps the keyboard', () => {
     expect(at.testid).toBe('doc-3d');
   });
 
-  test('the close button restores focus too, not only Escape', async ({ page }) => {
+  test('the close button restores focus too, not only Escape', async ({ pro: page }) => {
     await openWorkspace(page);
     await page.getByTestId('rebar-workspace-close').click();
     await expect(page.getByTestId('rebar-workspace')).toHaveCount(0);
