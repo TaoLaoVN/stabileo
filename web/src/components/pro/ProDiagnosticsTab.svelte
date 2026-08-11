@@ -235,7 +235,7 @@
 
   .diag-check {
     font-size: 2rem;
-    color: var(--st-value);
+    color: var(--st-text-2);
   }
 
   .diag-summary {

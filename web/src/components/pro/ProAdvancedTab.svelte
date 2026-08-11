@@ -1743,14 +1743,23 @@
     min-height: 0;
   }
 
+  /*
+     A caveat, at the size of a caveat.
+     ─────────────────────────────────
+     It was a full-width amber strip that reappeared on every visit to the
+     panel, permanently, above whatever you came to do — an announcement for
+     something that is a footnote. It says the same thing in one quiet line.
+  */
   .adv-wip-banner {
-    padding: 7px 12px;
-    font-size: 0.72rem;
-    color: var(--st-warn);
-    background: rgba(240, 192, 64, 0.08);
-    border-bottom: 1px solid rgba(240, 192, 64, 0.15);
-    flex-shrink: 0;
-    text-align: center;
+    display: block;
+    margin: 0 0 0.5rem;
+    padding: 0.1rem 0 0.3rem;
+    border-bottom: 1px solid var(--st-hair);
+    background: none;
+    color: var(--st-text-3);
+    font-size: 0.66rem;
+    font-style: italic;
+    text-align: left;
   }
 
   .adv-error {
@@ -1841,7 +1850,7 @@
     cursor: pointer;
   }
 
-  .adv-btn-sm:hover { color: var(--st-text); border-color: var(--st-value); }
+  .adv-btn-sm:hover { color: var(--st-text); border-color: var(--st-text-2); }
   .adv-btn-sm:disabled { opacity: 0.35; cursor: not-allowed; }
 
   .adv-title {

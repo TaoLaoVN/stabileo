@@ -306,13 +306,18 @@
 
 
   /*
-   * Which output is being read. Query first: it is the one that answers a
-   * question about a specific point, and the others are there to browse.
+   * Which output is being read.
+   *
+   * Reactions, not the query. The query interrogates the ACTIVE force diagram,
+   * so with none chosen — which is how the panel opens — it could only say
+   * "select a force diagram", and that was the first thing anyone saw after
+   * solving. Reactions exist the moment a solve does. The query keeps its
+   * place, last, because it is the specialised one: you go to it with a
+   * question.
    */
-  let resSection = $state('query');
+  let resSection = $state('reactions');
 
   const RES_SECTIONS = $derived([
-    { id: 'query', labelKey: 'pro.queryTitle', count: () => 1 },
     { id: 'reactions', labelKey: 'pro.reactionsTitle', count: () => results?.reactions.length ?? 0 },
     { id: 'forces', labelKey: 'pro.forcesTitle', count: () => results?.elementForces.length ?? 0 },
     { id: 'displacements', labelKey: 'pro.displacementsTitle', count: () => results?.displacements.length ?? 0 },
@@ -325,13 +330,36 @@
     { id: 'constraints', labelKey: 'pro.constraintForces',
       count: () => (results?.constraintForces?.length ?? 0) || resultsStore.constraintForces3D.length },
     { id: 'diagnostics', labelKey: 'pro.diagnosticsTitle', count: () => results?.diagnostics?.length ?? 0 },
+    { id: 'query', labelKey: 'pro.queryTitle', count: () => 1 },
   ]);
 
-  /* A section that empties under you is not somewhere to be left standing. */
+  /*
+   * A section that empties under you is not somewhere to be left standing —
+   * and the fallback is the first output that HAS something, not the query.
+   * Falling back to the query meant that before the first solve, when every
+   * count is zero, the panel landed on the one view that can say nothing
+   * without a diagram, and never came back once results arrived.
+   */
   $effect(() => {
     const cur = RES_SECTIONS.find(x => x.id === resSection);
-    if (cur && cur.id !== 'query' && cur.count() === 0) resSection = 'query';
+    if (!cur || cur.id === 'query' || cur.count() > 0) return;
+    const next = RES_SECTIONS.find(x => x.id !== 'query' && x.count() > 0);
+    // Nothing anywhere means there is no solve yet, and the selection is still
+    // a perfectly good intention — moving it would strand the panel on the
+    // query, which is where it used to end up and never come back from.
+    if (next) resSection = next.id;
   });
+
+  /*
+   * The six plotted along a member, so their ordinate can be scaled.
+   *
+   * Only the deformed shape had a slider, so the drawings whose height is
+   * arbitrary — a moment plotted along a member — could not be made readable
+   * on a tall frame or a long span. They use a different store because they
+   * scale a different thing: the deformed shape multiplies a displacement, a
+   * diagram multiplies an ordinate.
+   */
+  const DIAGRAM_KINDS = ['axial', 'momentY', 'momentZ', 'shearY', 'shearZ', 'torsion'];
 </script>
 
 <div class="pro-res">
@@ -423,7 +451,22 @@
           />
           <span class="pro-viz-val">{Math.round(resultsStore.deformedScale)}×</span>
         </div>
-      {/if}
+        {:else if DIAGRAM_KINDS.includes(resultsStore.diagramType)}
+          <div class="pro-viz-row">
+            <label class="pro-viz-label">{t('pro.scaleLabel')}</label>
+            <input
+              type="range"
+              class="pro-viz-range"
+              min={0.1}
+              max={5}
+              step={0.1}
+              value={resultsStore.diagramScale}
+              oninput={(e) => (resultsStore.diagramScale = Number((e.target as HTMLInputElement).value))}
+              data-testid="pro-diagram-scale"
+            />
+            <span class="pro-viz-val">{resultsStore.diagramScale.toFixed(1)}×</span>
+          </div>
+        {/if}
 
       <div class="pro-viz-row">
         <label class="pro-viz-check">
@@ -497,6 +540,7 @@
         The chosen table then gets the whole panel, which is more rows than any
         of them had before.
       -->
+      <h4 class="res-heading">{t('proResults.outputs')}</h4>
       <div class="res-tabs" role="tablist">
         {#each RES_SECTIONS as sec (sec.id)}
           {@const n = sec.count()}
@@ -884,6 +928,16 @@
 
 <style>
   /* ── The output selector ───────────────────────────────────────────── */
+
+  .res-heading {
+    font-family: var(--st-mono);
+    font-size: 0.64rem;
+    font-weight: 400;
+    letter-spacing: 0.11em;
+    text-transform: uppercase;
+    color: var(--st-text-3);
+    margin: 0.5rem 0 0.1rem;
+  }
 
   .res-tabs {
     display: flex;

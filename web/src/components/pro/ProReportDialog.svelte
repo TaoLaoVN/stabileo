@@ -207,14 +207,14 @@
   .rpt-fieldset {
     border: 1px solid var(--st-surface-3); border-radius: 6px; padding: 12px 14px; margin-bottom: 14px;
   }
-  .rpt-fieldset legend { color: var(--st-value); font-size: 12px; font-weight: 600; padding: 0 6px; text-transform: uppercase; }
+  .rpt-fieldset legend { color: var(--st-text-2); font-size: 12px; font-weight: 600; padding: 0 6px; text-transform: uppercase; }
   .rpt-field { margin-bottom: 10px; }
   .rpt-label { display: block; font-size: 11px; color: var(--st-text-2); margin-bottom: 3px; }
   .rpt-input {
     width: 100%; padding: 6px 8px; background: var(--st-bg); border: 1px solid var(--st-surface-3); border-radius: 4px;
     color: var(--st-text); font-size: 12px;
   }
-  .rpt-input:focus { border-color: var(--st-value); outline: none; }
+  .rpt-input:focus { border-color: var(--st-text-2); outline: none; }
   .rpt-input-sm { width: 80px; }
   .rpt-logo-row { display: flex; align-items: center; gap: 12px; margin-bottom: 10px; }
   .rpt-logo-area { display: flex; align-items: center; gap: 8px; }
@@ -222,7 +222,7 @@
   .rpt-file-input { font-size: 11px; color: var(--st-text-2); }
   .rpt-checks { display: flex; flex-direction: column; gap: 6px; }
   .rpt-check { font-size: 12px; cursor: pointer; display: flex; align-items: center; gap: 6px; }
-  .rpt-check input[type="checkbox"] { accent-color: var(--st-value); }
+  .rpt-check input[type="checkbox"] { accent-color: var(--st-text-2); }
   .rpt-check input:disabled { opacity: 0.4; }
   .rpt-hint { color: var(--st-text-3); font-size: 10px; }
   .rpt-footer {

@@ -260,7 +260,7 @@
 
   .pro-btn-selection {
     font-size: 0.72rem;
-    color: var(--st-value);
+    color: var(--st-text-2);
     border-color: var(--st-hair-strong);
   }
 
@@ -286,7 +286,7 @@
     gap: 3px;
     cursor: pointer;
   }
-  .dof-check input { accent-color: var(--st-value); }
+  .dof-check input { accent-color: var(--st-text-2); }
 
   .spring-grid {
     display: flex;
@@ -324,7 +324,7 @@
     color: var(--st-text-2); font-size: 0.72rem; cursor: pointer; width: 100%;
   }
   .pro-select-inline:hover { border-color: var(--st-surface-3); }
-  .pro-select-inline:focus { border-color: var(--st-value); outline: none; }
+  .pro-select-inline:focus { border-color: var(--st-text-2); outline: none; }
   .pro-delete-btn { background: none; border:  1px solid var(--st-hair); color: var(--st-text-3); font-size: 1rem; cursor: pointer; padding: 0; }
   .pro-delete-btn:hover { color: var(--st-danger); }
 </style>

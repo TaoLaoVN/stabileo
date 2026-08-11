@@ -1006,12 +1006,18 @@
         </aside>
       {:else if uiStore.appMode === 'pro' && !uiStore.proPanelVisible && !uiStore.isMobile}
         <!-- A closed panel has to be reopenable from where it closed. -->
+        <!--
+          A bare chevron on the canvas edge is not a clue. It says what it
+          reopens, running up the tab, so a panel you closed is findable
+          without hunting for a 16 px strip.
+        -->
         <button
           class="pro-panel-reopen"
           onclick={() => { uiStore.proPanelVisible = true; setTimeout(() => window.dispatchEvent(new Event('resize')), 50); }}
-          title={t('resize')}
+          title={t('proRibbon.reopenPanel')}
+          aria-label={t('proRibbon.reopenPanel')}
           data-testid="pro-panel-reopen"
-        >‹</button>
+        ><span class="ppr-text">‹ {t('proRibbon.reopenPanel')}</span></button>
       {:else if uiStore.appMode === 'educativo'}
         <aside class="sidebar right edu-sidebar">
           <EducativePanel />
@@ -1429,13 +1435,25 @@
 
   .pro-panel-reopen {
     align-self: stretch;
-    width: 16px;
+    width: 26px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
     background: var(--st-surface-2);
     border: none;
     border-left: 1px solid var(--st-hair);
     color: var(--st-text-3);
     cursor: pointer;
     font-size: 0.85rem;
+  }
+
+  .ppr-text {
+    writing-mode: vertical-rl;
+    font-family: var(--st-mono);
+    font-size: 0.62rem;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    white-space: nowrap;
   }
 
   .pro-panel-reopen:hover { background: var(--st-surface-3); color: var(--st-text); }

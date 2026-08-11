@@ -2207,7 +2207,7 @@
   }
   .section-tabs button:hover { color: var(--st-text-2); }
   .section-tabs button.active {
-    color: var(--st-value);
+    color: var(--st-text-2);
     border-bottom-color: var(--st-value);
   }
 
@@ -2269,7 +2269,7 @@
     padding: 3px 10px;
     font-size: 0.62rem;
     background: rgba(127, 212, 204, 0.1);
-    color: var(--st-value);
+    color: var(--st-text-2);
     border: 1px solid rgba(127, 212, 204, 0.3);
     border-radius: 3px;
     cursor: pointer;
@@ -2412,7 +2412,7 @@
   .wasm-checks { margin-top: 4px; padding-left: 8px; border-left: 2px solid var(--st-surface-3); }
   .wasm-check-line { display: flex; gap: 6px; font-size: 0.65rem; color: var(--st-text-2); padding: 1px 0; }
   .wasm-check-name { color: var(--st-info); }
-  .wasm-check-ratio { font-weight: 600; color: var(--st-value); }
+  .wasm-check-ratio { font-weight: 600; color: var(--st-text-2); }
   .wasm-check-ratio.fail { color: var(--st-accent); }
   .wasm-check-msg { color: var(--st-text-3); font-size: 0.6rem; }
 
@@ -2426,6 +2426,6 @@
   .conn-label .adv-num { width: 55px; }
   .conn-result { padding: 4px 8px; font-size: 0.68rem; color: var(--st-text-2); background: rgba(127, 212, 204, 0.08); border: 1px solid rgba(127, 212, 204, 0.2); border-radius: 4px; display: flex; gap: 10px; flex-wrap: wrap; }
   .conn-result.fail { border-color: var(--st-accent); background: rgba(229, 72, 42, 0.08); }
-  .adv-btn-sm { padding: 3px 10px; border: 1px solid var(--st-surface-3); border-radius: 4px; background: var(--st-surface-3); color: var(--st-value); font-size: 0.68rem; cursor: pointer; }
+  .adv-btn-sm { padding: 3px 10px; border: 1px solid var(--st-surface-3); border-radius: 4px; background: var(--st-surface-3); color: var(--st-text-2); font-size: 0.68rem; cursor: pointer; }
   .adv-btn-sm:hover { background: var(--st-surface-3); color: white; }
 </style>

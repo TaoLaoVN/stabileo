@@ -740,6 +740,15 @@
     setTimeout(() => window.dispatchEvent(new Event('stabileo-zoom-to-fit')), 200);
     setTimeout(() => window.dispatchEvent(new Event('stabileo-zoom-to-fit')), 600);
   }
+
+  /** What the panel calls each destination. */
+  const TAB_TITLE: Record<string, string> = {
+    project: 'ribbon.project', nodes: 'pro.tabNodes', elements: 'pro.tabElements',
+    shells: 'pro.tabShells', materials: 'pro.tabMaterials', sections: 'pro.tabSections',
+    supports: 'pro.tabSupports', constraints: 'pro.tabConstraints', loads: 'pro.tabLoads',
+    advanced: 'ribbon.advanced', results: 'ribbon.results', design: 'pro.tabDesign',
+    connections: 'pro.tabConnections', diagnostics: 'pro.tabDiagnostics',
+  };
 </script>
 
 <svelte:window onresize={updateExampleMenuPosition} onscroll={updateExampleMenuPosition} />
@@ -775,16 +784,32 @@
     <div class="pro-solve-error">{solveError}</div>
   {/if}
 
-  <!-- Pre-solve quality gate banner -->
-  {#if modelErrorCount > 0 && activeTab !== 'diagnostics'}
-    <!-- svelte-ignore a11y_click_events_have_key_events -->
-    <!-- svelte-ignore a11y_no_static_element_interactions -->
-    <div class="pro-quality-gate" onclick={() => uiStore.proActiveTab = 'diagnostics'}>
-      <span class="qg-icon">⚠</span>
-      <span class="qg-text"><strong>{modelErrorCount}</strong> {t('pro.errorsFound')} — {t('pro.fixBeforeSolve')}</span>
-      <span class="qg-arrow">→</span>
-    </div>
-  {/if}
+  <!--
+    The panel says what it is showing, as Basic's does.
+    ──────────────────────────────────────────────────
+    It opened straight into content, so the ✕ floated with nothing beside it
+    and the one thing the panel could not tell you was which of thirteen
+    destinations you were looking at.
+
+    The model-error count rides here rather than as a banner. It used to be a
+    full-width amber strip pinned above every tab, permanently, on the panel
+    that has the least room to spare — it was the first thing you saw on
+    opening PRO and it stayed there through every unrelated task. It is a
+    STATE, not an announcement: a count beside the heading, in the same place
+    whatever tab is open, and still a click away from the diagnostics that
+    explain it.
+  -->
+  <header class="pro-head">
+    <span class="pro-head-title" data-testid="pro-panel-title">{t(TAB_TITLE[activeTab] ?? 'pro.tabNodes')}</span>
+    {#if modelErrorCount > 0}
+      <button
+        class="pro-head-errors"
+        onclick={() => (uiStore.proActiveTab = 'diagnostics')}
+        title={t('pro.fixBeforeSolve')}
+        data-testid="pro-error-count"
+      >⚠ {modelErrorCount}</button>
+    {/if}
+  </header>
 
   <!-- Tab content -->
   <div class="pro-content">
@@ -797,7 +822,7 @@
     {:else}
       <svelte:boundary onerror={(e) => { tabError = String(e); console.error('ProPanel tab error:', e); }}>
         {#if activeTab === 'project'}
-          <ProProjectTab onOpenExamples={(btn) => { exampleButtonEl = btn; toggleExampleMenu(); }} />
+          <ProProjectTab groups={proExampleGroups} onLoadExample={loadProExample} />
         {:else if activeTab === 'nodes'}
           <ProNodesTab />
         {:else if activeTab === 'elements'}
@@ -884,6 +909,38 @@
 />
 
 <style>
+  .pro-head {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.5rem 2rem 0.45rem 0.7rem;
+    border-bottom: 1px solid var(--st-hair);
+    flex: none;
+  }
+
+  .pro-head-title {
+    font-family: var(--st-mono);
+    font-size: 0.68rem;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: var(--st-text-2);
+  }
+
+  /* A count, not a banner: it states a condition and offers the way to it. */
+  .pro-head-errors {
+    background: none;
+    border: 1px solid var(--st-warn);
+    border-radius: var(--st-radius);
+    color: var(--st-warn);
+    font-family: var(--st-mono);
+    font-size: 0.62rem;
+    line-height: 1;
+    padding: 0.15rem 0.35rem;
+    cursor: pointer;
+  }
+
+  .pro-head-errors:hover { background: var(--st-selected-bg); }
+
   /* ─── Mobile PRO navigation ─── */
   .pro-mobile-nav {
     padding: 8px 10px;
@@ -966,7 +1023,7 @@
     background-repeat: no-repeat;
     background-position: right 10px center;
   }
-  .pm-tab-select:focus { border-color: var(--st-value); outline: none; }
+  .pm-tab-select:focus { border-color: var(--st-text-2); outline: none; }
 
   .pro-panel {
     display: flex;

@@ -320,7 +320,7 @@
     transition: all 0.15s;
   }
   .cat-tabs button:hover { color: var(--st-text-2); }
-  .cat-tabs button.active { color: var(--st-value); border-bottom-color: var(--st-value); }
+  .cat-tabs button.active { color: var(--st-text-2); border-bottom-color: var(--st-value); }
 
   /* ─── Search ─── */
   .search-wrap {
@@ -337,7 +337,7 @@
     font-size: 0.78rem;
   }
   .search-wrap input::placeholder { color: var(--st-text-3); }
-  .search-wrap input:focus { outline: none; border-color: var(--st-value); }
+  .search-wrap input:focus { outline: none; border-color: var(--st-text-2); }
 
   /* ─── Preset List ─── */
   .preset-list {
@@ -393,7 +393,7 @@
     width: 100%;
     text-align: left;
   }
-  .custom-toggle:hover { color: var(--st-value); }
+  .custom-toggle:hover { color: var(--st-text-2); }
 
   .custom-form {
     display: flex;
@@ -422,7 +422,7 @@
     font-size: 0.75rem;
     font-family: monospace;
   }
-  .custom-row input:focus { outline: none; border-color: var(--st-value); }
+  .custom-row input:focus { outline: none; border-color: var(--st-text-2); }
 
   .add-btn {
     margin-top: 4px;
@@ -430,7 +430,7 @@
     background: var(--st-surface-3);
     border: 1px solid var(--st-hair-strong);
     border-radius: 4px;
-    color: var(--st-value);
+    color: var(--st-text-2);
     cursor: pointer;
     font-size: 0.75rem;
     font-weight: 600;

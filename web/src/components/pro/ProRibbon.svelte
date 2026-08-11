@@ -8,7 +8,7 @@
    * so the ribbon's own highlight followed the click and the panel never did.
    * One module specifier, one store.
    */
-  import { uiStore, modelStore, resultsStore, historyStore } from '../../lib/store';
+  import { uiStore, modelStore, resultsStore, historyStore, verificationStore } from '../../lib/store';
   import { saveProject } from '../../lib/store/file';
   import Icon from '../ribbon/Icon.svelte';
   import { TWO_D_INTERNAL_FORCE_LABELS as F2D } from '../../lib/geometry/coordinate-system';
@@ -196,14 +196,14 @@
           id: 'diagrams',
           labelKey: 'ribbon.tabResults',
           cmds: [
-            { id: 'none', labelKey: 'ribbon.noDiagram', icon: 'none', diagram: 'none' },
-            { id: 'deformed', labelKey: 'ribbon.deformed', icon: 'deformed', diagram: 'deformed' },
-            { id: 'axial', label: F2D.axial, labelKey: 'ribbon.nameAxial', icon: 'axial', diagram: 'axial' },
-            { id: 'momentY', label: 'My', labelKey: 'ribbon.nameMomentY', icon: 'moment', diagram: 'momentY' },
-            { id: 'shearZ', label: 'Vz', labelKey: 'ribbon.nameShearZ', icon: 'shear', diagram: 'shearZ' },
-            { id: 'momentZ', label: 'Mz', labelKey: 'ribbon.nameMomentZ', icon: 'moment', rotate: 90, diagram: 'momentZ' },
-            { id: 'shearY', label: 'Vy', labelKey: 'ribbon.nameShearY', icon: 'shear', rotate: 90, diagram: 'shearY' },
-            { id: 'torsion', label: 'T', labelKey: 'ribbon.nameTorsion', icon: 'torsion', diagram: 'torsion' },
+            { id: 'none', labelKey: 'ribbon.noDiagram', icon: 'none', diagram: 'none', enabled: () => solved },
+            { id: 'deformed', labelKey: 'ribbon.deformed', icon: 'deformed', diagram: 'deformed', enabled: () => solved },
+            { id: 'axial', label: F2D.axial, labelKey: 'ribbon.nameAxial', icon: 'axial', diagram: 'axial', enabled: () => solved },
+            { id: 'momentY', label: 'My', labelKey: 'ribbon.nameMomentY', icon: 'moment', diagram: 'momentY', enabled: () => solved },
+            { id: 'shearZ', label: 'Vz', labelKey: 'ribbon.nameShearZ', icon: 'shear', diagram: 'shearZ', enabled: () => solved },
+            { id: 'momentZ', label: 'Mz', labelKey: 'ribbon.nameMomentZ', icon: 'moment', rotate: 90, diagram: 'momentZ', enabled: () => solved },
+            { id: 'shearY', label: 'Vy', labelKey: 'ribbon.nameShearY', icon: 'shear', rotate: 90, diagram: 'shearY', enabled: () => solved },
+            { id: 'torsion', label: 'T', labelKey: 'ribbon.nameTorsion', icon: 'torsion', diagram: 'torsion', enabled: () => solved },
           ],
         },
         /*
@@ -216,15 +216,15 @@
           id: 'maps',
           labelKey: 'proRibbon.groupMaps',
           cmds: [
-            { id: 'colorMap', labelKey: 'pro.diagColorMap', icon: 'view2d', diagram: 'colorMap' },
-            { id: 'verification', labelKey: 'pro.diagVerification', icon: 'support', diagram: 'verification' },
+            { id: 'colorMap', labelKey: 'pro.diagColorMap', icon: 'view2d', diagram: 'colorMap', enabled: () => solved },
+            { id: 'verification', labelKey: 'pro.diagVerification', icon: 'support', diagram: 'verification', enabled: () => solved },
           ],
         },
         {
           id: 'inspect',
           labelKey: 'proRibbon.groupInspect',
           cmds: [
-            { id: 'results', labelKey: 'ribbon.results', icon: 'data', tab: 'results' },
+            { id: 'results', labelKey: 'ribbon.results', icon: 'data', tab: 'results', enabled: () => solved },
             { id: 'diagnostics', labelKey: 'pro.tabDiagnostics', icon: 'advanced', tab: 'diagnostics' },
           ],
         },
@@ -296,10 +296,10 @@
    * produced it, so telling where you were in the pipeline meant visiting the
    * stages one at a time.
    *
-   * Only states that can be read honestly are shown. There is deliberately no
-   * badge on DESIGN yet: its verification counters live inside the design
-   * store and wiring them out is its own change — a badge that cannot see the
-   * thing it reports is worse than no badge.
+   * Only states that can be read honestly are shown. DESIGN reads
+   * `verificationStore.summary`, which the code check fills with pass / warn /
+   * fail counts — the same numbers the design table prints, so the badge and
+   * the table can never disagree.
    */
   type Badge = { tone: 'ok' | 'warn' | 'danger'; text: string } | null;
 
@@ -311,7 +311,17 @@
         : { tone: 'ok', text: '' },
     conditions: modelStore.model.loads.length > 0 ? { tone: 'ok', text: '' } : null,
     analyse: solved ? { tone: 'ok', text: '' } : null,
-    design: null,
+    /*
+     * Failing outranks warning outranks clean: the badge reports the worst
+     * thing in the stage, because that is what decides whether you can stop.
+     */
+    design: (() => {
+      const sum = verificationStore.summary;
+      if (!sum || sum.totalMembers === 0) return null;
+      if (sum.fail > 0) return { tone: 'danger' as const, text: String(sum.fail) };
+      if (sum.warn > 0) return { tone: 'warn' as const, text: String(sum.warn) };
+      return { tone: 'ok' as const, text: '' };
+    })(),
   }));
 </script>
 
@@ -445,7 +455,7 @@
                   || (!!c.diagram && shownDiagram === c.diagram)}
                 disabled={!on}
                 onclick={() => run(c)}
-                title={t(c.labelKey)}
+                title={on ? t(c.labelKey) : `${t(c.labelKey)} — ${t('ribbon.needsSolve')}`}
                 data-testid="pr-cmd-{c.id}"
               >
                 <span class="pr-icon"><Icon name={c.icon ?? 'data'} rotate={c.rotate ?? 0} size={20} /></span>

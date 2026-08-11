@@ -612,7 +612,7 @@
   .pro-dof-check input[type="checkbox"] {
     width: 14px;
     height: 14px;
-    accent-color: var(--st-value);
+    accent-color: var(--st-text-2);
     cursor: pointer;
   }
 
@@ -657,7 +657,7 @@
 
   .pro-btn-auto {
     font-size: 0.72rem;
-    color: var(--st-value);
+    color: var(--st-text-2);
     border-color: var(--st-hair-strong);
   }
 
@@ -683,7 +683,7 @@
   }
   .pro-cst-table td { padding: 5px 8px; border-bottom: 1px solid var(--st-surface-2); color: var(--st-text-2); }
   .col-id { width: 34px; color: var(--st-text-3); font-family: monospace; text-align: center; }
-  .col-type { font-size: 0.72rem; color: var(--st-value); white-space: nowrap; }
+  .col-type { font-size: 0.72rem; color: var(--st-text-2); white-space: nowrap; }
   .col-desc { font-size: 0.72rem; color: var(--st-text-2); }
   .pro-delete-btn { background: none; border:  1px solid var(--st-hair); color: var(--st-text-3); font-size: 1rem; cursor: pointer; padding: 0; }
   .pro-delete-btn:hover { color: var(--st-danger); }

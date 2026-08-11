@@ -392,7 +392,7 @@
     transition: all 0.15s;
   }
   .main-tabs button:hover { color: var(--st-text-2); background: rgba(15, 52, 96, 0.3); }
-  .main-tabs button.active { color: var(--st-value); border-bottom-color: var(--st-value); }
+  .main-tabs button.active { color: var(--st-text-2); border-bottom-color: var(--st-value); }
 
   /* ─── Tab Body ─── */
   .tab-body {
@@ -454,7 +454,7 @@
     font-size: 0.78rem;
   }
   .search-wrap input::placeholder { color: var(--st-text-3); }
-  .search-wrap input:focus { outline: none; border-color: var(--st-value); }
+  .search-wrap input:focus { outline: none; border-color: var(--st-text-2); }
 
   .profile-table-wrap {
     flex: 1;
@@ -511,7 +511,7 @@
   }
   .cat-toggle button:first-child { border-radius: 5px 0 0 5px; border-right: none; }
   .cat-toggle button:last-child { border-radius: 0 5px 5px 0; }
-  .cat-toggle button.active { background: var(--st-surface-3); color: var(--st-value); border-color: var(--st-value); }
+  .cat-toggle button.active { background: var(--st-surface-3); color: var(--st-text-2); border-color: var(--st-value); }
   .cat-toggle button:not(.active):hover { background: rgba(15, 52, 96, 0.4); color: var(--st-text-2); }
 
   .shape-tabs {
@@ -532,7 +532,7 @@
     transition: all 0.12s;
   }
   .shape-btn:hover { background: var(--st-surface-3); color: var(--st-text); }
-  .shape-btn.active { background: var(--st-surface-3); border-color: var(--st-value); color: var(--st-text); }
+  .shape-btn.active { background: var(--st-surface-3); border-color: var(--st-text-2); color: var(--st-text); }
 
   .builder-content {
     padding: 0 10px 8px;
@@ -575,7 +575,7 @@
     text-align: right;
     font-family: monospace;
   }
-  .param-input input:focus { outline: none; border-color: var(--st-value); }
+  .param-input input:focus { outline: none; border-color: var(--st-text-2); }
   .param-unit { font-size: 0.68rem; color: var(--st-text-3); min-width: 1.5rem; }
 
   .results-box {
@@ -596,7 +596,7 @@
     background: var(--st-surface-3);
     border: 1px solid var(--st-hair-strong);
     border-radius: 5px;
-    color: var(--st-value);
+    color: var(--st-text-2);
     cursor: pointer;
     font-size: 0.8rem;
     font-weight: 600;

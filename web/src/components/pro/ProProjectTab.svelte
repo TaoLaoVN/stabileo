@@ -17,17 +17,26 @@
    *
    * Basic answered this with a Project panel, and the answer transfers — but
    * the content does not. PRO's examples are curated engineering cases with a
-   * stated intent, a size and a set of tags; presenting them as a flat list of
-   * names, the way Basic does, would throw away the part that makes them
-   * choosable. So the gallery keeps its cards and comes in here, where the rest
-   * of the document lives.
+   * stated intent and a size, so they keep more than a name; at panel width
+   * that is the name, one line of description and the model's size, which is
+   * what anyone actually chooses on.
    */
 
-  type Props = { onOpenExamples: (btn: HTMLButtonElement) => void };
-  let { onOpenExamples }: Props = $props();
+  type ExGroup = { title: string; examples: Array<Record<string, any>> };
+  type Props = { groups: ExGroup[]; onLoadExample: (ex: any) => void };
+  let { groups, onLoadExample }: Props = $props();
 
   let fileInput: HTMLInputElement | undefined = $state();
-  let exampleBtn: HTMLButtonElement | undefined = $state();
+  /*
+   * The gallery lives IN the panel, not over the canvas.
+   *
+   * It was a floating menu with a backdrop, anchored to a button — so choosing
+   * a model meant covering the model, and the one screen a project starts at
+   * threw a dialog at you. At panel width the cards drop to one line of name
+   * plus one of description, which is what you actually choose on; the tags
+   * and the node counts follow underneath.
+   */
+  let showExamples = $state(false);
 
   const solved = $derived(resultsStore.results3D != null || resultsStore.results != null);
   const hasModel = $derived(modelStore.nodes.size > 0);
@@ -62,30 +71,55 @@
     </button>
   </div>
 
+  <h4 class="pp-heading">{t('proProject.newModel')}</h4>
+
+  <button
+    class="pp-btn pp-btn-wide pp-disclose"
+    onclick={() => (showExamples = !showExamples)}
+    aria-expanded={showExamples}
+    data-testid="pp-examples"
+  >
+    <span>{t('pro.exampleBtn')}</span>
+    <span class="pp-caret">{showExamples ? '▾' : '▸'}</span>
+  </button>
+
+  {#if showExamples}
+    <div class="pp-gallery" data-testid="pp-gallery">
+      {#each groups as g (g.title)}
+        <div class="pp-gal-group">{g.title}</div>
+        {#each g.examples as ex (ex.nameKey)}
+          <button class="pp-ex" onclick={() => { onLoadExample(ex); showExamples = false; }}>
+            <span class="pp-ex-name">{t(ex.nameKey)}</span>
+            <span class="pp-ex-desc">{t(ex.descKey)}</span>
+            <span class="pp-ex-meta">
+              {ex.stats.nodes} {t('pro.stats.nodes')} · {ex.stats.members} {t('pro.stats.members')}
+              {#if ex.stats.shells}· {ex.stats.shells} {t('pro.stats.shells')}{/if}
+            </span>
+          </button>
+        {/each}
+      {/each}
+    </div>
+  {/if}
+
   <!--
-    The gallery opens anchored to this button rather than inline: its cards
-    carry a description, tags and a model size, and at panel width they would
-    wrap into an unreadable column. It is the one thing here that wants the
-    canvas's room.
+    Two importers, each with what it actually does. "DXF plan" named a file
+    format and left the rest to guesswork — it takes an architectural floor
+    plan and proposes a structure from it, which is a different promise from
+    "open a file".
   -->
-  <h4 class="pp-heading">{t('proProject.startFrom')}</h4>
-  <div class="pp-grid">
+  <div class="pp-row">
     <button
-      class="pp-btn pp-btn-wide"
-      bind:this={exampleBtn}
-      onclick={() => exampleBtn && onOpenExamples(exampleBtn)}
-      data-testid="pp-examples"
-    >{t('pro.exampleBtn')}</button>
-    <button
-      class="pp-btn pp-btn-wide"
+      class="pp-btn pp-btn-grow"
       onclick={() => window.dispatchEvent(new Event('stabileo-import-dxf'))}
-      title={t('project.openDxfCadTooltip')}
     >{t('cad.proBarBtn')}</button>
+    <button class="pp-help" title={t('proProject.dxfHelp')} aria-label={t('proProject.dxfHelp')}>?</button>
+  </div>
+  <div class="pp-row">
     <button
-      class="pp-btn pp-btn-wide"
+      class="pp-btn pp-btn-grow"
       onclick={() => window.dispatchEvent(new Event('stabileo-import-ifc'))}
-      title={t('project.openIfcTooltip')}
     >{t('project.openIfc')}</button>
+    <button class="pp-help" title={t('proProject.ifcHelp')} aria-label={t('proProject.ifcHelp')}>?</button>
   </div>
 
   <h4 class="pp-heading">{t('project.export')}</h4>
@@ -180,4 +214,60 @@
   }
 
   .pp-btn:disabled { opacity: 0.4; cursor: not-allowed; }
+
+  .pp-row { display: flex; gap: 0.3rem; align-items: stretch; margin-top: 0.3rem; }
+  .pp-btn-grow { flex: 1; }
+
+  .pp-help {
+    width: 26px;
+    flex: none;
+    background: none;
+    border: 1px solid var(--st-hair);
+    border-radius: var(--st-radius);
+    color: var(--st-text-3);
+    font-size: 0.72rem;
+    cursor: help;
+  }
+
+  .pp-help:hover { color: var(--st-text); border-color: var(--st-hair-strong); }
+
+  .pp-disclose { justify-content: space-between; margin-top: 0.3rem; }
+  .pp-caret { font-size: 0.6rem; color: var(--st-text-3); }
+
+  .pp-gallery {
+    display: flex;
+    flex-direction: column;
+    margin: 0.3rem 0 0.2rem;
+    border: 1px solid var(--st-hair);
+    border-radius: var(--st-radius);
+    max-height: 46vh;
+    overflow-y: auto;
+  }
+
+  .pp-gal-group {
+    font-family: var(--st-mono);
+    font-size: 0.6rem;
+    letter-spacing: 0.11em;
+    text-transform: uppercase;
+    color: var(--st-text-3);
+    padding: 0.4rem 0.5rem 0.2rem;
+    background: var(--st-surface-2);
+  }
+
+  .pp-ex {
+    display: flex;
+    flex-direction: column;
+    gap: 0.1rem;
+    text-align: left;
+    background: none;
+    border: none;
+    border-top: 1px solid var(--st-hair);
+    padding: 0.4rem 0.5rem;
+    cursor: pointer;
+  }
+
+  .pp-ex:hover { background: var(--st-surface-3); }
+  .pp-ex-name { font-size: 0.76rem; color: var(--st-text); }
+  .pp-ex-desc { font-size: 0.66rem; color: var(--st-text-3); }
+  .pp-ex-meta { font-family: var(--st-mono); font-size: 0.6rem; color: var(--st-text-3); }
 </style>

@@ -861,7 +861,7 @@
 
   .pro-btn-accent {
     background: var(--st-surface-3);
-    border-color: var(--st-value);
+    border-color: var(--st-text-2);
     color: var(--st-value);
   }
 
@@ -878,7 +878,7 @@
   }
   .shell-info-toggle {
     width: 100%; text-align: left; background: none; border:  1px solid var(--st-hair); cursor: pointer;
-    color: var(--st-value); font-size: 0.72rem; font-weight: 600; padding: 7px 9px;
+    color: var(--st-text-2); font-size: 0.72rem; font-weight: 600; padding: 7px 9px;
   }
   .shell-info-body { padding: 0 10px 8px; }
   .shell-info-body p { margin: 4px 0; font-size: 0.68rem; line-height: 1.4; color: var(--st-text-2); }
@@ -894,7 +894,7 @@
   }
   .pro-btn-pick.picking {
     background: var(--st-hair-strong);
-    border-color: var(--st-value);
+    border-color: var(--st-text-2);
     color: var(--st-text);
     animation: pickPulse 1.2s ease-in-out infinite;
   }
@@ -912,7 +912,7 @@
 
   .field-success {
     font-size: 0.68rem;
-    color: var(--st-value);
+    color: var(--st-text-2);
     padding: 2px 0;
   }
 
@@ -931,7 +931,7 @@
     color: var(--st-text-2);
     cursor: pointer;
   }
-  .mesh-check input { accent-color: var(--st-value); }
+  .mesh-check input { accent-color: var(--st-text-2); }
 
   /* Tables */
   .table-label {
@@ -1124,7 +1124,7 @@
   .col-family {
     font-size: 0.65rem;
     font-weight: 600;
-    color: var(--st-value);
+    color: var(--st-text-2);
     font-family: monospace;
     white-space: nowrap;
   }

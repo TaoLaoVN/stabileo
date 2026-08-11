@@ -302,14 +302,14 @@
     padding: 3px 5px; background: var(--st-surface-3); border: 1px solid var(--st-surface-3);
     border-radius: 3px; color: var(--st-text); font-size: 0.72rem;
   }
-  .conn-sel:focus { border-color: var(--st-value); outline: none; }
+  .conn-sel:focus { border-color: var(--st-text-2); outline: none; }
   .conn-check-label { font-size: 0.68rem; color: var(--st-text-3); display: flex; align-items: center; gap: 4px; cursor: pointer; }
   .conn-check-label input { accent-color: var(--st-text-2); }
 
   .conn-force-inputs { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; margin-bottom: 6px; }
   .conn-force-inputs label { font-size: 0.68rem; color: var(--st-text-3); display: flex; align-items: center; gap: 4px; }
   .conn-btn-auto {
-    padding: 3px 8px; font-size: 0.65rem; color: var(--st-value); background: transparent;
+    padding: 3px 8px; font-size: 0.65rem; color: var(--st-text-2); background: transparent;
     border: 1px solid var(--st-value); border-radius: 3px; cursor: pointer;
   }
   .conn-btn-auto:hover { background: rgba(127, 212, 204, 0.1); }

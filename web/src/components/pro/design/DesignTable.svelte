@@ -178,6 +178,17 @@
 <style>
   .table-scroll { flex: 1; overflow: auto; min-height: 0; }
   table { width: 100%; border-collapse: collapse; font-size: 0.72rem; }
+  /*
+     A sticky header hides the row you scrolled to.
+     ─────────────────────────────────────────────
+     `scrollIntoView` stops as soon as the row is inside the scroll box, which
+     for anything near the top means underneath this header — so a click aimed
+     at a row's control landed on the header instead. `scroll-margin-top` tells
+     the browser the row needs that much clearance, and it is the header's own
+     height. It matters more the shorter the panel gets.
+  */
+  tbody tr { scroll-margin-top: 2.2rem; }
+
   thead th { position: sticky; top: 0; z-index: 2; background: var(--st-surface-2);
     border-bottom: 1px solid var(--st-hair-strong); padding: 4px 6px; text-align: left;
     color: var(--st-info); font-weight: 600; white-space: nowrap; }

@@ -667,7 +667,7 @@
   .al-fieldset {
     border: 1px solid var(--st-surface-3); border-radius: 6px; padding: 10px 12px; margin-bottom: 12px;
   }
-  .al-fieldset legend { color: var(--st-value); font-size: 11px; font-weight: 600; padding: 0 6px; text-transform: uppercase; }
+  .al-fieldset legend { color: var(--st-text-2); font-size: 11px; font-weight: 600; padding: 0 6px; text-transform: uppercase; }
   .al-dead-row {
     display: flex; align-items: center; gap: 8px; margin-bottom: 4px; font-size: 11px;
   }
@@ -676,13 +676,13 @@
     width: 55px; padding: 3px 5px; background: var(--st-bg); border: 1px solid var(--st-surface-3);
     border-radius: 3px; color: var(--st-text); font-size: 11px; text-align: right;
   }
-  .al-input-sm:focus { border-color: var(--st-value); outline: none; }
+  .al-input-sm:focus { border-color: var(--st-text-2); outline: none; }
   .al-select, .al-select-sm {
     width: 100%; padding: 5px 6px; background: var(--st-bg); border: 1px solid var(--st-surface-3);
     border-radius: 4px; color: var(--st-text); font-size: 11px;
   }
   .al-select-sm { width: 100%; }
-  .al-select:focus, .al-select-sm:focus { border-color: var(--st-value); outline: none; }
+  .al-select:focus, .al-select-sm:focus { border-color: var(--st-text-2); outline: none; }
   .al-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
   .al-field { display: flex; flex-direction: column; gap: 3px; }
   .al-label { font-size: 10px; color: var(--st-text-3); }
@@ -690,7 +690,7 @@
   .al-directions label { display: flex; align-items: center; gap: 4px; cursor: pointer; }
   .al-directions input { accent-color: var(--st-value); }
   .al-check { display: flex; align-items: center; gap: 6px; font-size: 11px; cursor: pointer; margin-bottom: 4px; }
-  .al-check input { accent-color: var(--st-value); }
+  .al-check input { accent-color: var(--st-text-2); }
   .al-check-legend { display: flex; align-items: center; gap: 6px; cursor: pointer; }
   .al-check-legend input { accent-color: var(--st-text-2); }
   .al-preview {
