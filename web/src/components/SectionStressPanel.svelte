@@ -541,8 +541,22 @@
     return { maxSigmaY: maxSY, maxSigmaZ: maxSZ, maxTauY: maxTY };
   });
 
+  /**
+   * Close the panel AND leave the pointer usable.
+   *
+   * Opening this analysis switches the viewport into `selectMode = 'stress'`,
+   * where a click means "inspect the section at this station". Closing used to
+   * clear only the query, so the pointer stayed in a mode whose one gesture no
+   * longer had a panel to answer in: clicks selected nothing, dragging panned
+   * nothing, and the canvas read as frozen. There is no visible control for
+   * that mode either, so the state was unreachable as well as useless.
+   *
+   * Restoring 'elements' is what the user means by closing: back to selecting
+   * and panning.
+   */
   function close() {
     resultsStore.stressQuery = null;
+    if (uiStore.selectMode === 'stress') uiStore.selectMode = 'elements';
   }
 
   /** Update stressQuery to a new t position, recalculating world coordinates */
@@ -847,7 +861,9 @@
   >
     <div class="ssp-header">
       <span class="ssp-title">{t('stress.panelTitle')}</span>
-      <button class="ssp-close" onclick={() => resultsStore.stressQuery = null}>&#x2715;</button>
+      <!-- Same `close()` as the main header: closing from the warning variant
+           left the pointer stuck in stress mode exactly as the other one did. -->
+      <button class="ssp-close" onclick={close}>&#x2715;</button>
     </div>
     <div class="ssp-amorph-msg">
       <span class="ssp-amorph-icon">⚠</span>

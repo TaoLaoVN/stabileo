@@ -46,6 +46,27 @@
     basicPanel = toggle && basicPanel === panel ? null : panel;
   }
 
+  /**
+   * Close the right panel without stranding the pointer.
+   *
+   * Section analysis puts the viewport into `selectMode = 'stress'`, where a
+   * click means "inspect this station" and the answer appears in THIS panel.
+   * Closing the panel used to hide the answer while leaving the question mode
+   * armed: the canvas stopped responding to selection and panning, with no
+   * visible control to turn the mode off again, because the only one lived in
+   * the panel that had just been dismissed.
+   *
+   * Closing a panel is an unambiguous "I am done with this", so it also ends
+   * the interaction the panel existed to serve.
+   */
+  function closeBasicPanel() {
+    basicPanel = null;
+    if (uiStore.selectMode === 'stress') {
+      uiStore.selectMode = 'elements';
+      resultsStore.stressQuery = null;
+    }
+  }
+
   /*
    * The step-by-step wizard is started from Advanced but renders in the Model
    * data panel, which is the only place with room for a 10×10 matrix. Pressing
@@ -932,7 +953,7 @@
     </div>
 
     {#if uiStore.appMode === 'basico' && basicPanel && !uiStore.isMobile}
-      <BasicPanel panel={basicPanel} onClose={() => (basicPanel = null)} />
+      <BasicPanel panel={basicPanel} onClose={closeBasicPanel} />
     {/if}
 
     {#if !uiStore.isMobile}
