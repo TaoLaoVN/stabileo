@@ -176,7 +176,16 @@
 </div>
 
 <style>
-  .table-scroll { flex: 1; overflow: auto; min-height: 0; }
+    /*
+     A floor, not just `min-height: 0`.
+     ─────────────────────────────────
+     In a flex column `min-height: 0` lets this box shrink to nothing, and the
+     panel has been getting shorter — a ribbon of two rows, then a heading. Once
+     the box is shorter than its own sticky header, the header covers the first
+     row and a click aimed at row 1 lands on "select all". Below this floor the
+     panel scrolls instead, which is the honest failure.
+  */
+  .table-scroll { flex: 1; overflow: auto; min-height: 9rem; }
   table { width: 100%; border-collapse: collapse; font-size: 0.72rem; }
   /*
      A sticky header hides the row you scrolled to.
@@ -192,7 +201,7 @@
   thead th { position: sticky; top: 0; z-index: 2; background: var(--st-surface-2);
     border-bottom: 1px solid var(--st-hair-strong); padding: 4px 6px; text-align: left;
     color: var(--st-info); font-weight: 600; white-space: nowrap; }
-  .sort-btn { background: none; border:  1px solid var(--st-hair); color: inherit; font: inherit;
+  .sort-btn { background: none; border: none; color: inherit; font: inherit;
     cursor: pointer; padding: 0; }
   .sort-btn:focus-visible { outline: 2px solid var(--st-value); outline-offset: 1px; }
   tbody td { padding: 3px 6px; border-bottom: 1px solid var(--st-surface-3); color: var(--st-text); vertical-align: middle; }
@@ -210,7 +219,7 @@
   .col-ratio { width: 110px; }
   .col-status { width: 34px; }
   .col-flags { width: 190px; }
-  .expand-btn { background: none; border:  1px solid var(--st-hair); color: inherit; font: inherit;
+  .expand-btn { background: none; border: none; color: inherit; font: inherit;
     cursor: pointer; padding: 0; display: inline-flex; gap: 3px; align-items: center; }
   .expand-btn:focus-visible { outline: 2px solid var(--st-value); outline-offset: 1px; }
   .caret { color: var(--st-text-3); width: 8px; display: inline-block; }

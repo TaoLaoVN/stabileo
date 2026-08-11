@@ -104,7 +104,7 @@
   .list { list-style: none; margin: 3px 0 0; padding: 0; }
   li { display: flex; align-items: center; gap: 7px; padding: 1px 0;
     font-size: 0.68rem; border-bottom: 1px solid var(--st-surface-3); flex-wrap: wrap; }
-  .link { background: none; border:  1px solid var(--st-hair); color: var(--st-text); cursor: pointer;
+  .link { background: none; border:  none; color: var(--st-text); cursor: pointer;
     padding: 0; text-decoration: underline; font-size: 0.68rem; }
   .link:focus-visible { outline: 2px solid var(--st-value); outline-offset: 1px; }
   .mono { font-family: monospace; color: var(--st-text); }

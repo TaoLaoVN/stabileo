@@ -1012,7 +1012,7 @@
   .lc-name-input:focus { background: var(--st-surface-3); border-color: var(--st-surface-3); outline: none; }
   .lc-count { width: 40px; text-align: center; color: var(--st-text-3); font-family: monospace; font-size: 0.68rem; }
   .lc-vis { width: 24px; text-align: center; }
-  .lc-vis-btn { background: none; border:  1px solid var(--st-hair); font-size: 0.7rem; cursor: pointer; opacity: 0.9; padding: 0; transition: opacity 0.12s; }
+  .lc-vis-btn { background: none; border:  none; font-size: 0.7rem; cursor: pointer; opacity: 0.9; padding: 0; transition: opacity 0.12s; }
   .lc-vis-btn.hidden-case { opacity: 0.2; text-decoration: line-through; }
   .lc-del { width: 20px; text-align: center; }
   .sw-auto-badge {
@@ -1031,7 +1031,7 @@
   }
   .case-eye.visible { opacity: 0.9; }
   .case-eye:hover { opacity: 1; }
-  .case-x { background: none; border:  1px solid var(--st-hair); color: var(--st-text-3); font-size: 0.8rem; cursor: pointer; padding: 0 0 0 4px; line-height: 1; }
+  .case-x { background: none; border:  none; color: var(--st-text-3); font-size: 0.8rem; cursor: pointer; padding: 0 0 0 4px; line-height: 1; }
   .case-x:hover { color: var(--st-danger); }
 
   .case-type-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--st-text-3); flex-shrink: 0; }
@@ -1092,7 +1092,7 @@
   .combo-modal-header { padding: 14px 18px; border-bottom: 1px solid var(--st-surface-3); display: flex; align-items: center; gap: 10px; }
   .combo-modal-header h3 { font-size: 0.85rem; color: var(--st-text); font-weight: 700; margin: 0; }
   .combo-modal-sub { font-size: 0.62rem; color: var(--st-text-2); background: rgba(127, 212, 204,0.1); padding: 2px 6px; border-radius: 3px; }
-  .combo-modal-close { margin-left: auto; background: none; border:  1px solid var(--st-hair); color: var(--st-text-3); font-size: 1.1rem; cursor: pointer; }
+  .combo-modal-close { margin-left: auto; background: none; border:  none; color: var(--st-text-3); font-size: 1.1rem; cursor: pointer; }
   .combo-modal-close:hover { color: var(--st-accent); }
   .combo-modal-body { flex: 1; overflow-y: auto; padding: 8px 12px; }
   .combo-cand-row { display: flex; align-items: center; gap: 8px; padding: 6px 8px; border-radius: 5px; cursor: pointer; font-size: 0.75rem; color: var(--st-text-2); transition: background 0.1s; }
@@ -1167,7 +1167,7 @@
   .inp-cell:focus { background: var(--st-surface-3); border-color: var(--st-surface-3); outline: none; }
   .col-id { width: 32px; color: var(--st-text-3); font-family: monospace; text-align: center; }
   .col-num { font-family: monospace; text-align: right; font-size: 0.75rem; }
-  .pro-delete-btn { background: none; border:  1px solid var(--st-hair); color: var(--st-text-3); font-size: 1rem; cursor: pointer; padding: 0; }
+  .pro-delete-btn { background: none; border:  none; color: var(--st-text-3); font-size: 1rem; cursor: pointer; padding: 0; }
   .pro-delete-btn:hover { color: var(--st-danger); }
   .pro-empty { text-align: center; color: var(--st-text-3); font-style: italic; padding: 30px 10px; font-size: 0.78rem; }
 </style>

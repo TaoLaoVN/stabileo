@@ -325,6 +325,6 @@
   }
   .pro-select-inline:hover { border-color: var(--st-surface-3); }
   .pro-select-inline:focus { border-color: var(--st-text-2); outline: none; }
-  .pro-delete-btn { background: none; border:  1px solid var(--st-hair); color: var(--st-text-3); font-size: 1rem; cursor: pointer; padding: 0; }
+  .pro-delete-btn { background: none; border:  none; color: var(--st-text-3); font-size: 1rem; cursor: pointer; padding: 0; }
   .pro-delete-btn:hover { color: var(--st-danger); }
 </style>

@@ -299,7 +299,7 @@
     font-size: 0.78rem; color: var(--st-warn);
   }
   .code-gate-link {
-    background: none; border:  1px solid var(--st-hair); padding: 0; color: var(--st-info);
+    background: none; border:  none; padding: 0; color: var(--st-info);
     text-decoration: underline; cursor: pointer; font-size: inherit;
   }
   .code-name { font-weight: 600; }

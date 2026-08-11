@@ -201,7 +201,7 @@
     padding: 16px 20px; border-bottom: 1px solid var(--st-surface-3);
   }
   .rpt-header h2 { margin: 0; font-size: 16px; color: var(--st-text); }
-  .rpt-close { background: none; border:  1px solid var(--st-hair); color: var(--st-text-3); font-size: 22px; cursor: pointer; padding: 0 4px; }
+  .rpt-close { background: none; border:  none; color: var(--st-text-3); font-size: 22px; cursor: pointer; padding: 0 4px; }
   .rpt-close:hover { color: var(--st-text); }
   .rpt-body { padding: 16px 20px; overflow-y: auto; flex: 1; }
   .rpt-fieldset {

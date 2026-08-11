@@ -646,7 +646,7 @@
   .al-row { display: flex; align-items: center; gap: 0.4rem; margin: 0.2rem 0; }
   .al-row label { min-width: 11rem; }
   .al-seismic-preview { margin-top: 6px; font-size: 0.78rem; opacity: 0.9; }
-  .al-link { background: none; border:  1px solid var(--st-hair); text-decoration: underline; color: inherit; cursor: pointer; padding: 0; font: inherit; }
+  .al-link { background: none; border:  none; text-decoration: underline; color: inherit; cursor: pointer; padding: 0; font: inherit; }
   .al-overlay {
     position: fixed; inset: 0; z-index: 9999;
     background: rgba(0,0,0,0.5); display: flex; align-items: center; justify-content: center;
@@ -661,7 +661,7 @@
     padding: 14px 18px; border-bottom: 1px solid var(--st-surface-3);
   }
   .al-header h2 { margin: 0; font-size: 15px; color: var(--st-text); }
-  .al-close { background: none; border:  1px solid var(--st-hair); color: var(--st-text-3); font-size: 22px; cursor: pointer; }
+  .al-close { background: none; border:  none; color: var(--st-text-3); font-size: 22px; cursor: pointer; }
   .al-close:hover { color: var(--st-text); }
   .al-body { padding: 14px 18px; overflow-y: auto; flex: 1; }
   .al-fieldset {

@@ -685,6 +685,6 @@
   .col-id { width: 34px; color: var(--st-text-3); font-family: monospace; text-align: center; }
   .col-type { font-size: 0.72rem; color: var(--st-text-2); white-space: nowrap; }
   .col-desc { font-size: 0.72rem; color: var(--st-text-2); }
-  .pro-delete-btn { background: none; border:  1px solid var(--st-hair); color: var(--st-text-3); font-size: 1rem; cursor: pointer; padding: 0; }
+  .pro-delete-btn { background: none; border:  none; color: var(--st-text-3); font-size: 1rem; cursor: pointer; padding: 0; }
   .pro-delete-btn:hover { color: var(--st-danger); }
 </style>

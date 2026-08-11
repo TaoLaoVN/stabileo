@@ -1039,7 +1039,7 @@
 
   .pro-delete-btn {
     background: none;
-    border:  1px solid var(--st-hair);
+    border:  none;
     color: var(--st-text-3);
     font-size: 1rem;
     cursor: pointer;

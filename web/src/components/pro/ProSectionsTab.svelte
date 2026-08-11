@@ -657,7 +657,7 @@
   .col-name { max-width: 100px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .col-num { font-family: monospace; text-align: right; font-size: 0.68rem; }
   .del-btn {
-    background: none; border:  1px solid var(--st-hair); color: var(--st-hair-strong); font-size: 0.9rem; cursor: pointer; padding: 0;
+    background: none; border:  none; color: var(--st-hair-strong); font-size: 0.9rem; cursor: pointer; padding: 0;
   }
   .del-btn:hover { color: var(--st-danger); }
 </style>
