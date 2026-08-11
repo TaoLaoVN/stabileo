@@ -1837,24 +1837,23 @@ pub fn analyze_section_plastic(json: &str) -> Result<String, JsValue> {
     let z = section::plastic::solve_plastic(&mesh).map_err(|e| JsValue::from_str(&e))?;
 
     // Warping needs the shear centre as its pole, so it comes from the shear
-    // solve. Refused for closed sections, where it is negligible anyway; that
-    // is reported as absent rather than as an error, because a tube having no
-    // meaningful warping constant is an answer, not a failure.
+    // solve. A shear failure is a real numerical problem and must surface —
+    // only the WARPING solve may quietly decline: a closed section has no
+    // meaningful Cw, and reporting that as absent rather than as an error is
+    // honest, because a tube having no warping constant is an answer.
     let cw = {
         use section::shear::{solve_shear, ShearInertia};
         let c = [props.yc * scale, props.zc * scale];
-        solve_shear(
+        let sh = solve_shear(
             &mesh, c,
             ShearInertia { iy: props.iy * scale.powi(4), iz: props.iz * scale.powi(4) },
             section::poisson::SolveStrategy::Sparse,
         )
+        .map_err(|e| JsValue::from_str(&format!("shear solve failed on the way to Cw: {e}")))?;
+        section::warping::solve_warping(
+            &mesh, c, sh.shear_centre, section::poisson::SolveStrategy::Sparse,
+        )
         .ok()
-        .and_then(|sh| {
-            section::warping::solve_warping(
-                &mesh, c, sh.shear_centre, section::poisson::SolveStrategy::Sparse,
-            )
-            .ok()
-        })
         // Cw is a sixth moment.
         .map(|w| w.cw / scale.powi(6))
     };

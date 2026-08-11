@@ -33,6 +33,14 @@ export function resolveOnUpdate(sec: Section): Section {
  * resolved digest matches the stored one. It never invalidates results:
  * refreshing geometry is not a model edit.
  *
+ * A section already geometry-backed WITH a torsion answer is skipped without
+ * recomputing: within a session the engine build cannot change, so a fully
+ * resolved state cannot go stale, and re-resolving it would pay a WASM
+ * geometry build (and possibly a Saint-Venant solve) per section per load
+ * just to learn nothing changed. `jProvenance === 'unavailable'` is the
+ * marker of "restored before the torsion pass ran" — those are retried, as
+ * are genuine torsion failures, which is bounded and correct.
+ *
  * Returns the updated map, or null if nothing changed.
  */
 export function refreshCanonicalSections(
@@ -41,14 +49,22 @@ export function refreshCanonicalSections(
   let changed = false;
   const m = new Map(sections);
   for (const [id, sec] of m) {
-    const next = resolveSectionState(sec, { torsion: true });
     const before = sec.canonical;
+    if (before?.kind === 'geometry-backed' && before.jProvenance !== 'unavailable') continue;
+    const next = resolveSectionState(sec, { torsion: true });
     const sameKind = before?.kind === next.kind;
     const sameDigest =
       before?.kind === 'geometry-backed' && next.kind === 'geometry-backed'
         ? before.digest === next.digest
         : sameKind;
-    if (!sameDigest) {
+    // The digest does not cover torsion: a retry that succeeds with unchanged
+    // geometry must still be published, or the section would stay
+    // `unavailable` and every future refresh would re-solve and re-discard.
+    const sameTorsion =
+      before?.kind === 'geometry-backed' && next.kind === 'geometry-backed'
+        ? before.j === next.j && before.jProvenance === next.jProvenance
+        : true;
+    if (!sameDigest || !sameTorsion) {
       m.set(id, { ...sec, canonical: next });
       changed = true;
     }
@@ -60,7 +76,10 @@ export function refreshCanonicalSections(
 export function restoreCanonicalSections(
   sections: Map<number, Section>,
 ): Map<number, Section> {
-  return restoreSections(sections).sections;
+  // Torsion included: restoring is the one moment every section is resolved
+  // anyway, and doing it here means the post-load refresh finds nothing to
+  // repair instead of re-resolving every section a second time.
+  return restoreSections(sections, { torsion: true }).sections;
 }
 
 /** Resolve the default section's canonical state for a fresh model. */
