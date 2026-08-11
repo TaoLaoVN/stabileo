@@ -44,6 +44,8 @@
   import StressStateDetails from './stress/StressStateDetails.svelte';
   import MohrCircleDisplay from './stress/MohrCircleDisplay.svelte';
   import CentralCoreDetails from './stress/CentralCoreDetails.svelte';
+  import StressTensorDetails from './stress/StressTensorDetails.svelte';
+  import { resolveEccentric } from '../lib/section/eccentric';
 
   // Fiber position sliders: 0 = bottom/left, 1 = top/right
   let fiberRatioY = $state(1.0); // default to top fiber (extreme)
@@ -64,6 +66,17 @@
   let showPressureCenter = $state(false);      // CP: centro de presiones overlay
   let showCentralCoreInfo = $state(false);     // NC details section (closed by default)
   let useGlobalScale = $state(true);           // Local/global stress scaling toggle (global by default)
+  let showTensors = $state(false);             // Stress/strain tensor section (closed by default)
+  let showStressMap = $state(false);           // MAP: paint sigma over the section instead of at a point
+  let showEccentric = $state(false);           // CE: eccentric application point
+  /**
+   * Where the eccentric load is applied, canonical `[y, z]` in metres.
+   *
+   * Starts at the centroid rather than at some corner: that is the position
+   * whose effect is nil, so the first drag reads as "moving it away from the
+   * reference does this", which is the relationship worth showing.
+   */
+  let eccentricPoint = $state<[number, number] | null>([0, 0]);
 
   const is3D = $derived(uiStore.analysisMode === '3d' || uiStore.analysisMode === 'pro');
   const query = $derived(resultsStore.stressQuery);
@@ -333,7 +346,8 @@
    * throughout; the legacy result stays only as the fallback for sections that
    * have no geometry at all.
    */
-  const canonicalState = $derived.by(() => {
+  /** The member's own section, material and canonical query point. */
+  const stateInputs = $derived.by(() => {
     if (!query || !canonical?.ok) return null;
     const elem = modelStore.elements.get(query.elementId);
     const sec = elem ? modelStore.sections.get(elem.sectionId) : null;
@@ -348,25 +362,97 @@
     const pz = zMin + fiberRatioY * (zMax - zMin);
 
     const f = canonical.forces as { n: number; my: number; mz: number; vy?: number; vz?: number; tx?: number };
-    const r = canonicalStressState(
+    return {
       sec,
-      { n: f.n, my: f.my, mz: f.mz, vy: f.vy, vz: f.vz, t: f.tx },
-      [py, pz],
-      mat?.fy,
+      fy: mat?.fy,
+      // Only pass elastic constants when the material actually carries them:
+      // the strain tensor is omitted rather than computed from a guess.
+      elastic: mat && mat.e > 0 ? { e: mat.e, nu: mat.nu ?? 0.3 } : undefined,
+      point: [py, pz] as [number, number],
+      forces: { n: f.n, my: f.my, mz: f.mz, vy: f.vy, vz: f.vz, t: f.tx },
+    };
+  });
+
+  /**
+   * The stress state as the MODEL loads it — no eccentricity applied.
+   *
+   * Deliberately independent of `eccentricPoint`, so dragging the marker does
+   * not re-run this solve. It also carries the shear centre, which depends only
+   * on the geometry and so is the same regardless of where the load is put.
+   */
+  const canonicalState = $derived.by(() => {
+    if (!stateInputs) return null;
+    const r = canonicalStressState(
+      stateInputs.sec,
+      stateInputs.forces,
+      stateInputs.point,
+      stateInputs.fy,
+      stateInputs.elastic,
     );
     return r.ok ? r.state : null;
   });
 
+  /**
+   * Whether the application point keeps the whole section in one sign.
+   *
+   * Tested against the SAME polygon the drawing paints, not against
+   * `kernLimits`. The two agree analytically, but they are different code, and
+   * a marker that turns green while sitting outside the orange region reads as
+   * a bug whichever of the two is right. One source, one answer.
+   */
+  const eccentricInsideKern = $derived.by(() => {
+    if (!eccentricPoint) return true;
+    if (!centralCore || centralCore.vertices.length < 3) return true;
+    // The core polygon is stored (ez, ey) — horizontal, vertical — which is the
+    // canonical point's (y, z) in that order.
+    return isPointInConvexPolygon(eccentricPoint[0], eccentricPoint[1], centralCore.vertices);
+  });
+
+  /**
+   * What moving the load off the reference points adds.
+   *
+   * The shear centre comes from the base solve, so this is arithmetic: no
+   * meshing happens while the marker is dragged.
+   */
+  const eccentric = $derived.by(() => {
+    if (!showEccentric || !eccentricPoint || !stateInputs) return null;
+    const f = stateInputs.forces;
+    return resolveEccentric(
+      { n: f.n, vy: f.vy, vz: f.vz, my: f.my, mz: f.mz, t: f.t, at: eccentricPoint },
+      canonicalState?.shearCentre ?? [0, 0],
+    );
+  });
+
+  /**
+   * The state under the eccentric forces — what the panel shows while the
+   * overlay is on, so the drawing, the tensors and Mohr's circle all describe
+   * the same load case rather than disagreeing with each other.
+   */
+  const eccentricState = $derived.by(() => {
+    if (!eccentric || !stateInputs) return null;
+    const r = canonicalStressState(
+      stateInputs.sec,
+      eccentric.forces,
+      stateInputs.point,
+      stateInputs.fy,
+      stateInputs.elastic,
+    );
+    return r.ok ? r.state : null;
+  });
+
+  /** The state every downstream display reads. */
+  const activeState = $derived(showEccentric ? (eccentricState ?? canonicalState) : canonicalState);
+
   // Mohr circle data. Canonical where the section has geometry; the legacy
   // result only where it does not.
   const mohrData = $derived(
-    canonicalState?.mohr ?? (uses3DPath ? analysis3D?.mohr ?? null : analysis2D?.mohr ?? null),
+    activeState?.mohr ?? (uses3DPath ? analysis3D?.mohr ?? null : analysis2D?.mohr ?? null),
   );
   const mohrSigma = $derived(
-    canonicalState?.sigma ?? (uses3DPath ? (analysis3D?.sigmaAtFiber ?? 0) : (analysis2D?.sigmaAtY ?? 0)),
+    activeState?.sigma ?? (uses3DPath ? (analysis3D?.sigmaAtFiber ?? 0) : (analysis2D?.sigmaAtY ?? 0)),
   );
   const mohrTau = $derived(
-    canonicalState?.tau ?? (uses3DPath ? (analysis3D?.tauTotal ?? 0) : (analysis2D?.tauAtY ?? 0)),
+    activeState?.tau ?? (uses3DPath ? (analysis3D?.tauTotal ?? 0) : (analysis2D?.tauAtY ?? 0)),
   );
 
   const criticalSections = $derived.by(() => {
@@ -654,7 +740,52 @@
         {pressureCenter}
         {globalScales}
         sectionRotation={is3D ? 0 : (querySec?.rotation ?? 0)}
+        bind:showStressMap
+        bind:showEccentric
+        bind:eccentricPoint
+        stressField={activeState?.field ?? null}
+        shearCentre={canonicalState?.shearCentre ?? null}
+        {eccentricInsideKern}
       />
+
+      <!-- What the eccentricity produced. Shown next to the drawing rather
+           than folded into a collapsed section: it is the readout for a live
+           gesture, and a number that appears only after opening a panel cannot
+           be read while dragging. -->
+      {#if showEccentric && eccentric && eccentricPoint}
+        <div class="ssp-ecc">
+          <div class="ssp-ecc-head">
+            <span>{t('stress.eccentricTitle')}</span>
+            <button
+              class="ssp-ecc-reset"
+              onclick={() => eccentricPoint = [0, 0]}
+              title={t('stress.eccentricResetHelp')}
+            >{t('stress.eccentricReset')}</button>
+          </div>
+          <div class="ssp-ecc-row">
+            <span class="ssp-ecc-label">{t('stress.eccentricAt')}</span>
+            <span class="ssp-ecc-val">
+              y {fmtForce(eccentricPoint[0] * 1000)} · z {fmtForce(eccentricPoint[1] * 1000)} mm
+            </span>
+          </div>
+          <div class="ssp-ecc-row">
+            <span class="ssp-ecc-label">&Delta;M<sub>y</sub> / &Delta;M<sub>z</sub></span>
+            <span class="ssp-ecc-val">
+              {fmtForce(eccentric.effect.myFromN)} / {fmtForce(eccentric.effect.mzFromN)} kN·m
+            </span>
+          </div>
+          <div class="ssp-ecc-row" class:ssp-ecc-warn={Math.abs(eccentric.effect.tFromShear) > 1e-6}>
+            <span class="ssp-ecc-label">&Delta;T</span>
+            <span class="ssp-ecc-val">{fmtForce(eccentric.effect.tFromShear)} kN·m</span>
+          </div>
+          <p class="ssp-ecc-note">
+            {eccentricInsideKern ? t('stress.eccentricInKern') : t('stress.eccentricOutKern')}
+          </p>
+          {#if canonicalState?.shearCentre && Math.hypot(...canonicalState.shearCentre) > 1e-6}
+            <p class="ssp-ecc-note">{t('stress.eccentricShearCentreNote')}</p>
+          {/if}
+        </div>
+      {/if}
 
       <!-- Stress state details -->
       <StressStateDetails
@@ -663,6 +794,14 @@
         {isMassive}
         {analysis2D}
         {analysis3D}
+      />
+
+      <!-- Stress and strain tensors. Above Mohr on purpose: the circle is a
+           construction on this state, so the state comes first. -->
+      <StressTensorDetails
+        bind:showTensors
+        tensors={activeState?.tensors ?? null}
+        fy={stateInputs?.fy}
       />
 
       <!-- Mohr's circle -->
@@ -968,6 +1107,58 @@
     flex-wrap: wrap;
     gap: 4px;
     padding: 4px 0;
+  }
+
+  /* Eccentric-load readout. Sits under the drawing, always expanded while the
+     overlay is on, because it is the feedback for a live drag. */
+  .ssp-ecc {
+    margin: 2px 0 8px;
+    padding: 6px 8px;
+    border-radius: 4px;
+    background: rgba(255, 140, 0, 0.06);
+    border: 1px solid rgba(255, 140, 0, 0.22);
+  }
+  .ssp-ecc-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 6px;
+    margin-bottom: 4px;
+    font-size: 0.63rem;
+    text-transform: uppercase;
+    letter-spacing: 0.4px;
+    color: var(--st-warn);
+  }
+  .ssp-ecc-reset {
+    padding: 1px 6px;
+    border-radius: 3px;
+    border: 1px solid rgba(255, 140, 0, 0.35);
+    background: none;
+    color: var(--st-warn);
+    font-size: 0.58rem;
+    cursor: pointer;
+    text-transform: none;
+    letter-spacing: 0;
+  }
+  .ssp-ecc-reset:hover { background: rgba(255, 140, 0, 0.15); }
+  .ssp-ecc-row {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 6px;
+    font-size: 0.67rem;
+    color: var(--st-text-2);
+  }
+  .ssp-ecc-label { color: var(--st-text-3); flex: none; }
+  .ssp-ecc-val { font-family: 'Courier New', monospace; text-align: right; }
+  /* Torsion that the eccentricity created is the finding worth colouring:
+     it appears without anyone having applied a torque. */
+  .ssp-ecc-warn .ssp-ecc-val { color: var(--st-warn); font-weight: 600; }
+  .ssp-ecc-note {
+    margin: 4px 0 0;
+    font-size: 0.58rem;
+    line-height: 1.4;
+    color: var(--st-text-3);
   }
 
   .ssp-critical-chip {

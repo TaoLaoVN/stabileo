@@ -47,10 +47,17 @@
       <div class="preset-list">
         {#each filtered as p}
           <button class="preset-item" onclick={() => onselect(p)}>
-            <span class="preset-name">{p.name}</span>
+            <span class="preset-name">
+              {p.name}
+              <!-- The standard is part of the identity, not a footnote: two
+                   standards can give the same designation to different steels,
+                   and a grade cannot be specified on a drawing without it. -->
+              {#if p.standard}<span class="preset-std">{p.standard}</span>{/if}
+            </span>
             <span class="preset-props">
               E={p.e >= 1000 ? `${(p.e/1000).toFixed(0)}GPa` : `${p.e}MPa`}
               {#if p.fy} fy={p.fy}MPa{/if}
+              {#if p.fu} fu={p.fu}MPa{/if}
               ρ={p.rho}kN/m³
             </span>
           </button>
@@ -172,6 +179,16 @@
 
   .preset-name {
     font-weight: 600;
+  }
+
+  /* Subordinate to the designation, but on the same line: it qualifies the
+     name rather than describing the material. */
+  .preset-std {
+    margin-left: 6px;
+    font-weight: 400;
+    font-size: 0.68rem;
+    color: #7fd4cc;
+    opacity: 0.75;
   }
 
   .preset-props {

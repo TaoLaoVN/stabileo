@@ -51,6 +51,34 @@
     pressureCenter: { y: number; z: number; insideCore: boolean } | null;
     globalScales: { maxSigmaY: number; maxSigmaZ: number; maxTauY: number } | null;
     sectionRotation: number;
+    /**
+     * Paint the normal-stress field over the section instead of reading it at a
+     * single point. Both views answer different questions — "how bad is it
+     * here" versus "where is it worst" — so this is a toggle, not a
+     * replacement.
+     */
+    showStressMap: boolean;
+    /**
+     * Coefficients of the normal-stress plane, `sigma = axial + kz*z - ky*y`,
+     * MPa with y/z centroid-relative in metres. Null when the section has no
+     * canonical geometry, which is also when the map is not offered.
+     */
+    stressField: { axial: number; ky: number; kz: number } | null;
+    /** Show the eccentric application point and what it induces. */
+    showEccentric: boolean;
+    /**
+     * Where the load is applied, canonical `[y, z]` in metres, centroid-
+     * relative. Bound, because dragging the marker is how it is set.
+     */
+    eccentricPoint: [number, number] | null;
+    /**
+     * Shear centre, canonical `[y, z]` in metres. Drawn alongside the centroid
+     * because the whole point of the exercise is that they are different
+     * points — and for a channel this one sits outside the section entirely.
+     */
+    shearCentre: [number, number] | null;
+    /** Whether the application point lies inside the kern. */
+    eccentricInsideKern: boolean;
   }
 
   let {
@@ -79,7 +107,110 @@
     pressureCenter,
     globalScales,
     sectionRotation = 0,
+    showStressMap = $bindable(),
+    stressField,
+    showEccentric = $bindable(),
+    eccentricPoint = $bindable(),
+    shearCentre,
+    eccentricInsideKern,
   }: Props = $props();
+
+  /**
+   * Scale factor from canonical metres to this SVG's units.
+   *
+   * The outline path derives the same number inline; the overlays below need it
+   * as a value, and computing it twice from the same bbox is how the two drift
+   * apart. `null` when there is no canonical geometry — which is exactly when
+   * the eccentric-load and stress-map overlays are withheld, because both are
+   * expressed in canonical coordinates and have nothing to attach to otherwise.
+   */
+  const canonicalScale = $derived.by((): number | null => {
+    if (!canonicalGeometry) return null;
+    const [yMin, zMin, yMax, zMax] = canonicalGeometry.bbox;
+    const w = Math.max(yMax - yMin, 1e-12);
+    const h = Math.max(zMax - zMin, 1e-12);
+    return 80 / Math.max(w, h);
+  });
+
+  let gEl = $state<SVGGElement | null>(null);
+  let dragging = $state(false);
+
+  /**
+   * Pointer position in canonical section coordinates.
+   *
+   * Read through the `<g>`'s own screen matrix rather than by arithmetic on the
+   * bounding rect: the group carries a rotation, the SVG carries a viewBox, and
+   * the page can be scrolled or zoomed. Inverting the actual CTM handles all of
+   * those at once, whereas hand-rolled arithmetic handles whichever ones its
+   * author happened to think of.
+   */
+  function pointerToSection(ev: PointerEvent): [number, number] | null {
+    const sc = canonicalScale;
+    if (!gEl || sc === null) return null;
+    const ctm = gEl.getScreenCTM();
+    if (!ctm) return null;
+    const local = new DOMPoint(ev.clientX, ev.clientY).matrixTransform(ctm.inverse());
+    // Undo the two transforms the outline applies: scale, and the sign flip
+    // that puts z upward in a coordinate system whose y grows downward.
+    return [local.x / sc, -local.y / sc];
+  }
+
+  function startDrag(ev: PointerEvent) {
+    const p = pointerToSection(ev);
+    if (!p) return;
+    dragging = true;
+    eccentricPoint = p;
+    (ev.currentTarget as Element).setPointerCapture?.(ev.pointerId);
+    ev.preventDefault();
+  }
+
+  function moveDrag(ev: PointerEvent) {
+    if (!dragging) return;
+    const p = pointerToSection(ev);
+    if (p) eccentricPoint = p;
+  }
+
+  function endDrag(ev: PointerEvent) {
+    dragging = false;
+    (ev.currentTarget as Element).releasePointerCapture?.(ev.pointerId);
+  }
+
+  /**
+   * Nudge the point with the arrow keys, so setting it does not require a
+   * mouse. The step is a fiftieth of the section's size, which keeps the
+   * gesture proportionate on a 60 mm angle and on a 900 mm girder alike.
+   */
+  function nudge(ev: KeyboardEvent) {
+    if (!eccentricPoint || !canonicalGeometry) return;
+    const [yMin, zMin, yMax, zMax] = canonicalGeometry.bbox;
+    const step = Math.max(yMax - yMin, zMax - zMin) / 50;
+    const moves: Record<string, [number, number]> = {
+      ArrowLeft: [-step, 0], ArrowRight: [step, 0],
+      ArrowUp: [0, step], ArrowDown: [0, -step],
+    };
+    const d = moves[ev.key];
+    if (!d) return;
+    eccentricPoint = [eccentricPoint[0] + d[0], eccentricPoint[1] + d[1]];
+    ev.preventDefault();
+  }
+
+  /**
+   * Stops for the stress-map gradient.
+   *
+   * `sigma` is affine over the section, so a linear gradient reproduces the
+   * field EXACTLY — there is nothing being interpolated between samples here.
+   * The stops exist only because the stress-to-colour mapping is not linear;
+   * eleven of them keep the colour ramp smooth while the underlying values
+   * stay exact at every pixel.
+   */
+  function mapStops(sigmaLo: number, sigmaHi: number, scale: number) {
+    const stops: Array<{ offset: number; color: string }> = [];
+    for (let i = 0; i <= 10; i++) {
+      const f = i / 10;
+      stops.push({ offset: f, color: stressColor(sigmaLo + f * (sigmaHi - sigmaLo), scale) });
+    }
+    return stops;
+  }
 
   // SVG helper
   /**
@@ -173,6 +304,22 @@
       onclick={() => showPressureCenter = !showPressureCenter}
       title={showPressureCenter ? t('stress.pressureCenterOn') : t('stress.pressureCenterOff')}
     >CP</button>
+    {#if stressField}
+      <button
+        class="ssp-svg-toggle ssp-toggle-map"
+        class:active={showStressMap}
+        onclick={() => showStressMap = !showStressMap}
+        title={showStressMap ? t('stress.stressMapOn') : t('stress.stressMapOff')}
+      >MAP</button>
+    {/if}
+    {#if canonicalGeometry}
+      <button
+        class="ssp-svg-toggle ssp-toggle-ecc"
+        class:active={showEccentric}
+        onclick={() => showEccentric = !showEccentric}
+        title={showEccentric ? t('stress.eccentricOn') : t('stress.eccentricOff')}
+      >CE</button>
+    {/if}
     <button
       class="ssp-svg-toggle ssp-toggle-scale"
       class:active={useGlobalScale}
@@ -182,7 +329,83 @@
   </div>
   <div class="ssp-svg-container">
     <svg viewBox="-90 -90 180 180" class="ssp-cross-svg">
-      <g transform="rotate({sectionRotation})">
+      <g bind:this={gEl} transform="rotate({sectionRotation})">
+      <!-- ── Normal-stress map over the whole section ─────────────────
+           Painted BEHIND the outline so the outline stays readable on top of
+           it. The gradient is the exact field, not a rendering of samples:
+           sigma is affine in (y, z), and a linear gradient is affine in the
+           coordinates it spans. -->
+      {#if showStressMap && stressField && canonicalGeometry && canonicalScale}
+        {@const sc = canonicalScale}
+        {@const f = stressField}
+        {@const [yMin, zMin, yMax, zMax] = canonicalGeometry.bbox}
+        <!-- sigma at a corner, straight from the plane's coefficients. -->
+        {@const sAt = (y: number, z: number) => f.axial + f.kz * z - f.ky * y}
+        {@const corners = [sAt(yMin, zMin), sAt(yMin, zMax), sAt(yMax, zMin), sAt(yMax, zMax)]}
+        {@const sLo = Math.min(...corners)}
+        {@const sHi = Math.max(...corners)}
+        {@const sMax = Math.max(Math.abs(sLo), Math.abs(sHi), 1e-9)}
+        <!-- Gradient direction in SVG units. The field grows along
+             (-ky, -kz) in section axes; dividing by `sc` converts the rate to
+             SVG units and the z sign flips because SVG y points down. -->
+        {@const gx = -f.ky / sc}
+        {@const gy = f.kz / sc}
+        {@const gLen = Math.hypot(gx, gy)}
+        {@const cx = (yMin + yMax) / 2 * sc}
+        {@const cy = -(zMin + zMax) / 2 * sc}
+        <defs>
+          {#if gLen > 1e-12}
+            <!-- Span the gradient across the section along its own direction,
+                 far enough that the whole outline falls inside it. -->
+            {@const half = Math.hypot((yMax - yMin) * sc, (zMax - zMin) * sc) / 2}
+            {@const ux = gx / gLen}
+            {@const uy = gy / gLen}
+            {@const sCentre = sAt((yMin + yMax) / 2, (zMin + zMax) / 2)}
+            <linearGradient
+              id="ssp-stress-map"
+              gradientUnits="userSpaceOnUse"
+              x1={cx - ux * half} y1={cy - uy * half}
+              x2={cx + ux * half} y2={cy + uy * half}
+            >
+              {#each mapStops(sCentre - gLen * half, sCentre + gLen * half, sMax) as st}
+                <stop offset={st.offset} stop-color={st.color} />
+              {/each}
+            </linearGradient>
+          {:else}
+            <!-- Pure axial: one stress everywhere, so no direction to span. -->
+            <linearGradient id="ssp-stress-map">
+              <stop offset="0" stop-color={stressColor(f.axial, sMax)} />
+              <stop offset="1" stop-color={stressColor(f.axial, sMax)} />
+            </linearGradient>
+          {/if}
+        </defs>
+        <path
+          d={canonicalPath(canonicalGeometry)}
+          fill="url(#ssp-stress-map)"
+          fill-rule="evenodd"
+          opacity="0.85"
+        />
+        <!-- Neutral axis: where the plane crosses zero. Drawn only when the
+             crossing is actually inside the section, so a fully-compressed
+             member does not get a line through empty space. -->
+        {#if gLen > 1e-12 && sLo < 0 && sHi > 0}
+          {@const ux = gx / gLen}
+          {@const uy = gy / gLen}
+          {@const sCentre = sAt((yMin + yMax) / 2, (zMin + zMax) / 2)}
+          {@const d0 = -sCentre / gLen}
+          {@const span = Math.hypot((yMax - yMin) * sc, (zMax - zMin) * sc)}
+          <line
+            x1={cx + ux * d0 - uy * span / 2} y1={cy + uy * d0 + ux * span / 2}
+            x2={cx + ux * d0 + uy * span / 2} y2={cy + uy * d0 - ux * span / 2}
+            stroke="var(--st-text-1)" stroke-width="0.9" stroke-dasharray="4,2" opacity="0.75"
+          />
+          <text
+            x={cx + ux * d0 - uy * span / 2} y={cy + uy * d0 + ux * span / 2 - 2}
+            fill="var(--st-text-1)" font-size="4.5" opacity="0.8"
+          >EN</text>
+        {/if}
+      {/if}
+
       <!-- Section outline -->
       <path
         d={canonicalGeometry ? canonicalPath(canonicalGeometry) : sectionPathFromResolved(resolved)}
@@ -195,11 +418,15 @@
       <!-- Central core (núcleo central) overlay -->
       {#if showCentralCore && centralCore && centralCore.vertices.length >= 3}
         {@const scNC = 80 / Math.max(resolved.h, resolved.b)}
+        <!-- Unfilled over the stress map: a translucent orange wash on top of a
+             red-to-blue field muddies both, and the core's own tint reads as a
+             stress value that is not there. The dashed outline alone carries
+             the same information without competing with the field. -->
         <polygon
           points={centralCore.vertices.map(v => `${v.ez * scNC},${-v.ey * scNC}`).join(' ')}
-          fill="rgba(255, 140, 0, 0.15)"
+          fill={showStressMap ? 'none' : 'rgba(255, 140, 0, 0.15)'}
           stroke="var(--st-warn)"
-          stroke-width="0.8"
+          stroke-width={showStressMap ? 1.1 : 0.8}
           stroke-dasharray="3,2"
         />
         <!-- NC label -->
@@ -831,6 +1058,85 @@
           {/if}
         {/if}
       {/if}
+      <!-- ── Eccentric application point ──────────────────────────────
+           Last in the group, so it draws over every diagram: it is the thing
+           being manipulated, and a marker hidden under a stress plot cannot be
+           grabbed. -->
+      {#if showEccentric && canonicalGeometry && canonicalScale}
+        {@const sc = canonicalScale}
+        <!-- Catch surface: clicking anywhere on the section moves the point
+             there, which is a far more direct gesture than dragging a small
+             marker across the drawing. Only present while the overlay is on. -->
+        <rect
+          x="-90" y="-90" width="180" height="180"
+          fill="transparent"
+          class="ssp-ecc-catch"
+          role="button"
+          tabindex="-1"
+          aria-label={t('stress.eccentricPlace')}
+          onpointerdown={startDrag}
+          onpointermove={moveDrag}
+          onpointerup={endDrag}
+          onpointercancel={endDrag}
+        />
+
+        <!-- Centroid: the reference AXIAL force acts about. -->
+        <g opacity="0.9">
+          <circle cx="0" cy="0" r="2.2" fill="none" stroke="var(--st-text-2)" stroke-width="0.8" />
+          <line x1="-3.6" y1="0" x2="3.6" y2="0" stroke="var(--st-text-2)" stroke-width="0.6" />
+          <line x1="0" y1="-3.6" x2="0" y2="3.6" stroke="var(--st-text-2)" stroke-width="0.6" />
+          <text x="4.5" y="-2.5" fill="var(--st-text-2)" font-size="4" text-anchor="start">G</text>
+        </g>
+
+        <!-- Shear centre: the reference SHEAR acts about. Drawn whenever it is
+             a distinct point, because "these two coincide" is only true for a
+             doubly-symmetric section and the drawing should say which case
+             this is. -->
+        {#if shearCentre && Math.hypot(shearCentre[0], shearCentre[1]) * sc > 0.5}
+          {@const scx = shearCentre[0] * sc}
+          {@const scy = -shearCentre[1] * sc}
+          <g opacity="0.95">
+            <circle cx={scx} cy={scy} r="2.6" fill="none" stroke="var(--st-accent)" stroke-width="1" stroke-dasharray="1.5,1" />
+            <circle cx={scx} cy={scy} r="0.9" fill="var(--st-accent)" />
+            <text x={scx + 4.5} y={scy + 1.5} fill="var(--st-accent)" font-size="4" text-anchor="start">CC</text>
+          </g>
+
+          <!-- The torsion arm: the offset from the SHEAR CENTRE, not from the
+               centroid. Drawing it is the whole lesson — on a channel this
+               segment is long precisely when the load looks centred. -->
+          {#if eccentricPoint}
+            <line
+              x1={scx} y1={scy}
+              x2={eccentricPoint[0] * sc} y2={-eccentricPoint[1] * sc}
+              stroke="var(--st-accent)" stroke-width="0.7" stroke-dasharray="2,1.5" opacity="0.7"
+            />
+          {/if}
+        {/if}
+
+        <!-- The application point itself. -->
+        {#if eccentricPoint}
+          {@const px = eccentricPoint[0] * sc}
+          {@const py = -eccentricPoint[1] * sc}
+          {@const col = eccentricInsideKern ? 'var(--st-ok)' : 'var(--st-warn)'}
+          <g
+            class="ssp-ecc-marker"
+            class:dragging
+            role="button"
+            tabindex="0"
+            aria-label={t('stress.eccentricPoint')}
+            onpointerdown={startDrag}
+            onpointermove={moveDrag}
+            onpointerup={endDrag}
+            onpointercancel={endDrag}
+            onkeydown={nudge}
+          >
+            <circle cx={px} cy={py} r="6.5" fill={col} opacity="0.14" />
+            <circle cx={px} cy={py} r="3.2" fill="none" stroke={col} stroke-width="1.4" />
+            <circle cx={px} cy={py} r="1" fill={col} />
+            <text x={px + 5.5} y={py - 4} fill={col} font-size="4.2" text-anchor="start" font-weight="600">P</text>
+          </g>
+        {/if}
+      {/if}
       </g>
     </svg>
   </div>
@@ -965,6 +1271,29 @@
     color: var(--st-value);
     border-color: var(--st-value);
     background: rgba(127, 212, 204, 0.12);
+  }
+
+  .ssp-toggle-map.active {
+    color: var(--st-value);
+    border-color: var(--st-value);
+    background: rgba(127, 212, 204, 0.12);
+  }
+
+  .ssp-toggle-ecc.active {
+    color: var(--st-warn);
+    border-color: var(--st-warn);
+    background: rgba(255, 140, 0, 0.12);
+  }
+
+  /* Click-to-place over the whole drawing, so the point can be set without
+     first hitting a 3-unit marker. */
+  .ssp-ecc-catch { cursor: crosshair; }
+  .ssp-ecc-marker { cursor: grab; }
+  .ssp-ecc-marker.dragging { cursor: grabbing; }
+  .ssp-ecc-marker:focus-visible { outline: none; }
+  .ssp-ecc-marker:focus-visible circle:nth-of-type(2) {
+    stroke-width: 2;
+    stroke-dasharray: 2, 1;
   }
 
   .ssp-toggle-scale {

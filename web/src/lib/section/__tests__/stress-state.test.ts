@@ -171,3 +171,50 @@ describe('the shear centre is reported when it is not at the centroid', () => {
     expect(r.state.shearCentre).toBeUndefined();
   });
 });
+
+/**
+ * The stress-map overlay paints `field` over the whole section instead of
+ * asking the engine for a point at a time. That is only legitimate if the
+ * plane it describes IS the field the engine reports — otherwise the picture
+ * and the readout disagree, which is the exact class of split-brain defect
+ * this module was written to end.
+ */
+describe('the reported field reproduces the stress everywhere', () => {
+  const evalField = (f: { axial: number; ky: number; kz: number }, y: number, z: number) =>
+    f.axial + f.kz * z - f.ky * y;
+
+  it('agrees with the point stress at arbitrary points, under biaxial bending', () => {
+    const forces = { n: 500, my: 80, mz: 30 };
+    // Points picked off-axis on purpose: a field that only got the symmetric
+    // cases right would pass a centreline-only check.
+    for (const [y, z] of [[0, 0], [0.1, 0.2], [-0.07, 0.13], [0.09, -0.18]]) {
+      const r = canonicalStressState(rect(), forces, [y, z]);
+      if (!r.ok) throw new Error(r.message ?? r.reason);
+      // Exact to the engine's own arithmetic: both come from the same
+      // curvatures, so any discrepancy is a wiring error, not a tolerance.
+      expect(evalField(r.state.field, y, z)).toBeCloseTo(r.state.sigma, 10);
+    }
+  });
+
+  it('is a plane: the stress at a midpoint is the mean of its endpoints', () => {
+    const r = canonicalStressState(rect(), { n: 200, my: 60, mz: 25 }, [0, 0]);
+    if (!r.ok) throw new Error(r.message ?? r.reason);
+    const f = r.state.field;
+    const a = evalField(f, -0.1, -0.2);
+    const b = evalField(f, 0.1, 0.2);
+    expect(evalField(f, 0, 0)).toBeCloseTo((a + b) / 2, 10);
+  });
+
+  it('carries no shear: the map describes sigma only', () => {
+    // A shear field is solved on the mesh and is not a plane. Folding it into
+    // these three coefficients would be silently wrong, so the axial term must
+    // stay N/A even when a shear force is present.
+    const r = canonicalStressState(rect(), { n: 800, my: 0, mz: 0, vz: 300 }, [0, 0]);
+    if (!r.ok) throw new Error(r.message ?? r.reason);
+    expect(r.state.field.axial).toBeCloseTo(10, 6);
+    expect(evalField(r.state.field, 0, 0)).toBeCloseTo(r.state.sigma, 10);
+    // ...and the shear really is present in the state, so this is not a
+    // vacuous check on a state that happens to have no shear.
+    expect(r.state.tau).toBeGreaterThan(0);
+  });
+});

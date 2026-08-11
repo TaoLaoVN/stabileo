@@ -2,24 +2,63 @@
 // Properties in SI units: E (MPa), ν, ρ (kN/m³), fy (MPa)
 
 import { t } from '../i18n';
+import { HOT_ROLLED, COLD_FORMED, ALUMINIUM, STAINLESS, type StructuralGrade } from './structural-grades';
 
 export interface MaterialPreset {
   name: string;
-  category: 'acero' | 'hormigon' | 'madera' | 'aluminio';
+  category: 'acero' | 'conformado' | 'inox' | 'hormigon' | 'madera' | 'aluminio';
   e: number;    // MPa
   nu: number;
   rho: number;  // kN/m³
   fy?: number;  // MPa
+  /**
+   * The product standard the values come from, for the metal grades.
+   *
+   * Shown next to the name because "A572 Gr.50" and "S355" are only meaningful
+   * alongside the standard that defines them, and because two standards can
+   * use the same designation for different steels.
+   */
+  standard?: string;
+  /** Ultimate tensile strength, MPa — present for the graded metals. */
+  fu?: number;
+  /** Link back to the grade database, so a selection can be traced. */
+  gradeId?: string;
+}
+
+/**
+ * Adapt a catalogued grade to the preset shape the pickers already consume.
+ *
+ * The grade database is the source of truth; this is a projection of it, so
+ * adding a grade there makes it appear in every picker without touching them.
+ */
+function fromGrade(g: StructuralGrade, category: MaterialPreset['category']): MaterialPreset {
+  return {
+    name: g.designation,
+    category,
+    e: g.e,
+    nu: g.nu,
+    rho: g.rho,
+    fy: g.fy,
+    fu: g.fu,
+    standard: g.productStandard,
+    gradeId: g.id,
+  };
 }
 
 /** Returns material presets with translated names (call inside reactive context) */
 export function getMaterialPresets(): MaterialPreset[] {
   return [
-    // ─── Aceros estructurales ───
-    { name: t('material.steelA36'),       category: 'acero', e: 200000, nu: 0.3, rho: 78.5, fy: 250 },
-    { name: t('material.steelA572Gr50'),  category: 'acero', e: 200000, nu: 0.3, rho: 78.5, fy: 345 },
-    { name: t('material.steelA992'),      category: 'acero', e: 200000, nu: 0.3, rho: 78.5, fy: 345 },
-    { name: t('material.steelA500GrC'),   category: 'acero', e: 200000, nu: 0.3, rho: 78.5, fy: 317 },
+    // ─── Aceros estructurales, de la base multinorma ───
+    //
+    // Listed from the grade database rather than repeated here, so IRAM, ASTM,
+    // EN and NBR grades all reach the picker and none of them can drift out of
+    // step with the values the checks use.
+    ...HOT_ROLLED.map((g) => fromGrade(g, 'acero')),
+    ...COLD_FORMED.map((g) => fromGrade(g, 'conformado')),
+    ...STAINLESS.map((g) => fromGrade(g, 'inox')),
+
+    // Reinforcing steel: a bar grade, not a section grade, so it has no place
+    // in the rolled-profile database but is still needed to model concrete.
     { name: t('material.steelADN420'),    category: 'acero', e: 200000, nu: 0.3, rho: 78.5, fy: 420 },
 
     // ─── Hormigones argentinos (CIRSOC 201) ───
@@ -37,7 +76,7 @@ export function getMaterialPresets(): MaterialPreset[] {
     { name: t('material.woodEucalyptus'), category: 'madera', e: 15000, nu: 0.3, rho: 8.0 },
 
     // ─── Aluminio ───
-    { name: t('material.aluminum6061T6'), category: 'aluminio', e: 69000, nu: 0.33, rho: 27.0, fy: 276 },
+    ...ALUMINIUM.map((g) => fromGrade(g, 'aluminio')),
   ];
 }
 
@@ -62,9 +101,11 @@ export const MATERIAL_PRESETS: MaterialPreset[] = [
 
 export const MATERIAL_CATEGORIES = [
   { id: 'acero', label: 'matCat.steel' },
+  { id: 'conformado', label: 'matCat.coldFormed' },
+  { id: 'inox', label: 'matCat.stainless' },
+  { id: 'aluminio', label: 'matCat.aluminum' },
   { id: 'hormigon', label: 'matCat.concrete' },
   { id: 'madera', label: 'matCat.wood' },
-  { id: 'aluminio', label: 'matCat.aluminum' },
 ] as const;
 
 export function searchPresets(query: string, category?: string): MaterialPreset[] {
@@ -72,5 +113,10 @@ export function searchPresets(query: string, category?: string): MaterialPreset[
   if (category) source = source.filter(p => p.category === category);
   if (!query.trim()) return source;
   const q = query.trim().toLowerCase();
-  return source.filter(p => p.name.toLowerCase().includes(q));
+  // Searching the standard as well as the name is what makes "EN 10025" or
+  // "NBR" a usable query — which is how someone working to one code finds the
+  // grades that code is written around.
+  return source.filter(p =>
+    p.name.toLowerCase().includes(q) || (p.standard?.toLowerCase().includes(q) ?? false),
+  );
 }

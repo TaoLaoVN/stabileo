@@ -77,6 +77,22 @@ export interface CanonicalStressState {
    */
   shearCentre?: [number, number];
   /**
+   * The normal-stress field over the WHOLE section, as the coefficients of the
+   * plane it lies on: `sigma(y, z) = axial + kz*z - ky*y`, MPa, with y and z
+   * centroid-relative in metres.
+   *
+   * Normal stress under axial force and bending is affine in the section
+   * coordinates — that is the Bernoulli hypothesis, not an approximation of it.
+   * So three numbers reproduce the field everywhere, exactly, and a panel can
+   * paint a stress map by evaluating a plane instead of asking the engine for a
+   * point at a time. The alternative — sampling and interpolating — would be
+   * both slower and less accurate than the closed form it approximates.
+   *
+   * Shear is NOT included here: it is a solved field on the mesh, not a plane,
+   * and no three coefficients describe it.
+   */
+  field: { axial: number; ky: number; kz: number };
+  /**
    * The full stress and strain tensors at the point, with their principal
    * values and invariants.
    *
@@ -196,6 +212,7 @@ export function canonicalStressState(
         mohr: computeMohrCircle(sMPa, tMPa),
         failure: checkFailure(sMPa, tMPa, fy),
         shearCentre,
+        field: { axial: toMPa(axial), ky: toMPa(bending.ky), kz: toMPa(bending.kz) },
         tensors: elastic
           ? stressTensorState(sMPa, toMPa(tauXy), toMPa(tauXz), elastic.e, elastic.nu)
           : undefined,
