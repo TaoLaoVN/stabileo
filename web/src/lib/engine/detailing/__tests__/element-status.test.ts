@@ -217,3 +217,62 @@ describe('a provisional proposal against a failing verification', () => {
     expect(statusOf(false, provisional())).toBe('UNSUPPORTED');
   });
 });
+
+// ─── Top steel, beside the state rather than inside it ───────────
+
+describe('what a member\'s top steel is', () => {
+  const topBar = (id: number, over: Partial<SceneBar> = {}): SceneBar => ({
+    ...barFor(id), barId: `t${id}`, layerId: `e${id}:topRun:0`, ...over,
+  });
+  const bottomBar = (id: number): SceneBar => ({
+    ...barFor(id), barId: `bo${id}`, layerId: `e${id}:bottom:0`,
+  });
+
+  it('reads hangerProvisional off the bar the generator marked', () => {
+    const r = reportElementStatus(
+      scene([solid(1)], [bottomBar(1), topBar(1, { purpose: 'stirrupHanger' })]),
+      new Map([[1, { outcome: 'PROVISIONAL_BIAXIAL' } as DesignOutcomeSummary]]));
+    expect(r.entries[0].topSteel).toBe('hangerProvisional');
+    expect(r.hangerTopMembers).toEqual([1]);
+    // And it does NOT move the state. That is the whole point of the field.
+    expect(r.entries[0].status).toBe('PROVISIONAL');
+  });
+
+  it('does not let bottom steel answer a question about the top face', () => {
+    /**
+     * Bottom bars are longitudinal and carry no `purpose` either, so a filter that asked only
+     * "has this member unmarked longitudinal steel" would call every beam in the model
+     * `resistant` — the question would be about the member's steel rather than its top steel.
+     */
+    const r = reportElementStatus(
+      scene([solid(2)], [bottomBar(2)]),
+      new Map([[2, { outcome: 'VERIFIED' } as DesignOutcomeSummary]]));
+    expect(r.entries[0].topSteel).toBe('none');
+    expect(r.hangerTopMembers).toEqual([]);
+  });
+
+  it('ignores the cage, including another member\'s joint ties', () => {
+    /**
+     * The shape of the original defect: 63 beams had 24 to 48 bars each, every one of them
+     * transverse, and most of them the JOINT ties of the columns they frame into — which record
+     * the incident beams as owners. A count of bars said those beams were reinforced.
+     */
+    const jointTie: SceneBar = {
+      ...barFor(3), barId: 'j3', role: 'transverse', piece: 'jointTie', elementIds: [3, 99],
+    };
+    const r = reportElementStatus(
+      scene([solid(3)], [jointTie]),
+      new Map([[3, { outcome: 'PROVISIONAL_BIAXIAL' } as DesignOutcomeSummary]]));
+    expect(r.entries[0].topSteel).toBe('none');
+  });
+
+  it('calls a member with both resistant, not hanger-provisional', () => {
+    // A designed top group plus the continuous pair: the pair is part of that group, and
+    // reporting the member as carrying assembly steel would understate the design.
+    const r = reportElementStatus(
+      scene([solid(4)], [topBar(4), topBar(4, { barId: 'x4', purpose: 'stirrupHanger' })]),
+      new Map([[4, { outcome: 'VERIFIED' } as DesignOutcomeSummary]]));
+    expect(r.entries[0].topSteel).toBe('resistant');
+    expect(r.hangerTopMembers).toEqual([]);
+  });
+});

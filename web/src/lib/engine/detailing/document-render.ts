@@ -174,6 +174,37 @@ export function renderReportHtml(
       + '</p>');
   }
 
+  /**
+   * Top steel that answers to a stirrup bend rather than to a moment.
+   *
+   * Its own banner for the same reason the two above have theirs: a member can carry hogging
+   * steel, assembly steel, both or neither, and one sentence covering two of them tells a
+   * reader neither which members nor which action. The distinction this one makes is the
+   * narrowest of the three and the easiest to lose — 2Ø10 at the top of a beam looks the same
+   * whether a negative moment sized it or §25.7.1.2 did, and only one of those has a capacity
+   * behind it.
+   */
+  const hangerBars = doc.assemblies.flatMap((a) =>
+    a.bars.filter((b) => b.purpose === 'stirrupHanger'));
+  const hangerAll = [...new Set(hangerBars.flatMap((b) => b.ownerElementIds))]
+    .sort((x, y) => x - y);
+  if (hangerAll.length > 0) {
+    rows.push('<p class="banner draft hanger">'
+      + esc(L(
+        `ARMADURA SUPERIOR DE ARMADO — ${hangerAll.length} elemento(s). Ninguno de sus apoyos `
+        + 'tiene momento negativo de envolvente, de modo que sus barras superiores cumplen '
+        + '25.7.1.2 (cada doblez del estribo debe contener una barra longitudinal) y NO son '
+        + 'armadura resistente: no se les verificó ni se les atribuye capacidad a momento '
+        + 'negativo. El Reglamento no fija su diámetro y el elegido es un criterio de esta '
+        + 'aplicación, indicado como tal.',
+        `TOP ASSEMBLY REINFORCEMENT — ${hangerAll.length} member(s). Neither support carries an `
+        + 'envelope hogging moment, so their top bars satisfy §25.7.1.2 (every stirrup bend must '
+        + 'contain a longitudinal bar) and are NOT load-resisting reinforcement: no hogging '
+        + 'capacity was verified for them and none is attributed. The regulation does not fix '
+        + 'their diameter and the one chosen is this application\'s convention, stated as such.'))
+      + '</p>');
+  }
+
   // ── Revision block ──
   rows.push(`<h2>${L('Revisión', 'Revision')}</h2><table><tbody>`);
   rows.push(`<tr><th>${L('Revisión', 'Revision')}</th><td>${doc.revision.number}</td></tr>`);
@@ -272,6 +303,63 @@ export function renderReportHtml(
         rows.push(`<tr><td>${id}</td><td>${esc(a.id)}</td><td>${bars}</td>`
           + `<td class="bad">${esc(L('TORSIÓN NO EVALUADA — en desarrollo',
             'TORSION NOT EVALUATED — in development'))}</td></tr>`);
+      }
+    }
+    rows.push('</tbody></table>');
+  }
+
+  // ── Top assembly reinforcement, member by member ──
+  if (hangerAll.length > 0) {
+    rows.push(`<h2>${L('Armadura superior de armado', 'Top assembly reinforcement')}</h2>`);
+    rows.push(`<p>${esc(L(
+      'La cara superior de estos elementos no es una cara traccionada: el análisis no requiere '
+      + 'armadura de tracción en ella, de modo que 9.6.1.2 no la alcanza — 9.6.1.1 la circunscribe '
+      + 'a las secciones donde el análisis SÍ la requiere. Lo que sí rige es 25.7.1.2: entre los '
+      + 'extremos anclados, cada doblez de un estribo cerrado debe contener una barra '
+      + 'longitudinal, y si el estribo fuera en U, su gancho se cierra alrededor de una barra '
+      + 'longitudinal (25.7.1.3(a)). De ahí salen dos barras, y 9.7.7.1(b) llega al mismo piso de '
+      + 'dos barras continuas por integridad estructural. NINGUNA de esas cláusulas fija el '
+      + 'diámetro. El que figura abajo lo eligió esta aplicación como el menor de la serie del '
+      + 'proyecto que entra de a dos y no baja del diámetro del estribo, y no representa un área '
+      + 'requerida por el Reglamento. No es apto para presentarse como armadura resistente a '
+      + 'momento negativo.',
+      'The top face of these members is not a tension face: the analysis requires no tension '
+      + 'reinforcement there, so §9.6.1.2 does not reach it — §9.6.1.1 scopes it to sections '
+      + 'where the analysis DOES require it. What does govern is §25.7.1.2: between the anchored '
+      + 'ends, every bend of a closed stirrup must contain a longitudinal bar, and were the '
+      + 'stirrup U-shaped its hook closes around a longitudinal bar (§25.7.1.3(a)). That gives '
+      + 'two bars, and §9.7.7.1(b) reaches the same floor of two continuous bars for structural '
+      + 'integrity. NONE of those clauses fixes the diameter. The one below was chosen by this '
+      + 'application as the smallest in the project series that fits two per row and is not '
+      + 'thinner than the stirrup, and it does not represent an area the regulation requires. It '
+      + 'may not be presented as reinforcement resisting a hogging moment.'))}</p>`);
+    rows.push('<table><thead><tr>'
+      + `<th>${L('Elemento', 'Member')}</th>`
+      + `<th>${L('Conjunto', 'Assembly')}</th>`
+      + `<th>${L('Marca', 'Mark')}</th>`
+      + `<th>${L('Barras', 'Bars')}</th>`
+      + `<th>${L('Ø (mm)', 'Ø (mm)')}</th>`
+      + `<th>${L('Largo (m)', 'Length (m)')}</th>`
+      + `<th>${L('Estado', 'Status')}</th></tr></thead><tbody>`);
+    for (const a of doc.assemblies) {
+      const markOf = new Map<string, string>();
+      for (const m of a.source.marks) for (const bid of m.barIds) markOf.set(bid, m.mark);
+      const byMember = new Map<number, typeof a.bars>();
+      for (const b of a.bars) {
+        if (b.purpose !== 'stirrupHanger') continue;
+        for (const id of b.ownerElementIds) {
+          byMember.set(id, [...(byMember.get(id) ?? []), b]);
+        }
+      }
+      for (const id of [...byMember.keys()].sort((x, y) => x - y)) {
+        const bars = byMember.get(id)!;
+        rows.push(`<tr><td>${id}</td><td>${esc(a.id)}</td>`
+          + `<td>${esc([...new Set(bars.map((b) => markOf.get(b.id) ?? '—'))].join(', '))}</td>`
+          + `<td>${bars.length}</td>`
+          + `<td>${[...new Set(bars.map((b) => b.diameterMm))].join(', ')}</td>`
+          + `<td>${bars[0].cuttingLength.toFixed(2)}</td>`
+          + `<td class="bad">${esc(L('ARMADO (25.7.1.2) — Ø sin cláusula, no resistente',
+            'ASSEMBLY (§25.7.1.2) — Ø has no clause, not load-resisting'))}</td></tr>`);
       }
     }
     rows.push('</tbody></table>');

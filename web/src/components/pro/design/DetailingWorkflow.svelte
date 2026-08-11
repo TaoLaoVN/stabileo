@@ -334,6 +334,7 @@
               <th scope="col">{t('detailing.mark')}</th>
               <th scope="col">Ø</th>
               <th scope="col">{t('detailing.shape')}</th>
+              <th scope="col">{t('detailing.schedule.purpose')}</th>
               <th scope="col">{t('detailing.qty')}</th>
               <th scope="col">{t('detailing.cutLength')}</th>
               <th scope="col">{t('detailing.mass')}</th>
@@ -343,6 +344,8 @@
             {#each s.rows as r (r.mark)}
               <tr>
                 <td>{r.mark}</td><td>{r.diameterMm}</td><td>{r.shape}</td>
+                <td data-testid="schedule-purpose">{r.role === 'longitudinal'
+                  ? t(`detailing.schedule.purpose.${r.purpose ?? 'resistant'}`) : '—'}</td>
                 <td>{r.quantity}</td><td>{r.cuttingLengthM.toFixed(2)}</td>
                 <td>{r.massKg.toFixed(1)}</td>
               </tr>
@@ -350,7 +353,7 @@
           </tbody>
           <tfoot>
             <tr>
-              <th scope="row" colspan="3">{t('detailing.total')}</th>
+              <th scope="row" colspan="4">{t('detailing.total')}</th>
               <td>{s.totals.quantity}</td>
               <td>{s.totals.totalLengthM.toFixed(1)}</td>
               <td data-testid="schedule-mass">{s.totals.massKg.toFixed(1)}</td>

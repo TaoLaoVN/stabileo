@@ -126,6 +126,15 @@ export interface BarMark {
    * own owners is a second reader of the same fact and the two drift.
    */
   role: BarPath['role'];
+  /**
+   * What the marked item is FOR — see `BarPath.purpose`. Absent means resistant reinforcement.
+   *
+   * Part of the grouping key, not a summary of it: a Ø10 hanger and a Ø10 hogging bar of the
+   * same cut length ARE the same fabricated item, but they are not the same line on a schedule
+   * an engineer signs. One is steel that resists a moment and one is steel that holds a stirrup,
+   * and a bender reading a merged row cannot tell which of the two the drawing meant.
+   */
+  purpose?: BarPath['purpose'];
   ownerElementIds: number[];
   zoneIds: string[];
 }
@@ -322,17 +331,22 @@ export function shapeCode(bar: BarPath): string {
 export function assignMarks(bars: readonly BarPath[], prefix = 'B'): BarMark[] {
   const groups = new Map<string, BarPath[]>();
   for (const bar of bars) {
-    const key = `${bar.diameterMm}|${roundCut(bar.cuttingLength).toFixed(2)}|${shapeCode(bar)}`;
+    // `purpose` joins the key so a hanger never shares a schedule row with hogging steel. It is
+    // empty on every bar that carries no purpose, which is all of them until a beam has no
+    // hogging demand, so no existing mark moves because this term exists.
+    const key = `${bar.diameterMm}|${roundCut(bar.cuttingLength).toFixed(2)}`
+      + `|${shapeCode(bar)}|${bar.purpose ?? ''}`;
     const g = groups.get(key);
     if (g) g.push(bar); else groups.set(key, [bar]);
   }
 
   const sorted = [...groups.entries()].sort(([a], [b]) => {
-    const [da, la, sa] = a.split('|');
-    const [db, lb, sb] = b.split('|');
+    const [da, la, sa, pa] = a.split('|');
+    const [db, lb, sb, pb] = b.split('|');
     return Number(da) - Number(db)
       || Number(la) - Number(lb)
-      || sa.localeCompare(sb);
+      || sa.localeCompare(sb)
+      || pa.localeCompare(pb);
   });
 
   return sorted.map(([key, list], i) => {
@@ -349,6 +363,7 @@ export function assignMarks(bars: readonly BarPath[], prefix = 'B'): BarMark[] {
       massKg: area * cuttingLength * 7850 * list.length,
       barIds: list.map((b) => b.id).sort(),
       role: list[0].role,
+      ...(list[0].purpose ? { purpose: list[0].purpose } : {}),
       ownerElementIds: [...new Set(list.flatMap((b) => b.ownerElementIds))]
         .sort((x, y) => x - y),
       zoneIds: [...new Set(list.map((b) => b.zoneId).filter((z): z is string => !!z))].sort(),

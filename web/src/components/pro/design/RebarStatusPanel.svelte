@@ -134,6 +134,25 @@
     {/each}
   </ul>
 
+  <!-- ── Top assembly reinforcement ─────────────────────────────────
+       Beside the states rather than inside them, because it is not one. A member carrying the
+       §25.7.1.2 pair is still whatever the design made it — 62 of the 63 on the 7-storey
+       building are proposals and one is verified — so putting it in the state column would
+       have to drop one of the two facts. It is a way IN for the same reason every state row
+       is: click it and the viewport isolates them. -->
+  {#if report.hangerTopMembers.length > 0}
+    <button
+      type="button"
+      class="cause hanger"
+      data-testid="rebar-status-hanger-top"
+      title={t('detailing.scene.cause.isolate')}
+      onclick={() => rebarWorkspace.isolate(report.hangerTopMembers)}
+    >
+      <span class="cause-n">{report.hangerTopMembers.length}</span>
+      <span class="cause-text">{t('detailing.scene.hangerTop')}</span>
+    </button>
+  {/if}
+
   {#if rebarWorkspace.statusFilter.length > 0}
     <button type="button" class="link" onclick={() => rebarWorkspace.clearStatusFilter()}>
       {t('detailing.scene.clearIsolation')}
@@ -156,6 +175,13 @@
           >
             <span class="dot"></span>
             <span class="id">{tp('detailing.scene.solid.member', { id: e.elementId })}</span>
+            {#if e.topSteel === 'hangerProvisional'}
+              <span
+                class="hanger-chip"
+                data-testid={`rebar-element-hanger-${e.elementId}`}
+                title={t('detailing.scene.hangerTop')}
+              >{t('detailing.scene.hangerTopShort')}</span>
+            {/if}
             <span class="st">{t(`detailing.scene.status.${e.status}`)}</span>
           </button>
           {#if reasons?.get(e.elementId) && selectedIds.has(e.elementId)}
@@ -195,6 +221,14 @@
   /* The same violet the 3-D view paints provisional steel with — one colour, one meaning,
      across the panel and the viewport. */
   .st-provisional .dot { background: #a066d3; }
+
+  /* Assembly steel reads as a note, not as a state: it borrows the cause row's weight and
+     stays off the state palette, so no reader takes it for one of the seven. */
+  .cause.hanger { display: flex; width: 100%; }
+  .hanger-chip {
+    font-size: 0.68rem; padding: 0 0.28rem; border-radius: 3px;
+    border: 1px solid #6c6c6c; color: #b9b9b9; white-space: nowrap;
+  }
   .st-refused .dot { background: #d4762a; }
   .st-designed-not-modelled .dot { background: #d9c04a; }
   .st-not-evaluated .dot { background: #8b93a3; }

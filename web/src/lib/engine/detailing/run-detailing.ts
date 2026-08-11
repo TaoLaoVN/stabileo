@@ -40,6 +40,11 @@ import {
   centrelineRadius, minMandrelDiameter, type BarPath, type Point3,
 } from '../../codes/cirsoc201/bar-geometry';
 import type { MemberContext } from '../design/member-context';
+import { STANDARD_LONG_DIAS } from '../design/objective';
+import {
+  reconcileAcrossTheMember, resolveTopSteel,
+  type TopSteelProvision, type TopSteelPurpose,
+} from './beam-top-steel';
 import { detailableReinforcement, isProvisionalOutcome, type MemberDesignOutcome } from '../design/outcome';
 import {
   generateBeamBars, type BentUpPolicy, type MomentStation, type SupportKind,
@@ -323,19 +328,101 @@ function supportKindAt(
   return others >= 2 ? 'continuous' : 'simple';
 }
 
-function beamGroups(accepted: NonNullable<MemberDesignOutcome['accepted']>): {
+/**
+ * Peak hogging moment at each end of a member, kN·m, from its own envelope.
+ *
+ * The FIRST and LAST station rather than a region sweep, matching what `generateBeamBars`
+ * already calls `peakNegI` / `peakNegJ`. Two readings of "does this support hog" that disagree
+ * would put a hanger pair on a face the generator then curtails hogging steel into.
+ */
+function hoggingAtSupports(ctx: MemberContext): { start: number; end: number } {
+  const st = envelopeStations(ctx);
+  if (st.length === 0) return { start: 0, end: 0 };
+  return {
+    start: Math.max(st[0].mNeg, 0),
+    end: Math.max(st[st.length - 1].mNeg, 0),
+  };
+}
+
+interface BeamGroupOptions {
+  ctx: MemberContext;
+  edition: RegulationEdition;
+  maxAggregateSizeMm: number;
+  hogging: { start: number; end: number };
+}
+
+/** The top-steel provision at each support. One derivation, two readers. */
+function resolveTopSteelFor(
+  accepted: NonNullable<MemberDesignOutcome['accepted']>,
+  opts: BeamGroupOptions,
+): { start: TopSteelProvision; end: TopSteelProvision } {
+  const g = (x?: { count: number; diameter: number }) =>
+    x && x.count > 0 ? { count: x.count, diameterMm: x.diameter } : undefined;
+  const r = accepted.regions;
+  const common = {
+    b: opts.ctx.section.b,
+    cover: opts.ctx.material.cover,
+    stirrupDiaMm: opts.ctx.material.stirrupDia,
+    maxAggregateSizeMm: opts.maxAggregateSizeMm,
+    availableDiametersMm: STANDARD_LONG_DIAS,
+    edition: opts.edition,
+  };
+  const start = resolveTopSteel({
+    ...common,
+    designed: g(r?.topStart) ?? g(accepted.top),
+    hoggingMoment: opts.hogging.start,
+  });
+  const end = resolveTopSteel({
+    ...common,
+    designed: g(r?.topEnd) ?? g(accepted.top),
+    hoggingMoment: opts.hogging.end,
+  });
+  return reconcileAcrossTheMember(start, end);
+}
+
+
+/**
+ * The three longitudinal groups a beam is detailed from, and what each top group IS.
+ *
+ * ── The line this replaces, and why it was wrong ───────────────────
+ *
+ *     if (!bottom || !topStart || !topEnd) return null;
+ *
+ * All three or nothing. A beam whose envelope never hogs is designed with bottom steel and no
+ * top groups — `bottomSpan=2Ø20`, `topStart=—`, `topEnd=—` in the design's own candidate — and
+ * that gate discarded the bottom bars the design DID produce, along with the entire stirrup
+ * cage, which is generated in the same call. Sixty-three of the 7-storey building's 119 beams
+ * reached the viewport with no steel of their own at all; the transverse bars they appeared to
+ * have were the JOINT ties of the columns they frame into, which claim the beam ids too.
+ *
+ * The missing group is now RESOLVED rather than demanded — see `./beam-top-steel.ts`
+ * for the clauses and, more importantly, for the one number none of them fixes. The bottom group
+ * is still demanded: a beam with no bottom steel has nothing this function can build a beam from.
+ */
+function beamGroups(
+  accepted: NonNullable<MemberDesignOutcome['accepted']>,
+  opts: BeamGroupOptions,
+): {
   bottom: { count: number; diameterMm: number };
   topStart: { count: number; diameterMm: number };
   topEnd: { count: number; diameterMm: number };
+  topPurpose: { start: TopSteelPurpose; end: TopSteelPurpose };
+  /** The full provisions, for the trace, the refs and the blocked reasons. */
+  provisions: { start: TopSteelProvision; end: TopSteelProvision };
 } | null {
   const g = (x?: { count: number; diameter: number }) =>
     x && x.count > 0 ? { count: x.count, diameterMm: x.diameter } : null;
   const r = accepted.regions;
   const bottom = g(r?.bottomSpan) ?? g(accepted.bottom);
-  const topStart = g(r?.topStart) ?? g(accepted.top);
-  const topEnd = g(r?.topEnd) ?? g(accepted.top);
-  if (!bottom || !topStart || !topEnd) return null;
-  return { bottom, topStart, topEnd };
+  if (!bottom) return null;
+
+  const { start, end } = resolveTopSteelFor(accepted, opts);
+  if (!start.group || !end.group) return null;
+  return {
+    bottom, topStart: start.group, topEnd: end.group,
+    topPurpose: { start: start.purpose, end: end.purpose },
+    provisions: { start, end },
+  };
 }
 
 function columnBars(accepted: NonNullable<MemberDesignOutcome['accepted']>):
@@ -625,6 +712,36 @@ export function runDetailing(input: RunDetailingInput): RunDetailingResult {
   const barLayers = new Map<string, number>();
 
   /**
+   * One reading of each beam's support hogging, shared by every site that resolves its groups.
+   *
+   * Memoised rather than recomputed at the four call sites: `beamGroups` is asked the same
+   * question by the cage scorer, the layout coordinator, the generator and the joint builder,
+   * and four independent envelope walks are four chances to disagree about whether a support
+   * hogs — which is exactly the question that decides whether its top bars are hangers.
+   */
+  const hoggingCache = new Map<number, { start: number; end: number }>();
+  const hoggingOf = (id: number): { start: number; end: number } => {
+    let h = hoggingCache.get(id);
+    if (!h) {
+      const ctx = input.contexts.get(id);
+      h = ctx ? hoggingAtSupports(ctx) : { start: 0, end: 0 };
+      hoggingCache.set(id, h);
+    }
+    return h;
+  };
+  /** `beamGroups` options for a member, or undefined when it has no context. */
+  const groupOptsFor = (id: number) => {
+    const ctx = input.contexts.get(id);
+    return ctx
+      ? {
+        ctx, edition: input.edition,
+        maxAggregateSizeMm: input.maxAggregateSizeMm,
+        hogging: hoggingOf(id),
+      }
+      : undefined;
+  };
+
+  /**
    * Column bars whose line passes through a node's plan position and elevation.
    *
    * Read from the bars the column generator actually produced, not recomputed: threading
@@ -752,7 +869,8 @@ export function runDetailing(input: RunDetailingInput): RunDetailingResult {
         const bctx = input.contexts.get(bid);
         const bel = input.elements.get(bid);
         const accepted = detailableReinforcement(input.outcomes.get(bid))?.rebar;
-        const groups = accepted ? beamGroups(accepted) : null;
+        const bOpts = groupOptsFor(bid);
+        const groups = accepted && bOpts ? beamGroups(accepted, bOpts) : null;
         if (!bctx || !bel || !groups) continue;
         const nI = input.nodes.get(bel.nodeI);
         const nJ = input.nodes.get(bel.nodeJ);
@@ -1050,7 +1168,8 @@ export function runDetailing(input: RunDetailingInput): RunDetailingResult {
       const ctx = input.contexts.get(id);
       const el = input.elements.get(id);
       const accepted = detailableReinforcement(input.outcomes.get(id))?.rebar;
-      const groups = accepted ? beamGroups(accepted) : null;
+      const bOpts = groupOptsFor(id);
+      const groups = accepted && bOpts ? beamGroups(accepted, bOpts) : null;
       if (!ctx || !el || !groups) continue;
       const nI = input.nodes.get(el.nodeI);
       const nJ = input.nodes.get(el.nodeJ);
@@ -1502,8 +1621,52 @@ export function runDetailing(input: RunDetailingInput): RunDetailingResult {
     const ctx = input.contexts.get(id)!;
     const el = input.elements.get(id);
     const accepted = detailableReinforcement(input.outcomes.get(id))?.rebar;
-    const groups = accepted ? beamGroups(accepted) : null;
-    if (!el || !groups) { skipped.push({ elementId: id, key: 'detailing.skip.noBeamBars' }); continue; }
+    const opts = groupOptsFor(id);
+    const groups = accepted && opts ? beamGroups(accepted, opts) : null;
+    if (!el || !groups) {
+      /**
+       * A refusal that SAYS SO, rather than one that leaves an empty beam.
+       *
+       * `skipped` is read by nothing, so before this a beam that lost its steel arrived at the
+       * viewer with a cage of somebody else's joint ties and no explanation. When the top-steel
+       * resolver is what refused — a support that hogs with no designed steel, or a web too
+       * narrow to host two bars of any standard diameter — it has a sentence about why, and a
+       * zero-bar member record carries it into the assembly's unsupported conditions, which the
+       * sheets, the panels and the constructibility gate all read.
+       *
+       * Only for THAT refusal. The pre-existing ones (no rebar at all, no element) keep their
+       * behaviour, so no assembly gains a member because this branch exists.
+       */
+      const rebar = accepted?.regions;
+      const hasBottom = !!(rebar?.bottomSpan?.count || accepted?.bottom?.count);
+      const p = el && opts && hasBottom ? resolveTopSteelFor(accepted!, opts) : null;
+      const reasons = p
+        ? [...new Set([p.start, p.end].filter((x) => x.blocked).map((x) => x.note))] : [];
+      // The old key said "no top or bottom steel was accepted for this beam" and the bottom
+      // face WAS accepted. A reason that misdescribes the case is not better than none.
+      skipped.push({
+        elementId: id,
+        key: reasons.length > 0
+          ? 'detailing.skip.noBeamBarsBottomOnly' : 'detailing.skip.noBeamBars',
+      });
+      if (p && reasons.length > 0) {
+        const blocked = p.start.blocked ?? p.end.blocked!;
+        memberBarsById.set(id, {
+          elementId: id,
+          bars: [],
+          requiredTransversePieces: 0,
+          unsupported: reasons,
+          maturity: 'UNSUPPORTED',
+          refs: [...p.start.refs, ...p.end.refs],
+          trace: [
+            `Elemento ${id}: no se generó armadura longitudinal ni jaula de estribos.`,
+            ...reasons,
+          ],
+        });
+        unsupportedRun.push({ key: blocked.key, params: { element: id, ...blocked.params } });
+      }
+      continue;
+    }
     const nI = input.nodes.get(el.nodeI);
     const nJ = input.nodes.get(el.nodeJ);
     if (!nI || !nJ) { skipped.push({ elementId: id, key: 'detailing.skip.missingNode' }); continue; }
@@ -1537,6 +1700,7 @@ export function runDetailing(input: RunDetailingInput): RunDetailingResult {
       supportJ: supportKindAt(el.nodeJ, id, input.elements),
       vn: Math.max(...stations.map((s) => s.v), 1),
       bottom: groups.bottom, topStart: groups.topStart, topEnd: groups.topEnd,
+      topPurpose: groups.topPurpose,
       lateralSystem: input.lateralSystem?.has(id) ?? false,
       ld: anchor.ld,
       origin: nodePoint(nI),
@@ -1590,8 +1754,22 @@ export function runDetailing(input: RunDetailingInput): RunDetailingResult {
       maturity: deriveMaturity({
         implemented: true, refs: [...gen.refs, ...anchor.refs], benchmarks: [],
       }).maturity,
-      refs: [...gen.refs, ...anchor.refs],
-      trace: gen.trace,
+      refs: [...gen.refs, ...anchor.refs, ...groups.provisions.start.refs,
+        ...groups.provisions.end.refs],
+      /**
+       * The top-steel decision joins the trace whichever way it went.
+       *
+       * A reader asking "why is there 2Ø10 up there" must find the answer on the member, not
+       * only in a module's header — and the answer differs at the two supports, so both are
+       * stated rather than one summarised.
+       */
+      trace: [
+        ...gen.trace,
+        ...(groups.topPurpose.start === 'stirrupHanger'
+          ? [`Apoyo i: ${groups.provisions.start.note}`] : []),
+        ...(groups.topPurpose.end === 'stirrupHanger'
+          ? [`Apoyo j: ${groups.provisions.end.note}`] : []),
+      ],
     });
   }
 
@@ -2297,7 +2475,13 @@ function buildJoints(
       const dx = far.x - at.x, dy = far.y - at.y;
       const L = Math.hypot(dx, dy) || 1;
       const accepted = detailableReinforcement(input.outcomes.get(bid))?.rebar;
-      const g = accepted ? beamGroups(accepted) : null;
+      const g = accepted
+        ? beamGroups(accepted, {
+          ctx: bCtx, edition: input.edition,
+          maxAggregateSizeMm: input.maxAggregateSizeMm,
+          hogging: hoggingAtSupports(bCtx),
+        })
+        : null;
       incident.push({
         elementId: bid,
         direction: { x: dx / L, y: dy / L },

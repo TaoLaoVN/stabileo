@@ -222,6 +222,25 @@ export interface BarPath {
    */
   provisional?: 'biaxial';
   /**
+   * What this bar is FOR, when that is not "the action it was designed against".
+   *
+   * ── Why the default is absence ─────────────────────────────────────
+   *
+   * Almost every bar this app produces is resistant reinforcement: a group sized against a
+   * moment, an axial force or a shear, and checked. That is the norm, so it carries no marking
+   * and an absent `purpose` means exactly it. Only the exceptions are named, and today there is
+   * one:
+   *
+   *   `stirrupHanger` — the bar §25.7.1.2 requires in each top bend of a beam's cage, on a face
+   *      the analysis requires NO tension steel on. Real steel in a real place, with no capacity
+   *      attributed to it and none verified. See `engine/detailing/beam-top-steel.ts`.
+   *
+   * Carried on the BAR for the same reason `provisional` is: a drawing draws bars and a schedule
+   * lists bars, so a marking that lived only on the member has to be re-joined at every such
+   * site, and one of those joins is eventually forgotten on the sheet that gets issued.
+   */
+  purpose?: 'stirrupHanger';
+  /**
    * Stable physical layer identity, e.g. `e184:bottom:0`.
    *
    * ── Why an ID rather than a computed elevation ─────────────────────
@@ -340,6 +359,7 @@ export function buildStraightBarWithHooks(opts: {
   source?: BarPath['source'];
   locked?: boolean;
   layerId?: string;
+  purpose?: BarPath['purpose'];
 }): BarPath {
   const segments: BarSegment[] = [];
   const refs: ClauseRef[] = [];
@@ -390,6 +410,7 @@ export function buildStraightBarWithHooks(opts: {
     cuttingLength: developedLength(segments),
     ownerElementIds: opts.ownerElementIds,
     layerId: opts.layerId,
+    ...(opts.purpose ? { purpose: opts.purpose } : {}),
     source: opts.source ?? 'generated',
     locked: opts.locked ?? false,
     refs,

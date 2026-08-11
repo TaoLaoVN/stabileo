@@ -98,6 +98,14 @@ export interface SceneBar {
    */
   provisional?: 'biaxial';
   /**
+   * What the bar is FOR, carried verbatim from the document — see `BarPath.purpose`.
+   *
+   * Absent means resistant reinforcement. `stirrupHanger` means the bar exists because
+   * §25.7.1.2 requires one in the stirrup's bend and NOT because a moment was resisted by it,
+   * so the viewport may not present it as it presents designed steel.
+   */
+  purpose?: 'stirrupHanger';
+  /**
    * What KIND of piece this is, beyond longitudinal-or-transverse.
    *
    * ── Why `role` was not enough ──────────────────────────────────
@@ -559,6 +567,7 @@ export function buildSceneModel(doc: DocumentModel, opts: SceneOptions = {}): Sc
         cuttingLength: bar.cuttingLength,
         conflicted: conflictedBars.has(bar.id),
         provisional: bar.provisional,
+        purpose: bar.purpose,
       });
     }
 

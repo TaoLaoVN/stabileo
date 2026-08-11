@@ -1,44 +1,42 @@
 /**
- * DIAGNOSTIC — where a beam's longitudinal steel stops existing, and why.
+ * The 63 empty beams — the evidence, and now the regression test that they are not empty.
  *
- * ── What QA reported, and what is actually true ────────────────────
+ * ── What was reported, and what was actually true ──────────────────
  *
- * "Many beams show no proposed reinforcement", with ten ids. All ten HAVE bars — 24 to 48 each,
- * present in the design, the detailing, the DocumentModel and the SceneModel, none of them
- * degenerate. Not one beam in the building is empty in the scene.
- *
- * Every one of those bars is a STIRRUP. Sixty-three of the 119 beams have zero longitudinal
- * bars, which is what a person looking at a beam calls "no reinforcement", and they are not far
- * wrong: a cage of stirrups with no main steel is not a beam.
+ * "Many beams show no proposed reinforcement", with ten ids. All ten HAD bars — 24 to 48 each,
+ * in the design, the detailing, the DocumentModel and the SceneModel, none degenerate. Every one
+ * of those bars was TRANSVERSE, and not even the beam's own: they were the JOINT ties of the
+ * columns those beams frame into, which record the incident beams as owners so the classifier
+ * can see the containment. Sixty-three of the 119 beams had no steel of their own at all.
  *
  * ── The mechanism, in one line of `run-detailing.ts` ───────────────
  *
  *     if (!bottom || !topStart || !topEnd) return null;   // beamGroups()
  *
  * All three or nothing. The affected beams were designed with bottom steel and no hogging steel
- * — `bottomSpan=2Ø20`, `topStart=—`, `topEnd=—` in the design's own candidate, so this is not a
- * lossy write — and the gate therefore discards the bottom bars the design DID produce. The
- * stirrups survive because they come from the transverse cage, which reads the section rather
- * than the longitudinal groups.
+ * — `bottomSpan=2Ø20`, `topStart=—`, `topEnd=—` in the design's own candidate, so it was never a
+ * lossy write — and the gate therefore discarded the bottom bars the design DID produce, and the
+ * stirrup cage with them, since `generateBeamBars` builds both in one call.
  *
- * It is not the provisional state: 62 of the 63 are PROVISIONAL_BIAXIAL and one is VERIFIED,
- * and 55 other proposals get their longitudinal steel normally. The discriminator is only
- * whether the design produced top steel.
+ * It was not the provisional state, which was the obvious reading and is wrong: 62 of the 63 were
+ * PROVISIONAL_BIAXIAL and one was VERIFIED, while 55 other proposals got their longitudinal steel
+ * normally. The discriminator was only whether the design produced top steel.
  *
- * ── Why the beam is SILENT about it ────────────────────────────────
+ * ── What replaced it ───────────────────────────────────────────────
  *
- * `runDetailing` records `skipped: [{ elementId, key: 'detailing.skip.noBeamBars' }]` for each
- * one — and `RunDetailingResult.skipped` is read by nothing. The reason is computed and thrown
- * away, so the beam arrives at the viewer with stirrups, no main steel and no explanation.
- * (The message is also wrong for this case: it says no reinforcement was accepted on either
- * face, and the bottom face was.)
+ * The missing group is RESOLVED rather than demanded — `../beam-top-steel.ts`, whose
+ * header carries the clauses verbatim. Two bars, from §25.7.1.2 (every bend of a closed stirrup
+ * contains a longitudinal bar), §25.7.1.3(a) (a U stirrup's hook closes around one) and
+ * §9.7.7.1(b) (no fewer than two continuous). No area, because §9.6.1.1 scopes §9.6.1.2 to
+ * sections where the analysis requires tension steel and these do not. And no clause at all for
+ * the DIAMETER, which is why every bar this produces is marked `stirrupHanger` and no surface may
+ * present it as capacity.
  *
- * ── What this file is ──────────────────────────────────────────────
+ * ── What this file is now ──────────────────────────────────────────
  *
- * The evidence, kept runnable. It asserts only what it can prove today and PRINTS the rest, so
- * the table can be re-derived in twelve seconds instead of re-discovered. The fix needs a
- * detailing decision — see the report — and this stays until that lands, then becomes the
- * regression test for it.
+ * The same evidence, kept runnable, with the assertions flipped: what used to assert the defect
+ * now asserts its absence, and the table still prints so a regression can be read rather than
+ * guessed at. Twelve seconds to re-derive it.
  */
 
 import { describe, it, expect, beforeAll } from 'vitest';
@@ -332,31 +330,88 @@ describe('DIAGNOSTIC: beams with no reinforcement anywhere', { timeout: 900_000 
     expect(true).toBe(true);
   });
 
-  it('every reported id is a beam that HAS bars, and they are all stirrups', () => {
-    // The two facts that redirect the investigation, asserted so they cannot quietly change.
+  it('every reported id now has MAIN steel, not only a cage', () => {
+    /**
+     * The assertion this file was written to make, inverted.
+     *
+     * It read `.toBe(0)` and was labelled "this is the defect". Both halves matter now: the
+     * member must have longitudinal bars, and they must be bars of its own rather than another
+     * member's joint ties claiming its id — which is what the 24-to-48 transverse bars were.
+     */
     for (const id of REPORTED) {
       const bars = scene.bars.filter((b) => b.elementIds.includes(id));
       expect(bars.length, `member ${id} has bars in the scene`).toBeGreaterThan(0);
-      expect(bars.filter((b) => b.role === 'longitudinal').length,
-        `member ${id} has NO longitudinal steel — this is the defect`).toBe(0);
+      const long = bars.filter((b) => b.role === 'longitudinal');
+      expect(long.length, `member ${id} has main steel`).toBeGreaterThan(0);
+      const own = bars.filter((b) => b.role === 'transverse'
+        && b.piece !== 'jointTie' && b.piece !== 'jointCrosstie');
+      expect(own.length, `member ${id} has a cage of its own`).toBeGreaterThan(0);
     }
   });
 
-  it('the discriminator is the design\'s top steel, not the outcome', () => {
+  it('leaves no beam in the building with a cage and no main steel', () => {
+    const bare = rows.filter((r) =>
+      !scene.bars.some((b) => b.elementIds.includes(r.id) && b.role === 'longitudinal'));
+    expect(bare.map((r) => r.id)).toEqual([]);
+  });
+
+  it('gives the bottom-only beams a marked hanger pair, and only those beams', () => {
     /**
-     * Stated as an assertion because the obvious reading — "proposals lose their steel" — is
-     * wrong, and a future reader will reach for it again.
+     * The two facts that keep the fix honest, together.
+     *
+     * A beam whose design produced hogging steel must NOT acquire a hanger marking — its
+     * continuous top pair is part of that hogging steel and marking it would understate the
+     * design. A beam whose design produced none must have exactly two, marked, and they must be
+     * the top face rather than something that merely counted as longitudinal.
+     */
+    for (const id of REPORTED) {
+      const hangers = scene.bars.filter((b) =>
+        b.elementIds.includes(id) && b.purpose === 'stirrupHanger');
+      expect(hangers.length, `member ${id} hanger pair`).toBe(2);
+      for (const h of hangers) {
+        expect(h.role).toBe('longitudinal');
+        expect(h.diameterMm, `member ${id} hanger Ø`).toBeGreaterThan(0);
+        expect(h.layerId?.split(':')[1], `member ${id} hanger face`).toMatch(/^top/);
+      }
+    }
+    // 85 is the VERIFIED beam whose design DID produce top steel (7Ø10 at each support).
+    expect(scene.bars.filter((b) =>
+      b.elementIds.includes(85) && b.purpose === 'stirrupHanger')).toEqual([]);
+  });
+
+  it('no longer discriminates on whether the design produced top steel', () => {
+    /**
+     * The old reading — "proposals lose their steel" — was wrong then and is worth keeping
+     * disproved: the discriminator was the design's top steel, and it applied to a VERIFIED beam
+     * exactly as it applied to a proposal. Both halves are now asserted the other way round.
      */
     const withLong = (id: number) =>
       scene.bars.some((b) => b.elementIds.includes(id) && b.role === 'longitudinal');
-    const proposalsWithSteel = rows.filter(
-      (r) => r.outcome === 'PROVISIONAL_BIAXIAL' && withLong(r.id));
-    const verifiedWithout = rows.filter((r) => r.outcome === 'VERIFIED' && !withLong(r.id));
-    expect(proposalsWithSteel.length,
-      'proposals DO get longitudinal steel when the design produced top bars')
-      .toBeGreaterThan(0);
-    expect(verifiedWithout.length,
-      'and a VERIFIED beam loses it too when the design produced none')
-      .toBeGreaterThan(0);
+    expect(rows.filter((r) => r.outcome === 'PROVISIONAL_BIAXIAL' && !withLong(r.id)))
+      .toEqual([]);
+    expect(rows.filter((r) => r.outcome === 'VERIFIED' && !withLong(r.id))).toEqual([]);
+  });
+
+  it('keeps a provisional proposal provisional, hanger pair or not', () => {
+    /**
+     * The state the fix is forbidden to move.
+     *
+     * Giving a beam the two bars §25.7.1.2 asks for says nothing about the axis nobody checked.
+     * A proposal that came out of this with a VERIFIED outcome would be a false pass wearing an
+     * honest name — the exact failure `assertOutcomeInvariants` exists to stop, reasserted here
+     * on the real building because that is where the 62 of them are.
+     */
+    const hangers = new Set(scene.bars
+      .filter((b) => b.purpose === 'stirrupHanger')
+      .flatMap((b) => b.elementIds));
+    expect(hangers.size).toBeGreaterThan(50);
+    for (const id of hangers) {
+      const o = verificationStore.outcomeFor(id);
+      if (!o) continue;
+      expect(['PROVISIONAL_BIAXIAL', 'VERIFIED'], `member ${id}`).toContain(o.outcome);
+      if (o.outcome === 'PROVISIONAL_BIAXIAL') {
+        expect(o.certificate, `member ${id} must carry no certificate`).toBeUndefined();
+      }
+    }
   });
 });

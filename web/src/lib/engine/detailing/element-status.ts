@@ -126,11 +126,44 @@ export interface DesignOutcomeSummary {
   secondaryRatio?: number;
 }
 
+/**
+ * What a member's TOP steel is, orthogonal to its status.
+ *
+ * Named for the MEMBER rather than for the provision, because `beam-top-steel.ts` already has a
+ * `TopSteelProvision` and it is a different thing: that one is the rule's answer for ONE support,
+ * with its clauses, its areas and its blockage. This is the one word a table puts in a row.
+ *
+ * ── Why this is not a new `ElementStatus` ──────────────────────────
+ *
+ * A beam carrying the constructive pair §25.7.1.2 asks for is still whatever the design made
+ * it: a PROVISIONAL_BIAXIAL proposal stays a proposal, a VERIFIED member stays verified. Adding
+ * `TOP_HANGER_PROVISIONAL` to `ElementStatus` would put the two facts in one field, and a field
+ * that can only hold one of them has to drop the other — which on the 7-storey building means
+ * 62 proposals quietly reported as something else.
+ *
+ * So it rides alongside. A filter can ask for either, a table can show both, and neither can
+ * hide the other.
+ *
+ * `hangerProvisional` — the top bars exist because the cage needs something in its bends, and
+ *    their DIAMETER is this app's choice rather than a clause's. Never a moment capacity.
+ * `resistant` — the top bars were sized against a hogging moment and checked.
+ * `none` — the member has no longitudinal top steel at all.
+ */
+export type MemberTopSteel = 'resistant' | 'hangerProvisional' | 'none';
+
 export interface ElementStatusEntry {
   elementId: number;
   status: ElementStatus;
   /** True when the scene holds at least one bar owned by this element. */
   hasSteel: boolean;
+  /**
+   * What this member's top steel is — read from the SCENE, like `hasSteel`.
+   *
+   * The scene is the projection of the document, so a bar marked `stirrupHanger` there was
+   * marked so by the generator that built it. Re-deriving the role from an outcome would be a
+   * second opinion about a decision already made and recorded.
+   */
+  topSteel: MemberTopSteel;
   /** What the design run said, carried through unchanged. */
   outcome?: DesignOutcomeSummary['outcome'];
   limiting: readonly string[];
@@ -328,6 +361,14 @@ export interface ElementStatusReport {
   counts: Record<ElementStatus, number>;
   /** The states actually present, worst first — what a filter should offer. */
   present: ElementStatus[];
+  /**
+   * Members whose top steel is the §25.7.1.2 pair, ascending.
+   *
+   * Reported on the run and not only per entry, for the same reason `provisionalMembers` is: a
+   * reader must be able to ask "how many beams carry assembly bars up top" without walking
+   * every member, and a caller that never opens an entry still must not be able to miss it.
+   */
+  hangerTopMembers: number[];
 }
 
 /**
@@ -343,6 +384,33 @@ export function reportElementStatus(
   outcomes: ReadonlyMap<number, DesignOutcomeSummary>,
 ): ElementStatusReport {
   const steelOf = new Set(scene.bars.flatMap((b) => b.elementIds));
+  /**
+   * TOP longitudinal steel per member, split by what it is for.
+   *
+   * Two filters and both earn their place. `role === 'longitudinal'` excludes the cage: a
+   * stirrup carries no purpose marking and never will, and letting a transverse piece answer
+   * "what is this member's top steel" is how the original defect would read as solved — 63
+   * beams had 24 to 48 bars each and not one of them was main steel.
+   *
+   * The FACE comes from `layerId` (`e184:topRun:0`, `e184:bottom:0`), which the generator
+   * writes because it knows which layer it placed each bar in. Without that filter every beam
+   * with bottom bars answers `resistant`, because bottom bars are longitudinal and carry no
+   * purpose either — the question would then be about the member's steel rather than its top
+   * steel, and it would be answered yes for every beam in the model.
+   */
+  const hangerOf = new Set<number>();
+  const resistantOf = new Set<number>();
+  for (const b of scene.bars) {
+    if (b.role !== 'longitudinal') continue;
+    if (!b.layerId?.split(':')[1]?.startsWith('top')) continue;
+    for (const id of b.elementIds) {
+      (b.purpose === 'stirrupHanger' ? hangerOf : resistantOf).add(id);
+    }
+  }
+  const topSteelOf = (id: number): MemberTopSteel =>
+    // A member with both is `resistant`: the hangers are then part of hogging steel that WAS
+    // designed, and reporting the member as hanger-provisional would understate it.
+    resistantOf.has(id) ? 'resistant' : hangerOf.has(id) ? 'hangerProvisional' : 'none';
   const seen = new Set<number>();
   const entries: ElementStatusEntry[] = [];
 
@@ -356,6 +424,7 @@ export function reportElementStatus(
         elementId: id,
         status: statusOf(hasSteel, summary),
         hasSteel,
+        topSteel: topSteelOf(id),
         outcome: summary?.outcome,
         limiting: summary?.limiting ?? [],
         reasonKey: summary?.reasonKey,
@@ -375,5 +444,8 @@ export function reportElementStatus(
     entries,
     counts,
     present: ELEMENT_STATUS_ORDER.filter((s) => counts[s] > 0),
+    hangerTopMembers: entries
+      .filter((e) => e.topSteel === 'hangerProvisional')
+      .map((e) => e.elementId),
   };
 }

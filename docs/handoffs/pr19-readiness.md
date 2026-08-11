@@ -24,6 +24,7 @@ produces, and the four projections of that document.
 | Reconciliation | One document, four projections, cross-examined against each other rather than against a fixture. |
 | Torsion warning | Beams carrying torsion no check evaluates are named on every surface that shows their steel. |
 | Honest states | Seven element states with one shared not-for-construction list. |
+| Top assembly steel | A beam whose envelope never hogs gets the two top bars §25.7.1.2 requires in the stirrup's bends, marked `stirrupHanger` on every surface and never presented as capacity. 63 of 119 beams on the 7-storey building had no main steel at all before it; none has now. See `pr19-beam-top-steel.md`. |
 
 ## 2. Gates
 
@@ -32,10 +33,15 @@ Run at `HEAD` of this branch:
 | Gate | Result |
 |---|---|
 | `npm run typecheck` | 490/490, no new errors |
-| `npm run test:unit` | 276 files, 5444 tests, 0 failures |
+| `npm run test:unit` | 279 files, 5496 tests, 0 failures |
 | `npm run test:build` | 2 files, 8 tests |
 | `npm run build` | clean |
-| `E2E_PORT=4293 npx playwright test` | 198 passed, 4 skipped; see §9 for the one load-dependent failure |
+| `E2E_PORT=4293 npx playwright test` | 199 passed, 4 skipped, 25,4 min |
+
+Re-run at the top-steel commit. One caveat learned the hard way and worth writing down: two
+overlapping runs of this suite share the `E2E_PORT` preview server, and when the first finishes it
+tears the server down under the second — 83 tests in, every remaining test fails with
+`ERR_CONNECTION_REFUSED`. It reads exactly like a regression and is not one. One run at a time.
 
 `E2E_PORT=4293` is not optional locally: port 4173 is reused by another worktree's `vite preview`
 and Playwright will silently adopt it, testing the wrong bundle. It has cost two debugging
@@ -53,6 +59,18 @@ These are things the app does NOT do. Each is visible to the user rather than si
 - **Beams have no side-face bars** in the schema, the generator, the geometry, the drawings or
   the schedule, which is why a weak-axis check that failed would have no knob to turn. See
   `docs/audits/biaxial-beam-design.md`.
+- **The DIAMETER of a beam's top assembly bars is not a regulation number.** §25.7.1.2 fixes the
+  count and no clause fixes the size, so the app chooses the smallest bar that fits two per row
+  and is not thinner than the stirrup, and says so on every surface that shows it. §9.6.1.2 is
+  deliberately NOT quoted there: §9.6.1.1 scopes it to sections where the analysis requires
+  tension steel, and that face is not one.
+- **A support that hogs with no designed top steel produces no bars at all.** The design's top
+  knobs only exist when the seed is non-zero, so this remains open on the design side; the
+  detailing reports it with the moment in the message rather than filling the face with assembly
+  bars. See §5 of `pr19-beam-top-steel.md`.
+- **Top assembly bars are one bar per member and are never lapped.** §9.7.7.5(b) and §9.7.7.6
+  (splice near midspan, class B or mechanical) are not applied to them, and a run over 12 m is
+  reported by the schedule as needing a splice rather than given one.
 - **Columns' torsion is out of scope** of the warning: their transverse steel is detailed for
   confinement and their verification is a different unfinished story.
 - **The 7-storey example has no footings.** The switch says "sin elementos en este modelo"
@@ -73,6 +91,11 @@ These are things the app does NOT do. Each is visible to the user rather than si
 | Schedule | sheet-level line plus a per-row status beside the mark |
 | Report | banner above the fold and a section naming every member |
 
+Top assembly reinforcement rides ALONGSIDE this rather than inside it — a member carrying the
+§25.7.1.2 pair is still whatever the design made it, and 62 of the 63 are proposals. Its own
+banner, its own report section, its own sheet note, its own `Función` column on the schedule and
+its own chip in the status panel.
+
 The exception that produces this state is one predicate, `isKnownBiaxialLimitation`, with two
 callers. It applies only when EVERY failing check is the biaxial one: a proposal that also fails
 on flexure or shear stays FAILED.
@@ -81,6 +104,7 @@ on flexure or shear stays FAILED.
 
 - provisional proposal (secondary axis unverified)
 - torsion not evaluated
+- top reinforcement that answers to a stirrup bend rather than to a moment
 - unresolved conflicts, with counts by severity and a bounded worst-N list
 - unreinforced members (concrete the app could not design), drawn in their own colour
 - readiness / draft watermark on every export
@@ -114,6 +138,13 @@ Nothing here is covered by an assertion that a human would not repeat.
 - [ ] Reload mid-work and restore; confirm the banner text and that the layers come back at
       their defaults (documented policy, not a bug).
 - [ ] Resize the window down to a laptop screen with both banners up.
+- [ ] Beams **197, 199, 201, 203, 198, 163, 140, 143, 146, 89** on the 7-storey building. For
+      each: bottom bars present, the two top assembly bars present, the beam's OWN stirrups
+      present (not only the columns' joint ties, which claim the beam ids too), each bar's role
+      readable, the provisional warning still there, and the same steel visible in 3-D, on the
+      sheets and on the schedule. `beam-emptiness-diagnostic.test.ts` asserts the counts; whether
+      a reader can TELL an assembly bar from a hogging bar on a real sheet is not asserted and is
+      the point of the check. See `pr19-beam-top-steel.md`.
 
 ## 8. Merge risk
 

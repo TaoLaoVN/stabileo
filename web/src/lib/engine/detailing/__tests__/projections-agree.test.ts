@@ -117,7 +117,8 @@ describe('the scene and the schedule describe the same steel', () => {
    * diameter, shape, quantity, cutting length, … — is that function's contract; the extra
    * columns `renderSchedule` appends are appended after them, so these positions hold.
    */
-  const COL = { mark: 0, diameterMm: 4, quantity: 6, cuttingLengthM: 7 } as const;
+  // Marca | Tipo | Función | Elementos | Zona | Ø | Forma | Cant. | Largo corte | …
+  const COL = { mark: 0, diameterMm: 5, quantity: 7, cuttingLengthM: 8 } as const;
 
   function scheduleMarks(): Map<string, {
     quantity: number; diameterMm: number; cuttingLengthM: number;
