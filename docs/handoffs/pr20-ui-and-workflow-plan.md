@@ -7,6 +7,11 @@ PR19 must be reviewed, taken out of draft and merged before any of it starts.
 (`feat/pro-visual-system`) as it stood when this was written — 36 files, +1 204 / −1 204, draft,
 targeting `feat/app-visual-system` (#124) rather than `main`.
 
+**Revised at PR19 `1c5ef3b9`**, the beam top-steel pass. It added two UI surfaces and one new
+distinction that a visual pass can silently flatten; both are folded into §2, §3 and §5.2 below
+rather than appended, so a reader working through the plan cannot miss them by reading it in
+order.
+
 ---
 
 ## 1. What PR125 actually is
@@ -62,6 +67,12 @@ must preserve the mapping rather than pick the nearest hue.
 | `#ffd400` | selection | highlight ring, selected member row |
 | `#4caf72` | modelled | status dot |
 
+One later addition belongs in the same table by exception rather than by inclusion. The
+top-steel chip in `RebarStatusPanel` (`.hanger-chip`, `border #6c6c6c` / `text #b9b9b9`) is
+**deliberately neutral** and must NOT be nearest-matched onto a state token. It marks a fact
+that is orthogonal to the seven states — see §5.2 — and giving it a state's colour would make it
+read as an eighth state, which is precisely the reading the field was built to avoid.
+
 ## 3. What PR19 changed under PR125's feet
 
 Two edits landed in files PR125 rewrites, and both are additive markup rather than restyling:
@@ -72,6 +83,13 @@ Two edits landed in files PR125 rewrites, and both are additive markup rather th
   stylesheet.
 - `DetailingWorkflow.svelte`, `FoundationsPanel.svelte` and `ProDesignTab.svelte` gained
   controls and panels around the RC workflow.
+- `DetailingWorkflow.svelte` later gained a **`Función` column** in the bar schedule table
+  (`Resistente` / `Armado (25.7.1.2)`), which changed the table's column count and its `tfoot`
+  colspan. A layout pass that rebuilds this table must carry the column: it is the only place on
+  the schedule where a reader can tell steel that resists a moment from steel that holds a
+  stirrup.
+- `RebarStatusPanel.svelte` gained an aggregate row and a per-element chip for the same
+  distinction. See §2's note on its deliberately neutral colour.
 
 None of it should produce a semantic conflict. All of it will produce a textual one if the
 branches are merged in the wrong order.
@@ -174,6 +192,26 @@ well as the colour. Two invariants to preserve through the token migration:
   accent — the whole point of the state is that it is neither a pass nor a failure;
 - `OutcomeBadge` renders glyph + text + `sr-only` text for every state. A visual pass that
   reduces a badge to a coloured dot removes the only non-colour carrier on the design surface.
+
+**A second axis the shell must keep separate from the first (added at `1c5ef3b9`).** A beam's
+top steel can be the constructive pair §25.7.1.2 asks for rather than reinforcement designed
+against a moment. That is **orthogonal to the seven states**: 62 of the 63 members carrying it
+are proposals and one is verified, so it lives in its own field (`ElementStatusEntry.topSteel`,
+`ElementStatusReport.hangerTopMembers`) and its own chip, never in the state column.
+
+The temptation a panel tidy-up will feel is to merge the chip into the state badge, because on
+screen they sit next to each other and look like variants of one idea. They are not: a field
+that can hold only one of the two facts has to drop the other, and dropping either produces a
+sentence that is false. Two invariants:
+
+- the state column keeps saying what the DESIGN concluded; the chip keeps saying what the top
+  steel IS. Neither may be derived from the other.
+- the chip is not decoration. Together with the schedule's `Función` column, the sheet note and
+  the report section, it is how a reader learns that a diameter on the drawing is this app's
+  choice and not the regulation's. Removing any one of the four leaves that unsaid on the
+  surface somebody happens to be holding.
+
+`docs/handoffs/pr19-beam-top-steel.md` §8 is the table of which surface says what.
 
 ### 5.3 Design workflow
 

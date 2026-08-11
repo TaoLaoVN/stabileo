@@ -1,7 +1,28 @@
 # PR19 — readiness for review
 
-**Branch:** `pr/19-rc-cad-constructibility` · **PR:** #90, **draft** · not merged, and nothing in
-this document changes that. Taking it out of draft is Bauti's call after the manual QA below.
+**Branch:** `pr/19-rc-cad-constructibility` · **PR:** #90, **ready for review** · **not merged**,
+and nothing in this document changes that. The manual QA below has been done and passed; merging
+remains a separate decision after review.
+
+**Head:** `1c5ef3b9`, signed, pushed fast-forward to `origin/pr/19-rc-cad-constructibility`.
+
+## 0. Manual QA — done, and what it found
+
+Bauti ran the 3-D workspace on the 7-storey building against the checklist in §7 and reports:
+
+- the beams **show reinforcement**;
+- they no longer appear as **cages of stirrups with no longitudinal bars** — which was the whole
+  of the original report;
+- elements **197, 199, 201, 203, 198, 163, 140, 143, 146 and 89** all have visible steel;
+- the **3-D visualisation works**;
+- the current solution is **acceptable as a provisional proposal**.
+
+That last clause is the one to carry forward: it is an acceptance OF A PROPOSAL, not a finding
+that the design is complete. Every limitation in §3 and §4 stands unchanged, and §12 states the
+five of them that a reader must not be able to miss.
+
+The distinction the automated suite cannot make — whether a person reading a real sheet can tell
+an assembly bar from a hogging bar — is the one the manual pass was for. It passed.
 
 **Scope:** RC detailing made constructible and honest — the design outcome, the document it
 produces, and the four projections of that document.
@@ -36,7 +57,31 @@ Run at `HEAD` of this branch:
 | `npm run test:unit` | 279 files, 5496 tests, 0 failures |
 | `npm run test:build` | 2 files, 8 tests |
 | `npm run build` | clean |
-| `E2E_PORT=4293 npx playwright test` | 199 passed, 4 skipped, 25,4 min |
+| `E2E_PORT=4293 npx playwright test` | **199 passed, 4 skipped, 0 failed**, 27,8 min, exit 0 |
+
+Run at `1c5ef3b9` on a clean tree, with the machine otherwise idle and one suite at a time. The
+preview was verified to belong to THIS worktree before the result was trusted — `vite preview` on
+4293 with `cwd = stabileo-pr19-cad/web`, built fresh because the port was free and
+`reuseExistingServer` had nothing to adopt.
+
+**No flaky failure appeared in this run**, which is worth stating precisely rather than
+celebrating: §9's load-dependent starvation is unfixed and unexplained, and one green run does
+not retire it. Expect it back on a loaded machine. Nothing was loosened to obtain this result —
+no timeout raised, no spec disabled, no budget widened.
+
+The journeys named in the review brief, and where each ran (all inside the run above):
+
+| Journey | Specs | Tests |
+|---|---|---|
+| Restoration | `project-restore`, `pro-project-files` | 6 |
+| Global family design | `design-families`, `rc-design`, `rc-design-visual` | 26 |
+| Floor design | `floor-design`, `foundations`, `floor-families-document` | 32 |
+| Viewer | `rebar-3d`, `rebar-toggles`, `rebar-viewport-cost`, `rebar-workspace-open` | 53 |
+| Drawings and reconciliation | `documents`, `rc-cad-handoff`, `rc-cad-production-download`, `detailing` | 44 |
+
+Reconciliation is also asserted below the E2E layer, over one document rather than one screen:
+`projections-agree`, `provisional-projections`, `top-steel-projections`, `documents-semantic`,
+`document-render`, `drawings` and `fixture-journey`, all inside the unit pass.
 
 Re-run at the top-steel commit. One caveat learned the hard way and worth writing down: two
 overlapping runs of this suite share the `E2E_PORT` preview server, and when the first finishes it
@@ -122,12 +167,14 @@ on flexure or shear stays FAILED.
 3. **Whether the 7-storey example should ship with footings**, so the foundations switch has
    something to govern in the flagship demo.
 
-## 7. Manual QA still owed
+## 7. Manual QA
 
-Nothing here is covered by an assertion that a human would not repeat.
+Nothing here is covered by an assertion that a human would not repeat. The checked items were
+run by Bauti and passed (§0); the unchecked ones remain owed and are **not** blockers for review
+— they are polish and ergonomics, not correctness claims.
 
-- [ ] Open the 3-D workspace on the 7-storey building and switch each of the ten controls by
-      hand. The counts are asserted; how it FEELS at ~4 s per family switch on a real GPU is not.
+- [x] **Done, passed (§0)** — the workspace and its controls answer on a real GPU. The counts
+      are asserted; how it FEELS at ~4 s per family switch is what the hand pass covered.
 - [ ] Click a conflict marker, confirm the inspector names both bars and both members, and that
       "go back" walks the selection history.
 - [ ] Cut a section on each axis and flip it.
@@ -138,7 +185,7 @@ Nothing here is covered by an assertion that a human would not repeat.
 - [ ] Reload mid-work and restore; confirm the banner text and that the layers come back at
       their defaults (documented policy, not a bug).
 - [ ] Resize the window down to a laptop screen with both banners up.
-- [ ] Beams **197, 199, 201, 203, 198, 163, 140, 143, 146, 89** on the 7-storey building. For
+- [x] **Done, passed (§0).** Beams **197, 199, 201, 203, 198, 163, 140, 143, 146, 89** on the 7-storey building. For
       each: bottom bars present, the two top assembly bars present, the beam's OWN stirrups
       present (not only the columns' joint ties, which claim the beam ids too), each bar's role
       readable, the provisional warning still there, and the same steel visible in 3-D, on the
@@ -240,3 +287,44 @@ engineering.
 **Never touched in PR19** — Rust, Cargo, WASM, the solver, global analysis, load generation, the
 biaxial threshold, the crosstie rule, torsion authority, the collision set, marker tessellation,
 incremental GPU upload, V1, the golden fixtures, Landing and Basic/Education.
+
+## 12. The five things this document may never stop saying
+
+Everything above is detail. These five are the claims a reader must not be able to leave without,
+and they are restated here in one block because a reviewer who reads nothing else will read this.
+The manual QA in §0 passed; **none of it changes any of the following.**
+
+**1. PR19 does not implement full biaxial design.** The verifier evaluates one flexural axis for
+a beam. Beams have no side-face bars in the schema, the generator, the geometry, the drawings or
+the schedule, so a weak-axis check that failed would have no knob to turn. Real biaxial design is
+PR21. `docs/audits/biaxial-beam-design.md`.
+
+**2. The biaxial proposals are PROVISIONAL, and provisional is not a weak pass.** Above a 10 %
+secondary/primary moment ratio a member becomes `PROVISIONAL_BIAXIAL`: the primary axis was
+designed and verified by the ordinary search with no threshold relaxed and no capacity assumed
+for the axis nobody checked. It carries **no certificate**, is **never counted as verified**,
+cannot satisfy the constructibility gate, and is named on every surface that draws its steel.
+117 of the 119 beams on the 7-storey building are in this state.
+
+**3. Torsion is NOT evaluated, and is not an authority in this branch.** The CIRSOC 201 adapter
+declares `beams.torsion: false`. Beams carrying torsion above 0,1 kN·m are named in the viewer,
+the sheets, the schedule and the report with "TORSIÓN NO EVALUADA — función en desarrollo". The
+reinforcement shown resolves flexure and shear and does **not** account for torsion; verify it
+outside this application before issuing. Nothing in this pass moved that authority — in
+particular the top assembly bars added at `1c5ef3b9` are **not** §9.7.5 longitudinal torsion
+steel and are not sized as such.
+
+**4. The conflicts are not hidden.** 40 065 physical conflicts are detected on the 7-storey
+building, classified by severity, marked in 3-D, selectable, and carried into the report, the DXF
+and the schedule. A conflicted floor still exports, deliberately: the conflicts are the thing the
+reviewer needs to see. None was suppressed, none was reclassified to reach a green run, and the
+sheet note states the count and the worst of them by name rather than a bounded list pretending
+to be the whole.
+
+**5. Nothing here is final construction documentation.** `NOT_FOR_CONSTRUCTION_STATUSES` is one
+list read by the viewport legend, the sheets, the schedule and the report, so the claim cannot be
+true on one projection and forgotten on another. On top of it: every export carries its
+readiness; a proposal cannot hold a certificate; a refused member is drawn in its own colour
+rather than omitted; and the top assembly bars carry a diameter **this application chose**,
+because no CIRSOC clause fixes one for a face the analysis does not tension. Read the design as a
+reviewable proposal, not as a despiece to build from.
