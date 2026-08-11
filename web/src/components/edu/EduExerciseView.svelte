@@ -696,7 +696,9 @@
     accounts and pretending otherwise would be a lie about what this is.
   -->
   <section class="handin" data-testid="edu-handin">
-    <h3 class="step-title">{t('edu.handin.title')}</h3>
+    <!-- Its own class: handing in is not one of the three steps, and a
+         selector for "the step you are on" must not also match it. -->
+    <h3 class="handin-title">{t('edu.handin.title')}</h3>
     <label class="handin-name">
       {t('edu.handin.name')}
       <input type="text" bind:value={studentName} placeholder={t('edu.handin.namePlaceholder')} />
@@ -1208,6 +1210,20 @@
   }
 
   /* ─── Handing it in ─── */
+  /* Same treatment as a step heading — it is a heading in the same panel —
+     without pretending to be one. */
+  .handin-title {
+    font-family: var(--st-mono);
+    font-size: 0.68rem;
+    font-weight: 400;
+    letter-spacing: 0.11em;
+    text-transform: uppercase;
+    color: var(--st-text-2);
+    margin: 0 0 10px;
+    padding-bottom: 4px;
+    border-bottom: 1px solid var(--st-hair);
+  }
+
   .handin {
     margin-top: 22px;
     padding-top: 14px;

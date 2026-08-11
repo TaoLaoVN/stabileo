@@ -3105,7 +3105,6 @@ const en: Record<string, string> = {
   'edu.author.saveToLibrary': 'Save to my exercises',
   'edu.author.share': 'Copy link',
   'edu.author.linkCopied': 'Link copied. Hand it to your students.',
-  'edu.author.linkLoaded': 'A shared exercise was added to your exercises.',
   'edu.author.saved': 'Saved.',
   'edu.author.saveFailed': 'Could not save: no room left in the browser.',
   'edu.author.solveFailed': 'The structure could not be solved. Check supports and loads.',

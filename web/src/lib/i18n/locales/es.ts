@@ -3098,7 +3098,6 @@ const es: Record<string, string> = {
   'edu.author.saveToLibrary': 'Guardar en mis ejercicios',
   'edu.author.share': 'Copiar link',
   'edu.author.linkCopied': 'Link copiado. Pasáselo a tus alumnos.',
-  'edu.author.linkLoaded': 'Se agregó un ejercicio compartido a tus ejercicios.',
   'edu.author.saved': 'Guardado.',
   'edu.author.saveFailed': 'No se pudo guardar: no hay espacio en el navegador.',
   'edu.author.solveFailed': 'No se pudo resolver la estructura. Revisá apoyos y cargas.',
