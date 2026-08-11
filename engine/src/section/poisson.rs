@@ -277,10 +277,10 @@ pub fn factor_poisson<'a>(problem: &PoissonProblem<'a>) -> Result<FactoredPoisso
     let mut cols: Vec<usize> = Vec::with_capacity(mesh.triangles.len() * 9);
     let mut vals: Vec<f64> = Vec::with_capacity(mesh.triangles.len() * 9);
 
-    for &t in &mesh.triangles {
+    for (e, &t) in mesh.triangles.iter().enumerate() {
         let (b, c, area) = element_geometry(mesh, t);
         if area <= 0.0 {
-            return Err("Element has non-positive area — mesh is invalid".into());
+            return Err(format!("Element {e} has non-positive area — mesh is invalid"));
         }
         let scale = 1.0 / (4.0 * area);
         for i in 0..3 {
@@ -447,6 +447,16 @@ impl FactoredPoisson<'_> {
         let n = mesh.nodes.len();
         if !source.is_empty() && source.len() != mesh.triangles.len() {
             return Err("source must have one value per triangle (or be empty)".into());
+        }
+        if self.dirichlet_loop.iter().any(|&d| d) && dirichlet.len() < self.dirichlet_loop.len() {
+            // A missing value silently defaulting to zero would prescribe the
+            // wrong boundary without any sign of it — wrong numbers, not an
+            // error, which is the worst outcome a solver can produce.
+            return Err(format!(
+                "dirichlet must carry one value per loop ({}), got {}",
+                self.dirichlet_loop.len(),
+                dirichlet.len()
+            ));
         }
 
         // ── Right-hand side: source + baked Neumann data ──────────

@@ -2913,7 +2913,6 @@ function createModelStore() {
       // before the engine was ready — without it those would keep reporting
       // no known geometry for the rest of the session.
       this.refreshCanonicalSections();
-      this.refreshCanonicalSections();
 
       if (is2DFixture(name) && (uiStore.analysisMode === '3d' || uiStore.analysisMode === 'pro')) {
         uiStore.useUpright2DIn3DPresentation();
@@ -3060,6 +3059,17 @@ function createModelStore() {
       // never need.
       const withCanonical =
         Object.keys(patch).length === 0 && sec.canonical ? updated : resolveOnUpdate(updated);
+      // Mirror the resolved values back into the declared scalars. Declared
+      // values are the designed fallback — engine down, feature-flag rollback,
+      // readers that cannot see canonical state — and with the auto-calc guard
+      // above nothing else keeps them current on a geometry-backed section.
+      const st = withCanonical.canonical;
+      if (st?.kind === 'geometry-backed') {
+        withCanonical.a = st.a;
+        withCanonical.iy = st.iy;
+        withCanonical.iz = st.iz;
+        if (st.j != null) withCanonical.j = st.j;
+      }
 
       const m = new Map(model.sections);
       m.set(id, withCanonical);

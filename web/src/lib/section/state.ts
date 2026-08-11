@@ -109,6 +109,7 @@ function resolveTorsion(
   sec: Section,
   circular: { iy: number; iz: number } | null,
   geometry: CanonicalGeometry | null,
+  digest?: string,
 ): { j: number | null; jProvenance: TorsionProvenance } {
   if (circular) {
     const j = circular.iy + circular.iz;
@@ -130,16 +131,38 @@ function resolveTorsion(
     // Closed sections are handled too: the hole constants come from Bredt's
     // circulation condition, so a tube is not silently treated as if it were
     // slit — which would understate its J by more than a hundredfold.
+    //
+    // Solved once per geometry digest and cached: the solve depends only on
+    // the geometry, but re-resolutions for reasons that leave the geometry
+    // untouched (a rename, a refresh pass) used to pay the mesh-and-solve
+    // every time.
     try {
-      const { j } = analyzeSectionTorsion({ geometry });
-      if (Number.isFinite(j) && j > 0) return { j, jProvenance: 'saintVenant' };
+      let j: number | null | undefined = digest ? torsionJCache.get(digest) : undefined;
+      if (j === undefined) {
+        const r = analyzeSectionTorsion({ geometry });
+        j = Number.isFinite(r.j) && r.j > 0 ? r.j : null;
+        if (digest) {
+          if (torsionJCache.size >= TORSION_CACHE_LIMIT) {
+            // Map iterates in insertion order, so the first key is the oldest.
+            torsionJCache.delete(torsionJCache.keys().next().value!);
+          }
+          torsionJCache.set(digest, j);
+        }
+      }
+      if (j != null) return { j, jProvenance: 'saintVenant' };
     } catch {
       // Multiply-connected, degenerate mesh, or engine not ready — all mean
-      // "no trustworthy constant", which is what `unavailable` says.
+      // "no trustworthy constant", which is what `unavailable` says. Not
+      // cached: a throw can be transient (engine still warming up), and the
+      // next resolve must be free to retry.
     }
   }
   return { j: null, jProvenance: 'unavailable' };
 }
+
+/** A cached J is one number; 32 entries is nothing. */
+const TORSION_CACHE_LIMIT = 32;
+const torsionJCache = new Map<string, number | null>();
 
 /**
  * Resolve a section to solver-ready state.
@@ -206,6 +229,7 @@ export function resolveSectionState(sec: Section, opts: ResolveOptions = {}): Se
     sec,
     isCircularFamily(resolved.geometry.source) ? { iy: p.iy, iz: p.iz } : null,
     opts.torsion ? resolved.geometry : null,
+    resolved.digest,
   );
   return {
     kind: 'geometry-backed',

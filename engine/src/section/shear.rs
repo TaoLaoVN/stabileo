@@ -176,6 +176,13 @@ pub fn solve_shear(
     if mesh.triangles.is_empty() {
         return Err("mesh has no triangles".into());
     }
+    // Validate before paying the factorization, so a bad input is refused
+    // with the error that names it and not with an unrelated solver failure.
+    for inertia in [inertia.iy, inertia.iz] {
+        if !(inertia > 0.0) || !inertia.is_finite() {
+            return Err(format!("shear needs a positive second moment, got {inertia}"));
+        }
+    }
     // Both axes solve the SAME pure-Neumann problem — identical mesh, boundary
     // conditions and gauge pin, so identical reduced matrix — with only the
     // source term differing. Factor once and solve twice: the factorization is

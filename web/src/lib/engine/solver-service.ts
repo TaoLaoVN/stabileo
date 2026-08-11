@@ -1419,8 +1419,9 @@ export function buildSolverInput3D(
     nodes: new Map(Array.from(model.nodes.entries()).map(([id, n]) => [id, mapModelNodeToSolver3D(n, project2DToXZ)])),
     materials: new Map(Array.from(model.materials.entries()).map(([id, m]) => [id, { id: m.id, e: m.e, nu: m.nu }])),
     sections: new Map(Array.from(model.sections.entries()).map(([id, s]) => {
+      const props = solverProperties(s);
       if (project2DToXZ) {
-        const inPlaneIy = effectiveBendingInertia(s);
+        const inPlaneIy = effectiveBendingInertia(s, props);
         // Out-of-plane bending happens about the section's WEAK axis, which is
         // `iz`. This read `s.iy ?? s.iz` — the strong axis — which overstated
         // out-of-plane stiffness and so understated lateral displacement and
@@ -1434,7 +1435,6 @@ export function buildSolverInput3D(
         // case that still reaches this line — a geometry-backed section takes
         // the canonical branch below, which was always correct.
         const outOfPlaneIz = s.iz;
-        const props = solverProperties(s);
         return [id, {
           id: s.id, name: s.name, a: props.a,
           iy: inPlaneIy,
@@ -1456,7 +1456,6 @@ export function buildSolverInput3D(
       // Solver convention: iy controls bending about Y (w, θy DOFs), iz controls bending about Z (v, θz DOFs)
       // A geometry-backed section reports the inertia its canonical polygons
       // actually have; a properties-only section keeps what it declared.
-      const props = solverProperties(s);
       const aboutY = props.source === 'canonical'
         ? props.iy
         : (s.iy ?? (s.b && s.h ? (s.b * s.h ** 3) / 12 : s.iz));  // Iy: about Y horizontal

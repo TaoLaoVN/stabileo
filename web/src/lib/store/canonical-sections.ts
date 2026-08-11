@@ -57,7 +57,14 @@ export function refreshCanonicalSections(
       before?.kind === 'geometry-backed' && next.kind === 'geometry-backed'
         ? before.digest === next.digest
         : sameKind;
-    if (!sameDigest) {
+    // The digest does not cover torsion: a retry that succeeds with unchanged
+    // geometry must still be published, or the section would stay
+    // `unavailable` and every future refresh would re-solve and re-discard.
+    const sameTorsion =
+      before?.kind === 'geometry-backed' && next.kind === 'geometry-backed'
+        ? before.j === next.j && before.jProvenance === next.jProvenance
+        : true;
+    if (!sameDigest || !sameTorsion) {
       m.set(id, { ...sec, canonical: next });
       changed = true;
     }
