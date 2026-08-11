@@ -5,6 +5,10 @@
   import { eduStore } from './edu-store.svelte';
   import { readSupportReaction, type ReactionDof } from './edu-reactions';
   import type { SolveTimings } from '../../lib/engine/types';
+  import {
+    toSubmissionFile, toSubmissionCode,
+    type Submission, type SubmittedAnswer,
+  } from './exercise-submission';
 
   const SHAPE_OPTIONS: DiagramShape[] = ['zero', 'constant', 'linear', 'quadratic'];
 
@@ -117,6 +121,95 @@
     advancedFrom = new Set([...advancedFrom, activeStep]);
     activeStep = activeStep + 1;
   });
+
+  // ─── Handing it in ─────────────────────────────────────────
+  //
+  // The submission is assembled from the same state the panel is showing:
+  // every field the student was asked for, what they typed, the verdict the
+  // app gave it, and whether they revealed it instead of solving it.
+  let studentName = $state('');
+  let submissionCode = $state('');
+  let handinNote = $state('');
+
+  function collectAnswers(): SubmittedAnswer[] {
+    const out: SubmittedAnswer[] = [];
+    exercise.supports.forEach((sup, i) => {
+      for (const dof of sup.dofs) {
+        out.push({
+          label: `${sup.label} — ${dof}`,
+          answer: reactionAnswers[i][dof] ?? '',
+          unit: dof === 'M' ? 'kN·m' : 'kN',
+          outcome: reactionVerif[i][dof],
+          revealed: revealedReactions[i][dof],
+        });
+      }
+    });
+    if (exercise.kinematicQuestion) {
+      out.push({
+        label: t('edu.kinematicQuestion'),
+        answer: kinematicAnswer,
+        outcome: kinematicVerif,
+      });
+    }
+    (exercise.diagramShapeQuestions ?? []).forEach((q, i) => {
+      out.push({
+        label: `${t('edu.shapeQuestion')} — ${q.diagram}`,
+        answer: shapeAnswers[i] ?? '',
+        outcome: shapeVerif[i],
+      });
+    });
+    exercise.diagramQuestions.forEach((q, i) => {
+      out.push({
+        label: q.question,
+        answer: diagramAnswers[i] ?? '',
+        unit: q.unit,
+        outcome: diagramVerif[i],
+        revealed: revealedDiagrams[i],
+      });
+    });
+    exercise.characteristics.forEach((c, i) => {
+      out.push({
+        label: c.label,
+        answer: charAnswers[i] ?? '',
+        unit: c.unit,
+        outcome: charVerif[i],
+        revealed: revealedChars[i],
+      });
+    });
+    return out;
+  }
+
+  function buildSubmission(): Submission {
+    return {
+      stabileoSubmission: 1,
+      exerciseId: exercise.id,
+      exerciseTitle: exercise.title,
+      student: studentName.trim(),
+      submittedAt: new Date().toISOString(),
+      answers: collectAnswers(),
+    };
+  }
+
+  const answeredCount = $derived(collectAnswers().filter(a => a.outcome !== 'pending').length);
+  const totalCount = $derived(collectAnswers().length);
+
+  function downloadSubmission() {
+    const sub = buildSubmission();
+    const blob = new Blob([toSubmissionFile(sub)], { type: 'application/json' });
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    const who = sub.student ? sub.student.replace(/[^\w\-]+/g, '-').toLowerCase() : 'entrega';
+    a.download = `${who}-${sub.exerciseId}.stabileo-entrega.json`;
+    a.click();
+    URL.revokeObjectURL(a.href);
+    handinNote = t('edu.handin.downloaded');
+  }
+
+  function copySubmissionCode() {
+    submissionCode = toSubmissionCode(buildSubmission());
+    navigator.clipboard?.writeText(submissionCode).catch(() => {});
+    handinNote = t('edu.handin.codeCopied');
+  }
 
   // ─── Reaction verification ─────────────────────────────────
   /**
@@ -593,6 +686,39 @@
       {t('edu.exerciseSolved')}
     </div>
   {/if}
+
+  <!--
+    Handing it in.
+    ──────────────
+    Available from the first answer, not only once everything is right: a
+    student who ran out of time hands in what they have, and a teacher marking
+    partial work needs it. The name field is optional because the app has no
+    accounts and pretending otherwise would be a lie about what this is.
+  -->
+  <section class="handin" data-testid="edu-handin">
+    <h3 class="step-title">{t('edu.handin.title')}</h3>
+    <label class="handin-name">
+      {t('edu.handin.name')}
+      <input type="text" bind:value={studentName} placeholder={t('edu.handin.namePlaceholder')} />
+    </label>
+    <p class="step-info">
+      {t('edu.handin.summary')
+        .replace('{answered}', String(answeredCount))
+        .replace('{total}', String(totalCount))}
+    </p>
+    <div class="handin-actions">
+      <button class="verify-btn" onclick={downloadSubmission} data-testid="edu-handin-file">
+        {t('edu.handin.download')}
+      </button>
+      <button class="reveal-btn" onclick={copySubmissionCode} data-testid="edu-handin-code">
+        {t('edu.handin.copyCode')}
+      </button>
+    </div>
+    {#if handinNote}<p class="hint">{handinNote}</p>{/if}
+    {#if submissionCode}
+      <textarea class="handin-code" readonly rows="3" value={submissionCode}></textarea>
+    {/if}
+  </section>
 </div>
 
 <style>
@@ -1079,6 +1205,58 @@
     font-size: 0.68rem;
     padding: 4px 12px;
     margin-bottom: 12px;
+  }
+
+  /* ─── Handing it in ─── */
+  .handin {
+    margin-top: 22px;
+    padding-top: 14px;
+    border-top: 1px solid var(--st-hair);
+  }
+
+  .handin-name {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 0.72rem;
+    color: var(--st-text-2);
+    margin-bottom: 8px;
+  }
+
+  .handin-name input {
+    flex: 1;
+    padding: 4px 6px;
+    background: var(--st-surface-3);
+    border: 1px solid var(--st-hair);
+    border-radius: var(--st-radius);
+    color: var(--st-text);
+    font-family: var(--st-sans);
+    font-size: 0.75rem;
+  }
+
+  .handin-actions {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+
+  .handin-code {
+    width: 100%;
+    margin-top: 8px;
+    padding: 6px;
+    background: var(--st-surface-3);
+    border: 1px solid var(--st-hair);
+    border-radius: var(--st-radius);
+    color: var(--st-text-2);
+    font-family: var(--st-mono);
+    font-size: 0.6rem;
+    resize: vertical;
+  }
+
+  .hint {
+    font-size: 0.68rem;
+    color: var(--st-text-3);
+    margin: 6px 0 0;
   }
 
   /* ─── Success banner ─── */

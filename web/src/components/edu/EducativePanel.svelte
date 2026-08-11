@@ -9,6 +9,8 @@
   import { buildFromSpec, evaluateAnswer, type EduExerciseSpec } from './exercise-spec';
   import { stressContext } from './exercise-stress';
   import { loadLibrary, removeFromLibrary, saveToLibrary, fromShareLink } from './exercise-library';
+  import SubmissionReview from './SubmissionReview.svelte';
+  import { fromSubmissionCode, fromSubmissionFile, type Submission } from './exercise-submission';
 
   /** Teacher-authored exercises, restored from the library on mount.
    *  `authoring` lives in the store because the shell mounts the drawing
@@ -19,6 +21,45 @@
   let previewingSpec = $state<EduExerciseSpec | null>(null);
   let library = $state<EduExerciseSpec[]>([]);
   let linkNotice = $state('');
+
+  // ── Collecting what students hand back ────────────────────────
+  //
+  // A file for a campus upload, a code for a chat window. Both end at the
+  // same reader, so both land in `openedSubmission`.
+  let openedSubmission = $state<Submission | null>(null);
+  let submissionError = $state('');
+  let pastedCode = $state('');
+
+  /** Error codes to sentences, so a truncated download never reaches a
+   *  teacher as a raw identifier. */
+  function submissionMessage(code: string): string {
+    switch (code) {
+      case 'notJson': return t('edu.review.errNotJson');
+      case 'notSubmission': return t('edu.review.errNotSubmission');
+      case 'incomplete': return t('edu.review.errIncomplete');
+      case 'emptyCode': return t('edu.review.errEmptyCode');
+      case 'damagedCode': return t('edu.review.errDamagedCode');
+      default: return t('edu.review.errNotSubmission');
+    }
+  }
+
+  function openSubmissionFile(e: Event) {
+    const input = e.target as HTMLInputElement;
+    const file = input.files?.[0];
+    if (!file) return;
+    file.text().then((text) => {
+      const r = fromSubmissionFile(text);
+      if (r.ok) { openedSubmission = r.submission; submissionError = ''; }
+      else { openedSubmission = null; submissionError = submissionMessage(r.error); }
+      input.value = '';
+    });
+  }
+
+  function openSubmissionCode() {
+    const r = fromSubmissionCode(pastedCode);
+    if (r.ok) { openedSubmission = r.submission; submissionError = ''; pastedCode = ''; }
+    else { openedSubmission = null; submissionError = submissionMessage(r.error); }
+  }
 
   $effect(() => {
     library = loadLibrary();
@@ -220,6 +261,34 @@
         </div>
       {/if}
 
+      <!--
+        The other half of handing out an exercise: getting one back. It sits
+        with the teacher's own exercises rather than behind the authoring
+        form, because collecting is not authoring — it happens weeks later
+        and by someone who may not have written the exercise at all.
+      -->
+      <div class="exercise-section">
+        <h3 class="section-title">{t('edu.review.open')}</h3>
+        {#if openedSubmission}
+          <SubmissionReview submission={openedSubmission} onclose={() => (openedSubmission = null)} />
+        {:else}
+          <p class="edu-subtitle">{t('edu.review.openHint')}</p>
+          <input type="file" accept=".json" onchange={openSubmissionFile} data-testid="edu-open-submission" />
+          <div class="paste-row">
+            <input
+              type="text"
+              class="paste-code"
+              bind:value={pastedCode}
+              placeholder={t('edu.review.pastePlaceholder')}
+            />
+            <button class="card-act" onclick={openSubmissionCode} data-testid="edu-open-code">
+              {t('edu.review.openCode')}
+            </button>
+          </div>
+          {#if submissionError}<p class="edu-link-notice">{submissionError}</p>{/if}
+        {/if}
+      </div>
+
       <div class="edu-footer">
         <p>{t('edu.moreExercises')}</p>
         <!-- Authoring lives beside the exercise list, not behind a setting:
@@ -250,8 +319,8 @@
     display: flex;
     flex-direction: column;
     height: 100%;
-    background: #16213e;
-    color: #ddd;
+    background: var(--st-surface-2);
+    color: var(--st-text);
     overflow-y: auto;
   }
 
@@ -261,13 +330,13 @@
 
   .edu-welcome h2 {
     font-size: 1.3rem;
-    color: #4ecdc4;
+    color: var(--st-text-2);
     margin: 0 0 4px;
   }
 
   .edu-subtitle {
     font-size: 0.82rem;
-    color: #888;
+    color: var(--st-text-3);
     margin: 0 0 20px;
   }
 
@@ -278,10 +347,10 @@
   .section-title {
     font-size: 0.82rem;
     font-weight: 600;
-    color: #4ecdc4;
+    color: var(--st-text-2);
     margin: 0 0 10px;
     padding-bottom: 6px;
-    border-bottom: 1px solid #1a3a5a;
+    border-bottom: 1px solid var(--st-hair);
     text-transform: uppercase;
     letter-spacing: 0.03em;
   }
@@ -294,8 +363,8 @@
 
   .exercise-card {
     text-align: left;
-    background: #0f2840;
-    border: 1px solid #1a4a7a;
+    background: var(--st-surface-2);
+    border: 1px solid var(--st-hair-strong);
     border-radius: 8px;
     padding: 14px 16px;
     cursor: pointer;
@@ -303,8 +372,8 @@
   }
 
   .exercise-card:hover {
-    background: #1a3860;
-    border-color: #4ecdc4;
+    background: var(--st-surface-3);
+    border-color: var(--st-text-2);
   }
 
   .exercise-header {
@@ -317,7 +386,7 @@
   .exercise-title {
     font-size: 0.85rem;
     font-weight: 600;
-    color: #eee;
+    color: var(--st-text);
   }
 
   .difficulty {
@@ -330,23 +399,23 @@
   }
 
   .difficulty-easy {
-    background: #1a3a2a;
-    color: #4caf50;
+    background: var(--st-surface-2);
+    color: var(--st-ok);
   }
 
   .difficulty-medium {
-    background: #3a3a1a;
-    color: #f0a500;
+    background: var(--st-surface-2);
+    color: var(--st-warn);
   }
 
   .difficulty-hard {
-    background: #3a1a1a;
-    color: #e94560;
+    background: var(--st-surface-2);
+    color: var(--st-danger);
   }
 
   .exercise-desc {
     font-size: 0.75rem;
-    color: #999;
+    color: var(--st-text-2);
     margin: 0;
     line-height: 1.4;
   }
@@ -357,18 +426,18 @@
     margin: -4px 4px 6px 0;
   }
   .card-act {
-    background: none; border: none; color: #777;
+    background: none; border: none; color: var(--st-text-3);
     font-size: 0.66rem; cursor: pointer; padding: 2px 4px;
   }
-  .card-act:hover { color: #4ecdc4; }
-  .card-act.del:hover { color: #c66; }
+  .card-act:hover { color: var(--st-text-2); }
+  .card-act.del:hover { color: var(--st-danger); }
   .edu-link-notice {
-    background: rgba(78,205,196,0.08); border-left: 2px solid #4ecdc4;
-    padding: 6px 9px; color: #9fbfbc; font-size: 0.72rem; border-radius: 3px;
+    background: rgba(78,205,196,0.08); border-left: 2px solid var(--st-text-2);
+    padding: 6px 9px; color: var(--st-text-2); font-size: 0.72rem; border-radius: 3px;
   }
 
   .edu-author-btn {
-    background: none; border: 1px solid #4ecdc4; color: #4ecdc4;
+    background: none; border: 1px solid var(--st-text-2); color: var(--st-text-2);
     padding: 5px 14px; border-radius: 3px; cursor: pointer;
     font-size: 0.78rem; margin-top: 8px;
   }
@@ -381,7 +450,7 @@
 
   .edu-footer p {
     font-size: 0.68rem;
-    color: #555;
+    color: var(--st-hair);
     margin: 0;
     text-align: center;
     font-style: italic;
@@ -398,15 +467,15 @@
     align-items: center;
     gap: 10px;
     padding: 8px 12px;
-    background: #0a1a30;
-    border-bottom: 1px solid #1a4a7a;
+    background: var(--st-surface-3);
+    border-bottom: 1px solid var(--st-hair-strong);
     flex-shrink: 0;
   }
 
   .edu-back-btn {
     background: none;
-    border: 1px solid #334;
-    color: #888;
+    border: 1px solid var(--st-hair);
+    color: var(--st-text-3);
     padding: 4px 10px;
     border-radius: 4px;
     font-size: 0.72rem;
@@ -415,14 +484,14 @@
   }
 
   .edu-back-btn:hover {
-    color: #4ecdc4;
-    border-color: #4ecdc4;
+    color: var(--st-text-2);
+    border-color: var(--st-text-2);
   }
 
   .edu-exercise-name {
     font-size: 0.75rem;
     font-weight: 500;
-    color: #aaa;
+    color: var(--st-text-2);
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
