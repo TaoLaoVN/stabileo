@@ -128,8 +128,14 @@ export function sectionOutline(sec: Section): SectionOutline {
  *
  * Memoized per profile: the picker renders one row per catalogue entry and
  * re-renders on every search keystroke, and an uncached call here is a full
- * canonical resolution (a WASM round trip) PER ROW PER KEYSTROKE. The
- * catalogue is static data, so the cache never needs invalidation.
+ * canonical resolution (a WASM round trip) PER ROW PER KEYSTROKE.
+ *
+ * Only canonical outlines are cached. A resolution made before the engine is
+ * ready (or while the feature flag is off) falls back to the approximate
+ * parametric outline, and caching THAT would pin a degraded thumbnail for the
+ * rest of the session — the exact picker/section mismatch this module exists
+ * to eliminate. An uncached fallback re-resolves on the next render, by which
+ * time the engine is usually up.
  */
 const profileOutlineCache = new Map<string, SectionOutline>();
 
@@ -158,6 +164,6 @@ export function profileOutline(profile: SteelProfile): SectionOutline {
   // section cannot disagree.
   const state = resolveSectionState(probe);
   const outline = sectionOutline({ ...probe, canonical: state } as Section);
-  profileOutlineCache.set(profile.name, outline);
+  if (outline.source === 'canonical') profileOutlineCache.set(profile.name, outline);
   return outline;
 }

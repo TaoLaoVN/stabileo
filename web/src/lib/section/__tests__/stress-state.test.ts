@@ -229,13 +229,21 @@ describeField('the cached field path agrees with the per-point solves', () => {
   it('repeated queries across many fibres stay consistent (the cache-hit path)', () => {
     // Twenty-five fibres on one section: the first call solves and caches, the
     // rest are local triangle locates. A stale or mis-keyed cache shows up as
-    // a mismatch against the per-point solve.
-    const s = rect();
-    const st = s.canonical!;
-    if (st.kind !== 'geometry-backed') throw new Error('expected geometry-backed');
+    // a mismatch against the per-point solve — so the loop interleaves a
+    // second section with a different digest: a cache keyed on nothing (or on
+    // a constant) would serve the wrong geometry's field and fail here.
+    const a = rect();
+    const b = sec({ shape: 'rect', b: 0.1, h: 0.3 });
+    for (const s of [a, b]) {
+      const st = s.canonical!;
+      if (st.kind !== 'geometry-backed') throw new Error('expected geometry-backed');
+    }
     for (let iy = -2; iy <= 2; iy++) {
       for (let iz = -2; iz <= 2; iz++) {
-        const p: [number, number] = [iy * 0.04, iz * 0.08];
+        const s = (iy + iz) % 2 === 0 ? a : b;
+        const st = s.canonical!;
+        if (st.kind !== 'geometry-backed') throw new Error('expected geometry-backed');
+        const p: [number, number] = [iy * 0.02, iz * 0.05];
         const sh = analyzeSectionShear({ geometry: st.geometry, at: p });
         const r = canonicalStressState(s, { n: 0, my: 0, mz: 0, vz: 100 }, p);
         if (!r.ok) throw new Error(r.message ?? r.reason);

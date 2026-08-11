@@ -1397,7 +1397,13 @@ mod tests {
     #[test]
     fn section_shear_field_matches_point_query() {
         let geometry = i_section_geometry();
-        for p in [[0.03, 0.10], [-0.05, -0.12], [0.0, 0.0]] {
+        // The last point is deliberately OUTSIDE the section: both paths must
+        // then agree through the nearest-triangle fallback, which is the whole
+        // reason locate has one. (Interior points must sit strictly inside a
+        // triangle — on a shared edge, float rounding may legitimately pick
+        // different neighbours in the two frames, and tau is piecewise
+        // constant per triangle.)
+        for p in [[0.03, 0.10], [-0.05, -0.12], [0.0, 0.0], [0.25, 0.25]] {
             let point = super::analyze_section_shear(
                 &serde_json::json!({ "geometry": geometry, "at": p }).to_string(),
             )
@@ -1437,7 +1443,8 @@ mod tests {
     #[test]
     fn section_torsion_field_matches_point_query() {
         let geometry = i_section_geometry();
-        for p in [[0.03, 0.10], [-0.05, -0.12], [0.0, 0.0]] {
+        // Last point is outside the section on purpose — see the shear test.
+        for p in [[0.03, 0.10], [-0.05, -0.12], [0.0, 0.0], [0.25, 0.25]] {
             let point = super::analyze_section_torsion(
                 &serde_json::json!({ "geometry": geometry, "at": p }).to_string(),
             )
