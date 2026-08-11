@@ -37,8 +37,39 @@ export const COLORS: Record<string, number> = {
   background:      0x0c1620,  /* --st-ink */
 };
 
+/** Give `obj` a private copy of a shared material before it gets recoloured.
+ *
+ *  Gizmo materials are shared across every instance of a support type, and the
+ *  recolour path below mutates `material.color` in place — so without this,
+ *  selecting one support repaints all of them. Copy-on-write keeps the sharing
+ *  for everything that is never recoloured and pays a clone only for the object
+ *  actually being highlighted. The clone is private, so `disposeObject` frees
+ *  it normally. */
+function privatiseMaterial(obj: THREE.Mesh | THREE.Line): void {
+  // THREE.Material.clone() deep-copies userData, so the clone inherits
+  // `shared: true` unless it is cleared. Leaving it set would defeat the whole
+  // point twice over: disposeObject skips shared materials, so the private
+  // clone would never be freed, and the next recolour would clone it again —
+  // one leaked material per recolour, and syncSelection runs often.
+  const privatise = (m: THREE.Material): THREE.Material => {
+    const c = m.clone();
+    delete c.userData.shared;
+    return c;
+  };
+
+  const mat = obj.material;
+  if (Array.isArray(mat)) {
+    if (mat.some(m => m.userData?.shared)) {
+      obj.material = mat.map(m => (m.userData?.shared ? privatise(m) : m));
+    }
+    return;
+  }
+  if (mat?.userData?.shared) obj.material = privatise(mat);
+}
+
 /** Set emissive+color on a single Mesh's material (MeshStandard or LineMaterial) */
 export function setMeshColor(mesh: THREE.Mesh, color: number): void {
+  privatiseMaterial(mesh);
   const mat = mesh.material;
   if (mat instanceof THREE.MeshStandardMaterial) {
     mat.color.setHex(color);
@@ -60,9 +91,10 @@ export function setGroupColor(group: THREE.Group, color: number): void {
     // release stays visible while the element is selected.
     if (child.userData?.jointGlyph) return;
     if (child instanceof THREE.Mesh) {
-      setMeshColor(child, color);
+      setMeshColor(child, color); // privatises internally
     }
     if (child instanceof THREE.Line) {
+      privatiseMaterial(child);
       const mat = child.material;
       if (mat instanceof THREE.LineBasicMaterial) {
         mat.color.setHex(color);

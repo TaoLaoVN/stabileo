@@ -11,7 +11,7 @@
 import { describe, it, expect } from 'vitest';
 import * as THREE from 'three';
 import { createSupportGizmo } from '../create-support-gizmo';
-import { disposeObject } from '../selection-helpers';
+import { disposeObject, setGroupColor } from '../selection-helpers';
 
 const ORIGIN = { x: 0, y: 0, z: 0 };
 
@@ -130,5 +130,81 @@ describe('support gizmo resource sharing', () => {
       if ((o as THREE.Mesh).isMesh || (o as THREE.Line).isLine) drawables++;
     });
     expect(drawables).toBeGreaterThan(0);
+  });
+});
+
+describe('shared materials survive per-gizmo recolouring', () => {
+  /** Colour of the first Line found under `o`. */
+  function lineColour(o: THREE.Object3D): number | null {
+    let hex: number | null = null;
+    o.traverse((c) => {
+      if (hex === null && c instanceof THREE.Line) {
+        const m = c.material as THREE.LineBasicMaterial;
+        hex = m.color.getHex();
+      }
+    });
+    return hex;
+  }
+
+  it('selecting one support does not recolour the others', () => {
+    // The regression this guards: gizmo materials are shared across every
+    // support, and setGroupColor mutates `material.color` in place. Without
+    // copy-on-write, colouring one selected support repaints all of them.
+    const [a, b] = makeMany(2, 'fixed3d');
+    const before = lineColour(b);
+    expect(before).not.toBeNull();
+
+    setGroupColor(a, 0xff0000);
+
+    expect(lineColour(a)).toBe(0xff0000);
+    expect(lineColour(b)).toBe(before);
+  });
+
+  it('recolouring is still reversible on the same gizmo', () => {
+    const [a] = makeMany(1, 'fixed3d');
+    const original = lineColour(a);
+    setGroupColor(a, 0xff0000);
+    expect(lineColour(a)).toBe(0xff0000);
+    setGroupColor(a, original!);
+    expect(lineColour(a)).toBe(original);
+  });
+});
+
+describe('the private clone is genuinely private', () => {
+  function firstLine(o: THREE.Object3D): THREE.Line | null {
+    let found: THREE.Line | null = null;
+    o.traverse((c) => { if (!found && c instanceof THREE.Line) found = c as THREE.Line; });
+    return found;
+  }
+
+  it('does not inherit the shared flag', () => {
+    // THREE.Material.clone() deep-copies userData. If `shared` rode along,
+    // disposeObject would skip the clone forever and every later recolour
+    // would clone again.
+    const [g] = makeMany(1, 'fixed3d');
+    setGroupColor(g, 0xff0000);
+    const mat = (firstLine(g)!.material as THREE.Material);
+    expect(mat.userData?.shared).toBeUndefined();
+  });
+
+  it('recolouring repeatedly reuses the same private material', () => {
+    const [g] = makeMany(1, 'fixed3d');
+    setGroupColor(g, 0xff0000);
+    const first = firstLine(g)!.material;
+    setGroupColor(g, 0x00ff00);
+    setGroupColor(g, 0x0000ff);
+    expect(firstLine(g)!.material).toBe(first); // no new clone per recolour
+  });
+
+  it('the private clone is disposed with the gizmo', () => {
+    const [g] = makeMany(1, 'fixed3d');
+    setGroupColor(g, 0xff0000);
+    const mat = firstLine(g)!.material as THREE.Material;
+    let disposed = false;
+    mat.addEventListener('dispose', () => { disposed = true; });
+
+    disposeObject(g);
+
+    expect(disposed).toBe(true); // the shared original is still protected
   });
 });
