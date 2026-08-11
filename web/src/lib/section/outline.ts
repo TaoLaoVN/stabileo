@@ -125,8 +125,24 @@ export function sectionOutline(sec: Section): SectionOutline {
  * Resolving through the same entry point the model uses means the thumbnail in
  * the picker and the drawing after the click are the same geometry by
  * construction, not by two code paths agreeing.
+ *
+ * Memoized per profile: the picker renders one row per catalogue entry and
+ * re-renders on every search keystroke, and an uncached call here is a full
+ * canonical resolution (a WASM round trip) PER ROW PER KEYSTROKE.
+ *
+ * Only canonical outlines are cached. A resolution made before the engine is
+ * ready (or while the feature flag is off) falls back to the approximate
+ * parametric outline, and caching THAT would pin a degraded thumbnail for the
+ * rest of the session — the exact picker/section mismatch this module exists
+ * to eliminate. An uncached fallback re-resolves on the next render, by which
+ * time the engine is usually up.
  */
+const profileOutlineCache = new Map<string, SectionOutline>();
+
 export function profileOutline(profile: SteelProfile): SectionOutline {
+  const cached = profileOutlineCache.get(profile.name);
+  if (cached) return cached;
+
   const mm = (v: number) => v / 1000;
   const probe = {
     id: -1,
@@ -147,5 +163,7 @@ export function profileOutline(profile: SteelProfile): SectionOutline {
   // the profile is actually chosen — so the thumbnail and the committed
   // section cannot disagree.
   const state = resolveSectionState(probe);
-  return sectionOutline({ ...probe, canonical: state } as Section);
+  const outline = sectionOutline({ ...probe, canonical: state } as Section);
+  if (outline.source === 'canonical') profileOutlineCache.set(profile.name, outline);
+  return outline;
 }

@@ -1353,6 +1353,193 @@ mod tests {
         assert!((r1.rz + r2.rz - 10.0).abs() < 0.01);
         assert!((r1.rz - 5.0).abs() < 0.01);
     }
+
+    /// Barycentric locate over a field export's mesh: index of the triangle
+    /// containing `p`, or the nearest by centroid — the same contract as
+    /// `SectionMesh::locate`, re-implemented here so the test exercises the
+    /// exported nodes/triangles rather than the internal mesh.
+    fn locate_field(nodes: &[[f64; 2]], triangles: &[[usize; 3]], p: [f64; 2]) -> usize {
+        let mut best: Option<(f64, usize)> = None;
+        for (i, &t) in triangles.iter().enumerate() {
+            let [a, b, c] = [nodes[t[0]], nodes[t[1]], nodes[t[2]]];
+            let d = (b[0] - a[0]) * (c[1] - a[1]) - (c[0] - a[0]) * (b[1] - a[1]);
+            if d.abs() > 0.0 {
+                let l1 = ((b[0] - p[0]) * (c[1] - p[1]) - (c[0] - p[0]) * (b[1] - p[1])) / d;
+                let l2 = ((c[0] - p[0]) * (a[1] - p[1]) - (a[0] - p[0]) * (c[1] - p[1])) / d;
+                let l3 = 1.0 - l1 - l2;
+                if l1 >= -1e-9 && l2 >= -1e-9 && l3 >= -1e-9 {
+                    return i;
+                }
+            }
+            let cy = (a[0] + b[0] + c[0]) / 3.0 - p[0];
+            let cz = (a[1] + b[1] + c[1]) / 3.0 - p[1];
+            let dist = cy * cy + cz * cz;
+            if best.map_or(true, |(d0, _)| dist < d0) {
+                best = Some((dist, i));
+            }
+        }
+        best.unwrap().1
+    }
+
+    fn i_section_geometry() -> serde_json::Value {
+        let built = super::build_section_geometry(
+            &serde_json::json!({
+                "kind": "iSection", "h": 0.3, "b": 0.15, "tw": 0.007, "tf": 0.01,
+                "rootRadius": 0.012
+            })
+            .to_string(),
+        )
+        .unwrap();
+        let v: serde_json::Value = serde_json::from_str(&built).unwrap();
+        v["geometry"].clone()
+    }
+
+    #[test]
+    fn section_shear_field_matches_point_query() {
+        let geometry = i_section_geometry();
+        // The last point is deliberately OUTSIDE the section: both paths must
+        // then agree through the nearest-triangle fallback, which is the whole
+        // reason locate has one. (Interior points must sit strictly inside a
+        // triangle — on a shared edge, float rounding may legitimately pick
+        // different neighbours in the two frames, and tau is piecewise
+        // constant per triangle.)
+        for p in [[0.03, 0.10], [-0.05, -0.12], [0.0, 0.0], [0.25, 0.25]] {
+            let point = super::analyze_section_shear(
+                &serde_json::json!({ "geometry": geometry, "at": p }).to_string(),
+            )
+            .unwrap();
+            let point: serde_json::Value = serde_json::from_str(&point).unwrap();
+            let field = super::analyze_section_shear_field(
+                &serde_json::json!({ "geometry": geometry }).to_string(),
+            )
+            .unwrap();
+            let field: serde_json::Value = serde_json::from_str(&field).unwrap();
+
+            let nodes: Vec<[f64; 2]> = serde_json::from_value(field["nodes"].clone()).unwrap();
+            let triangles: Vec<[usize; 3]> =
+                serde_json::from_value(field["triangles"].clone()).unwrap();
+            let i = locate_field(&nodes, &triangles, p);
+
+            for axis in ["vy", "vz"] {
+                let tau: Vec<[f64; 2]> =
+                    serde_json::from_value(field[axis]["tau"].clone()).unwrap();
+                let at: [f64; 2] = serde_json::from_value(point[axis]["at"].clone()).unwrap();
+                for k in 0..2 {
+                    let denom = at[k].abs().max(1.0);
+                    assert!(
+                        ((tau[i][k] - at[k]) / denom).abs() < 1e-9,
+                        "{axis} at {p:?}: field={} point={}",
+                        tau[i][k],
+                        at[k]
+                    );
+                }
+                let tm0 = field[axis]["tauMax"].as_f64().unwrap();
+                let tm1 = point[axis]["tauMax"].as_f64().unwrap();
+                assert!((tm0 - tm1).abs() / tm1 < 1e-12, "tauMax {axis}: {tm0} vs {tm1}");
+            }
+        }
+    }
+
+    #[test]
+    fn section_torsion_field_matches_point_query() {
+        let geometry = i_section_geometry();
+        // Last point is outside the section on purpose — see the shear test.
+        for p in [[0.03, 0.10], [-0.05, -0.12], [0.0, 0.0], [0.25, 0.25]] {
+            let point = super::analyze_section_torsion(
+                &serde_json::json!({ "geometry": geometry, "at": p }).to_string(),
+            )
+            .unwrap();
+            let point: serde_json::Value = serde_json::from_str(&point).unwrap();
+            let field = super::analyze_section_torsion_field(
+                &serde_json::json!({ "geometry": geometry }).to_string(),
+            )
+            .unwrap();
+            let field: serde_json::Value = serde_json::from_str(&field).unwrap();
+
+            let nodes: Vec<[f64; 2]> = serde_json::from_value(field["nodes"].clone()).unwrap();
+            let triangles: Vec<[usize; 3]> =
+                serde_json::from_value(field["triangles"].clone()).unwrap();
+            let tau: Vec<[f64; 2]> = serde_json::from_value(field["tau"].clone()).unwrap();
+            let at: [f64; 2] = serde_json::from_value(point["at"].clone()).unwrap();
+            let i = locate_field(&nodes, &triangles, p);
+            for k in 0..2 {
+                let denom = at[k].abs().max(1.0);
+                assert!(
+                    ((tau[i][k] - at[k]) / denom).abs() < 1e-9,
+                    "torsion at {p:?}: field={} point={}",
+                    tau[i][k],
+                    at[k]
+                );
+            }
+            let j0 = field["j"].as_f64().unwrap();
+            let j1 = point["j"].as_f64().unwrap();
+            assert!((j0 - j1).abs() / j1 < 1e-12, "j: {j0} vs {j1}");
+        }
+    }
+}
+
+/// Shared prologue of the mesh-based section exports: analyse the polygons,
+/// normalise to a ~100-unit frame, and mesh.
+///
+/// The caller's units are its own business — the web side works in metres, so
+/// a section is 0.3 across and its target triangle area is ~1e-6 — and a
+/// Delaunay refiner carries absolute robustness tolerances that such small
+/// coordinates walk straight into, yielding a mesh far coarser than asked for
+/// and a J tens of percent low. Scaling the outline so its largest dimension
+/// is ~100 units makes the result independent of the caller's units; every
+/// quantity then scales back by its own power of `s` (J by s⁴, stress by s²,
+/// Cw by s⁶, lengths by s).
+///
+/// Returns the mesh in the scaled frame, the scale factor, and the section
+/// properties in the CALLER's units.
+fn normalize_and_mesh(
+    geometry: &section::catalogue::CanonicalGeometry,
+    max_area: Option<f64>,
+) -> Result<(section::mesh::SectionMesh, f64, section::SectionProperties), JsValue> {
+    use section::mesh::{mesh_section, MeshParams};
+
+    let props = section::analyze_section(&section::SectionInput {
+        polygons: geometry.polygons.clone(),
+        modular_ratios: Default::default(),
+    })
+    .map_err(|e| JsValue::from_str(&e))?;
+
+    let extent = geometry
+        .polygons
+        .iter()
+        .flat_map(|p| p.vertices.iter())
+        .fold(0.0_f64, |m, v| m.max(v[0].abs()).max(v[1].abs()));
+    if !(extent > 0.0) || !extent.is_finite() {
+        return Err(JsValue::from_str("geometry has no finite extent"));
+    }
+    let scale = 100.0 / extent;
+
+    let mut scaled = geometry.polygons.clone();
+    for poly in &mut scaled {
+        for v in &mut poly.vertices {
+            v[0] *= scale;
+            v[1] *= scale;
+        }
+    }
+
+    let mut params = MeshParams::default();
+    // Roughly two thousand triangles: J converges at the field's rate rather
+    // than the gradient's, so this is ample and keeps the solve within a few
+    // milliseconds — which matters, because this runs per model section.
+    let scaled_area = props.a * scale * scale;
+    params.max_area = max_area.map(|a| a * scale * scale).unwrap_or(scaled_area / 2000.0);
+
+    let mesh = mesh_section(&scaled, &params).map_err(|e| JsValue::from_str(&e))?;
+    Ok((mesh, scale, props))
+}
+
+/// Mesh nodes serialised for a field export: centroid-relative, in the
+/// caller's units, so a query point in that same frame needs no shift.
+fn field_nodes(mesh: &section::mesh::SectionMesh, scale: f64, yc: f64, zc: f64) -> Vec<[f64; 2]> {
+    mesh.nodes
+        .iter()
+        .map(|n| [n[0] / scale - yc, n[1] / scale - zc])
+        .collect()
 }
 
 /// Saint-Venant torsion constant and shear field for canonical geometry.
@@ -1366,7 +1553,6 @@ mod tests {
 /// hole boundary is fixed by Bredt's circulation condition.
 #[wasm_bindgen]
 pub fn analyze_section_torsion(json: &str) -> Result<String, JsValue> {
-    use section::mesh::{mesh_section, MeshParams};
     use section::poisson::SolveStrategy;
 
     #[derive(serde::Deserialize)]
@@ -1385,47 +1571,7 @@ pub fn analyze_section_torsion(json: &str) -> Result<String, JsValue> {
     let req: Request = serde_json::from_str(json)
         .map_err(|e| JsValue::from_str(&format!("Parse error: {e}")))?;
 
-    let props = section::analyze_section(&section::SectionInput {
-        polygons: req.geometry.polygons.clone(),
-        modular_ratios: Default::default(),
-    })
-    .map_err(|e| JsValue::from_str(&e))?;
-
-    // Mesh in a normalised frame. The caller's units are its own business —
-    // the web side works in metres, so a section is 0.3 across and its target
-    // triangle area is ~1e-6 — and a Delaunay refiner carries absolute
-    // robustness tolerances that such small coordinates walk straight into,
-    // yielding a mesh far coarser than asked for and a J tens of percent low.
-    // Scaling the outline so its largest dimension is ~100 units makes the
-    // result independent of the caller's units; J is a fourth moment, so it
-    // scales back by `s^4` exactly.
-    let extent = req
-        .geometry
-        .polygons
-        .iter()
-        .flat_map(|p| p.vertices.iter())
-        .fold(0.0_f64, |m, v| m.max(v[0].abs()).max(v[1].abs()));
-    if !(extent > 0.0) || !extent.is_finite() {
-        return Err(JsValue::from_str("geometry has no finite extent"));
-    }
-    let scale = 100.0 / extent;
-
-    let mut scaled = req.geometry.polygons.clone();
-    for poly in &mut scaled {
-        for v in &mut poly.vertices {
-            v[0] *= scale;
-            v[1] *= scale;
-        }
-    }
-
-    let mut params = MeshParams::default();
-    // Roughly two thousand triangles: J converges at the field's rate rather
-    // than the gradient's, so this is ample and keeps the solve within a few
-    // milliseconds — which matters, because this runs per model section.
-    let scaled_area = props.a * scale * scale;
-    params.max_area = req.max_area.map(|a| a * scale * scale).unwrap_or(scaled_area / 2000.0);
-
-    let mesh = mesh_section(&scaled, &params).map_err(|e| JsValue::from_str(&e))?;
+    let (mesh, scale, props) = normalize_and_mesh(&req.geometry, req.max_area)?;
     let mut res = section::torsion::solve_torsion(&mesh, SolveStrategy::Sparse)
         .map_err(|e| JsValue::from_str(&e))?;
     // Back to the caller's units: J is L^4, shear under unit twist rate is L.
@@ -1458,6 +1604,62 @@ pub fn analyze_section_torsion(json: &str) -> Result<String, JsValue> {
     .map_err(|e| JsValue::from_str(&format!("Serialize error: {e}")))
 }
 
+/// The torsion solve as a reusable field: mesh plus the per-triangle shear
+/// under unit twist rate.
+///
+/// `analyze_section_torsion` answers ONE query point per mesh-and-solve; a
+/// caller sweeping many points (the stress panel's fibre slider, at one call
+/// per drag tick) would pay the full solve for every one of them. This export
+/// returns the solved field once — the caller caches it per geometry digest
+/// and locates triangles locally, which is free by comparison.
+///
+/// Nodes are centroid-relative and in the caller's units, and `tau` is already
+/// scaled back to those units, so a query needs no frame arithmetic at all.
+#[wasm_bindgen]
+pub fn analyze_section_torsion_field(json: &str) -> Result<String, JsValue> {
+    use section::poisson::SolveStrategy;
+
+    #[derive(serde::Deserialize)]
+    #[serde(rename_all = "camelCase", deny_unknown_fields)]
+    struct Request {
+        geometry: section::catalogue::CanonicalGeometry,
+        #[serde(default)]
+        max_area: Option<f64>,
+    }
+
+    let req: Request = serde_json::from_str(json)
+        .map_err(|e| JsValue::from_str(&format!("Parse error: {e}")))?;
+
+    let (mesh, scale, props) = normalize_and_mesh(&req.geometry, req.max_area)?;
+    let res = section::torsion::solve_torsion(&mesh, SolveStrategy::Sparse)
+        .map_err(|e| JsValue::from_str(&e))?;
+
+    #[derive(serde::Serialize)]
+    #[serde(rename_all = "camelCase")]
+    struct Response {
+        j: f64,
+        tau_max: f64,
+        /// Mesh nodes, centroid-relative, in the caller's units.
+        nodes: Vec<[f64; 2]>,
+        /// Triangles as node indices.
+        triangles: Vec<[usize; 3]>,
+        /// `[tau_xy, tau_xz]` per triangle under unit twist rate, in the
+        /// caller's units.
+        tau: Vec<[f64; 2]>,
+        residual: f64,
+    }
+    serde_json::to_string(&Response {
+        // J is L⁴, shear under unit twist rate is L.
+        j: res.j / scale.powi(4),
+        tau_max: res.tau_max / scale,
+        nodes: field_nodes(&mesh, scale, props.yc, props.zc),
+        triangles: mesh.triangles.clone(),
+        tau: res.tau.iter().map(|t| [t[0] / scale, t[1] / scale]).collect(),
+        residual: res.residual,
+    })
+    .map_err(|e| JsValue::from_str(&format!("Serialize error: {e}")))
+}
+
 /// Transverse shear over canonical geometry, for unit forces on both axes.
 ///
 /// This is what lets angles, closed tubes and arbitrary polygons report a shear
@@ -1468,7 +1670,6 @@ pub fn analyze_section_torsion(json: &str) -> Result<String, JsValue> {
 /// cached rather than a per-query one.
 #[wasm_bindgen]
 pub fn analyze_section_shear(json: &str) -> Result<String, JsValue> {
-    use section::mesh::{mesh_section, MeshParams};
     use section::poisson::SolveStrategy;
     use section::shear::ShearInertia;
 
@@ -1486,39 +1687,9 @@ pub fn analyze_section_shear(json: &str) -> Result<String, JsValue> {
     let req: Request = serde_json::from_str(json)
         .map_err(|e| JsValue::from_str(&format!("Parse error: {e}")))?;
 
-    let props = section::analyze_section(&section::SectionInput {
-        polygons: req.geometry.polygons.clone(),
-        modular_ratios: Default::default(),
-    })
-    .map_err(|e| JsValue::from_str(&e))?;
-
-    // Same unit normalisation as torsion, and for the same reason: a Delaunay
-    // refiner carries absolute tolerances that metre-scale coordinates walk
-    // into. Shear stress is force over area, so it scales back by `s^2`.
-    let extent = req
-        .geometry
-        .polygons
-        .iter()
-        .flat_map(|p| p.vertices.iter())
-        .fold(0.0_f64, |m, v| m.max(v[0].abs()).max(v[1].abs()));
-    if !(extent > 0.0) || !extent.is_finite() {
-        return Err(JsValue::from_str("geometry has no finite extent"));
-    }
-    let scale = 100.0 / extent;
-
-    let mut scaled = req.geometry.polygons.clone();
-    for poly in &mut scaled {
-        for v in &mut poly.vertices {
-            v[0] *= scale;
-            v[1] *= scale;
-        }
-    }
-
-    let mut params = MeshParams::default();
-    let scaled_area = props.a * scale * scale;
-    params.max_area = req.max_area.map(|a| a * scale * scale).unwrap_or(scaled_area / 2000.0);
-
-    let mesh = mesh_section(&scaled, &params).map_err(|e| JsValue::from_str(&e))?;
+    // Same unit normalisation as torsion, and for the same reason. Shear
+    // stress is force over area, so it scales back by `s^2`.
+    let (mesh, scale, props) = normalize_and_mesh(&req.geometry, req.max_area)?;
     let res = section::shear::solve_shear(
         &mesh,
         [props.yc * scale, props.zc * scale],
@@ -1569,15 +1740,19 @@ pub fn analyze_section_shear(json: &str) -> Result<String, JsValue> {
     .map_err(|e| JsValue::from_str(&format!("Serialize error: {e}")))
 }
 
-/// Plastic section moduli for canonical geometry.
+/// The shear solve as a reusable field: mesh plus the per-triangle stress for
+/// a unit force on each axis.
 ///
-/// `Z` is what a limit-state check needs, and it is taken about the PLASTIC
-/// neutral axis — the equal-area line, not the centroid. The two coincide only
-/// for a doubly-symmetric section; for a tee or a channel, using the centroid
-/// understates the result.
+/// Same motive as `analyze_section_torsion_field`: `analyze_section_shear`
+/// answers one query point per mesh-and-solve, and a sweeping caller (the
+/// stress panel's fibre slider) would re-solve per drag tick. Cache this per
+/// geometry digest and locate triangles locally instead. Nodes are
+/// centroid-relative in the caller's units and `tau` is already scaled back,
+/// so a query needs no frame arithmetic.
 #[wasm_bindgen]
-pub fn analyze_section_plastic(json: &str) -> Result<String, JsValue> {
-    use section::mesh::{mesh_section, MeshParams};
+pub fn analyze_section_shear_field(json: &str) -> Result<String, JsValue> {
+    use section::poisson::SolveStrategy;
+    use section::shear::ShearInertia;
 
     #[derive(serde::Deserialize)]
     #[serde(rename_all = "camelCase", deny_unknown_fields)]
@@ -1590,35 +1765,75 @@ pub fn analyze_section_plastic(json: &str) -> Result<String, JsValue> {
     let req: Request = serde_json::from_str(json)
         .map_err(|e| JsValue::from_str(&format!("Parse error: {e}")))?;
 
-    let props = section::analyze_section(&section::SectionInput {
-        polygons: req.geometry.polygons.clone(),
-        modular_ratios: Default::default(),
-    })
+    let (mesh, scale, props) = normalize_and_mesh(&req.geometry, req.max_area)?;
+    let res = section::shear::solve_shear(
+        &mesh,
+        [props.yc * scale, props.zc * scale],
+        ShearInertia { iy: props.iy * scale.powi(4), iz: props.iz * scale.powi(4) },
+        SolveStrategy::Sparse,
+    )
     .map_err(|e| JsValue::from_str(&e))?;
 
-    let extent = req
-        .geometry
-        .polygons
-        .iter()
-        .flat_map(|p| p.vertices.iter())
-        .fold(0.0_f64, |m, v| m.max(v[0].abs()).max(v[1].abs()));
-    if !(extent > 0.0) || !extent.is_finite() {
-        return Err(JsValue::from_str("geometry has no finite extent"));
+    #[derive(serde::Serialize)]
+    #[serde(rename_all = "camelCase")]
+    struct AxisField {
+        tau_max: f64,
+        kappa: f64,
+        /// `[tau_xy, tau_xz]` per triangle, per unit force, in the caller's units.
+        tau: Vec<[f64; 2]>,
     }
-    let scale = 100.0 / extent;
-    let mut scaled = req.geometry.polygons.clone();
-    for poly in &mut scaled {
-        for v in &mut poly.vertices {
-            v[0] *= scale;
-            v[1] *= scale;
-        }
+    #[derive(serde::Serialize)]
+    #[serde(rename_all = "camelCase")]
+    struct Response {
+        vy: AxisField,
+        vz: AxisField,
+        /// Shear centre, centroid-relative, in the caller's units.
+        shear_centre: [f64; 2],
+        /// Mesh nodes, centroid-relative, in the caller's units.
+        nodes: Vec<[f64; 2]>,
+        /// Triangles as node indices.
+        triangles: Vec<[usize; 3]>,
+        residual: f64,
+    }
+    // Unit force over scaled geometry gives stress in scaled units; a stress is
+    // force per area, so undo `s^2`.
+    let s2 = scale * scale;
+    let axis_field = |f: &section::shear::ShearField| AxisField {
+        tau_max: f.tau_max * s2,
+        kappa: f.kappa,
+        tau: f.tau.iter().map(|t| [t[0] * s2, t[1] * s2]).collect(),
+    };
+    serde_json::to_string(&Response {
+        vy: axis_field(&res.vy),
+        vz: axis_field(&res.vz),
+        shear_centre: [res.shear_centre[0] / scale, res.shear_centre[1] / scale],
+        nodes: field_nodes(&mesh, scale, props.yc, props.zc),
+        triangles: mesh.triangles.clone(),
+        residual: res.residual,
+    })
+    .map_err(|e| JsValue::from_str(&format!("Serialize error: {e}")))
+}
+
+/// Plastic section moduli for canonical geometry.
+///
+/// `Z` is what a limit-state check needs, and it is taken about the PLASTIC
+/// neutral axis — the equal-area line, not the centroid. The two coincide only
+/// for a doubly-symmetric section; for a tee or a channel, using the centroid
+/// understates the result.
+#[wasm_bindgen]
+pub fn analyze_section_plastic(json: &str) -> Result<String, JsValue> {
+    #[derive(serde::Deserialize)]
+    #[serde(rename_all = "camelCase", deny_unknown_fields)]
+    struct Request {
+        geometry: section::catalogue::CanonicalGeometry,
+        #[serde(default)]
+        max_area: Option<f64>,
     }
 
-    let mut params = MeshParams::default();
-    let scaled_area = props.a * scale * scale;
-    params.max_area = req.max_area.map(|a| a * scale * scale).unwrap_or(scaled_area / 2000.0);
+    let req: Request = serde_json::from_str(json)
+        .map_err(|e| JsValue::from_str(&format!("Parse error: {e}")))?;
 
-    let mesh = mesh_section(&scaled, &params).map_err(|e| JsValue::from_str(&e))?;
+    let (mesh, scale, props) = normalize_and_mesh(&req.geometry, req.max_area)?;
     let z = section::plastic::solve_plastic(&mesh).map_err(|e| JsValue::from_str(&e))?;
 
     // Warping needs the shear centre as its pole, so it comes from the shear

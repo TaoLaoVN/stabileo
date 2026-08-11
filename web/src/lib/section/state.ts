@@ -32,6 +32,7 @@ import { ALL_PROFILES } from '../data/steel-profiles';
 import { resolveCanonicalSection, type PropertiesOnlyReason } from './canonical';
 import type { CanonicalGeometry } from '../engine/wasm-solver';
 import { isSolverReady, hasCanonicalGeometryExport, analyzeSectionTorsion } from '../engine/wasm-solver';
+import { canonicalSections } from '../features';
 import { CANONICAL_STATE_VERSION } from './version';
 
 /** Where a torsional constant came from. Never inferred, never fabricated. */
@@ -165,11 +166,15 @@ export interface ResolveOptions {
 }
 
 export function resolveSectionState(sec: Section, opts: ResolveOptions = {}): SectionState {
-  // The canonical-geometry WASM export may be absent even when the solver is
-  // ready (older builds, or a build from a branch that predates the section
-  // engine). resolveCanonicalSection throws in that case; treat it the same as
-  // "engine not ready" — properties-only, never a throw.
-  if (!isSolverReady() || !hasCanonicalGeometryExport()) {
+  // Three independent reasons to stay properties-only, in order of precedence:
+  //
+  // 1. The feature flag is off (field rollback without a redeploy).
+  // 2. The solver is not ready (tests, SSR, or a cold start).
+  // 3. The WASM build predates the section engine (no export to call).
+  //
+  // In every case the section keeps its declared A/I/J and the solver path is
+  // unaffected — only detailed stress and drawing are gated.
+  if (!canonicalSections() || !isSolverReady() || !hasCanonicalGeometryExport()) {
     const torsion = resolveTorsion(sec, null, null);
     return {
       kind: 'properties-only',
