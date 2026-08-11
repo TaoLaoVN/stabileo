@@ -186,12 +186,26 @@
 
   function goBack() {
     eduStore.clearExercise();
-    // Coming back from a preview returns to the form that opened it.
+    /*
+     * Coming back from a preview returns to the form that opened it — and to
+     * the structure it was written against. Clearing the canvas here left the
+     * teacher looking at a form that said "2 nodes · 1 member · 2 supports"
+     * above a hint telling them nothing was drawn yet: both true, and
+     * together nonsense.
+     */
     if (previewingSpec) {
+      const spec = previewingSpec;
       previewingSpec = null;
       eduStore.authoring = true;
-      modelStore.clear();
       resultsStore.clear();
+      modelStore.clear();
+      buildFromSpec(spec.model, {
+        addNode: (x, y) => modelStore.addNode(x, y),
+        addElement: (nI, nJ) => modelStore.addElement(nI, nJ),
+        addSupport: (nodeId, type) => modelStore.addSupport(nodeId, type),
+        addNodalLoad: (nodeId, fx, fy, mz) => modelStore.addNodalLoad(nodeId, fx, fy, mz ?? 0),
+        addDistributedLoad: (elementId, qI, qJ) => modelStore.addDistributedLoad(elementId, qI, qJ),
+      });
       return;
     }
     // Leaving the exercise ends the handout: from here the window is a normal

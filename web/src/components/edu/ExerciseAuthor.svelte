@@ -338,7 +338,11 @@
       <button class="btn-primary" onclick={capture} disabled={!hasDrawnModel()}>
         {t('edu.author.capture')}
       </button>
-      {#if !hasDrawnModel()}<p class="hint">{t('edu.author.nothingDrawn')}</p>{/if}
+      <!-- Only when there is nothing at all: a captured structure with an
+           empty canvas is a state this panel reaches on its own, and saying
+           "nothing drawn yet" underneath its own summary of what was drawn
+           reads as a contradiction. -->
+      {#if !hasDrawnModel() && !captured}<p class="hint">{t('edu.author.nothingDrawn')}</p>{/if}
     {:else if sourceTab === 'example'}
       <p class="hint">{t('edu.author.exampleHint')}</p>
       <div class="row">

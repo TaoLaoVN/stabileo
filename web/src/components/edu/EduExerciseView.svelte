@@ -440,9 +440,13 @@
     {/each}
   </div>
 
-  <div class="exercise-description">
-    <p>{exercise.description}</p>
-  </div>
+  <!-- An exercise with no statement draws no card: an empty bordered box
+       reads as something that failed to load. -->
+  {#if exercise.description?.trim()}
+    <div class="exercise-description">
+      <p>{exercise.description}</p>
+    </div>
+  {/if}
 
   <!-- Section data (given info for strength/advanced exercises) -->
   {#if exercise.sectionData && exercise.sectionData.length > 0}
