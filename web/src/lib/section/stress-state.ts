@@ -32,6 +32,7 @@ import {
 } from '../engine/wasm-solver';
 import { computeMohrCircle, checkFailure } from '../engine/section-stress';
 import type { MohrCircle, FailureCheck } from '../engine/section-stress';
+import { stressTensorState, type StressTensorState } from './tensors';
 
 /** Internal forces at a station, in the section's own frame. */
 export interface SectionForces {
@@ -75,6 +76,14 @@ export interface CanonicalStressState {
    * which is not something a user can guess from the drawing.
    */
   shearCentre?: [number, number];
+  /**
+   * The full stress and strain tensors at the point, with their principal
+   * values and invariants.
+   *
+   * Present only when elastic constants were supplied: strain needs E and nu,
+   * and inventing them would be worse than leaving this out.
+   */
+  tensors?: StressTensorState;
 }
 
 export type StressStateResult =
@@ -94,6 +103,13 @@ export function canonicalStressState(
   forces: SectionForces,
   point: [number, number],
   fy?: number,
+  /**
+   * Elastic constants, for the strain tensor.
+   *
+   * Optional because a stress-only query does not need them; without them the
+   * tensors are omitted rather than filled with a guessed modulus.
+   */
+  elastic?: { e: number; nu: number },
 ): StressStateResult {
   const st = sec.canonical;
   if (!st || st.kind !== 'geometry-backed') return { ok: false, reason: 'notResolved' };
@@ -180,6 +196,9 @@ export function canonicalStressState(
         mohr: computeMohrCircle(sMPa, tMPa),
         failure: checkFailure(sMPa, tMPa, fy),
         shearCentre,
+        tensors: elastic
+          ? stressTensorState(sMPa, toMPa(tauXy), toMPa(tauXz), elastic.e, elastic.nu)
+          : undefined,
       },
     };
   } catch (err) {

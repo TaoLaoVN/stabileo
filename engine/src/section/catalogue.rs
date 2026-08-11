@@ -557,8 +557,17 @@ pub fn tapered_channel(
         return Err("flange taper leaves no web between the flanges".into());
     }
     // A fillet cannot be larger than the space it sits in.
+    //
+    // The toe is bounded by the flange's thickness AT THE TIP, not by its
+    // quoted thickness: a tapered flange is thinnest exactly where the toe
+    // fillet sits. Without that bound the arc does not fit between the tip face
+    // and the inner face, and the outline closes through a 1.7-degree spike —
+    // which no Delaunay refiner can mesh, so shear and torsion panicked with
+    // `unreachable` on eight of the shipped channels while bending, which needs
+    // no mesh, answered fine.
+    let tip_thickness = hh - (slope * b + c);
     let r_root = r_root.max(0.0).min((b - tw) / 2.0).min(hh - tf);
-    let r_toe = r_toe.max(0.0).min((b - tw) / 2.0);
+    let r_toe = r_toe.max(0.0).min((b - tw) / 2.0).min(tip_thickness.max(0.0));
     let n = arc_segments.max(1);
 
     let mut top: Vec<[f64; 2]> = vec![[0.0, hh], [b, hh]];
