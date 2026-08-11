@@ -85,23 +85,59 @@
 {/if}
 
 <style>
+  /* The `?` belongs to the application's chrome, not to a palette of its own:
+     hairline at rest, accented when it is the thing you just opened. */
   .help-btn {
     width: 14px; height: 14px; line-height: 12px; padding: 0;
-    border-radius: 50%; border: 1px solid #555; background: none;
-    color: #888; font-size: 0.62rem; cursor: pointer; font-weight: 700;
+    border-radius: 50%;
+    border: 1px solid var(--st-hair);
+    background: none;
+    color: var(--st-text-3);
+    font-family: var(--st-sans);
+    font-size: 0.62rem;
+    cursor: pointer;
+    font-weight: 700;
     flex: none;
+    transition: border-color 0.12s, color 0.12s;
   }
-  .help-btn:hover, .help-btn.open { border-color: #4ecdc4; color: #4ecdc4; }
+
+  .help-btn:hover, .help-btn.open {
+    border-color: var(--st-accent);
+    color: var(--st-accent);
+  }
+
   .help-pop {
-    position: fixed; z-index: 200;
-    padding: 8px 10px; max-height: 60vh; overflow-y: auto;
-    background: #16211f; border: 1px solid #35504c; border-radius: 4px;
+    position: fixed;
+    z-index: 200;
+    padding: 8px 10px;
+    max-height: 60vh;
+    overflow-y: auto;
+    background: var(--st-surface-2);
+    border: 1px solid var(--st-hair-strong);
+    border-radius: var(--st-radius);
     box-shadow: 0 4px 16px rgba(0, 0, 0, 0.6);
   }
-  .help-what { margin: 0; color: #cfe3e0; font-size: 0.68rem; line-height: 1.45; }
+
+  .help-what {
+    margin: 0;
+    color: var(--st-text);
+    font-family: var(--st-sans);
+    font-size: 0.68rem;
+    line-height: 1.45;
+  }
+
+  /* What the student will see: a rendering, so it reads as a value rather
+     than as more prose. */
   .help-example {
-    margin-top: 6px; padding: 6px 8px; border-radius: 3px;
-    background: #101a19; border-left: 2px solid #4ecdc4;
-    color: #9fbfbc; font-size: 0.65rem; line-height: 1.5; white-space: pre-line;
+    margin-top: 6px;
+    padding: 6px 8px;
+    border-radius: var(--st-radius);
+    background: var(--st-surface-3);
+    border-left: 2px solid var(--st-value);
+    color: var(--st-text-2);
+    font-family: var(--st-mono);
+    font-size: 0.65rem;
+    line-height: 1.5;
+    white-space: pre-line;
   }
 </style>

@@ -10,6 +10,7 @@
   import { stressContext } from './exercise-stress';
   import { loadLibrary, removeFromLibrary, saveToLibrary, fromShareLink } from './exercise-library';
   import SubmissionReview from './SubmissionReview.svelte';
+  import FieldHelp from './FieldHelp.svelte';
   import { fromSubmissionCode, fromSubmissionFile, type Submission } from './exercise-submission';
 
   /** Teacher-authored exercises, restored from the library on mount.
@@ -29,6 +30,7 @@
   let openedSubmission = $state<Submission | null>(null);
   let submissionError = $state('');
   let pastedCode = $state('');
+  let submissionFileInput = $state<HTMLInputElement | undefined>();
 
   /** Error codes to sentences, so a truncated download never reaches a
    *  teacher as a raw identifier. */
@@ -273,18 +275,42 @@
           <SubmissionReview submission={openedSubmission} onclose={() => (openedSubmission = null)} />
         {:else}
           <p class="edu-subtitle">{t('edu.review.openHint')}</p>
-          <input type="file" accept=".json" onchange={openSubmissionFile} data-testid="edu-open-submission" />
-          <div class="paste-row">
+
+          <!--
+            Two ways in, and they are not interchangeable: a file is what a
+            student downloaded, a code is what they pasted into a message. A
+            native file input renders as a white system button that belongs to
+            no design system at all, and its label ("Choose File") says nothing
+            about which of the two this is — so the input is hidden behind a
+            button that names the thing, and each route carries a `?`.
+          -->
+          <div class="submit-row">
+            <button class="submit-btn" onclick={() => submissionFileInput?.click()} data-testid="edu-open-submission">
+              {t('edu.review.chooseFile')}
+            </button>
+            <FieldHelp what={t('edu.review.helpFileWhat')} example={t('edu.review.helpFileEx')} />
+          </div>
+          <input
+            bind:this={submissionFileInput}
+            type="file"
+            accept=".json"
+            style="display:none"
+            onchange={openSubmissionFile}
+          />
+
+          <div class="submit-row">
             <input
               type="text"
-              class="paste-code"
+              class="submit-code"
               bind:value={pastedCode}
               placeholder={t('edu.review.pastePlaceholder')}
             />
-            <button class="card-act" onclick={openSubmissionCode} data-testid="edu-open-code">
+            <button class="submit-btn" onclick={openSubmissionCode} data-testid="edu-open-code">
               {t('edu.review.openCode')}
             </button>
+            <FieldHelp what={t('edu.review.helpCodeWhat')} example={t('edu.review.helpCodeEx')} />
           </div>
+
           {#if submissionError}<p class="edu-link-notice">{submissionError}</p>{/if}
         {/if}
       </div>
@@ -431,6 +457,44 @@
   }
   .card-act:hover { color: var(--st-text-2); }
   .card-act.del:hover { color: var(--st-danger); }
+  /* Both routes into a submission read as one control family, and the file
+     one is a real button rather than the browser's white system widget. */
+  .submit-row {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    margin-top: 6px;
+  }
+
+  .submit-btn {
+    background: none;
+    border: 1px solid var(--st-hair);
+    border-radius: var(--st-radius);
+    color: var(--st-text-2);
+    font-family: var(--st-sans);
+    font-size: 0.7rem;
+    padding: 4px 10px;
+    cursor: pointer;
+    white-space: nowrap;
+    transition: border-color 0.12s, color 0.12s;
+  }
+
+  .submit-btn:hover { border-color: var(--st-hair-strong); color: var(--st-text); }
+
+  .submit-code {
+    flex: 1;
+    min-width: 0;
+    background: var(--st-surface-3);
+    border: 1px solid var(--st-hair);
+    border-radius: var(--st-radius);
+    color: var(--st-text);
+    font-family: var(--st-mono);
+    font-size: 0.66rem;
+    padding: 4px 6px;
+  }
+
+  .submit-code:focus { outline: none; border-color: var(--st-focus); }
+
   .edu-link-notice {
     background: rgba(78,205,196,0.08); border-left: 2px solid var(--st-text-2);
     padding: 6px 9px; color: var(--st-text-2); font-size: 0.72rem; border-radius: 3px;

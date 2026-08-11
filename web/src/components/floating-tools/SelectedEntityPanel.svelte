@@ -571,8 +571,8 @@
     justify-content: center;
     gap: 6px;
     padding: 4px 8px;
-    border-top: 1px solid rgba(78, 205, 196, 0.3);
-    background: rgba(78, 205, 196, 0.06);
+    border-top: 1px solid var(--st-hair-strong);
+    background: var(--st-surface-2);
   }
 
   .ft-load-tag {

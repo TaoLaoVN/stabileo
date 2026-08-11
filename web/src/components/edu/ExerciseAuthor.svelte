@@ -88,6 +88,8 @@
   let shareUrl = $state('');
   let sourceError = $state('');
   let sourceBusy = $state(false);
+  let modelFileInput = $state<HTMLInputElement | undefined>();
+  let exerciseFileInput = $state<HTMLInputElement | undefined>();
 
   async function useExample() {
     sourceBusy = true;
@@ -349,7 +351,14 @@
       </div>
     {:else if sourceTab === 'file'}
       <p class="hint">{t('edu.author.fileHint')}</p>
-      <input type="file" accept=".ded,.json" onchange={useFile} />
+      <!-- A native file input renders as a white system button that belongs
+           to no design system, labelled "Choose File" — which says nothing
+           about which file. Hidden behind a button that names it. -->
+      <div class="row">
+        <button class="btn-ghost" onclick={() => modelFileInput?.click()}>{t('edu.author.chooseModelFile')}</button>
+        <FieldHelp what={t('edu.author.helpModelFileWhat')} example={t('edu.author.helpModelFileEx')} />
+      </div>
+      <input bind:this={modelFileInput} type="file" accept=".ded,.json" style="display:none" onchange={useFile} />
     {:else}
       <p class="hint">{t('edu.author.linkHint')}</p>
       <div class="row">
@@ -676,82 +685,256 @@
 
   <section class="open-section">
     <h4>{t('edu.author.openExisting')}</h4>
-    <input type="file" accept=".json" onchange={openFile} />
+    <div class="row">
+      <button class="btn-ghost" onclick={() => exerciseFileInput?.click()}>{t('edu.author.chooseExerciseFile')}</button>
+      <FieldHelp what={t('edu.author.helpExerciseFileWhat')} example={t('edu.author.helpExerciseFileEx')} />
+    </div>
+    <input bind:this={exerciseFileInput} type="file" accept=".json" style="display:none" onchange={openFile} />
     {#if importError}<p class="warn">⚠ {importError}</p>{/if}
   </section>
 </div>
 
 <style>
-  .author { padding: 12px 14px; color: #ddd; font-size: 0.8rem; overflow-y: auto; height: 100%; }
-  .author-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px; }
-  .author-head h3 { margin: 0; font-size: 0.95rem; color: #4ecdc4; }
-  .author-close { background: none; border: none; color: #888; cursor: pointer; font-size: 0.9rem; }
-  .author-intro { color: #999; font-size: 0.72rem; line-height: 1.45; margin: 0 0 12px; }
+  /*
+    The authoring panel speaks the application's visual language.
+    ────────────────────────────────────────────────────────────
+    It was written before the design system landed and kept its own palette:
+    near-black greys that belong to no surface in the app, and a turquoise
+    doing four different jobs — a heading, an active tab, a primary button and
+    a computed value. Here the turquoise means one thing (a value the app
+    worked out), the accent means "the thing you are doing", and every grey is
+    a named surface or a text tier.
+  */
+  .author {
+    padding: 12px 14px;
+    color: var(--st-text);
+    font-family: var(--st-sans);
+    font-size: 0.8rem;
+    overflow-y: auto;
+    height: 100%;
+  }
+
+  .author-head {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 4px;
+  }
+
+  .author-head h3 {
+    margin: 0;
+    font-family: var(--st-display);
+    font-size: 0.9rem;
+    color: var(--st-text);
+  }
+
+  .author-close {
+    background: none;
+    border: none;
+    color: var(--st-text-3);
+    cursor: pointer;
+    font-size: 0.9rem;
+  }
+
+  .author-close:hover { color: var(--st-text); }
+
+  .author-intro {
+    color: var(--st-text-3);
+    font-size: 0.72rem;
+    line-height: 1.45;
+    margin: 0 0 12px;
+  }
+
+  /* Where the structure comes from: four routes, one selected. */
   .source-tabs { display: flex; gap: 4px; margin-bottom: 8px; flex-wrap: wrap; }
+
   .src-tab {
-    background: #1c1c1c; border: 1px solid #333; color: #999;
-    padding: 3px 9px; border-radius: 3px; cursor: pointer; font-size: 0.71rem;
+    background: none;
+    border: 1px solid var(--st-hair);
+    color: var(--st-text-2);
+    font-family: var(--st-sans);
+    padding: 3px 9px;
+    border-radius: var(--st-radius);
+    cursor: pointer;
+    font-size: 0.71rem;
+    transition: background 0.12s, border-color 0.12s, color 0.12s;
   }
-  .src-tab:hover { border-color: #4ecdc4; color: #ddd; }
-  .src-tab.active { background: #4ecdc4; border-color: #4ecdc4; color: #111; font-weight: 600; }
-  section { border-top: 1px solid #2a2a2a; padding: 10px 0; }
-  h4 { margin: 0 0 8px; font-size: 0.78rem; color: #bbb; font-weight: 600; }
-  label { display: block; margin-bottom: 6px; font-size: 0.72rem; color: #999; }
+
+  .src-tab:hover { border-color: var(--st-hair-strong); color: var(--st-text); }
+
+  .src-tab.active {
+    background: var(--st-accent);
+    border-color: var(--st-accent);
+    color: var(--st-text-on-accent);
+    font-weight: 600;
+  }
+
+  section { border-top: 1px solid var(--st-hair); padding: 10px 0; }
+
+  /* Numbered section headings, in the same mono the rest of the app uses. */
+  h4 {
+    margin: 0 0 8px;
+    font-family: var(--st-mono);
+    font-size: 0.66rem;
+    font-weight: 400;
+    letter-spacing: 0.11em;
+    text-transform: uppercase;
+    color: var(--st-text-2);
+  }
+
+  label { display: block; margin-bottom: 6px; font-size: 0.72rem; color: var(--st-text-2); }
   label input[type='text'], label input[type='number'], label textarea, label select { width: 100%; margin-top: 2px; }
+
   input[type='text'], input[type='number'], textarea, select {
-    background: #1c1c1c; border: 1px solid #333; color: #ddd;
-    padding: 3px 6px; border-radius: 3px; font-size: 0.74rem;
+    background: var(--st-surface-3);
+    border: 1px solid var(--st-hair);
+    color: var(--st-text);
+    font-family: var(--st-sans);
+    padding: 3px 6px;
+    border-radius: var(--st-radius);
+    font-size: 0.74rem;
   }
+
+  input[type='text']:focus, input[type='number']:focus, textarea:focus, select:focus {
+    outline: none;
+    border-color: var(--st-focus);
+  }
+
   .row { display: flex; gap: 6px; align-items: center; margin-bottom: 5px; flex-wrap: wrap; }
   .row > label { margin: 0; flex: 1; }
   .row input[type='text'] { flex: 1; min-width: 80px; }
   .unit { width: 62px; flex: none !important; }
   .num { width: 52px; }
   .chk { display: flex; align-items: center; gap: 3px; margin: 0; font-size: 0.7rem; }
+  .chk input[type='checkbox'] { accent-color: var(--st-accent); }
   .qgroup { margin-bottom: 12px; }
   .field-head { display: flex; align-items: center; gap: 5px; margin-bottom: 4px; }
-  .field-label { font-size: 0.72rem; color: #999; }
+  .field-label { font-size: 0.72rem; color: var(--st-text-2); }
+
   .presets { display: flex; gap: 4px; flex-wrap: wrap; margin-bottom: 7px; }
+
   .preset {
-    background: #1c1c1c; border: 1px solid #3a3a3a; color: #bbb;
-    padding: 2px 8px; border-radius: 10px; cursor: pointer; font-size: 0.7rem;
+    background: none;
+    border: 1px solid var(--st-hair);
+    color: var(--st-text-2);
+    font-family: var(--st-sans);
+    padding: 2px 8px;
+    border-radius: 10px;
+    cursor: pointer;
+    font-size: 0.7rem;
+    transition: border-color 0.12s, color 0.12s;
   }
-  .preset:hover:not(:disabled) { border-color: #4ecdc4; color: #4ecdc4; }
-  .preset:disabled { color: #555; border-color: #2a2a2a; cursor: not-allowed; }
-  .qrow {
-    border-left: 2px solid #2c2c2c; padding-left: 7px; margin-bottom: 7px;
-  }
+
+  .preset:hover:not(:disabled) { border-color: var(--st-hair-strong); color: var(--st-text); }
+  .preset:disabled { color: var(--st-text-3); border-color: var(--st-hair); opacity: 0.5; cursor: not-allowed; }
+
+  .qrow { border-left: 2px solid var(--st-hair); padding-left: 7px; margin-bottom: 7px; }
   .row.sub { margin-bottom: 0; }
   .row.sub select { font-size: 0.71rem; }
-  .chk.wide { font-size: 0.73rem; color: #bbb; margin-bottom: 5px; }
+  .chk.wide { font-size: 0.73rem; color: var(--st-text-2); margin-bottom: 5px; }
+
+  /* Something the app worked out from the drawing, not something typed. */
   .detected {
-    margin: 0; padding: 5px 8px; border-radius: 3px;
-    background: rgba(78,205,196,0.07); border-left: 2px solid #4ecdc4;
-    color: #9fbfbc; font-size: 0.7rem;
+    margin: 0;
+    padding: 5px 8px;
+    border-radius: var(--st-radius);
+    background: var(--st-surface-2);
+    border-left: 2px solid var(--st-value);
+    color: var(--st-text-2);
+    font-size: 0.7rem;
   }
-  .detected strong { color: #4ecdc4; }
-  .unit-lbl { color: #888; font-size: 0.7rem; }
-  .qlabel { display: block; font-size: 0.7rem; color: #777; text-transform: uppercase; letter-spacing: 0.04em; margin-bottom: 4px; }
+
+  .detected strong { color: var(--st-value); font-weight: 600; }
+
+  .unit-lbl { color: var(--st-text-3); font-size: 0.7rem; }
+
+  .qlabel {
+    display: block;
+    font-family: var(--st-mono);
+    font-size: 0.62rem;
+    color: var(--st-text-3);
+    text-transform: uppercase;
+    letter-spacing: 0.09em;
+    margin-bottom: 4px;
+  }
+
+  /* The action of the step is on the accent; everything beside it is hairline. */
   .btn-primary {
-    background: #4ecdc4; border: none; color: #111; font-weight: 600;
-    padding: 5px 12px; border-radius: 3px; cursor: pointer; font-size: 0.75rem;
+    background: var(--st-accent);
+    border: 1px solid var(--st-accent);
+    color: var(--st-text-on-accent);
+    font-family: var(--st-sans);
+    font-weight: 600;
+    padding: 5px 12px;
+    border-radius: var(--st-radius);
+    cursor: pointer;
+    font-size: 0.75rem;
+    transition: background 0.12s, border-color 0.12s;
   }
-  .btn-primary:disabled { background: #333; color: #666; cursor: not-allowed; }
+
+  .btn-primary:hover:not(:disabled) { background: var(--st-accent-hover); border-color: var(--st-accent-hover); }
+
+  .btn-primary:disabled {
+    background: none;
+    border-color: var(--st-hair);
+    color: var(--st-text-3);
+    cursor: not-allowed;
+  }
+
   .btn-ghost {
-    background: none; border: 1px solid #444; color: #aaa;
-    padding: 5px 10px; border-radius: 3px; cursor: pointer; font-size: 0.73rem;
+    background: none;
+    border: 1px solid var(--st-hair);
+    color: var(--st-text-2);
+    font-family: var(--st-sans);
+    padding: 5px 10px;
+    border-radius: var(--st-radius);
+    cursor: pointer;
+    font-size: 0.73rem;
+    transition: border-color 0.12s, color 0.12s;
   }
-  .btn-ghost:disabled { color: #555; border-color: #2c2c2c; cursor: not-allowed; }
-  .btn-add { background: none; border: 1px dashed #444; color: #888; padding: 3px 8px; border-radius: 3px; cursor: pointer; font-size: 0.7rem; }
-  .btn-del { background: none; border: none; color: #a55; cursor: pointer; font-size: 0.7rem; }
-  .summary { color: #4ecdc4; font-size: 0.72rem; margin: 6px 0 0; font-family: monospace; }
-  .warn { color: #d9a441; font-size: 0.7rem; line-height: 1.4; margin: 5px 0 0; }
-  .ok { color: #4ecdc4; font-size: 0.72rem; margin: 6px 0 0; }
-  .hint { color: #777; font-size: 0.68rem; margin: 5px 0 0; line-height: 1.4; }
-  .link { width: 100%; margin-top: 4px; font-size: 0.65rem; font-family: monospace; }
+
+  .btn-ghost:hover:not(:disabled) { border-color: var(--st-hair-strong); color: var(--st-text); }
+  .btn-ghost:disabled { color: var(--st-text-3); border-color: var(--st-hair); opacity: 0.5; cursor: not-allowed; }
+
+  .btn-add {
+    background: none;
+    border: 1px dashed var(--st-hair-strong);
+    color: var(--st-text-3);
+    font-family: var(--st-sans);
+    padding: 3px 8px;
+    border-radius: var(--st-radius);
+    cursor: pointer;
+    font-size: 0.7rem;
+  }
+
+  .btn-add:hover { color: var(--st-text); border-color: var(--st-text-3); }
+
+  .btn-del {
+    background: none;
+    border: none;
+    color: var(--st-danger);
+    font-family: var(--st-sans);
+    cursor: pointer;
+    font-size: 0.7rem;
+  }
+
+  .summary {
+    color: var(--st-value);
+    font-family: var(--st-mono);
+    font-size: 0.72rem;
+    margin: 6px 0 0;
+  }
+
+  .warn { color: var(--st-warn); font-size: 0.7rem; line-height: 1.4; margin: 5px 0 0; }
+  .ok { color: var(--st-ok); font-size: 0.72rem; margin: 6px 0 0; }
+  .hint { color: var(--st-text-3); font-size: 0.68rem; margin: 5px 0 0; line-height: 1.4; }
+
+  .link { width: 100%; margin-top: 4px; font-size: 0.65rem; font-family: var(--st-mono); }
+
   .preview { width: 100%; margin-top: 8px; border-collapse: collapse; }
-  .preview td { padding: 3px 4px; border-bottom: 1px solid #262626; font-size: 0.72rem; }
-  .preview .val { text-align: right; font-family: monospace; color: #4ecdc4; }
-  .preview .val.bad { color: #d9a441; }
-  .open-section { border-top: 1px solid #2a2a2a; }
+  .preview td { padding: 3px 4px; border-bottom: 1px solid var(--st-hair); font-size: 0.72rem; }
+  .preview .val { text-align: right; font-family: var(--st-mono); color: var(--st-value); }
+  .preview .val.bad { color: var(--st-warn); }
+
+  .open-section { border-top: 1px solid var(--st-hair); }
 </style>

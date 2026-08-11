@@ -707,10 +707,10 @@
         .replace('{total}', String(totalCount))}
     </p>
     <div class="handin-actions">
-      <button class="verify-btn" onclick={downloadSubmission} data-testid="edu-handin-file">
+      <button class="handin-btn" onclick={downloadSubmission} data-testid="edu-handin-file">
         {t('edu.handin.download')}
       </button>
-      <button class="reveal-btn" onclick={copySubmissionCode} data-testid="edu-handin-code">
+      <button class="handin-btn" onclick={copySubmissionCode} data-testid="edu-handin-code">
         {t('edu.handin.copyCode')}
       </button>
     </div>
@@ -1239,6 +1239,25 @@
     align-items: center;
     gap: 8px;
   }
+
+  /*
+     Hairline, not accent. "Verify" is the action of the step on screen and
+     owns the accent; handing in is available from the first answer and would
+     otherwise sit beside it claiming to be equally what you came to do.
+  */
+  .handin-btn {
+    background: none;
+    border: 1px solid var(--st-hair);
+    border-radius: var(--st-radius);
+    color: var(--st-text-2);
+    font-family: var(--st-sans);
+    font-size: 0.72rem;
+    padding: 5px 12px;
+    cursor: pointer;
+    transition: border-color 0.12s, color 0.12s;
+  }
+
+  .handin-btn:hover { border-color: var(--st-hair-strong); color: var(--st-text); }
 
   .handin-code {
     width: 100%;

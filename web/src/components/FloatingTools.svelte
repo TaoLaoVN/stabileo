@@ -134,7 +134,8 @@
     z-index: 100;
     display: flex;
     flex-direction: column;
-    background: rgba(22, 33, 62, 0.95);
+    /* The same surface as every other bar in the app, not a navy of its own. */
+    background: color-mix(in srgb, var(--st-surface) 95%, transparent);
     border-bottom: 1px solid var(--st-hair-strong);
     backdrop-filter: blur(8px);
   }
@@ -155,7 +156,7 @@
     background: transparent;
     border: 1px solid transparent;
     border-radius: 6px;
-    color: #999;
+    color: var(--st-text-2);
     cursor: pointer;
     transition: all 0.15s;
     min-width: 52px;
@@ -168,8 +169,8 @@
 
   .ft-btn.active {
     background: var(--st-accent);
-    border-color: var(--st-danger);
-    color: white;
+    border-color: var(--st-accent);
+    color: var(--st-text-on-accent);
   }
 
   .ft-icon {
@@ -236,19 +237,19 @@
   .ft-opt-btn:disabled {
     opacity: 0.35;
     cursor: not-allowed;
-    color: #555;
+    color: var(--st-text-3);
     background: var(--st-surface-2);
-    border-color: #1a3050;
+    border-color: var(--st-hair);
   }
 
   .ft-opt-btn.active {
     background: var(--st-accent);
-    border-color: var(--st-danger);
-    color: white;
+    border-color: var(--st-accent);
+    color: var(--st-text-on-accent);
   }
 
   .ft-sep {
-    color: #444;
+    color: var(--st-hair-strong);
     font-size: 0.8rem;
     margin: 0 2px;
   }
