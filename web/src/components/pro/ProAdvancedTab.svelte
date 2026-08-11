@@ -24,10 +24,8 @@
     solveCable2D,
     guyanReduce2D,
     craigBampton2D,
-    solveMultiCase2D,
     solveMultiCase3D,
     analyzeSection,
-    solveConstrained2D,
     solveConstrained3D,
   } from '../../lib/engine/wasm-solver';
   import { buildSolverInput3D } from '../../lib/engine/solver-service';
@@ -71,6 +69,36 @@
   }
 
   // ─── Shared helpers ────────────────────────────────────────────
+
+
+  /**
+   * Four of these analyses exist only in 2D in the engine — arc-length,
+   * displacement control, cable and model reduction all deserialise a 2D
+   * `SolverInput`. Feeding them a 3D model produced a parse error that read
+   * like a bug in the model.
+   *
+   * `modelStore.buildSolverInput` projects onto the X–Y plane and drops z, so
+   * a model that lies in that plane maps onto it exactly and anything with
+   * depth collapses — that is where cable's "element has zero length" came
+   * from. `uiStore.analysisMode` reads 'pro' throughout this workspace and
+   * never '2d', so the gate has to be the geometry.
+   */
+  const is2DModel = $derived(
+    modelStore.nodes.size > 1
+    && [...modelStore.nodes.values()].every(n => Math.abs(n.z ?? 0) < 1e-9),
+  );
+
+  /** A free node worth reading a response at: the highest unsupported one,
+   *  which on a building is the roof. */
+  function defaultFreeNode(): number | null {
+    let best: { id: number; z: number } | null = null;
+    for (const [id, n] of modelStore.nodes) {
+      if (modelStore.supports.has(id)) continue;
+      const z = (n as { z?: number }).z ?? 0;
+      if (!best || z > best.z) best = { id, z };
+    }
+    return best?.id ?? nodeIds[0] ?? null;
+  }
 
   let useDiaphragm = $state(false);
 
@@ -273,7 +301,9 @@
   let thMethod = $state<'newmark' | 'hht'>('newmark');
   let thAccelText = $state('');
   let thResult = $state<any | null>(null);
-  let thUseSine = $state(false);
+  /* Starts on the generated sine: with the text box empty and this off, the
+     only thing the button could do was refuse to run. */
+  let thUseSine = $state(true);
   let thSineAmp = $state(0.3);
   let thSineFreq = $state(2.0);
 
@@ -334,6 +364,7 @@
   let harmNPoints = $state(200);
   let harmDamping = $state(0.05);
   let harmDir = $state<'X' | 'Y' | 'Z'>('X');
+  let harmNodeId = $state<number | null>(null);
   let harmResult = $state<any | null>(null);
 
   function handleHarmonic() {
@@ -343,19 +374,25 @@
     try {
       let input = buildInput();
       input = maybeApplyDiaphragm(input);
+      // Mass density in kg/m³, exactly as modal does it — `rho` is a WEIGHT
+      // density in kN/m³, and feeding it straight in made every frequency
+      // wrong by a factor of g/1000.
       const densities: Record<string, number> = {};
-      for (const [id, mat] of modelStore.materials) {
-        densities[String(id)] = (mat as any).rho ?? 0;
-      }
+      for (const [id, d] of getMaterialDensities(input)) densities[String(id)] = d;
+      // The engine sweeps an explicit frequency list and reports one node's
+      // response; it has no fMin/fMax/nPoints of its own.
+      const span = harmNPoints > 1 ? (harmFMax - harmFMin) / (harmNPoints - 1) : 0;
+      const frequencies = Array.from({ length: Math.max(1, harmNPoints) }, (_, i) => harmFMin + i * span);
+      const responseNodeId = harmNodeId ?? defaultFreeNode();
+      if (responseNodeId == null) throw new Error(t('advanced.emptyModel'));
       const t0 = performance.now();
       const res = solveHarmonic3D({
         solver: input,
         densities,
-        fMin: harmFMin,
-        fMax: harmFMax,
-        nPoints: harmNPoints,
-        dampingXi: harmDamping,
-        direction: harmDir,
+        frequencies,
+        dampingRatio: harmDamping,
+        responseNodeId,
+        responseDof: harmDir.toLowerCase(),
       });
       const elapsed = performance.now() - t0;
       harmonicElapsed = elapsed;
@@ -445,13 +482,15 @@
     solveError = null;
     solving = true;
     try {
-      let input = buildInput();
-      input = maybeApplyDiaphragm(input);
+      // Engine-side this is `ArcLengthInput`, whose `solver` is a 2D
+      // SolverInput — hence the 2D build and the 2D-only gate on the button.
+      const input = modelStore.buildSolverInput(uiStore.includeSelfWeight);
+      if (!input) throw new Error(t('advanced.emptyModel'));
       arcResult = solveArcLength({
         solver: input,
         maxIter: arcMaxIter,
         tolerance: arcTol,
-        nIncrements: arcIncrements,
+        maxSteps: arcIncrements,
       });
     } catch (e: any) {
       solveError = `Arc-Length: ${errorText(e, 'Error')}`;
@@ -462,7 +501,8 @@
   // ─── 7c. Displacement Control ──────────────────────────────
 
   let dcNodeId = $state<number | null>(null);
-  let dcDof = $state<'ux' | 'uy' | 'uz'>('uy');
+  /** 2D control DOFs, in the engine's own order: 0=ux, 1=uz, 2=ry. */
+  let dcDof = $state(1);
   let dcTargetDisp = $state(-0.05);
   let dcIncrements = $state(20);
   let dcResult = $state<any | null>(null);
@@ -471,14 +511,16 @@
     solveError = null;
     solving = true;
     try {
-      let input = buildInput();
-      input = maybeApplyDiaphragm(input);
+      // 2D only, like arc-length: `DisplacementControlInput.solver` is a 2D
+      // SolverInput and `controlDof` is a DOF INDEX, not a name.
+      const input = modelStore.buildSolverInput(uiStore.includeSelfWeight);
+      if (!input) throw new Error(t('advanced.emptyModel'));
       dcResult = solveDisplacementControl({
         solver: input,
         controlNode: dcNodeId,
         controlDof: dcDof,
         targetDisplacement: dcTargetDisp,
-        nIncrements: dcIncrements,
+        nSteps: dcIncrements,
       });
     } catch (e: any) {
       solveError = `Disp. Control: ${errorText(e, 'Error')}`;
@@ -488,8 +530,14 @@
 
   // ─── 7d. Imperfections ─────────────────────────────────────
 
-  let imperfType = $state<'global' | 'local'>('global');
-  let imperfAmplitude = $state(0.001);
+  /**
+   * What the engine actually applies is a notional load derived from an
+   * out-of-plumbness RATIO (1/200 in EC3 and AISC), not a "global/local" mode
+   * with an amplitude — those two fields went across the wire and were never
+   * read, and the analysis failed on the missing `imperfections` block.
+   */
+  let imperfRatio = $state(0.005);
+  let imperfDir = $state<'X' | 'Y'>('X');
   let imperfResult = $state<any | null>(null);
 
   function handleImperfections() {
@@ -500,8 +548,10 @@
       input = maybeApplyDiaphragm(input);
       imperfResult = solveWithImperfections3D({
         solver: input,
-        type: imperfType,
-        amplitude: imperfAmplitude,
+        imperfections: {
+          // Gravity axis 2 = Z, which is vertical in this app's 3D models.
+          notionalLoads: [{ ratio: imperfRatio, direction: imperfDir === 'X' ? 0 : 1, gravityAxis: 2 }],
+        },
       });
     } catch (e: any) {
       solveError = `Imperfecciones: ${errorText(e, 'Error')}`;
@@ -539,8 +589,10 @@
           ...(s.kz ? { kz: s.kz } : {}),
         })),
       });
+      // The Winkler export returns AnalysisResults3D directly — reading
+      // `res.results` meant the solve never reached the viewport.
       winklerResult = res;
-      if (res.results) resultsStore.setResults3D(res.results);
+      if (res.displacements) resultsStore.setResults3D(res);
     } catch (e: any) {
       solveError = `Winkler: ${errorText(e, 'Error')}`;
     }
@@ -551,7 +603,8 @@
 
   let ssiNodeId = $state<number | null>(null);
   let ssiDirection = $state<'Y' | 'Z'>('Y');
-  let ssiCurveType = $state<'softClay' | 'sand' | 'stiffClay' | 'custom'>('softClay');
+  let ssiCurveType = $state<'softClay' | 'sand' | 'stiffClay'>('softClay');
+  let ssiEps50 = $state(0.01);
   let ssiSu = $state(50);
   let ssiGamma = $state(18);
   let ssiDiameter = $state(0.6);
@@ -563,15 +616,32 @@
   let ssiSprings = $state<any[]>([]);
   let ssiResult = $state<any | null>(null);
 
+  /**
+   * The p-y curve as the engine tags it. `SoilCurve` is an externally tagged
+   * enum with snake_case fields — "py_soft_clay" with `gamma_eff` and
+   * `eps_50`, not "softClay" with `gamma`, which is why every SSI run stopped
+   * at the deserialiser. Direction is an axis INDEX (0=X, 1=Y, 2=Z), not a
+   * letter.
+   */
+  const AXIS_INDEX: Record<string, number> = { X: 0, Y: 1, Z: 2 };
+
+  function ssiCurvePayload(): Record<string, unknown> {
+    const common = { gamma_eff: ssiGamma, d: ssiDiameter, depth: ssiDepth };
+    if (ssiCurveType === 'sand') return { type: 'py_sand', phi: ssiPhi, ...common };
+    return {
+      type: ssiCurveType === 'stiffClay' ? 'py_stiff_clay' : 'py_soft_clay',
+      su: ssiSu, eps_50: ssiEps50, ...common,
+    };
+  }
+
   function addSsiSpring() {
     if (ssiNodeId == null) return;
-    const params: any = { type: ssiCurveType };
-    if (ssiCurveType === 'softClay' || ssiCurveType === 'stiffClay') {
-      params.su = ssiSu; params.gamma = ssiGamma; params.d = ssiDiameter; params.depth = ssiDepth;
-    } else if (ssiCurveType === 'sand') {
-      params.phi = ssiPhi; params.gamma = ssiGamma; params.d = ssiDiameter; params.depth = ssiDepth;
-    }
-    ssiSprings = [...ssiSprings, { nodeId: ssiNodeId, direction: ssiDirection, curve: params, tributaryLength: ssiTribLength }];
+    ssiSprings = [...ssiSprings, {
+      nodeId: ssiNodeId,
+      direction: AXIS_INDEX[ssiDirection] ?? 1,
+      curve: ssiCurvePayload(),
+      tributaryLength: ssiTribLength,
+    }];
   }
 
   function removeSsiSpring(idx: number) {
@@ -639,11 +709,17 @@
 
   // ─── 11. Staged Construction ───────────────────────────────────
 
-  let stages = $state<{ name: string; addElements: number[]; removeElements: number[]; loadIndices: number[] }[]>([]);
+  let stages = $state<{ name: string; elementsAdded: number[]; elementsRemoved: number[]; loadIndices: number[] }[]>([]);
   let stagedResult = $state<any | null>(null);
 
   function addStage() {
-    stages = [...stages, { name: t('pro.stageN').replace('{n}', String(stages.length + 1)), addElements: [], removeElements: [], loadIndices: [] }];
+    stages = [...stages, {
+      name: t('pro.stageN').replace('{n}', String(stages.length + 1)),
+      // A stage that adds nothing builds nothing, so the first one starts with
+      // the whole model and later stages are cut back from it by hand.
+      elementsAdded: stages.length === 0 ? [...elementIds] : [],
+      elementsRemoved: [], loadIndices: [],
+    }];
   }
 
   function removeStage(idx: number) {
@@ -657,7 +733,15 @@
       const input = buildInput();
       const res = solveStaged3D({
         solver: input,
-        stages: stages.map(s => ({ addElements: s.addElements, removeElements: s.removeElements, loadIndices: s.loadIndices })),
+        // `StagedInput3D` names these `name` / `elementsAdded` /
+        // `elementsRemoved`; the old payload sent neither the name (required)
+        // nor the right field names, so no stage ever built anything.
+        stages: stages.map(s => ({
+          name: s.name,
+          elementsAdded: s.elementsAdded,
+          elementsRemoved: s.elementsRemoved,
+          loadIndices: s.loadIndices,
+        })),
       });
       stagedResult = res;
       if (res.results) resultsStore.setResults3D(res.results);
@@ -674,14 +758,12 @@
   let creepH0 = $state(200);
   let creepAge = $state(28);
   let creepCementClass = $state<'R' | 'N' | 'S'>('N');
-  let creepTimeSteps = $state<{ time: number; additionalLoadFactor: number }[]>([
-    { time: 365, additionalLoadFactor: 0 },
-  ]);
+  let creepTimeSteps = $state<{ time: number }[]>([{ time: 365 }]);
   let creepResult = $state<any | null>(null);
 
   function addCreepStep() {
     const lastTime = creepTimeSteps.length > 0 ? creepTimeSteps[creepTimeSteps.length - 1].time : 0;
-    creepTimeSteps = [...creepTimeSteps, { time: lastTime + 365, additionalLoadFactor: 0 }];
+    creepTimeSteps = [...creepTimeSteps, { time: lastTime + 365 }];
   }
 
   function removeCreepStep(idx: number) {
@@ -693,10 +775,20 @@
     solving = true;
     try {
       const input = buildInput();
+      // EC2 creep parameters are per MATERIAL, and the steps are keyed on
+      // `tDays`. The old payload sent one `concrete` block and a `time` field,
+      // neither of which the engine knows.
+      const creepParams: Record<string, unknown> = {};
+      for (const [id] of modelStore.materials) {
+        creepParams[String(id)] = {
+          fc: creepFc, rh: creepRH, h0: creepH0,
+          t0: creepAge, cementClass: creepCementClass,
+        };
+      }
       creepResult = solveCreepShrinkage3D({
         solver: input,
-        concrete: { fc: creepFc, rh: creepRH, h0: creepH0, ageAtLoading: creepAge, cementClass: creepCementClass },
-        timeSteps: creepTimeSteps,
+        creepParams,
+        timeSteps: creepTimeSteps.map(s => ({ tDays: s.time })),
       });
     } catch (e: any) {
       solveError = `Fluencia: ${errorText(e, 'Error')}`;
@@ -717,7 +809,9 @@
       // Cable analysis is 2D-only — uses buildSolverInput from modelStore
       const input = modelStore.buildSolverInput(true); // always include self-weight for cables
       if (!input) { solveError = t('advanced.emptyModel'); solving = false; return; }
-      cableResult = solveCable2D(input, cableMaxIter, cableTol);
+      const densities: Record<string, number> = {};
+      for (const [id, d] of getMaterialDensities()) densities[String(id)] = d;
+      cableResult = solveCable2D(input, cableMaxIter, cableTol, densities);
     } catch (e: any) {
       solveError = `Cable: ${errorText(e, 'Error')}`;
     }
@@ -727,8 +821,19 @@
   // ─── 14. Influence Lines 3D ──────────────────────────────────
 
   let ilElementId = $state<number | null>(null);
+  let ilNodeId = $state<number | null>(null);
   let ilResponse = $state<'moment' | 'shear' | 'axial' | 'reaction'>('moment');
+  let ilPosition = $state(0.5);
   let ilResult = $state<any | null>(null);
+
+  /**
+   * The engine asks for a QUANTITY by its 3D name and a target that depends on
+   * it: an element plus a position along it for internal forces, a node for a
+   * reaction. `elementId` + `responseType` meant nothing to it, and the run
+   * stopped on the missing `quantity`. Names follow the 2D-plane convention
+   * used everywhere else here: bending is My, shear is Vz.
+   */
+  const IL_QUANTITY = { moment: 'My_diag', shear: 'Vz', axial: 'N', reaction: 'Fz' } as const;
 
   function handleInfluenceLine3D() {
     solveError = null;
@@ -738,8 +843,11 @@
       input = maybeApplyDiaphragm(input);
       ilResult = computeInfluenceLine3D({
         solver: input,
-        elementId: ilElementId,
-        responseType: ilResponse,
+        quantity: IL_QUANTITY[ilResponse],
+        ...(ilResponse === 'reaction'
+          ? { targetNodeId: ilNodeId ?? undefined }
+          : { targetElementId: ilElementId ?? undefined, targetPosition: ilPosition }),
+        gravityDirection: 'z',
       });
     } catch (e: any) {
       solveError = `Influence Line 3D: ${errorText(e, 'Error')}`;
@@ -750,7 +858,9 @@
   // ─── 15. Model Reduction ─────────────────────────────────────
 
   let reductionMethod = $state<'guyan' | 'craigBampton'>('guyan');
-  let retainedDofs = $state('');   // comma-separated DOF indices
+  /** Boundary (retained) NODE ids — the engine condenses by node, not by raw
+   *  DOF index, and `retainedDofs` was never a field it read. */
+  let boundaryNodesText = $state('');
   let numCBModes = $state(10);
   let reductionResult = $state<any | null>(null);
 
@@ -758,9 +868,9 @@
     solveError = null;
     solving = true;
     try {
-      const retained = retainedDofs.split(/[,\s]+/).map(Number).filter(n => !isNaN(n) && n >= 0);
-      if (retained.length === 0) {
-        solveError = t('pro.noRetainedDofs');
+      const boundaryNodes = boundaryNodesText.split(/[,\s]+/).map(Number).filter(n => !isNaN(n) && n > 0);
+      if (boundaryNodes.length === 0) {
+        solveError = t('pro.noBoundaryNodes');
         solving = false;
         return;
       }
@@ -768,9 +878,11 @@
       const input = modelStore.buildSolverInput(uiStore.includeSelfWeight);
       if (!input) { solveError = t('advanced.emptyModel'); solving = false; return; }
       if (reductionMethod === 'guyan') {
-        reductionResult = guyanReduce2D({ solver: input, retainedDofs: retained });
+        reductionResult = guyanReduce2D({ solver: input, boundaryNodes });
       } else {
-        reductionResult = craigBampton2D({ solver: input, retainedDofs: retained, numModes: numCBModes });
+        const densities: Record<string, number> = {};
+        for (const [id, d] of getMaterialDensities()) densities[String(id)] = d;
+        reductionResult = craigBampton2D({ solver: input, boundaryNodes, nModes: numCBModes, densities });
       }
     } catch (e: any) {
       solveError = `Model Reduction: ${errorText(e, 'Error')}`;
@@ -782,6 +894,26 @@
 
   let multiCaseResult = $state<any | null>(null);
 
+  /**
+   * One load vector per case, built the same way the combination solve builds
+   * them: the model with only that case's loads. The engine wants the LOADS,
+   * not case ids — `caseIds` was a field it never had, so multi-case failed on
+   * a missing `loadCases` every time.
+   */
+  function loadsForCase(caseId: number): unknown[] {
+    const input = buildSolverInput3D(
+      { nodes: modelStore.nodes, elements: modelStore.elements, supports: modelStore.supports,
+        loads: modelStore.loads.filter(l => ((l as any).data?.caseId ?? 1) === caseId),
+        materials: modelStore.materials, sections: modelStore.sections,
+        quads: modelStore.quads, plates: modelStore.plates, constraints: modelStore.constraints,
+        connectors: modelStore.connectors },
+      uiStore.includeSelfWeight,
+      false,
+      { expandMemberOffsets: false },
+    );
+    return (input?.loads as unknown[]) ?? [];
+  }
+
   function handleMultiCase() {
     solveError = null;
     solving = true;
@@ -792,16 +924,21 @@
         solving = false;
         return;
       }
-      const is3DMode = modelStore.nodes.size > 0 && [...modelStore.nodes.values()].some(n => (n.z ?? 0) !== 0);
-      if (is3DMode) {
-        let input = buildInput();
-        input = maybeApplyDiaphragm(input);
-        multiCaseResult = solveMultiCase3D({ solver: input, caseIds: cases.map(c => c.id) });
-      } else {
-        const input2D = modelStore.buildSolverInput(uiStore.includeSelfWeight);
-        if (!input2D) { solveError = t('advanced.emptyModel'); solving = false; return; }
-        multiCaseResult = solveMultiCase2D({ solver: input2D, caseIds: cases.map(c => c.id) });
-      }
+      let input = buildInput();
+      input = maybeApplyDiaphragm(input);
+      const byId = new Map(cases.map(c => [c.id, c.name]));
+      multiCaseResult = solveMultiCase3D({
+        solver: input,
+        loadCases: cases.map(c => ({ name: c.name, loads: loadsForCase(c.id) })),
+        combinations: modelStore.combinations.map(cb => ({
+          name: cb.name,
+          factors: Object.fromEntries(
+            cb.factors
+              .filter(f => byId.has(f.caseId))
+              .map(f => [byId.get(f.caseId) as string, f.factor]),
+          ),
+        })),
+      });
     } catch (e: any) {
       solveError = `Multi-Case: ${errorText(e, 'Error')}`;
     }
@@ -820,27 +957,61 @@
   let secPolyText = $state(''); // "x1,y1; x2,y2; ..."
   let secResult = $state<any | null>(null);
 
+  /**
+   * The section analyser is a polygon integrator: it takes `polygons`, each a
+   * list of [y, z] vertices, and knows nothing about named shapes. The old
+   * payload sent `{shape:'rect', b, h}` and failed on the missing `polygons`,
+   * so the shape is meshed into its outline here instead.
+   */
+  function sectionOutline(): Array<[number, number]> {
+    const half = (v: number) => v / 2;
+    switch (secShape) {
+      case 'rect':
+        return [[-half(secB), -half(secH)], [half(secB), -half(secH)], [half(secB), half(secH)], [-half(secB), half(secH)]];
+      case 'circle': {
+        const n = 48;
+        return Array.from({ length: n }, (_, i) => {
+          const a = (2 * Math.PI * i) / n;
+          return [secR * Math.cos(a), secR * Math.sin(a)] as [number, number];
+        });
+      }
+      case 'I': {
+        const b = half(secBf), h = half(secH), tw = half(secTw), tf = secTf;
+        return [
+          [-b, -h], [b, -h], [b, -h + tf], [tw, -h + tf],
+          [tw, h - tf], [b, h - tf], [b, h], [-b, h],
+          [-b, h - tf], [-tw, h - tf], [-tw, -h + tf], [-b, -h + tf],
+        ];
+      }
+      case 'T': {
+        const b = half(secBf), h = half(secH), tw = half(secTw), tf = secTf;
+        return [[-tw, -h], [tw, -h], [tw, h - tf], [b, h - tf], [b, h], [-b, h], [-b, h - tf], [-tw, h - tf]];
+      }
+      case 'L': {
+        // Legs measured from the heel, then centred on the bounding box.
+        const b = secB, h = secH, tw = secTw, tf = secTf;
+        const pts: Array<[number, number]> = [[0, 0], [b, 0], [b, tf], [tw, tf], [tw, h], [0, h]];
+        return pts.map(([y, z]) => [y - b / 2, z - h / 2] as [number, number]);
+      }
+      default:
+        return [];
+    }
+  }
+
   function handleSectionAnalysis() {
     solveError = null;
     try {
-      let geometry: any;
-      switch (secShape) {
-        case 'rect': geometry = { shape: 'rect', b: secB, h: secH }; break;
-        case 'circle': geometry = { shape: 'circle', r: secR }; break;
-        case 'I': geometry = { shape: 'I', h: secH, b: secBf, tw: secTw, tf: secTf }; break;
-        case 'L': geometry = { shape: 'L', h: secH, b: secB, tw: secTw, tf: secTf }; break;
-        case 'T': geometry = { shape: 'T', h: secH, b: secBf, tw: secTw, tf: secTf }; break;
-        case 'polygon': {
-          const pts = secPolyText.split(';').map(p => {
-            const [x, y] = p.trim().split(',').map(Number);
-            return { x: x ?? 0, y: y ?? 0 };
-          }).filter(p => !isNaN(p.x) && !isNaN(p.y));
-          if (pts.length < 3) { solveError = t('pro.needPolygonPts'); return; }
-          geometry = { shape: 'polygon', vertices: pts };
-          break;
-        }
+      let vertices: Array<[number, number]>;
+      if (secShape === 'polygon') {
+        vertices = secPolyText.split(';').map(p => {
+          const [y, z] = p.trim().split(',').map(Number);
+          return [y, z] as [number, number];
+        }).filter(([y, z]) => !isNaN(y) && !isNaN(z));
+        if (vertices.length < 3) { solveError = t('pro.needPolygonPts'); return; }
+      } else {
+        vertices = sectionOutline();
       }
-      secResult = analyzeSection(geometry);
+      secResult = analyzeSection({ polygons: [{ vertices }] });
     } catch (e: any) {
       solveError = `Section: ${errorText(e, 'Error')}`;
     }
@@ -848,38 +1019,33 @@
 
   // ─── 18. Constrained Solver ────────────────────────────────
 
-  let constraintType = $state<'rigid' | 'penalty'>('rigid');
-  let constraintPairs = $state('');  // "nodeA,nodeB; nodeC,nodeD; ..."
+  let constraintPairs = $state('');  // "master,slave; master,slave; ..."
   let constrainedResult = $state<any | null>(null);
 
   function handleConstrained() {
     solveError = null;
     solving = true;
     try {
-      const pairs = constraintPairs.split(';').map(p => {
+      // A constraint is a tagged union in the engine, and the only pair-shaped
+      // member of it is a rigid link. `{nodeA, nodeB}` plus a `method` the
+      // engine has no field for parsed as nothing at all.
+      const constraints = constraintPairs.split(';').map(p => {
         const [a, b] = p.trim().split(',').map(Number);
-        return { nodeA: a, nodeB: b };
-      }).filter(p => !isNaN(p.nodeA) && !isNaN(p.nodeB));
-      if (pairs.length === 0) {
+        return { type: 'rigidLink', masterNode: a, slaveNode: b, dofs: [] as number[] };
+      }).filter(c => !isNaN(c.masterNode) && !isNaN(c.slaveNode));
+      if (constraints.length === 0) {
         solveError = t('pro.needConstraintPairs');
         solving = false;
         return;
       }
-      const is3DMode = modelStore.nodes.size > 0 && [...modelStore.nodes.values()].some(n => (n.z ?? 0) !== 0);
-      let res: any;
-      if (is3DMode) {
-        let input = buildInput();
-        input = maybeApplyDiaphragm(input);
-        res = solveConstrained3D({ solver: input, constraints: pairs, method: constraintType });
-      } else {
-        const input2D = modelStore.buildSolverInput(uiStore.includeSelfWeight);
-        if (!input2D) { solveError = t('advanced.emptyModel'); solving = false; return; }
-        res = solveConstrained2D({ solver: input2D, constraints: pairs, method: constraintType });
-      }
+      // PRO is a 3D workspace — `analysisMode` reads 'pro' here, never '3d',
+      // so branching on it sent every PRO model down the 2D path.
+      let input = buildInput();
+      input = maybeApplyDiaphragm(input);
+      // Like Winkler, this export returns AnalysisResults3D itself.
+      const res = solveConstrained3D({ solver: input, constraints });
       constrainedResult = res;
-      if (res.results) {
-        is3DMode ? resultsStore.setResults3D(res.results) : resultsStore.setResults(res.results);
-      }
+      if (res.displacements) resultsStore.setResults3D(res);
     } catch (e: any) {
       solveError = `Constrained: ${errorText(e, 'Error')}`;
     }
@@ -1121,9 +1287,15 @@
       </div>
       {#if thResult}
         <div class="adv-inline">
-          {#if thResult.peakDisplacement != null}δmax={fmtNum(thResult.peakDisplacement)} m{/if}
-          {#if thResult.peakBaseShear != null} — Vb={fmtNum(thResult.peakBaseShear)} kN{/if}
-          {#if thResult.timeAtPeak != null} — t={fmtNum(thResult.timeAtPeak)} s{/if}
+          <!-- The engine returns peak ENVELOPES, one per node and per support,
+               plus the step count — not a single peak triple. -->
+          {#if thResult.peakDisplacements?.length}
+            δmax={fmtNum(Math.max(...thResult.peakDisplacements.map((d: any) => Math.hypot(d.ux ?? 0, d.uy ?? 0, d.uz ?? 0))))} m
+          {/if}
+          {#if thResult.peakReactions?.length}
+            — Vb_max={fmtNum(Math.max(...thResult.peakReactions.map((r: any) => Math.hypot(r.rx ?? 0, r.ry ?? 0))))} kN
+          {/if}
+          {#if thResult.nSteps != null} — {thResult.nSteps} {t('pro.steps')} ({thResult.method}){/if}
         </div>
       {/if}
       {/if}
@@ -1137,24 +1309,30 @@
           <label class="adv-label">Puntos: <input type="number" class="adv-num" bind:value={harmNPoints} min={10} max={2000} step={10} /></label>
           <label class="adv-label">&#x03BE;: <input type="number" class="adv-num" bind:value={harmDamping} min={0} max={1} step={0.01} /></label>
           <label class="adv-label">Dir: <select class="adv-sel" bind:value={harmDir}><option value="X">X</option><option value="Y">Y</option><option value="Z">Z</option></select></label>
+          <!-- The sweep is read at ONE node: without it the engine has nothing to report. -->
+          <label class="adv-label">{t('pro.responseNode')}:
+            <select class="adv-sel" bind:value={harmNodeId}>
+              <option value={null}>{t('pro.autoTopNode')}</option>
+              {#each nodeIds as nid}<option value={nid}>{nid}</option>{/each}
+            </select>
+          </label>
         </div>
         <button class="adv-run-btn" onclick={handleHarmonic} disabled={!hasModel || solving || !wasmAvailable}>{solving ? t('pro.solving') : t('pro.runHarmonic')}</button>
       </div>
       {#if harmResult}
         <div class="adv-inline">
           {#if harmResult.peakAmplitude != null}{t('pro.peakAmplitude')}: {fmtNum(harmResult.peakAmplitude)} m{/if}
-          {#if harmResult.resonanceFreq != null} — f_res={fmtNum(harmResult.resonanceFreq)} Hz{/if}
-          {#if harmResult.peakDynamicFactor != null} — DAF={fmtNum(harmResult.peakDynamicFactor)}{/if}
+          {#if harmResult.peakFrequency != null} — f_res={fmtNum(harmResult.peakFrequency)} Hz{/if}
           {#if harmonicElapsed != null} — {harmonicElapsed >= 1000 ? (harmonicElapsed / 1000).toFixed(2) + ' s' : harmonicElapsed.toFixed(0) + ' ms'} (WASM){/if}
         </div>
-        {#if harmResult.frf?.length}
+        {#if harmResult.responsePoints?.length}
           <details>
             <summary class="adv-steps-toggle">{t('pro.frfCurve')}</summary>
             <div class="adv-frf-table">
               <table class="adv-table">
                 <thead><tr><th>f (Hz)</th><th>|H| (m/kN)</th></tr></thead>
                 <tbody>
-                  {#each harmResult.frf.filter((_: any, i: number) => i % Math.max(1, Math.floor(harmResult.frf.length / 20)) === 0) as pt}
+                  {#each harmResult.responsePoints.filter((_: any, i: number) => i % Math.max(1, Math.floor(harmResult.responsePoints.length / 20)) === 0) as pt}
                     <tr><td class="col-num">{fmtNum(pt.frequency)}</td><td class="col-num">{pt.amplitude.toExponential(3)}</td></tr>
                   {/each}
                 </tbody>
@@ -1184,11 +1362,22 @@
         <button class="adv-run-btn" onclick={handleNonlinear} disabled={!hasModel || solving || !wasmAvailable}>{t('pro.run')}</button>
       </div>
       {#if nlResult}
+        <!--
+          Each of the three runs returns a different result type, and the panel
+          read fields none of them has (`loadFactor`, `numHinges`), so a
+          successful pushover displayed a blank line. Pushover reports its
+          collapse factor and its hinges; the incremental solvers report the
+          path they walked.
+        -->
         <div class="adv-inline">
-          {#if nlResult.converged != null}{nlResult.converged ? t('pro.converged') : t('pro.notConverged')}{/if}
-          {#if nlResult.loadFactor != null} — λ={fmtNum(nlResult.loadFactor)}{/if}
-          {#if nlResult.maxDisplacement != null} — δmax={fmtNum(nlResult.maxDisplacement)} m{/if}
-          {#if nlResult.numHinges != null} — {nlResult.numHinges} {t('pro.hinges')}{/if}
+          {#if nlResult.collapseFactor != null}λ_c={fmtNum(nlResult.collapseFactor)}{/if}
+          {#if nlResult.hinges != null} — {nlResult.hinges.length} {t('pro.hinges')}{/if}
+          {#if nlResult.isMechanism != null} — {nlResult.isMechanism ? t('pro.mechanism') : t('pro.stable')}{/if}
+          {#if nlResult.converged != null} — {nlResult.converged ? t('pro.converged') : t('pro.notConverged')}{/if}
+          {#if nlResult.steps != null} — {nlResult.steps.length} {t('pro.steps')}{/if}
+          {#if nlResult.displacements?.length}
+            — δmax={fmtNum(Math.max(...nlResult.displacements.map((d: any) => Math.hypot(d.ux ?? 0, d.uy ?? 0, d.uz ?? 0))))} m
+          {/if}
         </div>
       {/if}
       {/if}
@@ -1199,15 +1388,16 @@
         <div class="adv-form">
           <label class="adv-label">Max iter: <input type="number" class="adv-num" bind:value={arcMaxIter} min={1} max={500} /></label>
           <label class="adv-label">Tol: <input type="number" class="adv-num adv-num-wide" bind:value={arcTol} min={1e-12} max={1} step={1e-6} /></label>
-          <label class="adv-label">Incr: <input type="number" class="adv-num" bind:value={arcIncrements} min={1} max={200} /></label>
+          <label class="adv-label">{t('pro.maxSteps')}: <input type="number" class="adv-num" bind:value={arcIncrements} min={1} max={200} /></label>
         </div>
-        <button class="adv-run-btn" onclick={handleArcLength} disabled={!hasModel || solving || !wasmAvailable}>{solving ? t('pro.solving') : t('pro.runArcLength')}</button>
+        {#if !is2DModel}<div class="adv-note">{t('pro.twoDOnly')}</div>{/if}
+        <button class="adv-run-btn" onclick={handleArcLength} disabled={!hasModel || solving || !wasmAvailable || !is2DModel}>{solving ? t('pro.solving') : t('pro.runArcLength')}</button>
       </div>
       {#if arcResult}
         <div class="adv-inline">
           {#if arcResult.converged != null}{arcResult.converged ? t('pro.yes') : t('pro.no')}{/if}
-          {#if arcResult.loadFactor != null} — λ={fmtNum(arcResult.loadFactor)}{/if}
-          {#if arcResult.maxDisplacement != null} — δmax={fmtNum(arcResult.maxDisplacement)} m{/if}
+          {#if arcResult.finalLoadFactor != null} — λ={fmtNum(arcResult.finalLoadFactor)}{/if}
+          {#if arcResult.totalIterations != null} — {arcResult.totalIterations} it{/if}
           {#if arcResult.steps != null} — {arcResult.steps.length} {t('pro.steps')}{/if}
         </div>
       {/if}
@@ -1223,17 +1413,18 @@
               {#each nodeIds as nid}<option value={nid}>{nid}</option>{/each}
             </select>
           </label>
-          <label class="adv-label">DOF: <select class="adv-sel" bind:value={dcDof}><option value="ux">ux</option><option value="uy">uy</option><option value="uz">uz</option></select></label>
+          <label class="adv-label">DOF: <select class="adv-sel" bind:value={dcDof}><option value={0}>ux</option><option value={1}>uz</option><option value={2}>ry</option></select></label>
           <label class="adv-label">δ (m): <input type="number" class="adv-num" bind:value={dcTargetDisp} step={0.001} /></label>
           <label class="adv-label">Incr: <input type="number" class="adv-num" bind:value={dcIncrements} min={1} max={200} /></label>
         </div>
-        <button class="adv-run-btn" onclick={handleDispControl} disabled={!hasModel || solving || !wasmAvailable || dcNodeId == null}>{solving ? t('pro.solving') : t('pro.runDispControl')}</button>
+        {#if !is2DModel}<div class="adv-note">{t('pro.twoDOnly')}</div>{/if}
+        <button class="adv-run-btn" onclick={handleDispControl} disabled={!hasModel || solving || !wasmAvailable || dcNodeId == null || !is2DModel}>{solving ? t('pro.solving') : t('pro.runDispControl')}</button>
       </div>
       {#if dcResult}
         <div class="adv-inline">
           {#if dcResult.converged != null}{dcResult.converged ? t('pro.yes') : t('pro.no')}{/if}
-          {#if dcResult.finalLoad != null} — P={fmtNum(dcResult.finalLoad)} kN{/if}
-          {#if dcResult.maxDisplacement != null} — δmax={fmtNum(dcResult.maxDisplacement)} m{/if}
+          {#if dcResult.finalLoadFactor != null} — λ={fmtNum(dcResult.finalLoadFactor)}{/if}
+          {#if dcResult.steps != null} — {dcResult.steps.length} {t('pro.steps')}{/if}
         </div>
       {/if}
       {/if}
@@ -1242,21 +1433,19 @@
       {#if advView === 'imperfections'}
       <div class="adv-panel">
         <div class="adv-form">
-          <label class="adv-label">{t('pro.imperfType')}:
-            <select class="adv-sel" bind:value={imperfType}>
-              <option value="global">Global (sway)</option>
-              <option value="local">Local (bow)</option>
-            </select>
-          </label>
-          <label class="adv-label">{t('pro.amplitude')} (L/...): <input type="number" class="adv-num" bind:value={imperfAmplitude} min={0.0001} max={0.1} step={0.0001} /></label>
+          <label class="adv-label">{t('pro.imperfRatio')}: <input type="number" class="adv-num adv-num-wide" bind:value={imperfRatio} min={0.0001} max={0.1} step={0.0005} /></label>
+          <label class="adv-label">Dir: <select class="adv-sel" bind:value={imperfDir}><option value="X">X</option><option value="Y">Y</option></select></label>
         </div>
         <button class="adv-run-btn" onclick={handleImperfections} disabled={!hasModel || solving || !wasmAvailable}>{solving ? t('pro.solving') : t('pro.runImperfections')}</button>
       </div>
       {#if imperfResult}
         <div class="adv-inline">
-          {#if imperfResult.maxAdditionalMoment != null}ΔM_max={fmtNum(imperfResult.maxAdditionalMoment)} kN·m{/if}
-          {#if imperfResult.maxLateralForce != null} — H_imp={fmtNum(imperfResult.maxLateralForce)} kN{/if}
-          {#if imperfResult.imperfectionShape != null} — {imperfResult.imperfectionShape.length} {t('pro.nodes')}{/if}
+          <!-- The engine returns the solved model, not a summary of the
+               imperfection: report the drift it actually produced. -->
+          {#if imperfResult.displacements?.length}
+            δmax={fmtNum(Math.max(...imperfResult.displacements.map((d: any) => Math.hypot(d.ux ?? 0, d.uy ?? 0, d.uz ?? 0))))} m
+            — {imperfResult.displacements.length} {t('pro.nodes')}
+          {/if}
         </div>
       {/if}
       {/if}
@@ -1297,9 +1486,14 @@
       </div>
       {#if winklerResult}
         <div class="adv-result-title">{t('pro.resultWinkler')}</div>
+        <!-- Winkler is a linear solve on a modified stiffness: it returns the
+             results themselves, with no iteration count to report. The panel
+             claimed "Convergence: No — Iterations: ?" on every successful run. -->
         <div class="adv-inline">
-          <span>{t('pro.convergence')}: {winklerResult.converged ? t('pro.yes') : t('pro.no')}</span> — <span>{t('pro.iterations')}: {winklerResult.iterations ?? '?'}</span>
-          {#if winklerResult.maxDisplacement != null} — <span>{t('pro.maxDisp')}: {fmtNum(winklerResult.maxDisplacement)} m</span>{/if}
+          {#if winklerResult.displacements?.length}
+            <span>{t('pro.maxDisp')}: {fmtNum(Math.max(...winklerResult.displacements.map((d: any) => Math.hypot(d.ux ?? 0, d.uy ?? 0, d.uz ?? 0))))} m</span>
+            — <span>{winklerResult.reactions?.length ?? 0} {t('results.reactions')}</span>
+          {/if}
         </div>
       {/if}
       {/if}
@@ -1320,7 +1514,6 @@
               <option value="softClay">{t('pro.softClay')}</option>
               <option value="stiffClay">{t('pro.stiffClay')}</option>
               <option value="sand">{t('pro.sand')}</option>
-              <option value="custom">{t('pro.customCurve')}</option>
             </select>
           </label>
         </div>
@@ -1330,6 +1523,9 @@
             <label class="adv-label">&#947; (kN/m3): <input type="number" class="adv-num" bind:value={ssiGamma} min={0} step={1} /></label>
             <label class="adv-label">d (m): <input type="number" class="adv-num" bind:value={ssiDiameter} min={0.1} step={0.1} /></label>
             <label class="adv-label">{t('pro.depth')}: <input type="number" class="adv-num" bind:value={ssiDepth} min={0} step={0.5} /></label>
+            <!-- Matlock/Reese both key the curve on ε50; it has no default in
+                 the engine, so the run needs it. -->
+            <label class="adv-label">&#949;50: <input type="number" class="adv-num" bind:value={ssiEps50} min={0.001} max={0.05} step={0.001} /></label>
           </div>
         {:else if ssiCurveType === 'sand'}
           <div class="adv-form">
@@ -1429,10 +1625,10 @@
               <button class="adv-rm" onclick={() => removeStage(i)}>x</button>
             </div>
             <div class="adv-form">
-              <label class="adv-label">{t('pro.addElemIds')} <input type="text" class="adv-text" value={stage.addElements.join(',')} oninput={(e) => { stage.addElements = (e.target as HTMLInputElement).value.split(',').map(Number).filter(n => !isNaN(n) && n > 0); stages = [...stages]; }} /></label>
+              <label class="adv-label">{t('pro.addElemIds')} <input type="text" class="adv-text" value={stage.elementsAdded.join(',')} oninput={(e) => { stage.elementsAdded = (e.target as HTMLInputElement).value.split(',').map(Number).filter(n => !isNaN(n) && n > 0); stages = [...stages]; }} /></label>
             </div>
             <div class="adv-form">
-              <label class="adv-label">{t('pro.removeElemIds')} <input type="text" class="adv-text" value={stage.removeElements.join(',')} oninput={(e) => { stage.removeElements = (e.target as HTMLInputElement).value.split(',').map(Number).filter(n => !isNaN(n) && n > 0); stages = [...stages]; }} /></label>
+              <label class="adv-label">{t('pro.removeElemIds')} <input type="text" class="adv-text" value={stage.elementsRemoved.join(',')} oninput={(e) => { stage.elementsRemoved = (e.target as HTMLInputElement).value.split(',').map(Number).filter(n => !isNaN(n) && n > 0); stages = [...stages]; }} /></label>
             </div>
             <div class="adv-form">
               <label class="adv-label">{t('pro.loadIndices')}: <input type="text" class="adv-text" value={stage.loadIndices.join(',')} oninput={(e) => { stage.loadIndices = (e.target as HTMLInputElement).value.split(',').map(Number).filter(n => !isNaN(n) && n >= 0); stages = [...stages]; }} /></label>
@@ -1470,7 +1666,6 @@
         {#each creepTimeSteps as step, i}
           <div class="adv-form">
             <label class="adv-label">{t('pro.timeDays')}: <input type="number" class="adv-num" bind:value={step.time} min={1} /></label>
-            <label class="adv-label">{t('pro.addLoadFactor')}: <input type="number" class="adv-num" bind:value={step.additionalLoadFactor} min={0} step={0.1} /></label>
             <button class="adv-rm" onclick={() => removeCreepStep(i)}>x</button>
           </div>
         {/each}
@@ -1479,11 +1674,17 @@
       </div>
       {#if creepResult}
         <div class="adv-result-title">{t('pro.resultCreep')}</div>
-        <div class="adv-inline">
-          {#if creepResult.phiCreep != null}{t('pro.creepCoeff')}: {fmtNum(creepResult.phiCreep)}{/if}
-          {#if creepResult.shrinkageStrain != null} — {t('pro.shrinkageStrain')}: {creepResult.shrinkageStrain.toExponential(2)}{/if}
-          {#if creepResult.maxDisplacement != null} — {t('pro.finalMaxDisp')}: {fmtNum(creepResult.maxDisplacement)} m{/if}
-        </div>
+        <!-- Creep is reported PER STEP; there is no single φ on the result. -->
+        {#if creepResult.steps?.length}
+          {@const last = creepResult.steps[creepResult.steps.length - 1]}
+          <div class="adv-inline">
+            t={fmtNum(last.tDays)} d — {t('pro.creepCoeff')}: {fmtNum(last.creepCoefficient)}
+            — {t('pro.shrinkageStrain')}: {last.shrinkageStrain.toExponential(2)}
+            {#if last.displacements?.length}
+              — {t('pro.finalMaxDisp')}: {fmtNum(Math.max(...last.displacements.map((d: any) => Math.hypot(d.ux ?? 0, d.uy ?? 0, d.uz ?? 0))))} m
+            {/if}
+          </div>
+        {/if}
       {/if}
       {/if}
 
@@ -1498,13 +1699,15 @@
           <label class="adv-label">{t('pro.tolerance')}: <input type="number" class="adv-num adv-num-wide" bind:value={cableTol} min={1e-12} max={1} step={1e-6} /></label>
         </div>
         <p class="adv-hint">{t('pro.cableHint')}</p>
-        <button class="adv-run-btn" onclick={handleCable} disabled={!hasModel || solving || !wasmAvailable}>{solving ? t('pro.solving') : t('pro.solveCable')}</button>
+        {#if !is2DModel}<div class="adv-note">{t('pro.twoDOnly')}</div>{/if}
+        <button class="adv-run-btn" onclick={handleCable} disabled={!hasModel || solving || !wasmAvailable || !is2DModel}>{solving ? t('pro.solving') : t('pro.solveCable')}</button>
       </div>
       {#if cableResult}
         <div class="adv-inline">
-          {#if cableResult.converged != null}{cableResult.converged ? t('pro.yes') : t('pro.no')}{/if}
-          {#if cableResult.maxSag != null} — {t('pro.maxSag')}: {fmtNum(cableResult.maxSag)} m{/if}
-          {#if cableResult.maxTension != null} — T_max={fmtNum(cableResult.maxTension)} kN{/if}
+          {#if cableResult.displacements?.length}
+            δmax={fmtNum(Math.max(...cableResult.displacements.map((d: any) => Math.hypot(d.ux ?? 0, d.uy ?? 0))))} m
+            — {cableResult.displacements.length} {t('pro.nodes')}
+          {/if}
         </div>
       {/if}
       {/if}
@@ -1513,43 +1716,58 @@
       {#if advView === 'influenceline3d'}
       <div class="adv-panel">
         <div class="adv-form">
-          <label class="adv-label">{t('pro.element')}:
-            <select class="adv-sel" bind:value={ilElementId}>
-              <option value={null}>--</option>
-              {#each elementIds as eid}<option value={eid}>{eid}</option>{/each}
-            </select>
-          </label>
           <label class="adv-label">{t('pro.response')}:
             <select class="adv-sel" bind:value={ilResponse}>
-              <option value="moment">M</option>
-              <option value="shear">V</option>
+              <option value="moment">My</option>
+              <option value="shear">Vz</option>
               <option value="axial">N</option>
-              <option value="reaction">R</option>
+              <option value="reaction">Rz</option>
             </select>
           </label>
+          <!-- Internal forces are read at a point ON a member; a reaction is
+               read AT a support. Different target, different picker. -->
+          {#if ilResponse === 'reaction'}
+            <label class="adv-label">{t('pro.nodeLabel')}:
+              <select class="adv-sel" bind:value={ilNodeId}>
+                <option value={null}>--</option>
+                {#each nodeIds as nid}<option value={nid}>{nid}</option>{/each}
+              </select>
+            </label>
+          {:else}
+            <label class="adv-label">{t('pro.element')}:
+              <select class="adv-sel" bind:value={ilElementId}>
+                <option value={null}>--</option>
+                {#each elementIds as eid}<option value={eid}>{eid}</option>{/each}
+              </select>
+            </label>
+            <label class="adv-label">x/L: <input type="number" class="adv-num" bind:value={ilPosition} min={0} max={1} step={0.05} /></label>
+          {/if}
         </div>
-        <button class="adv-run-btn" onclick={handleInfluenceLine3D} disabled={!hasModel || solving || !wasmAvailable || ilElementId == null}>{solving ? t('pro.solving') : t('pro.computeIL')}</button>
+        <button
+          class="adv-run-btn"
+          onclick={handleInfluenceLine3D}
+          disabled={!hasModel || solving || !wasmAvailable || (ilResponse === 'reaction' ? ilNodeId == null : ilElementId == null)}
+        >{solving ? t('pro.solving') : t('pro.computeIL')}</button>
       </div>
-      {#if ilResult}
+      {#if ilResult?.points?.length}
         <div class="adv-inline">
-          {#if ilResult.maxPositive != null}{t('pro.maxPos')}: {fmtNum(ilResult.maxPositive)}{/if}
-          {#if ilResult.maxNegative != null} — {t('pro.maxNeg')}: {fmtNum(ilResult.maxNegative)}{/if}
+          {t('pro.maxPos')}: {fmtNum(Math.max(...ilResult.points.map((p: any) => p.value)))}
+          — {t('pro.maxNeg')}: {fmtNum(Math.min(...ilResult.points.map((p: any) => p.value)))}
+          — {ilResult.points.length} pts
         </div>
-        {#if ilResult.ordinates?.length}
-          <details>
-            <summary class="adv-steps-toggle">{t('pro.ilOrdinates')}</summary>
-            <div class="adv-frf-table">
-              <table class="adv-table">
-                <thead><tr><th>{t('pro.nodeLabel')}</th><th>{t('pro.ilValue')}</th></tr></thead>
-                <tbody>
-                  {#each ilResult.ordinates as pt}
-                    <tr><td class="col-id">{pt.nodeId ?? pt.position?.toFixed(2) ?? '?'}</td><td class="col-num">{fmtNum(pt.value)}</td></tr>
-                  {/each}
-                </tbody>
-              </table>
-            </div>
-          </details>
-        {/if}
+        <details>
+          <summary class="adv-steps-toggle">{t('pro.ilOrdinates')}</summary>
+          <div class="adv-frf-table">
+            <table class="adv-table">
+              <thead><tr><th>{t('pro.element')}</th><th>x/L</th><th>{t('pro.ilValue')}</th></tr></thead>
+              <tbody>
+                {#each ilResult.points.filter((_: any, i: number) => i % Math.max(1, Math.floor(ilResult.points.length / 25)) === 0) as pt}
+                  <tr><td class="col-id">{pt.elementId}</td><td class="col-num">{pt.t.toFixed(2)}</td><td class="col-num">{fmtNum(pt.value)}</td></tr>
+                {/each}
+              </tbody>
+            </table>
+          </div>
+        </details>
       {/if}
       {/if}
 
@@ -1565,7 +1783,7 @@
           </label>
         </div>
         <div class="adv-form">
-          <label class="adv-label">{t('pro.retainedDofs')}: <input type="text" class="adv-text" bind:value={retainedDofs} placeholder="0,1,2,6,7,8..." /></label>
+          <label class="adv-label">{t('pro.boundaryNodes')}: <input type="text" class="adv-text" bind:value={boundaryNodesText} placeholder="1, 2, 5" /></label>
         </div>
         {#if reductionMethod === 'craigBampton'}
           <div class="adv-form">
@@ -1573,13 +1791,13 @@
           </div>
         {/if}
         <p class="adv-hint">{t('pro.reductionHint')}</p>
-        <button class="adv-run-btn" onclick={handleModelReduction} disabled={!hasModel || solving || !wasmAvailable}>{solving ? t('pro.solving') : t('pro.reduce')}</button>
+        {#if !is2DModel}<div class="adv-note">{t('pro.twoDOnly')}</div>{/if}
+        <button class="adv-run-btn" onclick={handleModelReduction} disabled={!hasModel || solving || !wasmAvailable || !is2DModel}>{solving ? t('pro.solving') : t('pro.reduce')}</button>
       </div>
       {#if reductionResult}
         <div class="adv-inline">
-          {#if reductionResult.originalSize != null}DOF orig: {reductionResult.originalSize}{/if}
-          {#if reductionResult.reducedSize != null} → red: {reductionResult.reducedSize}{/if}
-          {#if reductionResult.ratio != null} ({(reductionResult.ratio * 100).toFixed(0)}%){/if}
+          {#if reductionResult.nBoundary != null}DOF {t('pro.boundaryShort')}: {reductionResult.nBoundary}{/if}
+          {#if reductionResult.nInterior != null} — {t('pro.interiorShort')}: {reductionResult.nInterior}{/if}
         </div>
       {/if}
       {/if}
@@ -1592,8 +1810,8 @@
       </div>
       {#if multiCaseResult}
         <div class="adv-inline">
-          {#if multiCaseResult.cases != null}{multiCaseResult.cases.length} {t('pro.casesResolved')}{/if}
-          {#if multiCaseResult.maxDisplacement != null} — δmax={fmtNum(multiCaseResult.maxDisplacement)} m{/if}
+          {#if multiCaseResult.caseResults != null}{multiCaseResult.caseResults.length} {t('pro.casesResolved')}{/if}
+          {#if multiCaseResult.combinationResults != null} — {multiCaseResult.combinationResults.length} {t('pro.combos')}{/if}
         </div>
       {/if}
       {/if}
@@ -1645,19 +1863,19 @@
         <button class="adv-run-btn" onclick={handleSectionAnalysis} disabled={!wasmAvailable}>{t('pro.analyzeSection')}</button>
       </div>
       {#if secResult}
+        <!-- The engine names these a / yc / zc / syTop / szRight, not
+             area / centroidY / wy — so area and the centroid never printed. -->
         <div class="adv-inline">
-          {#if secResult.area != null}A={secResult.area.toExponential(3)} m²{/if}
+          {#if secResult.a != null}A={secResult.a.toExponential(3)} m²{/if}
           {#if secResult.iy != null} — Iy={secResult.iy.toExponential(3)} m⁴{/if}
           {#if secResult.iz != null} — Iz={secResult.iz.toExponential(3)} m⁴{/if}
         </div>
-        {#if secResult.centroidY != null || secResult.centroidZ != null}
-          <div class="adv-inline" style="font-size:0.62rem; opacity:0.8">
-            CG: y={fmtNum(secResult.centroidY ?? 0)} m, z={fmtNum(secResult.centroidZ ?? 0)} m
-            {#if secResult.j != null} — J={secResult.j.toExponential(3)} m⁴{/if}
-            {#if secResult.wy != null} — Wy={secResult.wy.toExponential(3)} m³{/if}
-            {#if secResult.wz != null} — Wz={secResult.wz.toExponential(3)} m³{/if}
-          </div>
-        {/if}
+        <div class="adv-inline" style="font-size:0.62rem; opacity:0.8">
+          CG: y={fmtNum(secResult.yc ?? 0)} m, z={fmtNum(secResult.zc ?? 0)} m
+          {#if secResult.j != null} — J={secResult.j.toExponential(3)} m⁴{/if}
+          {#if secResult.syTop != null} — Wy={secResult.syTop.toExponential(3)} m³{/if}
+          {#if secResult.szRight != null} — Wz={secResult.szRight.toExponential(3)} m³{/if}
+        </div>
       {/if}
       {/if}
 
@@ -1665,24 +1883,19 @@
       {#if advView === 'constrained'}
       <div class="adv-panel">
         <div class="adv-form">
-          <label class="adv-label">{t('pro.constraintMethod')}:
-            <select class="adv-sel" bind:value={constraintType}>
-              <option value="rigid">{t('pro.rigidLink')}</option>
-              <option value="penalty">{t('pro.penaltyMethod')}</option>
-            </select>
-          </label>
-        </div>
-        <div class="adv-form">
+          <!-- The engine ties the pair with a rigid link; there is no penalty
+               alternative to choose between, so the selector is gone. -->
           <label class="adv-label">{t('pro.nodePairs')}:</label>
         </div>
         <textarea class="adv-textarea" bind:value={constraintPairs} rows="2" placeholder="1,5; 2,6; 3,7"></textarea>
         <p class="adv-hint">{t('pro.constrainedHint')}</p>
-        <button class="adv-run-btn" onclick={handleConstrained} disabled={!hasModel || solving || !wasmAvailable}>{solving ? t('pro.solving') : t('pro.solveConstrained')}</button>
+        <button class="adv-run-btn" onclick={handleConstrained} disabled={!hasModel || solving || !wasmAvailable || !constraintPairs.trim()}>{solving ? t('pro.solving') : t('pro.solveConstrained')}</button>
       </div>
       {#if constrainedResult}
         <div class="adv-inline">
-          {#if constrainedResult.converged != null}{constrainedResult.converged ? t('pro.yes') : t('pro.no')}{/if}
-          {#if constrainedResult.maxDisplacement != null} — δmax={fmtNum(constrainedResult.maxDisplacement)} m{/if}
+          {#if constrainedResult.displacements?.length}
+            δmax={fmtNum(Math.max(...constrainedResult.displacements.map((d: any) => Math.hypot(d.ux ?? 0, d.uy ?? 0, d.uz ?? 0))))} m
+          {/if}
           {#if constrainedResult.constraintForces?.length} — {constrainedResult.constraintForces.length} {t('pro.constraintForcesCount')}{/if}
         </div>
       {/if}
@@ -1870,6 +2083,16 @@
     font-size: 0.6rem;
     color: var(--st-text-3);
     font-style: italic;
+  }
+
+  /* Why a run button is off, said where the button is — a disabled control
+     with no reason beside it reads as a broken one. */
+  .adv-note {
+    font-size: 0.62rem;
+    color: var(--st-warn);
+    border-left: 2px solid var(--st-warn);
+    padding: 0.15rem 0 0.15rem 0.4rem;
+    margin: 0.2rem 0;
   }
 
   .adv-inline {
