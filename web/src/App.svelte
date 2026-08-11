@@ -112,6 +112,7 @@
   import RebarWorkspace from './components/pro/design/RebarWorkspace.svelte';
   import ProProjectFileActions from './components/pro/ProProjectFileActions.svelte';
   import ToolbarConfig from './components/toolbar/ToolbarConfig.svelte';
+  import { captureFocus } from './lib/utils/dialog-focus';
   import ProRibbon from './components/pro/ProRibbon.svelte';
   import EducativePanel from './components/edu/EducativePanel.svelte';
   import { eduStore } from './components/edu/edu-store.svelte';
@@ -679,6 +680,18 @@
   let proPanelRef: any = $state(null);
   let proExBtnEl = $state<HTMLButtonElement | undefined>(undefined);
   let proSettingsOpen = $state(false);
+  /**
+   * The settings panel element, for focus and for the outside-click test.
+   *
+   * Focus moves into the panel on open and back to the gear on close: the panel covers part of
+   * the ribbon, so leaving focus on a button underneath it is the same defect the 3-D workspace
+   * had. `dialog-focus.ts` owns the mechanism.
+   */
+  let proSettingsEl = $state<HTMLDivElement | null>(null);
+  $effect(() => {
+    if (!proSettingsOpen) return;
+    return captureFocus(proSettingsEl);
+  });
 
   // PRO toolbar dropdown state
   type ProDropdown = null | 'select' | 'geometry' | 'properties' | 'conditions' | 'analysis';
@@ -690,8 +703,15 @@
 
   /** Close dropdown when clicking outside the toolbar. */
   function handleProBarClickOutside(e: MouseEvent) {
-    if (openDropdown && !(e.target as HTMLElement)?.closest('.pro-bar')) {
+    const target = e.target as HTMLElement | null;
+    if (openDropdown && !target?.closest('.pro-bar')) {
       openDropdown = null;
+    }
+    // The settings panel closes on a click anywhere outside its own anchor — which includes the
+    // gear itself, whose own handler has already toggled the state by the time this runs, so
+    // the anchor has to be the boundary rather than the panel.
+    if (proSettingsOpen && !target?.closest('.settings-anchor')) {
+      proSettingsOpen = false;
     }
   }
 
@@ -833,16 +853,58 @@
           data-testid="rb-settings"
         ><Icon name="settings" size={16} /></button>
       {/if}
-      <!-- PRO puts settings in the same corner, for the same reason. -->
+      <!--
+        PRO puts settings in the same corner, for the same reason — and the panel it opens is
+        anchored HERE, to the button, not left behind in the app body.
+
+        It was left behind, and that is the whole bug report "the settings button does nothing".
+        The panel is `position: absolute; top: 100%`, so it needs a positioned ancestor to
+        measure from. On PR19 it sat inside `<nav class="pro-bar">`, which was `position:
+        relative`, and `top: 100%` meant "just under the bar". The ribbon replaced that nav, the
+        panel became a child of `.app-body` — also positioned — and `top: 100%` started meaning
+        "one full app-body below the top of the app body", i.e. off the bottom of the window.
+        Every click worked. The state flipped, the panel mounted, and it rendered where nobody
+        could see it.
+      -->
       {#if uiStore.appMode === 'pro' && !uiStore.isMobile}
-        <button
-          class="btn btn-settings"
-          class:on={proSettingsOpen}
-          onclick={() => (proSettingsOpen = !proSettingsOpen)}
-          title={t('config.title')}
-          aria-label={t('config.title')}
-          data-testid="pro-settings"
-        ><Icon name="settings" size={16} /></button>
+        <div class="settings-anchor">
+          <button
+            class="btn btn-settings"
+            class:on={proSettingsOpen}
+            onclick={() => (proSettingsOpen = !proSettingsOpen)}
+            title={t('config.title')}
+            aria-label={t('config.title')}
+            aria-haspopup="dialog"
+            aria-expanded={proSettingsOpen}
+            aria-controls="pro-settings-panel"
+            data-testid="pro-settings"
+          ><Icon name="settings" size={16} /></button>
+
+          {#if proSettingsOpen}
+            <!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
+            <div
+              class="pro-settings-dropdown"
+              id="pro-settings-panel"
+              data-testid="pro-settings-panel"
+              role="dialog"
+              aria-label={t('config.title')}
+              bind:this={proSettingsEl}
+              tabindex="-1"
+              onkeydown={(e) => { if (e.key === 'Escape') { e.stopPropagation(); proSettingsOpen = false; } }}
+            >
+              <header class="pro-settings-head">
+                <h2>{t('config.title')}</h2>
+                <button
+                  class="pro-settings-close"
+                  onclick={() => (proSettingsOpen = false)}
+                  aria-label={t('config.close')}
+                  data-testid="pro-settings-close"
+                >✕</button>
+              </header>
+              <ToolbarConfig inline={true} />
+            </div>
+          {/if}
+        </div>
       {/if}
     </div>
   </header>
@@ -875,11 +937,6 @@
           proPanel={uiStore.proActiveTab}
           onOpenProject={() => (uiStore.proActiveTab = 'project')}
         />
-        {#if proSettingsOpen}
-          <div class="pro-settings-dropdown">
-            <ToolbarConfig inline={true} />
-          </div>
-        {/if}
     {/if}
 
     {#if uiStore.appMode === 'pro' && uiStore.isMobile}
@@ -1583,20 +1640,64 @@
     pointer-events: none;
   }
   .simplified-stats { font-weight: 400; opacity: 0.85; }
+  /* The positioned ancestor the panel measures `top: 100%` from. Without it the panel lands
+     one whole app-body below the window — see the note beside the button. */
+  .settings-anchor { position: relative; display: inline-flex; }
+
   .pro-settings-dropdown {
     position: absolute;
-    top: 100%;
-    right: 6px;
+    top: calc(100% + 6px);
+    right: 0;
     z-index: 200;
-    width: 260px;
-    max-height: 70vh;
+    width: 288px;
+    max-height: min(70vh, 34rem);
     overflow-y: auto;
     background: var(--st-surface);
     border: 1px solid var(--st-hair-strong);
-    border-radius: 6px;
-    padding: 0.5rem;
-    box-shadow: 0 4px 20px rgba(0,0,0,0.5);
+    border-radius: var(--st-radius-lg);
+    /* Breathing room on every side: the old 0.5rem let the first checkbox sit on the border. */
+    padding: 0.35rem 0.85rem 0.85rem;
+    box-shadow: 0 8px 28px rgba(0, 0, 0, 0.55);
   }
+
+  .pro-settings-dropdown:focus { outline: none; }
+
+  .pro-settings-head {
+    position: sticky;
+    top: 0;
+    z-index: 1;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.5rem;
+    /* Sticky over a scrolling panel, so it needs its own ground rather than the panel's. */
+    background: var(--st-surface);
+    padding: 0.5rem 0 0.45rem;
+    margin-bottom: 0.25rem;
+    border-bottom: 1px solid var(--st-hair);
+  }
+
+  .pro-settings-head h2 {
+    margin: 0;
+    font-family: var(--st-display);
+    font-size: 0.82rem;
+    font-weight: 600;
+    letter-spacing: 0.01em;
+    color: var(--st-text);
+  }
+
+  .pro-settings-close {
+    background: none;
+    border: none;
+    border-radius: var(--st-radius);
+    color: var(--st-text-2);
+    font-size: 0.8rem;
+    line-height: 1;
+    padding: 0.2rem 0.35rem;
+    cursor: pointer;
+  }
+  .pro-settings-close:hover { background: var(--st-surface-3); color: var(--st-text); }
+  .pro-settings-close:focus-visible { outline: 2px solid var(--st-focus); outline-offset: 1px; }
 
   .pn-actions {
     display: flex;

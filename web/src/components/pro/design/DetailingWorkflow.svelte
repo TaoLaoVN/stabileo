@@ -22,10 +22,11 @@
   } from '../../../lib/engine/detailing/document-render';
   import { exportToExcel } from '../../../lib/export/excel';
   import RebarScenePanel from './RebarScenePanel.svelte';
-  import { rebarWorkspace } from '../../../lib/store/rebar-workspace.svelte';
-  import { markOpenPhase } from '../../../lib/utils/open-timeline';
+  import { openRebar3D } from '../../../lib/store/rebar-open';
+  import { detailingAuthor } from '../../../lib/store/detailing-author.svelte';
 
-  let engineer = $state('');
+  // The engineer's name is read from `detailingAuthor` rather than held here: the Design row's
+  // `Ver modelo 3D` builds the same revision and has to sign it the same way.
   let docError = $state<string | null>(null);
   let show3d = $state(false);
 
@@ -39,7 +40,7 @@
   function currentDoc() {
     docError = null;
     const doc = detailingStore.buildDocument({
-      author: engineer.trim() || t('detailing.doc.unnamedAuthor'),
+      author: detailingAuthor.resolve(t('detailing.doc.unnamedAuthor')),
       at: new Date().toISOString(),
     });
     if (!doc) docError = t('detailing.doc.noCoordinated');
@@ -87,16 +88,18 @@
    * projections of the same instance rather than of two documents that happen to agree.
    */
   function open3d() {
-    // The phases of an open are recorded where they happen — see `open-timeline.ts` for why
-    // attributing this from the outside got it wrong twice.
-    markOpenPhase('click');
-    if (!currentDoc()) return;
-    markOpenPhase('document');
+    docError = null;
+    // Delegated so that this button and the `Ver modelo 3D` command on the Design row are ONE
+    // operation rather than two that resemble each other. See `lib/store/rebar-open.ts`.
+    const r = openRebar3D({
+      author: detailingAuthor.resolve(t('detailing.doc.unnamedAuthor')),
+      at: new Date().toISOString(),
+    });
+    if (!r.ok) { docError = t('detailing.doc.noCoordinated'); return; }
+    // The sidebar panel keeps the summary and the export; the inspection surface is the
+    // overlay, and making the user find a second button to reach it is the friction this pass
+    // exists to remove.
     show3d = true;
-    // Straight into the workspace. The sidebar panel keeps the summary and the export; the
-    // inspection surface is the overlay, and making the user find a second button to reach it
-    // is the friction this pass exists to remove.
-    rebarWorkspace.openWorkspace();
   }
 
   function exportXlsx() {
@@ -126,7 +129,7 @@
 
   function submitReview(state: 'REVIEWED' | 'ISSUED') {
     detailingStore.review({
-      engineer,
+      engineer: detailingAuthor.name,
       // The store never reads the clock itself; the timestamp comes from the action.
       at: new Date().toISOString(),
       state,
@@ -451,7 +454,9 @@
 
         <label class="field">
           {t('detailing.engineer')}
-          <input type="text" data-testid="review-engineer" bind:value={engineer} />
+          <input type="text" data-testid="review-engineer"
+                 value={detailingAuthor.name}
+                 oninput={(e) => detailingAuthor.set(e.currentTarget.value)} />
         </label>
         <label class="field">
           {t('detailing.notes')}

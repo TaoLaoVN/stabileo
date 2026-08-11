@@ -23,6 +23,7 @@
    */
   import { modelStore, resultsStore, uiStore, verificationStore } from '../../lib/store';
   import { designRunStore } from '../../lib/store/design-run.svelte';
+  import { diagnosticsWarning } from '../../lib/store/diagnostics-warning.svelte';
   import { t, tp } from '../../lib/i18n';
   import { clearReinforcement, revertReinforcement } from '../../lib/store/rebar-edit';
   import {
@@ -289,18 +290,26 @@
 </script>
 
 <div class="design-tab" data-testid="pro-design-tab">
+  <!--
+    Every design command arms the diagnostics warning. "I tried to design and it did not work"
+    is precisely the moment a blocking diagnostic earns the right to interrupt — and until one
+    of these is pressed, or a project is loaded, an untouched PRO says nothing.
+    See `lib/store/diagnostics-warning.svelte.ts`.
+  -->
   <DesignToolbar
     selectedCount={batchSelection.length}
     {hasResults} {hasCombinations}
     editedCount={designRunStore.manualOverrides.size}
-    onComputeDemands={() => designRunStore.computeDemands()}
-    onCodeCheck={() => designRunStore.runCodeCheck()}
-    onAutoDesignSelected={() => designRunStore.autoDesign(batchSelection)}
+    onComputeDemands={() => { diagnosticsWarning.arm(); designRunStore.computeDemands(); }}
+    onCodeCheck={() => { diagnosticsWarning.arm(); designRunStore.runCodeCheck(); }}
+    onAutoDesignSelected={() => { diagnosticsWarning.arm(); designRunStore.autoDesign(batchSelection); }}
     onAutoDesignUndesigned={() => {
+      diagnosticsWarning.arm();
       const ids = [...verificationStore.contexts.keys()].filter(id => !modelStore.elements.get(id)?.reinforcement);
       designRunStore.autoDesign(ids.length > 0 ? ids : [...verificationStore.contexts.keys()]);
     }}
-    onDesignAll={() => designRunStore.designAll()}
+    onDesignAll={() => { diagnosticsWarning.arm(); designRunStore.designAll(); }}
+    onOpenDiagnostics={() => (uiStore.proActiveTab = 'diagnostics')}
     onReviewChanges={() => (showChanged = true)}
     onRevertEdits={revertAllEdits}
     onShowOrientation={() => (showChanged = true)}

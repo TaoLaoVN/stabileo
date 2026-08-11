@@ -13,6 +13,9 @@
   import { te } from '../../../lib/i18n/engine-text';
   import { bindingLabel } from '../../../lib/codes/roles';
   import { detailingStore } from '../../../lib/store/detailing.svelte';
+  import { detailingAuthor } from '../../../lib/store/detailing-author.svelte';
+  import { diagnosticsWarning } from '../../../lib/store/diagnostics-warning.svelte';
+  import { canOpenRebar3D, openRebar3D, rebar3DAssemblyCount } from '../../../lib/store/rebar-open';
   import OutcomeBadge from './OutcomeBadge.svelte';
 
   interface Props {
@@ -28,14 +31,46 @@
     onReviewChanges: () => void;
     onRevertEdits: () => void;
     onShowOrientation: () => void;
+    /** Where the diagnostics chip goes. Owned by the panel, which knows how to switch tabs. */
+    onOpenDiagnostics: () => void;
   }
   let {
     selectedCount, hasResults, hasCombinations, editedCount,
     onComputeDemands, onCodeCheck, onAutoDesignSelected, onAutoDesignUndesigned,
     onDesignAll, onReviewChanges, onRevertEdits, onShowOrientation,
+    onOpenDiagnostics,
   }: Props = $props();
 
   let autoMenuOpen = $state(false);
+
+  // ─── Ver modelo 3D ──────────────────────────────────────────────
+  let opening3d = $state(false);
+  let open3dError = $state<string | null>(null);
+  const canOpen3d = $derived(canOpenRebar3D());
+  const assemblyCount = $derived(rebar3DAssemblyCount());
+
+  /**
+   * Build the document and open the workspace.
+   *
+   * `opening3d` is held across a frame on purpose. The build is synchronous and can take a
+   * noticeable moment on a large model, so without yielding first the browser never paints the
+   * pending state and the button looks like it did nothing — the exact complaint that put this
+   * command on the main row in the first place.
+   */
+  async function open3d() {
+    open3dError = null;
+    opening3d = true;
+    await new Promise((r) => requestAnimationFrame(() => r(null)));
+    try {
+      const res = openRebar3D({
+        author: detailingAuthor.resolve(t('detailing.doc.unnamedAuthor')),
+        at: new Date().toISOString(),
+      });
+      if (!res.ok) open3dError = t('detailing.doc.noCoordinated');
+    } finally {
+      opening3d = false;
+    }
+  }
 
   /**
    * The concrete design code in force, and why it might not be.
@@ -149,12 +184,56 @@
         : hasDetailing ? t('detailing.cmd.regenerate') : t('detailing.cmd.generate')}
     </button>
 
+    <!--
+      `Ver modelo 3D` — the RESULT of everything to its left, and until PR20 it was reachable
+      only from inside the detailing disclosure, two levels below the commands that produce it.
+
+      It is the same operation as the button that stays down there: both call `openRebar3D`, so
+      the cage on screen is a projection of the same document instance the report, the schedule
+      and the drawings render. It is disabled — not hidden — while there is nothing to draw, and
+      says so, because a command that vanishes teaches nobody what it needs.
+    -->
+    <button
+      class="cmd cmd-3d"
+      data-testid="cmd-open-3d"
+      onclick={open3d}
+      disabled={!canOpen3d || opening3d || detailingBusy}
+      title={canOpen3d ? '' : t('detailing.scene.openBlocked')}
+    >
+      <span aria-hidden="true">◫</span>
+      {opening3d ? t('detailing.scene.opening') : t('detailing.scene.openMain')}
+      {#if canOpen3d}
+        <span class="cmd-3d-count" data-testid="cmd-open-3d-count">{assemblyCount}</span>
+      {/if}
+    </button>
+
     {#if busy}
       <button class="cmd cmd-cancel" data-testid="cmd-cancel" onclick={() => designRunStore.cancel()}>
         {t('design.cmd.cancel')}
       </button>
     {/if}
+
+    <!--
+      The model-diagnostics warning, at the RIGHT of this row rather than down the side of the
+      panel — see `diagnostics-warning.svelte.ts` for when it is allowed to appear at all. It is
+      a chip, not a column: it takes one line's height and gives the rest back.
+    -->
+    {#if diagnosticsWarning.visible}
+      <button
+        class="cmd-diag"
+        data-testid="design-diagnostics-warning"
+        onclick={() => { diagnosticsWarning.markSeen(); onOpenDiagnostics(); }}
+        title={t('pro.fixBeforeSolve')}
+      >
+        <span aria-hidden="true">⚠</span>
+        {tp('pro.diagWarnChip', { n: diagnosticsWarning.count })}
+      </button>
+    {/if}
   </div>
+
+  {#if open3dError}
+    <p class="open3d-error" role="alert" data-testid="cmd-open-3d-error">{open3dError}</p>
+  {/if}
 
   <!-- Why the command is unavailable, in the open, with counts. -->
   {#if !detailingReady.ready && detailingBlockers}
@@ -327,6 +406,50 @@
   .progress-text { font-size: 0.7rem; color: var(--st-text-2); font-family: monospace; }
 
   .cmd-detailing { background: var(--st-hair-strong); }
+
+  /*
+     `Ver modelo 3D` reads as the end of the row, because it is: everything to its left
+     produces the thing it shows. Interactive blue rather than the accent — the accent is the
+     brand and the destructive edge, and this is neither.
+  */
+  .cmd-3d {
+    display: inline-flex; align-items: center; gap: 5px;
+    background: var(--st-surface-3);
+    border-color: var(--st-interactive);
+    color: var(--st-text);
+  }
+  .cmd-3d:hover:not(:disabled) { background: var(--st-hair-strong); }
+  .cmd-3d-count {
+    font-family: var(--st-mono); font-size: 0.66rem; font-weight: 600;
+    padding: 0 4px; border-radius: 2px;
+    background: var(--st-hair); color: var(--st-text-2);
+  }
+
+  /*
+     The diagnostics chip. `margin-left: auto` sends it to the right of the row and nothing
+     else in the row is allowed to grow, so it stays a chip on one line instead of the column
+     down the panel it used to be.
+  */
+  .cmd-diag {
+    margin-left: auto;
+    display: inline-flex; align-items: center; gap: 5px;
+    padding: 4px 9px;
+    background: rgba(217, 164, 65, 0.12);
+    border: 1px solid var(--st-warn);
+    border-radius: 4px;
+    color: var(--st-warn);
+    font-size: 0.72rem; font-weight: 600;
+    white-space: nowrap;
+    cursor: pointer;
+  }
+  .cmd-diag:hover { background: rgba(217, 164, 65, 0.22); }
+  .cmd-diag:focus-visible { outline: 2px solid var(--st-focus); outline-offset: 1px; }
+
+  .open3d-error {
+    margin: 0.3rem 0 0;
+    font-size: 0.72rem;
+    color: var(--st-warn);
+  }
   .detailing-blockers { margin: 0.3rem 0 0; font-size: 0.76rem; opacity: 0.85; }
   .detailing-auto { display: inline-flex; gap: 0.3rem; align-items: center; font-size: 0.76rem; margin-top: 0.3rem; }
   .counts { display: flex; gap: 9px; flex-wrap: wrap; font-size: 0.72rem; font-family: monospace; }

@@ -801,14 +801,20 @@
   -->
   <header class="pro-head">
     <span class="pro-head-title" data-testid="pro-panel-title">{t(TAB_TITLE[activeTab] ?? 'pro.tabNodes')}</span>
-    {#if modelErrorCount > 0}
-      <button
-        class="pro-head-errors"
-        onclick={() => (uiStore.proActiveTab = 'diagnostics')}
-        title={t('pro.fixBeforeSolve')}
-        data-testid="pro-error-count"
-      >⚠ {modelErrorCount}</button>
-    {/if}
+    <!--
+      The model-diagnostics chip is NOT here any more.
+
+      It used to render on every tab, driven by `modelErrorCount > 0`, and `checkModel` returns
+      three errors for an empty model — so an untouched PRO opened with a yellow "⚠ 3" over the
+      right panel before the user had done anything. It now lives at the right of the Design
+      command row, where the commands it blocks are, and only once it has something to say:
+      `lib/store/diagnostics-warning.svelte.ts` holds the rule and the dismissal policy.
+
+      Global visibility is not lost. The ribbon's MODEL badge still carries the count, under the
+      same arming rule, so the fact is reachable from any tab without interrupting from all of
+      them. `modelErrorCount` stays exported for the ribbon and for the pre-solve gate — the
+      gate reads `checkModel` directly and is not affected by anything the user hides.
+    -->
   </header>
 
   <!-- Tab content -->
@@ -926,20 +932,9 @@
     color: var(--st-text-2);
   }
 
-  /* A count, not a banner: it states a condition and offers the way to it. */
-  .pro-head-errors {
-    background: none;
-    border: 1px solid var(--st-warn);
-    border-radius: var(--st-radius);
-    color: var(--st-warn);
-    font-family: var(--st-mono);
-    font-size: 0.62rem;
-    line-height: 1;
-    padding: 0.15rem 0.35rem;
-    cursor: pointer;
-  }
-
-  .pro-head-errors:hover { background: var(--st-selected-bg); }
+  /* `.pro-head-errors` lived here. Its markup moved to the Design command row — see the note
+     in the header above — and the rule went with it rather than being left behind unreachable,
+     the way `.autosave-banner` was in App.svelte for a whole release. */
 
   /* ─── Mobile PRO navigation ─── */
   .pro-mobile-nav {
@@ -1266,19 +1261,15 @@
     border-bottom: 1px solid var(--st-surface-3);
   }
 
-  .pro-quality-gate {
-    display: flex; align-items: center; gap: 8px;
-    padding: 6px 12px; cursor: pointer;
-    background: rgba(233, 160, 0, 0.08);
-    border-bottom: 1px solid rgba(233, 160, 0, 0.2);
-    font-size: 0.72rem; color: var(--st-warn);
-    transition: background 0.15s;
-  }
-  .pro-quality-gate:hover { background: rgba(233, 160, 0, 0.15); }
-  .qg-icon { font-size: 0.85rem; }
-  .qg-text { flex: 1; }
-  .qg-text strong { color: var(--st-warn); }
-  .qg-arrow { font-size: 0.8rem; opacity: 0.6; }
+  /*
+     `.pro-quality-gate` lived here: PR19's full-width amber banner across the top of the panel,
+     the one that "took the whole height of the panel to say one sentence". PR125 replaced it
+     with the header chip, the merge kept PR125's markup, and these six rules were left behind
+     with nothing to style — six `css_unused_selector` warnings on every build.
+
+     Both are now gone. The same fact is carried by the chip at the right of the Design command
+     row, which is one line tall and next to the commands it blocks.
+  */
 
   /* ─── Content area ─── */
   .pro-content {

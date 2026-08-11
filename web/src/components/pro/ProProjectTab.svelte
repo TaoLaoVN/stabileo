@@ -5,6 +5,7 @@
     saveProject, saveSession, loadFile, downloadResultsCSV,
     downloadExcel, isMode3D,
   } from '../../lib/store/file';
+  import { autosaveStatus, autosaveRevisions } from '../../lib/store/autosave-db';
 
   /**
    * PRO's project view: what you have open, and how it gets in and out.
@@ -27,6 +28,51 @@
   let { groups, onLoadExample }: Props = $props();
 
   let fileInput: HTMLInputElement | undefined = $state();
+
+  /**
+   * What the user is holding: the document, its size, and where the autosave is keeping it.
+   *
+   * ── Why the Restore / Discard buttons are NOT here ────────────────
+   *
+   * There is exactly one place in this application that offers to restore a saved project: the
+   * inline prompt beside the tab strip. It moved there because a full-width banner pushed the
+   * whole app down on every load, and it carries the timestamp and the "this is not your newest
+   * save" warning. A second pair of Restore / Discard buttons in this panel would be a second
+   * owner of a decision that must be taken once — and the two would be able to disagree about
+   * whether an offer is still open.
+   *
+   * So this section is the STATUS, and it says where the decision lives. Nothing here restores
+   * or discards anything.
+   */
+  let storage = $state<{ backend: string; degraded: boolean; reason: string | null } | null>(null);
+  let lastSave = $state<{ revision: number; timestamp: string } | null>(null);
+  let statusError = $state<string | null>(null);
+
+  /**
+   * Read on mount and on demand, never on a timer.
+   *
+   * Both calls open IndexedDB. Polling them would put a database read behind every keystroke in
+   * a panel whose whole job is to sit still, so the refresh is a control the user presses.
+   */
+  async function refreshStatus() {
+    statusError = null;
+    try {
+      const [s, revs] = await Promise.all([autosaveStatus(), autosaveRevisions()]);
+      storage = s;
+      lastSave = revs.length > 0
+        ? { revision: revs[0].revision, timestamp: revs[0].timestamp }
+        : null;
+    } catch (err: unknown) {
+      // Reported, not swallowed: "the autosave status is unknown" is itself worth knowing.
+      statusError = err instanceof Error ? err.message : String(err);
+    }
+  }
+
+  $effect(() => { void refreshStatus(); });
+
+  const nodeCount = $derived(modelStore.nodes.size);
+  const elementCount = $derived(modelStore.elements.size);
+  const docName = $derived(modelStore.model.name?.trim() || t('tabBar.newStructure'));
   /*
    * The gallery lives IN the panel, not over the canvas.
    *
@@ -57,20 +103,87 @@
   }
 </script>
 
-<div class="pp">
-  <h4 class="pp-heading">{t('project.fileSection')}</h4>
-  <div class="pp-grid">
-    <button class="pp-btn" onclick={() => saveProject()} title={t('project.saveTabTooltip')}>
-      {t('project.saveTab')}
-    </button>
-    <button class="pp-btn" onclick={() => saveSession()} title={t('project.saveSessionTooltip')}>
-      {t('project.saveSession')}
-    </button>
-    <button class="pp-btn" onclick={() => fileInput?.click()} title={t('project.openTooltip')}>
-      {t('project.open')}
-    </button>
-  </div>
+<div class="pp" data-testid="pro-project-tab">
+  <!--
+    What is open, before what you can do to it. The panel used to start with three buttons and
+    never state which project they applied to.
+  -->
+  <section class="pp-card" data-testid="pp-document">
+    <h4 class="pp-heading pp-heading-first">{t('proProject.documentSection')}</h4>
+    <dl class="pp-facts">
+      <dt>{t('proProject.documentName')}</dt>
+      <dd data-testid="pp-doc-name">{docName}</dd>
+      <dt>{t('proProject.documentSize')}</dt>
+      <dd data-testid="pp-doc-size">
+        {nodeCount} {t('pro.stats.nodes')} · {elementCount} {t('pro.stats.members')}
+      </dd>
+      <dt>{t('proProject.documentSolved')}</dt>
+      <dd data-testid="pp-doc-solved">
+        {solved ? t('proProject.solvedYes') : t('proProject.solvedNo')}
+      </dd>
+    </dl>
+  </section>
 
+  <section class="pp-card">
+    <h4 class="pp-heading">{t('project.fileSection')}</h4>
+    <div class="pp-grid">
+      <button class="pp-btn pp-btn-primary" onclick={() => saveProject()}
+              title={t('project.saveTabTooltip')} data-testid="pp-save">
+        {t('project.saveTab')}
+      </button>
+      <button class="pp-btn" onclick={() => saveSession()}
+              title={t('project.saveSessionTooltip')} data-testid="pp-save-session">
+        {t('project.saveSession')}
+      </button>
+      <button class="pp-btn" onclick={() => fileInput?.click()}
+              title={t('project.openTooltip')} data-testid="pp-open">
+        {t('project.open')}
+      </button>
+    </div>
+  </section>
+
+  <!--
+    Autosave: status only. The offer to restore is the inline prompt beside the tabs, and there
+    is one of it — see the note in the script.
+  -->
+  <section class="pp-card" data-testid="pp-autosave">
+    <h4 class="pp-heading">{t('proProject.autosaveSection')}</h4>
+    <dl class="pp-facts">
+      <dt>{t('proProject.autosaveWhere')}</dt>
+      <dd data-testid="pp-autosave-backend">
+        {storage ? t(`proProject.backend.${storage.backend}`) : '—'}
+      </dd>
+      <dt>{t('proProject.autosaveLast')}</dt>
+      <dd data-testid="pp-autosave-last">
+        {#if lastSave}
+          <span class="pp-rev">r{lastSave.revision}</span>
+          {new Date(lastSave.timestamp).toLocaleString()}
+        {:else}
+          {t('proProject.autosaveNone')}
+        {/if}
+      </dd>
+    </dl>
+
+    {#if storage?.degraded}
+      <!-- Degraded storage is stated with the `⚠` and the sentence, never by colour alone. -->
+      <p class="pp-warn" role="status" data-testid="pp-autosave-degraded">
+        <span aria-hidden="true">⚠</span>
+        {t('proProject.autosaveDegraded')}{storage.reason ? ` — ${storage.reason}` : ''}
+      </p>
+    {/if}
+    {#if statusError}
+      <p class="pp-warn" role="alert" data-testid="pp-autosave-error">
+        <span aria-hidden="true">⚠</span> {statusError}
+      </p>
+    {/if}
+
+    <p class="pp-note">{t('proProject.autosaveRestoreHint')}</p>
+    <button class="pp-btn pp-btn-wide" onclick={refreshStatus} data-testid="pp-autosave-refresh">
+      {t('proProject.autosaveRefresh')}
+    </button>
+  </section>
+
+  <section class="pp-card">
   <h4 class="pp-heading">{t('proProject.newModel')}</h4>
 
   <button
@@ -121,7 +234,9 @@
     >{t('project.openIfc')}</button>
     <button class="pp-help" title={t('proProject.ifcHelp')} aria-label={t('proProject.ifcHelp')}>?</button>
   </div>
+  </section>
 
+  <section class="pp-card">
   <h4 class="pp-heading">{t('project.export')}</h4>
   <div class="pp-grid">
     <button class="pp-btn" onclick={() => downloadExcel()} title={t('project.exportExcelTooltip')}>Excel</button>
@@ -139,18 +254,22 @@
     >PNG</button>
   </div>
 
+  </section>
+
   <!--
     Sharing is a link to this model, not a file — different verb, own heading.
   -->
-  <h4 class="pp-heading">{t('project.share')}</h4>
-  <div class="pp-grid">
-    <button
-      class="pp-btn pp-btn-wide"
-      onclick={() => window.dispatchEvent(new Event('stabileo-copy-share-link'))}
-      disabled={!hasModel}
-      title={t('project.copyLinkTooltip')}
-    >{t('project.copyLink')}</button>
-  </div>
+  <section class="pp-card">
+    <h4 class="pp-heading">{t('project.share')}</h4>
+    <div class="pp-grid">
+      <button
+        class="pp-btn pp-btn-wide"
+        onclick={() => window.dispatchEvent(new Event('stabileo-copy-share-link'))}
+        disabled={!hasModel}
+        title={t('project.copyLinkTooltip')}
+      >{t('project.copyLink')}</button>
+    </div>
+  </section>
 </div>
 
 <input
@@ -162,7 +281,69 @@
 />
 
 <style>
-  .pp { display: flex; flex-direction: column; }
+  /*
+     The panel's own gutter.
+     ────────────────────────────────────────────────────────────────
+     `.pro-content` is `padding: 0`, so anything a tab does not pad itself sits flush against
+     the panel border and the scrollbar. This one did not, which is the reported "los botones
+     tocan los bordes": Save had a 1 px border and then the edge of the window.
+
+     Padding is taken here rather than on `.pro-content` deliberately. Several PRO tabs are
+     edge-to-edge tables that already manage their own gutters, and moving the padding up would
+     double theirs to fix this one.
+  */
+  .pp {
+    display: flex;
+    flex-direction: column;
+    gap: 0.85rem;
+    padding: 0.75rem 0.85rem 1.1rem;
+  }
+
+  /*
+     One card per decision, so the sections stop running into each other.
+     Grouped by the verb — what you HAVE, what you save and open, what the autosave is doing,
+     how you start something new, what comes out, what you share.
+  */
+  .pp-card {
+    display: flex;
+    flex-direction: column;
+    padding: 0.6rem 0.7rem 0.7rem;
+    background: var(--st-surface-2);
+    border: 1px solid var(--st-hair);
+    border-radius: var(--st-radius-lg);
+  }
+
+  /* ── Facts, not controls ─────────────────────────────────────── */
+  .pp-facts {
+    display: grid;
+    grid-template-columns: auto 1fr;
+    gap: 0.2rem 0.6rem;
+    margin: 0;
+    font-size: 0.72rem;
+  }
+  .pp-facts dt { color: var(--st-text-3); }
+  .pp-facts dd { margin: 0; color: var(--st-text); overflow-wrap: anywhere; }
+  .pp-rev {
+    font-family: var(--st-mono);
+    color: var(--st-text-2);
+    margin-right: 0.3rem;
+  }
+
+  .pp-note {
+    margin: 0.45rem 0 0.5rem;
+    font-size: 0.68rem;
+    line-height: 1.45;
+    color: var(--st-text-3);
+  }
+
+  .pp-warn {
+    display: flex;
+    gap: 0.35rem;
+    margin: 0.45rem 0 0;
+    font-size: 0.7rem;
+    line-height: 1.45;
+    color: var(--st-warn);
+  }
 
   .pp-heading {
     font-family: var(--st-mono);
@@ -176,7 +357,9 @@
     border-bottom: 1px solid var(--st-hair);
   }
 
-  .pp-heading:first-child { margin-top: 0; }
+  /* Every heading is now first inside its own card, so the top margin never applies. */
+  .pp-heading:first-child,
+  .pp-heading-first { margin-top: 0; }
 
   /*
      Sized by content, not by count: a three-column grid gives three items a
@@ -211,6 +394,36 @@
     background: var(--st-surface-3);
     border-color: var(--st-hair-strong);
     color: var(--st-text);
+  }
+
+  /*
+     A keyboard user could not see where they were: there was no focus style at all, so Tab
+     through this panel moved an invisible caret. The ring is the shared `--st-focus`, offset
+     so it reads against the card rather than merging with the button's own border.
+  */
+  .pp-btn:focus-visible,
+  .pp-help:focus-visible {
+    outline: 2px solid var(--st-focus);
+    outline-offset: 2px;
+    color: var(--st-text);
+  }
+
+  /*
+     Save is the primary action of this panel and now looks like one.
+
+     Not white, and not a filled accent: a white fill in this shell reads as an input, and the
+     vermillion accent is the brand and the destructive edge. This is the interactive blue the
+     rest of PRO uses for "you can press this", carried on the border and the label so the
+     button stays a button rather than becoming a block of colour.
+  */
+  .pp-btn-primary {
+    border-color: var(--st-interactive);
+    color: var(--st-text);
+    font-weight: 600;
+  }
+  .pp-btn-primary:hover:not(:disabled) {
+    background: var(--st-surface-3);
+    border-color: var(--st-interactive);
   }
 
   .pp-btn:disabled { opacity: 0.4; cursor: not-allowed; }

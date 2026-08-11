@@ -3,6 +3,11 @@
   import { t } from '../../lib/i18n';
   import type { SolverDiagnostic } from '../../lib/engine/types';
   import { checkModel } from '../../lib/engine/model-diagnostics';
+  import { diagnosticsWarning } from '../../lib/store/diagnostics-warning.svelte';
+
+  // Opening Diagnostics is itself an interaction: the user has come to look, so the chip is
+  // allowed to speak from here on even if nothing else has happened yet.
+  $effect(() => { diagnosticsWarning.arm(); });
 
   type SeverityFilter = 'all' | 'error' | 'warning' | 'info';
 
@@ -122,6 +127,47 @@
     </span>
   </div>
 
+  <!--
+    The switch for the Design bar's warning chip.
+
+    It lives here, and only here, because this is where the user arrives after following the
+    chip — so the control to quieten it is beside the thing it is about, and reaching it costs
+    a look at the diagnostics first. The scope is stated in full rather than implied: hiding is
+    per diagnostic set, for this session, and it changes NOTHING about what the design does.
+    The commands call `checkModel` themselves and refuse on their own.
+  -->
+  <section class="diag-notify" data-testid="diag-notify">
+    <h4>{t('pro.diagHideTitle')}</h4>
+    <label class="diag-notify-toggle">
+      <input
+        type="checkbox"
+        data-testid="diag-hide-warning"
+        checked={diagnosticsWarning.dismissed}
+        disabled={diagnosticsWarning.count === 0}
+        onchange={(e) => (e.currentTarget.checked
+          ? diagnosticsWarning.dismiss()
+          : diagnosticsWarning.restore())}
+      />
+      <span>{t('pro.diagHideLabel')}</span>
+    </label>
+    <p class="diag-notify-scope">{t('pro.diagHideScope')}</p>
+    <!--
+      What the diagnostics currently AMOUNT to, in words. The four categories the chip must
+      never blur together: no model at all, a model missing inputs, blocking errors — and,
+      separately owned elsewhere, provisional proposals and bar conflicts, which are states of
+      a design rather than faults in a model.
+    -->
+    <p class="diag-notify-kind" data-testid="diag-kind" data-kind={diagnosticsWarning.kind}>
+      {t(`pro.diagKind${diagnosticsWarning.kind === 'empty' ? 'Empty'
+        : diagnosticsWarning.kind === 'incomplete' ? 'Incomplete' : 'Blocking'}`)}
+    </p>
+    {#if diagnosticsWarning.dismissed}
+      <p class="diag-notify-state" role="status" data-testid="diag-hidden-note">
+        {t('pro.diagHidden')}
+      </p>
+    {/if}
+  </section>
+
   {#if !hasAny}
     <div class="diag-empty">
       <span class="diag-check">&#10003;</span>
@@ -201,6 +247,45 @@
 </div>
 
 <style>
+  /* ── Notification control ─────────────────────────────────────── */
+  .diag-notify {
+    margin: 0 0 0.75rem;
+    padding: 0.6rem 0.75rem;
+    background: var(--st-surface-2);
+    border: 1px solid var(--st-hair);
+    border-radius: var(--st-radius-lg);
+  }
+  .diag-notify h4 {
+    margin: 0 0 0.4rem;
+    font-family: var(--st-display);
+    font-size: 0.72rem;
+    font-weight: 600;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: var(--st-text-2);
+  }
+  .diag-notify-toggle {
+    display: flex; align-items: center; gap: 0.4rem;
+    font-size: 0.78rem; color: var(--st-text); cursor: pointer;
+  }
+  .diag-notify-toggle input:disabled + span { color: var(--st-text-3); cursor: not-allowed; }
+  .diag-notify-toggle input:focus-visible { outline: 2px solid var(--st-focus); outline-offset: 2px; }
+  .diag-notify-scope {
+    margin: 0.35rem 0 0;
+    font-size: 0.7rem; line-height: 1.45; color: var(--st-text-2);
+  }
+  .diag-notify-kind {
+    margin: 0.4rem 0 0;
+    font-size: 0.72rem; color: var(--st-text-2);
+  }
+  /* Each category reads differently without depending on the colour to say which. */
+  .diag-notify-kind[data-kind='blocking'] { color: var(--st-danger); font-weight: 600; }
+  .diag-notify-kind[data-kind='incomplete'] { color: var(--st-warn); }
+  .diag-notify-state {
+    margin: 0.35rem 0 0;
+    font-size: 0.72rem; font-weight: 600; color: var(--st-warn);
+  }
+
   .diag-panel {
     display: flex;
     flex-direction: column;
