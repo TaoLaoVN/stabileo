@@ -326,6 +326,47 @@ function mirrorRefPositions(forwardPositions: number[], totalLength: number, max
   return forwardPositions.map(r => totalLength - r - maxAxleOffset);
 }
 
+
+/**
+ * Per-element extremes, taken from the POINTWISE envelope rather than from
+ * element end values.
+ *
+ * The envelope built while sweeping compares `ef.mStart` and `ef.mEnd`, which
+ * are the moments at the two ENDS of a member. A simply supported span modelled
+ * as one element has zero moment at both ends at every load position, so the
+ * per-element envelope came out at 1e-14 for a beam whose real envelope peaks
+ * at PL/4 — the entire result, missed, because the maximum lives in the span.
+ *
+ * The pointwise envelope already samples along each member, so the extremes are
+ * read from it. Nothing extra is solved.
+ *
+ * It went unnoticed because the viewport draws the pointwise curves and never
+ * reads this map. That makes it a trap rather than a visible bug: the next
+ * caller wanting "the worst moment in member 3" would reach for the obvious
+ * field and get zero.
+ */
+function elementExtremesFromPointwise(
+  envelope: MovingLoadEnvelope['elements'],
+  full: FullEnvelope | undefined,
+): void {
+  if (!full) return;
+  const apply = (
+    curves: { elements: Array<{ elementId: number; posValues: number[]; negValues: number[] }> } | undefined,
+    pos: 'mMaxPos' | 'vMaxPos' | 'nMaxPos',
+    neg: 'mMaxNeg' | 'vMaxNeg' | 'nMaxNeg',
+  ) => {
+    for (const e of curves?.elements ?? []) {
+      const env = envelope.get(e.elementId);
+      if (!env) continue;
+      for (const v of e.posValues) if (v > env[pos]) env[pos] = v;
+      for (const v of e.negValues) if (v < env[neg]) env[neg] = v;
+    }
+  };
+  apply(full.moment as never, 'mMaxPos', 'mMaxNeg');
+  apply(full.shear as never, 'vMaxPos', 'vMaxNeg');
+  apply(full.axial as never, 'nMaxPos', 'nMaxNeg');
+}
+
 export function solveMovingLoads(
   baseInput: SolverInput,
   config: MovingLoadConfig,
@@ -374,6 +415,7 @@ export function solveMovingLoads(
 
   const allResults = positions.map(p => p.results);
   const fullEnvelope = computePointwiseEnvelope(allResults);
+  elementExtremesFromPointwise(envelope, fullEnvelope);
 
   return { elements: envelope, positions, fullEnvelope, train: config.train, path };
 }
@@ -478,6 +520,7 @@ export async function solveMovingLoadsAsync(
 
   const allResults = positions.map(p => p.results);
   const fullEnvelope = computePointwiseEnvelope(allResults);
+  elementExtremesFromPointwise(envelope, fullEnvelope);
 
   return { elements: envelope, positions, fullEnvelope, train: config.train, path };
 }
