@@ -471,11 +471,18 @@
   /* The meta block sat flush against the panel edge and ran its rows together,
      so the family name and its two facts read as one paragraph. Padded and
      spaced to match the card above it. */
+  /* The card above has an inner padding of its own, so the text below sat
+     visually further left than the drawing it describes. Matched to it, and
+     given the same background so the two read as one block rather than as a
+     panel with a caption escaping from under it. */
   .profile-aside .profile-meta {
     display: flex;
     flex-direction: column;
     gap: 3px;
-    padding: 0 2px;
+    padding: 8px 10px;
+    border-radius: var(--st-radius, 3px);
+    background: var(--st-surface-3);
+    border: 1px solid var(--st-border);
   }
   .profile-aside .meta-family {
     padding-bottom: 4px;

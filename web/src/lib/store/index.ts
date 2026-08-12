@@ -78,3 +78,9 @@ uiStore._setModelFlatnessProvider(() => shouldProjectModelToXZ({
 }));
 
 export { modelStore, uiStore, resultsStore, historyStore, dsmStepsStore, tabManager, tourStore, verificationStore };
+
+// The editing/reading exclusion is a rule of the app, not of a component, so it
+// is installed once here rather than remembered at each of the six places that
+// arm a tool.
+import { installViewModeRules } from './view-mode';
+installViewModeRules();

@@ -26,14 +26,56 @@
     }
     return items;
   })());
+
+  /** Individual load cases, in the order the solver produced them. */
+  const caseKeys = $derived([...resultsStore.perCase.keys()]);
 </script>
 
-{#if resultsStore.hasCombinations}
-  <div class="results-sub-tabs combo-view-tabs">
-    <button class:active={resultsStore.activeView === 'envelope'} onclick={() => { resultsStore.activeView = 'envelope'; }}>{t('resultsTable.envelope')}</button>
-    {#each modelStore.combinations as combo}
-      <button class:active={resultsStore.activeView === 'combo' && resultsStore.activeComboId === combo.id} onclick={() => { resultsStore.activeView = 'combo'; resultsStore.activeComboId = combo.id; }}>{combo.name}</button>
-    {/each}
+<!--
+  Which load state the table describes.
+  
+  It was a row of buttons — one per combination, plus the envelope — which grew
+  a wrapping wall on any real model and offered no way to see the SIMPLE loads
+  at all: the two states the diagram selector above does offer, all loads
+  together and each case on its own. A table that cannot show what the canvas
+  is showing is not the same view of the same result.
+  
+  A select, because this is one choice from a list that gets long, and because
+  it is the same control the diagram selector uses for the same question.
+-->
+{#if resultsStore.hasCombinations || caseKeys.length > 0}
+  <div class="results-case-bar">
+    <label for="results-case">{t('results.primary')}</label>
+    <select
+      id="results-case"
+      value={resultsStore.activeView === 'envelope' ? 'envelope'
+           : resultsStore.activeCaseId !== null ? `case_${resultsStore.activeCaseId}`
+           : resultsStore.activeView === 'combo' ? `combo_${resultsStore.activeComboId ?? ''}`
+           : 'single'}
+      onchange={(e) => {
+        const v = (e.currentTarget as HTMLSelectElement).value;
+        if (v === 'single') { resultsStore.activeCaseId = null; resultsStore.activeView = 'single'; }
+        else if (v === 'envelope') { resultsStore.activeCaseId = null; resultsStore.activeView = 'envelope'; }
+        else if (v.startsWith('case_')) { resultsStore.activeCaseId = Number(v.slice(5)); }
+        else if (v.startsWith('combo_')) {
+          resultsStore.activeCaseId = null;
+          resultsStore.activeView = 'combo';
+          resultsStore.activeComboId = Number(v.slice(6));
+        }
+      }}
+    >
+      <option value="single">{t('results.simpleLoads')}</option>
+      {#each caseKeys as id}
+        {@const lc = modelStore.model.loadCases.find((c) => c.id === id)}
+        <option value={`case_${id}`}>{lc?.name ?? `${t('results.caseFallback')} ${id}`}</option>
+      {/each}
+      {#each modelStore.combinations as combo}
+        <option value={`combo_${combo.id}`}>{combo.name}</option>
+      {/each}
+      {#if resultsStore.hasCombinations}
+        <option value="envelope">{t('resultsTable.envelope')}</option>
+      {/if}
+    </select>
   </div>
 {/if}
 <div class="results-sub-tabs">
@@ -195,6 +237,29 @@
 </div>
 
 <style>
+  .results-case-bar {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 6px 8px;
+    border-bottom: 1px solid var(--st-border);
+  }
+  .results-case-bar label {
+    font-size: 0.7rem;
+    color: var(--st-text-3);
+    white-space: nowrap;
+  }
+  .results-case-bar select {
+    flex: 1;
+    min-width: 0;
+    padding: 3px 6px;
+    border-radius: var(--st-radius, 3px);
+    border: 1px solid var(--st-border);
+    background: var(--st-surface-3);
+    color: var(--st-text);
+    font-size: 0.74rem;
+  }
+
   table {
     width: max-content;
     min-width: 100%;

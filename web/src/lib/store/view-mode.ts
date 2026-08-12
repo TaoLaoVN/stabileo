@@ -56,12 +56,26 @@ export function showDiagram(type: DiagramType): void {
  * Drawing on top of a result is the same contradiction seen from the other
  * side — and worse in practice, because the diagram is drawn over the members
  * you are trying to click.
+ *
+ * Thin now: the store's own setter enforces this, so every path arming a tool
+ * gets it — including the floating tools, the keyboard shortcuts and the data
+ * tabs, none of which call through here. This remains as the readable way to
+ * say it from a component.
  */
 export function armTool(tool: string): void {
   uiStore.currentTool = tool as never;
-  if ((EDIT_TOOLS as readonly string[]).includes(tool) && resultsStore.diagramType !== 'none') {
-    resultsStore.diagramType = 'none';
-  }
+}
+
+/**
+ * Wire the store-level rule. Called once, from the store barrel.
+ *
+ * Registered rather than imported so `uiStore` need not know the results store
+ * exists — the two would otherwise import each other.
+ */
+export function installViewModeRules(): void {
+  uiStore.onEditToolArmed(() => {
+    if (resultsStore.diagramType !== 'none') resultsStore.diagramType = 'none';
+  });
 }
 
 /** Whether a result is currently on screen. */

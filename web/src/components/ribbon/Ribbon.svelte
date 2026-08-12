@@ -312,6 +312,18 @@
       return;
     }
     if (cmd.action) cmd.action();
+    /*
+     * A Properties command opens a table, so it leaves editing too.
+     *
+     * Materials and Sections carry no `tool`, so they fell through the branch
+     * above and left whatever was armed still armed — pressing Sections while
+     * the element tool was up lit both, which is the same "editing and reading
+     * at once" contradiction wearing different clothes. There is nothing to
+     * draw on a properties table.
+     */
+    if (cmd.dataTab && !cmd.tool && EDIT_TOOLS.includes(uiStore.currentTool)) {
+      uiStore.currentTool = 'select';
+    }
     // `solve` shows its panel rather than toggling it: pressing it twice means
     // "solve again", not "solve and hide the answer".
     if (cmd.panel) onOpenPanel(cmd.panel, {

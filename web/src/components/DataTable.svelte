@@ -7,9 +7,8 @@
   import LoadsTable from './tables/LoadsTable.svelte';
   import MaterialsTable from './tables/MaterialsTable.svelte';
   import SectionsTable from './tables/SectionsTable.svelte';
-  import CombosTable from './tables/CombosTable.svelte';
 
-  type TabId = 'nodes' | 'elements' | 'supports' | 'loads' | 'materials' | 'sections' | 'combos';
+  type TabId = 'nodes' | 'elements' | 'supports' | 'loads' | 'materials' | 'sections';
   interface Props {
     /**
      * The open tab, BOUND — the ribbon and this table are two views of one
@@ -20,7 +19,7 @@
      * left the ribbon lighting whatever it had lit before. Two controls
      * disagreeing about what is selected is worse than one control.
      */
-    activeTab?: TabId;
+    activeTab?: string;
   }
   let { activeTab = $bindable('nodes') }: Props = $props();
 
@@ -32,11 +31,11 @@
    * the table and leave the ribbon dark. Materials and sections have no tool —
    * they are edited in the table itself — and the ribbon lights those by tab.
    */
-  const TAB_TOOL: Partial<Record<TabId, string>> = {
+  const TAB_TOOL: Record<string, string> = {
     nodes: 'node', elements: 'element', supports: 'support', loads: 'load',
   };
 
-  function pickTab(tab: TabId) {
+  function pickTab(tab: string) {
     activeTab = tab;
     const tool = TAB_TOOL[tab];
     // Only arm an EDIT tool when one exists. Landing on Materials must not
@@ -83,9 +82,6 @@
     <button class:active={activeTab === 'sections'} onclick={() => pickTab('sections')}>
       {t('data.sections')} ({modelStore.sections.size})
     </button>
-    <button class:active={activeTab === 'combos'} onclick={() => pickTab('combos')}>
-      {t('data.combinations')}
-    </button>
     <!--
       Results are NOT a tab here.
       
@@ -111,8 +107,6 @@
       <MaterialsTable />
     {:else if activeTab === 'sections'}
       <SectionsTable />
-    {:else if activeTab === 'combos'}
-      <CombosTable />
     {/if}
   </div>
 </div>

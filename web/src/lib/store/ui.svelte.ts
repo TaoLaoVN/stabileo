@@ -109,6 +109,17 @@ function createUIStore() {
   let panY = $state<number>(300);
 
   let selectMode = $state<SelectMode>('elements');
+
+  /** Tools that build the model, as opposed to selecting, panning or querying. */
+  const EDIT_TOOLS: string[] = ['node', 'element', 'support', 'load'];
+
+  /**
+   * Called when a build tool is armed, so the results view can stand down.
+   *
+   * A hook rather than a direct call: this store must not import the results
+   * store, and the alternative — every caller remembering — is what failed.
+   */
+  let _onEditToolArmed: (() => void) | null = null;
   let selectedNodes = $state<Set<number>>(new Set());
   let selectedElements = $state<Set<number>>(new Set());
   // True only when selectedElements was set by a genuine MANUAL element action
@@ -402,7 +413,25 @@ function createUIStore() {
 
   return {
     get currentTool() { return currentTool; },
-    set currentTool(v: Tool) { currentTool = v; },
+    /**
+     * Arming a tool is a MODE change, so it carries the rule with it.
+     *
+     * The rule — that building and reading results are exclusive — lived in the
+     * callers, and there turned out to be six of them: the ribbon, the results
+     * toolbar, the floating tools, the keyboard shortcuts, the data tabs and
+     * the selected-entity panel. Two coordinated. The other four armed a tool
+     * and left whatever diagram was on screen exactly where it was, so the app
+     * claimed you were placing nodes on a moment diagram — which is what a user
+     * kept seeing.
+     *
+     * Putting it here makes it unevadable. The dependency is inverted through a
+     * hook rather than importing the results store, which would make the two
+     * import each other.
+     */
+    set currentTool(v: Tool) {
+      currentTool = v;
+      if (EDIT_TOOLS.includes(v)) _onEditToolArmed?.();
+    },
 
     get supportType() { return supportType; },
     set supportType(v: SupportTool) { supportType = v; },
@@ -470,6 +499,9 @@ function createUIStore() {
 
     get panY() { return panY; },
     set panY(v: number) { panY = v; },
+
+    /** Register the reaction to arming a build tool. Called once, at startup. */
+    onEditToolArmed(fn: () => void) { _onEditToolArmed = fn; },
 
     get selectMode() { return selectMode; },
     set selectMode(v: SelectMode) { applySelectMode(v); },

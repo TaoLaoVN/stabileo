@@ -33,7 +33,7 @@
     dataTab?: string;
     onClose: () => void;
   };
-  let { panel, dataTab, onClose }: Props = $props();
+  let { panel, dataTab = $bindable('nodes'), onClose }: Props = $props();
 
   /**
    * Width is dragged and remembered.
@@ -163,7 +163,7 @@
       {#if dsmStepsStore.isOpen}
         <StepWizard />
       {:else}
-        <DataTable bind:activeTab={dataTab as never} />
+        <DataTable bind:activeTab={dataTab} />
       {/if}
     {/if}
   </div>
