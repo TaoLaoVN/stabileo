@@ -40,20 +40,15 @@ export const MEMBER_ROLES = [
 
 export type MemberRole = (typeof MEMBER_ROLES)[number];
 
-/**
- * The roles that make up a truss web and chords, in the order the three-slot profile
- * editor in the generator dialogs presents them.
+/*
+ * There is deliberately no fixed list of "the roles a dialog offers".
  *
- * Kept as its own list because every latticed generator — truss, lattice column — offers
- * exactly these three, and a dialog that offered `purlin` for a lattice column would be
- * offering a control that generates nothing.
+ * `requiredRoles(topology)` derives it from the members actually placed, so a generator that
+ * stops emitting diagonals stops asking for a diagonal profile without anyone remembering to
+ * update a list. An earlier version exported a hardcoded lattice-role list and a
+ * `roleLabelKey` helper; neither had a caller, and a dead export beside a live one reads as
+ * the API to use.
  */
-export const LATTICE_ROLES: readonly MemberRole[] = Object.freeze(['chord', 'post', 'diagonal']);
-
-/** i18n key for a role's label. Rendered at the UI boundary, never here. */
-export function roleLabelKey(role: MemberRole): string {
-  return `generator.role.${role}`;
-}
 
 /**
  * Tally members by role.

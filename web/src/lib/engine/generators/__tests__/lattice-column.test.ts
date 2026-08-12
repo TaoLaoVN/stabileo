@@ -8,7 +8,7 @@
 
 import { describe, it, expect } from 'vitest';
 import {
-  DEFAULT_LATTICE_COLUMN_PARAMS, generateLatticeColumn, latticeTopNodes,
+  DEFAULT_LATTICE_COLUMN_PARAMS, generateLatticeColumn,
   validateLatticeColumnParams, type LatticeColumnParams,
 } from '../lattice-column';
 
@@ -136,13 +136,34 @@ describe('generateLatticeColumn — supports', () => {
   });
 });
 
-describe('latticeTopNodes — where a truss lands on the column', () => {
-  it.each([1, 2, 6, 12])('points at the top of each chord for %i divisions', (divisions) => {
+describe('node ordering — chord by chord, bottom to top', () => {
+  /**
+   * Asserted by POSITION rather than through an index helper.
+   *
+   * An earlier version exported `latticeTopNodes(divisions)` and this test called it, which
+   * made the test agree with the helper rather than with the geometry — both could drift
+   * together. The ordering is still a documented property of the generator, so it is checked
+   * against where the nodes actually are.
+   */
+  it.each([1, 2, 6, 12])('puts each chord head last in its own run, for %i divisions', (divisions) => {
     const t = generateLatticeColumn(P({ heightM: 8, divisions }));
-    const [a, b] = latticeTopNodes({ divisions });
-    expect(t.nodes[a].z).toBeCloseTo(8, 12);
-    expect(t.nodes[b].z).toBeCloseTo(8, 12);
-    expect(t.nodes[a].x).not.toBeCloseTo(t.nodes[b].x, 6);
+    const left = t.nodes.slice(0, divisions + 1);
+    const right = t.nodes.slice(divisions + 1, 2 * (divisions + 1));
+
+    expect(left[divisions].z).toBeCloseTo(8, 12);
+    expect(right[divisions].z).toBeCloseTo(8, 12);
+    expect(left[divisions].x).not.toBeCloseTo(right[divisions].x, 6);
+    // And each run climbs, so "last" really is the head.
+    for (const run of [left, right]) {
+      for (let i = 1; i < run.length; i++) expect(run[i].z).toBeGreaterThan(run[i - 1].z);
+    }
+  });
+
+  it('appends the cap after both chords, on the axis', () => {
+    const t = generateLatticeColumn(P({ divisions: 4, heightM: 8, capTop: true }));
+    const cap = t.nodes[t.nodes.length - 1];
+    expect(cap.x).toBeCloseTo(0, 12);
+    expect(cap.z).toBeCloseTo(8, 12);
   });
 });
 

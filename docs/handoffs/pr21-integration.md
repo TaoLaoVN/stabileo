@@ -2,29 +2,37 @@
 
 **Rama:** `feat/pro-steel-family` · **PR** [#135](https://github.com/lambdaclass/stabileo/pull/135)
 **Base:** `origin/main@542fc664`
-**Estado al 2026-08-12:** capa de motor completa y testada. Faltan los diálogos de los generadores.
+**Estado al 2026-08-12:** alcance cerrado. Motor, superficie metálica, generadores y su UI —
+completos y testados. Lo pendiente está en §6.
 
 ---
 
 ## 1. Cómo leer esta rama
 
-Todo lo que hace está en **19 archivos nuevos**. Sobre archivos existentes hay **6 ediciones**,
-todas chicas y todas justificadas abajo. Ese reparto es deliberado: #125 toca 253 archivos y
-#132 toca 61, y medí la superposición antes de escribir nada.
+52 archivos, **+9710 / −28**. Todo el contenido está en **41 archivos nuevos**; sobre
+archivos preexistentes hay **11 ediciones**, todas chicas y todas justificadas abajo. Ese
+reparto es deliberado: #125 toca 253 archivos y #132 toca 61, y medí la superposición antes
+de escribir nada.
 
 | Archivo existente | Líneas | ¿Lo tocan? | Qué se hizo |
 |---|---|---|---|
-| `lib/engine/design/member-context.ts` | +55/−4 | **no** | excluir metálicos del pipeline de hormigón |
-| `lib/codes/roles.ts` | +48/−4 | **no** | opción `experimental` en el catálogo |
-| `lib/codes/capability.ts` | +12/−0 | **no** | 10 claves de capacidad metálica |
-| `lib/templates/load-fixture.ts` | +18/−4 | **no** | passthrough de `rollAngle` |
-| `lib/i18n/store.svelte.ts` | +18/−1 | **no** | fusiona los diccionarios de acero |
+| `lib/engine/design/member-context.ts` | +71/−1 | **no** | excluir metálicos del pipeline de hormigón |
+| `lib/codes/roles.ts` | +57/−3 | **no** | opción `experimental` en el catálogo |
+| `lib/model/provenance.ts` | +48/−5 | **no** | procedencia de generador + hipótesis como claves |
+| `lib/codes/capability.ts` | +14/−0 | **no** | 10 claves de capacidad metálica |
+| `lib/i18n/store.svelte.ts` | +19/−1 | **no** | fusiona los diccionarios de acero |
+| `lib/templates/load-fixture.ts` | +19/−5 | **no** | passthrough de `rollAngle` |
+| `lib/codes/__tests__/roles-revisions.test.ts` | +32/−1 | **no** | el test que fijaba el error rojo |
 | `lib/store/model.svelte.ts` | +22/−10 | **sí, ambos** | extraer `fixtureApi()` de `loadExample` |
-| `components/pro/ProPanel.svelte` | +5/−1 | **sí, #125** | registrar la pestaña Metálicas |
+| `components/pro/ProPanel.svelte` | +9/−1 | **sí, #125** | registrar Metálicas y Generadores |
 | `components/pro/ProVerificationTab.svelte` | +3/−0 | **sí, #125** | banner experimental sobre la tabla 301 |
-| `lib/codes/__tests__/roles-revisions.test.ts` | +33/−2 | **no** | el test que fijaba el error rojo |
+| `App.svelte` | +3/−1 | **sí, #125** | las dos entradas del desplegable Análisis |
 
-**Sólo tres archivos chocan con trabajo ajeno, y suman 30 líneas.**
+**Sólo cuatro archivos chocan con trabajo ajeno, y suman 37 líneas.**
+
+`App.svelte` es el que no estaba en la primera versión de este documento: la lista de
+pestañas de `ProPanel` **no** alimenta el desplegable — eso está cableado en `App.svelte`, y
+ahí hay que registrar cualquier pestaña nueva o queda inalcanzable.
 
 ---
 
@@ -112,25 +120,44 @@ estado metálico vive en `SteelMemberStatus`, en su propio módulo. Fue una deci
 descuido — un miembro de acero nunca entra al pipeline de hormigón, así que no puede producir
 un outcome de hormigón, y los estados de los dos materiales tenían que quedar separados.
 
-### 3.4 `ProPanel.svelte` → conflicto trivial
+### 3.4 `ProPanel.svelte` y `App.svelte` → conflicto trivial, en dos lugares
 
-#125 reorganiza los grupos de pestañas y agrega `project`. Esta rama agrega 4 líneas:
+Las pestañas se registran **dos veces** y hay que hacer ambas o la entrada no es alcanzable:
+
+**`ProPanel.svelte`** — el tipo, el import y el bloque que la renderiza:
 
 ```ts
 import SteelPanel from './steel/SteelPanel.svelte';
-type ProTab = … | 'steel' | …
-{ id: 'steel' as ProTab, label: t('steel.panel.title') },
+import ProGeneratorsPanel from './generators/ProGeneratorsPanel.svelte';
+type ProTab = … | 'steel' | 'generators' | …
 {:else if activeTab === 'steel'} <SteelPanel />
+{:else if activeTab === 'generators'} <ProGeneratorsPanel />
 ```
 
-Resolución: quedarse con la estructura de #125 y volver a insertar esas cuatro. Si el ribbon
-de #125 ya está, la entrada natural es el stage `design`, grupo `rc`:
+(la lista `tabGroups` de `ProPanel` existe pero **no** alimenta la barra de navegación)
+
+**`App.svelte`** — el desplegable real, junto a `pb-tab-design`:
+
+```svelte
+<button class="pb-dd-item" data-testid="pb-tab-steel" …>{t('steel.panel.title')}</button>
+<button class="pb-dd-item" data-testid="pb-tab-generators" …>{t('generator.ui.title')}</button>
+```
+
+y sumar `'steel'` y `'generators'` al array de `group-active` de ese grupo.
+
+Resolución: quedarse con la estructura de #125 y reinsertar esas líneas. Si el ribbon de #125
+ya está, la entrada natural es el stage `design`, grupo `rc`:
 
 ```ts
 { id: 'steel', labelKey: 'steel.panel.title', icon: 'element', tab: 'steel' },
+{ id: 'generators', labelKey: 'generator.ui.title', icon: 'element', tab: 'generators' },
 ```
 
-y sumar `steel: 'design'` al mapa `TAB_STAGE`.
+y sumar `steel: 'design'` y `generators: 'model'` al mapa `TAB_STAGE` — los generadores son
+una herramienta de modelado, no de diseño.
+
+**El E2E lo verifica.** `e2e/generators-steel.spec.ts` llega a las dos pestañas por el
+desplegable, así que un merge que rompa el registro falla ahí en vez de pasar desapercibido.
 
 ### 3.5 `ProVerificationTab.svelte` → conflicto trivial
 
@@ -172,7 +199,7 @@ lo que ya pasa con casi todos los namespaces fuera de `design.*`).
 
 ---
 
-## 5. La red de seguridad, y cómo leerla si se rompe
+## 5. Las tres redes de seguridad, y cómo leerlas si se rompen
 
 `lib/engine/design/__tests__/rc-baseline-digest.test.ts` fija el diseño de hormigón
 **miembro por miembro** sobre el pórtico de 408 barras: outcome, constraints y utilización
@@ -185,6 +212,24 @@ utilizaciones dejando los conteos quietos. Esta huella no.
 demuestre lo contrario. No regrabar la huella para que pase — buscar qué se movió. El
 archivo lo dice en su encabezado.
 
+Las otras dos:
+
+**`generators/__tests__/generated-models-solve.test.ts`** — cada geometría generada resuelve
+con el solver real. Es lo único que detecta un mecanismo. Ver §7.
+
+**`e2e/generators-steel.spec.ts`** — cuatro propiedades que tienen que sobrevivir a que se
+rehaga la UI, afirmadas sobre comportamiento y no sobre marcado:
+
+| | |
+|---|---|
+| **G1** | el número al lado de Generar es el número que entra al modelo |
+| **G2** | la figura de la sección muestra la **disposición**, no sólo el perfil |
+| **S1** | ningún miembro metálico se presenta como verificado |
+| **S2** | la advertencia experimental no se puede cerrar ni condicionar |
+
+Ninguna afirma "el elemento es visible": esa aserción es verdadera en todos los modos de falla
+que cubren.
+
 ---
 
 ## 6. Lo que esta rama NO hace
@@ -194,15 +239,22 @@ Ordenado según tu taxonomía.
 **Infraestructura lista y testada**
 - Generadores de cercha (5 tipos + media cercha), columna reticulada y nave.
 - Composición de perfiles múltiples (7 disposiciones) por ejes paralelos.
-- Resolución de perfiles del catálogo a propiedades centroidales.
+- Resolución de perfiles del catálogo a propiedades centroidales y a su contorno canónico.
 - Emisión a `JSONModel` y carga al store con procedencia y suposiciones.
+- Proyección de la geometría a elevación e isométrica, y del perfil compuesto a su contorno.
 - Eje de familia de material con procedencia de la clasificación.
 - Estados metálicos con guardián de invariantes.
 - Matriz de capacidades de CIRSOC 301, todas las facetas en `false` y todas `gate`.
 - Exclusión de metálicos del pipeline de hormigón.
+- **Solvencia verificada con el solver real**: cada geometría generada, cargada, resuelve con
+  desplazamientos finitos y reacciones que equilibran. Ahí se encontraron los dos mecanismos
+  del §7.
 
 **Workflow experimental**
 - Panel Metálicas: inventario, censo, empty states, avisos, lista de huecos.
+- Panel Generadores: tres generadores, previsualización en elevación e isométrica, figura de
+  la sección por renglón, conteos por rol, hipótesis desplegables. **UI a propósito mínima**
+  — es la parte que se espera rehacer, y el E2E fija lo que tiene que sobrevivir a eso.
 - CIRSOC 301 seleccionable como código del proyecto, marcado experimental, sin producir nada.
 
 **Cálculo no disponible**
@@ -216,14 +268,56 @@ Ordenado según tu taxonomía.
 - Ninguna. Cero.
 
 **Fuera de alcance, pendiente**
-- Los **diálogos de los generadores** con preview 2D/3D. Los motores están listos y
-  testados; falta la UI que los invoca. `applyGeneratedModel` es el punto de entrada.
-- Torsión de secciones cerradas por Bredt (hoy `j: null` declarado).
-- Traducción de las claves a los 12 idiomas restantes.
+- **Torsión de secciones cerradas por Bredt.** Hoy `j: null` declarado. Hay una vía de
+  validación adentro del repo: el catálogo IRAM de tubos publica `j` para RHS/SHS, así que
+  una implementación de Bredt se puede contrastar contra 100+ valores tabulados antes de
+  aplicarla a un perfil compuesto. Es lo que la promovería de hipótesis a valor sostenible.
+- **Traducción de las 180 claves a los 12 idiomas restantes.** Hoy caen a inglés, que es lo
+  que ya pasa con casi todos los namespaces fuera de `design.*`.
+- **Arriostramientos longitudinales** en la nave. Su ausencia es la razón por la que las bases
+  de columna reticulada van empotradas por defecto (§7). Generarlos permitiría volver a
+  articularlas, que es el modelo más honesto.
+- **Perfiles metálicos en el visor 3D con su sección extruida.** Hoy el visor los dibuja como
+  barras; `lib/three/section-profiles.ts` ya sabe extruir una sección, y el contorno canónico
+  del perfil compuesto ya se calcula (`section-outline.ts`).
+- **Cargas.** Un modelo generado sale sin casos de carga a propósito, y por eso apretar
+  Resolver informa "sin resultados". Un generador de cargas de cubierta y viento sobre la
+  nave sería el siguiente paso natural, y es trabajo de las autoridades CIRSOC 101/102, no
+  de acero.
 
 ---
 
-## 7. Un defecto encontrado que conviene no repetir
+## 7. Los dos mecanismos, y por qué el test de solvencia se queda
+
+`generators/__tests__/generated-models-solve.test.ts` corre cada geometría generada por el
+solver real con una carga aplicada. Encontró dos mecanismos en los propios generadores, y
+**ninguno de los tests de topología podía verlos**: simetría, conteos y coordenadas los
+satisface un mecanismo perfectamente. Sólo el solver los ve.
+
+**1. `rollerXZ` no sostiene verticalmente.** Se lee como "rueda a lo largo de la luz" y es lo
+contrario: `solver-service.ts:1402` lo mapea a `{ rx: false, ry: true, rz: false }`, y esas
+banderas significan **restringido** — libre en X *y en Z*. Toda cercha generada apoyaba sobre
+un pin y un apoyo que no tomaba carga vertical. Ahora se emite `custom3d` con los GDL escritos
+(`emit.ts :: support`), que además es más difícil de malinterpretar que un nombre que hay que
+ir a buscar para creerle.
+
+**2. Bases de columna reticulada articuladas.** La celosía arriostra la columna en su plano y
+en ningún otro, así que un pin bajo cada cordón deja al par plegarse de costado. Una nave real
+lo resiste con arriostramiento longitudinal, que este generador no coloca. El default de la
+nave pasó a empotrado; elegir articulado sigue permitido y se declara con
+`generator.assume.latticeBasesPinnedNoOutOfPlane`, **con un test que afirma que esa
+configuración es inestable** — para que quede registrada y no se redescubra vía matriz
+singular.
+
+Ninguno de los dos era un defecto del solver. Antes de tocar nada verifiqué que `rollerXZ`
+hace exactamente lo que su código dice.
+
+**Ese test es el que hay que mantener verde al rehacer los generadores.** Es la única red que
+detecta un mecanismo, y un mecanismo es el modo de falla propio de un generador de geometría.
+
+---
+
+## 8. Un defecto encontrado que conviene no repetir
 
 `steelStore` usaba un `$derived` a nivel de store. Un `$derived` así **sólo recomputa dentro
 de un contexto reactivo**: leído desde una función común devuelve lo que tenía cuando se
@@ -236,7 +330,7 @@ revisar si el mismo patrón aparece en otros stores.
 
 ---
 
-## 8. Y una que no era un defecto
+## 9. Y una que no era un defecto
 
 `buildSolverInput3D` compone `element.rollAngle + section.rotation`. Escribir los dos campos
 para expresar una sola rotación da el doble del giro pedido — y eso era un error **mío**, en

@@ -28,7 +28,6 @@
  * Pure: no store, no runes, no i18n.
  */
 
-import type { MemberRole } from './member-roles';
 import { tallyRoles } from './member-roles';
 import type { GenMember, GenNode, GenSupport, ParamProblem, Topology } from './truss-topology';
 
@@ -175,16 +174,15 @@ export function generateLatticeColumn(params: Partial<LatticeColumnParams> = {})
   };
 }
 
-/** The node indices at the top of each chord — where a shed lands its truss or beam. */
-export function latticeTopNodes(p: Pick<LatticeColumnParams, 'divisions'>): [number, number] {
-  const n = p.divisions;
-  return [n, 2 * n + 1];
-}
-
-/** The index of the cap node, or null when the column was generated without one. */
-export function latticeCapNode(p: Pick<LatticeColumnParams, 'divisions' | 'capTop'>): number | null {
-  return p.capTop ? 2 * (p.divisions + 1) : null;
-}
-
-/** Roles a lattice column places, for a dialog that must not offer profiles it never uses. */
-export const LATTICE_COLUMN_ROLES: readonly MemberRole[] = Object.freeze(['chord', 'post', 'diagonal']);
+/*
+ * No index helpers for the chord heads or the cap.
+ *
+ * An earlier version exported `latticeTopNodes` and `latticeCapNode`, computing positions
+ * from `divisions`. Nothing used them: `generateShed` joins pieces by COORDINATE, which the
+ * geometry decides rather than the node ordering. Keeping them would have been worse than
+ * useless — they encode an ordering assumption a change to the layout would silently
+ * invalidate, handing a caller the wrong nodes instead of an error.
+ *
+ * The ordering is still a documented property, and `lattice-column.test.ts` asserts it by
+ * position.
+ */
