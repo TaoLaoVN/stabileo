@@ -2,6 +2,7 @@ const es: Record<string, string> = {
   // ─── Auth / Login ───
 
   // ─── Landing Page ───
+  'combos.needsRecalcSolve': "Las combinaciones ya no corresponden al modelo — apretá Calcular para volver a resolverlas.",
   'table.showProperties': "Ver propiedades y forma",
   'results.verification': "Verificación",
   'resultsTable.diagnostics': "Diagnóstico",

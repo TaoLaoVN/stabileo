@@ -3,6 +3,7 @@ const pt: Translations = {
   // ─── Auth / Login ───
 
   // ─── Landing Page ───
+  'combos.needsRecalcSolve': "As combinações já não correspondem ao modelo — pressione Calcular para resolvê-las de novo.",
   'table.showProperties': "Ver propriedades e forma",
   'advanced.despiece': "Detalhamento",
   'advanced.jointsUnsupported': "As articulações internas 3D só são incluídas na análise estática linear e no detalhamento. Esta análise as ignora.",
