@@ -13,6 +13,7 @@
   import DataTable from './components/DataTable.svelte';
   import { modelStore, uiStore, resultsStore, dsmStepsStore, tabManager, historyStore } from './lib/store';
   import { t, i18n, setLocale } from './lib/i18n';
+  import { OFFERED_LOCALES } from './lib/i18n/store.svelte';
   import StepWizard from './components/dsm/StepWizard.svelte';
   import { resolveDeleteTargets } from './lib/store/delete-selection';
   import {
@@ -39,11 +40,14 @@
    */
   let basicPanel = $state<string | null>(null);
   /** Which Model-data tab the last Properties command asked for. */
-  let basicDataTab = $state<string | undefined>(undefined);
+  let basicDataTab = $state<string>('nodes');
 
   function openBasicPanel(panel: string | null, opts: { toggle?: boolean; dataTab?: string } = {}) {
     const toggle = opts.toggle !== false;
-    basicDataTab = opts.dataTab;
+    // Remembered rather than overwritten with undefined: the ribbon lights the
+    // command whose tab is showing, and a command that carries no tab of its
+    // own must not blank the one already chosen.
+    if (opts.dataTab) basicDataTab = opts.dataTab;
     if (panel === null) { basicPanel = null; return; }
     // Toggling is right for a command that owns its panel (Settings, Examples).
     // It is wrong for a selection like a diagram, which only ever means "show".
@@ -735,21 +739,17 @@
       <button class="btn btn-help" onclick={() => uiStore.showHelp = true} title={t('app.keyboardShortcuts')}>
         ?
       </button>
-      <select class="lang-select" value={i18n.locale} onchange={(e) => { setLocale((e.currentTarget as HTMLSelectElement).value); tabManager.updateDefaultNames(); }}>
-        <option value="es">{t('lang.es')}</option>
-        <option value="en">{t('lang.en')}</option>
-        <option value="pt">{t('lang.pt')}</option>
-        <option value="de">{t('lang.de')}</option>
-        <option value="fr">{t('lang.fr')}</option>
-        <option value="it">{t('lang.it')}</option>
-        <option value="tr">{t('lang.tr')}</option>
-        <option value="hi">{t('lang.hi')}</option>
-        <option value="zh">{t('lang.zh')}</option>
-        <option value="ja">{t('lang.ja')}</option>
-        <option value="ko">{t('lang.ko')}</option>
-        <option value="ru">{t('lang.ru')}</option>
-        <option value="ar">{t('lang.ar')}</option>
-        <option value="id">{t('lang.id')}</option>
+      <!-- Three languages, fully maintained. The other dictionaries still
+           exist but are largely English underneath, so offering them promised a
+           translation the app could not keep. -->
+      <select
+        class="lang-select"
+        value={i18n.locale}
+        onchange={(e) => { setLocale((e.currentTarget as HTMLSelectElement).value); tabManager.updateDefaultNames(); }}
+      >
+        {#each OFFERED_LOCALES as code}
+          <option value={code}>{t(`lang.${code}`)}</option>
+        {/each}
       </select>
 
       <!--
@@ -772,7 +772,7 @@
 
 
   {#if uiStore.appMode === 'basico' && !uiStore.isMobile}
-    <Ribbon onOpenPanel={openBasicPanel} activePanel={basicPanel} />
+    <Ribbon onOpenPanel={openBasicPanel} activePanel={basicPanel} activeDataTab={basicDataTab} />
     <ToolOptionsBar />
   {/if}
 

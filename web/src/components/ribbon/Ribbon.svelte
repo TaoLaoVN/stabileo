@@ -47,8 +47,10 @@
   type Props = {
     onOpenPanel: (panel: string | null, opts?: { toggle?: boolean; dataTab?: string }) => void;
     activePanel: string | null;
+    /** Which data tab is showing, so only that command lights. */
+    activeDataTab?: string;
   };
-  let { onOpenPanel, activePanel }: Props = $props();
+  let { onOpenPanel, activePanel, activeDataTab }: Props = $props();
 
   type Cmd = {
     id: string;
@@ -188,23 +190,29 @@
       id: 'data',
       labelKey: 'ribbon.groupData',
       cmds: [
-        { id: 'data', icon: 'data', nameKey: 'ribbon.data', panel: 'data', prominent: true },
+        /*
+         * Opens on whichever tab the ribbon is already pointing at — Nodes if
+         * none. Landing on Nodes after the user had just picked Sections would
+         * discard the choice they had made a second earlier.
+         */
+        { id: 'data', icon: 'data', nameKey: 'ribbon.data', panel: 'data', prominent: true,
+          dataTab: activeDataTab || 'nodes' },
       ],
     },
     {
       id: 'draw',
       labelKey: 'ribbon.groupDraw',
       cmds: [
-        { id: 'node', icon: 'node', labelKey: 'float.node', tool: 'node' },
-        { id: 'element', icon: 'element', labelKey: 'float.element', tool: 'element' },
+        { id: 'node', icon: 'node', labelKey: 'float.node', tool: 'node', panel: 'data', dataTab: 'nodes' },
+        { id: 'element', icon: 'element', labelKey: 'float.element', tool: 'element', panel: 'data', dataTab: 'elements' },
       ],
     },
     {
       id: 'conditions',
       labelKey: 'ribbon.groupConditions',
       cmds: [
-        { id: 'support', icon: 'support', labelKey: 'float.support', tool: 'support' },
-        { id: 'load', icon: 'load', labelKey: 'float.load', tool: 'load' },
+        { id: 'support', icon: 'support', labelKey: 'float.support', tool: 'support', panel: 'data', dataTab: 'supports' },
+        { id: 'load', icon: 'load', labelKey: 'float.load', tool: 'load', panel: 'data', dataTab: 'loads' },
       ],
     },
     {
@@ -269,18 +277,26 @@
   function run(cmd: Cmd) {
     if (cmd.enabled && !cmd.enabled()) return;
     if (cmd.tool) {
-      /*
-       * Arming a tool no longer opens a side panel: its options appear in the
-       * contextual bar directly below, where the eye already is. It does close
-       * whatever panel was open, because that panel belonged to a different
-       * task than the one just started.
-       */
       uiStore.currentTool = cmd.tool as never;
       // Back to editing: put the diagram away rather than draw on top of it.
       if (EDIT_TOOLS.includes(cmd.tool) && resultsStore.diagramType !== 'none') {
         resultsStore.diagramType = 'none';
       }
-      onOpenPanel(null);
+      /*
+       * Arming a tool now OPENS the data panel on that tool's own tab.
+       *
+       * It used to close whatever panel was open, on the reasoning that the
+       * panel belonged to a different task. That was right when the panel could
+       * only be results or settings — and wrong once Materials and Sections
+       * joined the ribbon, because those DO open a table and the row then
+       * behaved two different ways for commands that look identical.
+       *
+       * The table is what you are editing when you place a node, so showing it
+       * is showing your work. `toggle: false`: arming a tool means "show me
+       * this", and a second press should re-show rather than hide.
+       */
+      if (cmd.dataTab) onOpenPanel('data', { dataTab: cmd.dataTab, toggle: false });
+      else onOpenPanel(null);
       return;
     }
     if (cmd.diagram) {
@@ -308,6 +324,22 @@
 
   function isActive(cmd: Cmd): boolean {
     if (cmd.tool) return uiStore.currentTool === cmd.tool;
+    /*
+     * A command that names a data tab lights when THAT tab is showing.
+     *
+     * Materials, Sections and Data all opened `panel: 'data'`, so all three lit
+     * at once — the ribbon claiming three things were selected when one was.
+     * The tab is what distinguishes them, so the tab is what decides.
+     */
+    if (cmd.dataTab && cmd.id !== 'data') {
+      return activePanel === 'data' && activeDataTab === cmd.dataTab;
+    }
+    /*
+     * Data itself never lights. It is the container, not a selection: what is
+     * selected is the tab inside it, and lighting both said the same thing
+     * twice while suggesting they were separate choices.
+     */
+    if (cmd.id === 'data') return false;
     if (cmd.diagram) {
       /*
        * Axial stays lit whichever way it is being drawn. `axialColor` is the
