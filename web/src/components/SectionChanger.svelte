@@ -468,6 +468,30 @@
     padding: 10px 0;
   }
   .profile-aside { display: flex; flex-direction: column; gap: 8px; }
+  /* The meta block sat flush against the panel edge and ran its rows together,
+     so the family name and its two facts read as one paragraph. Padded and
+     spaced to match the card above it. */
+  .profile-aside .profile-meta {
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+    padding: 0 2px;
+  }
+  .profile-aside .meta-family {
+    padding-bottom: 4px;
+    margin-bottom: 2px;
+    border-bottom: 1px solid var(--st-border);
+  }
+  .profile-aside .meta-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    gap: 8px;
+    font-size: 0.7rem;
+    line-height: 1.5;
+  }
+  .profile-aside .meta-k { color: var(--st-text-3); min-width: 0; }
+  .profile-aside .meta-v { text-align: right; }
   .profile-preview {
     aspect-ratio: 1;
     border-radius: var(--st-radius, 3px);

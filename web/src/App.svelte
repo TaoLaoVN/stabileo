@@ -961,7 +961,7 @@
     </div>
 
     {#if uiStore.appMode === 'basico' && basicPanel && !uiStore.isMobile}
-      <BasicPanel panel={basicPanel} dataTab={basicDataTab} onClose={closeBasicPanel} />
+      <BasicPanel panel={basicPanel} bind:dataTab={basicDataTab} onClose={closeBasicPanel} />
     {/if}
 
     {#if !uiStore.isMobile}

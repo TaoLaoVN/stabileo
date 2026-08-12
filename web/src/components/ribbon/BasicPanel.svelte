@@ -26,7 +26,10 @@
 
   type Props = {
     panel: string;
-    /** Model-data tab to open on, when the Properties group asked for one. */
+    /**
+     * The open Model-data tab, BOUND. The ribbon lights whichever command
+     * matches it, so a change made inside the table has to travel back up.
+     */
     dataTab?: string;
     onClose: () => void;
   };
@@ -160,7 +163,7 @@
       {#if dsmStepsStore.isOpen}
         <StepWizard />
       {:else}
-        <DataTable initialTab={dataTab as never} />
+        <DataTable bind:activeTab={dataTab as never} />
       {/if}
     {/if}
   </div>

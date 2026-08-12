@@ -3,6 +3,7 @@ const pt: Translations = {
   // ─── Auth / Login ───
 
   // ─── Landing Page ───
+  'table.showProperties': "Ver propriedades e forma",
   'advanced.despiece': "Detalhamento",
   'advanced.jointsUnsupported': "As articulações internas 3D só são incluídas na análise estática linear e no detalhamento. Esta análise as ignora.",
   'advanced.sliding3dUnsupported': "Os deslizadores (articulações deslizantes) só são admitidos por ora na análise estática linear 3D.",

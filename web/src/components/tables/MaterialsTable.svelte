@@ -7,6 +7,9 @@
   const materialsArr = $derived([...modelStore.materials.values()]);
 
   let materialPresetTargetId = $state<number | null>(null);
+  /** Which material has its properties open. One at a time: this is a list. */
+  let expandedId = $state<number | null>(null);
+
   let showMaterialPresetSelector = $state(false);
 
   function addMaterial() {
@@ -44,26 +47,52 @@
   }
 </script>
 
-<table>
+<!--
+  Number, name, and what you do with it — the same shape as the sections list.
+  E, nu, rho and fy spread across every row made three materials read as a
+  spreadsheet; they belong to ONE material at a time, which is a different
+  question from "which materials are there".
+-->
+<table class="mat-list">
   <thead>
-    <tr><th>ID</th><th>{t('table.name')}</th><th>E (MPa)</th><th>&nu;</th><th>&rho; (kN/m&sup3;)</th><th>fy (MPa)</th><th></th></tr>
+    <tr><th>ID</th><th>{t('table.name')}</th><th class="col-actions"></th></tr>
   </thead>
   <tbody>
     {#each materialsArr as mat}
-      <tr>
+      {@const open = expandedId === mat.id}
+      <tr class:expanded={open}>
         <td class="id-cell">{mat.id}</td>
-        <td class="name-with-action">
+        <td class="name-cell">
           <input type="text" value={mat.name} onchange={(e) => updateMaterialField(mat.id, 'name', e.currentTarget.value)} />
-          <button class="row-action-btn" title={t('table.chooseMaterial')} onclick={() => { materialPresetTargetId = mat.id; showMaterialPresetSelector = true; }}>&#9783;</button>
         </td>
-        <td><input type="number" step="1000" value={mat.e} onchange={(e) => updateMaterialField(mat.id, 'e', e.currentTarget.value)} /></td>
-        <td><input type="number" step="0.01" value={mat.nu} onchange={(e) => updateMaterialField(mat.id, 'nu', e.currentTarget.value)} /></td>
-        <td><input type="number" step="0.1" value={mat.rho} onchange={(e) => updateMaterialField(mat.id, 'rho', e.currentTarget.value)} /></td>
-        <td><input type="number" step="10" value={mat.fy ?? ''} onchange={(e) => updateMaterialField(mat.id, 'fy', e.currentTarget.value)} /></td>
         <td class="action-cell">
+          <button
+            class="row-action-btn primary"
+            title={t('table.chooseMaterial')}
+            onclick={() => { materialPresetTargetId = mat.id; showMaterialPresetSelector = true; }}
+          >&#9783;</button>
+          <button
+            class="row-action-btn"
+            class:on={open}
+            title={t('table.showProperties')}
+            aria-expanded={open}
+            onclick={() => expandedId = open ? null : mat.id}
+          >&#9432;</button>
           <button class="del" onclick={() => deleteMaterial(mat.id)}>&#10005;</button>
         </td>
       </tr>
+      {#if open}
+        <tr class="detail-row">
+          <td colspan="3">
+            <div class="mat-detail">
+              <label class="prop"><span>E (MPa)</span><input type="number" step="1000" value={mat.e} onchange={(e) => updateMaterialField(mat.id, 'e', e.currentTarget.value)} /></label>
+              <label class="prop"><span>ν</span><input type="number" step="0.01" value={mat.nu} onchange={(e) => updateMaterialField(mat.id, 'nu', e.currentTarget.value)} /></label>
+              <label class="prop"><span>ρ (kN/m³)</span><input type="number" step="0.1" value={mat.rho} onchange={(e) => updateMaterialField(mat.id, 'rho', e.currentTarget.value)} /></label>
+              <label class="prop"><span>fy (MPa)</span><input type="number" step="10" value={mat.fy ?? ''} onchange={(e) => updateMaterialField(mat.id, 'fy', e.currentTarget.value)} /></label>
+            </div>
+          </td>
+        </tr>
+      {/if}
     {/each}
   </tbody>
 </table>
@@ -77,6 +106,31 @@
 />
 
 <style>
+  .mat-list .col-actions { width: 1%; }
+  .mat-list .name-cell input { width: 100%; }
+  .mat-list .action-cell { display: flex; gap: 4px; justify-content: flex-end; }
+  .row-action-btn.primary { color: var(--st-value); border-color: var(--st-value); }
+  .row-action-btn.on { background: var(--st-surface-3); color: var(--st-text); }
+  tr.expanded > td { border-bottom-color: transparent; }
+  .detail-row > td { padding: 0 0 8px; }
+  .mat-detail {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+    gap: 4px 14px;
+    padding: 9px 11px;
+    border-radius: var(--st-radius, 3px);
+    background: var(--st-surface-2);
+  }
+  .prop {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 8px;
+    font-size: 0.74rem;
+    color: var(--st-text-3);
+  }
+  .prop input { width: 90px; text-align: right; }
+
   table {
     width: max-content;
     min-width: 100%;

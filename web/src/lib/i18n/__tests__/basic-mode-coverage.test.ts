@@ -56,6 +56,32 @@ function usedKeys(): Set<string> {
 
 const used = usedKeys();
 
+/**
+ * Keys as they are WRITTEN in a dictionary file, both quote styles.
+ *
+ * The files mix `'key':` and `"key":`, and a check that saw only one style
+ * reported keys as missing that were sitting there in the other — which is
+ * exactly what happened: 23 keys were "added" that already existed, producing
+ * silent duplicates that only the TypeScript compiler caught.
+ */
+function writtenKeys(lang: string): string[] {
+  const src = readFileSync(join(import.meta.dirname, `../locales/${lang}.ts`), 'utf8');
+  return [...src.matchAll(/^\s*['"]([^'"]+)['"]\s*:/gm)].map((m) => m[1]);
+}
+
+describe('the dictionaries are well formed', () => {
+  it('no key is defined twice in any language', () => {
+    // A duplicate is not merely untidy: the later one silently wins, so an
+    // edit to the first has no effect and nothing says why.
+    for (const lang of ['en', 'es', 'pt']) {
+      const ks = writtenKeys(lang);
+      const seen = new Set<string>();
+      const dupes = ks.filter((k) => (seen.has(k) ? true : (seen.add(k), false)));
+      expect([...new Set(dupes)], lang).toEqual([]);
+    }
+  });
+});
+
 describe('Basic mode is fully translated', () => {
   it('asks for a substantial number of keys — the scan is not silently empty', () => {
     // Guards the test itself: a broken regex would make everything below pass

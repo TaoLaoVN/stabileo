@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { modelStore, resultsStore } from '../lib/store';
+  import { uiStore, modelStore, resultsStore } from '../lib/store';
   import { t } from '../lib/i18n';
   import NodesTable from './tables/NodesTable.svelte';
   import ElementsTable from './tables/ElementsTable.svelte';
@@ -13,19 +13,42 @@
   type TabId = 'nodes' | 'elements' | 'supports' | 'loads' | 'materials' | 'sections' | 'combos' | 'results';
   interface Props {
     /**
-     * Which tab to open on. The ribbon's Properties group points straight at
-     * Materials or Sections, so landing on Nodes and making the user find them
-     * would defeat the command.
+     * The open tab, BOUND — the ribbon and this table are two views of one
+     * selection, so it lives above both rather than in either.
+     *
+     * It was a one-way `initialTab`, which made the connection asymmetric:
+     * pressing Elements on the ribbon moved the table, but moving the table
+     * left the ribbon lighting whatever it had lit before. Two controls
+     * disagreeing about what is selected is worse than one control.
      */
-    initialTab?: TabId;
+    activeTab?: TabId;
   }
-  let { initialTab }: Props = $props();
+  let { activeTab = $bindable('nodes') }: Props = $props();
 
-  let activeTab = $state<TabId>(initialTab ?? 'nodes');
+  /**
+   * The tool each tab corresponds to.
+   *
+   * Picking a tab arms its tool, which is what closes the loop: the ribbon
+   * lights editing commands by TOOL, so without this a tab change would move
+   * the table and leave the ribbon dark. Materials and sections have no tool —
+   * they are edited in the table itself — and the ribbon lights those by tab.
+   */
+  const TAB_TOOL: Partial<Record<TabId, string>> = {
+    nodes: 'node', elements: 'element', supports: 'support', loads: 'load',
+  };
 
-  // A second press of the same ribbon command should return here, so the tab
-  // follows the request rather than only the first one.
-  $effect(() => { if (initialTab) activeTab = initialTab; });
+  function pickTab(tab: TabId) {
+    activeTab = tab;
+    const tool = TAB_TOOL[tab];
+    // Only arm an EDIT tool when one exists. Landing on Materials must not
+    // leave the pointer holding whatever tool was armed before, so that case
+    // falls back to selection.
+    if (tool) uiStore.currentTool = tool as never;
+    else if (EDIT_TOOL_IDS.includes(uiStore.currentTool)) uiStore.currentTool = 'select';
+  }
+
+  /** Tools that draw, so leaving them for a table means going back to select. */
+  const EDIT_TOOL_IDS = ['node', 'element', 'support', 'load'];
 
   const solved = $derived(resultsStore.results != null || resultsStore.results3D != null);
 
@@ -45,25 +68,25 @@
 
 <div class="data-table" onkeydown={handleKeydown} role="region">
   <div class="tabs">
-    <button class:active={activeTab === 'nodes'} onclick={() => activeTab = 'nodes'}>
+    <button class:active={activeTab === 'nodes'} onclick={() => pickTab('nodes')}>
       {t('data.nodes')} ({modelStore.nodes.size})
     </button>
-    <button class:active={activeTab === 'elements'} onclick={() => activeTab = 'elements'}>
+    <button class:active={activeTab === 'elements'} onclick={() => pickTab('elements')}>
       {t('data.elements')} ({modelStore.elements.size})
     </button>
-    <button class:active={activeTab === 'supports'} onclick={() => activeTab = 'supports'}>
+    <button class:active={activeTab === 'supports'} onclick={() => pickTab('supports')}>
       {t('data.supports')} ({modelStore.supports.size})
     </button>
-    <button class:active={activeTab === 'loads'} onclick={() => activeTab = 'loads'}>
+    <button class:active={activeTab === 'loads'} onclick={() => pickTab('loads')}>
       {t('data.loads')} ({modelStore.loads.length})
     </button>
-    <button class:active={activeTab === 'materials'} onclick={() => activeTab = 'materials'}>
+    <button class:active={activeTab === 'materials'} onclick={() => pickTab('materials')}>
       {t('data.materials')} ({modelStore.materials.size})
     </button>
-    <button class:active={activeTab === 'sections'} onclick={() => activeTab = 'sections'}>
+    <button class:active={activeTab === 'sections'} onclick={() => pickTab('sections')}>
       {t('data.sections')} ({modelStore.sections.size})
     </button>
-    <button class:active={activeTab === 'combos'} onclick={() => activeTab = 'combos'}>
+    <button class:active={activeTab === 'combos'} onclick={() => pickTab('combos')}>
       {t('data.combinations')}
     </button>
     <!--
@@ -76,7 +99,7 @@
       class:active={activeTab === 'results'}
       disabled={!solved}
       title={solved ? undefined : t('ribbon.needsSolve')}
-      onclick={() => activeTab = 'results'}
+      onclick={() => pickTab('results')}
     >
       {t('data.results')}
     </button>

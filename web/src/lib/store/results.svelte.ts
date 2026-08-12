@@ -563,13 +563,30 @@ function createResultsStore() {
       perCombo = pco;
       envelope = env;
       activeCaseId = null; // reset individual case selection
-      // Default: show "Cargas simples" (all loads ×1) if available
+      /*
+       * Default to "Cargas simples" — all loads at unit factor.
+       *
+       * The fallback used to be the ENVELOPE, which is the wrong thing to land
+       * on: an envelope is a summary of every case at once, so no single
+       * diagram it shows corresponds to a state the structure is ever in. It
+       * is what you check against at the end, not what you open on.
+       *
+       * With no base solve available the first individual CASE is the honest
+       * default — a real load state, and one whose diagram means something.
+       */
       if (singleResults) {
         results = singleResults;
         activeView = 'single';
       } else {
-        results = env.maxAbsResults;
-        activeView = 'envelope';
+        const firstCase = pc.keys().next().value;
+        if (firstCase !== undefined) {
+          results = pc.get(firstCase)!;
+          activeCaseId = firstCase;
+          activeView = 'single';
+        } else {
+          results = env.maxAbsResults;
+          activeView = 'envelope';
+        }
       }
       activeComboId = pco.keys().next().value ?? null;
       // Preserve current diagram type if it's a results-based view

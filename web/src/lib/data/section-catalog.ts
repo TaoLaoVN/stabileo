@@ -117,7 +117,7 @@ export const DESIGN_CODES: DesignCode[] = [
     id: 'cirsoc-301',
     label: 'CIRSOC 301',
     region: 'AR',
-    families: ['W', 'HP', 'M', 'IPN', 'UPN', 'C', 'MC', 'L', 'T', 'CHS', 'RHS', 'SHS'],
+    families: ['IPN', 'UPN', 'W', 'HP', 'M', 'C', 'MC', 'L', 'T', 'CHS', 'RHS', 'SHS'],
     missingFamilies: [ 'L de alas desiguales', 'C/Z conformados en frío (CIRSOC 303)'],
     note: 'cat.note.cirsoc',
   },
@@ -154,7 +154,15 @@ export const DESIGN_CODES: DesignCode[] = [
 ];
 
 /** Every family the app ships, in picker order. */
-export const ALL_FAMILIES: ProfileFamily[] = ['IPE', 'HEA', 'HEB', 'W', 'HP', 'M', 'IPN', 'UPN', 'C', 'MC', 'L', 'T', 'CHS', 'RHS', 'SHS'];
+/**
+ * Every family the app ships, in picker order.
+ *
+ * IPN leads the I-series because it leads in practice here: it is the section
+ * Argentine mills roll as standard and the one CIRSOC's own tables are built
+ * around, so it is what a local user reaches for first. The rest follow by
+ * series — European, American, then the rolled channels and angles.
+ */
+export const ALL_FAMILIES: ProfileFamily[] = ['IPN', 'IPE', 'HEA', 'HEB', 'W', 'HP', 'M', 'UPN', 'C', 'MC', 'L', 'T', 'CHS', 'RHS', 'SHS'];
 
 /** Design code by id. */
 export function designCode(id: string): DesignCode | undefined {
