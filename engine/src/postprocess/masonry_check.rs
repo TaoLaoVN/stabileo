@@ -6,6 +6,8 @@
 
 use serde::{Deserialize, Serialize};
 
+use crate::postprocess::check_ledger::{CheckLedger, Unevaluated};
+
 // ==================== Types ====================
 
 /// Masonry member data.
@@ -91,6 +93,9 @@ pub struct MasonryCheckResult {
     pub slenderness: f64,
     /// Overall pass
     pub pass: bool,
+    /// Checks whose capacity could not be evaluated.
+    #[serde(default)]
+    pub unevaluated: Unevaluated,
 }
 
 // ==================== Constants ====================
@@ -101,15 +106,26 @@ const PHI_SHEAR: f64 = 0.80;
 
 // ==================== Implementation ====================
 
+
+/// Index the force records by id so each member is a hash lookup rather than a
+/// scan of the whole list. The pairing was O(members x forces): fine at 100
+/// members, quadratic at 10,000 — and this runs on every edit.
+fn index_forces<T>(forces: &[T], id_of: impl Fn(&T) -> usize) -> std::collections::HashMap<usize, &T> {
+    let mut map = std::collections::HashMap::with_capacity(forces.len());
+    for f in forces {
+        map.entry(id_of(f)).or_insert(f);
+    }
+    map
+}
+
 /// Check all masonry members.
 pub fn check_masonry_members(input: &MasonryCheckInput) -> Vec<MasonryCheckResult> {
     let mut results = Vec::new();
 
+    let by_id = index_forces(&input.forces, |f| f.element_id);
+
     for member in &input.members {
-        let forces = input
-            .forces
-            .iter()
-            .find(|f| f.element_id == member.element_id);
+        let forces = by_id.get(&member.element_id).copied();
         let forces = match forces {
             Some(f) => f,
             None => continue,
@@ -134,27 +150,27 @@ fn check_single_masonry(m: &MasonryMemberData, f: &MasonryDesignForces) -> Mason
 
     // ==================== Axial Compression (TMS 402 Sec 9.3.5) ====================
 
-    // Slenderness reduction factor
-    let pn = if slenderness <= 99.0 {
+    // Radius of gyration of the solid rectangular section.
+    let r_gyr = m.t / (12.0_f64).sqrt();
+    // TMS 402 9.3.5.4 selects the branch on h/r, not h/t. With r = t/sqrt(12)
+    // the two differ by a factor of 3.46, so comparing h/t against 99 keeps the
+    // parabolic branch far past its range — where it goes negative, clamps to
+    // zero, and reports a wall with no capacity as one with no demand.
+    let h_over_r = if r_gyr > 0.0 { h_eff / r_gyr } else { f64::INFINITY };
+
+    let squash = 0.80 * (0.80 * m.fm * (an - m.as_tension) + m.fy * m.as_tension);
+    let pn = if h_over_r <= 99.0 {
         // Pn = 0.80 * [0.80 * f'm * (An - As) + fy * As] * [1 - (h/(140r))²]
-        // Simplified: r ≈ t/sqrt(12)
-        let r = m.t / (12.0_f64).sqrt();
-        let hr = h_eff / (140.0 * r);
-        let slenderness_factor = (1.0 - hr * hr).max(0.0);
-        0.80 * (0.80 * m.fm * (an - m.as_tension) + m.fy * m.as_tension) * slenderness_factor
+        let hr = h_eff / (140.0 * r_gyr);
+        squash * (1.0 - hr * hr).max(0.0)
     } else {
         // Very slender: Euler buckling governs
         // Pn = 0.80 * [0.80 * f'm * (An - As) + fy * As] * (70r/h)²
-        let r = m.t / (12.0_f64).sqrt();
-        let factor = (70.0 * r / h_eff).powi(2);
-        0.80 * (0.80 * m.fm * (an - m.as_tension) + m.fy * m.as_tension) * factor
+        squash * (70.0 * r_gyr / h_eff).powi(2)
     };
 
-    let axial_ratio = if pn > 0.0 {
-        pu / (PHI_AXIAL * pn)
-    } else {
-        0.0
-    };
+    let mut ledger = CheckLedger::new();
+    let axial_ratio = ledger.ratio_if_loaded("Axial 9.3.5", pu, PHI_AXIAL * pn);
 
     // ==================== Flexure (TMS 402 Sec 9.3.4) ====================
 
@@ -162,11 +178,7 @@ fn check_single_masonry(m: &MasonryMemberData, f: &MasonryDesignForces) -> Mason
     let a = m.as_tension * m.fy / (0.80 * m.fm * m.b);
     let mn = m.as_tension * m.fy * (m.d - a / 2.0);
 
-    let flexure_ratio = if mn > 0.0 {
-        mu / (PHI_FLEXURE * mn)
-    } else {
-        0.0
-    };
+    let flexure_ratio = ledger.ratio_if_loaded("Flexure 9.3.4", mu, PHI_FLEXURE * mn);
 
     // ==================== Shear (TMS 402 Sec 9.3.6) ====================
 
@@ -174,7 +186,14 @@ fn check_single_masonry(m: &MasonryMemberData, f: &MasonryDesignForces) -> Mason
     let _em = em; // used for documentation/consistency
     let fm_mpa = m.fm / 1e6;
     let an_mm2 = an * 1e6; // m² to mm²
-    let vm = 0.083 * (4.0 - 1.75 * (mu / (vu * m.d)).min(1.0).max(0.0)) * fm_mpa.sqrt() * an_mm2;
+    // M/(V·dv), the shear-span ratio the code indexes on. Guarded so a member
+    // with no shear demand does not divide by zero.
+    let mv_dv = {
+        let denom = vu * m.d;
+        if denom > 0.0 { (mu / denom).clamp(0.0, 1.0) } else { 0.0 }
+    };
+
+    let vm = 0.083 * (4.0 - 1.75 * mv_dv) * fm_mpa.sqrt() * an_mm2;
     // Add effect of axial compression
     let vm = vm + 0.25 * pu; // simplified
 
@@ -184,19 +203,31 @@ fn check_single_masonry(m: &MasonryMemberData, f: &MasonryDesignForces) -> Mason
         _ => 0.0,
     };
 
-    let vn = vm + vs;
-
-    let shear_ratio = if vn > 0.0 {
-        vu / (PHI_SHEAR * vn)
+    // TMS 402 9.3.4.1.2 caps Vn regardless of how much reinforcement is
+    // present, so that closely spaced steel cannot buy unlimited shear
+    // strength — the governing failure mode for masonry in earthquakes:
+    //   M/(V·dv) <= 0.25  ->  Vn <= 0.5 ·An·sqrt(f'm)
+    //   M/(V·dv) >= 1.00  ->  Vn <= 0.33·An·sqrt(f'm)
+    // with linear interpolation between.
+    let vn_coefficient = if mv_dv <= 0.25 {
+        0.5
+    } else if mv_dv >= 1.0 {
+        0.33
     } else {
-        0.0
+        0.5 + (0.33 - 0.5) * (mv_dv - 0.25) / 0.75
     };
+    let vn_max = vn_coefficient * an_mm2 * fm_mpa.sqrt();
+
+    let vn = (vm + vs).min(vn_max);
+
+    let shear_ratio = ledger.ratio_if_loaded("Shear 9.3.6", vu, PHI_SHEAR * vn);
 
     // ==================== Interaction ====================
     // Simplified linear interaction: Pu/(phi*Pn) + Mu/(phi*Mn) <= 1.0
     let interaction_ratio = axial_ratio + flexure_ratio;
 
-    let pass = axial_ratio <= 1.0
+    let pass = ledger.all_evaluated()
+        && axial_ratio <= 1.0
         && flexure_ratio <= 1.0
         && shear_ratio <= 1.0
         && interaction_ratio <= 1.0;
@@ -212,5 +243,6 @@ fn check_single_masonry(m: &MasonryMemberData, f: &MasonryDesignForces) -> Mason
         vn,
         slenderness,
         pass,
+        unevaluated: ledger.into_unevaluated(),
     }
 }

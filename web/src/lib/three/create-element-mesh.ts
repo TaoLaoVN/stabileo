@@ -15,11 +15,24 @@ export function setLineResolution(w: number, h: number): void {
   fatLineResolution.set(w, h);
 }
 
+/** Per-axis end release, matching the model's typed `Release` (my/mz/t). Only
+ *  these three flags drive the 3D end-marker visual — `slide`/`slideAxis` are
+ *  not glyphed here. */
+export interface ReleaseFlags {
+  my: boolean;
+  mz: boolean;
+  t: boolean;
+}
+
 export interface CreateElementOpts {
   elementId: number;
   elementType: 'frame' | 'truss';
-  hingeStart?: boolean;
-  hingeEnd?: boolean;
+  /** Typed release at the I end (nI). A released end draws the end marker when
+   *  ANY of my/mz/t is true — not just mz (the old hingeStart boolean leaked
+   *  only strong-axis releases, hiding My-only or torsion-only releases). */
+  releaseI?: ReleaseFlags;
+  /** Typed release at the J end (nJ). See releaseI. */
+  releaseJ?: ReleaseFlags;
   selected?: boolean;
   hovered?: boolean;
   /** Optional section for extruded profile visualization */
@@ -68,7 +81,7 @@ export function createElementGroup(
 
   // In wireframe mode, brighten the base colors to distinguish from the grid
   if (mode === 'wireframe' && !opts.selected && !opts.hovered) {
-    baseColor = opts.elementType === 'frame' ? 0x6cb4ff : 0xf0b848;
+    baseColor = opts.elementType === 'frame' ? 0xa8b8c6 : 0x9fb2c2;
   }
 
   if (mode === 'wireframe') {
@@ -96,11 +109,15 @@ export function createElementGroup(
   // Picking: a single BVH-accelerated InstancedMesh (ElementsPicking) now
   // serves raycasts for all elements, so no per-group picking helper needed.
 
-  // Hinges: small wireframe circles at the ends
-  if (opts.hingeStart) {
+  // Hinges: small wireframe circles at the ends — drawn when ANY of the three
+  // per-axis release flags (my/mz/t) is set, so a My-only or torsion-only
+  // release is visible too, not just the classic strong-axis (mz) hinge.
+  // Axis-specific glyph styling is later polish; the honesty fix here is
+  // "a released end is visible at all".
+  if (opts.releaseI && (opts.releaseI.my || opts.releaseI.mz || opts.releaseI.t)) {
     group.add(createHingeMarker(nI.x, nI.y, nI.z));
   }
-  if (opts.hingeEnd) {
+  if (opts.releaseJ && (opts.releaseJ.my || opts.releaseJ.mz || opts.releaseJ.t)) {
     group.add(createHingeMarker(nJ.x, nJ.y, nJ.z));
   }
 

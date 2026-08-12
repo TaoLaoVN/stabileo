@@ -66,29 +66,29 @@
 
 <style>
   .step { display: flex; flex-direction: column; gap: 0.6rem; }
-  .explanation { font-size: 0.72rem; color: #bbb; line-height: 1.5; }
+  .explanation { font-size: 0.72rem; color: var(--st-text-2); line-height: 1.5; }
   .explanation p { margin: 0; }
 
   .contrib-section { margin-top: 0.3rem; }
-  .contrib-title { font-size: 0.7rem; color: #888; font-weight: 600; margin-bottom: 0.25rem; }
+  .contrib-title { font-size: 0.7rem; color: var(--st-text-3); font-weight: 600; margin-bottom: 0.25rem; }
   .contrib-scroll { overflow: auto; max-height: 250px; }
   .contrib-table {
     width: 100%; border-collapse: collapse;
     font-size: 0.6rem; font-family: 'Courier New', monospace;
   }
   .contrib-table th {
-    background: #16213e; color: #888; padding: 0.2rem 0.4rem;
+    background: var(--st-surface-2); color: var(--st-text-3); padding: 0.2rem 0.4rem;
     font-weight: 600; position: sticky; top: 0; text-align: left;
     font-size: 0.55rem;
   }
   .contrib-table td {
-    padding: 0.15rem 0.4rem; border-bottom: 1px solid #1e1e3a;
+    padding: 0.15rem 0.4rem; border-bottom: 1px solid var(--st-surface-2);
   }
-  .dof-cell { color: #ccc; }
+  .dof-cell { color: var(--st-text-2); }
   .val-cell { text-align: right; }
-  .val-cell.pos { color: #4ecdc4; }
-  .val-cell.neg { color: #e94560; }
-  .src-cell { color: #999; font-size: 0.55rem; }
+  .val-cell.pos { color: var(--st-value); }
+  .val-cell.neg { color: var(--st-accent); }
+  .src-cell { color: var(--st-text-3); font-size: 0.55rem; }
 
-  .no-loads { font-size: 0.7rem; color: #666; text-align: center; padding: 1rem; }
+  .no-loads { font-size: 0.7rem; color: var(--st-text-3); text-align: center; padding: 1rem; }
 </style>

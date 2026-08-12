@@ -19,7 +19,7 @@ import {
   type NeutralAxisInfo,
 } from '../section-stress-3d';
 import { effectiveBendingInertia } from '../solver-service';
-import { resolveSectionGeometry } from '../section-stress';
+import { resolveSectionGeometryLegacy } from '../section-stress';
 import type { ElementForces3D } from '../types-3d';
 import type { Section } from '../../store/model.svelte';
 
@@ -361,7 +361,7 @@ describe('suggestCriticalSections3D', () => {
 // computePerpNADistribution (PR [12] convention)
 // ═══════════════════════════════════════════════════════════════
 describe('computePerpNADistribution', () => {
-  const rs = resolveSectionGeometry(rectSection);
+  const rs = resolveSectionGeometryLegacy(rectSection);
   const A = rectSection.a;
   const Iz = rs.iz;
   const Iy = rs.iy;
@@ -530,7 +530,7 @@ describe('Pressure center 3D correctness', () => {
   });
 
   it('CP inside core → EN outside section (full compression/tension)', () => {
-    const rs = resolveSectionGeometry(rectSection);
+    const rs = resolveSectionGeometryLegacy(rectSection);
     const A = rs.a;
     const Iy = rs.iy;
 

@@ -4,7 +4,17 @@
   import { t } from '../../lib/i18n';
 
   /** When true, skip outer toggle and show content directly (used in PRO dropdown). */
-  let { inline = false }: { inline?: boolean } = $props();
+
+  /**
+   * `flat` — everything open, no accordions.
+   *
+   * These sections collapse because they used to be stacked in one narrow left
+   * column where five of them competed for the same vertical space. In the
+   * ribbon layout only ONE of them is ever mounted, in a panel that already
+   * names it and that the user can widen, so a disclosure triangle just hides
+   * what they explicitly asked to see.
+   */
+  let { inline = false, flat = false }: any = $props();
 
   let showConfig = $state(false);
   let showGridSub = $state(false);
@@ -29,16 +39,27 @@
 
 <div class="toolbar-section" data-tour="config-section">
   {#if !inline}
-  <button class="section-toggle" onclick={() => showConfig = !showConfig}>
+  {#if !flat}<button class="section-toggle" onclick={() => showConfig = !showConfig}>
     {showConfig ? '▾' : '▸'} {t('config.title')}
   </button>
   {/if}
-  {#if showConfig || inline}
+  {/if}
+  <!--
+    `flat` belongs in this gate. Every sub-section below already opens on
+    `flat ||`, but the outer one did not, and `showConfig` starts closed —
+    so pressing Settings in the ribbon opened a right panel with a heading
+    and nothing underneath it.
+  -->
+  {#if showConfig || inline || flat}
   <div class="config-children">
-    <button class="sub-toggle" onclick={() => showGridSub = !showGridSub}>
-      {showGridSub ? '▾' : '▸'} {t('config.grid')}
-    </button>
-    {#if showGridSub}
+    {#if flat}
+      <span class="sub-heading">{t('config.grid')}</span>
+    {:else}
+      <button class="sub-toggle" onclick={() => showGridSub = !showGridSub}>
+        {showGridSub ? '▾' : '▸'} {t('config.grid')}
+      </button>
+    {/if}
+    {#if flat || showGridSub}
       {@const is3D = uiStore.analysisMode === '3d' || uiStore.analysisMode === 'pro'}
       {@const isPro = uiStore.analysisMode === 'pro'}
       {@const gridVisible = is3D ? uiStore.showGrid3D : uiStore.showGrid}
@@ -111,10 +132,20 @@
       </div>
     {/if}
 
-    <button class="sub-toggle" onclick={() => showStructureSub = !showStructureSub}>
-      {showStructureSub ? '▾' : '▸'} {t('config.model')}
-    </button>
-    {#if showStructureSub}
+    {#if flat}
+
+      <span class="sub-heading">{t('config.model')}</span>
+
+    {:else}
+
+      <button class="sub-toggle" onclick={() => showStructureSub = !showStructureSub}>
+
+        {showStructureSub ? '▾' : '▸'} {t('config.model')}
+
+      </button>
+
+    {/if}
+    {#if flat || showStructureSub}
       {@const is3Dm = uiStore.analysisMode === '3d' || uiStore.analysisMode === 'pro'}
       <div class="sub-content">
         <label class="checkbox-item">
@@ -186,10 +217,20 @@
       </div>
     {/if}
 
-    <button class="sub-toggle" onclick={() => showResultsSub = !showResultsSub}>
-      {showResultsSub ? '▾' : '▸'} {t('config.resultsSection')}
-    </button>
-    {#if showResultsSub}
+    {#if flat}
+
+      <span class="sub-heading">{t('config.resultsSection')}</span>
+
+    {:else}
+
+      <button class="sub-toggle" onclick={() => showResultsSub = !showResultsSub}>
+
+        {showResultsSub ? '▾' : '▸'} {t('config.resultsSection')}
+
+      </button>
+
+    {/if}
+    {#if flat || showResultsSub}
       <div class="sub-content">
         <label class="checkbox-item">
           <input type="checkbox" bind:checked={resultsStore.showDiagramValues} />
@@ -245,9 +286,9 @@
     width: 100%;
     padding: 0.4rem 0.5rem;
     background: none;
-    border: 1px solid #333;
+    border: 1px solid var(--st-hair);
     border-radius: 4px;
-    color: #aaa;
+    color: var(--st-text-2);
     cursor: pointer;
     font-size: 0.75rem;
     font-weight: 600;
@@ -258,9 +299,9 @@
   }
 
   .section-toggle:hover {
-    background: #1a1a2e;
-    color: #ccc;
-    border-color: #555;
+    background: var(--st-bg);
+    color: var(--st-text);
+    border-color: var(--st-hair-strong);
   }
 
   /* Configuración sub-sections */
@@ -272,13 +313,25 @@
     padding-right: 0.2rem;
   }
 
+  .sub-heading {
+    display: block;
+    font-family: var(--st-mono);
+    font-size: 0.66rem;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: var(--st-text-2);
+    padding: 0.5rem 0 0.2rem;
+    border-bottom: 1px solid var(--st-hair);
+    margin-bottom: 0.25rem;
+  }
+
   .sub-toggle {
     width: 100%;
     padding: 0.25rem 0.4rem;
     background: none;
-    border: 1px solid #2a2a3e;
+    border: 1px solid var(--st-hair);
     border-radius: 3px;
-    color: #999;
+    color: var(--st-text-2);
     cursor: pointer;
     font-size: 0.68rem;
     font-weight: 500;
@@ -287,9 +340,9 @@
     transition: all 0.2s;
   }
   .sub-toggle:hover {
-    background: #1a1a2e;
-    color: #ccc;
-    border-color: #444;
+    background: var(--st-bg);
+    color: var(--st-text);
+    border-color: var(--st-hair-strong);
   }
 
   .sub-content {
@@ -297,7 +350,7 @@
     display: flex;
     flex-direction: column;
     gap: 0.35rem;
-    border: 1px solid #2a2a3e;
+    border: 1px solid var(--st-hair);
     border-radius: 4px;
     margin-top: 0.15rem;
     overflow: hidden;
@@ -334,10 +387,10 @@
   .input-group input {
     width: 70px;
     padding: 0.25rem;
-    background: #0f3460;
-    border: 1px solid #1a4a7a;
+    background: var(--st-surface-2);
+    border: 1px solid var(--st-hair-strong);
     border-radius: 4px;
-    color: #eee;
+    color: var(--st-text);
     cursor: pointer;
   }
 
@@ -345,16 +398,16 @@
     flex: 1;
     min-width: 100px;
     padding: 0.25rem;
-    background: #0f3460;
-    border: 1px solid #1a4a7a;
+    background: var(--st-surface-2);
+    border: 1px solid var(--st-hair-strong);
     border-radius: 4px;
-    color: #eee;
+    color: var(--st-text);
     cursor: pointer;
   }
 
   input[type="radio"],
   input[type="checkbox"] {
-    accent-color: #e94560;
+    accent-color: var(--st-accent);
   }
 
   .help-hint {
@@ -364,49 +417,49 @@
     width: 16px;
     height: 16px;
     border-radius: 50%;
-    border: 1px solid #555;
-    color: #888;
+    border: 1px solid var(--st-hair-strong);
+    color: var(--st-text-3);
     font-size: 0.6rem;
     font-weight: 600;
     cursor: help;
     flex-shrink: 0;
   }
   .help-hint:hover {
-    border-color: #4ecdc4;
-    color: #4ecdc4;
+    border-color: var(--st-interactive);
+    color: var(--st-value);
   }
 
   .config-action-btn {
     width: 100%;
     padding: 0.25rem 0.4rem;
-    background: #0f3460;
-    border: 1px solid #1a4a7a;
+    background: var(--st-surface-2);
+    border: 1px solid var(--st-hair-strong);
     border-radius: 3px;
-    color: #4ecdc4;
+    color: var(--st-value);
     cursor: pointer;
     font-size: 0.68rem;
     transition: all 0.2s;
   }
   .config-action-btn:hover {
-    background: #1a4a7a;
+    background: var(--st-surface-3);
     color: white;
   }
   .live-calc-btn {
-    color: #888;
-    background: #12192e;
-    border-color: #333;
+    color: var(--st-text-3);
+    background: var(--st-bg);
+    border-color: var(--st-hair);
   }
   .live-calc-btn:hover {
-    background: #1a1a2e;
-    color: #ccc;
+    background: var(--st-bg);
+    color: var(--st-text);
   }
   .live-calc-active {
-    color: #4ecdc4;
-    background: #0f3460;
-    border-color: #4ecdc4;
+    color: var(--st-value);
+    background: var(--st-surface-2);
+    border-color: var(--st-interactive);
   }
   .live-calc-active:hover {
-    background: #1a4a7a;
+    background: var(--st-surface-3);
     color: white;
   }
 </style>

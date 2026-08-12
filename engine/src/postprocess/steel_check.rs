@@ -5,6 +5,8 @@
 
 use serde::{Deserialize, Serialize};
 
+use crate::postprocess::check_ledger::{CheckLedger, Unevaluated};
+
 // ==================== Types ====================
 
 /// Steel design parameters for a member.
@@ -14,6 +16,10 @@ pub struct SteelMemberData {
     pub element_id: usize,
     /// Yield stress (Pa or consistent units)
     pub fy: f64,
+    /// Tensile strength Fu (Pa). Required for the D2-2 rupture check; without
+    /// it only gross-section yielding is evaluated.
+    #[serde(default)]
+    pub fu: Option<f64>,
     /// Gross area (m² or consistent)
     pub ag: f64,
     /// Net area for tension (default = Ag)
@@ -22,6 +28,12 @@ pub struct SteelMemberData {
     /// Effective net area factor U (default 1.0)
     #[serde(default)]
     pub u_factor: Option<f64>,
+    /// Web area Aw = d·tw (m²). Required for the G2 shear check.
+    #[serde(default)]
+    pub aw: Option<f64>,
+    /// Web shear strength coefficient Cv1 (default 1.0, AISC G2.1)
+    #[serde(default)]
+    pub cv1: Option<f64>,
     /// Unbraced length for compression about Y-axis
     pub lby: f64,
     /// Unbraced length for compression about Z-axis
@@ -112,8 +124,12 @@ pub struct SteelCheckResult {
     pub flexure_y_ratio: f64,
     /// Flexural capacity check about Z-axis (Mr / phi*Mn_z)
     pub flexure_z_ratio: f64,
+    /// Shear capacity check (Vr / phi*Vn), 0.0 when Aw was not supplied
+    pub shear_ratio: f64,
     /// Combined interaction ratio (AISC H1-1)
     pub interaction_ratio: f64,
+    /// Available shear strength (phi*Vn), 0.0 when Aw was not supplied
+    pub phi_vn: f64,
     /// Available axial compression strength (phi*Pn)
     pub phi_pn_compression: f64,
     /// Available axial tension strength (phi*Pn)
@@ -122,21 +138,43 @@ pub struct SteelCheckResult {
     pub phi_mn_y: f64,
     /// Available flexural strength about Z (phi*Mn)
     pub phi_mn_z: f64,
+    /// Checks whose capacity could not be evaluated. Non-empty means the
+    /// reported ratios do not cover the member.
+    #[serde(default)]
+    pub unevaluated: Unevaluated,
 }
 
 // ==================== AISC 360 Design Checks ====================
 
 const PHI_C: f64 = 0.90; // Compression
 const PHI_T: f64 = 0.90; // Tension (yielding)
+const PHI_TR: f64 = 0.75; // Tension (rupture on the net section)
 const PHI_B: f64 = 0.90; // Flexure
+/// AISC G1 general case. The phi_v = 1.00 of G2.1(a) needs h/tw <= 2.24*sqrt(E/Fy),
+/// which cannot be verified from the properties supplied here, so the lower
+/// value is used.
+const PHI_V: f64 = 0.90;
+
+
+/// Index the force records by id so each member is a hash lookup rather than a
+/// scan of the whole list. The pairing was O(members x forces): fine at 100
+/// members, quadratic at 10,000 — and this runs on every edit.
+fn index_forces<T>(forces: &[T], id_of: impl Fn(&T) -> usize) -> std::collections::HashMap<usize, &T> {
+    let mut map = std::collections::HashMap::with_capacity(forces.len());
+    for f in forces {
+        map.entry(id_of(f)).or_insert(f);
+    }
+    map
+}
 
 /// Run AISC 360 steel design checks on all members.
 pub fn check_steel_members(input: &SteelCheckInput) -> Vec<SteelCheckResult> {
     let mut results = Vec::new();
 
+    let by_id = index_forces(&input.forces, |f| f.element_id);
+
     for member in &input.members {
-        let forces = input.forces.iter()
-            .find(|f| f.element_id == member.element_id);
+        let forces = by_id.get(&member.element_id).copied();
 
         let forces = match forces {
             Some(f) => f,
@@ -169,29 +207,31 @@ fn check_single_member(member: &SteelMemberData, forces: &ElementDesignForces) -
     let my = forces.my.abs();
     let mz = forces.mz.unwrap_or(0.0).abs();
 
-    let tension_ratio = if n > 0.0 && phi_pn_tension > 0.0 {
-        n / phi_pn_tension
-    } else {
-        0.0
-    };
+    let mut ledger = CheckLedger::new();
 
-    let compression_ratio = if n < 0.0 && phi_pn_compression > 0.0 {
-        (-n) / phi_pn_compression
-    } else {
-        0.0
-    };
+    let tension_ratio =
+        ledger.ratio_if_loaded("Tension D2", n.max(0.0), phi_pn_tension);
+    let compression_ratio =
+        ledger.ratio_if_loaded("Compression E3", (-n).max(0.0), phi_pn_compression);
+    let flexure_y_ratio = ledger.ratio_if_loaded("Flexure-Y F2", my, phi_mn_y);
+    let flexure_z_ratio = ledger.ratio_if_loaded("Flexure-Z F6", mz, phi_mn_z);
 
-    let flexure_y_ratio = if phi_mn_y > 0.0 { my / phi_mn_y } else { 0.0 };
-    let flexure_z_ratio = if phi_mn_z > 0.0 { mz / phi_mn_z } else { 0.0 };
+    // A NaN demand never reaches a ratio above, so flag it explicitly.
+    if !n.is_finite() {
+        ledger.flag("Axial demand");
+    }
+
+    // AISC G2 shear
+    let phi_vn = shear_capacity(member);
+    let vy = forces.vy.unwrap_or(0.0).abs();
+    let shear_ratio = if phi_vn > 0.0 { vy / phi_vn } else { 0.0 };
 
     // AISC H1 interaction (using appropriate axial capacity)
-    let axial_ratio = if n < 0.0 {
-        if phi_pn_compression > 0.0 { (-n) / phi_pn_compression } else { 0.0 }
-    } else {
-        if phi_pn_tension > 0.0 { n / phi_pn_tension } else { 0.0 }
-    };
-
-    let interaction_ratio = interaction_h1(axial_ratio, flexure_y_ratio, flexure_z_ratio);
+    let axial_ratio = if n < 0.0 { compression_ratio } else { tension_ratio };
+    let interaction_ratio = ledger.require_finite(
+        "Interaction H1",
+        interaction_h1(axial_ratio, flexure_y_ratio, flexure_z_ratio),
+    );
 
     // Governing
     let checks = [
@@ -199,13 +239,16 @@ fn check_single_member(member: &SteelMemberData, forces: &ElementDesignForces) -
         (compression_ratio, "Compression E3"),
         (flexure_y_ratio, "Flexure-Y F2"),
         (flexure_z_ratio, "Flexure-Z F6"),
+        (shear_ratio, "Shear G2"),
         (interaction_ratio, "Interaction H1"),
     ];
 
-    let (unity_ratio, governing_check) = checks.iter()
-        .max_by(|a, b| a.0.partial_cmp(&b.0).unwrap())
-        .map(|(r, name)| (*r, name.to_string()))
-        .unwrap_or((0.0, "None".to_string()));
+    let (unity_ratio, governing) = ledger.governing(&checks);
+    let governing_check = if ledger.all_evaluated() {
+        governing.to_string()
+    } else {
+        format!("{governing} (incomplete)")
+    };
 
     SteelCheckResult {
         element_id: eid,
@@ -215,17 +258,50 @@ fn check_single_member(member: &SteelMemberData, forces: &ElementDesignForces) -
         compression_ratio,
         flexure_y_ratio,
         flexure_z_ratio,
+        shear_ratio,
         interaction_ratio,
+        phi_vn,
         phi_pn_compression,
         phi_pn_tension,
         phi_mn_y,
         phi_mn_z,
+        unevaluated: ledger.into_unevaluated(),
     }
 }
 
-/// AISC D2: Tension yielding on gross section.
+/// AISC D2: available tensile strength — the lower of yielding on the gross
+/// section (D2-1) and rupture on the effective net section (D2-2).
+///
+/// Rupture is skipped when Fu is not supplied, since there is no basis for it.
+/// Where a member is bolted, rupture routinely governs: the smaller phi (0.75
+/// vs 0.90) and the hole deduction together typically cost 20 %.
 fn tension_capacity(m: &SteelMemberData) -> f64 {
-    PHI_T * m.fy * m.ag
+    let yielding = PHI_T * m.fy * m.ag;
+
+    match m.fu {
+        Some(fu) if fu > 0.0 => {
+            // D3: Ae = An·U
+            let an = m.an.unwrap_or(m.ag);
+            let u = m.u_factor.unwrap_or(1.0);
+            let rupture = PHI_TR * fu * an * u;
+            yielding.min(rupture)
+        }
+        _ => yielding,
+    }
+}
+
+/// AISC G2-1: Vn = 0.6·Fy·Aw·Cv1.
+///
+/// Returns 0.0 when the web area is unknown — there is no shear check to
+/// report rather than a capacity to invent.
+fn shear_capacity(m: &SteelMemberData) -> f64 {
+    match m.aw {
+        Some(aw) if aw > 0.0 => {
+            let cv1 = m.cv1.unwrap_or(1.0);
+            PHI_V * 0.6 * m.fy * aw * cv1
+        }
+        _ => 0.0,
+    }
 }
 
 /// AISC E3: Flexural buckling compression capacity.
@@ -272,7 +348,18 @@ fn flexural_capacity_y(m: &SteelMemberData) -> f64 {
 
     // AISC F2-7: rts² = √(Iy_weak * Cw) / Sx_strong
     let c = 1.0; // For doubly-symmetric I-shapes
-    let ho = m.depth.unwrap_or(0.3); // distance between flange centroids (approx depth)
+
+    // `ho` is the distance between flange centroids. For a doubly-symmetric
+    // I-shape Cw = Iz·ho²/4, so when Cw is supplied ho follows from the section
+    // properties already given — no guess needed, and it lands within ~0.3 % of
+    // d - tf for rolled shapes. Falling back to a literal 0.3 m (the previous
+    // default) applied one section's depth to every section.
+    let ho = if cw > 0.0 && m.iz > 0.0 {
+        Some(2.0 * (cw / m.iz).sqrt())
+    } else {
+        m.depth
+    };
+
     let rts = if m.sy > 1e-20 && cw > 0.0 {
         let rts_sq = (m.iz * cw).sqrt() / m.sy;
         rts_sq.sqrt()
@@ -281,14 +368,24 @@ fn flexural_capacity_y(m: &SteelMemberData) -> f64 {
         m.rz
     };
 
-    let lr = if rts > 0.0 && m.j > 0.0 {
+    // St-Venant torsion term Jc/(Sx·ho), shared by F2-4 and F2-6. Without a
+    // usable ho there is no basis for it; dropping it to zero reduces Fcr to
+    // the pure-warping lower bound, which is the conservative reading.
+    let jc_sh = match ho {
+        Some(ho) if ho > 0.0 && m.sy > 1e-20 => m.j * c / (m.sy * ho),
+        _ => 0.0,
+    };
+
+    let lr = if rts > 0.0 && m.j > 0.0 && jc_sh > 0.0 {
         // AISC F2-6: Lr = 1.95 * rts * (E/(0.7*Fy)) * sqrt(Jc/(Sx*ho) + sqrt(...))
-        let jc_sh = m.j * c / (m.sy * ho);
         let ratio_sq = (0.7 * m.fy / m.e).powi(2);
         1.95 * rts * (m.e / (0.7 * m.fy))
             * (jc_sh + (jc_sh * jc_sh + 6.76 * ratio_sq).sqrt()).sqrt()
     } else {
-        10.0 * lp // fallback
+        // No basis for Lr: treat everything past Lp as elastic LTB rather than
+        // inventing a long inelastic plateau (the previous 10·Lp fallback ran
+        // the other way).
+        lp
     };
 
     let mn = if lb <= lp {
@@ -302,7 +399,7 @@ fn flexural_capacity_y(m: &SteelMemberData) -> f64 {
         let pi2 = std::f64::consts::PI * std::f64::consts::PI;
         let lb_rts = lb / rts;
         let fcr = cb * pi2 * m.e / lb_rts.powi(2)
-            * (1.0 + 0.078 * m.j * c / (m.sy * ho) * lb_rts.powi(2)).sqrt();
+            * (1.0 + 0.078 * jc_sh * lb_rts.powi(2)).sqrt();
         (fcr * m.sy).min(mp)
     };
 

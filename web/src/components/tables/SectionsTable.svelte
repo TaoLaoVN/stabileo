@@ -5,6 +5,7 @@
   import type { SteelProfile } from '../../lib/data/steel-profiles';
   import { profileToSectionFull } from '../../lib/data/steel-profiles';
   import type { SectionProperties } from '../../lib/data/section-shapes';
+  import { solverProperties } from '../../lib/section/state';
 
   const sectionsArr = $derived([...modelStore.sections.values()]);
   const is3D = $derived(uiStore.analysisMode === '3d');
@@ -114,19 +115,27 @@
   </thead>
   <tbody>
     {#each sectionsArr as sec}
-      {@const hasShape = !!sec.shape}
+      <!-- Read-only because the numbers are DERIVED, not because the section
+           happens to carry a `shape` string. A geometry-backed section's A and
+           I are outputs of its polygons; letting them be typed over would put
+           the model in a state where the drawing and the numbers disagree. -->
+      {@const derived = sec.canonical?.kind === 'geometry-backed'}
+      {@const props = solverProperties(sec)}
       <tr>
         <td class="id-cell">{sec.id}</td>
         <td class="name-with-action">
           <input type="text" value={sec.name} onchange={(e) => updateSectionField(sec.id, 'name', e.currentTarget.value)} />
           <button class="row-action-btn" title={t('table.changeSection')} onclick={() => { sectionChangerTargetSecId = sec.id; showSectionChanger = true; }}>&#9783;</button>
         </td>
-        {#if hasShape}
-          <td><span class="ro-val">{fmtA(sec.a)}</span></td>
-          <td><span class="ro-val">{fmtI(sec.iy ?? sec.iz)}</span></td>
-          <td><span class="ro-val">{fmtI(sec.iz)}</span></td>
+        {#if derived}
+          <!-- The values shown are the ones the solver is actually given, so
+               the table, the section drawing and the analysis cannot quote
+               three different areas for one profile. -->
+          <td><span class="ro-val" title={t('table.derivedFromGeometry')}>{fmtA(props.a)}</span></td>
+          <td><span class="ro-val" title={t('table.derivedFromGeometry')}>{fmtI(props.iy ?? props.iz)}</span></td>
+          <td><span class="ro-val" title={t('table.derivedFromGeometry')}>{fmtI(props.iz)}</span></td>
           {#if is3D}
-            <td><span class="ro-val">{fmtI(sec.j ?? (sec.iy ?? sec.iz) * 0.001)}</span></td>
+            <td><span class="ro-val" title={props.j == null ? t('table.torsionUnavailable') : t('table.derivedFromGeometry')}>{props.j == null ? '—' : fmtI(props.j)}</span></td>
           {/if}
         {:else}
           <td><input type="number" step="0.01" value={sec.a * M2_TO_CM2} onchange={(e) => updateSectionField(sec.id, 'a', e.currentTarget.value)} /></td>
@@ -166,27 +175,27 @@
   th {
     text-align: left;
     padding: 0.25rem 0.35rem;
-    color: #888;
+    color: var(--st-text-3);
     font-weight: 500;
     font-size: 0.65rem;
     text-transform: uppercase;
     letter-spacing: 0.03em;
-    border-bottom: 1px solid #0f3460;
+    border-bottom: 1px solid var(--st-surface-3);
     position: sticky;
     top: 0;
-    background: #16213e;
+    background: var(--st-surface-2);
     white-space: nowrap;
   }
 
   td {
     padding: 0.2rem 0.35rem;
-    border-bottom: 1px solid #0a1a30;
-    color: #ccc;
+    border-bottom: 1px solid var(--st-bg);
+    color: var(--st-text-2);
     white-space: nowrap;
   }
 
   .id-cell {
-    color: #4ecdc4;
+    color: var(--st-value);
     font-weight: 600;
   }
 
@@ -199,10 +208,10 @@
   td input[type="text"] {
     width: 55px;
     padding: 0.1rem 0.2rem;
-    background: #0f3460;
-    border: 1px solid #1a4a7a;
+    background: var(--st-surface-3);
+    border: 1px solid var(--st-surface-3);
     border-radius: 3px;
-    color: #eee;
+    color: var(--st-text);
     font-size: 0.7rem;
   }
 
@@ -228,10 +237,10 @@
   }
 
   .row-action-btn {
-    background: #0f3460;
-    border: 1px solid #1a4a7a;
+    background: var(--st-surface-3);
+    border: 1px solid var(--st-surface-3);
     border-radius: 3px;
-    color: #4ecdc4;
+    color: var(--st-value);
     cursor: pointer;
     font-size: 0.8rem;
     padding: 0.1rem 0.3rem;
@@ -240,51 +249,51 @@
   }
 
   .row-action-btn:hover {
-    background: #1a4a7a;
+    background: var(--st-surface-3);
     color: white;
   }
 
   .del {
     background: none;
     border: none;
-    color: #666;
+    color: var(--st-text-3);
     cursor: pointer;
     font-size: 0.8rem;
     padding: 0.1rem 0.3rem;
   }
   .del:hover {
-    color: #e94560;
+    color: var(--st-accent);
   }
 
   tr:hover {
-    background: rgba(78, 205, 196, 0.05);
+    background: rgba(127, 212, 204, 0.05);
   }
 
   .table-footer {
     padding: 0.5rem;
-    border-top: 1px solid #0a1a30;
+    border-top: 1px solid var(--st-bg);
   }
 
   .add-btn {
     width: 100%;
     padding: 0.4rem 0.5rem;
-    background: #0f3460;
-    border: 1px solid #1a4a7a;
+    background: var(--st-surface-3);
+    border: 1px solid var(--st-surface-3);
     border-radius: 4px;
-    color: #4ecdc4;
+    color: var(--st-value);
     cursor: pointer;
     font-size: 0.8rem;
     transition: all 0.2s;
   }
 
   .add-btn:hover {
-    background: #1a4a7a;
+    background: var(--st-surface-3);
     color: white;
   }
 
   .ro-val {
     font-size: 0.7rem;
-    color: #999;
+    color: var(--st-text-3);
     font-family: monospace;
     user-select: text;
   }

@@ -17,10 +17,23 @@ interface DrawContext {
   getElement: (id: number) => { nodeI: number; nodeJ: number } | undefined;
 }
 
+/*
+ * Diagram colours, on the application's palette.
+ *
+ * These were royal blue, lime green and medium orchid — CSS named colours from
+ * a different era of the product, at a saturation nothing else on screen uses.
+ * Three fully saturated hues over a quiet model made the diagram shout louder
+ * than the structure it describes.
+ *
+ * The assignment is not arbitrary. Moment takes the accent because it is the
+ * diagram an engineer reads first; shear takes the blue already meaning
+ * compression in the truss figure; axial takes amber, kept away from the
+ * red/blue pair so a signed axial colour map is never confused with it.
+ */
 const DIAGRAM_COLORS: Record<DiagramKind, { fill: string; stroke: string; text: string }> = {
-  moment: { fill: 'rgba(65, 105, 225, 0.25)', stroke: '#4169E1', text: '#6495ED' },   // Blue
-  shear:  { fill: 'rgba(50, 205, 50, 0.25)', stroke: '#32CD32', text: '#90EE90' },     // Green
-  axial:  { fill: 'rgba(186, 85, 211, 0.25)', stroke: '#BA55D3', text: '#DDA0DD' },    // Purple
+  moment: { fill: 'rgba(229, 72, 42, 0.22)', stroke: '#e5482a', text: '#f07a62' },
+  shear:  { fill: 'rgba(74, 143, 212, 0.22)', stroke: '#4a8fd4', text: '#7fb0e2' },
+  axial:  { fill: 'rgba(217, 164, 65, 0.22)', stroke: '#d9a441', text: '#e5bd77' },
 };
 
 /**
@@ -281,21 +294,26 @@ function formatValue(value: number, kind: DiagramKind): string {
 
 // ─── Envelope Diagram Rendering ──────────────────────────────────
 
+/*
+ * Envelope colours: the same hue for the positive branch as the plain diagram,
+ * and a muted counter-hue for the negative one, so an envelope reads as the
+ * same quantity with two bounds rather than as two unrelated plots.
+ */
 const ENVELOPE_COLORS: Record<DiagramKind, {
   posFill: string; posStroke: string; posText: string;
   negFill: string; negStroke: string; negText: string;
 }> = {
   moment: {
-    posFill: 'rgba(65,105,225,0.18)', posStroke: '#4169E1', posText: '#6495ED',
-    negFill: 'rgba(225,80,65,0.18)',   negStroke: '#E15041', negText: '#E17060',
+    posFill: 'rgba(229,72,42,0.16)', posStroke: '#e5482a', posText: '#f07a62',
+    negFill: 'rgba(74,143,212,0.16)', negStroke: '#4a8fd4', negText: '#7fb0e2',
   },
   shear: {
-    posFill: 'rgba(50,205,50,0.18)',  posStroke: '#32CD32', posText: '#90EE90',
-    negFill: 'rgba(205,50,50,0.18)',   negStroke: '#CD3232', negText: '#E06060',
+    posFill: 'rgba(74,143,212,0.16)', posStroke: '#4a8fd4', posText: '#7fb0e2',
+    negFill: 'rgba(229,72,42,0.16)',  negStroke: '#e5482a', negText: '#f07a62',
   },
   axial: {
-    posFill: 'rgba(186,85,211,0.18)', posStroke: '#BA55D3', posText: '#DDA0DD',
-    negFill: 'rgba(211,85,100,0.18)',  negStroke: '#D35565', negText: '#E08090',
+    posFill: 'rgba(217,164,65,0.16)', posStroke: '#d9a441', posText: '#e5bd77',
+    negFill: 'rgba(143,163,179,0.16)', negStroke: '#8fa3b3', negText: '#a8b8c6',
   },
 };
 

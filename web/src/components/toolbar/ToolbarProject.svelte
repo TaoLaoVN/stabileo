@@ -3,6 +3,7 @@
   import { saveProject, loadFile, saveSession, downloadResultsCSV, downloadDXF, downloadSVG, downloadExcel, isMode3D } from '../../lib/store/file';
   import { generateShareURL, loadFromShareLink, MAX_URL_SAFE } from '../../lib/utils/url-sharing';
   import { t } from '../../lib/i18n';
+  import ToolbarExamples from './ToolbarExamples.svelte';
   import CalcReportDialog from '../CalcReportDialog.svelte';
 
   let fileInput: HTMLInputElement;
@@ -75,13 +76,26 @@
     // Dispatch custom event — App.svelte handles it with canvas ref
     window.dispatchEvent(new CustomEvent('stabileo-export-png'));
   }
+
+  /**
+   * `flat` — everything open, no accordions.
+   *
+   * These sections collapse because they used to be stacked in one narrow left
+   * column where five of them competed for the same vertical space. In the
+   * ribbon layout only ONE of them is ever mounted, in a panel that already
+   * names it and that the user can widen, so a disclosure triangle just hides
+   * what they explicitly asked to see.
+   */
+  let { flat = false }: { flat?: boolean } = $props();
 </script>
 
 <div class="toolbar-section" data-tour="project-section">
-  <button class="section-toggle" onclick={() => showProject = !showProject}>
+  {#if !flat}<button class="section-toggle" onclick={() => showProject = !showProject}>
     {showProject ? '▾' : '▸'} {t('project.title')}
   </button>
-  {#if showProject}
+  {/if}
+  {#if flat || showProject}
+  {#if flat}<h4 class="proj-heading">{t('project.fileSection')}</h4>{/if}
   <div class="file-grid">
     <button class="file-btn" onclick={saveProject} title={t('project.saveTabTooltip')}>
       {t('project.saveTab')}
@@ -93,10 +107,29 @@
       {t('project.open')}
     </button>
   </div>
-  <button class="sub-section-toggle" onclick={() => showProjectExtras = !showProjectExtras}>
-    {showProjectExtras ? '▾' : '▸'} {t('project.exportImport')}
-  </button>
-  {#if showProjectExtras}
+  <!--
+    Examples belong to the document, like everything else here: they answer
+    "which model am I working on". They had their own panel and their own
+    button, which put one of the six commands in the window's most valuable
+    corner on the same footing as Save. Between opening a file and exporting
+    one is where starting from a supplied model actually falls.
+  -->
+  <div class="proj-block">
+    <ToolbarExamples flat={true} />
+  </div>
+
+  <!--
+    A heading, not a toggle. Below it opens on `flat ||` regardless, so in the
+    right panel this chevron changed direction and did nothing else.
+  -->
+  {#if flat}
+    <h4 class="proj-heading">{t('project.exportImport')}</h4>
+  {:else}
+    <button class="sub-section-toggle" onclick={() => showProjectExtras = !showProjectExtras}>
+      {showProjectExtras ? '▾' : '▸'} {t('project.exportImport')}
+    </button>
+  {/if}
+  {#if flat || showProjectExtras}
     <div class="sub-section-content">
       <span class="file-sub-header">{t('project.export')}</span>
       <div class="file-grid">
@@ -184,9 +217,9 @@
     width: 100%;
     padding: 0.4rem 0.5rem;
     background: none;
-    border: 1px solid #333;
+    border: 1px solid var(--st-hair);
     border-radius: 4px;
-    color: #aaa;
+    color: var(--st-text-2);
     cursor: pointer;
     font-size: 0.75rem;
     font-weight: 600;
@@ -197,18 +230,18 @@
   }
 
   .section-toggle:hover {
-    background: #1a1a2e;
-    color: #ccc;
-    border-color: #555;
+    background: var(--st-bg);
+    color: var(--st-text);
+    border-color: var(--st-hair-strong);
   }
 
   .sub-section-toggle {
     width: 100%;
     padding: 0.25rem 0.4rem;
     background: none;
-    border: 1px solid #2a2a3a;
+    border: 1px solid var(--st-hair);
     border-radius: 3px;
-    color: #777;
+    color: var(--st-text-3);
     cursor: pointer;
     font-size: 0.65rem;
     font-weight: 600;
@@ -220,37 +253,94 @@
   }
 
   .sub-section-toggle:hover {
-    background: #1a1a2e;
-    color: #aaa;
-    border-color: #444;
+    background: var(--st-bg);
+    color: var(--st-text-2);
+    border-color: var(--st-hair-strong);
   }
 
   .sub-section-content {
     margin-left: 0.25rem;
     padding-left: 0.4rem;
-    border-left: 2px solid #2a2a3a;
+    border-left: 2px solid var(--st-hair);
   }
 
+  :global(.basic-panel) .sub-section-content {
+    margin-left: 0;
+    padding-left: 0;
+    border-left: none;
+  }
+
+  /*
+     Every command in this panel is the same size.
+     ────────────────────────────────────────────
+     The file row and the export row used the same class but landed at
+     different widths, because a three-column grid holding three items gives
+     each a third of the panel while one holding six gives each a sixth — so
+     "Save tab" was a wide button and "DXF" a small one, implying DXF was a
+     lesser command than Save. They are peers: both are one action on the
+     document.
+
+     `auto-fill` with a floor sizes by CONTENT rather than by count, so a row of
+     three and a row of six produce the same button. The floor is wide enough
+     for "Guardar sesión" at the panel's minimum width without wrapping.
+  */
   .file-grid {
     display: grid;
-    grid-template-columns: repeat(3, 1fr);
-    gap: 0.25rem;
+    grid-template-columns: repeat(auto-fill, minmax(84px, 1fr));
+    gap: 0.3rem;
   }
 
+  /*
+     A command, on the shell's own button language: hairline border, no fill
+     until hover, accent on hover. These were raised blocks on a lighter
+     surface, which is how this application draws a VALUE — so a column of file
+     commands read as a column of read-outs.
+  */
   .file-btn {
-    padding: 0.35rem 0.4rem;
-    background: #0f3460;
-    border: 1px solid #1a4a7a;
-    border-radius: 4px;
-    color: #ccc;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 30px;
+    padding: 0.35rem 0.5rem;
+    background: none;
+    border: 1px solid var(--st-hair);
+    border-radius: var(--st-radius);
+    color: var(--st-text-2);
     cursor: pointer;
+    font-family: var(--st-sans);
     font-size: 0.75rem;
     text-align: center;
-    transition: all 0.2s;
+    transition: background 0.12s, color 0.12s, border-color 0.12s;
   }
 
   .file-btn:hover:not(:disabled) {
-    background: #1a4a7a;
+    background: var(--st-surface-3);
+    border-color: var(--st-hair-strong);
+    color: var(--st-text);
+  }
+
+  .file-btn:disabled { opacity: 0.4; cursor: not-allowed; }
+
+  /* Section headings, matching every other heading in the right panel. */
+  .proj-heading {
+    font-family: var(--st-mono);
+    font-size: 0.66rem;
+    font-weight: 400;
+    letter-spacing: 0.11em;
+    text-transform: uppercase;
+    color: var(--st-text-2);
+    margin: 0.9rem 0 0.4rem;
+    padding-bottom: 0.15rem;
+    border-bottom: 1px solid var(--st-hair);
+  }
+
+  .proj-heading:first-child { margin-top: 0; }
+
+  /* Examples brings its own headings, so it only needs the spacing. */
+  .proj-block { margin: 0.9rem 0 0; }
+
+  .file-btn:hover:not(:disabled) {
+    background: var(--st-surface-3);
     color: white;
   }
 
@@ -260,25 +350,27 @@
   }
 
   .file-sub-header {
-    font-size: 0.65rem;
+    display: block;
+    font-family: var(--st-mono);
+    font-size: 0.62rem;
     text-transform: uppercase;
-    color: #666;
-    letter-spacing: 0.05em;
-    margin-top: 0.25rem;
+    color: var(--st-text-3);
+    letter-spacing: 0.09em;
+    margin: 0.7rem 0 0.3rem;
   }
 
   .small-btn {
     padding: 0.1rem 0.4rem;
-    border: 1px solid #555;
+    border: 1px solid var(--st-hair-strong);
     border-radius: 3px;
-    background: #2a2a2a;
-    color: #ccc;
+    background: var(--st-surface-2);
+    color: var(--st-text);
     font-size: 0.7rem;
     cursor: pointer;
   }
 
   .small-btn:hover:not(:disabled) {
-    background: #3a3a3a;
+    background: var(--st-surface-3);
     color: white;
   }
 

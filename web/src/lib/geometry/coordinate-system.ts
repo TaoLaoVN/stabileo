@@ -50,6 +50,26 @@ export const TWO_D_NODAL_LOAD_LABELS = {
   moment: 'My',
 } as const;
 
+/**
+ * What a 2D element's internal forces are called.
+ *
+ * A 2D node's degrees of freedom are ux, uz and θy, so a 2D frame bends about
+ * its local y and shears along its local z: its diagrams are My and Vz — the
+ * same two an identical model reports in 3D. Mz and Vy are the out-of-plane
+ * pair and do not exist in 2D at all.
+ *
+ * This exists because the ribbon spelled these out itself and got them wrong,
+ * labelling the 2D moment diagram "Mz" and the shear "Vy" — the Y-up names from
+ * before the app moved to Z-up. The same model solved in both modes then showed
+ * the identical diagram under two different names. Everything that displays a
+ * 2D axis label reads it from this module; nothing should hardcode one.
+ */
+export const TWO_D_INTERNAL_FORCE_LABELS = {
+  axial: 'N',
+  moment: 'My',
+  shear: 'Vz',
+} as const;
+
 const THREE_D_SUPPORT_TYPES = new Set([
   'fixed3d',
   'pinned3d',

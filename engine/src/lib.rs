@@ -747,6 +747,263 @@ pub fn analyze_section(json: &str) -> Result<String, JsValue> {
         .map_err(|e| JsValue::from_str(&format!("Serialize error: {}", e)))
 }
 
+// ==================== Canonical Section Geometry ====================
+//
+// Wire convention: JSON strings in, JSON strings out, matching the existing
+// `analyze_section` export. These are cold paths called once per section
+// change, not per solve, so the JsValue boundary used by `solve_2d`/`solve_3d`
+// would buy nothing and would split the section API across two conventions.
+//
+// Every export is versioned through the payload it returns and validates its
+// inputs before use, so a malformed request produces an actionable message
+// rather than a panic across the boundary.
+
+/// Build canonical geometry for a parametric or catalogue section.
+///
+/// Request: `{ "kind": "...", ...dimensions }`. Every builder REQUIRES each
+/// dimension it needs; nothing is inferred from a name and no thickness is
+/// invented, which is what makes the missing-dimension defect unrepresentable
+/// rather than merely unlikely.
+#[wasm_bindgen]
+pub fn build_section_geometry(json: &str) -> Result<String, JsValue> {
+    use section::catalogue as cat;
+
+    #[derive(serde::Deserialize)]
+    #[serde(rename_all = "camelCase", rename_all_fields = "camelCase", tag = "kind", deny_unknown_fields)]
+    enum Request {
+        Rect { b: f64, h: f64 },
+        Circle { d: f64, #[serde(default)] arc_segments: Option<usize> },
+        Chs { d: f64, t: f64, #[serde(default)] arc_segments: Option<usize> },
+        #[serde(rename = "iSection")]
+        ISection {
+            h: f64, b: f64, tw: f64, tf: f64,
+            #[serde(default)] root_radius: f64,
+            #[serde(default)] arc_segments: Option<usize>,
+            #[serde(default)] profile_id: Option<String>,
+            #[serde(default)] standard: Option<String>,
+        },
+        /// IPN — tapered flanges, radii per DIN 1025-1's own rules.
+        Ipn {
+            h: f64, b: f64, tw: f64, tf: f64,
+            #[serde(default)] arc_segments: Option<usize>,
+            #[serde(default)] profile_id: Option<String>,
+            #[serde(default)] standard: Option<String>,
+        },
+        /// UPN — tapered flanges, radii per DIN 1025-5's own rules.
+        Upn {
+            h: f64, b: f64, tw: f64, tf: f64,
+            #[serde(default)] arc_segments: Option<usize>,
+            #[serde(default)] profile_id: Option<String>,
+            #[serde(default)] standard: Option<String>,
+        },
+        Tee {
+            h: f64, b: f64, tw: f64, tf: f64,
+            #[serde(default)] root_radius: f64,
+            #[serde(default)] toe_radius: f64,
+            #[serde(default)] arc_segments: Option<usize>,
+            #[serde(default)] profile_id: Option<String>,
+            #[serde(default)] standard: Option<String>,
+        },
+        Angle {
+            h: f64, b: f64, t: f64,
+            #[serde(default)] root_radius: f64,
+            #[serde(default)] toe_radius: f64,
+            #[serde(default)] arc_segments: Option<usize>,
+            #[serde(default)] profile_id: Option<String>,
+            #[serde(default)] standard: Option<String>,
+        },
+        Channel {
+            h: f64, b: f64, tw: f64, tf: f64,
+            #[serde(default)] slope: f64,
+            #[serde(default)] root_radius: f64,
+            #[serde(default)] toe_radius: f64,
+            /// Where `tf` is quoted, from the web's outer face. Defaults to
+            /// mid-overhang, which is what the American tables use.
+            #[serde(default)] taper_ref: Option<f64>,
+            #[serde(default)] arc_segments: Option<usize>,
+            #[serde(default)] profile_id: Option<String>,
+            #[serde(default)] standard: Option<String>,
+        },
+        Rhs {
+            b: f64, h: f64, t: f64,
+            #[serde(default)] corner_radius: f64,
+            #[serde(default)] arc_segments: Option<usize>,
+            #[serde(default)] profile_id: Option<String>,
+            #[serde(default)] standard: Option<String>,
+        },
+        Custom { outer: Vec<[f64; 2]>, #[serde(default)] holes: Vec<Vec<[f64; 2]>> },
+    }
+
+    let req: Request = serde_json::from_str(json)
+        .map_err(|e| JsValue::from_str(&format!("Parse error: {e}")))?;
+    let segs = |o: Option<usize>| o.unwrap_or(cat::DEFAULT_ARC_SEGMENTS);
+    // A `profileId` is what makes an outline a catalogue profile rather than a
+    // shape the user drew; the standard travels with it so provenance survives
+    // into the digest.
+    let catalogue_source = |id: Option<String>, std_: Option<String>, default_std: &str, shape: &str| {
+        match id {
+            Some(profile_id) => cat::GeometrySource::Catalogue {
+                profile_id,
+                standard: std_.unwrap_or_else(|| default_std.into()),
+            },
+            None => cat::GeometrySource::Parametric { shape: shape.into() },
+        }
+    };
+
+    let geometry = match req {
+        Request::Rect { b, h } => cat::rectangle(b, h),
+        Request::Circle { d, arc_segments } => cat::solid_circle(d, segs(arc_segments)),
+        Request::Chs { d, t, arc_segments } => cat::circular_hollow(d, t, segs(arc_segments)),
+        Request::ISection { h, b, tw, tf, root_radius, arc_segments, profile_id, standard } => {
+            let source = match profile_id {
+                Some(id) => cat::GeometrySource::Catalogue {
+                    profile_id: id,
+                    standard: standard.unwrap_or_else(|| "EN 10365".into()),
+                },
+                None => cat::GeometrySource::Parametric { shape: "i".into() },
+            };
+            cat::i_section(h, b, tw, tf, root_radius, segs(arc_segments), source)
+        }
+        Request::Ipn { h, b, tw, tf, arc_segments, profile_id, standard } => {
+            cat::ipn_section(h, b, tw, tf, segs(arc_segments),
+                catalogue_source(profile_id, standard, "DIN 1025-1", "ipn"))
+        }
+        Request::Upn { h, b, tw, tf, arc_segments, profile_id, standard } => {
+            cat::upn_section(h, b, tw, tf, segs(arc_segments),
+                catalogue_source(profile_id, standard, "DIN 1025-5", "upn"))
+        }
+        Request::Tee { h, b, tw, tf, root_radius, toe_radius, arc_segments, profile_id, standard } => {
+            cat::tee_section_filleted(h, b, tw, tf, root_radius, toe_radius, segs(arc_segments),
+                catalogue_source(profile_id, standard, "IRAM-IAS U 500-561", "tee"))
+        }
+        Request::Angle { h, b, t, root_radius, toe_radius, arc_segments, profile_id, standard } => {
+            cat::angle_section_filleted(h, b, t, root_radius, toe_radius, segs(arc_segments),
+                catalogue_source(profile_id, standard, "EN 10056-1", "angle"))
+        }
+        Request::Channel { h, b, tw, tf, slope, root_radius, toe_radius, taper_ref,
+                           arc_segments, profile_id, standard } => {
+            cat::tapered_channel(h, b, tw, tf, slope, root_radius, toe_radius,
+                taper_ref.unwrap_or(tw + (b - tw) / 2.0), segs(arc_segments),
+                catalogue_source(profile_id, standard, "IRAM-IAS U 500-509-4", "channel"))
+        }
+        Request::Rhs { b, h, t, corner_radius, arc_segments, profile_id, standard } => {
+            cat::rectangular_hollow_rounded(b, h, t, corner_radius, segs(arc_segments),
+                catalogue_source(profile_id, standard, "IRAM-IAS U 500-218", "rhs"))
+        }
+        Request::Custom { outer, holes } => cat::custom(outer, holes),
+    }
+    .map_err(|e| JsValue::from_str(&e))?;
+
+    #[derive(serde::Serialize)]
+    #[serde(rename_all = "camelCase")]
+    struct Response {
+        geometry: cat::CanonicalGeometry,
+        digest: String,
+        properties: section::SectionProperties,
+    }
+
+    let properties = section::analyze_section(&section::SectionInput {
+        polygons: geometry.polygons.clone(),
+        modular_ratios: Default::default(),
+    })
+    .map_err(|e| JsValue::from_str(&e))?;
+
+    serde_json::to_string(&Response { digest: geometry.digest(), geometry, properties })
+        .map_err(|e| JsValue::from_str(&format!("Serialize error: {e}")))
+}
+
+/// Axial and unsymmetrical-bending stress over canonical geometry.
+///
+/// Uses the complete centroidal inertia tensor including `Iyz`, so angles,
+/// channels and arbitrary asymmetric polygons are handled correctly rather
+/// than being treated as if their geometric axes were principal.
+///
+/// The response echoes the geometry digest so a caller can prove the drawing
+/// and the numbers came from the same section.
+#[wasm_bindgen]
+pub fn analyze_section_bending(json: &str) -> Result<String, JsValue> {
+    use section::bending::{analyze_bending, SectionForces};
+    use section::catalogue::CanonicalGeometry;
+
+    #[derive(serde::Deserialize)]
+    #[serde(rename_all = "camelCase")]
+    struct Request {
+        geometry: CanonicalGeometry,
+        #[serde(default)]
+        n: f64,
+        #[serde(default)]
+        my: f64,
+        #[serde(default)]
+        mz: f64,
+        /// When set, `my`/`mz` are element-local and are rotated into section
+        /// coordinates by the geometry's own rotation.
+        #[serde(default)]
+        forces_are_local: bool,
+    }
+
+    let req: Request = serde_json::from_str(json)
+        .map_err(|e| JsValue::from_str(&format!("Parse error: {e}")))?;
+
+    let forces = if req.forces_are_local {
+        SectionForces::from_local(req.n, req.my, req.mz, req.geometry.rotation)
+    } else {
+        SectionForces { n: req.n, my: req.my, mz: req.mz }
+    };
+
+    let result = analyze_bending(&req.geometry.polygons, forces)
+        .map_err(|e| JsValue::from_str(&e))?;
+
+    #[derive(serde::Serialize)]
+    #[serde(rename_all = "camelCase")]
+    struct Response {
+        #[serde(flatten)]
+        result: section::bending::BendingResult,
+        digest: String,
+        geometry_version: u32,
+    }
+
+    serde_json::to_string(&Response {
+        digest: req.geometry.digest(),
+        geometry_version: req.geometry.version,
+        result,
+    })
+    .map_err(|e| JsValue::from_str(&format!("Serialize error: {e}")))
+}
+
+/// Digest, version and provenance of a canonical geometry.
+///
+/// Exists so the drawing layer can assert it is rendering the same section the
+/// numerical path analysed, without recomputing the geometry itself.
+#[wasm_bindgen]
+pub fn section_geometry_digest(json: &str) -> Result<String, JsValue> {
+    use section::catalogue::CanonicalGeometry;
+    let g: CanonicalGeometry = serde_json::from_str(json)
+        .map_err(|e| JsValue::from_str(&format!("Parse error: {e}")))?;
+
+    #[derive(serde::Serialize)]
+    #[serde(rename_all = "camelCase")]
+    struct Response {
+        digest: String,
+        version: u32,
+        arc_segments: usize,
+        rotation: f64,
+        source: section::catalogue::GeometrySource,
+        solid_count: usize,
+        hole_count: usize,
+    }
+
+    serde_json::to_string(&Response {
+        digest: g.digest(),
+        version: g.version,
+        arc_segments: g.arc_segments,
+        rotation: g.rotation,
+        solid_count: g.polygons.iter().filter(|p| !p.is_void).count(),
+        hole_count: g.polygons.iter().filter(|p| p.is_void).count(),
+        source: g.source,
+    })
+    .map_err(|e| JsValue::from_str(&format!("Serialize error: {e}")))
+}
+
 // ==================== Steel Design Check ====================
 
 /// Check steel members per AISC 360 (LRFD). JSON: SteelCheckInput
@@ -1096,4 +1353,540 @@ mod tests {
         assert!((r1.rz + r2.rz - 10.0).abs() < 0.01);
         assert!((r1.rz - 5.0).abs() < 0.01);
     }
+
+    /// Barycentric locate over a field export's mesh: index of the triangle
+    /// containing `p`, or the nearest by centroid — the same contract as
+    /// `SectionMesh::locate`, re-implemented here so the test exercises the
+    /// exported nodes/triangles rather than the internal mesh.
+    fn locate_field(nodes: &[[f64; 2]], triangles: &[[usize; 3]], p: [f64; 2]) -> usize {
+        let mut best: Option<(f64, usize)> = None;
+        for (i, &t) in triangles.iter().enumerate() {
+            let [a, b, c] = [nodes[t[0]], nodes[t[1]], nodes[t[2]]];
+            let d = (b[0] - a[0]) * (c[1] - a[1]) - (c[0] - a[0]) * (b[1] - a[1]);
+            if d.abs() > 0.0 {
+                let l1 = ((b[0] - p[0]) * (c[1] - p[1]) - (c[0] - p[0]) * (b[1] - p[1])) / d;
+                let l2 = ((c[0] - p[0]) * (a[1] - p[1]) - (a[0] - p[0]) * (c[1] - p[1])) / d;
+                let l3 = 1.0 - l1 - l2;
+                if l1 >= -1e-9 && l2 >= -1e-9 && l3 >= -1e-9 {
+                    return i;
+                }
+            }
+            let cy = (a[0] + b[0] + c[0]) / 3.0 - p[0];
+            let cz = (a[1] + b[1] + c[1]) / 3.0 - p[1];
+            let dist = cy * cy + cz * cz;
+            if best.map_or(true, |(d0, _)| dist < d0) {
+                best = Some((dist, i));
+            }
+        }
+        best.unwrap().1
+    }
+
+    fn i_section_geometry() -> serde_json::Value {
+        let built = super::build_section_geometry(
+            &serde_json::json!({
+                "kind": "iSection", "h": 0.3, "b": 0.15, "tw": 0.007, "tf": 0.01,
+                "rootRadius": 0.012
+            })
+            .to_string(),
+        )
+        .unwrap();
+        let v: serde_json::Value = serde_json::from_str(&built).unwrap();
+        v["geometry"].clone()
+    }
+
+    #[test]
+    fn section_shear_field_matches_point_query() {
+        let geometry = i_section_geometry();
+        // The last point is deliberately OUTSIDE the section: both paths must
+        // then agree through the nearest-triangle fallback, which is the whole
+        // reason locate has one. (Interior points must sit strictly inside a
+        // triangle — on a shared edge, float rounding may legitimately pick
+        // different neighbours in the two frames, and tau is piecewise
+        // constant per triangle.)
+        for p in [[0.03, 0.10], [-0.05, -0.12], [0.0, 0.0], [0.25, 0.25]] {
+            let point = super::analyze_section_shear(
+                &serde_json::json!({ "geometry": geometry, "at": p }).to_string(),
+            )
+            .unwrap();
+            let point: serde_json::Value = serde_json::from_str(&point).unwrap();
+            let field = super::analyze_section_shear_field(
+                &serde_json::json!({ "geometry": geometry }).to_string(),
+            )
+            .unwrap();
+            let field: serde_json::Value = serde_json::from_str(&field).unwrap();
+
+            let nodes: Vec<[f64; 2]> = serde_json::from_value(field["nodes"].clone()).unwrap();
+            let triangles: Vec<[usize; 3]> =
+                serde_json::from_value(field["triangles"].clone()).unwrap();
+            let i = locate_field(&nodes, &triangles, p);
+
+            for axis in ["vy", "vz"] {
+                let tau: Vec<[f64; 2]> =
+                    serde_json::from_value(field[axis]["tau"].clone()).unwrap();
+                let at: [f64; 2] = serde_json::from_value(point[axis]["at"].clone()).unwrap();
+                for k in 0..2 {
+                    let denom = at[k].abs().max(1.0);
+                    assert!(
+                        ((tau[i][k] - at[k]) / denom).abs() < 1e-9,
+                        "{axis} at {p:?}: field={} point={}",
+                        tau[i][k],
+                        at[k]
+                    );
+                }
+                let tm0 = field[axis]["tauMax"].as_f64().unwrap();
+                let tm1 = point[axis]["tauMax"].as_f64().unwrap();
+                assert!((tm0 - tm1).abs() / tm1 < 1e-12, "tauMax {axis}: {tm0} vs {tm1}");
+            }
+        }
+    }
+
+    #[test]
+    fn section_torsion_field_matches_point_query() {
+        let geometry = i_section_geometry();
+        // Last point is outside the section on purpose — see the shear test.
+        for p in [[0.03, 0.10], [-0.05, -0.12], [0.0, 0.0], [0.25, 0.25]] {
+            let point = super::analyze_section_torsion(
+                &serde_json::json!({ "geometry": geometry, "at": p }).to_string(),
+            )
+            .unwrap();
+            let point: serde_json::Value = serde_json::from_str(&point).unwrap();
+            let field = super::analyze_section_torsion_field(
+                &serde_json::json!({ "geometry": geometry }).to_string(),
+            )
+            .unwrap();
+            let field: serde_json::Value = serde_json::from_str(&field).unwrap();
+
+            let nodes: Vec<[f64; 2]> = serde_json::from_value(field["nodes"].clone()).unwrap();
+            let triangles: Vec<[usize; 3]> =
+                serde_json::from_value(field["triangles"].clone()).unwrap();
+            let tau: Vec<[f64; 2]> = serde_json::from_value(field["tau"].clone()).unwrap();
+            let at: [f64; 2] = serde_json::from_value(point["at"].clone()).unwrap();
+            let i = locate_field(&nodes, &triangles, p);
+            for k in 0..2 {
+                let denom = at[k].abs().max(1.0);
+                assert!(
+                    ((tau[i][k] - at[k]) / denom).abs() < 1e-9,
+                    "torsion at {p:?}: field={} point={}",
+                    tau[i][k],
+                    at[k]
+                );
+            }
+            let j0 = field["j"].as_f64().unwrap();
+            let j1 = point["j"].as_f64().unwrap();
+            assert!((j0 - j1).abs() / j1 < 1e-12, "j: {j0} vs {j1}");
+        }
+    }
+}
+
+/// Shared prologue of the mesh-based section exports: analyse the polygons,
+/// normalise to a ~100-unit frame, and mesh.
+///
+/// The caller's units are its own business — the web side works in metres, so
+/// a section is 0.3 across and its target triangle area is ~1e-6 — and a
+/// Delaunay refiner carries absolute robustness tolerances that such small
+/// coordinates walk straight into, yielding a mesh far coarser than asked for
+/// and a J tens of percent low. Scaling the outline so its largest dimension
+/// is ~100 units makes the result independent of the caller's units; every
+/// quantity then scales back by its own power of `s` (J by s⁴, stress by s²,
+/// Cw by s⁶, lengths by s).
+///
+/// Returns the mesh in the scaled frame, the scale factor, and the section
+/// properties in the CALLER's units.
+fn normalize_and_mesh(
+    geometry: &section::catalogue::CanonicalGeometry,
+    max_area: Option<f64>,
+) -> Result<(section::mesh::SectionMesh, f64, section::SectionProperties), JsValue> {
+    use section::mesh::{mesh_section, MeshParams};
+
+    let props = section::analyze_section(&section::SectionInput {
+        polygons: geometry.polygons.clone(),
+        modular_ratios: Default::default(),
+    })
+    .map_err(|e| JsValue::from_str(&e))?;
+
+    let extent = geometry
+        .polygons
+        .iter()
+        .flat_map(|p| p.vertices.iter())
+        .fold(0.0_f64, |m, v| m.max(v[0].abs()).max(v[1].abs()));
+    if !(extent > 0.0) || !extent.is_finite() {
+        return Err(JsValue::from_str("geometry has no finite extent"));
+    }
+    let scale = 100.0 / extent;
+
+    let mut scaled = geometry.polygons.clone();
+    for poly in &mut scaled {
+        for v in &mut poly.vertices {
+            v[0] *= scale;
+            v[1] *= scale;
+        }
+    }
+
+    let mut params = MeshParams::default();
+    // Roughly two thousand triangles: J converges at the field's rate rather
+    // than the gradient's, so this is ample and keeps the solve within a few
+    // milliseconds — which matters, because this runs per model section.
+    let scaled_area = props.a * scale * scale;
+    params.max_area = max_area.map(|a| a * scale * scale).unwrap_or(scaled_area / 2000.0);
+
+    let mesh = mesh_section(&scaled, &params).map_err(|e| JsValue::from_str(&e))?;
+    Ok((mesh, scale, props))
+}
+
+/// Mesh nodes serialised for a field export: centroid-relative, in the
+/// caller's units, so a query point in that same frame needs no shift.
+fn field_nodes(mesh: &section::mesh::SectionMesh, scale: f64, yc: f64, zc: f64) -> Vec<[f64; 2]> {
+    mesh.nodes
+        .iter()
+        .map(|n| [n[0] / scale - yc, n[1] / scale - zc])
+        .collect()
+}
+
+/// Saint-Venant torsion constant and shear field for canonical geometry.
+///
+/// This is what retires the `Iz * 0.001` placeholder. It is a real solve — mesh
+/// the section, solve Prandtl's stress function, integrate — so it costs
+/// milliseconds rather than microseconds and is meant to be computed once per
+/// section and cached, not called per element.
+///
+/// Handles closed sections as well as open ones: the unknown constant on each
+/// hole boundary is fixed by Bredt's circulation condition.
+#[wasm_bindgen]
+pub fn analyze_section_torsion(json: &str) -> Result<String, JsValue> {
+    use section::poisson::SolveStrategy;
+
+    #[derive(serde::Deserialize)]
+    #[serde(rename_all = "camelCase", deny_unknown_fields)]
+    struct Request {
+        geometry: section::catalogue::CanonicalGeometry,
+        /// Largest triangle area, in the geometry's own units squared. Omitted
+        /// means "size it from the section", which is what callers should do.
+        #[serde(default)]
+        max_area: Option<f64>,
+        /// Optional query point, CENTROID-RELATIVE, in the caller's units.
+        #[serde(default)]
+        at: Option<[f64; 2]>,
+    }
+
+    let req: Request = serde_json::from_str(json)
+        .map_err(|e| JsValue::from_str(&format!("Parse error: {e}")))?;
+
+    let (mesh, scale, props) = normalize_and_mesh(&req.geometry, req.max_area)?;
+    let mut res = section::torsion::solve_torsion(&mesh, SolveStrategy::Sparse)
+        .map_err(|e| JsValue::from_str(&e))?;
+    // Back to the caller's units: J is L^4, shear under unit twist rate is L.
+    res.j /= scale.powi(4);
+    res.tau_max /= scale;
+
+    #[derive(serde::Serialize)]
+    #[serde(rename_all = "camelCase")]
+    struct Response {
+        j: f64,
+        /// Peak shear under unit twist rate, for scaling a real state.
+        tau_max: f64,
+        /// `[tau_xy, tau_xz]` at the query point under unit twist rate.
+        #[serde(skip_serializing_if = "Option::is_none")]
+        at: Option<[f64; 2]>,
+        triangles: usize,
+        residual: f64,
+    }
+    let at = req.at.and_then(|p| {
+        mesh.locate([p[0] * scale + props.yc * scale, p[1] * scale + props.zc * scale])
+            .map(|i| [res.tau[i][0] / scale, res.tau[i][1] / scale])
+    });
+    serde_json::to_string(&Response {
+        j: res.j,
+        tau_max: res.tau_max,
+        at,
+        triangles: mesh.triangles.len(),
+        residual: res.residual,
+    })
+    .map_err(|e| JsValue::from_str(&format!("Serialize error: {e}")))
+}
+
+/// The torsion solve as a reusable field: mesh plus the per-triangle shear
+/// under unit twist rate.
+///
+/// `analyze_section_torsion` answers ONE query point per mesh-and-solve; a
+/// caller sweeping many points (the stress panel's fibre slider, at one call
+/// per drag tick) would pay the full solve for every one of them. This export
+/// returns the solved field once — the caller caches it per geometry digest
+/// and locates triangles locally, which is free by comparison.
+///
+/// Nodes are centroid-relative and in the caller's units, and `tau` is already
+/// scaled back to those units, so a query needs no frame arithmetic at all.
+#[wasm_bindgen]
+pub fn analyze_section_torsion_field(json: &str) -> Result<String, JsValue> {
+    use section::poisson::SolveStrategy;
+
+    #[derive(serde::Deserialize)]
+    #[serde(rename_all = "camelCase", deny_unknown_fields)]
+    struct Request {
+        geometry: section::catalogue::CanonicalGeometry,
+        #[serde(default)]
+        max_area: Option<f64>,
+    }
+
+    let req: Request = serde_json::from_str(json)
+        .map_err(|e| JsValue::from_str(&format!("Parse error: {e}")))?;
+
+    let (mesh, scale, props) = normalize_and_mesh(&req.geometry, req.max_area)?;
+    let res = section::torsion::solve_torsion(&mesh, SolveStrategy::Sparse)
+        .map_err(|e| JsValue::from_str(&e))?;
+
+    #[derive(serde::Serialize)]
+    #[serde(rename_all = "camelCase")]
+    struct Response {
+        j: f64,
+        tau_max: f64,
+        /// Mesh nodes, centroid-relative, in the caller's units.
+        nodes: Vec<[f64; 2]>,
+        /// Triangles as node indices.
+        triangles: Vec<[usize; 3]>,
+        /// `[tau_xy, tau_xz]` per triangle under unit twist rate, in the
+        /// caller's units.
+        tau: Vec<[f64; 2]>,
+        residual: f64,
+    }
+    serde_json::to_string(&Response {
+        // J is L⁴, shear under unit twist rate is L.
+        j: res.j / scale.powi(4),
+        tau_max: res.tau_max / scale,
+        nodes: field_nodes(&mesh, scale, props.yc, props.zc),
+        triangles: mesh.triangles.clone(),
+        tau: res.tau.iter().map(|t| [t[0] / scale, t[1] / scale]).collect(),
+        residual: res.residual,
+    })
+    .map_err(|e| JsValue::from_str(&format!("Serialize error: {e}")))
+}
+
+/// Transverse shear over canonical geometry, for unit forces on both axes.
+///
+/// This is what lets angles, closed tubes and arbitrary polygons report a shear
+/// stress at all: Jourawski's `V*Q/(I*b)` needs one well-defined width and they
+/// have none, so the legacy path refused them outright.
+///
+/// Like torsion, it meshes and solves, so it is a per-section cost meant to be
+/// cached rather than a per-query one.
+#[wasm_bindgen]
+pub fn analyze_section_shear(json: &str) -> Result<String, JsValue> {
+    use section::poisson::SolveStrategy;
+    use section::shear::ShearInertia;
+
+    #[derive(serde::Deserialize)]
+    #[serde(rename_all = "camelCase", deny_unknown_fields)]
+    struct Request {
+        geometry: section::catalogue::CanonicalGeometry,
+        #[serde(default)]
+        max_area: Option<f64>,
+        /// Optional query point, CENTROID-RELATIVE, in the caller's units.
+        #[serde(default)]
+        at: Option<[f64; 2]>,
+    }
+
+    let req: Request = serde_json::from_str(json)
+        .map_err(|e| JsValue::from_str(&format!("Parse error: {e}")))?;
+
+    // Same unit normalisation as torsion, and for the same reason. Shear
+    // stress is force over area, so it scales back by `s^2`.
+    let (mesh, scale, props) = normalize_and_mesh(&req.geometry, req.max_area)?;
+    let res = section::shear::solve_shear(
+        &mesh,
+        [props.yc * scale, props.zc * scale],
+        ShearInertia { iy: props.iy * scale.powi(4), iz: props.iz * scale.powi(4) },
+        SolveStrategy::Sparse,
+    )
+    .map_err(|e| JsValue::from_str(&e))?;
+
+    #[derive(serde::Serialize)]
+    #[serde(rename_all = "camelCase")]
+    struct Axis {
+        tau_max: f64,
+        kappa: f64,
+        /// `[tau_xy, tau_xz]` at the query point, per unit force. Absent when
+        /// no point was asked for.
+        #[serde(skip_serializing_if = "Option::is_none")]
+        at: Option<[f64; 2]>,
+    }
+    #[derive(serde::Serialize)]
+    #[serde(rename_all = "camelCase")]
+    struct Response {
+        vy: Axis,
+        vz: Axis,
+        /// Shear centre, centroid-relative, in the caller's units.
+        shear_centre: [f64; 2],
+        triangles: usize,
+        residual: f64,
+    }
+    // Unit force over scaled geometry gives stress in scaled units; a stress is
+    // force per area, so undo `s^2`.
+    let s2 = scale * scale;
+    // The query arrives centroid-relative; the mesh is in absolute scaled
+    // coordinates, so shift it onto the centroid before locating.
+    let located = req.at.and_then(|p| {
+        mesh.locate([p[0] * scale + props.yc * scale, p[1] * scale + props.zc * scale])
+    });
+    let at_of = |f: &section::shear::ShearField| {
+        located.map(|i| [f.tau[i][0] * s2, f.tau[i][1] * s2])
+    };
+    serde_json::to_string(&Response {
+        vy: Axis { tau_max: res.vy.tau_max * s2, kappa: res.vy.kappa, at: at_of(&res.vy) },
+        vz: Axis { tau_max: res.vz.tau_max * s2, kappa: res.vz.kappa, at: at_of(&res.vz) },
+        // A length, so it scales back by `s` alone.
+        shear_centre: [res.shear_centre[0] / scale, res.shear_centre[1] / scale],
+        triangles: mesh.triangles.len(),
+        residual: res.residual,
+    })
+    .map_err(|e| JsValue::from_str(&format!("Serialize error: {e}")))
+}
+
+/// The shear solve as a reusable field: mesh plus the per-triangle stress for
+/// a unit force on each axis.
+///
+/// Same motive as `analyze_section_torsion_field`: `analyze_section_shear`
+/// answers one query point per mesh-and-solve, and a sweeping caller (the
+/// stress panel's fibre slider) would re-solve per drag tick. Cache this per
+/// geometry digest and locate triangles locally instead. Nodes are
+/// centroid-relative in the caller's units and `tau` is already scaled back,
+/// so a query needs no frame arithmetic.
+#[wasm_bindgen]
+pub fn analyze_section_shear_field(json: &str) -> Result<String, JsValue> {
+    use section::poisson::SolveStrategy;
+    use section::shear::ShearInertia;
+
+    #[derive(serde::Deserialize)]
+    #[serde(rename_all = "camelCase", deny_unknown_fields)]
+    struct Request {
+        geometry: section::catalogue::CanonicalGeometry,
+        #[serde(default)]
+        max_area: Option<f64>,
+    }
+
+    let req: Request = serde_json::from_str(json)
+        .map_err(|e| JsValue::from_str(&format!("Parse error: {e}")))?;
+
+    let (mesh, scale, props) = normalize_and_mesh(&req.geometry, req.max_area)?;
+    let res = section::shear::solve_shear(
+        &mesh,
+        [props.yc * scale, props.zc * scale],
+        ShearInertia { iy: props.iy * scale.powi(4), iz: props.iz * scale.powi(4) },
+        SolveStrategy::Sparse,
+    )
+    .map_err(|e| JsValue::from_str(&e))?;
+
+    #[derive(serde::Serialize)]
+    #[serde(rename_all = "camelCase")]
+    struct AxisField {
+        tau_max: f64,
+        kappa: f64,
+        /// `[tau_xy, tau_xz]` per triangle, per unit force, in the caller's units.
+        tau: Vec<[f64; 2]>,
+    }
+    #[derive(serde::Serialize)]
+    #[serde(rename_all = "camelCase")]
+    struct Response {
+        vy: AxisField,
+        vz: AxisField,
+        /// Shear centre, centroid-relative, in the caller's units.
+        shear_centre: [f64; 2],
+        /// Mesh nodes, centroid-relative, in the caller's units.
+        nodes: Vec<[f64; 2]>,
+        /// Triangles as node indices.
+        triangles: Vec<[usize; 3]>,
+        residual: f64,
+    }
+    // Unit force over scaled geometry gives stress in scaled units; a stress is
+    // force per area, so undo `s^2`.
+    let s2 = scale * scale;
+    let axis_field = |f: &section::shear::ShearField| AxisField {
+        tau_max: f.tau_max * s2,
+        kappa: f.kappa,
+        tau: f.tau.iter().map(|t| [t[0] * s2, t[1] * s2]).collect(),
+    };
+    serde_json::to_string(&Response {
+        vy: axis_field(&res.vy),
+        vz: axis_field(&res.vz),
+        shear_centre: [res.shear_centre[0] / scale, res.shear_centre[1] / scale],
+        nodes: field_nodes(&mesh, scale, props.yc, props.zc),
+        triangles: mesh.triangles.clone(),
+        residual: res.residual,
+    })
+    .map_err(|e| JsValue::from_str(&format!("Serialize error: {e}")))
+}
+
+/// Plastic section moduli for canonical geometry.
+///
+/// `Z` is what a limit-state check needs, and it is taken about the PLASTIC
+/// neutral axis — the equal-area line, not the centroid. The two coincide only
+/// for a doubly-symmetric section; for a tee or a channel, using the centroid
+/// understates the result.
+#[wasm_bindgen]
+pub fn analyze_section_plastic(json: &str) -> Result<String, JsValue> {
+    #[derive(serde::Deserialize)]
+    #[serde(rename_all = "camelCase", deny_unknown_fields)]
+    struct Request {
+        geometry: section::catalogue::CanonicalGeometry,
+        #[serde(default)]
+        max_area: Option<f64>,
+    }
+
+    let req: Request = serde_json::from_str(json)
+        .map_err(|e| JsValue::from_str(&format!("Parse error: {e}")))?;
+
+    let (mesh, scale, props) = normalize_and_mesh(&req.geometry, req.max_area)?;
+    let z = section::plastic::solve_plastic(&mesh).map_err(|e| JsValue::from_str(&e))?;
+
+    // Warping needs the shear centre as its pole, so it comes from the shear
+    // solve. A shear failure is a real numerical problem and must surface —
+    // only the WARPING solve may quietly decline: a closed section has no
+    // meaningful Cw, and reporting that as absent rather than as an error is
+    // honest, because a tube having no warping constant is an answer.
+    let cw = {
+        use section::shear::{solve_shear, ShearInertia};
+        let c = [props.yc * scale, props.zc * scale];
+        let sh = solve_shear(
+            &mesh, c,
+            ShearInertia { iy: props.iy * scale.powi(4), iz: props.iz * scale.powi(4) },
+            section::poisson::SolveStrategy::Sparse,
+        )
+        .map_err(|e| JsValue::from_str(&format!("shear solve failed on the way to Cw: {e}")))?;
+        section::warping::solve_warping(
+            &mesh, c, sh.shear_centre, section::poisson::SolveStrategy::Sparse,
+        )
+        .ok()
+        // Cw is a sixth moment.
+        .map(|w| w.cw / scale.powi(6))
+    };
+
+    #[derive(serde::Serialize)]
+    #[serde(rename_all = "camelCase")]
+    struct Response {
+        zy: f64,
+        zz: f64,
+        /// Elastic moduli, so the caller has the shape factor without a second call.
+        sy: f64,
+        sz: f64,
+        pna_z: f64,
+        pna_y: f64,
+        /// Warping constant. Absent for a closed section, where it is negligible.
+        #[serde(skip_serializing_if = "Option::is_none")]
+        cw: Option<f64>,
+    }
+    // Z is a third moment, so it scales back by `s^3`; the neutral axes are
+    // lengths and are returned centroid-relative.
+    let s3 = scale.powi(3);
+    let half_z = req.geometry.polygons.iter().flat_map(|p| p.vertices.iter())
+        .fold(0.0_f64, |m, v| m.max((v[1] - props.zc).abs()));
+    let half_y = req.geometry.polygons.iter().flat_map(|p| p.vertices.iter())
+        .fold(0.0_f64, |m, v| m.max((v[0] - props.yc).abs()));
+    serde_json::to_string(&Response {
+        zy: z.zy / s3,
+        zz: z.zz / s3,
+        sy: if half_z > 0.0 { props.iy / half_z } else { 0.0 },
+        sz: if half_y > 0.0 { props.iz / half_y } else { 0.0 },
+        pna_z: z.pna_z / scale - props.zc,
+        pna_y: z.pna_y / scale - props.yc,
+        cw,
+    })
+    .map_err(|e| JsValue::from_str(&format!("Serialize error: {e}")))
 }

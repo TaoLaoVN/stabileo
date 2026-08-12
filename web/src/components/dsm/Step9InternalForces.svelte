@@ -160,19 +160,19 @@
 
 <style>
   .step { display: flex; flex-direction: column; gap: 0.6rem; }
-  .explanation { font-size: 0.72rem; color: #bbb; line-height: 1.5; }
+  .explanation { font-size: 0.72rem; color: var(--st-text-2); line-height: 1.5; }
   .explanation p { margin: 0; }
 
   .elem-selector {
     display: flex; align-items: center; gap: 0.5rem;
-    font-size: 0.7rem; color: #ccc;
+    font-size: 0.7rem; color: var(--st-text-2);
   }
   .elem-selector select {
-    background: #16213e; color: #eee; border: 1px solid #0f3460;
+    background: var(--st-surface-2); color: var(--st-text); border: 1px solid var(--st-surface-3);
     border-radius: 3px; padding: 0.2rem 0.4rem; font-size: 0.65rem;
   }
 
-  .separator { border-top: 1px solid #0f3460; margin: 0.2rem 0; }
+  .separator { border-top: 1px solid var(--st-surface-3); margin: 0.2rem 0; }
 
   .force-summary { margin-top: 0.3rem; }
   .summary-table {
@@ -180,14 +180,14 @@
     font-size: 0.65rem; font-family: 'Courier New', monospace;
   }
   .summary-table th {
-    background: #16213e; color: #888; padding: 0.2rem 0.4rem;
+    background: var(--st-surface-2); color: var(--st-text-3); padding: 0.2rem 0.4rem;
     font-weight: 600; text-align: left; font-size: 0.6rem;
   }
   .summary-table td {
-    padding: 0.2rem 0.4rem; border-bottom: 1px solid #1e1e3a;
+    padding: 0.2rem 0.4rem; border-bottom: 1px solid var(--st-surface-2);
     text-align: right; font-weight: 600;
   }
-  .summary-table td:first-child { text-align: left; color: #ccc; font-weight: 400; }
-  .pos { color: #4ecdc4; }
-  .neg { color: #e94560; }
+  .summary-table td:first-child { text-align: left; color: var(--st-text-2); font-weight: 400; }
+  .pos { color: var(--st-value); }
+  .neg { color: var(--st-accent); }
 </style>

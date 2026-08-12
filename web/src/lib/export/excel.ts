@@ -47,6 +47,11 @@ interface ExcelExportOptions {
   onlyExtras?: boolean;
 }
 
+export const releaseLabel = (r?: { my: boolean; mz: boolean; t: boolean }): string => {
+  if (!r) return '';
+  const parts = [r.my && 'My', r.mz && 'Mz', r.t && 'T'].filter(Boolean);
+  return parts.join('+');
+};
 
 function createSummarySheet(): XLSX.WorkSheet {
   const is3D = isMode3D(uiStore.analysisMode);
@@ -142,7 +147,7 @@ function createElementsSheet(): XLSX.WorkSheet {
     t('excel.section'), 'A (m²)', 'Iy (m⁴)',
   ];
   if (is3D) headers.push('Iz (m⁴)', 'J (m⁴)');
-  headers.push(t('excel.hingeI'), t('excel.hingeJ'));
+  headers.push(t('excel.releaseI'), t('excel.releaseJ'));
 
   if (hasResults && is3D) {
     headers.push(
@@ -178,7 +183,7 @@ function createElementsSheet(): XLSX.WorkSheet {
       sec?.name ?? '-', sec?.a ?? 0, sec?.iy ?? sec?.iz ?? 0,
     ];
     if (is3D) row.push(sec?.iz ?? 0, sec?.j ?? 0);
-    row.push(elem.releaseI?.mz === true ? t('excel.yes') : t('excel.no'), elem.releaseJ?.mz === true ? t('excel.yes') : t('excel.no'));
+    row.push(releaseLabel(elem.releaseI), releaseLabel(elem.releaseJ));
 
     if (hasResults && is3D && r3d) {
       const f = r3d.elementForces.find(f => f.elementId === elem.id);

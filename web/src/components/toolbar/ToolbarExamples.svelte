@@ -69,100 +69,96 @@
   ];
 
 
+
+  /**
+   * `flat` — everything open, no accordions.
+   *
+   * These sections collapse because they used to be stacked in one narrow left
+   * column where five of them competed for the same vertical space. In the
+   * ribbon layout only ONE of them is ever mounted, in a panel that already
+   * names it and that the user can widen, so a disclosure triangle just hides
+   * what they explicitly asked to see.
+   */
+  let { flat = false }: { flat?: boolean } = $props();
 </script>
 
-{#if uiStore.analysisMode === 'pro'}
-<!-- PRO mode: only PRO examples -->
-<div class="toolbar-section" data-tour="examples-section">
-  <button class="section-toggle" onclick={() => showExamples = !showExamples}>
-    {showExamples ? '▾' : '▸'} {t('examples.titlePro')}
-  </button>
-  {#if showExamples}
-    <div class="examples-list">
-      {#each examplesPro as ex}
-        <button class="example-item" onclick={async () => { await modelStore.loadExample(ex.id); resultsStore.clear(); resultsStore.clear3D(); if (uiStore.isMobile) uiStore.leftDrawerOpen = false; setTimeout(() => window.dispatchEvent(new Event('stabileo-zoom-to-fit')), 50); }}>
-          <span class="example-name">{t(ex.nameKey)}</span>
-          <span class="example-desc">{t(ex.descKey)}</span>
-        </button>
-      {/each}
-    </div>
-  {/if}
-</div>
+<!--
+  One structure, not five near-identical mode branches.
 
-{:else if uiStore.analysisMode === '3d'}
-<!-- 3D mode: 2D + 3D example sections -->
-<div data-tour="examples-section" style="display:flex;flex-direction:column;gap:1rem">
-<div class="toolbar-section">
-  <button class="section-toggle" onclick={() => showExamples = !showExamples}>
-    {showExamples ? '▾' : '▸'} {t('examples.title2d')}
-  </button>
-  {#if showExamples}
-    <div class="examples-list">
-      {#each examples as ex}
-        <button class="example-item" onclick={async () => { await modelStore.loadExample(ex.id); resultsStore.clear(); resultsStore.clear3D(); if (uiStore.isMobile) uiStore.leftDrawerOpen = false; setTimeout(() => window.dispatchEvent(new Event('stabileo-zoom-to-fit')), 50); }}>
-          <span class="example-name">{t(ex.nameKey)}</span>
-          <span class="example-desc">{t(ex.descKey)}</span>
-        </button>
-      {/each}
-    </div>
-  {/if}
-</div>
+  The markup carried a separate copy per mode, which is how the 3D list came to
+  be gated on `showExamples3D` alone while every other list was gated on
+  `flat || show…` — so in the right panel, in 3D, the 3D examples never
+  appeared and the user was offered only the 2D ones.
 
-<div class="toolbar-section">
-  <button class="section-toggle" onclick={() => showExamples3D = !showExamples3D}>
-    {showExamples3D ? '▾' : '▸'} {t('examples.title3d')}
-  </button>
-  {#if showExamples3D}
-    <div class="examples-list">
-      {#each examples3D as ex}
-        <button class="example-item" onclick={async () => { await modelStore.loadExample(ex.id); resultsStore.clear(); resultsStore.clear3D(); if (uiStore.isMobile) uiStore.leftDrawerOpen = false; setTimeout(() => window.dispatchEvent(new Event('stabileo-zoom-to-fit')), 50); }}>
-          <span class="example-name">{t(ex.nameKey)}</span>
-          <span class="example-desc">{t(ex.descKey)}</span>
-        </button>
-      {/each}
-    </div>
-  {/if}
-</div>
-</div>
+  Both catalogues are now offered in both modes, under their own headings. A 2D
+  model opens fine in the 3D viewport, and picking a 3D example from 2D switches
+  the viewport with it rather than flattening a space frame into a plane.
+-->
+{#snippet exampleList(items: { id: string; nameKey: string; descKey: string }[], to3D: boolean)}
+  <div class="examples-list">
+    {#each items as ex}
+      <button class="example-item" onclick={async () => {
+        /*
+         * The example decides the mode, in BOTH directions.
+         *
+         * Switching to 3D for a 3D example but never back left a planar model
+         * opened from 2D-in-3D: a three-hinge arch has no out-of-plane
+         * restraint, so the 3D solver correctly called it a mechanism and the
+         * example looked broken. An example carries the mode it was built for.
+         */
+        const want = to3D ? '3d' : '2d';
+        if (uiStore.analysisMode !== want) uiStore.analysisMode = want;
+        await modelStore.loadExample(ex.id);
+        resultsStore.clear();
+        resultsStore.clear3D();
+        if (uiStore.isMobile) uiStore.leftDrawerOpen = false;
+        setTimeout(() => window.dispatchEvent(new Event('stabileo-zoom-to-fit')), 50);
+      }}>
+        <span class="example-name">{t(ex.nameKey)}</span>
+        <span class="example-desc">{t(ex.descKey)}</span>
+      </button>
+    {/each}
+  </div>
+{/snippet}
 
-{:else if uiStore.analysisMode === 'edu'}
-<!-- EDU mode: same 2D examples as basic -->
-<div class="toolbar-section" data-tour="examples-section">
-  <button class="section-toggle" onclick={() => showExamples = !showExamples}>
-    {showExamples ? '▾' : '▸'} {t('examples.title')}
-  </button>
-  {#if showExamples}
-    <div class="examples-list">
-      {#each examples as ex}
-        <button class="example-item" onclick={async () => { await modelStore.loadExample(ex.id); resultsStore.clear(); resultsStore.clear3D(); if (uiStore.isMobile) uiStore.leftDrawerOpen = false; setTimeout(() => window.dispatchEvent(new Event('stabileo-zoom-to-fit')), 50); }}>
-          <span class="example-name">{t(ex.nameKey)}</span>
-          <span class="example-desc">{t(ex.descKey)}</span>
-        </button>
-      {/each}
-    </div>
-  {/if}
-</div>
+{#snippet group(titleKey: string, items: { id: string; nameKey: string; descKey: string }[], to3D: boolean, open: boolean, toggle: () => void)}
+  <div class="toolbar-section">
+    {#if flat}
+      <h3 class="ex-heading">{t(titleKey)}</h3>
+      {@render exampleList(items, to3D)}
+    {:else}
+      <button class="section-toggle" onclick={toggle}>
+        {open ? '▾' : '▸'} {t(titleKey)}
+      </button>
+      {#if open}{@render exampleList(items, to3D)}{/if}
+    {/if}
+  </div>
+{/snippet}
 
-{:else}
-<!-- 2D mode: single examples section -->
-<div class="toolbar-section" data-tour="examples-section">
-  <button class="section-toggle" onclick={() => showExamples = !showExamples}>
-    {showExamples ? '▾' : '▸'} {t('examples.title')}
-  </button>
-  {#if showExamples}
-    <div class="examples-list">
-      {#each examples as ex}
-        <button class="example-item" onclick={async () => { await modelStore.loadExample(ex.id); resultsStore.clear(); resultsStore.clear3D(); if (uiStore.isMobile) uiStore.leftDrawerOpen = false; setTimeout(() => window.dispatchEvent(new Event('stabileo-zoom-to-fit')), 50); }}>
-          <span class="example-name">{t(ex.nameKey)}</span>
-          <span class="example-desc">{t(ex.descKey)}</span>
-        </button>
-      {/each}
-    </div>
+<div data-tour="examples-section" class="ex-groups">
+  {#if uiStore.analysisMode === 'pro'}
+    {@render group('examples.titlePro', examplesPro, false, showExamples, () => showExamples = !showExamples)}
+  {:else if uiStore.analysisMode === '3d'}
+    <!--
+      The catalogue for the mode you are IN goes first. Both are offered in both
+      modes, but in 3D the 3D examples sat under nineteen 2D ones, far enough
+      down the panel to read as an afterthought.
+    -->
+    {@render group('examples.title3d', examples3D, true, showExamples3D, () => showExamples3D = !showExamples3D)}
+    {@render group('examples.title2d', [...examples], false, showExamples, () => showExamples = !showExamples)}
+  {:else}
+    {@render group('examples.title2d', [...examples], false, showExamples, () => showExamples = !showExamples)}
+    {@render group('examples.title3d', examples3D, true, showExamples3D, () => showExamples3D = !showExamples3D)}
   {/if}
 </div>
-{/if}
 
 <style>
+  .ex-groups {
+    display: flex;
+    flex-direction: column;
+    gap: 1rem;
+  }
+
   .toolbar-section {
     display: flex;
     flex-direction: column;
@@ -172,7 +168,7 @@
   .toolbar-section h3 {
     font-size: 0.75rem;
     text-transform: uppercase;
-    color: #888;
+    color: var(--st-text-3);
     letter-spacing: 0.05em;
   }
 
@@ -180,9 +176,9 @@
     width: 100%;
     padding: 0.4rem 0.5rem;
     background: none;
-    border: 1px solid #333;
+    border: 1px solid var(--st-hair);
     border-radius: 4px;
-    color: #aaa;
+    color: var(--st-text-2);
     cursor: pointer;
     font-size: 0.75rem;
     font-weight: 600;
@@ -193,9 +189,45 @@
   }
 
   .section-toggle:hover {
-    background: #1a1a2e;
-    color: #ccc;
-    border-color: #555;
+    background: var(--st-bg);
+    color: var(--st-text);
+    border-color: var(--st-hair-strong);
+  }
+
+  /*
+     In the right panel the list IS the panel's content, so it drops the frame.
+     A bordered, 260 px-tall scroll box made sense in the narrow left sidebar it
+     was written for; inside a 320 px panel it reads as a window within a window,
+     gives up width to its own padding, and scrolls internally while most of the
+     panel below it sits empty.
+  */
+  :global(.basic-panel) .examples-list {
+    max-height: none;
+    overflow-y: visible;
+    border: none;
+    border-radius: 0;
+    padding: 0;
+    gap: 0;
+  }
+
+  :global(.basic-panel) .example-item + .example-item {
+    border-top: 1px solid var(--st-hair);
+  }
+
+  :global(.basic-panel) .example-item {
+    border-radius: 0;
+    padding: 0.45rem 0.35rem;
+  }
+
+  .ex-heading {
+    font-family: var(--st-mono);
+    font-size: 0.66rem;
+    letter-spacing: 0.11em;
+    text-transform: uppercase;
+    color: var(--st-text-2);
+    font-weight: 400;
+    padding-bottom: 0.15rem;
+    border-bottom: 1px solid var(--st-hair);
   }
 
   .examples-list {
@@ -204,7 +236,7 @@
     gap: 2px;
     max-height: 260px;
     overflow-y: auto;
-    border: 1px solid #1a4a7a;
+    border: 1px solid var(--st-hair-strong);
     border-radius: 4px;
     padding: 2px;
   }
@@ -216,14 +248,14 @@
     background: none;
     border: none;
     border-radius: 3px;
-    color: #ccc;
+    color: var(--st-text);
     cursor: pointer;
     text-align: left;
     transition: all 0.15s;
   }
 
   .example-item:hover {
-    background: #1a4a7a;
+    background: var(--st-surface-3);
     color: white;
   }
 
@@ -234,11 +266,11 @@
 
   .example-desc {
     font-size: 0.65rem;
-    color: #777;
+    color: var(--st-text-3);
   }
 
   .example-item:hover .example-desc {
-    color: #aaa;
+    color: var(--st-text-2);
   }
 
   .input-group {
@@ -251,10 +283,10 @@
   .input-group input {
     width: 70px;
     padding: 0.25rem;
-    background: #0f3460;
-    border: 1px solid #1a4a7a;
+    background: var(--st-surface-2);
+    border: 1px solid var(--st-hair-strong);
     border-radius: 4px;
-    color: #eee;
+    color: var(--st-text);
     cursor: pointer;
   }
 
@@ -262,23 +294,23 @@
     flex: 1;
     min-width: 100px;
     padding: 0.25rem;
-    background: #0f3460;
-    border: 1px solid #1a4a7a;
+    background: var(--st-surface-2);
+    border: 1px solid var(--st-hair-strong);
     border-radius: 4px;
-    color: #eee;
+    color: var(--st-text);
     cursor: pointer;
   }
 
   input[type="checkbox"] {
-    accent-color: #e94560;
+    accent-color: var(--st-accent);
   }
 
   .file-btn {
     padding: 0.35rem 0.4rem;
-    background: #0f3460;
-    border: 1px solid #1a4a7a;
+    background: var(--st-surface-2);
+    border: 1px solid var(--st-hair-strong);
     border-radius: 4px;
-    color: #ccc;
+    color: var(--st-text);
     cursor: pointer;
     font-size: 0.75rem;
     text-align: center;
@@ -286,7 +318,7 @@
   }
 
   .file-btn:hover:not(:disabled) {
-    background: #1a4a7a;
+    background: var(--st-surface-3);
     color: white;
   }
 

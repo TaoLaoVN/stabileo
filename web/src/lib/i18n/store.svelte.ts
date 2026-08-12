@@ -133,3 +133,51 @@ export const i18n = {
 	t,
 	setLocale
 };
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Public landing locales
+//
+// The application ships fourteen languages and keeps all of them. The public
+// landing page deliberately offers only two, because only `en` and `es` have a
+// complete `landing.*` dictionary — the other twelve are ~97 keys short each,
+// so `t()`'s silent English fallback renders them as a half-translated page.
+// Offering a language the marketing copy does not actually speak is worse than
+// not offering it.
+//
+// Nothing here mutates the application's locale. A visitor whose browser is set
+// to French reads the landing in English and still gets a French editor.
+// ─────────────────────────────────────────────────────────────────────────────
+
+export const PUBLIC_LOCALES = ['en', 'es'] as const;
+export type PublicLocale = (typeof PUBLIC_LOCALES)[number];
+
+function isPublicLocale(loc: string): loc is PublicLocale {
+	return (PUBLIC_LOCALES as readonly string[]).includes(loc);
+}
+
+/** The active locale if the landing speaks it, English otherwise. */
+function publicLocale(): PublicLocale {
+	return isPublicLocale(_locale) ? _locale : 'en';
+}
+
+/** `t()` constrained to the landing's public locales. */
+export function tPublic(key: string): string {
+	const dict = dicts[publicLocale()];
+	return (dict as any)[key] ?? (dicts.en as any)[key] ?? key;
+}
+
+/** Reactive read-only view of the locale the landing is rendering in. */
+export const publicI18n = {
+	get locale(): PublicLocale {
+		return publicLocale();
+	}
+};
+
+/**
+ * Set the locale from the landing's selector. This is a real, persisted, manual
+ * choice and it applies to the whole application, exactly as the app's own
+ * language selector does.
+ */
+export function setPublicLocale(loc: PublicLocale) {
+	setLocale(loc);
+}

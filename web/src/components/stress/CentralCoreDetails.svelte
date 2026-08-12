@@ -95,14 +95,14 @@
     padding: 3px 0;
     background: none;
     border: none;
-    color: #888;
+    color: var(--st-text-3);
     font-size: 0.68rem;
     text-transform: uppercase;
     letter-spacing: 0.5px;
     cursor: pointer;
     border-bottom: 1px solid rgba(26, 74, 122, 0.3);
   }
-  .ssp-section-toggle:hover { color: #ccc; }
+  .ssp-section-toggle:hover { color: var(--st-text-2); }
   .ssp-chevron { font-size: 0.6rem; width: 10px; }
 
   .ssp-help {
@@ -112,20 +112,20 @@
     width: 13px;
     height: 13px;
     border-radius: 50%;
-    background: rgba(78, 205, 196, 0.12);
-    color: #4ecdc4;
+    background: rgba(127, 212, 204, 0.12);
+    color: var(--st-value);
     font-size: 0.5rem;
     font-weight: 700;
     cursor: help;
     flex-shrink: 0;
-    border: 1px solid rgba(78, 205, 196, 0.25);
+    border: 1px solid rgba(127, 212, 204, 0.25);
     opacity: 0.6;
     transition: opacity 0.15s;
     font-style: normal;
     line-height: 1;
     vertical-align: middle;
   }
-  .ssp-help:hover { opacity: 1; background: rgba(78, 205, 196, 0.25); }
+  .ssp-help:hover { opacity: 1; background: rgba(127, 212, 204, 0.25); }
   .ssp-help-inline { margin-left: auto; }
 
   .nc-detail {
@@ -134,7 +134,7 @@
 
   .nc-desc {
     font-size: 0.68rem;
-    color: #aaa;
+    color: var(--st-text-2);
     margin: 0 0 4px;
     line-height: 1.45;
   }
@@ -147,7 +147,7 @@
 
   .nc-eq-title {
     font-size: 0.65rem;
-    color: #ff8c00;
+    color: var(--st-warn);
     text-transform: uppercase;
     letter-spacing: 0.3px;
     margin-bottom: 3px;
@@ -156,7 +156,7 @@
 
   .nc-eq {
     font-size: 0.65rem;
-    color: #999;
+    color: var(--st-text-3);
     margin: 0 0 3px;
     line-height: 1.4;
   }
@@ -164,7 +164,7 @@
   .nc-formula {
     font-family: 'Courier New', monospace;
     font-size: 0.7rem;
-    color: #ff8c00;
+    color: var(--st-warn);
     background: rgba(255, 140, 0, 0.08);
     border: 1px solid rgba(255, 140, 0, 0.15);
     border-radius: 4px;
@@ -174,7 +174,7 @@
   }
 
   .nc-shape-note {
-    color: #bbb;
+    color: var(--st-text-2);
     font-style: italic;
   }
 
@@ -184,20 +184,20 @@
     gap: 4px;
     margin-bottom: 2px;
     font-size: 0.68rem;
-    color: #aaa;
+    color: var(--st-text-2);
   }
 
   .nc-label {
-    color: #888;
+    color: var(--st-text-3);
     min-width: 60px;
   }
 
   .nc-val {
-    color: #ccc;
+    color: var(--st-text-2);
   }
 
   .nc-val.mono {
     font-family: 'Courier New', monospace;
-    color: #ff8c00;
+    color: var(--st-warn);
   }
 </style>

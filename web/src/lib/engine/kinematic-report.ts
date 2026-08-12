@@ -281,10 +281,10 @@ export function generateKinematicReport(
       explanation = `${elemList} — ${t('kin.hingeFreeEnd')}`;
     } else if (hasRot) {
       ci = j;
-      explanation = `${elemList} — ${t('kin.hingeRotRestraint').replace('{c}', String(j))}`;
+      explanation = `${elemList} — ${t('kin.hingeRotRestraint').replaceAll('{c}', String(j))}`;
     } else {
       ci = Math.min(j, k - 1);
-      explanation = `${elemList} — ${t('kin.hingeFormula').replace('{k}', String(k)).replace('{j}', String(j)).replace('{ci}', String(ci))}`;
+      explanation = `${elemList} — ${t('kin.hingeFormula').replaceAll('{k}', String(k)).replaceAll('{j}', String(j)).replaceAll('{ci}', String(ci))}`;
     }
 
     if (j > 0) {
@@ -305,10 +305,10 @@ export function generateKinematicReport(
     slideDetails.push({
       elemId: sj.elemId, end: sj.end, kind: sj.kind, axis: sj.axis, ci: 1,
       explanation: t('kin.slideExplain')
-        .replace('{elem}', String(sj.elemId))
-        .replace('{end}', sj.end)
-        .replace('{dir}', dir)
-        .replace('{axis}', ax),
+        .replaceAll('{elem}', String(sj.elemId))
+        .replaceAll('{end}', sj.end)
+        .replaceAll('{dir}', dir)
+        .replaceAll('{axis}', ax),
     });
   }
   slideDetails.sort((a, b) => a.elemId - b.elemId || (a.end < b.end ? -1 : 1));
@@ -358,21 +358,21 @@ export function generateKinematicReport(
   let classificationText: string;
   if (degree < 0) {
     classification = 'hypostatic';
-    classificationText = t('kin.classHypostatic').replace('{n}', String(Math.abs(degree))).replace('{s}', Math.abs(degree) > 1 ? t('kin.plural_s') : '');
+    classificationText = t('kin.classHypostatic').replaceAll('{n}', String(Math.abs(degree))).replaceAll('{s}', Math.abs(degree) > 1 ? t('kin.plural_s') : '');
   } else if (hasHiddenMechanism) {
     // g ≥ 0 but rank analysis reveals mechanism → override classification
     classification = 'hypostatic';
     if (degree === 0) {
-      classificationText = t('kin.classHiddenMechZero').replace('{modes}', String(mechanismModes)).replace('{s}', mechanismModes > 1 ? t('kin.plural_s') : '');
+      classificationText = t('kin.classHiddenMechZero').replaceAll('{modes}', String(mechanismModes)).replaceAll('{s}', mechanismModes > 1 ? t('kin.plural_s') : '');
     } else {
-      classificationText = t('kin.classHiddenMechPos').replace('{degree}', String(degree)).replace('{modes}', String(mechanismModes)).replace('{s}', mechanismModes > 1 ? t('kin.plural_s') : '');
+      classificationText = t('kin.classHiddenMechPos').replaceAll('{degree}', String(degree)).replaceAll('{modes}', String(mechanismModes)).replaceAll('{s}', mechanismModes > 1 ? t('kin.plural_s') : '');
     }
   } else if (degree === 0) {
     classification = 'isostatic';
     classificationText = t('kin.classIsostatic');
   } else {
     classification = 'hyperstatic';
-    classificationText = t('kin.classHyperstatic').replace('{degree}', String(degree)).replace('{s}', degree > 1 ? t('kin.plural_s') : '');
+    classificationText = t('kin.classHyperstatic').replaceAll('{degree}', String(degree)).replaceAll('{s}', degree > 1 ? t('kin.plural_s') : '');
   }
 
   // Build detailed unconstrained DOF explanations
@@ -819,14 +819,14 @@ function buildDofBreakdown(
   let summary: string;
   if (status === 'mechanism') {
     if (freeDofs.length > 0) {
-      summary = t('kin.summMechMissing').replace('{dofs}', freeDofs.join(', '));
+      summary = t('kin.summMechMissing').replaceAll('{dofs}', freeDofs.join(', '));
     } else {
       summary = t('kin.summMech');
     }
   } else if (status === 'hyperstatic') {
     const overDofs = lines.filter(l => l.sources.length > 1 && !l.sources.every(s => s.implicit)).map(l => l.dof);
     if (overDofs.length > 0) {
-      summary = t('kin.summHyperOver').replace('{dofs}', overDofs.join(', '));
+      summary = t('kin.summHyperOver').replaceAll('{dofs}', overDofs.join(', '));
     } else {
       summary = t('kin.summHyper');
     }
@@ -1031,7 +1031,7 @@ function buildConstraintDescription(
       const reachedSup = findReachableSupport(ce.elemId, nodeId, thisElemId, nodeElems, supportByNode);
       const typeLabel = ce.type === 'frame' ? t('kin.connRigid') : t('kin.connHinged');
       const hingeNote = ce.hingedAtNode ? ', ' + t('kin.withHinge') : '';
-      const supNote = reachedSup ? ` \u2192 ${t('kin.reachesSupport').replace('{type}', reachedSup.type.toLowerCase()).replace('{node}', String(reachedSup.nodeId))}` : '';
+      const supNote = reachedSup ? ` \u2192 ${t('kin.reachesSupport').replaceAll('{type}', reachedSup.type.toLowerCase()).replaceAll('{node}', String(reachedSup.nodeId))}` : '';
       return `${t('kin.member')} ${ce.elemId} (${typeLabel}${hingeNote})${supNote}`;
     });
     if (support) {
@@ -1045,7 +1045,7 @@ function buildConstraintDescription(
   if (downstream.length > 0) {
     const downIds = downstream.map(ce => `${t('kin.member')} ${ce.elemId}`).join(', ');
     if (support || upstream.length > 0) {
-      parts.push(`(${downIds} ${t('kin.dependsOnChain').replace('{s}', downstream.length > 1 ? t('kin.plural_n') : '')})`);
+      parts.push(`(${downIds} ${t('kin.dependsOnChain').replaceAll('{s}', downstream.length > 1 ? t('kin.plural_n') : '')})`);
     }
     // If there's nothing else, these downstream elements don't help
   }
@@ -1055,7 +1055,7 @@ function buildConstraintDescription(
     parts.push(t('kin.freeEnd'));
   } else if (!support && upstream.length === 0 && downstream.length > 0) {
     const downIds = downstream.map(ce => `${t('kin.member')} ${ce.elemId}`).join(', ');
-    parts.push(`${t('kin.noOwnSupport')} ${downIds} ${t('kin.connectedNoSupport').replace('{s}', downstream.length > 1 ? t('kin.plural_s') : '')}`);
+    parts.push(`${t('kin.noOwnSupport')} ${downIds} ${t('kin.connectedNoSupport').replaceAll('{s}', downstream.length > 1 ? t('kin.plural_s') : '')}`);
   }
 
   // Hinge note
@@ -1148,11 +1148,11 @@ function buildElementExplanation(
 
   if (status === 'hyperstatic') {
     const excess = total - needed;
-    return `${t('kin.node')} ${nodeIInfo.nodeId}: ${nI}. ${t('kin.node')} ${nodeJInfo.nodeId}: ${nJ}. ${t('kin.totalEffective').replace('{total}', String(total)).replace('{needed}', String(needed)).replace('{excess}', String(excess))}`;
+    return `${t('kin.node')} ${nodeIInfo.nodeId}: ${nI}. ${t('kin.node')} ${nodeJInfo.nodeId}: ${nJ}. ${t('kin.totalEffective').replaceAll('{total}', String(total)).replaceAll('{needed}', String(needed)).replaceAll('{excess}', String(excess))}`;
   }
 
   // isostatic
-  return `${t('kin.node')} ${nodeIInfo.nodeId}: ${nI}. ${t('kin.node')} ${nodeJInfo.nodeId}: ${nJ}. ${t('kin.justRight').replace('{needed}', String(needed))}`;
+  return `${t('kin.node')} ${nodeIInfo.nodeId}: ${nI}. ${t('kin.node')} ${nodeJInfo.nodeId}: ${nJ}. ${t('kin.justRight').replaceAll('{needed}', String(needed))}`;
 }
 
 // ─── Helpers ────────────────────────────────────────────────────
@@ -1210,7 +1210,7 @@ function explainUnconstrainedDof(nodeId: number, dof: string, input: SolverInput
   const supportedNodes = new Set(Array.from(input.supports.values()).map(s => s.nodeId));
 
   if (connectedElems.length === 0) {
-    return t('kin.nodeNotConnected').replace('{node}', String(nodeId));
+    return t('kin.nodeNotConnected').replaceAll('{node}', String(nodeId));
   }
 
   // Check if all elements at node are hinged
@@ -1221,20 +1221,20 @@ function explainUnconstrainedDof(nodeId: number, dof: string, input: SolverInput
   // Rotation DOF unconstrained
   if (dof === 'ry') {
     if (allHinged && !support) {
-      return t('kin.allHingedNoMoment').replace('{node}', String(nodeId)).replace('{elems}', frameElems.map(e => `Elem. ${e.id}`).join(', '));
+      return t('kin.allHingedNoMoment').replaceAll('{node}', String(nodeId)).replaceAll('{elems}', frameElems.map(e => `Elem. ${e.id}`).join(', '));
     }
     if (allHinged && support && support.type !== 'fixed') {
       const supLabel = getSupportLabels()[support.type as string]?.label ?? support.type;
-      return t('kin.allHingedSupportNoRot').replace('{node}', String(nodeId)).replace('{support}', supLabel);
+      return t('kin.allHingedSupportNoRot').replaceAll('{node}', String(nodeId)).replaceAll('{support}', supLabel);
     }
-    return t('kin.insufficientRotConstraint').replace('{node}', String(nodeId));
+    return t('kin.insufficientRotConstraint').replaceAll('{node}', String(nodeId));
   }
 
   // Translation DOF (ux or uz) unconstrained
   const direction = dof === 'ux' ? t('kin.dirHorizontal') : t('kin.dirVertical');
 
   if (!support && connectedElems.length === 1) {
-    return t('kin.nodeFreeEnd').replace('{node}', String(nodeId)).replace('{elem}', String(connectedElems[0].id));
+    return t('kin.nodeFreeEnd').replaceAll('{node}', String(nodeId)).replaceAll('{elem}', String(connectedElems[0].id));
   }
 
   // Check for bi-articulated elements (only transmit axial)
@@ -1257,10 +1257,10 @@ function explainUnconstrainedDof(nodeId: number, dof: string, input: SolverInput
     });
 
     if (dof === 'ux' && biArtVertical.length === biArticulated.length && biArticulated.length === connectedElems.length) {
-      return t('kin.biArtVertical').replace('{node}', String(nodeId)).replace('{elems}', biArtIds).replace('{dir}', direction);
+      return t('kin.biArtVertical').replaceAll('{node}', String(nodeId)).replaceAll('{elems}', biArtIds).replaceAll('{dir}', direction);
     }
     if (dof === 'uz' && biArtHorizontal.length === biArticulated.length && biArticulated.length === connectedElems.length) {
-      return t('kin.biArtHorizontal').replace('{node}', String(nodeId)).replace('{elems}', biArtIds).replace('{dir}', direction);
+      return t('kin.biArtHorizontal').replaceAll('{node}', String(nodeId)).replaceAll('{elems}', biArtIds).replaceAll('{dir}', direction);
     }
   }
 
@@ -1281,7 +1281,7 @@ function explainUnconstrainedDof(nodeId: number, dof: string, input: SolverInput
       }
     }
     if (allCollinear) {
-      return t('kin.collinearHinged').replace('{node}', String(nodeId));
+      return t('kin.collinearHinged').replaceAll('{node}', String(nodeId));
     }
   }
 
@@ -1295,15 +1295,15 @@ function explainUnconstrainedDof(nodeId: number, dof: string, input: SolverInput
     });
 
     if (!hasPathToSupport && allHinged) {
-      return t('kin.noSupportAllHinged').replace('{node}', String(nodeId)).replace('{dir}', direction);
+      return t('kin.noSupportAllHinged').replaceAll('{node}', String(nodeId)).replaceAll('{dir}', direction);
     }
     if (!hasPathToSupport) {
-      return t('kin.insufficientDirConstraint').replace('{node}', String(nodeId)).replace('{dir}', direction);
+      return t('kin.insufficientDirConstraint').replaceAll('{node}', String(nodeId)).replaceAll('{dir}', direction);
     }
   }
 
   // Generic fallback
-  return t('kin.genericUnconstrained').replace('{node}', String(nodeId)).replace('{dof}', getDofNames()[dof] ?? dof);
+  return t('kin.genericUnconstrained').replaceAll('{node}', String(nodeId)).replaceAll('{dof}', getDofNames()[dof] ?? dof);
 }
 
 /**
@@ -1326,11 +1326,11 @@ function generateSuggestions(
       if (!seen.has(key)) {
         seen.add(key);
         if (ud.dof === 'ry') {
-          suggestions.push(t('kin.sugAddFixed').replace('{node}', String(ud.nodeId)));
+          suggestions.push(t('kin.sugAddFixed').replaceAll('{node}', String(ud.nodeId)));
         } else if (ud.dof === 'ux') {
-          suggestions.push(t('kin.sugAddHorizSupport').replace('{node}', String(ud.nodeId)));
+          suggestions.push(t('kin.sugAddHorizSupport').replaceAll('{node}', String(ud.nodeId)));
         } else {
-          suggestions.push(t('kin.sugAddVertSupport').replace('{node}', String(ud.nodeId)));
+          suggestions.push(t('kin.sugAddVertSupport').replaceAll('{node}', String(ud.nodeId)));
         }
       }
     }
@@ -1342,7 +1342,7 @@ function generateSuggestions(
         const key = `upgrade-${ud.nodeId}`;
         if (!seen.has(key)) {
           seen.add(key);
-          suggestions.push(t('kin.sugUpgradeSupport').replace('{node}', String(ud.nodeId)).replace('{type}', getSupportLabels()[sup.type as string]?.label ?? sup.type));
+          suggestions.push(t('kin.sugUpgradeSupport').replaceAll('{node}', String(ud.nodeId)).replaceAll('{type}', getSupportLabels()[sup.type as string]?.label ?? sup.type));
         }
       }
     }
@@ -1357,7 +1357,7 @@ function generateSuggestions(
       const key = `remove-hinge-${ud.nodeId}`;
       if (!seen.has(key)) {
         seen.add(key);
-        suggestions.push(t('kin.sugRemoveHinge').replace('{elem}', String(hingesHere[0].elemId)).replace('{end}', hingesHere[0].end).replace('{node}', String(ud.nodeId)));
+        suggestions.push(t('kin.sugRemoveHinge').replaceAll('{elem}', String(hingesHere[0].elemId)).replaceAll('{end}', hingesHere[0].end).replaceAll('{node}', String(ud.nodeId)));
       }
     }
   }

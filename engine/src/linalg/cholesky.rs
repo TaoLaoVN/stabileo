@@ -6,7 +6,12 @@ pub fn cholesky_decompose(a: &mut [f64], n: usize) -> bool {
         for k in 0..j {
             sum -= a[j * n + k] * a[j * n + k];
         }
-        if sum <= 1e-15 {
+        // Negated `>` rather than `<=` so a NaN pivot is REJECTED. Every IEEE-754
+        // comparison against NaN is false, so `sum <= 1e-15` waved NaN straight through:
+        // `sqrt(NaN)` became the diagonal and the routine returned "successful (A is SPD)"
+        // for a matrix that is not a number. For every non-NaN value the two forms are
+        // identical, so this changes nothing else.
+        if !(sum > 1e-15) {
             return false;
         }
         a[j * n + j] = sum.sqrt();

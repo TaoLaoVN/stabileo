@@ -11,7 +11,7 @@ import { modelStore, uiStore, resultsStore } from '../store';
 import { createDeformedLines, type ElementEI } from '../three/deformed-shape-3d';
 import { createDiagramGroup3D, createEnvelopeDiagramGroup3D } from '../three/diagram-render-3d';
 import { createDespiece3DGroup } from '../three/despiece-3d';
-import { COLORS, setGroupColor, disposeObject, axialForceColor, verificationColor, verificationStateColor, createTextSprite, heatmapColor } from '../three/selection-helpers';
+import { COLORS, setGroupColor, disposeObject, axialForceColor, verificationStateColor, createTextSpriteCached, heatmapColor } from '../three/selection-helpers';
 import { verificationStore } from '../store/verification.svelte';
 import { createReactionArrow, createConstraintForceArrow } from '../three/create-load-arrow';
 import type { Diagram3DKind } from '../engine/diagrams-3d';
@@ -42,13 +42,20 @@ function projectFlag(): boolean {
 export const DIAGRAM_3D_TYPES: Set<string> = new Set(['momentY', 'momentZ', 'shearY', 'shearZ', 'axial', 'torsion']);
 
 /** Build a node map projected to scene coordinates (handles 2D→XZ swap for embedded models). */
+let projectedNodesCache: { key: string; map: Map<number, { id: number; x: number; y: number; z?: number }> } | null = null;
+
 function getProjectedNodes(): Map<number, { id: number; x: number; y: number; z?: number }> {
   const project2D = projectFlag();
+  // Node coords only change with modelVersion — one rebuild per edit total,
+  // not one per animation frame / per results publish.
+  const key = `${modelStore.modelVersion}|${project2D}`;
+  if (projectedNodesCache?.key === key) return projectedNodesCache.map;
   const projected = new Map<number, { id: number; x: number; y: number; z?: number }>();
   for (const [id, n] of modelStore.nodes) {
     const p = projectNodeToScene(n, project2D);
     projected.set(id, { id, x: p.x, y: p.y, z: p.z });
   }
+  projectedNodesCache = { key, map: projected };
   return projected;
 }
 
@@ -112,13 +119,6 @@ function computeStructureBBox(): number {
 export function syncDeformed(ctx: ResultsSyncContext, scaleOverride?: number): void {
   if (!ctx.initialized) return;
 
-  // Remove old deformed
-  if (ctx.deformedGroup) {
-    ctx.resultsParent.remove(ctx.deformedGroup);
-    disposeObject(ctx.deformedGroup);
-    ctx.deformedGroup = null;
-  }
-
   const dt = resultsStore.diagramType;
   const isDeformedLike = dt === 'deformed' || dt === 'modeShape' || dt === 'bucklingMode';
 
@@ -150,43 +150,88 @@ export function syncDeformed(ctx: ResultsSyncContext, scaleOverride?: number): v
   let scale = scaleOverride ?? resultsStore.deformedScale;
   let modeColor: number | null = null;
 
+  /**
+   * Nothing to draw means the old shape has to GO, not merely stop updating.
+   *
+   * Every branch below bailed with a bare `return` when its data was missing —
+   * and the code that removes the previous group sits after them, on the path
+   * where the data changed. So going from "deformed on screen" to "no results"
+   * left the group in the scene: load a second model over a solved one and the
+   * previous structure's deformed shape stayed floating over it, at full size,
+   * while the status bar reported the new model's three nodes. `clear()` had
+   * dropped the results correctly; the scene was never told.
+   */
+  function dropDeformed(): void {
+    if (!ctx.deformedGroup) return;
+    ctx.resultsParent.remove(ctx.deformedGroup);
+    disposeObject(ctx.deformedGroup);
+    ctx.deformedGroup = null;
+  }
+
   if (dt === 'deformed') {
     const r3d = resultsStore.results3D;
-    if (!r3d) return;
+    if (!r3d) { dropDeformed(); return; }
     displacements = r3d.displacements;
     // Scale x1 = true physical deformation (1:1). No auto-amplification.
     // The user increases the scale slider to amplify if needed.
   } else if (dt === 'modeShape') {
     const modal = resultsStore.modalResult3D;
-    if (!modal || !modal.modes.length) return;
+    if (!modal || !modal.modes.length) { dropDeformed(); return; }
     const mode = modal.modes[resultsStore.activeModeIndex];
-    if (!mode) return;
+    if (!mode) { dropDeformed(); return; }
     // Scale mode shapes relative to structure size (eigenvectors are normalized to max=1)
     const structureSize = computeStructureBBox();
     const modeScale = structureSize * 0.15 * (scale / 100);
     scale = modeScale * Math.sin(performance.now() / 500);
     displacements = mode.displacements;
-    modeColor = 0x4ecdc4; // cyan
+    modeColor = 0x7fd4cc; // --st-value
   } else if (dt === 'bucklingMode') {
     const buckling = resultsStore.bucklingResult3D;
-    if (!buckling || !buckling.modes.length) return;
+    if (!buckling || !buckling.modes.length) { dropDeformed(); return; }
     const mode = buckling.modes[resultsStore.activeBucklingMode];
-    if (!mode) return;
+    if (!mode) { dropDeformed(); return; }
     // Scale buckling modes relative to structure size (eigenvectors are normalized to max=1)
     const structureSize = computeStructureBBox();
     const modeScale = structureSize * 0.15 * (scale / 100);
     scale = modeScale * Math.sin(performance.now() / 500);
     displacements = mode.displacements;
-    modeColor = 0xe96941; // orange-red
+    modeColor = 0xd9a441; // --st-warn
   } else {
+    // Any other diagram — including 'none' after a model swap.
+    dropDeformed();
     return;
   }
 
-  if (!displacements) return;
+  if (!displacements) { dropDeformed(); return; }
+
+  // In-place scale update when the underlying data is unchanged: the group
+  // carries preallocated base/displacement buffers and a setScale() that
+  // rewrites positions without rebuilding any geometry (previously every
+  // animation frame disposed and recreated the whole group per element).
+  const r3d = resultsStore.results3D;
+  const sigDt = dt;
+  const sigDisp = displacements;
+  const sigForces = dt === 'deformed' && r3d ? r3d.elementForces : null;
+  const sigVer = modelStore.modelVersion;
+  const sigHand = uiStore.axisConvention3D === 'leftHand';
+  const prev = ctx.deformedGroup?.userData;
+  if (ctx.deformedGroup && prev?.sigDt === sigDt && prev?.sigDisp === sigDisp
+      && prev?.sigForces === sigForces && prev?.sigVer === sigVer && prev?.sigHand === sigHand) {
+    prev.setScale(scale);
+    prev.material.color.setHex(modeColor ?? COLORS.deformed);
+    ctx.resultsParent.add(ctx.deformedGroup);
+    return;
+  }
+
+  // Remove old deformed — the data actually changed, rebuild is required.
+  if (ctx.deformedGroup) {
+    ctx.resultsParent.remove(ctx.deformedGroup);
+    disposeObject(ctx.deformedGroup);
+    ctx.deformedGroup = null;
+  }
 
   // Build EI map for particular solution (only for static deformed — modes don't need it)
   let eiMap: Map<number, ElementEI> | undefined;
-  const r3d = resultsStore.results3D;
   if (dt === 'deformed') {
     eiMap = new Map<number, ElementEI>();
     for (const [id, elem] of modelStore.elements) {
@@ -210,8 +255,17 @@ export function syncDeformed(ctx: ResultsSyncContext, scaleOverride?: number): v
     dt === 'deformed' && r3d ? r3d.elementForces : [],
     scale,
     eiMap,
-    uiStore.axisConvention3D === 'leftHand',
+    sigHand,
+    modelStore.sections,
   );
+  if (modeColor !== null) {
+    ctx.deformedGroup.userData.material.color.setHex(modeColor);
+  }
+  ctx.deformedGroup.userData.sigDt = sigDt;
+  ctx.deformedGroup.userData.sigDisp = sigDisp;
+  ctx.deformedGroup.userData.sigForces = sigForces;
+  ctx.deformedGroup.userData.sigVer = sigVer;
+  ctx.deformedGroup.userData.sigHand = sigHand;
 
   // Tint mode shapes with their distinctive color
   if (modeColor !== null) {
@@ -338,7 +392,7 @@ export function syncColorMap3D(ctx: ResultsSyncContext): void {
         showOriginalMeshes(group, true);
         const elem = modelStore.elements.get(id);
         const isTruss = elem?.type === 'truss';
-        const wireBaseColor = isTruss ? 0xf0b848 : 0x6cb4ff;
+        const wireBaseColor = isTruss ? 0x9fb2c2 : 0xa8b8c6;
         const baseColor = wireframe ? wireBaseColor : (isTruss ? COLORS.truss : COLORS.frame);
         const selected = uiStore.selectedElements.has(id);
         const finalColor = selected ? COLORS.elementSelected : baseColor;
@@ -469,7 +523,7 @@ export function syncVerificationLabels(ctx: ResultsSyncContext): void {
     const textColor = ds === 'stale' ? '#b9b9a8' : baseColor;
     const glyph = ds === 'stale' ? '⌛ ' : status === 'fail' ? '✗ ' : status === 'warn' ? '⚠ ' : '';
 
-    const sprite = createTextSprite(`${glyph}${ratio.toFixed(2)}`, textColor, 32);
+    const sprite = createTextSpriteCached(`${glyph}${ratio.toFixed(2)}`, textColor, 32);
     sprite.position.set(mx, my + 0.15, mz); // offset slightly above element
     sprite.scale.set(0.45, 0.45, 1);
     group.add(sprite);
@@ -884,7 +938,7 @@ export function syncLabels3D(ctx: ResultsSyncContext): void {
 
     for (const [id, node] of modelStore.nodes) {
       const pos = projectNodeToScene(node, project2D);
-      const sprite = createTextSprite(String(id), '#ffffff', 28);
+      const sprite = createTextSpriteCached(String(id), '#ffffff', 28);
       sprite.position.set(
         pos.x + spriteScale * 0.3,
         pos.y + spriteScale * 0.5,
@@ -913,7 +967,7 @@ export function syncLabels3D(ctx: ResultsSyncContext): void {
       const my = (sceneI.y + sceneJ.y) / 2;
       const mz = (sceneI.z + sceneJ.z) / 2;
 
-      const sprite = createTextSprite(String(id), '#88ccff', 24);
+      const sprite = createTextSpriteCached(String(id), '#88ccff', 24);
       sprite.position.set(mx, my + spriteScale * 0.3, mz);
       sprite.scale.set(spriteScale * 0.8, spriteScale * 0.8, 1);
       ctx.elementLabelsGroup.add(sprite);
@@ -942,7 +996,7 @@ export function syncLabels3D(ctx: ResultsSyncContext): void {
       const my = (sceneI.y + sceneJ.y) / 2 - spriteScale * 0.3;
       const mz = (sceneI.z + sceneJ.z) / 2;
 
-      const sprite = createTextSprite(`${len.toFixed(2)} m`, '#88cc88', 22);
+      const sprite = createTextSpriteCached(`${len.toFixed(2)} m`, '#88cc88', 22);
       sprite.position.set(mx, my, mz);
       sprite.scale.set(spriteScale * 0.7, spriteScale * 0.7, 1);
       ctx.lengthLabelsGroup.add(sprite);

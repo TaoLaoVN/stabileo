@@ -204,27 +204,27 @@
   th {
     text-align: left;
     padding: 0.25rem 0.35rem;
-    color: #888;
+    color: var(--st-text-3);
     font-weight: 500;
     font-size: 0.65rem;
     text-transform: uppercase;
     letter-spacing: 0.03em;
-    border-bottom: 1px solid #0f3460;
+    border-bottom: 1px solid var(--st-surface-3);
     position: sticky;
     top: 0;
-    background: #16213e;
+    background: var(--st-surface-2);
     white-space: nowrap;
   }
 
   td {
     padding: 0.2rem 0.35rem;
-    border-bottom: 1px solid #0a1a30;
-    color: #ccc;
+    border-bottom: 1px solid var(--st-bg);
+    color: var(--st-text-2);
     white-space: nowrap;
   }
 
   .id-cell {
-    color: #4ecdc4;
+    color: var(--st-value);
     font-weight: 600;
   }
 
@@ -234,14 +234,14 @@
   }
 
   tr:hover {
-    background: rgba(78, 205, 196, 0.05);
+    background: rgba(127, 212, 204, 0.05);
   }
 
   .results-sub-tabs {
     display: flex;
     gap: 0;
-    border-bottom: 1px solid #0f3460;
-    background: #12192e;
+    border-bottom: 1px solid var(--st-surface-3);
+    background: var(--st-surface-2);
     flex-shrink: 0;
   }
 
@@ -249,23 +249,29 @@
     padding: 0.35rem 0.75rem;
     border: none;
     background: transparent;
-    color: #777;
+    color: var(--st-text-3);
     cursor: pointer;
     font-size: 0.72rem;
     border-bottom: 2px solid transparent;
   }
-  .results-sub-tabs button:hover { color: #eee; }
+  .results-sub-tabs button:hover { color: var(--st-text); }
+  /*
+     An active tab takes the accent, like every other active control in the
+     shell. These were amber, which this palette reserves for a warning — so
+     "Displacements is the tab you are on" was drawn in the colour that
+     elsewhere means "something needs your attention".
+  */
   .results-sub-tabs button.active {
-    color: #e9c46a;
-    border-bottom-color: #e9c46a;
+    color: var(--st-accent);
+    border-bottom-color: var(--st-accent);
   }
 
   .combo-view-tabs {
-    background: #1a2040 !important;
+    background: var(--st-surface-2) !important;
   }
   .combo-view-tabs button.active {
-    color: #4ecdc4 !important;
-    border-bottom-color: #4ecdc4 !important;
+    color: var(--st-accent) !important;
+    border-bottom-color: var(--st-accent) !important;
   }
 
   .results-content {
@@ -273,6 +279,6 @@
     overflow: auto;
   }
 
-  .severity-warn { color: #e9c46a; font-weight: 600; }
-  .severity-err { color: #e94560; font-weight: 600; }
+  .severity-warn { color: var(--st-warn); font-weight: 600; }
+  .severity-err { color: var(--st-accent); font-weight: 600; }
 </style>

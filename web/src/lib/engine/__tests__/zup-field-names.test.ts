@@ -177,18 +177,24 @@ describe('Bug 1: 2D Displacement uses uz/ry (not uy/rz)', () => {
     const mobileResults = readFileSync(new URL('../../../components/MobileResultsPanel.svelte', import.meta.url), 'utf8');
     const sectionStress = readFileSync(new URL('../../../components/SectionStressPanel.svelte', import.meta.url), 'utf8');
     const aiReview = readFileSync(new URL('../../../components/toolbar/ToolbarAiReview.svelte', import.meta.url), 'utf8');
-    const toolbar = readFileSync(new URL('../../../components/Toolbar.svelte', import.meta.url), 'utf8');
+    // Copy/paste moved out of Toolbar with the rest of the keyboard layer:
+    // Toolbar is mounted on mobile only, so every shortcut it owned did nothing
+    // on desktop. These guarantees follow the code to its new home.
+    const toolbar = readFileSync(new URL('../../../components/KeyboardShortcuts.svelte', import.meta.url), 'utf8');
+    const oldToolbar = readFileSync(new URL('../../../components/Toolbar.svelte', import.meta.url), 'utf8');
 
     expect(aiDrawer, 'AiDrawer.svelte should treat pro as 3D').toContain("uiStore.analysisMode === '3d' || uiStore.analysisMode === 'pro'");
     expect(aiDrawer, 'AiDrawer.svelte should send canonical 3D mode to the AI backend').toContain("const aiAnalysisMode = $derived(is3DMode ? '3d' : '2d');");
     expect(mobileResults, 'MobileResultsPanel.svelte should treat pro as 3D').toContain("uiStore.analysisMode === '3d' || uiStore.analysisMode === 'pro'");
     expect(sectionStress, 'SectionStressPanel.svelte should treat pro as 3D').toContain("uiStore.analysisMode === '3d' || uiStore.analysisMode === 'pro'");
     expect(aiReview, 'ToolbarAiReview.svelte should treat pro as 3D').toContain("uiStore.analysisMode === '3d' || uiStore.analysisMode === 'pro'");
-    expect(toolbar, 'Toolbar.svelte should treat pro as 3D when pasting copied geometry').toContain("uiStore.analysisMode === '3d' || uiStore.analysisMode === 'pro'");
-    expect(toolbar, 'Toolbar.svelte should copy 3D element metadata into the clipboard through the shared helper').toContain('...pickElement3DMetadata(elem)');
-    expect(toolbar, 'Toolbar.svelte should require a complete explicit local axis before restoring it on paste').toContain('if (hasExplicitLocalY(el)) {');
-    expect(toolbar, 'Toolbar.svelte should restore localY metadata when pasting').toContain('modelStore.updateElementLocalY(newElemId, el.localYx, el.localYy, el.localYz);');
-    expect(toolbar, 'Toolbar.svelte should restore rollAngle metadata when pasting').toContain('modelStore.rotateElementLocalAxes(newElemId, el.rollAngle);');
+    expect(toolbar, 'KeyboardShortcuts.svelte should treat pro as 3D when pasting copied geometry').toContain("uiStore.analysisMode === '3d' || uiStore.analysisMode === 'pro'");
+    expect(toolbar, 'KeyboardShortcuts.svelte should copy 3D element metadata into the clipboard through the shared helper').toContain('...pickElement3DMetadata(elem)');
+    expect(toolbar, 'KeyboardShortcuts.svelte should require a complete explicit local axis before restoring it on paste').toContain('if (hasExplicitLocalY(el)) {');
+    expect(toolbar, 'KeyboardShortcuts.svelte should restore localY metadata when pasting').toContain('modelStore.updateElementLocalY(newElemId, el.localYx, el.localYy, el.localYz);');
+    expect(toolbar, 'KeyboardShortcuts.svelte should restore rollAngle metadata when pasting').toContain('modelStore.rotateElementLocalAxes(newElemId, el.rollAngle);');
+    expect(oldToolbar, 'the keyboard layer should live in ONE place, not two')
+      .not.toContain('function handleKeydown');
   });
 
   it('3D viewport presentation should be explicit rather than a boolean projection hint', () => {
@@ -439,14 +445,28 @@ describe('Bug 2: 3D self-weight must apply gravity to fz (not fy)', () => {
   });
 
   it('all 3D solve entry points must ensure WASM is ready before calling solve3D', () => {
-    const toolbarResults = readFileSync(new URL('../../../components/toolbar/ToolbarResults.svelte', import.meta.url), 'utf8');
+    /*
+     * The 3D solve path moved out of ToolbarResults into lib/actions/solve.ts
+     * so the ribbon could solve without opening a panel first. The guard is
+     * unchanged in intent — WASM must be initialised before solve3D — but it
+     * now has one place to check instead of two, which is the point of having
+     * extracted it. Toolbar.svelte keeps its own copy for the mobile path.
+     */
+    const solveAction = readFileSync(new URL('../../actions/solve.ts', import.meta.url), 'utf8');
     const toolbar = readFileSync(new URL('../../../components/Toolbar.svelte', import.meta.url), 'utf8');
 
-    // Both toolbar solve buttons must await WASM initialization before solve3D
-    for (const [label, text] of [['ToolbarResults.svelte', toolbarResults], ['Toolbar.svelte', toolbar]] as const) {
+    for (const [label, text] of [['actions/solve.ts', solveAction], ['Toolbar.svelte', toolbar]] as const) {
       expect(text, `${label} must call ensureWasmReady or initSolver before solve3D`).toMatch(/ensureWasmReady|initSolver/);
-      expect(text, `${label} handleSolve3D must be async`).toMatch(/async\s+function\s+handleSolve3D|handleSolve3D\s*=\s*async/);
     }
+
+    // The extracted action keeps the async 3D entry point.
+    expect(solveAction, 'runSolve3D must be async').toMatch(/export\s+async\s+function\s+runSolve3D/);
+    expect(toolbar, 'Toolbar.svelte handleSolve3D must be async').toMatch(/async\s+function\s+handleSolve3D|handleSolve3D\s*=\s*async/);
+
+    // And nothing may call solve3D without going through one of them.
+    const results = readFileSync(new URL('../../../components/toolbar/ToolbarResults.svelte', import.meta.url), 'utf8');
+    expect(results, 'ToolbarResults must delegate rather than re-implement solving')
+      .toMatch(/runSolve/);
   });
 
   it('3D viewport should keep projected 2D result overlays in the same XZ plane as the model', () => {

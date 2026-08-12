@@ -57,26 +57,26 @@
   />
 
   <div class="size-info">
-    {t('dsm.step4.sizeInfo').replace('{n}', String(n)).replace('{nElem}', String(data.elements.length))}
+    {t('dsm.step4.sizeInfo').replaceAll('{n}', String(n)).replaceAll('{nElem}', String(data.elements.length))}
   </div>
 </div>
 
 <style>
   .step { display: flex; flex-direction: column; gap: 0.6rem; }
-  .explanation { font-size: 0.72rem; color: #bbb; line-height: 1.5; }
+  .explanation { font-size: 0.72rem; color: var(--st-text-2); line-height: 1.5; }
   .explanation p { margin: 0; }
 
   .elem-selector {
     display: flex; align-items: center; gap: 0.5rem;
-    font-size: 0.7rem; color: #ccc;
+    font-size: 0.7rem; color: var(--st-text-2);
   }
   .elem-selector select {
-    background: #16213e; color: #eee; border: 1px solid #0f3460;
+    background: var(--st-surface-2); color: var(--st-text); border: 1px solid var(--st-surface-3);
     border-radius: 3px; padding: 0.2rem 0.4rem; font-size: 0.65rem;
   }
 
   .size-info {
-    font-size: 0.6rem; color: #666;
+    font-size: 0.6rem; color: var(--st-text-3);
     text-align: center;
   }
 </style>

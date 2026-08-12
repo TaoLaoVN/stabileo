@@ -62,7 +62,7 @@
 <style>
   .vec-title {
     font-size: 0.7rem;
-    color: #888;
+    color: var(--st-text-3);
     margin-bottom: 0.25rem;
     font-weight: 600;
   }
@@ -83,21 +83,21 @@
   }
   .vec-table th {
     padding: 0.15rem 0.3rem;
-    background: #16213e;
-    color: #888;
+    background: var(--st-surface-2);
+    color: var(--st-text-3);
     font-weight: 500;
     font-size: 0.6rem;
     text-align: right;
   }
-  .vec-table th.hl { background: rgba(78, 205, 196, 0.2); color: #4ecdc4; }
+  .vec-table th.hl { background: rgba(127, 212, 204, 0.2); color: var(--st-value); }
   .vec-table td {
     padding: 0.15rem 0.4rem;
     text-align: right;
-    border: 1px solid #1a1a2e;
-    background: #0f0f1e;
+    border: 1px solid var(--st-surface);
+    background: var(--st-bg);
   }
-  .vec-table td.pos { color: #4ecdc4; }
-  .vec-table td.neg { color: #e94560; }
-  .vec-table td.zero { color: #444; }
-  .vec-table td.hl { background: rgba(78, 205, 196, 0.08); }
+  .vec-table td.pos { color: var(--st-value); }
+  .vec-table td.neg { color: var(--st-accent); }
+  .vec-table td.zero { color: var(--st-text-3); }
+  .vec-table td.hl { background: rgba(127, 212, 204, 0.08); }
 </style>

@@ -1,65 +1,81 @@
 <script lang="ts">
-  import { t, i18n, setLocale } from '../../lib/i18n';
+  import { tPublic as t, publicI18n, setPublicLocale, PUBLIC_LOCALES } from '../../lib/i18n/store.svelte';
   import { REPO_URL, enterApp, scrollToId, fetchGithubStars } from './landing-utils';
 
   let stars = $state<number | null>(null);
+  let open = $state(false);
+
+  const LOCALE_NAMES: Record<string, string> = { en: 'English', es: 'Español' };
+
+  const links = [
+    { id: 'basic', key: 'landing.navBasic' },
+    { id: 'demo', key: 'landing.navDemo' },
+    { id: 'codes', key: 'landing.navCodes' },
+    { id: 'education', key: 'landing.navEducation' },
+    { id: 'pro', key: 'landing.navPro' },
+    { id: 'status', key: 'landing.navStatus' },
+  ];
 
   $effect(() => {
-    fetchGithubStars().then((n) => {
-      stars = n;
-    });
+    fetchGithubStars().then((n) => { stars = n; });
   });
 
-  function formatStars(n: number) {
-    if (n >= 1000) return (n / 1000).toFixed(1).replace(/\.0$/, '') + 'k';
-    return n.toString();
+  function fmtStars(n: number) {
+    return n >= 1000 ? (n / 1000).toFixed(1).replace(/\.0$/, '') + 'k' : String(n);
+  }
+
+  function go(id: string) {
+    open = false;
+    scrollToId(id);
   }
 </script>
 
-<nav class="nav">
+<nav class="nav" aria-label="Primary">
   <div class="nav-inner">
-    <button class="nav-brand" onclick={() => scrollToId('top')} aria-label="Back to top">
-      <span class="nav-logo">S</span>
+    <button class="nav-brand" onclick={() => go('top')} aria-label="Back to top">
+      <span class="nav-logo" aria-hidden="true">S</span>
       <span class="nav-name">Stabileo</span>
     </button>
 
-    <div class="nav-links">
-      <button onclick={() => scrollToId('features')}>{t('landing.features')}</button>
-      <button onclick={() => scrollToId('docs')}>{t('landing.docs')}</button>
-      <button onclick={() => scrollToId('demo')}>{t('landing.demo')}</button>
-      <button onclick={() => scrollToId('roadmap')}>{t('landing.roadmap')}</button>
-      <button onclick={() => scrollToId('pricing')}>{t('landing.pricing')}</button>
+    <div class="nav-links" id="nav-links" class:open>
+      {#each links as l}
+        <button onclick={() => go(l.id)}>{t(l.key)}</button>
+      {/each}
     </div>
 
     <div class="nav-actions">
-      <a class="nav-gh-stars" href={REPO_URL} target="_blank" rel="noreferrer" aria-label="GitHub repository">
-        <svg viewBox="0 0 24 24" fill="currentColor" width="14" height="14" aria-hidden="true">
-          <path d="M12 .587l3.668 7.568 8.332 1.151-6.064 5.828 1.48 8.279L12 19.771l-7.416 3.642 1.48-8.279L0 9.306l8.332-1.151z"/>
+      <a class="nav-gh" href={REPO_URL} target="_blank" rel="noreferrer" aria-label="GitHub repository">
+        <svg viewBox="0 0 24 24" fill="currentColor" width="13" height="13" aria-hidden="true" focusable="false">
+          <path d="M12 .3a12 12 0 0 0-3.8 23.4c.6.1.8-.3.8-.6v-2c-3.3.7-4-1.6-4-1.6-.6-1.4-1.4-1.8-1.4-1.8-1-.7 0-.7 0-.7 1.2.1 1.8 1.2 1.8 1.2 1 1.8 2.8 1.3 3.5 1 .1-.8.4-1.3.7-1.6-2.7-.3-5.5-1.3-5.5-5.9 0-1.3.5-2.4 1.2-3.2-.1-.3-.5-1.5.1-3.2 0 0 1-.3 3.3 1.2a11.5 11.5 0 0 1 6 0C17 4.7 18 5 18 5c.6 1.7.2 2.9.1 3.2.8.8 1.2 1.9 1.2 3.2 0 4.6-2.8 5.6-5.5 5.9.4.4.8 1.1.8 2.2v3.3c0 .3.2.7.8.6A12 12 0 0 0 12 .3z"/>
         </svg>
-        <span>{stars != null ? formatStars(stars) : 'GitHub'}</span>
+        <span>{stars != null ? fmtStars(stars) : 'GitHub'}</span>
       </a>
-      <select
-        class="nav-lang"
-        value={i18n.locale}
-        onchange={(e) => setLocale((e.currentTarget as HTMLSelectElement).value)}
-        aria-label="Select language"
+
+      <label class="nav-lang-wrap">
+        <span class="sr-only">{t('landing.navLanguage')}</span>
+        <select
+          class="nav-lang"
+          value={publicI18n.locale}
+          onchange={(e) => setPublicLocale((e.currentTarget as HTMLSelectElement).value as 'en' | 'es')}
+        >
+          {#each PUBLIC_LOCALES as code}
+            <option value={code}>{LOCALE_NAMES[code]}</option>
+          {/each}
+        </select>
+      </label>
+
+      <button class="btn btn-primary btn-sm" onclick={() => enterApp()}>{t('landing.navOpenEditor')}</button>
+
+      <button
+        class="nav-toggle"
+        aria-expanded={open}
+        aria-controls="nav-links"
+        aria-label={t('landing.navMenuOpen')}
+        onclick={() => (open = !open)}
       >
-        <option value="en">English</option>
-        <option value="es">Español</option>
-        <option value="pt">Português</option>
-        <option value="de">Deutsch</option>
-        <option value="fr">Français</option>
-        <option value="it">Italiano</option>
-        <option value="tr">Türkçe</option>
-        <option value="hi">हिन्दी</option>
-        <option value="zh">中文</option>
-        <option value="ja">日本語</option>
-        <option value="ko">한국어</option>
-        <option value="ru">Русский</option>
-        <option value="ar">العربية</option>
-        <option value="id">Bahasa Indonesia</option>
-      </select>
-      <button class="btn-primary sm" onclick={() => enterApp()}>{t('landing.launchEditor')}</button>
+        <span aria-hidden="true"></span>
+        <span aria-hidden="true"></span>
+      </button>
     </div>
   </div>
 </nav>

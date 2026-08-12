@@ -45,6 +45,36 @@ describe('calc-report reactions section', () => {
   });
 });
 
+describe('calc-report elements table hinges column', () => {
+  it('renders per-axis release labels for each end, and "—" when neither end has a release', () => {
+    const elements = [
+      {
+        id: 1, type: 'frame', nodeI: 1, nodeJ: 2, materialId: 1, sectionId: 1,
+        releaseI: { my: false, mz: true, t: false },
+        releaseJ: { my: false, mz: false, t: false },
+      },
+      {
+        id: 2, type: 'frame', nodeI: 2, nodeJ: 3, materialId: 1, sectionId: 1,
+        releaseI: { my: false, mz: false, t: false },
+        releaseJ: { my: false, mz: false, t: false },
+      },
+      {
+        id: 3, type: 'frame', nodeI: 3, nodeJ: 4, materialId: 1, sectionId: 1,
+        releaseI: { my: true, mz: false, t: true },
+        releaseJ: { my: false, mz: false, t: false },
+      },
+    ] as any;
+    const html = generateCalcReportHtml(baseData({ elements }));
+
+    // Element 1: released at I (Mz only), rigid at J
+    expect(html).toContain('I: Mz · J: —');
+    // Element 3: released at I (My+T), rigid at J
+    expect(html).toContain('I: My+T · J: —');
+    // Element 2: rigid at both ends collapses to a single em dash, not "I: — · J: —"
+    expect(html).toContain('<td>2</td><td>frame</td><td>2</td><td>3</td><td>1</td><td>1</td><td>—</td></tr>');
+  });
+});
+
 describe('calc-report applied-loads table', () => {
   it('numbers condensed rows by their true position in the load list', () => {
     const loads = Array.from({ length: 100 }, (_, i) => ({

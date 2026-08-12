@@ -12,8 +12,8 @@ interface DrawContext {
 
 const FILL_POS = 'rgba(50, 205, 50, 0.2)';
 const FILL_NEG = 'rgba(255, 99, 71, 0.2)';
-const STROKE_COLOR = '#ff6b6b';
-const TEXT_COLOR = '#ff9999';
+const STROKE_COLOR = '#e8705f';
+const TEXT_COLOR = '#f0a08f';
 
 export function drawInfluenceLine(
   il: InfluenceLineResult,
@@ -177,8 +177,8 @@ export function drawInfluenceLine(
     const elem = dc.getElement(unitLoadElemId);
     const s = dc.worldToScreen(unitLoadWorldX, unitLoadWorldY);
     const arrowLen = 30;
-    ctx.strokeStyle = '#ffdd57';
-    ctx.fillStyle = '#ffdd57';
+    ctx.strokeStyle = '#d9a441';
+    ctx.fillStyle = '#d9a441';
     ctx.lineWidth = 2;
 
     if (elem) {
@@ -274,7 +274,7 @@ export function drawInfluenceLine(
   }
 
   // Draw label
-  ctx.fillStyle = '#ff6b6b';
+  ctx.fillStyle = '#e8705f';
   ctx.font = 'bold 12px sans-serif';
   ctx.textAlign = 'left';
   const labelText = `${t('influence.label')}: ${il.quantity}` +
