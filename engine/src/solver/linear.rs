@@ -2484,15 +2484,18 @@ pub(crate) fn build_reactions_3d(
         let mut vals = [0.0f64; 6];
 
         // Handle each DOF individually: restrained DOFs from reactions_vec,
-        // spring DOFs (free with stiffness) from R = -k * u
+        // spring DOFs (free with stiffness) from R = -k * u. A spring DOF is
+        // free regardless of the restraint flags (DofNumbering gives springs
+        // precedence), so the flag is not consulted on the free branch —
+        // otherwise a support with both a flag and a stiffness would report
+        // zero reaction while the spring force is real.
         let spring_stiffs = [sup.kx, sup.ky, sup.kz, sup.krx, sup.kry, sup.krz];
-        let restrained_flags = [sup.rx, sup.ry, sup.rz, sup.rrx, sup.rry, sup.rrz];
         for i in 0..6.min(dof_num.dofs_per_node) {
             if let Some(&d) = dof_num.map.get(&(sup.node_id, i)) {
                 if d >= nf {
                     // Restrained DOF: reaction from solve
                     vals[i] = reactions_vec[d - nf];
-                } else if !restrained_flags[i] {
+                } else {
                     // Free DOF: check for spring stiffness
                     let k = spring_stiffs[i].unwrap_or(0.0);
                     if k > 0.0 {
