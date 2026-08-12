@@ -777,6 +777,39 @@ pub fn solve_constrained_2d(input: &ConstrainedInput) -> Result<AnalysisResults,
     let mut u_r = vec![0.0; nr];
     for sup in input.solver.supports.values() {
         if sup.support_type == "spring" { continue; }
+
+        if sup.support_type == "inclinedRoller" {
+            // Prescribed translations are given in GLOBAL coords; the
+            // restrained inclined DOF (local_dof 1) is the normal direction.
+            // Rotate into the inclined frame, mirroring prepare_static_2d.
+            if let Some(theta) = sup.angle {
+                let c = theta.cos();
+                let s = theta.sin();
+                let u_normal = sup.dx.unwrap_or(0.0) * s + sup.dz.unwrap_or(0.0) * c;
+                if u_normal.abs() > 1e-15 {
+                    if let Some(&d) = dof_num.map.get(&(sup.node_id, 1)) {
+                        if d >= nf { u_r[d - nf] = u_normal; }
+                    }
+                }
+            } else {
+                if let Some(v) = sup.dz {
+                    if v.abs() > 1e-15 {
+                        if let Some(&d) = dof_num.map.get(&(sup.node_id, 1)) {
+                            if d >= nf { u_r[d - nf] = v; }
+                        }
+                    }
+                }
+            }
+            if let Some(v) = sup.dry {
+                if v.abs() > 1e-15 {
+                    if let Some(&d) = dof_num.map.get(&(sup.node_id, 2)) {
+                        if d >= nf { u_r[d - nf] = v; }
+                    }
+                }
+            }
+            continue;
+        }
+
         let prescribed: [(usize, Option<f64>); 3] = [
             (0, sup.dx), (1, sup.dz), (2, sup.dry),
         ];
@@ -1064,6 +1097,35 @@ pub fn solve_constrained_3d(input: &ConstrainedInput3D) -> Result<AnalysisResult
     // Build prescribed displacements
     let mut u_r = vec![0.0; nr];
     for sup in input.solver.supports.values() {
+        // Inclined supports: prescribed translations are given in GLOBAL
+        // coords; the restrained inclined DOF (local_dof 0) is the normal
+        // direction in the rotated frame. Project onto the normal —
+        // mirroring prepare_static_3d.
+        if sup.is_inclined.unwrap_or(false) {
+            if let (Some(nx), Some(ny), Some(nz)) = (sup.normal_x, sup.normal_y, sup.normal_z) {
+                let n_len = (nx * nx + ny * ny + nz * nz).sqrt();
+                if n_len > 1e-12 {
+                    let u_normal = (nx * sup.dx.unwrap_or(0.0)
+                        + ny * sup.dy.unwrap_or(0.0)
+                        + nz * sup.dz.unwrap_or(0.0)) / n_len;
+                    if u_normal.abs() > 1e-15 {
+                        if let Some(&d) = dof_num.map.get(&(sup.node_id, 0)) {
+                            if d >= nf { u_r[d - nf] = u_normal; }
+                        }
+                    }
+                    for (i, pd) in [sup.drx, sup.dry, sup.drz].iter().enumerate() {
+                        if let Some(val) = pd {
+                            if val.abs() > 1e-15 {
+                                if let Some(&d) = dof_num.map.get(&(sup.node_id, 3 + i)) {
+                                    if d >= nf { u_r[d - nf] = *val; }
+                                }
+                            }
+                        }
+                    }
+                    continue;
+                }
+            }
+        }
         let prescribed = [sup.dx, sup.dy, sup.dz, sup.drx, sup.dry, sup.drz];
         for (i, pd) in prescribed.iter().enumerate() {
             if let Some(val) = pd {
@@ -1901,5 +1963,60 @@ mod tests {
         // The diaphragm should change the slave's displacement compared to free
         assert!((d2_dia.ux - d2_free.ux).abs() > 1e-10,
             "Diaphragm should actually constrain the slave node's motion");
+    }
+
+    #[test]
+    fn test_inclined_support_prescribed_displacement_matches_unconstrained() {
+        // An inclinedRoller with a prescribed settlement: prescribed (dx, dz)
+        // are GLOBAL and must be rotated into the inclined frame. The
+        // constrained solve used to assign raw dz to the restrained (normal)
+        // slot; prepare_static_2d rotates. Parity between the two paths is
+        // the reference.
+        let theta = std::f64::consts::FRAC_PI_4;
+        let delta = 0.001;
+
+        let mut solver = make_two_beam_model();
+        // Replace the fixed support at node 0 with an inclined roller
+        // carrying a prescribed global settlement, and fix node 2 instead so
+        // the model stays stable.
+        solver.supports.clear();
+        solver.supports.insert("0".into(), SolverSupport {
+            id: 0, node_id: 0, support_type: "inclinedRoller".into(),
+            kx: None, ky: None, kz: None,
+            dx: Some(delta), dz: Some(delta), dry: None, angle: Some(theta),
+        });
+        solver.supports.insert("2".into(), SolverSupport {
+            id: 2, node_id: 2, support_type: "fixed".into(),
+            kx: None, ky: None, kz: None,
+            dx: None, dz: None, dry: None, angle: None,
+        });
+        solver.loads = vec![];
+
+        // Reference: plain linear solve (rotates prescribed displacements).
+        let reference = linear::solve_2d(&solver).unwrap();
+
+        // Constrained path (dummy-but-real constraint forces the delegation).
+        let input = ConstrainedInput {
+            solver: solver.clone(),
+            constraints: vec![Constraint::EqualDOF(EqualDOFConstraint {
+                master_node: 0, slave_node: 1, dofs: vec![2],
+            })],
+        };
+        let constrained = solve_constrained_2d(&input).unwrap();
+
+        let d0_ref = reference.displacements.iter().find(|d| d.node_id == 0).unwrap();
+        let d0_con = constrained.displacements.iter().find(|d| d.node_id == 0).unwrap();
+
+        // The prescribed DOF is the normal-direction displacement:
+        // u_normal = dx·sinθ + dz·cosθ = δ√2.
+        let expected = delta * 2.0 * std::f64::consts::FRAC_1_SQRT_2;
+        let u_normal_ref = d0_ref.ux * theta.sin() + d0_ref.uz * theta.cos();
+        assert!((u_normal_ref - expected).abs() < 1e-12,
+            "reference path: normal disp {} expected {}", u_normal_ref, expected);
+
+        let u_normal_con = d0_con.ux * theta.sin() + d0_con.uz * theta.cos();
+        assert!((u_normal_con - expected).abs() < 1e-12,
+            "constrained path: normal disp {} expected {} (raw-dz bug would give {})",
+            u_normal_con, expected, delta);
     }
 }
