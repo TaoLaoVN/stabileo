@@ -160,6 +160,16 @@
     <!-- The member, and the zero axis it is measured from. -->
     <line class="ds-axis" x1={PAD} y1={MID} x2={W - PAD} y2={MID} />
 
+    <!--
+      Which way is positive.
+      ──────────────────────
+      Without this the student has to guess the sign convention before they
+      can start, and a diagram drawn perfectly upside down fails for a reason
+      that has nothing to do with what the exercise is asking.
+    -->
+    <text class="ds-sign" x={2} y={PAD + 4}>+</text>
+    <text class="ds-sign" x={2} y={H - 3}>−</text>
+
     {#if refPath}
       <!-- The real diagram, shown only once the answer has been marked. -->
       <path class="ds-ref" d={refPath} />
@@ -258,6 +268,12 @@
   }
 
   .ds-axis { stroke: var(--st-hair-strong); stroke-width: 1; }
+
+  .ds-sign {
+    fill: var(--st-text-3);
+    font-family: var(--st-mono);
+    font-size: 9px;
+  }
 
   .ds-curve {
     fill: none;

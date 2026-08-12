@@ -3359,6 +3359,13 @@ const en: Record<string, string> = {
   'edu.shape.constant': 'Constant',
   'edu.shape.linear': 'Linear',
   'edu.shape.quadratic': 'Quadratic',
+  'edu.handin.showFeedback': 'See the feedback your teacher gets',
+  'edu.handin.hideFeedback': 'Hide the feedback',
+  'edu.sketch.worst': 'The drawing is furthest off at x/L = {t}, where you drew it {side} the real diagram.',
+  'edu.sketch.side.above': 'above',
+  'edu.sketch.side.below': 'below',
+  'edu.shape.cubic': 'Cubic',
+  'edu.author.deflected': 'Deflected shape',
 
   // ─── Edu: Section data ───
   'edu.sectionDataTitle': 'Section data',

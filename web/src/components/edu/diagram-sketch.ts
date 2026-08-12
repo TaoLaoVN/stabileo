@@ -159,6 +159,14 @@ export interface SketchVerdict {
   /** True when the real diagram is flat zero — nothing to draw, and saying so
    *  IS the answer. */
   trueIsZero: boolean;
+  /**
+   * Where the drawing is furthest from the real diagram, and on which side.
+   *
+   * "Wrong" on its own sends a student back to stare at the whole picture.
+   * The station of the worst error and whether they drew above or below it
+   * there is the difference between a verdict and a correction.
+   */
+  worst: { t: number; side: 'above' | 'below' } | null;
 }
 
 /** How far the drawing may sit from the real diagram, as a fraction of its peak. */
@@ -178,10 +186,16 @@ export function gradeSketch(sketch: Sketch, trueSamples: number[]): SketchVerdic
   // picks over a line of zeros is defensible, and 'zero' is what they should
   // reach for, so it is the only one accepted.
   let sq = 0;
+  let worst: { t: number; side: 'above' | 'below' } | null = null;
+  let worstAbs = 0;
   for (let i = 0; i < n; i++) {
     const t = n === 1 ? 0 : i / (n - 1);
     const d = sketchValueAt(sketch, t) - trueSamples[i];
     sq += d * d;
+    if (Math.abs(d) > worstAbs) {
+      worstAbs = Math.abs(d);
+      worst = { t, side: d > 0 ? 'above' : 'below' };
+    }
   }
   const rms = n > 0 ? Math.sqrt(sq / n) : 0;
   const curveError = trueIsZero ? rms : rms / peak;
@@ -200,6 +214,7 @@ export function gradeSketch(sketch: Sketch, trueSamples: number[]): SketchVerdic
     curveError,
     powers,
     trueIsZero,
+    worst: curveOk ? null : worst,
   };
 }
 

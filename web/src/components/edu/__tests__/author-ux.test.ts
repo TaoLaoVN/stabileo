@@ -82,17 +82,27 @@ describe('the common questions are one click', () => {
 });
 
 describe('shapes are suggested from the loads, not left blank', () => {
-  it('a distributed load suggests parabolic moment and linear shear', () => {
-    const s = suggestShapes(true);
-    expect(s.find((x) => x.diagram === 'M')!.correct).toBe('quadratic');
-    expect(s.find((x) => x.diagram === 'V')!.correct).toBe('linear');
+  const of = (s: ReturnType<typeof suggestShapes>, d: string) => s.find((x) => x.diagram === d)!.correct;
+
+  it('a uniform load suggests parabolic moment and linear shear', () => {
+    const s = suggestShapes('uniform');
+    expect(of(s, 'M')).toBe('quadratic');
+    expect(of(s, 'V')).toBe('linear');
   });
 
   it('without one it suggests linear moment and constant shear', () => {
     // Offering a parabola where no distributed load exists invites a mistake.
-    const s = suggestShapes(false);
-    expect(s.find((x) => x.diagram === 'M')!.correct).toBe('linear');
-    expect(s.find((x) => x.diagram === 'V')!.correct).toBe('constant');
+    const s = suggestShapes('none');
+    expect(of(s, 'M')).toBe('linear');
+    expect(of(s, 'V')).toBe('constant');
+  });
+
+  it('a load that VARIES raises the whole chain a further power', () => {
+    // Triangular load: quadratic shear, cubic moment. The case the format
+    // could not express until cubic existed.
+    const s = suggestShapes('varying');
+    expect(of(s, 'V')).toBe('quadratic');
+    expect(of(s, 'M')).toBe('cubic');
   });
 });
 

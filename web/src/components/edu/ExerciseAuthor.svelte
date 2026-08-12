@@ -15,7 +15,7 @@
   import { captureModel, toFile, fromFile, type CaptureWarning } from './exercise-capture';
   import {
     lintExercise, evaluateAnswer,
-    type AnswerSpec, type EduExerciseSpec, type ForceKind, type StressMeasure,
+    type AnswerSpec, type DiagramShape, type EduExerciseSpec, type ForceKind, type StressMeasure,
   } from './exercise-spec';
   import { stressContext } from './exercise-stress';
   import { saveToLibrary, toShareLink } from './exercise-library';
@@ -144,10 +144,16 @@
     // does, instead of asking the teacher for the answer to their own question.
     detected = detectKinematics();
     if (r.spec && shapeQs.length === 0) {
-      // Suggested, not imposed: a member with no distributed load cannot have a
-      // parabolic moment, so offering that as the default invites a mistake.
-      const hasDist = (r.spec.distributedLoads?.length ?? 0) > 0;
-      shapeQs = suggestShapes(hasDist) as never;
+      /*
+       * Suggested, not imposed — and the suggestion now reads the KIND of
+       * distributed load, not merely whether there is one. A load that varies
+       * along the member (qI ≠ qJ) raises the whole chain a further power:
+       * quadratic shear, cubic moment. Offering "quadratic moment" there was
+       * inviting the mistake the question exists to catch.
+       */
+      const dist = r.spec.distributedLoads ?? [];
+      const varying = dist.some((d) => Math.abs((d.qJ ?? d.qI) - d.qI) > 1e-9);
+      shapeQs = suggestShapes(varying ? 'varying' : dist.length ? 'uniform' : 'none') as never;
     }
   }
 
@@ -175,7 +181,9 @@
       t: q.answer.kind === 'at' ? q.answer.t : 0,
     })) ?? [],
   );
-  let shapeQs = $state<Array<{ diagram: 'N' | 'V' | 'M'; correct: 'zero' | 'constant' | 'linear' | 'quadratic' }>>(
+  // The shape list is spelled once, in the spec — repeating it here is how it
+  // came to be missing `cubic` on one side of the boundary.
+  let shapeQs = $state<Array<{ diagram: 'N' | 'V' | 'M'; correct: DiagramShape }>>(
     editing?.diagramShapeQuestions?.map((q) => ({ ...q })) ?? [],
   );
   let givens = $state<Array<{ label: string; value: string }>>(
@@ -208,7 +216,7 @@
    * Nothing to configure but which one: the answer is the solve, so there is
    * no correct sketch to store and no way for a teacher to state it wrongly.
    */
-  let sketchQs = $state<Array<{ diagram: 'N' | 'V' | 'M' }>>(
+  let sketchQs = $state<Array<{ diagram: 'N' | 'V' | 'M' | 'D' }>>(
     (editing?.diagramSketchQuestions ?? []).map((q) => ({ diagram: q.diagram })),
   );
   const addSketch = () => (sketchQs = [...sketchQs, { diagram: 'M' }]);
@@ -629,6 +637,7 @@
               <option value="constant">{t('edu.shape.constant')}</option>
               <option value="linear">{t('edu.shape.linear')}</option>
               <option value="quadratic">{t('edu.shape.quadratic')}</option>
+              <option value="cubic">{t('edu.shape.cubic')}</option>
             </select>
             <button class="btn-del" onclick={() => (shapeQs = shapeQs.filter((_, k) => k !== i))} aria-label="✕">✕</button>
           </div>
@@ -652,6 +661,8 @@
               <option value="N">{t('edu.author.axial')} (N)</option>
               <option value="V">{t('edu.author.shear')} (V)</option>
               <option value="M">{t('edu.author.moment')} (M)</option>
+              <!-- One power above the moment, every time. -->
+              <option value="D">{t('edu.author.deflected')}</option>
             </select>
             <button class="btn-del" onclick={() => (sketchQs = sketchQs.filter((_, k) => k !== i))} aria-label="✕">✕</button>
           </div>

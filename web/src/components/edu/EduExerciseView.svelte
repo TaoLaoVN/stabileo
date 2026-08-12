@@ -10,12 +10,18 @@
     type Submission, type SubmittedAnswer,
   } from './exercise-submission';
   import DiagramSketch from './DiagramSketch.svelte';
+  import SubmissionReview from './SubmissionReview.svelte';
   import {
     emptySketch, gradeSketch, type Sketch, type SketchVerdict,
   } from './diagram-sketch';
-  import { computeDiagramValueAt } from '../../lib/engine/diagrams';
+  import { computeDiagramValueAt, computeDisplacementAt } from '../../lib/engine/diagrams';
+  import { modelStore } from '../../lib/store';
+  import { effectiveBendingInertia } from '../../lib/engine/solver-service';
+  import { get2DDisplayDisplacementVertical } from '../../lib/geometry/coordinate-system';
 
-  const SHAPE_OPTIONS: DiagramShape[] = ['zero', 'constant', 'linear', 'quadratic'];
+  // Cubic included: a linearly varying load makes the moment cubic, and the
+  // answer has to be on the list for the question to be answerable.
+  const SHAPE_OPTIONS: DiagramShape[] = ['zero', 'constant', 'linear', 'quadratic', 'cubic'];
 
   interface Props {
     exercise: EduExercise;
@@ -87,17 +93,57 @@
    *  exercise written before the teacher could choose keeps working. */
   const canReveal = $derived(exercise.allowReveal !== false);
 
-  const DIAGRAM_KIND = { N: 'axial', V: 'shear', M: 'moment' } as const;
+  /** The three the diagram sampler knows. `D` is the deflected shape and is
+   *  read from the displacement field instead, further down. */
+  const DIAGRAM_KIND: Record<'N' | 'V' | 'M', 'axial' | 'shear' | 'moment'> =
+    { N: 'axial', V: 'shear', M: 'moment' };
 
   /** The real diagram for a question, sampled along the member. */
   function trueSamplesFor(i: number): number[] | null {
     const q = sketchQuestions[i];
-    const forces = eduStore.results?.elementForces;
+    const res = eduStore.results;
+    const forces = res?.elementForces;
     if (!q || !forces?.length) return null;
     const ef = forces[q.elementIndex ?? 0];
     if (!ef) return null;
-    return Array.from({ length: SKETCH_STATIONS }, (_, k) =>
-      computeDiagramValueAt(DIAGRAM_KIND[q.diagram], k / (SKETCH_STATIONS - 1), ef as never));
+
+    // Read once into a local: narrowing a property of a reactive object does
+    // not survive the closure below.
+    const which = q.diagram;
+    if (which !== 'D') {
+      return Array.from({ length: SKETCH_STATIONS }, (_, k) =>
+        computeDiagramValueAt(DIAGRAM_KIND[which], k / (SKETCH_STATIONS - 1), ef as never));
+    }
+
+    /*
+     * The deflected shape, sampled the same way — through the same Hermite
+     * interpolation the viewport draws, so the curve a student is marked
+     * against is the curve the app would have drawn them. In mm, because a
+     * deflection in metres is four zeros and a digit.
+     */
+    const elem = modelStore.elements.get(ef.elementId);
+    if (!elem) return null;
+    const ni = modelStore.nodes.get(elem.nodeI);
+    const nj = modelStore.nodes.get(elem.nodeJ);
+    const di = res?.displacements.find(d => d.nodeId === elem.nodeI);
+    const dj = res?.displacements.find(d => d.nodeId === elem.nodeJ);
+    if (!ni || !nj || !di || !dj) return null;
+
+    const mat = modelStore.materials.get(elem.materialId);
+    const sec = modelStore.sections.get(elem.sectionId);
+    const EI = mat && sec ? mat.e * 1000 * effectiveBendingInertia(sec) : undefined;
+
+    return Array.from({ length: SKETCH_STATIONS }, (_, k) => {
+      const disp = computeDisplacementAt(
+        k / (SKETCH_STATIONS - 1),
+        ni.x, ni.y, nj.x, nj.y,
+        di.ux, di.uz, di.ry,
+        dj.ux, dj.uz, dj.ry,
+        ef.length, ef.hingeStart, ef.hingeEnd,
+        EI, ef.qI, ef.qJ, ef.pointLoads, ef.distributedLoads,
+      );
+      return get2DDisplayDisplacementVertical(disp) * 1000;
+    });
   }
 
   function verifySketches() {
@@ -173,6 +219,7 @@
   // every field the student was asked for, what they typed, the verdict the
   // app gave it, and whether they revealed it instead of solving it.
   let studentName = $state('');
+  let showFeedback = $state(false);
   let submissionCode = $state('');
   let handinNote = $state('');
 
@@ -684,6 +731,13 @@
               {v.powersOk ? '✓' : '✗'} {t('edu.sketch.powers')}
             </span>
           </div>
+          {#if !v.curveOk && v.worst}
+            <p class="sketch-worst">
+              {t('edu.sketch.worst')
+                .replace('{t}', v.worst.t.toFixed(2))
+                .replace('{side}', t('edu.sketch.side.' + v.worst.side))}
+            </p>
+          {/if}
           {#if !v.powersOk}
             <ul class="sketch-notes">
               {#each v.powers as p, k}
@@ -836,6 +890,22 @@
         {t('edu.handin.copyCode')}
       </button>
     </div>
+    <!--
+      What the teacher will see, from here.
+      ─────────────────────────────────────
+      "Hand it in" ended at a downloaded file, and neither side could picture
+      what happened next. This is the same table the teacher opens, built from
+      the answers as they stand — so the loop is visible in any exercise,
+      including the built-in ones, without anyone having to send anything.
+    -->
+    <button class="handin-btn preview-btn" onclick={() => (showFeedback = !showFeedback)} data-testid="edu-feedback-preview">
+      {showFeedback ? t('edu.handin.hideFeedback') : t('edu.handin.showFeedback')}
+    </button>
+    {#if showFeedback}
+      <div class="handin-feedback">
+        <SubmissionReview submission={buildSubmission()} onclose={() => (showFeedback = false)} />
+      </div>
+    {/if}
     {#if handinNote}<p class="handin-note">{handinNote}</p>{/if}
     {#if submissionCode}
       <textarea class="handin-code" readonly rows="3" value={submissionCode}></textarea>
@@ -1342,6 +1412,13 @@
   .sv-ok { color: var(--st-ok); }
   .sv-bad { color: var(--st-danger); }
 
+  .sketch-worst {
+    margin: 4px 0 0;
+    font-size: 0.68rem;
+    color: var(--st-warn);
+    line-height: 1.4;
+  }
+
   .sketch-notes {
     margin: 4px 0 0;
     padding-left: 16px;
@@ -1415,6 +1492,16 @@
   }
 
   .handin-btn:hover { border-color: var(--st-hair-strong); color: var(--st-text); }
+
+  .preview-btn { margin-top: 8px; }
+
+  .handin-feedback {
+    margin-top: 10px;
+    padding: 10px;
+    background: var(--st-surface-2);
+    border: 1px solid var(--st-hair);
+    border-radius: var(--st-radius-lg);
+  }
 
   .handin-code {
     width: 100%;

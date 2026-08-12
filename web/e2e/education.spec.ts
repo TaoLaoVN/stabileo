@@ -189,6 +189,72 @@ test.describe('@smoke Education — drawing the diagram', () => {
   });
 });
 
+test.describe('@smoke Education — the whole flow', () => {
+  test('the first statics exercise can be finished, and shows what the teacher gets', async ({ page }) => {
+    await bootEducation(page);
+    await openExercise(page);
+
+    // ── Step 1 · reactions. q = 5 kN/m over 8 m → 20 kN each support.
+    const dofs = page.locator('.dof-input input');
+    await dofs.nth(0).fill('0');
+    await dofs.nth(1).fill('20');
+    await dofs.nth(2).fill('20');
+    await page.locator('.radio-option', { hasText: /Isostatic/i }).first().click();
+    await page.locator('.verify-btn').first().click();
+    await expect(page.getByTestId('edu-step-1')).toHaveClass(/done/);
+
+    // ── Step 2 · the shapes, the drawings, and the two values.
+    await page.getByTestId('edu-step-2').click();
+    for (const [i, want] of [[0, 'Zero'], [1, 'Linear'], [2, 'Quadratic']] as const) {
+      await page.locator('.shape-row').nth(i)
+        // Not anchored: the label carries the radio and its whitespace too.
+        .locator('label.radio-option', { hasText: new RegExp(want, 'i') }).first().click();
+    }
+    await page.locator('.verify-btn', { hasText: /Verify shapes/i }).click();
+
+    // Shear: +20 to −20, straight.
+    const shear = page.locator('.ds').nth(0);
+    await shear.locator('.ds-val').nth(0).fill('20');
+    await shear.locator('.ds-val').nth(1).fill('-20');
+    await shear.locator('.ds-pw', { hasText: /^lin$/ }).click();
+
+    // Moment: an ordinate at midspan, −40 there, both halves quadratic with
+    // their flat end at the peak — where the shear crosses zero.
+    const moment = page.locator('.ds').nth(1);
+    await moment.locator('.ds-add').click();
+    await moment.locator('.ds-val').nth(1).fill('-40');
+    const spans = moment.locator('.ds-span');
+    await spans.nth(0).locator('.ds-pw', { hasText: '²' }).click();
+    await spans.nth(1).locator('.ds-pw', { hasText: '²' }).click();
+    await spans.nth(0).locator('.ds-vertex .ds-pw').nth(1).click();
+    await spans.nth(1).locator('.ds-vertex .ds-pw').nth(0).click();
+
+    await page.locator('.verify-btn', { hasText: /Verify the drawing/i }).click();
+    await expect(page.locator('.sketch-verdict .sv-bad')).toHaveCount(0);
+
+    const numeric = page.locator('.diagram-questions input');
+    await numeric.nth(0).fill('20');
+    await numeric.nth(1).fill('-40');
+    await page.locator('.verify-btn', { hasText: /Verify diagrams/i }).click();
+    await expect(page.getByTestId('edu-step-2')).toHaveClass(/done/);
+
+    // ── Step 3 · the characteristic values.
+    await page.getByTestId('edu-step-3').click();
+    const chars = page.locator('.char-input input');
+    await chars.nth(0).fill('40');
+    await chars.nth(1).fill('20');
+    await page.locator('.verify-btn').last().click();
+    await expect(page.getByTestId('edu-step-3')).toHaveClass(/done/);
+    await expect(page.locator('.success-banner')).toBeVisible();
+
+    // ── And what the teacher will see, from the student's own screen.
+    await page.getByTestId('edu-feedback-preview').click();
+    const feedback = page.locator('.handin-feedback');
+    await expect(feedback).toBeVisible();
+    await expect(feedback.locator('.score')).toContainText(/13 \/ 13/);
+  });
+});
+
 test.describe('@smoke Education — the teacher decides about revealing', () => {
   test('an exercise with reveal off never offers the answer', async ({ page }) => {
     const locked = {

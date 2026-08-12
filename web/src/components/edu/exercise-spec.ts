@@ -213,7 +213,15 @@ export function evaluateAnswer(
 // ─── The exercise ──────────────────────────────────────────────────
 
 export type ExerciseCategory = 'statics' | 'strength' | 'advanced';
-export type DiagramShape = 'zero' | 'constant' | 'linear' | 'quadratic';
+/**
+ * The shapes a diagram can have, up to the one a triangular load produces.
+ *
+ * Cubic was missing, and it is not exotic: a linearly varying load makes the
+ * shear quadratic and the moment cubic, which is the second case any course
+ * covers. Without it the only honest answer to that exercise was absent from
+ * the list.
+ */
+export type DiagramShape = 'zero' | 'constant' | 'linear' | 'quadratic' | 'cubic';
 
 export interface KinematicQuestion {
   classification: 'isostatic' | 'hyperstatic';
@@ -232,7 +240,14 @@ export interface DiagramShapeQuestion {
  * there is no correct sketch to store and nothing for an author to get wrong.
  */
 export interface DiagramSketchQuestion {
-  diagram: 'N' | 'V' | 'M';
+  /**
+   * Which one to draw. `D` is the deflected shape, and it belongs in this
+   * list for the reason the chain V → M → D exists at all: each is the
+   * integral of the one before, so each is one power higher. A triangular
+   * load gives a quadratic shear, a cubic moment and a quartic deflection —
+   * and a student who has seen that once stops guessing.
+   */
+  diagram: 'N' | 'V' | 'M' | 'D';
   /** Index into `model.elements`; the first member when absent. */
   elementIndex?: number;
 }
