@@ -46,17 +46,25 @@ export type GradeRegion = 'AR' | 'US' | 'EU' | 'BR' | 'AU' | 'IN' | 'ZA';
 /**
  * The regions Basic mode offers.
  *
- * European and American cover the overwhelming majority of what is specified
- * locally, and they also cover CIRSOC by construction: CIRSOC 301 is a
- * verification code that adopts AISC's method and takes its sections from
- * whatever is commercially normalised, which in Argentina means IRAM grades
- * alongside ASTM ones. So Argentina is in this list not as a third region but
- * because it is the default, and hiding its own grades would be perverse.
+ * European and American cover most of what is specified anywhere. Argentine is
+ * here because CIRSOC is the default and hiding its own grades would be
+ * perverse — and CIRSOC leans on both anyway, being a verification code that
+ * adopts AISC's method over locally normalised sections.
  *
- * Everything else — Brazilian, Australian, Indian, South African — is real and
- * loaded, just not surfaced in Basic. PRO shows the lot.
+ * Brazilian joins them for the same reason it matters in the Southern Cone: it
+ * is the region an Argentine engineer is most likely to meet outside their own
+ * code, the ABNT grades map cleanly onto the ASTM ones they already know
+ * (MR-250 is A36, AR-350 is A572 Gr.50), and NBR 8800 uses the same 200 GPa
+ * modulus — so nothing about mixing them surprises.
+ *
+ * With Brazil added, this list now covers every grade in the table, so the gate
+ * currently withholds nothing — `MATERIAL_DESIGN_CODES` carries Australian,
+ * Indian and South African CODES, but no grades of those regions are loaded
+ * yet. Saying so plainly beats implying PRO holds a reserve it does not. The
+ * gate stays because it is where the distinction belongs the moment such grades
+ * are added, and a test asserts the current state so the change is noticed.
  */
-export const BASIC_REGIONS: GradeRegion[] = ['AR', 'EU', 'US'];
+export const BASIC_REGIONS: GradeRegion[] = ['AR', 'EU', 'US', 'BR'];
 
 /** A yield/ultimate pair that applies over a thickness band. */
 export interface ThicknessBand {
@@ -471,4 +479,90 @@ export function searchGrades(query: string, family?: GradeFamily): StructuralGra
     g.productStandard.toLowerCase().includes(q) ||
     (g.note?.toLowerCase().includes(q) ?? false),
   );
+}
+
+// ─────────────────────────────────────────────────────────────────────
+// What each profile family is actually rolled in
+// ─────────────────────────────────────────────────────────────────────
+
+/**
+ * The grade a profile family is commercially produced in, by region.
+ *
+ * A section and a material look like independent choices in a modelling tool,
+ * and physically they are: nothing stops anyone specifying an IPN in F-36. But
+ * a mill rolls each family in a particular grade, and ordering anything else
+ * means a special production run — so the pairing a drawing shows is usually
+ * not a free choice, it is what the supplier ships.
+ *
+ * Recording it does two things. It gives a sensible default, so a section
+ * carries the steel it is really made of instead of whatever material happened
+ * to be selected. And it lets the app say — without blocking anything — when a
+ * combination departs from what is stocked, which is a question of cost and
+ * lead time rather than of correctness.
+ *
+ * Only entries confirmed against a mill catalogue are listed. European practice
+ * is deliberately absent: S235 and S355 are both ordinary there and the grade is
+ * named when ordering, so there is no single commercial default to record and
+ * inventing one would be worse than leaving it out.
+ */
+export interface CommercialPairing {
+  gradeId: string;
+  /** i18n key naming where this comes from. */
+  sourceKey: string;
+}
+
+const COMMERCIAL: Record<string, Partial<Record<GradeRegion, CommercialPairing>>> = {
+  // Argentina — Acindar's catalogue, which cites IRAM-IAS U 500-503 per family.
+  IPN: { AR: { gradeId: 'iram-f24', sourceKey: 'grade.src.iramAcindar' } },
+  UPN: { AR: { gradeId: 'iram-f24', sourceKey: 'grade.src.iramAcindar' } },
+  IPE: { AR: { gradeId: 'iram-f24', sourceKey: 'grade.src.iramAcindar' } },
+  HEA: { AR: { gradeId: 'iram-f24', sourceKey: 'grade.src.iramAcindar' } },
+  HEB: { AR: { gradeId: 'iram-f24', sourceKey: 'grade.src.iramAcindar' } },
+  T:   { AR: { gradeId: 'iram-f24', sourceKey: 'grade.src.iramAcindar' } },
+  L:   { AR: { gradeId: 'iram-f24', sourceKey: 'grade.src.iramAcindarAngle' } },
+  // The wide-flange series is the exception: rolled in F-36, not F-24.
+  W: {
+    AR: { gradeId: 'iram-f36', sourceKey: 'grade.src.iramW' },
+    BR: { gradeId: 'astm-a572-50', sourceKey: 'grade.src.gerdau' },
+    US: { gradeId: 'astm-a992', sourceKey: 'grade.src.aisc' },
+  },
+  HP: {
+    BR: { gradeId: 'astm-a572-50', sourceKey: 'grade.src.gerdau' },
+    US: { gradeId: 'astm-a992', sourceKey: 'grade.src.aisc' },
+  },
+  // Hollow sections are a different product standard entirely.
+  RHS: { US: { gradeId: 'astm-a500c-shaped', sourceKey: 'grade.src.astmTube' } },
+  SHS: { US: { gradeId: 'astm-a500c-shaped', sourceKey: 'grade.src.astmTube' } },
+  CHS: { US: { gradeId: 'astm-a500c-round', sourceKey: 'grade.src.astmTube' } },
+};
+
+/** The grade a family is normally supplied in, or null if none is recorded. */
+export function commercialGrade(family: string, region: GradeRegion): CommercialPairing | null {
+  return COMMERCIAL[family]?.[region] ?? null;
+}
+
+/**
+ * Every region for which a family has a recorded pairing.
+ *
+ * A caller with no particular region — the common case, since the model does
+ * not carry one — uses this to ask whether a chosen grade matches ANY known
+ * practice before warning about it. Warning on a combination that is standard
+ * somewhere would be noise.
+ */
+export function commercialGradesFor(family: string): CommercialPairing[] {
+  const byRegion = COMMERCIAL[family];
+  return byRegion ? Object.values(byRegion).filter((v): v is CommercialPairing => !!v) : [];
+}
+
+/**
+ * Whether a section/grade pairing departs from every recorded practice.
+ *
+ * Returns null when nothing is recorded for the family, which is NOT the same
+ * as "unusual" — most families have no entry, and treating silence as a warning
+ * would make the warning meaningless.
+ */
+export function isUnusualPairing(family: string, gradeId: string | undefined): boolean | null {
+  const known = commercialGradesFor(family);
+  if (known.length === 0 || !gradeId) return null;
+  return !known.some((k) => k.gradeId === gradeId);
 }

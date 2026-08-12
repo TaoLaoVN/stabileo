@@ -12,6 +12,7 @@
 import { describe, it, expect } from 'vitest';
 import {
   ALL_GRADES,
+  BASIC_REGIONS,
   MATERIAL_DESIGN_CODES,
   HOT_ROLLED,
   ALUMINIUM,
@@ -25,6 +26,9 @@ import {
   codesForMode,
   defaultCodeFor,
   gradesForCode,
+  commercialGrade,
+  commercialGradesFor,
+  isUnusualPairing,
   type GradeFamily,
 } from '../structural-grades';
 
@@ -217,23 +221,29 @@ describe('the two views of a design code agree where they overlap', () => {
  * someone went looking for F-24.
  */
 describe('what Basic offers versus PRO', () => {
-  it('Basic keeps European, American and Argentine grades, and hides the rest', () => {
+  it('Basic offers exactly the four regions it declares', () => {
     const basic = gradesForMode(ALL_GRADES, false);
     const regions = new Set(basic.map((g) => g.region));
-    expect([...regions].sort()).toEqual(['AR', 'EU', 'US']);
+    expect([...regions].sort()).toEqual(['AR', 'BR', 'EU', 'US']);
     // CIRSOC is the default, so its own grades must survive the Basic filter.
     expect(basic.some((g) => g.id === 'iram-f24')).toBe(true);
   });
 
-  it('PRO adds regions Basic withholds, without losing any', () => {
+  it('PRO loses nothing, and today adds no GRADES — only design codes', () => {
     const basic = gradesForMode(ALL_GRADES, false);
     const pro = gradesForMode(ALL_GRADES, true);
     expect(pro.length).toBe(ALL_GRADES.length);
-    expect(pro.length).toBeGreaterThan(basic.length);
-    // Nothing visible in Basic may vanish in PRO.
     for (const g of basic) expect(pro).toContain(g);
-    // And the withheld ones are genuinely there, not absent from the database.
-    expect(pro.some((g) => g.region === 'BR')).toBe(true);
+
+    // Worth asserting rather than assuming: every grade loaded belongs to a
+    // Basic region, so the gate currently withholds nothing. The AU/IN/ZA
+    // entries are design CODES with no grades of their own yet. If grades for
+    // those regions are ever added, this flips and the gate starts to bite —
+    // which is the moment to notice, not to discover later.
+    expect(pro.length).toBe(basic.length);
+    expect(ALL_GRADES.every((g) => BASIC_REGIONS.includes(g.region))).toBe(true);
+    const codeRegions = new Set(MATERIAL_DESIGN_CODES.map((c) => c.region));
+    expect(codeRegions.has('AU')).toBe(true);
   });
 
   it('Basic still offers a code for every family', () => {
@@ -356,5 +366,114 @@ describe('audited against the published standards', () => {
     for (const id of ['astm-a36', 'astm-a572-50', 'astm-a992']) {
       expect(g(id).e, id).toBe(200000);
     }
+  });
+});
+
+/**
+ * Brazil, audited and surfaced in Basic.
+ *
+ * Every ABNT value was checked against NBR 7007, NBR 7008 and Gerdau's own
+ * catalogue, and unlike the Argentine set all of them were already right — so
+ * these pin them against a future edit rather than record a correction.
+ */
+describe('Brazilian grades', () => {
+  const g = (id: string) => {
+    const found = gradeById(id);
+    if (!found) throw new Error(`${id} missing`);
+    return found;
+  };
+
+  it('NBR 7007 hot-rolled grades match the standard', () => {
+    expect([g('nbr-mr250').fy, g('nbr-mr250').fu]).toEqual([250, 400]);
+    expect([g('nbr-ar350').fy, g('nbr-ar350').fu]).toEqual([350, 450]);
+    expect([g('nbr-ar415').fy, g('nbr-ar415').fu]).toEqual([415, 520]);
+    expect([g('nbr-ar350cor').fy, g('nbr-ar350cor').fu]).toEqual([350, 485]);
+  });
+
+  it('NBR 7008 galvanised grades match the standard', () => {
+    expect([g('nbr-zar250').fy, g('nbr-zar250').fu]).toEqual([250, 360]);
+    expect([g('nbr-zar280').fy, g('nbr-zar280').fu]).toEqual([280, 380]);
+    expect([g('nbr-zar345').fy, g('nbr-zar345').fu]).toEqual([345, 430]);
+  });
+
+  it('uses NBR 8800’s 200 GPa modulus, matching ASTM rather than EN', () => {
+    for (const id of ['nbr-mr250', 'nbr-ar350', 'nbr-ar415']) {
+      expect(g(id).e, id).toBe(200000);
+    }
+  });
+
+  it('is equivalent to the ASTM grades without being numerically identical', () => {
+    // Gerdau states A572 Gr.50 and AR 350 are the same steel under two
+    // standards — but the nominal yields are 345 and 350 MPa, because each
+    // standard rounds from its own unit system. Close enough to substitute,
+    // different enough that quoting one for the other is wrong.
+    expect(g('nbr-ar350').fy).toBe(350);
+    expect(g('astm-a572-50').fy).toBe(345);
+    expect(Math.abs(g('nbr-ar350').fy - g('astm-a572-50').fy)).toBeLessThanOrEqual(5);
+    expect(g('nbr-ar350').fu).toBe(g('astm-a572-50').fu);   // both 450
+    // MR-250 and A36 do coincide exactly.
+    expect(g('nbr-mr250').fy).toBe(g('astm-a36').fy);
+    expect(g('nbr-mr250').fu).toBe(g('astm-a36').fu);
+  });
+
+  it('is offered in Basic', () => {
+    const basic = gradesForMode(ALL_GRADES, false);
+    expect(basic.some((x) => x.region === 'BR')).toBe(true);
+    expect(new Set(basic.map((x) => x.region))).toEqual(new Set(['AR', 'EU', 'US', 'BR']));
+    // And the Brazilian design codes come with them.
+    const codes = codesForMode(MATERIAL_DESIGN_CODES, false);
+    expect(codes.some((c) => c.id === 'nbr-8800')).toBe(true);
+    expect(codes.some((c) => c.id === 'nbr-14762')).toBe(true);
+  });
+
+  it('still withholds the regions PRO is for', () => {
+    // Adding Brazil must not quietly open everything.
+    const basic = gradesForMode(ALL_GRADES, false);
+    expect(basic.some((x) => x.region === 'AU')).toBe(false);
+    expect(basic.some((x) => x.region === 'IN')).toBe(false);
+  });
+});
+
+describe('what a profile family is actually rolled in', () => {
+  it('records the Argentine practice per family, W being the exception', () => {
+    // Acindar's catalogue: the ordinary families in F-24, the wide-flange
+    // series in F-36.
+    expect(commercialGrade('IPN', 'AR')?.gradeId).toBe('iram-f24');
+    expect(commercialGrade('UPN', 'AR')?.gradeId).toBe('iram-f24');
+    expect(commercialGrade('W', 'AR')?.gradeId).toBe('iram-f36');
+  });
+
+  it('records Brazilian and American practice for the same family', () => {
+    // One family, three regions, three different steels — which is exactly why
+    // this cannot be a property of the family alone.
+    expect(commercialGrade('W', 'BR')?.gradeId).toBe('astm-a572-50');
+    expect(commercialGrade('W', 'US')?.gradeId).toBe('astm-a992');
+    expect(commercialGradesFor('W')).toHaveLength(3);
+  });
+
+  it('every recorded pairing points at a grade that exists', () => {
+    for (const family of ['IPN', 'UPN', 'IPE', 'HEA', 'HEB', 'T', 'L', 'W', 'HP', 'RHS', 'SHS', 'CHS']) {
+      for (const p of commercialGradesFor(family)) {
+        expect(gradeById(p.gradeId), `${family} → ${p.gradeId}`).toBeDefined();
+        expect(p.sourceKey, `${family} → ${p.gradeId}`).toBeTruthy();
+      }
+    }
+  });
+
+  it('flags a departure from practice without flagging silence', () => {
+    // An IPN in F-36 is buildable but not what is stocked.
+    expect(isUnusualPairing('IPN', 'iram-f36')).toBe(true);
+    expect(isUnusualPairing('IPN', 'iram-f24')).toBe(false);
+    // A W in A992 is standard in the US even though Argentina rolls F-36 —
+    // matching ANY recorded practice is enough, or the warning becomes noise.
+    expect(isUnusualPairing('W', 'astm-a992')).toBe(false);
+    expect(isUnusualPairing('W', 'astm-a572-50')).toBe(false);
+  });
+
+  it('says nothing where no practice is recorded, rather than warning', () => {
+    // Silence is not the same as unusual. European practice names the grade at
+    // order time, so there is no commercial default to depart from.
+    expect(isUnusualPairing('MC', 'iram-f24')).toBeNull();
+    expect(isUnusualPairing('IPN', undefined)).toBeNull();
   });
 });

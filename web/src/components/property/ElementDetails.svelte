@@ -4,6 +4,7 @@
   import { computeElementStress } from '../../lib/store/results.svelte';
   import { toDisplay, unitLabel } from '../../lib/utils/units';
   import SectionChanger from '../SectionChanger.svelte';
+  import PairingNote from './PairingNote.svelte';
   import MaterialPresetSelector from '../MaterialPresetSelector.svelte';
   import type { SteelProfile } from '../../lib/data/steel-profiles';
   import { profileToSectionFull } from '../../lib/data/steel-profiles';
@@ -27,6 +28,7 @@
     const full = profileToSectionFull(profile);
     const secId = modelStore.addSection({
       name: profile.name,
+      profileFamily: profile.family,
       a: full.a,
       iz: full.iz,
       iy: full.iy,
@@ -92,6 +94,7 @@
       nu: preset.nu,
       rho: preset.rho,
       fy: preset.fy,
+      gradeId: preset.gradeId,
     });
     modelStore.updateElementMaterial(materialPresetTargetElemId, matId);
     resultsStore.clear();
@@ -150,6 +153,9 @@
           <button class="icon-btn" onclick={() => { const newId = modelStore.addSection({ name: t('table.newSection'), a: 0.01, iz: 0.000025, iy: 0.0001 }); uiStore.editingSectionId = newId; }} title={t('prop.newSection')}>+</button>
         </div>
       </div>
+      <!-- Whether this section/steel pairing is one mills actually supply.
+           Silent unless it departs from every recorded practice. -->
+      <PairingNote family={sec?.profileFamily} gradeId={mat?.gradeId} />
       <div class="property-row">
         <span>{t('prop.hinges')}{is3DMode ? ` ${t('prop.hinges3DSuffix')}` : ''}:</span>
         <div class="hinge-toggles">
