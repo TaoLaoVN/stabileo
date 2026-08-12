@@ -1,22 +1,26 @@
 /**
- * English / Spanish parity for the keys the public landing actually uses.
+ * Every language the public landing offers actually speaks the whole page.
  *
- * The public landing offers exactly two languages (see PUBLIC_LOCALES in
- * src/lib/i18n/store.svelte.ts). `t()` falls back to English silently, so a
- * missing Spanish key renders an English sentence in the middle of a Spanish
- * page and nothing errors. That is precisely the defect this guards.
+ * The landing offers the locales in PUBLIC_LOCALES (src/lib/i18n/store.svelte.ts)
+ * and nothing else. `t()` falls back to English silently, so a missing key
+ * renders an English sentence in the middle of a Spanish or Portuguese page and
+ * nothing errors. That is precisely the defect this guards — and the reason the
+ * list of offered locales and this test have to move together: adding a locale
+ * to PUBLIC_LOCALES without its copy fails here rather than shipping a page
+ * that switches language halfway down.
  *
  * Scope is derived from the source, not from a hand-maintained list: the test
  * scans every landing component for `t('landing.…')` and requires each key it
- * finds to exist in both dictionaries. Adding a section with untranslated copy
- * therefore fails here, without anyone remembering to update this file.
+ * finds to exist in every offered dictionary. Adding a section with
+ * untranslated copy therefore fails here, without anyone remembering to update
+ * this file.
  *
  * The repo-wide locale-parity test (src/lib/i18n/__tests__) is deliberately
  * untouched: it covers all fourteen dictionaries and a different namespace.
  */
 import { describe, it, expect } from 'vitest';
 import en from '../../../lib/i18n/locales/en';
-import es from '../../../lib/i18n/locales/es';
+import { PUBLIC_LOCALES, dictFor } from '../../../lib/i18n/store.svelte';
 
 const sources = import.meta.glob('../**/*.{svelte,ts}', { query: '?raw', import: 'default', eager: true }) as Record<string, string>;
 
@@ -34,8 +38,20 @@ function usedKeys(): string[] {
 /** Keys built at runtime as `'landing.' + key`, which the regex cannot see. */
 const COMPUTED_PREFIXED = ['capLin', 'capNl', 'capEl', 'capTd', 'stT', 'stPa', 'stR'];
 
-describe('public landing en/es key parity', () => {
+/**
+ * The landing's live-demo section mounts the real editor, not a screenshot, so
+ * its chrome is rendered from the application dictionary rather than from
+ * `landing.*`. Portuguese was missing all of it while every landing key was
+ * present: a fully Portuguese page with an English ribbon sitting in the middle
+ * of it. The rest of the application is still far from translated in
+ * Portuguese, and deliberately out of scope here — what the landing shows is
+ * what the landing has to speak.
+ */
+const DEMO_CHROME = /^(ribbon\.|config\.localAxes|editor\.slide)/;
+
+describe('public landing i18n', () => {
   const keys = usedKeys();
+  const enDict = en as Record<string, string>;
 
   it('finds a plausible number of landing keys to check', () => {
     expect(keys.length).toBeGreaterThan(80);
@@ -46,23 +62,53 @@ describe('public landing en/es key parity', () => {
     expect(missing, `missing from en.ts:\n${missing.join('\n')}`).toEqual([]);
   });
 
-  it('every landing key used by a component exists in Spanish', () => {
-    const missing = keys.filter((k) => !(k in es));
-    expect(missing, `missing from es.ts — these would render in English on the Spanish landing:\n${missing.join('\n')}`).toEqual([]);
-  });
+  for (const locale of PUBLIC_LOCALES.filter((l) => l !== 'en')) {
+    const dict = () => dictFor(locale) as Record<string, string>;
 
-  it('the runtime-composed capability and status keys exist in both', () => {
-    const enKeys = Object.keys(en);
-    for (const prefix of COMPUTED_PREFIXED) {
-      const group = enKeys.filter((k) => new RegExp(`^landing\\.${prefix}\\d+$`).test(k));
-      expect(group.length, `en.ts has no landing.${prefix}<n> keys`).toBeGreaterThan(0);
-      const missing = group.filter((k) => !(k in es));
-      expect(missing, `missing from es.ts:\n${missing.join('\n')}`).toEqual([]);
+    it(`${locale} has every landing key used by a component`, () => {
+      const d = dict();
+      const missing = keys.filter((k) => !(k in d));
+      expect(missing, `missing from ${locale}.ts — these would render in English on the ${locale} landing:\n${missing.join('\n')}`).toEqual([]);
+    });
+
+    it(`${locale} has the runtime-composed capability and status keys`, () => {
+      const d = dict();
+      for (const prefix of COMPUTED_PREFIXED) {
+        const group = Object.keys(en).filter((k) => new RegExp(`^landing\\.${prefix}\\d+$`).test(k));
+        expect(group.length, `en.ts has no landing.${prefix}<n> keys`).toBeGreaterThan(0);
+        const missing = group.filter((k) => !(k in d));
+        expect(missing, `missing from ${locale}.ts:\n${missing.join('\n')}`).toEqual([]);
+      }
+    });
+
+    it(`${locale} has the editor chrome the embedded demo renders`, () => {
+      const d = dict();
+      const chrome = Object.keys(en).filter((k) => DEMO_CHROME.test(k));
+      expect(chrome.length, 'the demo-chrome scan matched nothing').toBeGreaterThan(40);
+      const missing = chrome.filter((k) => !(k in d));
+      expect(missing, `missing from ${locale}.ts — English chrome inside a ${locale} page:\n${missing.join('\n')}`).toEqual([]);
+    });
+
+    it(`${locale} is translated, not English copied across`, () => {
+      // A locale that "has" every key by repeating English reads as complete and
+      // is not. Sampling the longest strings catches that without pretending to
+      // judge translation quality: identical prose in two languages is the tell.
+      const d = dict();
+      const sample = keys
+        .filter((k) => typeof enDict[k] === 'string' && enDict[k].length > 40)
+        .sort((a, b) => enDict[b].length - enDict[a].length)
+        .slice(0, 40);
+      const copied = sample.filter((k) => d[k] === enDict[k]);
+      expect(copied, `${locale} repeats the English text for: ${copied.join(', ')}`).toEqual([]);
+    });
+  }
+
+  it('no landing key used by a component is an empty string in an offered locale', () => {
+    const blank: string[] = [];
+    for (const locale of PUBLIC_LOCALES) {
+      const d = dictFor(locale) as Record<string, string>;
+      for (const k of keys) if (k in d && d[k].trim() === '') blank.push(`${locale}:${k}`);
     }
-  });
-
-  it('no landing key used by a component is an empty string', () => {
-    const blank = keys.filter((k) => (en as Record<string, string>)[k]?.trim() === '' || (es as Record<string, string>)[k]?.trim() === '');
     expect(blank).toEqual([]);
   });
 });

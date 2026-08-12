@@ -15,7 +15,7 @@
       </div>
     </div>
 
-    <nav class="footer-links" aria-label="Footer">
+    <nav class="footer-links" aria-label={t('landing.footNav')}>
       <a href={DOCS_HUB_URL} target="_blank" rel="noreferrer">{t('landing.footDocs')}</a>
       <a href={REPO_URL} target="_blank" rel="noreferrer">{t('landing.footRepo')}</a>
       <a href="/demo">{t('landing.footTour')}</a>

@@ -138,17 +138,24 @@ export const i18n = {
 // Public landing locales
 //
 // The application ships fourteen languages and keeps all of them. The public
-// landing page deliberately offers only two, because only `en` and `es` have a
-// complete `landing.*` dictionary — the other twelve are ~97 keys short each,
-// so `t()`'s silent English fallback renders them as a half-translated page.
-// Offering a language the marketing copy does not actually speak is worse than
-// not offering it.
+// landing page offers only the ones whose `landing.*` dictionary is complete,
+// because `t()` falls back to English silently: a locale that is ninety keys
+// short does not look broken, it looks like a page that switches to English
+// halfway down. Offering a language the marketing copy does not actually speak
+// is worse than not offering it.
+//
+// Portuguese joined on 2026-08-12, once all 321 landing keys were written, and
+// so were the ribbon and editor keys the live demo renders inside the page —
+// the demo is the real editor, so an English ribbon would sit in the middle of
+// a Portuguese landing. The rest of the application is still ~1,460 keys short
+// in Portuguese; `landing-locale-coverage.test.ts` is what keeps this list and
+// that promise in step.
 //
 // Nothing here mutates the application's locale. A visitor whose browser is set
 // to French reads the landing in English and still gets a French editor.
 // ─────────────────────────────────────────────────────────────────────────────
 
-export const PUBLIC_LOCALES = ['en', 'es'] as const;
+export const PUBLIC_LOCALES = ['en', 'es', 'pt'] as const;
 export type PublicLocale = (typeof PUBLIC_LOCALES)[number];
 
 function isPublicLocale(loc: string): loc is PublicLocale {

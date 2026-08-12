@@ -3,6 +3,762 @@ const pt: Translations = {
   // ─── Auth / Login ───
 
   // ─── Landing Page ───
+
+  'config.localAxesAlways': 'Todos',
+
+  'config.localAxesMembers': 'Eixos locais (barras)',
+
+  'config.localAxesNever': 'Nenhum',
+
+  'config.localAxesSelected': 'Seleção',
+
+  'config.localAxesShells': 'Eixos locais (lajes/paredes)',
+
+  'editor.slideEnd': 'Deslizante fim',
+
+  'editor.slideNone': 'Nenhuma',
+
+  'editor.slideStart': 'Deslizante início',
+
+  'editor.slideX': 'Desliz. X',
+
+  'editor.slideZ': 'Desliz. Z',
+
+  'ribbon.advanced': 'Avançado',
+
+  'ribbon.axial': 'Normal',
+
+  'ribbon.close': 'Fechar painel',
+
+  'ribbon.data': 'Dados do modelo',
+
+  'ribbon.deformed': 'Deformada',
+
+  'ribbon.examples': 'Exemplos',
+
+  'ribbon.groupConditions': 'Condições',
+
+  'ribbon.groupCreate': 'Criar',
+
+  'ribbon.groupData': 'Dados',
+
+  'ribbon.groupDiagrams': 'Diagramas',
+
+  'ribbon.groupDraw': 'Desenhar',
+
+  'ribbon.groupEdit': 'Editar',
+
+  'ribbon.groupInspect': 'Inspecionar',
+
+  'ribbon.groupProject': 'Projeto',
+
+  'ribbon.groupProperties': 'Propriedades',
+
+  'ribbon.groupSolve': 'Resolver',
+
+  'ribbon.groupView': 'Vista',
+
+  'ribbon.moment': 'Momento',
+
+  'ribbon.momentY': 'My',
+
+  'ribbon.momentZ': 'Mz',
+
+  'ribbon.nameAxial': 'Esforço normal',
+
+  'ribbon.nameMoment': 'Momento fletor',
+
+  'ribbon.nameMomentY': 'Momento fletor em torno de y',
+
+  'ribbon.nameMomentZ': 'Momento fletor em torno de z',
+
+  'ribbon.nameShear': 'Esforço cortante',
+
+  'ribbon.nameShearY': 'Cortante segundo y',
+
+  'ribbon.nameShearZ': 'Cortante segundo z',
+
+  'ribbon.nameTorsion': 'Torção',
+
+  'ribbon.needs3d': 'somente em análise 3D',
+
+  'ribbon.needsSolve': 'resolva o modelo primeiro',
+
+  'ribbon.noDiagram': 'Nenhum',
+
+  'ribbon.project': 'Projeto',
+
+  'ribbon.resize': 'Redimensionar painel',
+
+  'ribbon.results': 'Resultados',
+
+  'ribbon.sectionStress': 'Seção',
+
+  'ribbon.sections': 'Seções',
+
+  'ribbon.settings': 'Ajustes',
+
+  'ribbon.shear': 'Cortante',
+
+  'ribbon.shearZ': 'Vz',
+
+  'ribbon.tabAnalyse': 'Análise',
+
+  'ribbon.tabModel': 'Modelo',
+
+  'ribbon.tabResults': 'Resultados',
+
+  'ribbon.tabs': 'Abas',
+
+  'ribbon.tool': 'Opções',
+
+  'ribbon.torsion': 'Torção',
+
+  'ribbon.view2d': '2D',
+
+  'ribbon.view3d': '3D',
+
+  'landing.accessB': 'O Stabileo é software livre sob AGPL-3.0, e o solver roda na sua própria máquina. Não há preço, não há conta e não há licenças.',
+
+  'landing.accessEdu': 'A intenção é que a aplicação central siga gratuita para uso educacional, e as camadas Educativo e PRO crescem por cima.',
+
+  'landing.accessNote': 'Os serviços hospedados marcados como ROADMAP ainda estão à frente, e usar o Stabileo nunca vai depender deles.',
+
+  'landing.accessT': 'Livre e de código aberto',
+
+  'landing.aiFut1': 'Ajudar a criar e modificar modelos estruturais.',
+
+  'landing.aiFut2': 'Interpretar resultados estruturais.',
+
+  'landing.aiFut3': 'Explicar conceitos de engenharia e o que o solver devolveu.',
+
+  'landing.aiFut4': 'Acompanhar durante um fluxo de projeto.',
+
+  'landing.aiFut5': 'Apoiar decisões estruturais atentas à norma.',
+
+  'landing.aiFut6': 'Conectar a modelagem, a verificação e a documentação.',
+
+  'landing.aiFutKicker': 'EM DESENVOLVIMENTO',
+
+  'landing.aiFutTitle': 'O que a camada de agentes vai fazer',
+
+  'landing.aiStatus': 'O Stabileo AI está em desenvolvimento ativo. As rotas do agente já rodam em desenvolvimento e teste contra um backend próprio, sobre o mesmo solver e os mesmos números que todo o resto desta página. Esse backend ainda não faz parte do site público, então esta seção descreve a direção e não um serviço que você possa abrir hoje. O trabalho continua sendo assinado por um engenheiro.',
+
+  'landing.badgeDev': 'EM DESENVOLVIMENTO',
+
+  'landing.badgePartial': 'PARCIAL',
+
+  'landing.badgeRoadmap': 'ROADMAP',
+
+  'landing.badgeTesting': 'PARCIAL · EM TESTE',
+
+  'landing.badgeToday': 'DISPONÍVEL HOJE',
+
+  'landing.basicDemoNote': 'A demo ao vivo logo abaixo roda o modo Básico tal como é publicado. Educativo e PRO constroem mais fluxos sobre a mesma base de cálculo estrutural.',
+
+  'landing.basicH': 'Básico é o modo que já funciona hoje.',
+
+  'landing.basicP': 'Um ambiente de cálculo estrutural prático que você já pode usar: modelos 2D e 3D simples, as ferramentas essenciais de uma disciplina universitária de estruturas, e resultados que você pode ler, conferir e explicar.',
+
+  'landing.basicPt1': 'Modelos 2D e 3D simples: vigas, pórticos, treliças, arcos e pórticos espaciais.',
+
+  'landing.basicPt2': 'O raciocínio de um curso inicial e intermediário de estruturas: estabilidade, reações, esforços internos, deformações e tensões de seção.',
+
+  'landing.basicPt3': 'Explicações didáticas, não só um resultado: um assistente passo a passo do método da rigidez que mostra cada operação matricial.',
+
+  'landing.basicPt4': 'Resultados de engenharia à vista: diagramas de M, V, N e T, a deformada, as reações e as tensões em uma seção cortada.',
+
+  'landing.basicPt5': '55 modelos de exemplo vêm com a aplicação, e 37 estão a um clique no menu de exemplos.',
+
+  'landing.basicPt6': 'Recálculo ao vivo, como opção: ao ativá-lo o solver roda a cada edição e os diagramas seguem o modelo enquanto você o altera.',
+
+  'landing.capAlt2d': 'Stabileo em 2D: um pórtico resolvido com seu diagrama de momentos fletores.',
+
+  'landing.capAlt3d': 'Stabileo em 3D: um galpão industrial colorido por aproveitamento.',
+
+  'landing.capAltStress2d': 'Stabileo em 2D: o painel de tensões de seção com o círculo de Mohr da barra selecionada.',
+
+  'landing.capAltStress3d': 'Stabileo em 3D: tensões biaxiais de seção em uma barra selecionada.',
+
+  'landing.capColElements': 'ELEMENTOS',
+
+  'landing.capColLinear': 'LINEAR',
+
+  'landing.capColNonlinear': 'NÃO LINEAR',
+
+  'landing.capColTime': 'DEPENDENTE DO TEMPO',
+
+  'landing.capEl1': 'Vigas-coluna de fibras',
+
+  'landing.capEl2': 'Cascas MITC4 / MITC9',
+
+  'landing.capEl3': 'Solid-shells SHB8-ANS',
+
+  'landing.capEl4': 'Cabos',
+
+  'landing.capEl5': 'Protendido / pós-tracionado',
+
+  'landing.capH': 'Um motor, todo o espectro da análise.',
+
+  'landing.capLin1': 'Estático',
+
+  'landing.capLin2': 'Segunda ordem',
+
+  'landing.capLin3': 'Flambagem',
+
+  'landing.capLin4': 'Modal',
+
+  'landing.capLin5': 'Espectro de resposta',
+
+  'landing.capLin6': 'História temporal',
+
+  'landing.capLin7': 'Harmônico',
+
+  'landing.capLin8': 'Cargas móveis',
+
+  'landing.capNl1': 'Corrotacional',
+
+  'landing.capNl2': 'Não linearidade material',
+
+  'landing.capNl3': 'Análise plástica',
+
+  'landing.capNl4': 'Etapas construtivas',
+
+  'landing.capNl5': 'Contato / gap',
+
+  'landing.capNl6': 'Imperfeições iniciais',
+
+  'landing.capP': 'O mesmo motor serve aos três modos. As análises mais profundas fazem parte do modo PRO, e algumas capacidades do solver seguem sendo ampliadas.',
+
+  'landing.capShot2dBody': 'Diagramas de M, V e N, deformada, tensões de Navier e Jourawski, fluxo de cisalhamento e círculo de Mohr para a seção selecionada.',
+
+  'landing.capShot2dTitle': '2D — diagramas e tensões de seção',
+
+  'landing.capShot3dBody': 'My, Mz, Vy, Vz, N e T, flexão biaxial, torção e mapa de cores de aproveitamento sobre todo o modelo.',
+
+  'landing.capShot3dTitle': '3D — seis graus de liberdade por nó',
+
+  'landing.capShotStress2dBody': 'Você escolhe um ponto de uma barra e lê σ e τ em toda a seção, o fluxo de cisalhamento e a verificação de falha.',
+
+  'landing.capShotStress2dTitle': 'Tensões de seção, barra por barra',
+
+  'landing.capShotStress3dBody': 'N/A + Mz·y/Iz + My·z/Iy com componentes de cisalhamento separadas e torção de Saint-Venant ou Bredt.',
+
+  'landing.capShotStress3dTitle': 'Tensões biaxiais em 3D',
+
+  'landing.capTd1': 'Fluência (creep)',
+
+  'landing.capTd2': 'Retração (shrinkage)',
+
+  'landing.capTd3': 'Construção por etapas',
+
+  'landing.capTd4': 'Estados de carga acumulados',
+
+  'landing.cir101Body': 'Geradas a partir do modelo: peso próprio, incidência de alvenaria, as sobrecargas mínimas da Tabela 4.1, a redução de sobrecarga e as sete combinações de resistência textuais.',
+
+  'landing.cir101Limit': 'Outros tipos de carga serão somados mais adiante.',
+
+  'landing.cir101Scope': 'Cargas permanentes e sobrecargas, e combinações',
+
+  'landing.cir102Body': 'Pressão dinâmica, exposição e constantes de terreno, topografia, fator de rajada, classificação de fechamento e os coeficientes de pressão de paredes e cobertura, aplicados ao sistema principal resistente ao vento.',
+
+  'landing.cir102Limit': 'Os edifícios não rígidos e os casos de carga torcionais serão incorporados no futuro.',
+
+  'landing.cir102Scope': 'Ação do vento',
+
+  'landing.cir103Body': 'Já são gerados o peso sísmico efetivo e a distribuição em altura do cortante na base pelo método estático.',
+
+  'landing.cir103Limit': 'Fluxo sísmico regulamentar em desenvolvimento.',
+
+  'landing.cir103Scope': 'Ação sísmica e detalhamento sismorresistente',
+
+  'landing.cir201Body': 'A cobertura mais forte de todas as desta página. As vigas e os pilares são verificados e além disso gerados: flexão, cisalhamento, estribos, zonas de barras, espaçamentos, ancoragens e comprimentos de emenda, e cada resultado leva o seu artigo. As lajes, as paredes estruturais e as sapatas também são projetadas, são alcançadas a partir do fluxo de trabalho, e seus resultados são marcados como provisórios.',
+
+  'landing.cir201Limit': 'Finalizando seu desenvolvimento e sendo testado frente a casos reais.',
+
+  'landing.cir201Scope': 'Projeto de concreto armado, e geração de armaduras',
+
+  'landing.cir301Body': 'Um verificador de barras de aço sobre a base AISC 360 LRFD: tração, compressão com flambagem segundo KL/r, flexão com flambagem lateral com torção, cisalhamento e solicitações combinadas.',
+
+  'landing.cir301Limit': 'Projeto segundo a norma em desenvolvimento.',
+
+  'landing.cir301Scope': 'Verificação de barras de aço',
+
+  'landing.cirsocP': 'Stabileo é feito na Argentina, então CIRSOC vem primeiro: é o marco normativo argentino e o que este trabalho tem de cumprir, e é onde o projeto segundo a norma está mais avançado. O roadmap segue com os Eurocódigos, e depois com as normas dos Estados Unidos.',
+
+  'landing.codeCfs': 'Aço formado a frio',
+
+  'landing.codeEcConcrete': 'Eurocódigo · concreto',
+
+  'landing.codeEcSteel': 'Eurocódigo · aço',
+
+  'landing.codeRc': 'Concreto armado',
+
+  'landing.codeSteel': 'Aço',
+
+  'landing.codeTimberMasonry': 'Madeira e alvenaria',
+
+  'landing.codesH': 'Projeto e verificação contra as normas com as quais se trabalha.',
+
+  'landing.codesIntlLead': 'Hoje o solver qualifica contra cada uma destas uma barra que você dimensionou.',
+
+  'landing.codesIntlTitle': 'CÓDIGOS INTERNACIONAIS · VERIFICAÇÃO DE BARRAS',
+
+  'landing.codesLead': 'A verificação de barras já cobre as principais normas internacionais. O projeto segundo a norma, ou seja propor um dimensionamento e gerar armaduras, está sendo construído um marco de cada vez.',
+
+  'landing.codesRegionEu': 'Europa',
+
+  'landing.codesRegionUs': 'Estados Unidos',
+
+  'landing.ctaH': 'Abra o Stabileo e modele alguma coisa.',
+
+  'landing.ctaP': 'Sem instalar, sem conta. O primeiro modelo leva um minuto.',
+
+  'landing.ctaSource': 'Ver o código',
+
+  'landing.demoBasicPill': '100% modo Básico',
+
+  'landing.demoEx1': 'Balanço',
+
+  'landing.demoEx2': 'Pórtico',
+
+  'landing.demoEx3': 'Treliça',
+
+  'landing.demoEx4': 'Pórtico 3D',
+
+  'landing.demoExamplesLbl': 'Exemplos',
+
+  'landing.demoExit': 'Sair',
+
+  'landing.demoFallback': 'A demo embutida não pôde ser carregada neste navegador.',
+
+  'landing.demoFallbackCta': 'Abrir o editor em uma aba nova',
+
+  'landing.demoH': 'Este é o modo Básico, rodando aqui.',
+
+  'landing.demoInteractive': 'Interativo',
+
+  'landing.demoLoadingNew': 'Carregando o editor…',
+
+  'landing.demoLockedCta': 'Toque para interagir',
+
+  'landing.demoLockedHint': 'Até então, a roda do mouse segue rolando a página',
+
+  'landing.demoOpenFull': 'Abrir este exemplo no editor',
+
+  'landing.demoP': 'Não é um vídeo nem uma captura. É o mesmo editor que serve stabileo.com, embutido nesta página e resolvendo inteiramente no seu navegador. Escolha um exemplo e edite.',
+
+  'landing.demoPosterAlt': 'Prévia do editor do Stabileo com um pórtico resolvido e seu diagrama de momentos.',
+
+  'landing.demoReset': 'Reiniciar',
+
+  'landing.demoResetTitle': 'Recarregar este exemplo no seu estado original',
+
+  'landing.demoRetry': 'Tentar de novo',
+
+  'landing.demoScopeNote': 'Tudo o que você vê nesta janela é o modo Básico que obtém em stabileo.com, rodando no seu navegador. Educativo e PRO estendem a mesma base com seus próprios fluxos.',
+
+  'landing.demoStart': 'Iniciar a demo interativa',
+
+  'landing.demoStartHint': 'Carrega o editor dentro desta página',
+
+  'landing.demoStatusFailed': 'O editor não carregou',
+
+  'landing.demoStatusLoading': 'Carregando o editor',
+
+  'landing.demoStatusReady': 'Interativo — a demo recebe a roda do mouse. Esc a devolve.',
+
+  'landing.demoTourCopy': 'Faça um tour guiado pelo modo Básico.',
+
+  'landing.demoTourCta': 'Aprenda o básico',
+
+  'landing.docs': 'Docs',
+
+  'landing.docsC1B': 'Modelar, resolver e ler resultados nos primeiros dez minutos.',
+
+  'landing.docsC1T': 'Início rápido',
+
+  'landing.docsC2B': 'Como um agente lida com o mesmo modelo estruturado que o engenheiro edita à mão.',
+
+  'landing.docsC2T': 'Fluxo de modelagem com IA',
+
+  'landing.docsC3B': 'Formulação, biblioteca de elementos, convenções de sinais e método de validação.',
+
+  'landing.docsC3T': 'Referência do solver',
+
+  'landing.docsH': 'O método está escrito.',
+
+  'landing.docsOpenNew': 'Abrir no GitHub',
+
+  'landing.docsP': 'Formulação, convenções e fluxo de trabalho, no repositório, versionados junto ao código.',
+
+  'landing.ebBasic': 'MODO BÁSICO',
+
+  'landing.ebCapabilities': 'CAPACIDADES DO SOLVER',
+
+  'landing.ebCodes': 'NORMAS E INTEROPERABILIDADE',
+
+  'landing.ebDemo': 'DEMO AO VIVO',
+
+  'landing.ebDocs': 'DOCUMENTAÇÃO',
+
+  'landing.ebEdu': 'MODO EDUCATIVO',
+
+  'landing.ebHero': 'LIVRE E ABERTO · CÁLCULO ESTRUTURAL',
+
+  'landing.ebPro': 'MODO PRO',
+
+  'landing.ebProblem': 'O PROBLEMA',
+
+  'landing.ebStatus': 'ESTADO DO PRODUTO',
+
+  'landing.ebThesis': 'A TESE',
+
+  'landing.ebValidation': 'VALIDAÇÃO E EVIDÊNCIA',
+
+  'landing.ebWhat': 'O QUE É STABILEO',
+
+  'landing.eduFree': 'A intenção é que o núcleo educacional siga gratuito para uso educacional.',
+
+  'landing.eduH': 'O modo Educativo se constrói sobre o Básico.',
+
+  'landing.eduNext1': 'Tarefas que agrupem vários exercícios, com data de entrega e uma turma para distribuí-las.',
+
+  'landing.eduNext2': 'Mais do exercício sob controle do professor: quais dicas aparecem, quando os resultados ficam visíveis, quantas tentativas.',
+
+  'landing.eduNext3': 'Fluxos para que o estudante inspecione, conserte e construa modelos, e não apenas leia um.',
+
+  'landing.eduNext4': 'Uma progressão com forma de disciplina: estabilidade, reações, deslocamentos, diagramas, cinemática, análise de seções.',
+
+  'landing.eduNext5': 'Ajuda com a terminologia, onde o aluno encontra uma palavra pela primeira vez.',
+
+  'landing.eduNext6': 'Onboarding separado para professores e para estudantes.',
+
+  'landing.eduNextKicker': 'EM DESENVOLVIMENTO',
+
+  'landing.eduNextTitle': 'Fluxos docentes em desenvolvimento',
+
+  'landing.eduNotYet': 'O que existe é o exercício e a volta completa em torno dele: o professor o escreve, distribui e lê as respostas. O que não existe é a cátedra em torno DISSO — tarefas, lista de turma, tentativas, uma nota que viva em algum lugar. O Stabileo não guarda nada em um servidor, então um exercício e uma entrega viajam como link, arquivo ou código, do jeito que já se entrega. As lições passo a passo do método da rigidez estão disponíveis como parte do Básico.',
+
+  'landing.eduNow4': 'O aluno DESENHA o diagrama — as ordenadas e a potência de cada trecho — e o traçado e as potências são corrigidos separadamente contra o cálculo. Cortante, momento, normal e a deformada.',
+
+  'landing.eduNow5': 'As respostas são verificadas com uma tolerância, com uma dica quando o que falhou foi o sinal ou a ordem de grandeza. Os resultados ficam ocultos enquanto você trabalha; se podem ser revelados ou não, quem decide é o professor.',
+
+  'landing.eduNow6': 'O professor escreve o exercício no app: desenha a estrutura com as ferramentas de sempre e depois diz o que perguntar sobre ela. Sem código e sem arquivos para editar.',
+
+  'landing.eduNow7': 'Distribuir é um link ou um arquivo, e abre um ambiente feito para o aluno. Ele devolve um arquivo ou um código curto, e o professor o abre como uma tabela corrigida.',
+
+  'landing.eduNowKicker': 'JÁ FUNCIONA',
+
+  'landing.eduNowTitleNew': 'A camada de exercícios do estudante',
+
+  'landing.eduP': 'Uma camada de exercícios para estudantes construída sobre o mesmo motor de cálculo. O professor escreve o exercício dentro do app, distribui como link e recebe as respostas; o que falta é a camada de cima: a cátedra.',
+
+  'landing.figCompression': 'COMPRESSÃO  −',
+
+  'landing.figDeformedNorm': 'DEFORMADA · NORMALIZADA',
+
+  'landing.figDesc': 'Treliça Pratt de seis painéis simplesmente apoiada: apoio fixo no nó esquerdo do banzo e móvel no direito. Uma única carga unitária descendente percorre o banzo; entre nós ela se distribui linearmente entre os dois adjacentes, de modo que a carga total sempre vale um.',
+
+  'landing.figTension': 'TRAÇÃO  +',
+
+  'landing.figTitle': 'Uma carga unitária percorrendo uma treliça Pratt de seis painéis',
+
+  'landing.figUndeformed': 'SEM DEFORMAR',
+
+  'landing.figZero': 'QUASE NULO  ≈0',
+
+  'landing.footDocs': 'Documentação',
+
+  'landing.footLaunch': 'Abrir o editor',
+
+  'landing.footRepo': 'GitHub',
+
+  'landing.footRights': 'Software livre sob AGPL-3.0.',
+
+  'landing.footTagline': 'Análise estrutural de código aberto que roda no seu navegador.',
+
+  'landing.footTour': 'Tour guiado',
+
+  'landing.heroCtaPrimary': 'Abrir o editor',
+
+  'landing.heroCtaSecondary': 'Ver a demo ao vivo',
+
+  'landing.heroH': 'Análise estrutural, em uma aba do navegador.',
+
+  'landing.heroMetaA': 'Sem instalar. Sem licenças. Sem conta.',
+
+  'landing.heroMetaB': 'Código aberto · AGPL-3.0',
+
+  'landing.heroMetaC': 'Feito na Argentina · FIUBA · Lambda Class',
+
+  'landing.heroModeBasic': 'Básico',
+
+  'landing.heroModeBasicSt': 'Disponível hoje',
+
+  'landing.heroModeEdu': 'Educativo',
+
+  'landing.heroModeEduSt': 'Em desenvolvimento',
+
+  'landing.heroModePro': 'PRO',
+
+  'landing.heroModeProSt': 'Em desenvolvimento',
+
+  'landing.heroP': 'Uma plataforma gratuita e aberta de cálculo estrutural com três modos: Básico, que já funciona, e Educativo e PRO, ainda em desenvolvimento. O solver roda no seu navegador, na sua própria máquina.',
+
+  'landing.modeAiLine': 'A camada de agentes em desenvolvimento, sobre o mesmo solver e os mesmos números. Está sendo construída para ajudar você a modelar, interpretar, explicar e, com o tempo, percorrer um projeto de ponta a ponta.',
+
+  'landing.modeAiName': 'Stabileo AI',
+
+  'landing.modeBasicLine': 'O modo de cálculo estrutural que já funciona, disponível hoje. Modelos 2D e 3D simples, e as ferramentas de que precisa uma disciplina universitária de estruturas.',
+
+  'landing.modeBasicName': 'Básico',
+
+  'landing.modeEduLine': 'Exercícios e fluxos de aprendizagem sobre o mesmo motor. Escrever um exercício, distribuí-lo e ler as respostas já funciona; a cátedra em volta — tarefas, turma, uma nota que viva em algum lugar — está em desenvolvimento.',
+
+  'landing.modeEduName': 'Educativo',
+
+  'landing.modeProLine': 'A camada avançada: elementos finitos, modelos complexos e projeto segundo a norma que você escolher. CIRSOC para concreto armado já tem suporte básico, e o projeto em aço está em desenvolvimento.',
+
+  'landing.modeProName': 'PRO',
+
+  'landing.modesLead': 'Os quatro crescem sobre o mesmo solver. Básico é o modo de cálculo estrutural que você já pode usar hoje; Educativo, PRO e Stabileo AI o estendem com aprendizagem, engenharia avançada e fluxos com agentes.',
+
+  'landing.modesTitle': 'Três modos e uma camada de agentes que se constrói sobre eles.',
+
+  'landing.navBasic': 'Básico',
+
+  'landing.navCodes': 'Normas',
+
+  'landing.navDemo': 'Demo',
+
+  'landing.navEducation': 'Educativo',
+
+  'landing.footNav': 'Rodapé',
+
+  'landing.navBackToTop': 'Voltar ao topo',
+
+  'landing.navGithubRepo': 'Repositório no GitHub',
+
+  'landing.navPrimary': 'Principal',
+
+  'landing.navLanguage': 'Idioma',
+
+  'landing.navMenuOpen': 'Menu',
+
+  'landing.navOpenEditor': 'Abrir o editor',
+
+  'landing.navPro': 'PRO',
+
+  'landing.navStatus': 'Estado',
+
+  'landing.proH': 'PRO está em desenvolvimento, e já serve para cálculos complexos.',
+
+  'landing.proHonest': 'Na prática: hoje saem do Stabileo um conjunto de desenhos e uma planilha de dobramento reais para vigas, pilares, sapatas, lajes e paredes estruturais, e vale a pena revisá-los. A documentação completa de um edifício inteiro é o passo seguinte, e cada resultado carrega até onde chegou a sua validação.',
+
+  'landing.proNext1': 'Detalhamento de armaduras da estrutura completa.',
+
+  'landing.proNext2': 'Plantas completas: locação e armadura de um pavimento inteiro.',
+
+  'landing.proNext3': 'Armadura verificada segundo a norma em todas as famílias suportadas, à medida que os resultados provisórios de hoje forem promovidos com bancos de prova publicados.',
+
+  'landing.proNext4': 'Exportação pronta para produção da documentação estrutural e das planilhas completas diretamente do Stabileo.',
+
+  'landing.proNext5': 'Fluxos sísmicos segundo INPRES-CIRSOC 103.',
+
+  'landing.proNext6': 'Torção, nós viga-pilar, diafragmas e seções não retangulares.',
+
+  'landing.proNext7': 'Suporte a normas internacionais, depois do CIRSOC.',
+
+  'landing.proNextKicker': 'EM DESENVOLVIMENTO',
+
+  'landing.proNextTitle': 'O que ainda falta ao PRO',
+
+  'landing.proNow1': 'Análise estrutural complexa: segunda ordem, flambagem, modal, espectro de resposta, história temporal e análise plástica.',
+
+  'landing.proNow2': 'Modelagem e cálculo com elementos finitos, com elementos de placa, de casca e solid-shell, e seus resultados de tensões.',
+
+  'landing.proNow3': 'Um painel de modelagem estruturado, com abas próprias para nós, elementos, seções, materiais, apoios, cargas, vínculos, ligações, resultados e diagnósticos.',
+
+  'landing.proNow4': 'Geração automática de cargas segundo CIRSOC 101 e 102, com cada valor rastreável ao artigo de onde saiu.',
+
+  'landing.proNow5': 'Projeto de concreto armado de vigas e pilares segundo CIRSOC 201-2025: verifica um dimensionamento e gera a armadura, e cada resultado leva o seu artigo e a sua maturidade de validação.',
+
+  'landing.proNow6': 'As lajes em uma e em duas direções, as paredes estruturais e as sapatas também são projetadas, a partir de um comando real do fluxo de trabalho. Esses resultados são marcados como provisórios enquanto são testados frente a casos reais.',
+
+  'landing.proNow7': 'Desenhos de armadura para cinco famílias de elementos: elevações de vigas e pilares com suas seções, plantas de sapatas com dois cortes, plantas de painéis de laje, e elevações e cortes de paredes estruturais. São exportados em DXF e SVG.',
+
+  'landing.proNow8': 'Uma planilha de dobramento com marcas, diâmetros, formas, quantidades, comprimentos de corte medidos sobre a barra física incluindo os ganchos, peso, barras comerciais e sobras, mais uma nota sempre que uma barra excede o comprimento comercial e precisa de emenda. É exportada em XLSX.',
+
+  'landing.proNowKicker': 'JÁ DÁ PARA USAR',
+
+  'landing.proNowTitle': 'O que o PRO faz hoje',
+
+  'landing.proP': 'A análise com elementos finitos e os modelos complexos já funcionam aqui, no nível que você esperaria de um programa profissional. O que está sendo lapidado é o projeto segundo a norma: o passo em que muitos programas de elementos finitos param, entregam os resultados e deixam a verificação regulamentar para você.',
+
+  'landing.proSourceNote': 'Os estados desta página seguem o modelo de maturidade da própria aplicação: um cálculo conta como validado quando tem registrado um banco de prova externo e independente, e até então é marcado como provisório, no produto e aqui.',
+
+  'landing.probBoxBody': 'Resultados sem rastreabilidade nem forma de auditar o método. O engenheiro precisa assinar algo que não pode inspecionar.',
+
+  'landing.probBoxTerm': 'Caixa-preta',
+
+  'landing.probCostBody': 'Onde as ferramentas dominantes publicam um preço, uma licença custa milhares por ano. Uma barreira real para escritórios pequenos, profissionais autônomos e para a formação.',
+
+  'landing.probCostTerm': 'Milhares de USD',
+
+  'landing.probH1': 'Durante décadas, o cálculo estrutural dependeu de software',
+
+  'landing.probH2': 'caro, fechado e preso a um desktop.',
+
+  'landing.probOsBody': 'Instalação pesada, licenças e um único sistema operacional. O cálculo não viaja: mora em uma máquina.',
+
+  'landing.probOsTerm': 'Windows',
+
+  'landing.roadmap': 'Roadmap',
+
+  'landing.stD1': 'Modo Educativo — o exercício e a volta completa em torno dele já funcionam; a cátedra acima está em desenvolvimento',
+
+  'landing.stD2': 'Modo PRO — hoje análise avançada e projeto de concreto, com o detalhamento e a exportação sendo ampliados',
+
+  'landing.stD3': 'Stabileo AI — a camada de agentes, em desenvolvimento sobre o mesmo solver',
+
+  'landing.stD4': 'Sismo INPRES-CIRSOC 103 — hoje geração de cargas, o fluxo regulamentar completo em desenvolvimento',
+
+  'landing.stGroupDev': 'Em desenvolvimento',
+
+  'landing.stGroupPartial': 'Parcial',
+
+  'landing.stGroupRoadmap': 'Roadmap / proposto',
+
+  'landing.stGroupToday': 'Disponível hoje, em stabileo.com',
+
+  'landing.stH': 'Onde está hoje cada capacidade.',
+
+  'landing.stP': 'Tudo o que está em produção figura como tal, tudo o que está em curso leva o seu estado, e nada disso é necessário para usar o Stabileo.',
+
+  'landing.stPa1': 'Vento CIRSOC 102: hoje edifícios rígidos, com os não rígidos e os casos torcionais no futuro',
+
+  'landing.stPa2': 'Aço CIRSOC 301: hoje verificação de barras, projeto segundo a norma em desenvolvimento',
+
+  'landing.stPa3': 'Desenhos de armadura e planilhas de dobramento para vigas, pilares, sapatas, lajes e paredes estruturais, com exportação em DXF, SVG e XLSX; os desenhos da estrutura completa estão em desenvolvimento',
+
+  'landing.stPa4': 'Os resultados são marcados como provisórios até ter registrado um banco de prova externo e independente',
+
+  'landing.stPa5': 'As lajes, as paredes estruturais e as sapatas são projetadas e alcançadas a partir do fluxo de trabalho, e estão sendo testadas frente a casos reais',
+
+  'landing.stR1': 'Maior cobertura CIRSOC, começando pelos fluxos sísmicos',
+
+  'landing.stR2': 'Remote solving — serviço hospedado opcional para modelos grandes demais para resolver localmente',
+
+  'landing.stR3': 'Stabileo AI credits — assistência com IA, paga e opcional',
+
+  'landing.stR4': 'Cloud workspace — armazenamento e sincronização hospedados, opcionais',
+
+  'landing.stR5': 'Camadas de processo: otimização, quantitativos e sequência construtiva',
+
+  'landing.stT1': 'Solver 2D e 3D no navegador (Rust → WebAssembly), método direto da rigidez',
+
+  'landing.stT2': 'Recálculo ao vivo a cada edição, disponível como opção',
+
+  'landing.stT3': 'Análise linear, não linear, dinâmica e elementos avançados',
+
+  'landing.stT4': 'Validado contra NAFEMS, ANSYS, Code_Aster, SAP2000 e OpenSees',
+
+  'landing.stT5': 'Importação IFC (BIM), e importação e exportação DXF R12',
+
+  'landing.stT6': 'Verificação de barras segundo AISC 360, ACI 318, os Eurocódigos, AISI S100, NDS e TMS 402',
+
+  'landing.stT7': '55 modelos de exemplo vêm com a aplicação, 37 deles no menu de exemplos',
+
+  'landing.stT8': 'Código aberto sob AGPL-3.0, sem conta e sem licenças',
+
+  'landing.stT9': 'Projeto de concreto armado de vigas e pilares segundo CIRSOC 201-2025: verificado e gerado, não apenas qualificado',
+
+  'landing.statExamplesHint': 'Vêm com a aplicação, de um balanço a um estádio · 37 no menu de exemplos',
+
+  'landing.statExamplesLbl': 'Exemplos incluídos',
+
+  'landing.statLicenseHint': 'Repositório público, método inspecionável',
+
+  'landing.statLicenseLbl': 'Licença',
+
+  'landing.statStarsHint': 'github.com/lambdaclass/stabileo',
+
+  'landing.statStarsLbl': 'Estrelas no GitHub',
+
+  'landing.statTestsHintNew': 'Passando, 0 falhas · medido em 6c3369d6 · 2026-08-01',
+
+  'landing.statTestsLbl': 'Testes do motor',
+
+  'landing.thAn1': 'Os agentes de programação funcionam porque algo diz se compila e se passa.',
+
+  'landing.thAn1K': 'CÓDIGO + COMPILADOR/TESTES',
+
+  'landing.thAn2': 'O AlphaProof prova teoremas porque um verificador formal não deixa passar um erro.',
+
+  'landing.thAn2K': 'MATEMÁTICA + LEAN',
+
+  'landing.thAn3': 'A IA pode projetar porque o solver valida cada resultado contra a física.',
+
+  'landing.thAn3K': 'ESTRUTURAS + STABILEO',
+
+  'landing.thClose': 'O solver do Stabileo é o compilador do mundo físico.',
+
+  'landing.thGenB': 'Gera e edita o modelo estruturado: geometria, cargas, seções, hipóteses.',
+
+  'landing.thGenK': 'GERADOR',
+
+  'landing.thGenT': 'A IA propõe',
+
+  'landing.thH1': 'A IA não projeta sozinha. Projeta sobre um modelo que',
+
+  'landing.thH2': 'a verifica.',
+
+  'landing.thP': 'A IA generativa produz o plausível, não o correto, e não distingue uma coisa da outra. O que a torna confiável é dar a ela um ambiente determinista que a valide. A arquitetura que já funciona é sempre a mesma: um gerador que explora e um verificador que garante.',
+
+  'landing.thVerB': 'O solver determinista resolve a mecânica real. É a fonte de verdade, e não há mágica no prompt.',
+
+  'landing.thVerK': 'VERIFICADOR',
+
+  'landing.thVerT': 'O solver garante',
+
+  'landing.valAgainst': 'VALIDADO CONTRA',
+
+  'landing.valBook': 'Soluções de livro',
+
+  'landing.valH': 'Contrastado com as referências da indústria.',
+
+  'landing.valLocalBody': 'O solver é WebAssembly e é executado no seu navegador, de modo que seu modelo permanece na sua máquina durante a análise.',
+
+  'landing.valLocalTitle': 'Roda na sua máquina',
+
+  'landing.valP': 'Não é autocertificação: cada tipo de análise é validado contra bancos de prova publicados e software de referência.',
+
+  'landing.valPerfBody': 'Fatoração 22–89× mais rápida em malhas de cascas, e 22× de ponta a ponta. Cholesky esparso com ordenamento AMD, medido neste repositório contra o próprio caminho denso do Stabileo, não contra outros fornecedores.',
+
+  'landing.valPerfTitle': 'Montagem esparsa, medida',
+
+  'landing.whatAccess': 'A aplicação central é livre e de código aberto sob AGPL-3.0, e o solver roda na sua própria máquina. A ideia é que siga gratuita para uso educacional. Mais adiante pode haver serviços hospedados opcionais; nenhum será necessário para usá-la.',
+
+  'landing.whatB1': 'Você entra em stabileo.com e começa. Sem download, sem licenças, sem conta. O modelo roda na sua máquina.',
+
+  'landing.whatB2': 'Pórticos, treliças, placas e cascas. Diagramas de esforços, tensões, reações e deformada.',
+
+  'landing.whatB3': 'O solver é escrito em Rust e compilado para WebAssembly. Roda localmente, na aba, sem instalar nada.',
+
+  'landing.whatH': 'Você modela, resolve, inspeciona e compartilha, tudo em uma aba.',
+
+  'landing.whatK1': 'ABRIR E COMEÇAR',
+
+  'landing.whatK2': '2D E 3D',
+
+  'landing.whatK3': 'RUST → WEBASSEMBLY',
+
+  'landing.whatT1': 'Zero fricção',
+
+  'landing.whatT2': 'Método direto da rigidez',
+
+  'landing.whatT3': 'Motor nativo no navegador',
   'landing.features': 'Recursos',
   'landing.demo': 'Demo',
   'landing.pricing': 'Preços',

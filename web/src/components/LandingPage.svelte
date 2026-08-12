@@ -1,6 +1,6 @@
 <script lang="ts">
   import { onMount } from 'svelte';
-  import { tPublic as t, publicI18n } from '../lib/i18n/store.svelte';
+  import { tPublic as t, publicI18n, PUBLIC_LOCALES, type PublicLocale } from '../lib/i18n/store.svelte';
   import LandingNav from './landing/LandingNav.svelte';
   import LandingHero from './landing/LandingHero.svelte';
   import LandingProblem from './landing/LandingProblem.svelte';
@@ -34,6 +34,8 @@
    * originals are captured once and restored when the landing unmounts, so
    * entering the application never leaves landing copy behind.
    */
+  const OG_LOCALE: Record<PublicLocale, string> = { en: 'en_US', es: 'es_AR', pt: 'pt_BR' };
+
   const META_TAGS = [
     ['meta[name="description"]', 'content'],
     ['meta[property="og:title"]', 'content'],
@@ -68,8 +70,15 @@
     setMeta('meta[name="description"]', description);
     setMeta('meta[property="og:title"]', title);
     setMeta('meta[property="og:description"]', description);
-    setMeta('meta[property="og:locale"]', locale === 'es' ? 'es_AR' : 'en_US');
-    setMeta('meta[property="og:locale:alternate"]', locale === 'es' ? 'en_US' : 'es_AR');
+    // A ternary here read Portuguese as English once pt joined the landing.
+    const og = OG_LOCALE[locale];
+    setMeta('meta[property="og:locale"]', og);
+    setMeta(
+      'meta[property="og:locale:alternate"]',
+      PUBLIC_LOCALES.filter((l) => l !== locale)
+        .map((l) => OG_LOCALE[l])
+        .join(','),
+    );
     setMeta('meta[name="twitter:title"]', title);
     setMeta('meta[name="twitter:description"]', description);
   }
