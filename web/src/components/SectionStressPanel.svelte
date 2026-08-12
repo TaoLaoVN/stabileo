@@ -47,7 +47,8 @@
   import StressTensorDetails from './stress/StressTensorDetails.svelte';
   import TorsionDetails from './stress/TorsionDetails.svelte';
   import GeometricPropertyWorking from './stress/GeometricPropertyWorking.svelte';
-  import { resolveEccentric, snapShearCentre } from '../lib/section/eccentric';
+  import { resolveEccentric, snapShearCentre, kernLimits } from '../lib/section/eccentric';
+  import { computeTorsionFlow } from '../lib/engine/torsion-flow';
 
   // Fiber position sliders: 0 = bottom/left, 1 = top/right
   let fiberRatioY = $state(1.0); // default to top fiber (extreme)
@@ -74,6 +75,7 @@
   let showShearCentreWork = $state(false); // Step-by-step shear centre             // Stress/strain tensor section (closed by default)
   let showStressMap = $state(false);           // MAP: paint sigma over the section instead of at a point
   let showEccentric = $state(false);           // CE: eccentric application point
+  let showTorsionFlow = $state(false);         // T: torsional shear flow on the drawing
   /**
    * Where the eccentric load is applied, canonical `[y, z]` in metres.
    *
@@ -656,6 +658,43 @@
     return r.ok ? r.state : null;
   });
 
+  /**
+   * Length of the member being queried, metres.
+   *
+   * Warping needs it and the section cannot supply it: how a torque splits
+   * between uniform torsion and warping is a property of the MEMBER, not of its
+   * cross-section. Two beams of identical section and different length respond
+   * differently to the same torque.
+   */
+  const queryElementLength = $derived.by(() => {
+    if (!query) return 0;
+    const elem = modelStore.elements.get(query.elementId);
+    if (!elem) return 0;
+    const ni = modelStore.getNode(elem.nodeI);
+    const nj = modelStore.getNode(elem.nodeJ);
+    if (!ni || !nj) return 0;
+    return Math.hypot(nj.x - ni.x, nj.y - ni.y, (nj.z ?? 0) - (ni.z ?? 0));
+  });
+
+  /**
+   * Kern limits from the section's own moduli.
+   *
+   * A second, independent route to the same region the drawing paints as a
+   * polygon — so the numbers shown are a cross-check on the picture rather
+   * than a restatement of it.
+   */
+  const kern = $derived.by(() => {
+    if (!canonical?.ok || !stateInputs) return null;
+    const st = stateInputs.sec.canonical;
+    if (!st || st.kind !== 'geometry-backed') return null;
+    const [yMin, zMin, yMax, zMax] = canonical.geometry.bbox;
+    return kernLimits(st.a, st.iy, st.iz, { zMax, zMin, yMax, yMin });
+  });
+
+  /** Torque at the queried station, kN·m — used by the drawing and the panel. */
+  const activeTorque = $derived(eccentric?.forces.t ?? stateInputs?.forces.t ?? 0);
+  const torsionFlow = $derived(resolved ? computeTorsionFlow(activeTorque, resolved) : null);
+
   /** The state every downstream display reads. */
   const activeState = $derived(showEccentric ? (eccentricState ?? canonicalState) : canonicalState);
 
@@ -978,6 +1017,8 @@
         stressField={activeState?.field ?? null}
         shearCentre={shearCentreClean}
         {eccentricInsideKern}
+        {torsionFlow}
+        bind:showTorsionFlow
       />
 
       <!-- What the eccentricity produced. Shown next to the drawing rather
@@ -1129,8 +1170,11 @@
            tensors because it is a component OF the state they summarise. -->
       <TorsionDetails
         bind:showTorsion
-        torque={eccentric?.forces.t ?? stateInputs?.forces.t ?? 0}
+        torque={activeTorque}
         {resolved}
+        length={queryElementLength}
+        e={stateInputs?.elastic?.e ?? 210000}
+        nu={stateInputs?.elastic?.nu ?? 0.3}
       />
 
       <!-- Stress and strain tensors. Above Mohr on purpose: the circle is a
@@ -1164,6 +1208,7 @@
         bind:showCentralCoreInfo
         {centralCore}
         {resolved}
+        {kern}
       />
 
       <!-- Critical sections -->

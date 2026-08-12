@@ -15,6 +15,7 @@
    */
   import type { ResolvedSection } from '../../lib/engine/section-stress';
   import { computeTorsionFlow, closedVersusOpen } from '../../lib/engine/torsion-flow';
+  import { warpingProperties, withLambda, warpingResponse } from '../../lib/engine/warping';
   import { t } from '../../lib/i18n';
   import { fmt } from './fmt';
 
@@ -23,12 +24,28 @@
     /** Torque at the station, kN·m. */
     torque: number;
     resolved: ResolvedSection | undefined;
+    /** Member length, metres — warping depends on it, the section alone does not. */
+    length: number;
+    /** Young's modulus, MPa. */
+    e: number;
+    nu: number;
   }
 
-  let { showTorsion = $bindable(), torque, resolved }: Props = $props();
+  let { showTorsion = $bindable(), torque, resolved, length, e, nu }: Props = $props();
 
   const flow = $derived(resolved ? computeTorsionFlow(torque, resolved) : null);
   const slitPenalty = $derived(resolved ? closedVersusOpen(resolved) : null);
+
+  /**
+   * Warping — the other mechanism, and the one whose omission is not
+   * conservative. Which end restraint applies is a property of the STRUCTURE,
+   * not of the section, so it is a control rather than an assumption.
+   */
+  let restraint = $state<'cantilever' | 'simple'>('cantilever');
+  const warp = $derived(resolved ? withLambda(warpingProperties(resolved), e, nu) : null);
+  const response = $derived(
+    resolved && warp ? warpingResponse(resolved, warp, torque, length, e, restraint, nu) : null,
+  );
 </script>
 
 <button class="ssp-section-toggle" onclick={() => showTorsion = !showTorsion}>
@@ -63,6 +80,69 @@
       </div>
 
       <p class="ssp-tor-note">{t(`${flow.labelKey}Note`)}</p>
+
+      <!-- ── Warping ────────────────────────────────────────────
+           Inside Torsion because it IS torsion: the same torque, carried by a
+           second mechanism whose share depends on the member's length. -->
+      {#if warp && warp.cw > 0}
+        <div class="ssp-tor-warp">
+          <div class="ssp-tor-warp-head">{t('warp.title')}</div>
+          <div class="ssp-tor-row">
+            <span class="ssp-tor-label">C<sub>w</sub></span>
+            <span class="ssp-tor-val">
+              {fmt(warp.cw * 1e12)}<span class="ssp-tor-unit">cm⁶</span>
+              {#if warp.fidelity === 'thinWall'}
+                <span class="ssp-tor-approx" title={t('warp.thinWallHelp')}>≈</span>
+              {/if}
+            </span>
+          </div>
+          {#if warp.lambda}
+            <div class="ssp-tor-row">
+              <span class="ssp-tor-label">&lambda; = &radic;(EC<sub>w</sub>/GJ)</span>
+              <span class="ssp-tor-val">{fmt(warp.lambda)}<span class="ssp-tor-unit">m</span></span>
+            </div>
+            <div class="ssp-tor-row">
+              <span class="ssp-tor-label">L / &lambda;</span>
+              <span class="ssp-tor-val">{fmt(length / warp.lambda)}</span>
+            </div>
+          {/if}
+
+          {#if response}
+            <!-- End restraint: it changes the answer, so it is asked rather
+                 than assumed. -->
+            <div class="ssp-tor-restraint">
+              <button
+                class="ssp-tor-rtab" class:active={restraint === 'cantilever'}
+                onclick={() => restraint = 'cantilever'}
+              >{t('warp.case.cantilever')}</button>
+              <button
+                class="ssp-tor-rtab" class:active={restraint === 'simple'}
+                onclick={() => restraint = 'simple'}
+              >{t('warp.case.simple')}</button>
+            </div>
+
+            <!-- How the torque actually splits. This is the number that makes
+                 the distinction concrete. -->
+            {@const sv = Math.round(response.saintVenantShare * 100)}
+            <div class="ssp-tor-split" title={t('warp.splitHelp')}>
+              <div class="ssp-tor-bar">
+                <div class="ssp-tor-sv" style="width:{sv}%"></div>
+              </div>
+              <div class="ssp-tor-legend">
+                <span>{t('warp.bySaintVenant').replace('{pct}', String(sv))}</span>
+                <span>{t('warp.byWarping').replace('{pct}', String(100 - sv))}</span>
+              </div>
+            </div>
+
+            <div class="ssp-tor-row ssp-tor-peak">
+              <span class="ssp-tor-label">&sigma;<sub>w</sub></span>
+              <span class="ssp-tor-val">{fmt(response.sigmaW)}<span class="ssp-tor-unit">MPa</span></span>
+            </div>
+            <p class="ssp-tor-note ssp-tor-warn">{t('warp.addsToBending')}</p>
+          {/if}
+          <p class="ssp-tor-note">{t(warp.labelKey + 'Note')}</p>
+        </div>
+      {/if}
 
       {#if slitPenalty !== null}
         <!-- The single most instructive number here: same wall, same area, same
@@ -129,6 +209,56 @@
     line-height: 1.45;
     color: var(--st-text-3);
   }
+  .ssp-tor-warp {
+    margin-top: 8px;
+    padding-top: 6px;
+    border-top: 1px solid rgba(26, 74, 122, 0.3);
+  }
+  .ssp-tor-warp-head {
+    font-size: 0.6rem;
+    text-transform: uppercase;
+    letter-spacing: 0.4px;
+    color: var(--st-text-3);
+    margin-bottom: 4px;
+  }
+  .ssp-tor-approx { color: var(--st-text-3); cursor: help; margin-left: 2px; }
+  .ssp-tor-restraint { display: flex; gap: 3px; margin: 6px 0 5px; }
+  .ssp-tor-rtab {
+    flex: 1;
+    padding: 2px 4px;
+    border-radius: 3px;
+    border: 1px solid rgba(127, 212, 204, 0.25);
+    background: none;
+    color: var(--st-text-3);
+    font-size: 0.56rem;
+    cursor: pointer;
+  }
+  .ssp-tor-rtab.active {
+    background: rgba(127, 212, 204, 0.14);
+    border-color: var(--st-value);
+    color: var(--st-value);
+  }
+  .ssp-tor-split { margin: 5px 0; }
+  /* Two mechanisms sharing one torque: a single bar says that better than two
+     numbers, because the point is that they add to a whole. */
+  .ssp-tor-bar {
+    height: 6px;
+    border-radius: 3px;
+    overflow: hidden;
+    background: var(--st-warn);
+  }
+  .ssp-tor-sv { height: 100%; background: var(--st-value); }
+  .ssp-tor-legend {
+    display: flex;
+    justify-content: space-between;
+    margin-top: 2px;
+    font-size: 0.55rem;
+    color: var(--st-text-3);
+  }
+  .ssp-tor-legend span:first-child { color: var(--st-value); }
+  .ssp-tor-legend span:last-child { color: var(--st-warn); }
+  .ssp-tor-warn { color: var(--st-warn); opacity: 0.95; }
+
   .ssp-tor-slit {
     margin: 6px 0 0;
     padding: 5px 7px;

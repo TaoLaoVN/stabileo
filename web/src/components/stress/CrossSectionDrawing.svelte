@@ -87,6 +87,16 @@
     shearCentre: [number, number] | null;
     /** Whether the application point lies inside the kern. */
     eccentricInsideKern: boolean;
+    /**
+     * Torsional shear distribution, when a torque exists.
+     *
+     * `computeTorsionFlow` produced this from the start and nothing consumed
+     * it — the panel showed the peak and the theory but never the field. Half-
+     * connected code is worse than either alternative, so it is drawn.
+     */
+    torsionFlow: import('../../lib/engine/torsion-flow').TorsionFlow | null;
+    /** Draw it. Off by default: the figure is already busy. */
+    showTorsionFlow: boolean;
   }
 
   let {
@@ -123,6 +133,8 @@
     hasParallelLoad,
     shearCentre,
     eccentricInsideKern,
+    torsionFlow,
+    showTorsionFlow = $bindable(),
   }: Props = $props();
 
   /**
@@ -430,6 +442,14 @@
         onclick={() => showStressMap = !showStressMap}
         title={showStressMap ? t('stress.stressMapOn') : t('stress.stressMapOff')}
       >MAP</button>
+    {/if}
+    {#if torsionFlow}
+      <button
+        class="ssp-svg-toggle ssp-toggle-tor"
+        class:active={showTorsionFlow}
+        onclick={() => showTorsionFlow = !showTorsionFlow}
+        title={showTorsionFlow ? t('stress.torsionFlowOn') : t('stress.torsionFlowOff')}
+      >T</button>
     {/if}
     {#if canonicalGeometry}
       <button
@@ -1184,6 +1204,55 @@
           {/if}
         {/if}
       {/if}
+      <!-- ── Torsional shear flow ─────────────────────────────────────
+           Drawn from the same distribution the readout summarises, so the
+           picture and the number cannot disagree. Each theory has its own
+           shape and the drawing shows it: a closed loop for Bredt, a radius
+           for a circular bar, and a through-thickness reversal for an open
+           wall — which is the whole distinction, made visible. -->
+      {#if showTorsionFlow && torsionFlow && resolved}
+        {@const scT = 80 / Math.max(resolved.h, resolved.b)}
+        {@const peak = Math.max(torsionFlow.tauMax, 1e-9)}
+        {#each torsionFlow.segments as seg}
+          {#if seg.closed}
+            <!-- Bredt: constant around the circuit, so the line itself is the
+                 diagram. Arrows say it CIRCULATES, which is the point. -->
+            <polyline
+              points={seg.points.map(p => `${p.z * scT},${-p.y * scT}`).join(' ')}
+              fill="none" stroke="var(--st-accent)" stroke-width={1.6 * strokeK} opacity="0.85"
+            />
+            {#each seg.points.slice(0, -1) as p, i}
+              {@const q = seg.points[i + 1]}
+              {@const mx = (p.z + q.z) / 2 * scT}
+              {@const my = -(p.y + q.y) / 2 * scT}
+              {@const ang = Math.atan2(-(q.y - p.y), q.z - p.z) * 180 / Math.PI}
+              <polygon
+                points="0,-1.6 4,0 0,1.6"
+                fill="var(--st-accent)" opacity="0.9"
+                transform="translate({mx},{my}) rotate({ang}) scale({strokeK * 1.4})"
+              />
+            {/each}
+          {:else}
+            <!-- Open wall or radius: plot tau along the segment, so the
+                 reversal through the thickness is visible as a sign change. -->
+            {@const amp = 26}
+            <polyline
+              points={seg.points.map(p => `${p.z * scT},${-p.y * scT - (p.tau / peak) * amp}`).join(' ')}
+              fill="none" stroke="var(--st-accent)" stroke-width={1.2 * strokeK} opacity="0.9"
+            />
+            <line
+              x1={seg.points[0].z * scT} y1={-seg.points[0].y * scT}
+              x2={seg.points[seg.points.length - 1].z * scT} y2={-seg.points[seg.points.length - 1].y * scT}
+              stroke="var(--st-text-3)" stroke-width={0.4 * strokeK} opacity="0.5"
+            />
+          {/if}
+        {/each}
+        <text
+          x="0" y={-84} fill="var(--st-accent)" font-size={5 * textK}
+          text-anchor="middle" opacity="0.9"
+        >&tau;<tspan font-size={3.6 * textK} dy={1.2 * textK}>T</tspan></text>
+      {/if}
+
       <!-- ── Eccentric application point ──────────────────────────────
            Last in the group, so it draws over every diagram: it is the thing
            being manipulated, and a marker hidden under a stress plot cannot be
@@ -1493,6 +1562,12 @@
     color: var(--st-value);
     border-color: var(--st-value);
     background: rgba(127, 212, 204, 0.12);
+  }
+
+  .ssp-toggle-tor.active {
+    color: var(--st-accent);
+    border-color: var(--st-accent);
+    background: rgba(127, 212, 204, 0.1);
   }
 
   .ssp-toggle-ecc.active {
