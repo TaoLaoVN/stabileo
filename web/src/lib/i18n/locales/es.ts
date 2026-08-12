@@ -5835,5 +5835,12 @@ const es: Record<string, string> = {
 
   'design.families.optionalStage': 'paso opcional',
   'detailing.floorRun.whenToRun': 'Opcional, y va ANTES del detallado. «Diseñar todo» diseña el pórtico — columnas y vigas; esto diseña las losas y tabiques que soporta, y las zapatas si las pedís. Un edificio sólo de pórticos puede saltearlo.',
+
+  'design.memo.flexure': 'Flexión',
+  'design.memo.shear': 'Corte',
+  'design.memo.column': 'Flexocompresión',
+  'design.memo.torsion': 'Torsión',
+  'design.memo.torsionNegligible': 'Torsión (despreciable)',
+  'design.memo.biaxial': 'Biaxial (Bresler)',
 };
 export default es;

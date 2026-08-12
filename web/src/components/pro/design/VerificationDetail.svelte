@@ -185,7 +185,8 @@
       <div class="memos">
         {#each codeDetail.memos as memo (memo.title)}
           <div class="memo">
-            <div class="memo-title">{memo.title}</div>
+            <!-- The key when the adapter supplied one; the English title is the fallback. -->
+            <div class="memo-title">{memo.titleKey ? t(memo.titleKey) : memo.title}</div>
             {#each memo.steps as s}<div class="memo-step">{s}</div>{/each}
           </div>
         {/each}

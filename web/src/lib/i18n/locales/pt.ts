@@ -4824,5 +4824,12 @@ const pt: Translations = {
 
   'design.families.optionalStage': 'etapa opcional',
   'detailing.floorRun.whenToRun': 'Opcional, e roda ANTES do detalhamento. «Dimensionar tudo» dimensiona o pórtico — pilares e vigas; isto dimensiona as lajes e paredes que ele suporta, e as sapatas se você as pedir. Um edifício só de pórticos pode pulá-lo.',
+
+  'design.memo.flexure': 'Flexão',
+  'design.memo.shear': 'Cortante',
+  'design.memo.column': 'Flexo-compressão',
+  'design.memo.torsion': 'Torção',
+  'design.memo.torsionNegligible': 'Torção (desprezível)',
+  'design.memo.biaxial': 'Biaxial (Bresler)',
 };
 export default pt;

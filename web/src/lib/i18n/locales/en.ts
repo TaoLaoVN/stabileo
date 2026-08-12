@@ -5843,5 +5843,12 @@ const en: Record<string, string> = {
 
   'design.families.optionalStage': 'optional step',
   'detailing.floorRun.whenToRun': 'Optional, and it runs BEFORE detailing. "Design all" designs the frame — columns and beams; this designs the slabs and walls it carries, and the footings if you ask for them. A frame-only building can skip it.',
+
+  'design.memo.flexure': 'Flexure',
+  'design.memo.shear': 'Shear',
+  'design.memo.column': 'Flexo-compression',
+  'design.memo.torsion': 'Torsion',
+  'design.memo.torsionNegligible': 'Torsion (negligible)',
+  'design.memo.biaxial': 'Biaxial (Bresler)',
 };
 export default en;

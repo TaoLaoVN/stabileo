@@ -3425,5 +3425,12 @@ const it: Translations = {
   'design.stage.srCurrent': 'current step',
   'design.stage.srDone': 'completed',
   'design.stage.title': 'Concrete design workflow',
+
+  'design.memo.flexure': 'Flexure',
+  'design.memo.shear': 'Shear',
+  'design.memo.column': 'Flexo-compression',
+  'design.memo.torsion': 'Torsion',
+  'design.memo.torsionNegligible': 'Torsion (negligible)',
+  'design.memo.biaxial': 'Biaxial (Bresler)',
 };
 export default it;
