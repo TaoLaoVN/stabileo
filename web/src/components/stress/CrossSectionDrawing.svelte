@@ -557,11 +557,11 @@
           <line
             x1={cx + dir.ux * d0 - dir.uy * span / 2} y1={cy + dir.uy * d0 + dir.ux * span / 2}
             x2={cx + dir.ux * d0 + dir.uy * span / 2} y2={cy + dir.uy * d0 - dir.ux * span / 2}
-            stroke="var(--st-text-1)" stroke-width={0.9 * strokeK} stroke-dasharray="4,2" opacity="0.75"
+            stroke="var(--st-text-2)" stroke-width={0.9 * strokeK} stroke-dasharray="4,2" opacity="0.75"
           />
           <text
             x={cx + dir.ux * d0 - dir.uy * span / 2} y={cy + dir.uy * d0 + dir.ux * span / 2 - 2}
-            fill="var(--st-text-1)" font-size={4.5 * textK} opacity="0.8"
+            fill="var(--st-text-2)" font-size={4.5 * textK} opacity="0.8"
           >EN</text>
         {/if}
       {/if}

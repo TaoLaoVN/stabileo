@@ -255,8 +255,15 @@
           <div class="sub-content">
             {#if uiStore.showPrimarySelector}
               <div class="input-group">
-                <label>{t('results.primary')}:</label>
-                <select value={resultsStore.activeView === 'envelope' ? 'envelope'
+                <!--
+                  No visible label: every option names itself ("Simple loads",
+                  a case, a combination), so the word in front of them spent a
+                  third of a narrow panel's width restating the obvious. The
+                  accessible name stays for anyone who cannot see that.
+                -->
+                <select
+                  aria-label={t('results.primary')}
+                  value={resultsStore.activeView === 'envelope' ? 'envelope'
                              : resultsStore.activeCaseId !== null ? `case_${resultsStore.activeCaseId}`
                              : resultsStore.activeView === 'combo' ? `combo_${resultsStore.activeComboId ?? ''}`
                              : 'single'}

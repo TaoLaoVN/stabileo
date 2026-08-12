@@ -651,7 +651,7 @@
 
   .sc-main-tabs button:hover {
     color: var(--st-text);
-    background: rgba(15, 52, 96, 0.3);
+    background: var(--st-surface-3);
   }
 
   .sc-main-tabs button.active {
@@ -699,18 +699,20 @@
   .tab-btn:hover { background: var(--st-surface-2); color: var(--st-text); }
   .tab-btn.active { background: var(--st-accent); border-color: var(--st-accent); color: white; }
 
-  .profile-preview {
-    display: flex;
-    justify-content: center;
-    padding: 0.25rem 1.25rem 0.4rem;
-  }
-  .preview-svg {
-    width: 90px;
-    height: 90px;
-    background: rgba(15, 52, 96, 0.3);
-    border-radius: 6px;
-    border: 1px solid rgba(26, 74, 122, 0.4);
-  }
+  /*
+   * The old preview styles lived here and were deleted, not merged.
+   *
+   * They were a second `.profile-preview` block plus a `.preview-svg` that
+   * painted the DRAWING with `rgba(15, 52, 96, 0.3)` — a pale blue, hardcoded
+   * rather than a token, and applied to the svg inside a card that already has
+   * its own background. The result was a blue rectangle floating inside the
+   * card, not aligned with it, which is the untidiness this panel kept being
+   * reported for. Being later in the file, this block also overrode the
+   * current one's padding, so the shape sat off-centre in its own box.
+   *
+   * The background belongs to the container, which has it. The svg is
+   * transparent.
+   */
 
   .code-bar {
     display: flex; align-items: center; gap: 6px; flex-wrap: wrap;
@@ -798,7 +800,7 @@
     padding: 0.35rem 0.5rem;
     text-align: right;
     color: var(--st-text);
-    border-bottom: 1px solid rgba(15, 52, 96, 0.5);
+    border-bottom: 1px solid var(--st-hair);
   }
   .name-cell { text-align: left !important; font-weight: 500; color: var(--st-text) !important; }
   .no-results { text-align: center !important; color: var(--st-text-3) !important; padding: 2rem 0 !important; }
@@ -824,7 +826,7 @@
   .category-tabs button:first-child { border-radius: 6px 0 0 6px; border-right: none; }
   .category-tabs button:last-child { border-radius: 0 6px 6px 0; }
   .category-tabs button.active { background: var(--st-surface-2); color: var(--st-value); border-color: var(--st-interactive); }
-  .category-tabs button:not(.active):hover { background: rgba(15, 52, 96, 0.4); color: var(--st-text); }
+  .category-tabs button:not(.active):hover { background: var(--st-surface-3); color: var(--st-text); }
 
   .shape-tabs {
     display: flex;
@@ -848,9 +850,9 @@
   .section-preview {
     width: 120px;
     height: 120px;
-    background: rgba(15, 52, 96, 0.3);
+    background: var(--st-surface-3);
     border-radius: 6px;
-    border: 1px solid rgba(26, 74, 122, 0.4);
+    border: 1px solid var(--st-border);
   }
 
   .param-grid {

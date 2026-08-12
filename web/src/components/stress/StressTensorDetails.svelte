@@ -245,7 +245,7 @@
     color: var(--st-ok);
     font-size: 0.9em;
   }
-  .ssp-util.over { background: rgba(214, 69, 69, 0.18); color: var(--st-bad); }
+  .ssp-util.over { background: rgba(214, 69, 69, 0.18); color: var(--st-danger); }
 
   .ssp-help {
     display: inline-flex;

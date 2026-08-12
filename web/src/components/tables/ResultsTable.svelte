@@ -45,9 +45,15 @@
 -->
 {#if resultsStore.hasCombinations || caseKeys.length > 0}
   <div class="results-case-bar">
-    <label for="results-case">{t('results.primary')}</label>
+    <!--
+      No visible label. Every option in the list names itself — "Simple loads",
+      a case name, a combination — so the word in front of them added a column
+      of chrome and no information. The accessible name stays, for a reader who
+      cannot see that the options are self-describing.
+    -->
     <select
       id="results-case"
+      aria-label={t('results.primary')}
       value={resultsStore.activeView === 'envelope' ? 'envelope'
            : resultsStore.activeCaseId !== null ? `case_${resultsStore.activeCaseId}`
            : resultsStore.activeView === 'combo' ? `combo_${resultsStore.activeComboId ?? ''}`
@@ -243,11 +249,6 @@
     gap: 8px;
     padding: 6px 8px;
     border-bottom: 1px solid var(--st-border);
-  }
-  .results-case-bar label {
-    font-size: 0.7rem;
-    color: var(--st-text-3);
-    white-space: nowrap;
   }
   .results-case-bar select {
     flex: 1;

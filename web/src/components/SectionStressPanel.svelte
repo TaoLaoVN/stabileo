@@ -1554,9 +1554,9 @@
     padding: 7px 9px;
     border-radius: 4px;
     background: rgba(214, 69, 69, 0.1);
-    border-left: 2px solid var(--st-bad);
+    border-left: 2px solid var(--st-danger);
   }
-  .ssp-shear-warn-icon { color: var(--st-bad); flex: none; }
+  .ssp-shear-warn-icon { color: var(--st-danger); flex: none; }
   .ssp-shear-warn-text {
     margin: 0;
     font-size: 0.63rem;

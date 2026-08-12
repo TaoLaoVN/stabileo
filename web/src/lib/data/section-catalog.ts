@@ -121,11 +121,26 @@ export const DESIGN_CODES: DesignCode[] = [
     missingFamilies: [ 'L de alas desiguales', 'C/Z conformados en frío (CIRSOC 303)'],
     note: 'cat.note.cirsoc',
   },
+  /*
+   * The hollow families are listed here even though the shipped tubes are the
+   * IRAM ones, and the note says so.
+   *
+   * The note was already written — it explains that these are IRAM-IAS tubes
+   * and that EN 10219-2 leaves the corner radius as a range — but the families
+   * were not in the list, so a user working to Eurocode 3 saw no tube at all
+   * and read an explanation of something they could not select. A European
+   * frame without a hollow section is not a small gap.
+   *
+   * Listing them with the caveat is the honest option: the outside dimensions
+   * of the metric series are common to both standards, the corner radius is
+   * what differs, and the note says which is which. Silently relabelling them
+   * EN 10210/10219 would be the dishonest one.
+   */
   {
     id: 'eurocode-3',
     label: 'Eurocode 3',
     region: 'EU',
-    families: ['IPE', 'HEA', 'HEB', 'IPN', 'UPN', 'L'],
+    families: ['IPE', 'HEA', 'HEB', 'IPN', 'UPN', 'L', 'CHS', 'RHS', 'SHS'],
     note: 'cat.note.eurocodeTubes',
   },
   /*
