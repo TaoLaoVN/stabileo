@@ -46,6 +46,7 @@
   import CentralCoreDetails from './stress/CentralCoreDetails.svelte';
   import StressTensorDetails from './stress/StressTensorDetails.svelte';
   import TorsionDetails from './stress/TorsionDetails.svelte';
+  import GeometricPropertyWorking from './stress/GeometricPropertyWorking.svelte';
   import { resolveEccentric, snapShearCentre } from '../lib/section/eccentric';
 
   // Fiber position sliders: 0 = bottom/left, 1 = top/right
@@ -68,7 +69,9 @@
   let showCentralCoreInfo = $state(false);     // NC details section (closed by default)
   let useGlobalScale = $state(true);           // Local/global stress scaling toggle (global by default)
   let showTensors = $state(false);
-  let showTorsion = $state(false);      // Torsional shear section (closed by default)             // Stress/strain tensor section (closed by default)
+  let showTorsion = $state(false);      // Torsional shear section (closed by default)
+  let showCentroidWork = $state(false);  // Step-by-step centroid
+  let showShearCentreWork = $state(false); // Step-by-step shear centre             // Stress/strain tensor section (closed by default)
   let showStressMap = $state(false);           // MAP: paint sigma over the section instead of at a point
   let showEccentric = $state(false);           // CE: eccentric application point
   /**
@@ -1114,6 +1117,16 @@
         {mohrData}
         {mohrSigma}
         {mohrTau}
+      />
+
+      <!-- How the centroid and the shear centre are found. Next to the core,
+           which is the other purely geometric property here — none of the three
+           depends on the load. -->
+      <GeometricPropertyWorking
+        bind:showCentroidWork
+        bind:showShearCentreWork
+        {resolved}
+        engineShearCentre={canonicalState?.shearCentre ? shearCentreClean : null}
       />
 
       <!-- Central core details -->
