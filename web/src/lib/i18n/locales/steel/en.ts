@@ -141,6 +141,9 @@ const steelEn: Record<string, string> = {
   'generator.assume.nominalDimensionFamily': 'Nominal-dimension family: the derived area differs from the tabulated one.',
 
   // ─── Generators: built-up torsion ───
+  'generator.outline.unknownProfile': 'The profile is not in the catalogue.',
+  'generator.outline.noGeometry': 'The profile has no canonical outline, so none is drawn. Its published properties are still used.',
+  'generator.outline.arrangementRefused': 'This arrangement cannot be composed from this profile.',
   'generator.builtUp.torsion.singleProfile': 'Torsional constant from the catalogue.',
   'generator.builtUp.torsion.sumOfOpenParts': 'Torsional constant taken as the sum of the open parts. An assumption, not a tabulated value.',
   'generator.builtUp.torsion.closedCellNotComputed': 'Closed section: Bredt governs and the enclosed area cannot be determined from the catalogue, so no torsional constant is reported.',

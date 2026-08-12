@@ -147,6 +147,9 @@ const steelEs: Record<string, string> = {
   'generator.assume.nominalDimensionFamily': 'Familia de dimensiones nominales: el área derivada difiere de la tabulada.',
 
   // ─── Generadores: torsión de perfiles compuestos ───
+  'generator.outline.unknownProfile': 'El perfil no está en el catálogo.',
+  'generator.outline.noGeometry': 'El perfil no tiene contorno canónico, así que no se dibuja. Las propiedades publicadas sí se usan.',
+  'generator.outline.arrangementRefused': 'No puede componerse esta disposición con este perfil.',
   'generator.builtUp.torsion.singleProfile': 'Constante torsional del catálogo.',
   'generator.builtUp.torsion.sumOfOpenParts': 'Constante torsional tomada como la suma de las partes abiertas. Es una hipótesis, no un valor tabulado.',
   'generator.builtUp.torsion.closedCellNotComputed': 'Sección cerrada: rige Bredt y el área encerrada no puede determinarse del catálogo, así que no se reporta constante torsional.',

@@ -12,8 +12,10 @@
   import { FAMILY_LIST, PROFILE_FAMILIES } from '../../../lib/data/steel-profiles';
   import { availableArrangements, canCompose, resolveProfile } from '../../../lib/engine/generators/profile-resolve';
   import { ARRANGEMENTS, isClosedArrangement } from '../../../lib/engine/generators/built-up-section';
+  import { ROLE_COLOUR } from '../../../lib/engine/generators/preview-projection';
   import type { ProfileSpec } from '../../../lib/engine/generators/emit';
   import type { MemberRole } from '../../../lib/engine/generators/member-roles';
+  import SectionFigure from './SectionFigure.svelte';
 
   interface Props {
     role: MemberRole;
@@ -40,6 +42,14 @@
 </script>
 
 <div class="row" data-testid={`gen-profile-${role}`}>
+  <!-- The figure first, because it is what the row is about. -->
+  <SectionFigure
+    profileName={spec.profileName}
+    arrangement={spec.arrangement}
+    gapMm={spec.gapMm}
+    rotationDeg={spec.rotationDeg}
+    colour={ROLE_COLOUR[role]}
+  />
   <label class="lbl" for={`prof-${role}`}>{t(`generator.role.${role}`)}</label>
 
   <select
@@ -119,5 +129,6 @@
   input { width: 4.5rem; text-align: right; }
   .gap { display: inline-flex; align-items: center; gap: 4px; font-size: 0.68rem; color: #9ab; }
   .unit { color: #778; }
-  .note { margin: 0 0 6px 6.5rem; font-size: 0.65rem; color: #f0cc66; line-height: 1.35; }
+  /* Indented past the figure and the label, so a note lines up under the controls. */
+  .note { margin: 0 0 6px calc(6.5rem + 40px); font-size: 0.65rem; color: #f0cc66; line-height: 1.35; }
 </style>

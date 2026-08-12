@@ -73,6 +73,18 @@ export interface ResolvedProfile {
    * leave a user to discover a 0.4 % difference against their own tables.
    */
   areaDeviation: number | null;
+  /**
+   * The profile's real outline, referred to its own CENTROID, in metres.
+   *
+   * Carried on the same resolution that produced the properties rather than fetched again,
+   * because a second call would be a second answer: the geometry engine is deterministic,
+   * but nothing would guarantee the drawing and the numbers came from the same request.
+   * `[y, z]` pairs, `isVoid` marking a hole.
+   *
+   * Empty for a properties-only family — there is no outline to draw, and drawing a
+   * plausible box instead would be inventing geometry the app has said it does not have.
+   */
+  polygons: Array<{ vertices: Array<[number, number]>; isVoid: boolean }>;
 }
 
 /** Look a catalogue profile up by its exact name. */
@@ -122,6 +134,12 @@ export function resolveProfile(name: string): ResolvedProfile | null {
       basis: 'canonicalGeometry',
       centroidKnown: true,
       areaDeviation: declaredA > 0 ? (q.a - declaredA) / declaredA : null,
+      // Shifted onto the centroid, so every consumer works in the one frame the placement
+      // arithmetic already uses.
+      polygons: resolved.geometry.polygons.map((poly) => ({
+        isVoid: poly.isVoid,
+        vertices: poly.vertices.map(([y, z]) => [y - q.yc, z - q.zc] as [number, number]),
+      })),
       profile: {
         name: p.name,
         a: q.a,
@@ -146,6 +164,9 @@ export function resolveProfile(name: string): ResolvedProfile | null {
     basis: 'catalogueDeclared',
     centroidKnown: isDoublySymmetric(p.family),
     areaDeviation: null,
+    // No geometry means no drawing. A plausible rectangle here would be inventing an outline
+    // the app has just finished saying it does not have.
+    polygons: [],
     profile: {
       name: p.name,
       a: declaredA,
