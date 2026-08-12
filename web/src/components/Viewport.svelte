@@ -11,6 +11,7 @@
   import { drawDeformed } from '../lib/canvas/draw-deformed';
   import { drawDespiece, despieceElementSpan, remapLoadSpanToShrunk, distributedResultantVector, DESPIECE_LOAD_COLOR } from '../lib/canvas/draw-despiece';
   import { drawDistributedLoads, drawPointLoadsOnElements, drawThermalLoads, drawMovingLoadAxles, drawMomentSymbol } from '../lib/canvas/draw-loads';
+  import { createLabelCollector, type LabelCollector } from '../lib/canvas/label-layout';
   import { computeAxleWorldPositions } from '../lib/engine/moving-loads';
   import { drawInfluenceLine } from '../lib/canvas/draw-influence';
   import { drawModeShape, drawPlasticHinges } from '../lib/canvas/draw-modes';
@@ -18,6 +19,7 @@
   import {
     drawGrid as _drawGrid,
     drawAxes as _drawAxes,
+    AXES_GIZMO_HEIGHT,
     drawNode as _drawNode,
     drawElement as _drawElement,
     drawSupport as _drawSupport,
@@ -262,7 +264,56 @@
         // 2D bending uses effective inertia (accounts for section rotation via Mohr)
         return sec ? { iz: effectiveBendingInertia(sec) } : undefined;
       },
+      /*
+       * Every member on screen, so load labels can be laid out around the
+       * structure instead of across it. A lazy callback rather than an array:
+       * only the renderers that place labels need it, and building it on every
+       * frame for the ones that do not would cost a pass over the whole model
+       * each time.
+       */
+      memberSegments: memberScreenSegments,
+      labels: currentFrameLabels,
     };
+  }
+
+  /**
+   * The collector the current frame is filling, or undefined outside a draw.
+   *
+   * Module-level rather than threaded through `makeDrawContext`'s callers
+   * because every one of them wants the same answer — the frame's collector —
+   * and passing it explicitly through a dozen call sites would only create
+   * opportunities to forget.
+   */
+  let currentFrameLabels: LabelCollector | undefined;
+
+  /**
+   * The structure in screen coordinates, as the things a label must not cover.
+   *
+   * Node markers are included as degenerate segments: the node number is drawn
+   * there, and a load value written across it makes both unreadable — which is
+   * exactly what a horizontal nodal force did, its label starting at the arrow
+   * tail and running straight through the node it was applied to.
+   */
+  function memberScreenSegments(): { x1: number; y1: number; x2: number; y2: number }[] {
+    const segs: { x1: number; y1: number; x2: number; y2: number }[] = [];
+    for (const el of modelStore.elements.values()) {
+      const a = modelStore.getNode(el.nodeI);
+      const b = modelStore.getNode(el.nodeJ);
+      if (!a || !b) continue;
+      const pa = project2DNode(a);
+      const pb = project2DNode(b);
+      const sa = uiStore.worldToScreen(pa.x, pa.y);
+      const sb = uiStore.worldToScreen(pb.x, pb.y);
+      segs.push({ x1: sa.x, y1: sa.y, x2: sb.x, y2: sb.y });
+    }
+    if (uiStore.showNodeLabels) {
+      for (const n of modelStore.nodes.values()) {
+        const pn = project2DNode(n);
+        const s = uiStore.worldToScreen(pn.x, pn.y);
+        segs.push({ x1: s.x, y1: s.y - 12, x2: s.x + 14, y2: s.y + 2 });
+      }
+    }
+    return segs;
   }
 
   onMount(() => {
@@ -316,6 +367,18 @@
 
   function draw() {
     if (!ctx) return;
+
+    /*
+     * ONE label layout pass for the whole frame.
+     *
+     * Loads and diagrams are drawn by half a dozen functions — nodal, point,
+     * distributed and thermal loads, plus the diagram values — and each used to
+     * place its own text. Each was therefore correct in isolation and blind to
+     * the other five: two values on one beam simply overlapped, and whichever
+     * drew last won. Everything is queued here and resolved together at the end
+     * of the frame, which is the only level at which the guarantee can hold.
+     */
+    currentFrameLabels = createLabelCollector();
 
     // Advance IL animation
     const now = performance.now();
@@ -516,7 +579,7 @@
             ld,
             modelStore.getLoadCaseColor(caseId),
             modelStore.getLoadCaseName(caseId),
-            i * 16,
+            currentFrameLabels!,
           );
         }
       }
@@ -535,16 +598,18 @@
             a: d.a, b: d.b,
             caseColor: modelStore.getLoadCaseColor(caseId),
             caseName: modelStore.getLoadCaseName(caseId),
-            labelYOffset: 0,
           };
         });
-      // Stack labels for same element
-      const elemCount = new Map<number, number>();
-      for (const d of distLoads) {
-        const c = elemCount.get(d.elementId) ?? 0;
-        d.labelYOffset = c * 16;
-        elemCount.set(d.elementId, c + 1);
-      }
+      /*
+       * No stacking offsets are computed here any more.
+       *
+       * This used to nudge every label after the first on an element down by a
+       * fixed 16 px. That separated them from each other and from nothing else:
+       * it moved labels that were not colliding, left colliding ones colliding
+       * whenever they sat on different elements, and ordered them by whatever
+       * order the loads happened to be stored in rather than by size. The
+       * renderer now lays them out against what is actually on screen.
+       */
       if (distLoads.length > 0) {
         drawDistributedLoads(distLoads, makeDrawContext());
       }
@@ -563,16 +628,8 @@
             angle: d.angle, isGlobal: d.isGlobal,
             caseColor: modelStore.getLoadCaseColor(caseId),
             caseName: modelStore.getLoadCaseName(caseId),
-            labelYOffset: 0,
           };
         });
-      // Stack labels for same element
-      const elemCount = new Map<number, number>();
-      for (const d of ptLoads) {
-        const c = elemCount.get(d.elementId) ?? 0;
-        d.labelYOffset = c * 16;
-        elemCount.set(d.elementId, c + 1);
-      }
       if (ptLoads.length > 0) {
         drawPointLoadsOnElements(ptLoads, makeDrawContext());
       }
@@ -588,19 +645,13 @@
           return {
             elementId: d.elementId, dtUniform: d.dtUniform, dtGradient: d.dtGradient,
             caseName: modelStore.getLoadCaseName(caseId),
-            labelYOffset: 0,
           };
         });
-      const elemCount = new Map<number, number>();
-      for (const d of thermLoads) {
-        const c = elemCount.get(d.elementId) ?? 0;
-        d.labelYOffset = c * 16;
-        elemCount.set(d.elementId, c + 1);
-      }
       if (thermLoads.length > 0) {
         drawThermalLoads(thermLoads, makeDrawContext());
       }
     }
+
     } // end loadsVisible
 
     // Draw moving load train axles for the current position
@@ -857,7 +908,13 @@
           const LOAD = DESPIECE_LOAD_COLOR;
           const vSize = Math.max(0.3, uiStore.despieceVectorSize);
           const lSize = Math.max(0.3, uiStore.despieceLabelSize);
-          const baseCtx = makeDrawContext();
+          /*
+           * The free-body view has its own pass: the members here are drawn
+           * shrunk and pulled apart, so the segments the main pass uses as
+           * obstacles do not describe what is on screen.
+           */
+          const overlayLabels = createLabelCollector();
+          const baseCtx = { ...makeDrawContext(), labels: overlayLabels };
           // Fixed-size amber arrow (screen space) so big load values don't dominate.
           const loadArrow = (sx: number, sy: number, ux: number, uy: number, label: string) => {
             const len = 38 * vSize, tx = sx + ux * len, ty = sy + uy * len;
@@ -880,7 +937,7 @@
             if (load.type === 'nodal') {
               const d = load.data as { nodeId: number; fx?: number; fz?: number; fy?: number; my?: number; mz?: number };
               const node = baseCtx.getNode(d.nodeId); if (!node) continue;
-              if (loadMode === 'all') { drawNodalLoad(load, LOAD, undefined, 0); continue; }
+              if (loadMode === 'all') { drawNodalLoad(load, LOAD, undefined, overlayLabels); continue; }
               // resultant: one combined force arrow (fx, fz-up) + one moment glyph
               const s = uiStore.worldToScreen(node.x, node.y);
               const fx = d.fx ?? 0, fz = d.fz ?? d.fy ?? 0, fmag = Math.hypot(fx, fz);
@@ -908,14 +965,15 @@
                 }
               } else if (load.type === 'distributed') {
                 const rem = remapLoadSpanToShrunk(d.a ?? 0, d.b ?? span.lenOrig, span.lenOrig, span.lenShrunk);
-                drawDistributedLoads([{ elementId: d.elementId, qI: d.qI ?? 0, qJ: d.qJ ?? 0, angle: d.angle, isGlobal: d.isGlobal, a: rem.a, b: rem.b, caseColor: LOAD, caseName: '', labelYOffset: 0 }], elemCtx);
+                drawDistributedLoads([{ elementId: d.elementId, qI: d.qI ?? 0, qJ: d.qJ ?? 0, angle: d.angle, isGlobal: d.isGlobal, a: rem.a, b: rem.b, caseColor: LOAD, caseName: '' }], elemCtx);
               } else {
                 // point load — already concentrated; draw at mapped point in both modes
                 const aRem = span.lenOrig > 1e-9 ? ((d.a ?? 0) / span.lenOrig) * span.lenShrunk : 0;
-                drawPointLoadsOnElements([{ elementId: d.elementId, a: aRem, p: d.p ?? 0, px: d.px, my: d.my ?? d.mz, angle: d.angle, isGlobal: d.isGlobal, caseColor: LOAD, caseName: '', labelYOffset: 0 }], elemCtx);
+                drawPointLoadsOnElements([{ elementId: d.elementId, a: aRem, p: d.p ?? 0, px: d.px, my: d.my ?? d.mz, angle: d.angle, isGlobal: d.isGlobal, caseColor: LOAD, caseName: '' }], elemCtx);
               }
             }
           }
+          overlayLabels.flush(ctx!);
         }
       } else if (dt === 'moment' || dt === 'shear' || dt === 'axial') {
         const dkind = dt as DiagramKind;
@@ -1015,7 +1073,10 @@
 
       // Color legend for stressRatio and axialColor
       if (resultsStore.diagramType === 'colorMap' && resultsStore.colorMapKind === 'stressRatio') {
-        const lx = 12, ly = height - 110, lw = 16, lh = 90;
+        // Stacked above the axis indicator rather than at a fixed offset, so
+        // the two cannot drift into each other.
+        const lh = 90;
+        const lx = 12, ly = height - AXES_GIZMO_HEIGHT - lh - 8, lw = 16;
         // Gradient bar
         for (let i = 0; i < lh; i++) {
           const norm = 1.0 - i / lh; // top=1 (red), bottom=0 (green/blue)
@@ -1044,7 +1105,9 @@
         ctx.fillStyle = '#aaa';
         ctx.fillText(t('viewport.resistance'), lx, ly - 16);
       } else if (resultsStore.diagramType === 'axialColor') {
-        const lx = 12, ly = height - 80;
+        // Same rule as the gradient key above: clear the axis indicator by
+        // construction. The block is 32 px tall plus its title.
+        const lx = 12, ly = height - AXES_GIZMO_HEIGHT - 40;
         ctx.font = '10px sans-serif';
         ctx.textAlign = 'left';
         ctx.fillStyle = '#aaa';
@@ -1236,6 +1299,10 @@
         ctx.setLineDash([]);
       }
     }
+
+    // Everything queued above is laid out now, against the structure itself.
+    currentFrameLabels.flush(ctx, memberScreenSegments());
+    currentFrameLabels = undefined;
   }
 
   function drawGrid() {
@@ -1363,12 +1430,12 @@
     _drawSupport(ctx!, sup, screen, uiStore.selectedSupports.has(sup.id), (nid) => modelStore.getElementAngleAtNode(nid));
   }
 
-  function drawNodalLoad(load: { type: string; data: any }, caseColor?: string, caseName?: string, labelYOffset?: number) {
+  function drawNodalLoad(load: { type: string; data: any }, caseColor: string | undefined, caseName: string | undefined, labels: LabelCollector) {
     const node = modelStore.getNode(load.data.nodeId);
     if (!node) return;
     const pn = project2DNode(node);
     const screen = uiStore.worldToScreen(pn.x, pn.y);
-    _drawNodalLoad(ctx!, screen, load.data, caseColor, caseName, labelYOffset);
+    _drawNodalLoad(ctx!, screen, load.data, caseColor, caseName, labels);
   }
 
   function drawReactions() {

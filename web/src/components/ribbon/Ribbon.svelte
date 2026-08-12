@@ -273,6 +273,9 @@
    * while a diagram is shown, because reading a result means moving around it
    * and clicking things in it. They are how you LOOK, not how you edit.
    */
+  /** Tools that only change how you LOOK at the model, never what it is. */
+  const VIEW_TOOLS: string[] = ['select', 'pan'];
+
   const EDIT_TOOLS = ['node', 'element', 'support', 'load'];
 
   function run(cmd: Cmd) {
@@ -292,8 +295,19 @@
        * is showing your work. `toggle: false`: arming a tool means "show me
        * this", and a second press should re-show rather than hide.
        */
-      if (cmd.dataTab) onOpenPanel('data', { dataTab: cmd.dataTab, toggle: false });
-      else onOpenPanel(null);
+      if (cmd.dataTab) {
+        onOpenPanel('data', { dataTab: cmd.dataTab, toggle: false });
+      } else if (!VIEW_TOOLS.includes(cmd.tool)) {
+        onOpenPanel(null);
+      }
+      /*
+       * Select and Pan leave the panel exactly as it was.
+       *
+       * They are not a task — they are how you look at whatever task you are
+       * in. Reaching for Pan to move the canvas and having the panel you were
+       * reading close underneath is a loss you did not ask for, and getting it
+       * back costs two clicks and the scroll position.
+       */
       return;
     }
     if (cmd.diagram) {

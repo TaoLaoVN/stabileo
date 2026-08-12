@@ -6,6 +6,7 @@
  */
 
 import { drawMomentSymbol } from '../canvas/draw-loads';
+import type { LabelCollector } from '../canvas/label-layout';
 import {
   TWO_D_DISPLACEMENT_LABELS,
   TWO_D_NODAL_LOAD_LABELS,
@@ -70,6 +71,22 @@ export function drawGrid(
   }
 }
 
+/**
+ * How much room the corner axis indicator needs, measured up from the bottom.
+ *
+ * Exported because overlays share that corner and were colliding with it: the
+ * axial colour key started at `height - 80` while the gizmo's Z label reached
+ * `height - 81`, so the two occupied the same pixels and neither was legible.
+ *
+ * A constant rather than a number repeated in each overlay — the gizmo can grow
+ * and everything that avoids it should move with it, instead of drifting into
+ * it one edit at a time.
+ */
+export const AXES_GIZMO_BASE = 40;
+export const AXES_GIZMO_ARM = 25;
+/** Total vertical extent, label included, from the bottom edge upward. */
+export const AXES_GIZMO_HEIGHT = AXES_GIZMO_BASE + AXES_GIZMO_ARM + 18;
+
 export function drawAxes(
   ctx: CanvasRenderingContext2D,
   width: number,
@@ -92,7 +109,7 @@ export function drawAxes(
   ctx.stroke();
 
   // Corner axis indicator (bottom-left)
-  const cx = 40, cy = height - 40, len = 25;
+  const cx = 40, cy = height - AXES_GIZMO_BASE, len = AXES_GIZMO_ARM;
   ctx.lineWidth = 2;
   // X axis (red, right)
   ctx.strokeStyle = '#e5482a';
@@ -589,18 +606,26 @@ export function drawPrescribedDisp(
 
 // ── Nodal Loads ──────────────────────────────────────────────────────
 
+/**
+ * Draw a nodal load.
+ *
+ * The VALUES are handed to the frame's label collector rather than drawn here,
+ * for the same reason as every other load: a nodal force sits exactly where the
+ * node number and the members meeting it already are, so its label is the one
+ * most likely to be written across something. Where it fits cannot be decided
+ * from inside this function, which sees one load and nothing else.
+ */
 export function drawNodalLoad(
   ctx: CanvasRenderingContext2D,
   screen: ScreenPoint,
   loadData: { fx: number; fy?: number; fz?: number; mz?: number; my?: number },
-  caseColor?: string,
-  caseName?: string,
-  labelYOffset?: number,
+  caseColor: string | undefined,
+  caseName: string | undefined,
+  labels: LabelCollector,
 ): void {
   const arrowLen = 40;
   const color = caseColor ?? '#e5482a';
   const prefix = caseName ? `${caseName}: ` : '';
-  const yOff = labelYOffset ?? 0;
   const vertical = loadData.fz ?? loadData.fy ?? 0;
   const moment = loadData.my ?? loadData.mz ?? 0;
 
@@ -622,12 +647,18 @@ export function drawNodalLoad(
     ctx.closePath();
     ctx.fill();
 
-    ctx.font = '12px sans-serif';
-    ctx.fillText(
-      `${prefix}${TWO_D_NODAL_LOAD_LABELS.vertical}=${Math.abs(vertical)} kN`,
-      screen.x + 10,
-      screen.y - arrowLen / 2 * dir + yOff,
-    );
+    labels.block({ x1: screen.x, y1: screen.y, x2: screen.x, y2: screen.y - arrowLen * dir });
+    labels.add({
+      text: `${prefix}${TWO_D_NODAL_LOAD_LABELS.vertical}=${Math.abs(vertical)} kN`,
+      colour: color,
+      font: '12px sans-serif',
+      box: {
+        x: screen.x + 10, y: screen.y - arrowLen / 2 * dir,
+        width: 92, height: 14,
+        dirX: 1, dirY: 0, sweep: 'any', anchorX: 'left',
+        priority: Math.abs(vertical),
+      },
+    });
   }
 
   if (Math.abs(loadData.fx) > 0.001) {
@@ -644,12 +675,24 @@ export function drawNodalLoad(
     ctx.closePath();
     ctx.fill();
 
-    ctx.font = '12px sans-serif';
-    ctx.fillText(
-      `${prefix}${TWO_D_NODAL_LOAD_LABELS.horizontal}=${Math.abs(loadData.fx)} kN`,
-      screen.x - arrowLen * dir,
-      screen.y - 10 + yOff,
-    );
+    labels.block({ x1: screen.x, y1: screen.y, x2: screen.x - arrowLen * dir, y2: screen.y });
+    labels.add({
+      text: `${prefix}${TWO_D_NODAL_LOAD_LABELS.horizontal}=${Math.abs(loadData.fx)} kN`,
+      colour: color,
+      /*
+       * A horizontal force is drawn as a horizontal arrow, so its value has
+       * nowhere to go along the arrow — either end is on the node or past the
+       * tip. It is offered the tail end and told to escape vertically first,
+       * which is the direction with room.
+       */
+      font: '12px sans-serif',
+      box: {
+        x: screen.x - arrowLen * dir - (dir > 0 ? 96 : 0), y: screen.y - 10,
+        width: 92, height: 14,
+        dirX: 0, dirY: -1, sweep: 'any', anchorX: 'left',
+        priority: Math.abs(loadData.fx),
+      },
+    });
   }
 
   // Moment (curved arrow) — reuses drawMomentSymbol for consistent visuals
@@ -657,14 +700,17 @@ export function drawNodalLoad(
     const r = 18;
     drawMomentSymbol(ctx, screen.x, screen.y, moment, color, r);
 
-    // Label
-    ctx.font = '12px sans-serif';
-    ctx.fillStyle = color;
-    ctx.fillText(
-      `${prefix}${TWO_D_NODAL_LOAD_LABELS.moment}=${Math.abs(moment)} kN\u00B7m`,
-      screen.x + r + 5,
-      screen.y - r + yOff,
-    );
+    labels.add({
+      text: `${prefix}${TWO_D_NODAL_LOAD_LABELS.moment}=${Math.abs(moment)} kN\u00B7m`,
+      colour: color,
+      font: '12px sans-serif',
+      box: {
+        x: screen.x + r + 5, y: screen.y - r,
+        width: 104, height: 14,
+        dirX: 1, dirY: 0, sweep: 'any', anchorX: 'left',
+        priority: Math.abs(moment),
+      },
+    });
   }
 }
 
