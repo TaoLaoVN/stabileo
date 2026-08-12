@@ -161,6 +161,37 @@ export function hook<T>(page: Page, fn: (h: TestHooks) => T): Promise<T> {
 }
 
 /**
+ * Boot a page into PRO, in a known locale, with the real solver up and Design active.
+ *
+ * Extracted from the `pro` fixture so that a page Playwright did NOT hand to a test — the
+ * worker-scoped preparation in `prepared-building.ts` opens its own — boots through exactly
+ * the same steps. A second copy of this sequence is a second definition of "the app is ready",
+ * and the two would drift the first time one of them learned something the other did not.
+ */
+export async function bootPro(page: Page, appLocale = 'en'): Promise<void> {
+  await page.addInitScript((loc) => {
+    try {
+      localStorage.clear();
+      // Force a stable locale: the RC surface is localised, so assertions on
+      // English text would otherwise depend on the browser's language.
+      localStorage.setItem('stabileo-lang', loc);
+      localStorage.setItem('stabileo-lang-manual', '1');
+    } catch { /* private mode */ }
+  }, appLocale);
+
+  await page.goto(PRO_URL);
+  // Hooks exist ⇒ the app booted with ?e2e=1.
+  await page.waitForFunction(() => !!window.__stabileo, null, { timeout: 60_000 });
+  // The REAL WASM solver must be live; the Vite stub fails here.
+  await expect
+    .poll(() => page.evaluate(() => window.__stabileo.solverReady()), { timeout: 60_000, message: 'real WASM solver must be initialised (not the Vite stub)' })
+    .toBe(true);
+
+  // The RC Design tab must be the active PRO tab for its table to exist.
+  await page.evaluate(() => window.__stabileoActions.openDesignTab());
+}
+
+/**
  * A PRO page booted in an explicit locale.
  *
  * Default `en`, so every existing spec keeps its stable English assertions. A spec that
@@ -199,26 +230,7 @@ export const test = base.extend<{ pro: Page; appLocale: string }>({
     page.on('pageerror', (e) => pageErrors.push(String(e)));
 
     solveFallbacks.length = 0;
-    await page.addInitScript((loc) => {
-      try {
-        localStorage.clear();
-        // Force a stable locale: the RC surface is localised, so assertions on
-        // English text would otherwise depend on the browser's language.
-        localStorage.setItem('stabileo-lang', loc);
-        localStorage.setItem('stabileo-lang-manual', '1');
-      } catch { /* private mode */ }
-    }, appLocale);
-
-    await page.goto(PRO_URL);
-    // Hooks exist ⇒ the app booted with ?e2e=1.
-    await page.waitForFunction(() => !!window.__stabileo, null, { timeout: 60_000 });
-    // The REAL WASM solver must be live; the Vite stub fails here.
-    await expect
-      .poll(() => page.evaluate(() => window.__stabileo.solverReady()), { timeout: 60_000, message: 'real WASM solver must be initialised (not the Vite stub)' })
-      .toBe(true);
-
-    // The RC Design tab must be the active PRO tab for its table to exist.
-    await page.evaluate(() => window.__stabileoActions.openDesignTab());
+    await bootPro(page, appLocale);
 
     await use(page);
 

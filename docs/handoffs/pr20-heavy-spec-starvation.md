@@ -1,7 +1,7 @@
-# `rebar-3d.spec.ts` starvation — diagnosis, and the fix that has not been made yet
+# `rebar-3d.spec.ts` starvation — the diagnosis, and the fix that was made
 
-**Status:** diagnosed, NOT fixed. Captured here so the next pass starts from the measurement
-rather than from the symptom.
+**Status:** FIXED. The diagnosis below is kept because the fix only makes sense against it, and
+because one of its conclusions turned out to be wrong in a way worth recording.
 
 ## The symptom
 
@@ -45,32 +45,76 @@ same process, and the last ones run on a machine that has been at full tilt for 
 Only line 324 is about the journey. The other three are **observers**: they open a prepared
 workspace and assert what the rail reports.
 
-## The fix, and the trap in it
+### What the diagnosis got wrong, measured afterwards
 
-Reuse the prepared state for the three observers, keep 324 as a full journey.
+It assumed the setup was expensive in itself. It is not: on an idle machine the whole chain —
+load, solve, `designAll`, detailing, floor design — is about **17 seconds**. Four of those is a
+minute, not the eight the file takes.
 
-The trap is that "reuse" here means sharing a page, because the model lives in memory rather
-than in storage — and 362 turns a layer switch OFF, which the store deliberately keeps across a
-close/reopen (`rebar-workspace.svelte.ts`: "closing keeps the switches, reloading resets"). So a
-naive shared page lets 362's toggle change what 383 and 396 observe. That is exactly the
-cross-test coupling this must not introduce.
+What makes it starvation is that ONE of those steps does not degrade gently. `fixtures.ts`
+already records the measurement that matters: on a run where the cost spec had just spent ten
+minutes on this machine, a 7-storey solve exceeded **four minutes**, with the worker pool up and
+no fallback to the sequential solver. So the operation to remove from the observers was never
+"the setup", it was **the solve** — and the fix below removes exactly it, because a restore is
+explicitly not a solve (`pro-project-files.spec.ts` C asserts that opening a project does not
+move the solve counter).
 
-Two candidate shapes, in order of preference:
+## The fix
 
-1. **Serialise the prepared project once, deserialise per test.** A worker-scoped fixture runs
-   the chain once and captures the project through the production save path; each observer gets
-   its own page and loads it. Independence is real — no shared object — and the expensive part is
-   paid once. Needs an e2e hook pair for snapshot/restore, which does not exist yet; it must
-   drive the same `file.ts` entry points the UI does, not write store state directly.
+`e2e/prepared-building.ts`. The chain runs ONCE per worker, in a context of its own. Each
+observer gets a NEW PAGE in that context, the app finds its own autosave, and the test presses
+Restaurar.
 
-2. **Shared worker page plus an explicit reset.** Cheaper to write, and each observer must
-   restore the view state it depends on in its own first line. Rejected as the default because it
-   makes every future test in this file responsible for a contract it cannot see.
+- **Isolation is real.** A new page is a new realm: every store, every switch, the selection, the
+  camera and the WebGL context are fresh, exactly as they are for a page Playwright hands out.
+  The trap in the original plan — that "reuse" would mean sharing a page, and that
+  `rebar-workspace.svelte.ts` deliberately keeps the layer switches across a close/reopen — does
+  not apply, because nothing is shared except storage.
+- **Produced by the application.** `requestAutosave` writes it and the restore banner reads it.
+  No fixture writes project data.
+- **Guarded.** The fixture compares the stored fingerprint against the prepared one before every
+  restore, so a future test that writes over the slot fails loudly instead of leaving every
+  measurement about a different building. And `rebar-3d.spec.ts` carries a test that asserts the
+  restored scene equals the live one — the family tally, the piece kinds, and the mesh census read
+  off `mesh.visible` — so a restore that lost anything is a failure rather than a smaller number
+  nobody notices.
 
-Whichever is chosen, the requirement stands: no force click, no widened timeout, no disabled
-spec, one Playwright instance, `E2E_PORT=4293`.
+### The transport that did not work, and why it matters beyond the tests
 
-## Also worth doing in the same pass
+The plan's preferred shape was to serialise the project through the production save path and load
+it per test. That was tried first and **fails on this project**:
 
-`rebar-viewport-cost.spec.ts` has the same shape and the plan document already measured it: 12,3
-min for five 7-storey setups in one file. The fix is the same fix.
+- `pro-project-save` (the real `.ded` download) produced no download in 180 s and the browser
+  context disappeared underneath the run;
+- `context.storageState({ indexedDB: true })` did not return in twenty minutes.
+
+Both of those turn the document into a string. The autosave keeps it an object and takes about
+two seconds. That is a product finding, not a harness detail — see
+`pr20-pro-design-matrix.md` §10.
+
+### One regression this introduced, and what it cost
+
+The prepared setup opens the viewer from `cmd-open-3d` on the command row, and did not open the
+detailing disclosure. `rebar-viewport-cost.spec.ts` closes the workspace and reopens it from
+`doc-3d`, which lives INSIDE that disclosure — so Playwright waited on an element that exists, is
+enabled, and will never be visible, and spent the test's entire fifteen-minute budget doing it.
+`openPreparedWorkspace` now leaves the panel open, as the setup it replaces did. Recorded because
+the failure reads as a hang and is not one.
+
+## Measured, after
+
+| | before | after |
+|---|---|---|
+| `rebar-3d.spec.ts`, whole file | 1 failed of 29 across three files, 8.6 min | **24 passed, 3.1 min** |
+| the journey test inside the whole file | failed | 35.4 s |
+| each of the three observers | a full setup each | 6.6–9.4 s |
+| `rebar-viewport-cost.spec.ts`, whole file | 12.3 min (plan §5.4) | **10 passed, 6.6 min** |
+
+The "before" column for the first two rows is the measurement at the top of this document, taken
+on the same machine before the change; it was not re-run afterwards.
+
+## Still true
+
+`E2E_PORT=4293`, one Playwright instance, no widened budgets, no force clicks, no disabled specs.
+The three observers' `test.setTimeout(240_000)` overrides are now far above what they need and
+could be lowered; they are left alone in this pass rather than tuned on one run's numbers.

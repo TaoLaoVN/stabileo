@@ -34,9 +34,24 @@
  * with no workspace open at all. The first version of the tab-return benchmark timed exactly that
  * and blamed the tab switch. Everything here waits for the setup to settle first, and the settling
  * wait is not part of any number.
+ *
+ * ── Where the big model comes from now ─────────────────────────────
+ *
+ * Five of these tests set up the 7-storey building, and every one of them is an OBSERVER: they
+ * measure what an interaction costs on a scene, not what building the scene costs. Running the
+ * whole chain five times in one file measured 12,3 min and left the machine saturated for
+ * whatever ran next — half of the starvation diagnosed in
+ * `docs/handoffs/pr20-heavy-spec-starvation.md`.
+ *
+ * So the building is prepared once per worker and opened from the `.ded` the app's own Save
+ * button wrote. Each test still gets its own page, its own store and its own WebGL context; see
+ * `prepared-building.ts` for why the state travels as a file rather than as a shared page. The
+ * small control model is cheap and still runs its own chain, which keeps at least one path
+ * through load → design → detail → open measured here.
  */
 
-import { test, expect, designAll, loadModel } from './fixtures';
+import { test, expect, openPreparedWorkspace } from './prepared-building';
+import { designAll, loadModel } from './fixtures';
 
 type Page = import('@playwright/test').Page;
 
@@ -61,9 +76,26 @@ async function openWorkspace(page: Page, example: string, withFloors: boolean) {
 
   await page.getByTestId('doc-3d').click();
   await expect(page.getByTestId('rebar-workspace')).toBeVisible();
-  // The setup's own queued work, settled before anything is timed.
+}
+
+/** The setup's own queued work, settled before anything is timed. */
+async function settle(page: Page) {
   await page.waitForTimeout(3000);
 }
+
+/**
+ * How one of these tests gets a workspace to measure.
+ *
+ * Two shapes, because the two models arrive by different routes and a test may only declare the
+ * fixtures it actually uses: asking for both the `pro` page and the prepared one would boot two
+ * pages per test and open two WebGL contexts, one of which nothing would look at. So the label
+ * chooses a REGISTRAR, and the five test bodies below are written once and registered twice.
+ */
+type Registrar = (
+  title: string, body: (page: Page, label: Label) => Promise<void>,
+) => void;
+
+type Label = 'small control' | '7-storey building';
 
 /** Builds, projections, contexts and canvases — the four things a switch must not change. */
 async function counters(page: Page) {
@@ -97,7 +129,9 @@ async function counters(page: Page) {
  * event handler returned". A synchronous rebuild lands on the next frame, so measuring only up to
  * the handler is how a seconds-long freeze gets reported as sub-millisecond.
  */
-async function timed(page: Page, act: () => Promise<void>, settle: () => Promise<void>) {
+async function timed(
+  page: Page, act: () => Promise<unknown>, settle: () => Promise<unknown>,
+) {
   const t0 = Date.now();
   await act();
   const acted = Date.now() - t0;
@@ -163,17 +197,34 @@ const TIGHT_MS = {
   '7-storey building': 2500,
 } as const;
 
-for (const [label, example, floors] of [
-  ['small control', 'rc-qa-diagnostic', false],
-  ['7-storey building', 'pro-edificio-7p', true],
+/** The small control model builds its own scene; it is seconds, and it keeps one full path measured. */
+const smallControl: Registrar = (title, body) => {
+  test(title, async ({ pro: page }) => {
+    test.setTimeout(900_000);
+    await openWorkspace(page, 'rc-qa-diagnostic', false);
+    await settle(page);
+    await body(page, 'small control');
+  });
+};
+
+/** The 7-storey building is restored from the project the preparation had the app autosave. */
+const building: Registrar = (title, body) => {
+  test(title, async ({ preparedPage: page, preparedProject }) => {
+    test.setTimeout(900_000);
+    await openPreparedWorkspace(page, preparedProject);
+    await settle(page);
+    await body(page, '7-storey building');
+  });
+};
+
+for (const [label, register] of [
+  ['small control', smallControl],
+  ['7-storey building', building],
 ] as const) {
   test.describe(`viewport cost — ${label}`, () => {
-    test('no switch rebuilds the geometry, and the numbers say what it does cost', async (
-      { pro: page },
+    register('no switch rebuilds the geometry, and the numbers say what it does cost', async (
+      page, label,
     ) => {
-      test.setTimeout(900_000);
-      await openWorkspace(page, example, floors);
-
       const start = await counters(page);
       const rows: Array<[string, string]> = [];
       const budget = BUDGET_MS[label];
@@ -411,11 +462,9 @@ for (const [label, example, floors] of [
       expect(panel.total, `member-list selection (${label})`).toBeLessThan(budget.select);
     });
 
-    test('showing and hiding the conflict markers costs a flag, not a rebuild', async (
-      { pro: page },
+    register('showing and hiding the conflict markers costs a flag, not a rebuild', async (
+      page, label,
     ) => {
-      test.setTimeout(900_000);
-      await openWorkspace(page, example, floors);
       const start = await counters(page);
 
       const markers = page.getByTestId('rebar-layer-conflicts');
@@ -488,9 +537,7 @@ for (const [label, example, floors] of [
       await expect(markers).toBeChecked();
     });
 
-    test('repeating the marker switch adds no canvas and no context', async ({ pro: page }) => {
-      test.setTimeout(900_000);
-      await openWorkspace(page, example, floors);
+    register('repeating the marker switch adds no canvas and no context', async (page) => {
       const start = await counters(page);
 
       const markers = page.getByTestId('rebar-layer-conflicts');
@@ -507,9 +554,7 @@ for (const [label, example, floors] of [
       await expect(page.getByTestId('rebar-canvas')).toBeVisible();
     });
 
-    test('opening and closing the workspace leaks no WebGL context', async ({ pro: page }) => {
-      test.setTimeout(900_000);
-      await openWorkspace(page, example, floors);
+    register('opening and closing the workspace leaks no WebGL context', async (page) => {
       const start = await counters(page);
 
       /**
@@ -543,11 +588,7 @@ for (const [label, example, floors] of [
       expect(end.builds - start.builds, 'builds across five reopens').toBe(5);
     });
 
-    test('repeating a toggle forty times adds no memory, no canvas and no context', async (
-      { pro: page },
-    ) => {
-      test.setTimeout(900_000);
-      await openWorkspace(page, example, floors);
+    register('repeating a toggle forty times adds no memory, no canvas and no context', async (page) => {
       const start = await counters(page);
 
       const slabs = page.getByTestId('rebar-layer-slab');
