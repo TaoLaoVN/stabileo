@@ -45,7 +45,7 @@
    */
 
   type Props = {
-    onOpenPanel: (panel: string | null, opts?: { toggle?: boolean }) => void;
+    onOpenPanel: (panel: string | null, opts?: { toggle?: boolean; dataTab?: string }) => void;
     activePanel: string | null;
   };
   let { onOpenPanel, activePanel }: Props = $props();
@@ -60,6 +60,8 @@
     label?: string;
     /** Translation key for the human name, shown in the tooltip. */
     nameKey?: string;
+    /** Which Model-data tab to land on, for the Properties group. */
+    dataTab?: string;
     /** Degrees to turn the icon, for a force about a perpendicular axis. */
     rotate?: number;
     tool?: string;
@@ -206,6 +208,22 @@
       ],
     },
     {
+      /*
+       * Materials and sections had no home on the ribbon at all: they were
+       * reachable only by opening Model data and finding the right tab, or by
+       * going through an element. They are properties of the model in exactly
+       * the sense supports and loads are conditions of it, so they belong on
+       * the same row — between the conditions that act on the structure and the
+       * analysis that consumes both. PRO already groups them this way.
+       */
+      id: 'properties',
+      labelKey: 'ribbon.groupProperties',
+      cmds: [
+        { id: 'materials', icon: 'material', labelKey: 'pro.tabMaterials', panel: 'data', dataTab: 'materials' },
+        { id: 'sections', icon: 'section', labelKey: 'pro.tabSections', panel: 'data', dataTab: 'sections' },
+      ],
+    },
+    {
       id: 'analyse',
       labelKey: 'ribbon.tabAnalyse',
       cmds: [
@@ -282,7 +300,10 @@
     if (cmd.action) cmd.action();
     // `solve` shows its panel rather than toggling it: pressing it twice means
     // "solve again", not "solve and hide the answer".
-    if (cmd.panel) onOpenPanel(cmd.panel, cmd.id === 'solve' ? { toggle: false } : undefined);
+    if (cmd.panel) onOpenPanel(cmd.panel, {
+      ...(cmd.id === 'solve' ? { toggle: false } : {}),
+      ...(cmd.dataTab ? { dataTab: cmd.dataTab, toggle: false } : {}),
+    });
   }
 
   function isActive(cmd: Cmd): boolean {

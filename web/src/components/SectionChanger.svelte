@@ -170,7 +170,17 @@
         <button class="sc-close" onclick={onclose}>&#x2715;</button>
       </div>
 
-      <!-- Main tabs: Profile vs Shape vs Amorphous -->
+      <!--
+        The three routes, named by WHERE the section comes from rather than by
+        what it is made of.
+
+        The old labels invited the wrong question. A user working in timber or
+        aluminium looked at "standard profile / build a section / amorphous" and
+        could not tell which was theirs, because none of them mentions a
+        material. The answer is that SHAPE IS INDEPENDENT OF MATERIAL: a
+        rectangle is a rectangle whether it is concrete, timber or steel. Only
+        the catalogue is material-specific, because rolling is.
+      -->
       <div class="sc-main-tabs">
         <button
           class:active={activeMainTab === 'profile'}
@@ -191,6 +201,7 @@
       <!-- ═══ Profile Selector Tab ═══ -->
       {#if activeMainTab === 'profile'}
         <div class="sc-body sc-profile-body">
+          <p class="sc-route-note">{t('dialog.catalogueIsRolledSteel')}</p>
           <div class="code-bar">
             <span class="code-label">{t('cat.code')}</span>
             <button class="code-btn" class:active={activeCode === null}
@@ -201,18 +212,26 @@
             {/each}
           </div>
 
+          <!-- One row per series, each with its own heading. These used to run
+               together in a single wrapping flow, so a series label could end
+               up mid-line between two families it did not belong to and the
+               grouping stopped being visible at all. -->
           <div class="profile-tabs">
             {#each familyGroups as group}
-              <span class="series-label">{t('cat.series.' + group.series)}</span>
-              {#each group.families as fam}
-                <button
-                  class="tab-btn"
-                  class:active={activeFamily === fam}
-                  class:approx={classifyFamily(fam)?.fidelity === 'propertiesOnly'}
-                  title={classifyFamily(fam)?.standard}
-                  onclick={() => { activeFamily = fam; searchQuery = ''; }}
-                >{fam}</button>
-              {/each}
+              <div class="series-group">
+                <span class="series-label">{t('cat.series.' + group.series)}</span>
+                <div class="series-families">
+                  {#each group.families as fam}
+                    <button
+                      class="tab-btn"
+                      class:active={activeFamily === fam}
+                      class:approx={classifyFamily(fam)?.fidelity === 'propertiesOnly'}
+                      title={classifyFamily(fam)?.standard}
+                      onclick={() => { activeFamily = fam; searchQuery = ''; }}
+                    >{fam}</button>
+                  {/each}
+                </div>
+              </div>
             {/each}
           </div>
 
@@ -220,7 +239,7 @@
             {#if profilePreviewPath}
               <div class="profile-preview">
                 <svg viewBox="-90 -90 180 180" class="preview-svg">
-                  <path d={profilePreviewPath} fill="none" stroke="#4ecdc4" stroke-width="1.5" fill-rule="evenodd" />
+                  <path d={profilePreviewPath} fill="none" stroke="var(--st-value)" stroke-width="1.5" fill-rule="evenodd" />
                 </svg>
               </div>
             {/if}
@@ -263,8 +282,8 @@
                   <tr onclick={() => handleProfileClick(p)} class="profile-row">
                     <td class="name-cell">
                       <svg viewBox="-90 -90 180 180" class="row-thumb" aria-hidden="true">
-                        <path d={profileOutline(p).d} fill="#4ecdc4" fill-opacity="0.25"
-                              stroke="#4ecdc4" stroke-width="4" fill-rule="evenodd" />
+                        <path d={profileOutline(p).d} fill="var(--st-value)" fill-opacity="0.25"
+                              stroke="var(--st-value)" stroke-width="4" fill-rule="evenodd" />
                       </svg>
                       {p.name}
                     </td>
@@ -367,8 +386,8 @@
           {#if shapePreviewPath}
             <div class="preview-container">
               <svg viewBox="-90 -90 180 180" class="section-preview">
-                <path d={shapePreviewPath} fill="none" stroke="#4ecdc4" stroke-width="1.5" fill-rule="evenodd" />
-                <circle cx="0" cy="0" r="2" fill="#e94560" opacity="0.7" />
+                <path d={shapePreviewPath} fill="none" stroke="var(--st-value)" stroke-width="1.5" fill-rule="evenodd" />
+                <circle cx="0" cy="0" r="2" fill="var(--st-accent)" opacity="0.7" />
               </svg>
             </div>
           {/if}
@@ -412,6 +431,26 @@
 {/if}
 
 <style>
+  /* Series grouping: a heading and its families on one row of their own. */
+  .series-group {
+    display: flex;
+    align-items: baseline;
+    gap: 8px;
+    flex-wrap: wrap;
+    padding: 3px 0;
+  }
+  .series-families { display: flex; flex-wrap: wrap; gap: 3px; }
+  .sc-route-note {
+    margin: 0 0 8px;
+    padding: 6px 9px;
+    border-radius: var(--st-radius, 3px);
+    background: var(--st-surface-2);
+    border-left: 2px solid var(--st-value);
+    font-size: 0.72rem;
+    line-height: 1.5;
+    color: var(--st-text-2);
+  }
+
   .sc-overlay {
     position: fixed;
     inset: 0;
@@ -556,8 +595,8 @@
     background: #1c1c1c; border: 1px solid #333; color: #aaa;
     font-size: 0.72rem; padding: 3px 9px; border-radius: 3px; cursor: pointer;
   }
-  .code-btn:hover { border-color: #4ecdc4; color: #ddd; }
-  .code-btn.active { background: #4ecdc4; border-color: #4ecdc4; color: #111; font-weight: 600; }
+  .code-btn:hover { border-color: var(--st-value); color: #ddd; }
+  .code-btn.active { background: var(--st-value); border-color: var(--st-value); color: #111; font-weight: 600; }
   .series-label {
     font-size: 0.62rem; color: #666; text-transform: uppercase;
     letter-spacing: 0.05em; margin: 0 2px 0 8px; align-self: center;
@@ -570,7 +609,7 @@
   .profile-meta { flex: 1; min-width: 0; font-size: 0.7rem; }
   .meta-row { display: flex; gap: 6px; }
   .meta-k { color: #777; min-width: 74px; }
-  .meta-v { color: #ccc; font-family: monospace; }
+  .meta-v { color: var(--st-text-2); font-family: monospace; }
   .meta-v.warn { color: #d9a441; }
   .meta-missing { margin-top: 6px; color: #8a7a55; font-size: 0.65rem; line-height: 1.35; }
   .row-thumb { width: 18px; height: 18px; vertical-align: -4px; margin-right: 6px; }

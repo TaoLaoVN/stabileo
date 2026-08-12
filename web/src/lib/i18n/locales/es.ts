@@ -1769,6 +1769,7 @@ const es: Record<string, string> = {
   'dialog.steelProfiles': 'Perfiles de Acero',
   'dialog.changeSection': 'Cambiar Sección',
   'dialog.chooseStandardProfile': 'Elegir Perfil Estándar',
+  'dialog.catalogueIsRolledSteel': "Este catálogo es de ACERO laminado y conformado — son las formas que producen las acerías. Para hormigón, madera o aluminio usá «Armar sección» y dale las dimensiones: la forma es independiente del material.",
   'dialog.buildSection': 'Construir Sección',
   'dialog.defineAmorphousSection': 'Definir Sección Amorfa',
   'dialog.amorphousSectionDesc': 'Definí las propiedades de la sección directamente sin forma geométrica. Las secciones amorfas no soportan análisis de sección (distribución de tensiones).',
@@ -1899,6 +1900,9 @@ const es: Record<string, string> = {
   'grade.src.astmTube': "ASTM A500, tubo estructural",
   'matCode.label': "Norma de diseño",
   'matCode.hint': "Filtra los grados que esa norma suele referenciar. No es una restricción: cualquier grado puede verificarse por cualquier norma.",
+  'matCode.aboutCode': "Sobre esta norma",
+  'matCode.body': "La escribe",
+  'matCode.since': "Desde",
 
   // ─── Section Shape Labels ───
   'shape.hollowRect': 'Cajón rectangular',
@@ -2195,10 +2199,10 @@ const es: Record<string, string> = {
   // ─── Stress analysis (P3) ───
   'stress.mohrCircle': 'Círculo de Mohr',
   'stress.mohrCircleHelp': 'Representación gráfica del estado tensional en todos los planos.\n\nEl círculo muestra cómo varían σ y τ al rotar el plano de análisis.\nEl punto rojo es el estado actual (σ, τ).\nLos puntos donde el círculo toca el eje σ son las tensiones principales (σ1, σ2) donde τ=0.\nEl radio del círculo es τmax (Tresca).',
-  'teach.centroidTitle': "Baricentro — paso a paso",
+  'teach.centroidTitle': "Baricentro",
   'teach.centroidHelp': "Dónde se equilibra el ÁREA. Sale de un momento estático y nada más, así que toda sección tiene uno y encontrarlo no requiere ninguna noción de carga.\\n\\nLa sección se parte en rectángulos; cada uno aporta su área por su brazo, y el total dividido por el área total es la respuesta.",
   'teach.centroidLead': "Se parte en rectángulos; cada uno aporta su área por su distancia a un borde de referencia.",
-  'teach.shearCentreTitle': "Centro de corte — paso a paso",
+  'teach.shearCentreTitle': "Centro de corte",
   'teach.shearCentreHelp': "Dónde una carga transversal NO PRODUCE TORSIÓN. A diferencia del baricentro sale del flujo de corte, así que depende de cómo está repartido el material alrededor del eje, no sólo de cuánto hay.\\n\\nPor eso el de un U cae fuera de la sección — un lugar donde el baricentro nunca puede estar.",
   'teach.shearCentreLead': "Qué regla se aplica lo decide la simetría de la sección, y saber cuál es justamente el contenido.",
   'teach.symBoth': "Dos ejes de simetría: el baricentro está sobre ambos, así que es el centro de la sección. La tabla de abajo lo confirma, no lo descubre.",

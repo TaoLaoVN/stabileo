@@ -4,6 +4,7 @@
     MATERIAL_DESIGN_CODES, codesForFamily, codesForMode, defaultCodeFor,
   } from '../lib/data/structural-grades';
   import { concreteCodes, timberCodes } from '../lib/data/non-metal-grades';
+  import { codeLore } from '../lib/data/code-lore';
   import { uiStore } from '../lib/store';
   import { t } from '../lib/i18n';
 
@@ -75,6 +76,13 @@
     codeId = null;
   }
 
+  /** Where the selected code comes from — shown on demand, not by default. */
+  const lore = $derived(codeLore(activeCode?.name));
+  let showLore = $state(false);
+  // A `?` that stayed open across a change of code would describe the wrong
+  // one, which is worse than being closed.
+  $effect(() => { void activeCode?.id; showLore = false; });
+
   function handleKeydown(e: KeyboardEvent) {
     if (e.key === 'Escape') onclose();
   }
@@ -118,7 +126,23 @@
               <option value={c.id}>{c.name}</option>
             {/each}
           </select>
+          {#if lore}
+            <button
+              class="preset-lore-btn"
+              class:open={showLore}
+              onclick={() => showLore = !showLore}
+              aria-expanded={showLore}
+              title={t('matCode.aboutCode')}
+            >?</button>
+          {/if}
           <span class="preset-code-hint">{t('matCode.hint')}</span>
+          {#if showLore && lore}
+            <div class="preset-lore">
+              <div class="preset-lore-row"><span>{t('matCode.body')}</span><span>{lore.body}</span></div>
+              <div class="preset-lore-row"><span>{t('matCode.since')}</span><span>{lore.since}</span></div>
+              <p class="preset-lore-trivia">{lore.trivia}</p>
+            </div>
+          {/if}
         </div>
       {/if}
 
@@ -159,178 +183,232 @@
 {/if}
 
 <style>
+  /*
+   * Rebuilt on the design tokens.
+   *
+   * This dialog still carried the app's first palette — a navy card with cyan
+   * headings — while everything around it had moved to the ink/vermillion
+   * system. Hard-coded hexes are why: they cannot follow a theme, so the one
+   * surface nobody revisited stayed behind and read as a different product.
+   */
   .preset-overlay {
     position: fixed;
     inset: 0;
-    background: rgba(0,0,0,0.6);
+    background: rgba(8, 16, 22, 0.72);
     z-index: 1000;
     display: flex;
     align-items: center;
     justify-content: center;
+    padding: 24px;
   }
 
   .preset-modal {
-    background: #16213e;
-    border: 1px solid #1a4a7a;
-    border-radius: 8px;
-    width: 420px;
-    max-height: 70vh;
+    background: var(--st-surface);
+    border: 1px solid var(--st-border);
+    border-radius: var(--st-radius-lg);
+    /* Was a fixed 420 px, which is what pushed the sixth category tab off the
+       edge once concrete and timber arrived. Sized to its content within a
+       bound instead, so adding a category widens the dialog rather than
+       hiding it. */
+    width: min(560px, 100%);
+    max-height: min(78vh, 720px);
     display: flex;
     flex-direction: column;
-    box-shadow: 0 8px 32px rgba(0,0,0,0.5);
+    box-shadow: 0 12px 40px rgba(0, 0, 0, 0.55);
+    font-family: var(--st-sans);
   }
 
   .preset-header {
     display: flex;
     justify-content: space-between;
     align-items: center;
-    padding: 0.75rem 1rem;
-    border-bottom: 1px solid #1a4a7a;
+    padding: 12px 16px;
+    border-bottom: 1px solid var(--st-border);
   }
-
   .preset-header h3 {
-    color: #4ecdc4;
-    font-size: 0.9rem;
+    color: var(--st-text);
+    font-family: var(--st-display);
+    font-size: 0.95rem;
+    font-weight: 600;
     margin: 0;
   }
 
   .close-btn {
     background: none;
     border: none;
-    color: #888;
+    color: var(--st-text-3);
     cursor: pointer;
-    font-size: 1rem;
-    padding: 0.2rem 0.4rem;
-    border-radius: 4px;
+    font-size: 1.05rem;
+    line-height: 1;
+    padding: 4px 6px;
+    border-radius: var(--st-radius);
   }
-  .close-btn:hover { color: #e94560; }
+  .close-btn:hover { color: var(--st-text); background: var(--st-surface-3); }
 
   .preset-tabs {
     display: flex;
-    border-bottom: 1px solid #0f3460;
-    padding: 0 0.5rem;
+    /* Wrap rather than overflow: a category the user cannot see is a category
+       that does not exist. */
+    flex-wrap: wrap;
+    gap: 2px;
+    padding: 8px 12px 0;
+    border-bottom: 1px solid var(--st-border);
   }
 
   .tab-btn {
-    padding: 0.4rem 0.6rem;
+    padding: 5px 10px;
     border: none;
     background: transparent;
-    color: #888;
+    color: var(--st-text-3);
     cursor: pointer;
-    font-size: 0.75rem;
+    font-size: 0.76rem;
+    white-space: nowrap;
     border-bottom: 2px solid transparent;
+    border-radius: var(--st-radius) var(--st-radius) 0 0;
   }
-  .tab-btn:hover { color: #eee; }
-  .tab-btn.active { color: #4ecdc4; border-bottom-color: #4ecdc4; }
-
-  .preset-search {
-    padding: 0.5rem;
-  }
-
-  .preset-search input {
-    width: 100%;
-    padding: 0.4rem 0.6rem;
-    background: #0f3460;
-    border: 1px solid #1a4a7a;
-    border-radius: 4px;
-    color: #eee;
-    font-size: 0.8rem;
-  }
-
-  .preset-list {
-    overflow-y: auto;
-    flex: 1;
-    padding: 0.25rem 0.5rem 0.5rem;
-  }
-
-  .preset-item {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    width: 100%;
-    padding: 0.5rem 0.6rem;
-    background: transparent;
-    border: 1px solid transparent;
-    border-radius: 4px;
-    color: #ccc;
-    cursor: pointer;
-    font-size: 0.8rem;
-    text-align: left;
-    transition: all 0.15s;
-  }
-
-  .preset-item:hover {
-    background: #1a4a7a;
-    border-color: #4ecdc4;
-    color: white;
-  }
-
-  .preset-name {
-    font-weight: 600;
-  }
+  .tab-btn:hover { color: var(--st-text); background: var(--st-surface-2); }
+  .tab-btn.active { color: var(--st-text); border-bottom-color: var(--st-accent); }
 
   .preset-code {
     display: flex;
     align-items: center;
     gap: 8px;
-    padding: 8px 16px 0;
+    padding: 10px 16px 0;
     flex-wrap: wrap;
   }
   .preset-code label {
-    font-size: 0.72rem;
-    color: #999;
+    font-size: 0.76rem;
+    color: var(--st-text-2);
     white-space: nowrap;
   }
   .preset-code select {
     flex: 1;
-    min-width: 150px;
-    padding: 4px 6px;
-    border-radius: 4px;
-    border: 1px solid #35504c;
-    background: #16211f;
-    color: #cfe3e0;
-    font-size: 0.75rem;
+    min-width: 170px;
+    padding: 5px 8px;
+    border-radius: var(--st-radius);
+    border: 1px solid var(--st-border);
+    background: var(--st-surface-3);
+    color: var(--st-text);
+    font-family: var(--st-sans);
+    font-size: 0.8rem;
   }
   .preset-code-hint {
     width: 100%;
-    font-size: 0.62rem;
-    color: #777;
-    line-height: 1.35;
+    font-size: 0.68rem;
+    color: var(--st-text-3);
+    line-height: 1.4;
   }
 
-  /* Subordinate to the designation, but on the same line: it qualifies the
-     name rather than describing the material. */
-  .preset-unver {
-    margin-left: 4px;
-    padding: 0 4px;
-    border-radius: 3px;
-    background: rgba(255, 140, 0, 0.14);
-    color: #e0a060;
-    font-size: 0.62rem;
+  .preset-lore-btn {
+    width: 18px; height: 18px; flex: none;
+    border-radius: 50%;
+    border: 1px solid var(--st-border);
+    background: none;
+    color: var(--st-text-3);
+    font-size: 0.72rem;
     font-weight: 700;
-    cursor: help;
+    line-height: 1;
+    cursor: pointer;
   }
+  .preset-lore-btn:hover, .preset-lore-btn.open {
+    border-color: var(--st-value);
+    color: var(--st-value);
+  }
+  .preset-lore {
+    width: 100%;
+    margin-top: 6px;
+    padding: 9px 11px;
+    border-radius: var(--st-radius);
+    background: var(--st-surface-2);
+    border-left: 2px solid var(--st-value);
+  }
+  .preset-lore-row {
+    display: flex;
+    gap: 8px;
+    font-size: 0.72rem;
+    line-height: 1.5;
+  }
+  .preset-lore-row span:first-child { color: var(--st-text-3); min-width: 74px; }
+  .preset-lore-row span:last-child { color: var(--st-text-2); }
+  .preset-lore-trivia {
+    margin: 6px 0 0;
+    font-size: 0.72rem;
+    line-height: 1.55;
+    color: var(--st-text-2);
+  }
+
+  .preset-search { padding: 10px 16px; }
+  .preset-search input {
+    width: 100%;
+    padding: 6px 10px;
+    background: var(--st-surface-3);
+    border: 1px solid var(--st-border);
+    border-radius: var(--st-radius);
+    color: var(--st-text);
+    font-family: var(--st-sans);
+    font-size: 0.82rem;
+  }
+  .preset-search input:focus {
+    outline: none;
+    border-color: var(--st-accent);
+  }
+
+  .preset-list {
+    overflow-y: auto;
+    flex: 1;
+    padding: 0 12px 12px;
+  }
+
+  .preset-item {
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    gap: 12px;
+    width: 100%;
+    padding: 7px 10px;
+    background: transparent;
+    border: 1px solid transparent;
+    border-radius: var(--st-radius);
+    color: var(--st-text-2);
+    cursor: pointer;
+    font-family: var(--st-sans);
+    font-size: 0.82rem;
+    text-align: left;
+  }
+  .preset-item:hover {
+    background: var(--st-surface-2);
+    border-color: var(--st-border);
+    color: var(--st-text);
+  }
+
+  .preset-name { font-weight: 500; color: var(--st-text); }
   .preset-std {
     margin-left: 6px;
     font-weight: 400;
-    font-size: 0.68rem;
-    color: #7fd4cc;
-    opacity: 0.75;
+    font-size: 0.72rem;
+    color: var(--st-text-3);
   }
-
-  .preset-props {
+  .preset-unver {
+    margin-left: 5px;
+    padding: 0 4px;
+    border-radius: var(--st-radius);
+    background: rgba(217, 164, 65, 0.16);
+    color: var(--st-amber-text);
     font-size: 0.7rem;
-    color: #888;
+    font-weight: 700;
+    cursor: help;
   }
-
-  .preset-item:hover .preset-props {
-    color: #aaa;
+  .preset-props {
+    font-family: var(--st-mono);
+    font-size: 0.7rem;
+    color: var(--st-text-3);
+    white-space: nowrap;
   }
 
   .no-results {
+    color: var(--st-text-3);
     text-align: center;
-    color: #666;
-    font-size: 0.8rem;
-    padding: 1rem;
+    padding: 20px;
+    font-size: 0.82rem;
   }
 </style>

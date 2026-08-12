@@ -1037,6 +1037,7 @@
         bind:eccentricPoint
         bind:eccentricPointV
         hasParallelLoad={eccentricHasParallel}
+        hasPerpendicularLoad={Math.abs(eccentricComponents.n) > 1e-12}
         stressField={activeState?.field ?? null}
         shearCentre={shearCentreClean}
         {eccentricInsideKern}

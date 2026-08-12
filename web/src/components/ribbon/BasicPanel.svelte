@@ -24,8 +24,13 @@
    * They live in the contextual bar under the ribbon instead.
    */
 
-  type Props = { panel: string; onClose: () => void };
-  let { panel, onClose }: Props = $props();
+  type Props = {
+    panel: string;
+    /** Model-data tab to open on, when the Properties group asked for one. */
+    dataTab?: string;
+    onClose: () => void;
+  };
+  let { panel, dataTab, onClose }: Props = $props();
 
   /**
    * Width is dragged and remembered.
@@ -155,7 +160,7 @@
       {#if dsmStepsStore.isOpen}
         <StepWizard />
       {:else}
-        <DataTable />
+        <DataTable initialTab={dataTab as never} />
       {/if}
     {/if}
   </div>

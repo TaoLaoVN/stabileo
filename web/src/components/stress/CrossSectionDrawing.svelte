@@ -79,6 +79,8 @@
     eccentricPointV: [number, number] | null;
     /** Whether a parallel load exists, so its marker is only drawn if it does. */
     hasParallelLoad: boolean;
+    /** Whether a load normal to the section exists — decides the default marker. */
+    hasPerpendicularLoad: boolean;
     /**
      * Shear centre, canonical `[y, z]` in metres. Drawn alongside the centroid
      * because the whole point of the exercise is that they are different
@@ -131,6 +133,7 @@
     eccentricPoint = $bindable(),
     eccentricPointV = $bindable(),
     hasParallelLoad,
+    hasPerpendicularLoad,
     shearCentre,
     eccentricInsideKern,
     torsionFlow,
@@ -218,6 +221,18 @@
    */
   const textK = $derived(maximized ? 0.62 : 1);
 
+  /**
+   * Scale for GLYPHS — arrowheads, peak markers — as opposed to the diagram
+   * itself.
+   *
+   * The shear bars and their offsets are part of the plot and should grow with
+   * the figure. An arrowhead is not: it says "this way", and a direction
+   * indicator four times its normal size stops reading as an annotation and
+   * starts competing with the geometry. Sized like the strokes rather than
+   * like the plot.
+   */
+  const glyphK = $derived(maximized ? 0.5 : 1);
+
   // Escape leaves the maximised view. It is the gesture every overlay teaches,
   // and the toolbar button can end up behind the enlarged figure on a short
   // window, so there has to be a way out that does not depend on hitting it.
@@ -249,14 +264,29 @@
   }
 
   /**
-   * Which marker the pointer drives.
+   * Which marker the background click drives.
    *
-   * Two markers share one catch surface, so clicking the background has to mean
-   * something specific. It moves whichever was last grabbed, which keeps the
-   * click-anywhere gesture — the fast way to place a point — without it
-   * silently moving the marker the user was not thinking about.
+   * Two markers share one catch surface, so clicking away from both has to mean
+   * something specific. It used to always mean the perpendicular one, which
+   * produced a silent dead end: a user with only a PARALLEL load would add it,
+   * click the drawing to place it, move the wrong marker, and get no torsion —
+   * with the panel cheerfully reporting zero because nothing had in fact moved
+   * off the shear centre.
+   *
+   * Now it follows the load that EXISTS. With no axial force there is nothing
+   * the perpendicular point can do — moving it cannot change a bending that is
+   * N times an arm when N is zero — so the parallel point is what a click means.
+   * Grabbing a marker directly still selects it, and the panel shows which is
+   * active, so the rule is visible rather than merely sensible.
    */
   let activeMarker = $state<'n' | 'v'>('n');
+
+  $effect(() => {
+    // Only steers the DEFAULT: once a marker is grabbed the choice is the
+    // user's, and this must not fight it.
+    if (!userPickedMarker) activeMarker = hasParallelLoad && !hasPerpendicularLoad ? 'v' : 'n';
+  });
+  let userPickedMarker = $state(false);
 
   function setPoint(p: [number, number]) {
     if (activeMarker === 'v') eccentricPointV = p;
@@ -264,7 +294,7 @@
   }
 
   function startDrag(ev: PointerEvent, which?: 'n' | 'v') {
-    if (which) activeMarker = which;
+    if (which) { activeMarker = which; userPickedMarker = true; }
     const p = pointerToSection(ev);
     if (!p) return;
     dragging = true;
@@ -1091,7 +1121,7 @@
               {@const afw = adz / alen}
               {@const afh = -ady / alen}
               <polygon
-                points="{ax + afw * 5.5},{ay + afh * 5.5} {ax - afw * 2 + afh * 3},{ay - afh * 2 - afw * 3} {ax - afw * 2 - afh * 3},{ay - afh * 2 + afw * 3}"
+                points="{ax + afw * 5.5 * glyphK},{ay + afh * 5.5 * glyphK} {ax - afw * 2 * glyphK + afh * 3 * glyphK},{ay - afh * 2 * glyphK - afw * 3 * glyphK} {ax - afw * 2 * glyphK - afh * 3 * glyphK},{ay - afh * 2 * glyphK + afw * 3 * glyphK}"
                 fill="var(--st-accent)"
                 stroke="var(--st-surface-2)"
                 stroke-width={0.5 * strokeK}
@@ -1102,7 +1132,7 @@
           {@const globalMax = shearFlow.flatMap(s => s.points).reduce((best, p) => p.tau > best.tau ? p : best, { z: 0, y: 0, tau: 0 })}
           {#if globalMax.tau > 0.01}
             {@const gmSc = 80 / Math.max(rs.h, rs.b)}
-            <circle cx={globalMax.z * gmSc} cy={-globalMax.y * gmSc} r="2.5" fill="var(--st-accent)" opacity="0.9" />
+            <circle cx={globalMax.z * gmSc} cy={-globalMax.y * gmSc} r={2.5 * glyphK} fill="var(--st-accent)" opacity="0.9" />
             <text
               x={globalMax.z * gmSc + (globalMax.z >= 0 ? 5 : -5)}
               y={-globalMax.y * gmSc - 4}
@@ -1229,7 +1259,7 @@
               <polygon
                 points="0,-1.6 4,0 0,1.6"
                 fill="var(--st-accent)" opacity="0.9"
-                transform="translate({mx},{my}) rotate({ang}) scale({strokeK * 1.4})"
+                transform="translate({mx},{my}) rotate({ang}) scale({glyphK})"
               />
             {/each}
           {:else}
@@ -1318,6 +1348,7 @@
           <g
             class="ssp-ecc-marker"
             class:dragging={dragging && activeMarker === 'n'}
+            class:inactive={hasParallelLoad && activeMarker !== 'n'}
             role="button"
             tabindex="0"
             aria-label={t('stress.eccentricPointN')}
@@ -1343,6 +1374,7 @@
           <g
             class="ssp-ecc-marker"
             class:dragging={dragging && activeMarker === 'v'}
+            class:inactive={activeMarker !== 'v'}
             role="button"
             tabindex="0"
             aria-label={t('stress.eccentricPointV')}
@@ -1580,6 +1612,9 @@
      first hitting a 3-unit marker. */
   .ssp-ecc-catch { cursor: crosshair; }
   .ssp-ecc-marker { cursor: grab; }
+  /* The marker a background click will NOT move, dimmed so the rule is visible
+     rather than merely sensible. */
+  .ssp-ecc-marker.inactive { opacity: 0.45; }
   .ssp-ecc-marker.dragging { cursor: grabbing; }
   .ssp-ecc-marker:focus-visible { outline: none; }
   .ssp-ecc-marker:focus-visible circle:nth-of-type(2) {

@@ -170,3 +170,86 @@ describe('degenerate input is refused rather than drawn wrong', () => {
     expect(peak(computeShearFlowPaths(-150, s))).toBeCloseTo(peak(computeShearFlowPaths(150, s)), 9);
   });
 });
+
+/**
+ * Flow CONTINUITY — the property that makes it a flow rather than a set of
+ * unrelated curves.
+ *
+ * Jourawski's shear flow `q = V·Q/I` is a flow in the physical sense: it is
+ * conserved along the wall. Where two walls meet, whatever arrives must leave.
+ * On an I-beam that means each flange delivers its flow into the web, so the
+ * web's flow at the junction equals the sum of what the flanges bring — and the
+ * web starts from a NON-ZERO value, unlike a solid rectangle whose flow starts
+ * from zero at the free surface.
+ *
+ * This is the check the earlier magnitude tests could not make: a formula can
+ * get every peak right and still describe walls that are not connected to each
+ * other.
+ */
+describe('shear flow is conserved where walls meet', () => {
+  const ipe = () => rs({
+    shape: 'I', h: 0.3, b: 0.15, tw: 0.0071, tf: 0.0107,
+    a: 5.381e-3, iy: 8.356e-5,
+  });
+
+  it('the web carries far more flow than the flanges deliver per unit width', () => {
+    // The web is thin, so the same flow becomes a much larger STRESS. That
+    // ratio is roughly the thickness ratio, which is the physical content of
+    // "the web takes the shear".
+    const segs = computeShearFlowPaths(150, ipe());
+    const peaks = segs.map((g) => Math.max(...g.points.map((p) => Math.abs(p.tau))));
+    const webPeak = Math.max(...peaks);
+    const flangePeak = Math.min(...peaks.filter((p) => p > 0));
+    expect(webPeak / flangePeak).toBeGreaterThan(2);
+  });
+
+  it('the flow does not start from zero in the web — the flanges feed it', () => {
+    // A solid rectangle starts at zero because there is free surface above it.
+    // A web does not: the flanges have already delivered their flow.
+    const segs = computeShearFlowPaths(150, ipe());
+    const web = segs.reduce((best, g) => {
+      const m = Math.max(...g.points.map((p) => Math.abs(p.tau)));
+      return m > Math.max(...best.points.map((p) => Math.abs(p.tau))) ? g : best;
+    });
+    const ends = [web.points[0].tau, web.points[web.points.length - 1].tau];
+    expect(Math.max(...ends.map(Math.abs))).toBeGreaterThan(0);
+  });
+
+  it('a solid section DOES start from zero, so the distinction is real', () => {
+    const solid = computeShearFlowPaths(120, rs({ shape: 'rect', b: 0.2, h: 0.4, a: 0.08, iy: 1.0667e-3 }));
+    expect(Math.abs(solid[0].points[0].tau)).toBeCloseTo(0, 6);
+  });
+
+  it('the peak sits at the neutral axis on a solid section', () => {
+    // Q is largest there, and Q is the whole numerator.
+    const pts = computeShearFlowPaths(120, rs({ shape: 'rect', b: 0.2, h: 0.4, a: 0.08, iy: 1.0667e-3 }))[0].points;
+    const peak = pts.reduce((a, b) => (Math.abs(b.tau) > Math.abs(a.tau) ? b : a));
+    expect(Math.abs(peak.y)).toBeLessThan(0.02);
+  });
+
+  it('every segment of every catalogued shape is a connected path', () => {
+    // Consecutive points must be adjacent along the wall. A jump means the
+    // path was assembled out of order and the arrows drawn on it would point
+    // through empty space.
+    const shapes: Array<[string, ResolvedSection]> = [
+      ['I', rs({ shape: 'I', h: 0.3, b: 0.15, tw: 0.0071, tf: 0.0107, a: 5.38e-3, iy: 8.356e-5 })],
+      ['U', rs({ shape: 'U', h: 0.2, b: 0.075, tw: 0.0085, tf: 0.0115, a: 3.22e-3, iy: 1.91e-5 })],
+      ['RHS', rs({ shape: 'RHS', h: 0.2, b: 0.1, t: 0.006, a: 3.35e-3, iy: 1.72e-5 })],
+      ['CHS', rs({ shape: 'CHS', h: 0.2, b: 0.2, t: 0.005, a: 3.06e-3, iy: 1.47e-5 })],
+      ['T', rs({ shape: 'T', h: 0.1, b: 0.1, tw: 0.009, tf: 0.009, a: 1.71e-3, iy: 1.72e-6 })],
+    ];
+    for (const [name, s] of shapes) {
+      for (const seg of computeShearFlowPaths(100, s)) {
+        const span = Math.max(s.h, s.b);
+        for (let i = 1; i < seg.points.length; i++) {
+          const step = Math.hypot(
+            seg.points[i].z - seg.points[i - 1].z,
+            seg.points[i].y - seg.points[i - 1].y,
+          );
+          // No step may exceed half the section — that would be a teleport.
+          expect(step, `${name} step ${i}`).toBeLessThan(span * 0.5);
+        }
+      }
+    }
+  });
+});

@@ -1572,10 +1572,10 @@ const ko: Translations = {
   // ─── Stress analysis (P3) ───
   'stress.mohrCircle': '모어 원',
   'stress.mohrCircleHelp': '모든 평면에서의 응력 상태를 그래픽으로 표현합니다.\n\n원은 해석 평면을 회전할 때 σ와 τ가 어떻게 변하는지 보여줍니다.\n빨간 점은 현재 상태(σ, τ)입니다.\n원이 σ축과 만나는 점이 τ=0인 주응력(σ1, σ2)입니다.\n원의 반지름은 τmax(트레스카)입니다.',
-  'teach.centroidTitle': "Centroid — step by step",
+  'teach.centroidTitle': "Centroid",
   'teach.centroidHelp': "Where the AREA balances. It follows from a first moment and nothing else, so any section has one and finding it needs no notion of load.\\n\\nThe section is split into rectangles; each contributes its area times its lever arm, and the total divided by the total area is the answer.",
   'teach.centroidLead': "Split into rectangles, each contributing its area times its distance to a reference edge.",
-  'teach.shearCentreTitle': "Shear centre — step by step",
+  'teach.shearCentreTitle': "Shear centre",
   'teach.shearCentreHelp': "Where a transverse load produces NO TWIST. Unlike the centroid it follows from the shear flow, so it depends on how the material is arranged around the axis, not just how much there is.\\n\\nThat is why a channel's lies outside the section entirely — somewhere the centroid can never be.",
   'teach.shearCentreLead': "Which rule applies is decided by the section's symmetry, and knowing which one is the point.",
   'teach.symBoth': "Two axes of symmetry: the centroid lies on both, so it is the centre of the section. The table below confirms it rather than discovers it.",

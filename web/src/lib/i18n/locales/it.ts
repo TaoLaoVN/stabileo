@@ -1566,10 +1566,10 @@ const it: Translations = {
   // ─── Stress analysis (P3) ───
   'stress.mohrCircle': "Mohr's Circle",
   'stress.mohrCircleHelp': "Graphical representation of the stress state in all planes.\n\nThe circle shows how σ and τ vary when rotating the analysis plane.\nThe red dot is the current state (σ, τ).\nThe points where the circle touches the σ axis are the principal stresses (σ1, σ2) where τ=0.\nThe circle radius is τmax (Tresca).",
-  'teach.centroidTitle': "Centroid — step by step",
+  'teach.centroidTitle': "Centroid",
   'teach.centroidHelp': "Where the AREA balances. It follows from a first moment and nothing else, so any section has one and finding it needs no notion of load.\\n\\nThe section is split into rectangles; each contributes its area times its lever arm, and the total divided by the total area is the answer.",
   'teach.centroidLead': "Split into rectangles, each contributing its area times its distance to a reference edge.",
-  'teach.shearCentreTitle': "Shear centre — step by step",
+  'teach.shearCentreTitle': "Shear centre",
   'teach.shearCentreHelp': "Where a transverse load produces NO TWIST. Unlike the centroid it follows from the shear flow, so it depends on how the material is arranged around the axis, not just how much there is.\\n\\nThat is why a channel's lies outside the section entirely — somewhere the centroid can never be.",
   'teach.shearCentreLead': "Which rule applies is decided by the section's symmetry, and knowing which one is the point.",
   'teach.symBoth': "Two axes of symmetry: the centroid lies on both, so it is the centre of the section. The table below confirms it rather than discovers it.",

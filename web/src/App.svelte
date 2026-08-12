@@ -38,8 +38,12 @@
    * sideways when a panel appears.
    */
   let basicPanel = $state<string | null>(null);
-  function openBasicPanel(panel: string | null, opts: { toggle?: boolean } = {}) {
+  /** Which Model-data tab the last Properties command asked for. */
+  let basicDataTab = $state<string | undefined>(undefined);
+
+  function openBasicPanel(panel: string | null, opts: { toggle?: boolean; dataTab?: string } = {}) {
     const toggle = opts.toggle !== false;
+    basicDataTab = opts.dataTab;
     if (panel === null) { basicPanel = null; return; }
     // Toggling is right for a command that owns its panel (Settings, Examples).
     // It is wrong for a selection like a diagram, which only ever means "show".
@@ -957,7 +961,7 @@
     </div>
 
     {#if uiStore.appMode === 'basico' && basicPanel && !uiStore.isMobile}
-      <BasicPanel panel={basicPanel} onClose={closeBasicPanel} />
+      <BasicPanel panel={basicPanel} dataTab={basicDataTab} onClose={closeBasicPanel} />
     {/if}
 
     {#if !uiStore.isMobile}

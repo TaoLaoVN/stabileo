@@ -11,7 +11,21 @@
   import ResultsTable from './tables/ResultsTable.svelte';
 
   type TabId = 'nodes' | 'elements' | 'supports' | 'loads' | 'materials' | 'sections' | 'combos' | 'results';
-  let activeTab = $state<TabId>('nodes');
+  interface Props {
+    /**
+     * Which tab to open on. The ribbon's Properties group points straight at
+     * Materials or Sections, so landing on Nodes and making the user find them
+     * would defeat the command.
+     */
+    initialTab?: TabId;
+  }
+  let { initialTab }: Props = $props();
+
+  let activeTab = $state<TabId>(initialTab ?? 'nodes');
+
+  // A second press of the same ribbon command should return here, so the tab
+  // follows the request rather than only the first one.
+  $effect(() => { if (initialTab) activeTab = initialTab; });
 
   const solved = $derived(resultsStore.results != null || resultsStore.results3D != null);
 
