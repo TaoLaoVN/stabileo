@@ -1246,14 +1246,28 @@ function sfCHS(absV: number, rs: ResolvedSection): ShearFlowSegment[] {
   const t = rs.t || R * 0.05;
   const N = 16;
 
-  // Q(θ) = t·R²·sin(θ);  b = 2t at any cut  →  τ = V·Q/(Iz·2t)
+  // Walking the wall from the crown, `Q(theta) = t·R²·sin(theta)` is the first
+  // moment of the arc traversed so far — ONE side of the tube. The matching
+  // width in `V·Q/(I·b)` is therefore the single wall thickness `t`, not `2t`.
+  //
+  // Pairing this one-sided Q with `b = 2t` — as this did — halves the answer,
+  // and the halved distribution still has the right shape, peaks in the right
+  // place and vanishes at the crown, so nothing about the picture betrays it.
+  // Every circular tube in the catalogue reported half its shear stress, on the
+  // unconservative side.
+  //
+  // The `2t` reasoning is not wrong in itself, it is simply the OTHER
+  // formulation: a horizontal cut severs two walls, so with `b = 2t` the first
+  // moment must be that of the whole area above the cut, `2t·R²·sin(theta)`.
+  // Both give tau_max = 2·V/A, the classic thin-tube result. Mixing them does
+  // not. See `shear-flow-audit.test.ts`, which pins the factor.
   const mkSemi = (signZ: number): ShearFlowSegment => ({
     points: Array.from({ length: N + 1 }, (_, i) => {
       const theta = (i / N) * Math.PI;
       return {
         z: signZ * R * Math.sin(theta),
         y: R * Math.cos(theta),
-        tau: absV * t * R * R * Math.sin(theta) / (rs.iy * 2 * t) / 1000,
+        tau: absV * t * R * R * Math.sin(theta) / (rs.iy * t) / 1000,
       };
     }),
   });
