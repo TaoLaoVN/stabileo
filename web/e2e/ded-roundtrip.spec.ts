@@ -34,6 +34,7 @@
  */
 
 import { readFileSync, writeFileSync } from 'node:fs';
+import { bootPro } from './fixtures';
 import {
   test, expect, openPreparedWorkspace, openWorkspaceFromCommandRow, readTally, readPieces,
 } from './prepared-building';
@@ -144,7 +145,7 @@ test.describe('@smoke a small project survives the file', () => {
 
 test.describe('@slow the 7-storey project survives the file', () => {
   test('saved as a .ded and reopened on a page that has never seen it', async (
-    { preparedPage: page, preparedProject, pro: fresh }, testInfo,
+    { preparedPage: page, preparedProject, browser }, testInfo,
   ) => {
     test.setTimeout(600_000);
 
@@ -193,8 +194,37 @@ test.describe('@slow the 7-storey project survives the file', () => {
 
     // ── A page that has never seen this project ────────────────────
     //
-    // `fresh` is Playwright's own page, in its own context: no autosave, no IndexedDB, nothing
-    // but the file.
+    // A context of its own: no autosave, no IndexedDB, nothing but the file.
+    //
+    // ── Why it is built HERE and not declared as a fixture ─────────
+    //
+    // It used to be the `pro` fixture, and this test was the only one in the suite that held
+    // three browser contexts at once — the preparation's, the observer's, and this one. Playwright
+    // builds every declared fixture BEFORE the body runs, so `pro` booted the whole application,
+    // its WASM module and its worker pool alongside the 7-storey solve that `preparedProject` was
+    // in the middle of. The test then failed at `the solve did not finish in 480 s` five runs in
+    // a row, always at the same position, while the very same preparation succeeded for
+    // `rebar-3d.spec.ts` — which uses the identical fixture and never holds a `pro` page next to
+    // it.
+    //
+    // This page is not needed until the file has been written, which is minutes after the solve.
+    // Building it at the moment it is first used costs nothing and takes a whole application off
+    // the machine during the one stretch of the run that is contended. The coverage is unchanged:
+    // it is the same fresh context opening the same file, asserted the same way.
+    // The context options are read off the project rather than restated: a viewport or a locale
+    // copied by hand is one that stops matching the config the moment the config changes.
+    const opts = testInfo.project.use;
+    const freshContext = await browser.newContext({
+      baseURL: opts.baseURL,
+      viewport: opts.viewport,
+      deviceScaleFactor: opts.deviceScaleFactor,
+      colorScheme: opts.colorScheme,
+      locale: opts.locale,
+      timezoneId: opts.timezoneId,
+    });
+    const fresh = await freshContext.newPage();
+    await bootPro(fresh);
+
     await openDed(fresh, path);
     await expect
       .poll(() => fresh.evaluate(() => window.__stabileo.elementIds().length), { timeout: 180_000 })
@@ -239,6 +269,10 @@ test.describe('@slow the 7-storey project survives the file', () => {
       'the file records which members are proposals').toBe(true);
     expect(await fresh.getByTestId('rebar-provisional-banner').count() > 0,
       'and the project that opened it still says so').toBe(preparedProject.provisionalBanner);
+
+    // Built by hand, so it is closed by hand. A browser drops the oldest context without warning
+    // past about sixteen of them, and this one holds a WASM solver and a WebGL scene.
+    await freshContext.close();
   });
 });
 

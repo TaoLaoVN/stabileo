@@ -216,35 +216,65 @@ export async function openPreparedWorkspace(
 }
 
 /**
+ * Time every stage of the preparation, and say so on the way past.
+ *
+ * ── Why this is here and not a comment ─────────────────────────────
+ *
+ * When this chain overruns, all Playwright reports is the assertion that happened to be waiting
+ * — `the solve did not finish in 480 s` — and the reader is left to guess whether the boot was
+ * slow, the solve was slow, or the detailing was. Five failures were classified from that one
+ * line, which is not enough evidence to classify anything.
+ *
+ * So each stage prints its own duration as it completes. On a healthy run the numbers are the
+ * baseline; on a failing one, the stages that DID print bound the problem to the one that did
+ * not. It costs one line of output per stage and it is the difference between a diagnosis and a
+ * hypothesis.
+ */
+async function stage<T>(name: string, run: () => Promise<T>): Promise<T> {
+  const started = performance.now();
+  try {
+    return await run();
+  } finally {
+    const secs = ((performance.now() - started) / 1000).toFixed(1);
+    // eslint-disable-next-line no-console
+    console.log(`  prep · ${name}: ${secs} s`);
+  }
+}
+
+/**
  * Run the whole chain once, record what it produced, and let the app save it.
  *
  * Kept out of the fixture body only so the fixture reads as what it is — a value with a
  * lifetime — rather than as a hundred-line procedure.
  */
 async function prepare(page: Page): Promise<Omit<PreparedProject, 'context'>> {
-  await bootPro(page);
+  await stage('boot', () => bootPro(page));
   // Nothing carried over from an earlier run: IndexedDB survives by design, which is the point,
   // and a stale revision would be restored by every observer in this worker.
   await page.evaluate(() => window.__stabileoActions.autosaveDiscard());
 
-  await loadModel(page, BUILDING);
-  await designAll(page);
+  await stage('load + solve', () => loadModel(page, BUILDING));
+  await stage('design all', () => designAll(page));
 
   // Beams and columns come from `cmd-generate-detailing`; slabs, walls and footings come from
   // `floor-design-run` in its own disclosure. A caller who wants the whole structure has to run
   // both — that is the app's real shape, and a preparation that ran only the first would hand
   // every observer a building with no floors in it.
-  await page.getByTestId('detailing-disclosure').locator('> summary').click();
-  const generate = page.getByTestId('cmd-generate-detailing');
-  await expect(generate).toBeEnabled();
-  await generate.click();
-  await expect.poll(() => assemblyCount(page), { timeout: 180_000 }).toBeGreaterThan(0);
+  await stage('detailing', async () => {
+    await page.getByTestId('detailing-disclosure').locator('> summary').click();
+    const generate = page.getByTestId('cmd-generate-detailing');
+    await expect(generate).toBeEnabled();
+    await generate.click();
+    await expect.poll(() => assemblyCount(page), { timeout: 180_000 }).toBeGreaterThan(0);
+  });
 
-  await page.getByTestId('floor-families-disclosure').locator('> summary').click();
-  const floors = page.getByTestId('floor-design-run');
-  await expect(floors).toBeEnabled();
-  await floors.click();
-  await expect(page.getByTestId('floor-families')).toBeVisible({ timeout: 300_000 });
+  await stage('floor design', async () => {
+    await page.getByTestId('floor-families-disclosure').locator('> summary').click();
+    const floors = page.getByTestId('floor-design-run');
+    await expect(floors).toBeEnabled();
+    await floors.click();
+    await expect(page.getByTestId('floor-families')).toBeVisible({ timeout: 300_000 });
+  });
 
   const elements = (await page.evaluate(() => window.__stabileo.elementIds())).length;
   const assemblies = await assemblyCount(page);
@@ -252,15 +282,18 @@ async function prepare(page: Page): Promise<Omit<PreparedProject, 'context'>> {
 
   // The scene as the design produced it, recorded so an observer can assert that the restore
   // reproduces it rather than assume so.
-  await openWorkspaceFromCommandRow(page);
-  await expect(page.getByTestId('rebar-tally')).toBeVisible();
-  const tally = await readTally(page);
-  const pieces = await readPieces(page);
-  const census = (await page.evaluate(() => window.__stabileo.rebarSceneCensus()))!;
-  expect(census, 'the prepared scene is drawing something').not.toBeNull();
-  const provisionalBanner = await page.getByTestId('rebar-provisional-banner').count() > 0;
-  await page.getByTestId('rebar-workspace-close').click();
-  await expect(page.getByTestId('rebar-workspace')).toHaveCount(0);
+  const { tally, pieces, census, provisionalBanner } = await stage('scene census', async () => {
+    await openWorkspaceFromCommandRow(page);
+    await expect(page.getByTestId('rebar-tally')).toBeVisible();
+    const t = await readTally(page);
+    const p = await readPieces(page);
+    const c = (await page.evaluate(() => window.__stabileo.rebarSceneCensus()))!;
+    expect(c, 'the prepared scene is drawing something').not.toBeNull();
+    const banner = await page.getByTestId('rebar-provisional-banner').count() > 0;
+    await page.getByTestId('rebar-workspace-close').click();
+    await expect(page.getByTestId('rebar-workspace')).toHaveCount(0);
+    return { tally: t, pieces: p, census: c, provisionalBanner: banner };
+  });
 
   /**
    * The same save the 30 s timer and every post-design hook ask for.

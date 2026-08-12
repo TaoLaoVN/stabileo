@@ -26,10 +26,16 @@
   interface Props {
     /** The assembly the sheet belongs to, for the caption. */
     assemblyLabel: string;
+    /**
+     * Whether the enlarged dialog is up.
+     *
+     * Bound rather than internal so the conflict list can open the drawing a conflict is on. The
+     * dialog still owns closing it — Escape, the close button and the focus restore all live
+     * here, so there is exactly one place that knows how this dialog ends.
+     */
+    open?: boolean;
   }
-  const { assemblyLabel }: Props = $props();
-
-  let sheetOpen = $state(false);
+  let { assemblyLabel, open = $bindable(false) }: Props = $props();
   let sheetDialog = $state<HTMLDivElement | null>(null);
 
   const kindLabel = $derived(detailingStore.sheetKind === 'section'
@@ -42,13 +48,13 @@
    * defect the PR20 plan lists first for the overlay. Not worth reintroducing one panel over.
    */
   $effect(() => {
-    if (!sheetOpen) return;
+    if (!open) return;
     return captureFocus(sheetDialog);
   });
 
   function onSheetKeydown(e: KeyboardEvent) {
-    if (!sheetOpen) return;
-    if (e.key === 'Escape') { sheetOpen = false; return; }
+    if (!open) return;
+    if (e.key === 'Escape') { open = false; return; }
     if (cycleTabWithin(sheetDialog, e)) e.preventDefault();
   }
 </script>
@@ -68,7 +74,7 @@
         type="button"
         class="sheet-expand"
         data-testid="sheet-expand"
-        onclick={() => (sheetOpen = true)}
+        onclick={() => (open = true)}
         title={t('detailing.sheet.expandHint')}
       >⤢ {t('detailing.sheet.expand')}</button>
     </figcaption>
@@ -86,7 +92,7 @@
   presentations. `overflow: auto` on the body is the zoom/pan: the SVG keeps its natural size and
   the dialog scrolls, so nothing is scaled down into illegibility and nothing is cropped.
 -->
-{#if sheetOpen && detailingStore.sheetSvg}
+{#if open && detailingStore.sheetSvg}
   <div
     class="sheet-modal"
     data-testid="sheet-modal"
@@ -106,7 +112,7 @@
           <span class="rev">{tp('detailing.doc.revision', { n: detailingStore.document.revision.number })}</span>
         {/if}
       </h2>
-      <button type="button" data-testid="sheet-modal-close" onclick={() => (sheetOpen = false)}>
+      <button type="button" data-testid="sheet-modal-close" onclick={() => (open = false)}>
         ✕ {t('detailing.sheet.close')}
       </button>
     </header>

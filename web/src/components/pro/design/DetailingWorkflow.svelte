@@ -15,6 +15,8 @@
    */
   import { t, tp, i18n } from '../../../lib/i18n';
   import SheetPreview from './SheetPreview.svelte';
+  import DetailingProblems from './DetailingProblems.svelte';
+  import { uiStore } from '../../../lib/store';
   import { detailingStore } from '../../../lib/store/detailing.svelte';
   import { REVIEW_STATES, reviewRank } from '../../../lib/engine/detailing/assembly';
   import { maturityLabelKey } from '../../../lib/codes/maturity';
@@ -30,6 +32,8 @@
   // `Ver modelo 3D` builds the same revision and has to sign it the same way.
   let docError = $state<string | null>(null);
   let show3d = $state(false);
+  /** Bound to the sheet dialog, so a conflict can open the drawing it is on. */
+  let sheetOpen = $state(false);
 
   /**
    * Build the document, or say why not.
@@ -140,8 +144,16 @@
     });
   }
 
-  function severityLabel(s: string): string {
-    return s === 'overlap' ? t('detailing.conflict.overlap') : t('detailing.conflict.clearance');
+  /**
+   * Follow a conflict to the member it is in.
+   *
+   * `BarConflict.elementIds` exists for exactly this and nothing consumed it: the reviewer read
+   * `barA / barB`, wrote the number down, and went looking. Selecting the element is what the
+   * rest of the app already listens to — the design table scrolls to it, the 3-D scene isolates
+   * it — so the conflict list gets that behaviour by routing rather than by reimplementing it.
+   */
+  function goToMember(elementId: number) {
+    uiStore.selectElement(elementId);
   }
 
 </script>
@@ -230,31 +242,32 @@
         {/each}
       </ol>
 
-      {#if selected.unsupported.length > 0}
-        <div class="notice warning" data-testid="unsupported-list">
-          <strong>{t('detailing.unsupported')}</strong>
-          <ul>
-            {#each selected.unsupported as u, i (i)}
-              <li>{u.message}</li>
-            {/each}
-          </ul>
-        </div>
-      {/if}
+      <!--
+        Everything wrong with this assembly, ranked, directly under the header.
+
+        These were three separate notices scattered down the column — warnings above the bar list,
+        blockers below it, conflicts below those — so the thing that stops a sheet being issued
+        was further from the eye than the thing that merely annotates it. See
+        `DetailingProblems.svelte` for why the order is the whole point.
+      -->
+      <DetailingProblems
+        conflicts={detailingStore.conflicts}
+        conflictIndex={detailingStore.conflictIndex}
+        stateBlockers={selected.stateBlockers ?? []}
+        unsupported={selected.unsupported}
+        stateLabel={t(`detailing.state.${selected.state}`)}
+        onSelectConflict={(i) => detailingStore.goToConflict(i)}
+        onPrev={() => detailingStore.prevConflict()}
+        onNext={() => detailingStore.nextConflict()}
+        onGoToMember={goToMember}
+        onShowOnSheet={() => { sheetOpen = true; }}
+      />
 
       <!--
         Longitudinal reinforcement, bar by bar, with the lock control the coordination
         pipeline honours. Without this the "locked bars survive regeneration" guarantee is
         real in the engine and unreachable in the product.
       -->
-      <!-- What stands between this assembly and the next state up. -->
-      {#if (selected.stateBlockers ?? []).length > 0}
-        <div class="notice warning" data-testid="state-blockers">
-          <strong>{tp('detailing.blockersTitle', { state: t(`detailing.state.${selected.state}`) })}</strong>
-          <ul>
-            {#each selected.stateBlockers ?? [] as b, i (i)}<li>{b}</li>{/each}
-          </ul>
-        </div>
-      {/if}
 
       <details class="bars" data-testid="bar-list">
         <summary>{tp('detailing.barsCount', { n: selected.bars.length })}</summary>
@@ -274,33 +287,6 @@
           {/each}
         </ul>
       </details>
-
-      <nav class="conflicts" aria-label={t('detailing.conflicts')}>
-        {#if detailingStore.conflicts.length === 0}
-          <p class="ok" data-testid="no-conflicts">{t('detailing.noConflicts')}</p>
-        {:else}
-          {@const c = detailingStore.currentConflict}
-          <div class="conflict-nav" data-testid="conflict-nav">
-            <button data-testid="conflict-prev"
-                    onclick={() => detailingStore.prevConflict()}
-                    aria-label={t('detailing.prevConflict')}>‹</button>
-            <span data-testid="conflict-counter">
-              {tp('detailing.conflictOf', {
-                i: detailingStore.conflictIndex + 1, n: detailingStore.conflicts.length,
-              })}
-            </span>
-            <button data-testid="conflict-next"
-                    onclick={() => detailingStore.nextConflict()}
-                    aria-label={t('detailing.nextConflict')}>›</button>
-          </div>
-          {#if c}
-            <p class="notice error" data-testid="conflict-detail">
-              {severityLabel(c.severity)} — {c.barA} / {c.barB}:
-              {(c.clearance * 1000).toFixed(0)} mm / {(c.required * 1000).toFixed(0)} mm
-            </p>
-          {/if}
-        {/if}
-      </nav>
 
       <div class="sheet-controls">
         <fieldset>
@@ -338,7 +324,7 @@
         sheet projection, not a second renderer — so what you enlarge is exactly what the DXF and
         the report carry.
       -->
-      <SheetPreview assemblyLabel={selected?.label ?? ''} />
+      <SheetPreview assemblyLabel={selected?.label ?? ''} bind:open={sheetOpen} />
 
       {#if detailingStore.schedule}
         {@const s = detailingStore.schedule}
