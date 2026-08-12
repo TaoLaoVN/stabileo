@@ -31,6 +31,7 @@
   import { estimateQuantitiesFromVerification } from '../../lib/engine/quantity-takeoff';
   import type { QuantitySummary } from '../../lib/engine/quantity-takeoff';
   import type { SteelVerification } from '../../lib/engine/codes/argentina/cirsoc301';
+  import SteelExperimentalBanner from './steel/SteelExperimentalBanner.svelte';
   import { generateInteractionDiagram, generateInteractionSvg } from '../../lib/engine/codes/argentina/interaction-diagram';
   import type { DiagramParams } from '../../lib/engine/codes/argentina/interaction-diagram';
   import { isDesignCheckAvailable, checkSteelMembers, checkRcMembers, checkEc2Members, checkEc3Members, checkTimberMembers, checkMasonryMembers, checkCfsMembers, checkBoltGroups, checkWeldGroups, checkSpreadFootings } from '../../lib/engine/wasm-solver';
@@ -1417,6 +1418,8 @@
       </div>
       {#if steelVerifications.length > 0}
         <div class="pro-section-label">{t('pro.cirsoc301')}</div>
+        <!-- Nothing below this line is a verification. See the component. -->
+        <SteelExperimentalBanner />
         <div class="pro-verif-table-wrap">
           <table class="pro-verif-table">
             <thead><tr><th>Elem</th><th>Nu</th><th>Muz</th><th>Muy</th><th>Vu</th><th>{t('pro.interaction')}</th><th></th></tr></thead>

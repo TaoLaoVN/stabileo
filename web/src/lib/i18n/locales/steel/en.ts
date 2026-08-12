@@ -1,0 +1,148 @@
+/**
+ * English counterpart of `steel/es.ts`. Same keys, same order — a test asserts it.
+ *
+ * `t()` falls back to English for any locale missing a key, so these two dictionaries are
+ * what every other language will render until the namespace is translated. See the sibling
+ * file for why they live outside the main dictionaries.
+ */
+const steelEn: Record<string, string> = {
+  // ─── Material family ───
+  'steel.family.noMaterial': 'The element has no material assigned.',
+  'steel.family.noStrength': 'The material declares no strength, so it cannot be classified.',
+  'steel.family.inferredConcrete': 'Read as concrete from the magnitude of f\'c (≤ 80 MPa), not from a declaration.',
+  'steel.family.inferredMetalNotFerrousChecked': 'Read as metal from the magnitude of fy (> 80 MPa). Steel and aluminium are indistinguishable here until the material declares its grade.',
+
+  // ─── Statuses ───
+  'steel.status.NOT_DESIGNED': 'Not designed',
+  'steel.status.EXPERIMENTAL': 'Experimental',
+  'steel.status.DEMAND_UNAVAILABLE': 'No demands',
+  'steel.status.NOT_APPLICABLE': 'Not applicable',
+  'steel.status.NOT_DESIGNED.desc': 'Recognised as metallic. No design was attempted.',
+  'steel.status.EXPERIMENTAL.desc': 'A number was computed with no verifiable authority behind it. Not a certification.',
+  'steel.status.DEMAND_UNAVAILABLE.desc': 'Results or combinations are missing for this member.',
+  'steel.status.NOT_APPLICABLE.desc': 'The member is not metallic.',
+
+  // ─── Reasons ───
+  'steel.reason.noDemands': 'Solve the model and define combinations before looking at the steel.',
+  'steel.reason.noMetallicAuthority': 'No usable metallic design code is bound to this project.',
+  'steel.reason.designNotRun': 'A metallic code is declared, but no design has been run.',
+
+  // ─── Notices ───
+  'steel.notice.noAuthorityBound': 'No metallic code can produce results in this version. Steel members are listed, not verified.',
+  'steel.notice.noDemands': 'No demands yet: solve the model with combinations.',
+
+  // ─── Assumptions of the existing checker ───
+  'steel.assume.unbracedLengthIsMemberLength': 'Unbraced length taken equal to the member length (Lb = L).',
+  'steel.assume.webAndFlangeThicknessInferred': 'Web and flange thicknesses inferred as fractions of the width when the section does not state them.',
+  'steel.assume.ultimateStrengthInferred': 'Ultimate strength inferred as 1.25·fy when the material does not state it.',
+  'steel.assume.noSectionClassification': 'The section is not classified (compact / non-compact / slender).',
+  'steel.assume.noTests': 'The checker has no tests and no external benchmark.',
+  'steel.promotion.needsClauseMapAndBenchmark': 'To stop being experimental this needs the CIRSOC 301-2018 clauses mapped and agreement with at least one published worked example.',
+
+  'steel.checker.experimentalTitle': 'Experimental metallic check',
+  'steel.checker.experimentalBody': 'The numbers in this table come from a checker with no tests, no mapped clauses and no place in the app\'s maturity model. They are not a verification and cannot be used as one. They are shown because an engineer who can see the assumptions can review them; they would be withheld if they could not.',
+
+  // ─── Panel ───
+  'steel.panel.title': 'Steel structures',
+  'steel.panel.subtitle': 'Inventory of metallic members. None of them is verified.',
+  'steel.panel.experimentalBanner': 'Experimental surface. This screen reports which members are metallic and what was not done to them. It computes no capacities, issues no certificates, and nothing it shows may be used as a verification.',
+  'steel.panel.empty.noElements': 'The model has no elements.',
+  'steel.panel.empty.noneMetallic': 'The model has {total} elements and none of them is metallic.',
+  'steel.panel.empty.allUnclassified': 'The model has {total} elements and none declares a strength, so its material cannot be classified.',
+  'steel.panel.summary': '{n} metallic members · {beams} beams · {columns} columns · {length} m',
+  'steel.panel.censusTitle': 'Materials in the model',
+  'steel.panel.inferredWarning': 'The material family was inferred from the magnitude of fy. It is not a declaration by the project.',
+  'steel.panel.gapsTitle': 'What the metallic code cannot do',
+  'steel.panel.gapsIntro': 'Every item is unimplemented. None of them blocks the model: they block reporting it as complete.',
+  'steel.panel.codeDeclared': 'Metallic code declared: {name}',
+  'steel.panel.codeNotDeclared': 'The project declares no metallic code.',
+  'steel.panel.codeExperimental': 'experimental — produces no results',
+
+  // ─── Table ───
+  'steel.table.element': 'Elem',
+  'steel.table.kind': 'Kind',
+  'steel.table.section': 'Section',
+  'steel.table.material': 'Material',
+  'steel.table.length': 'Length',
+  'steel.table.status': 'Status',
+  'steel.kind.beam': 'Beam',
+  'steel.kind.column': 'Column',
+  'steel.kind.wall': 'Wall',
+  'steel.family.concrete': 'Concrete',
+  'steel.family.steel': 'Steel',
+  'steel.family.timber': 'Timber',
+  'steel.family.masonry': 'Masonry',
+  'steel.family.aluminium': 'Aluminium',
+  'steel.family.unknown': 'Unclassified',
+
+  // ─── Metallic capabilities ───
+  'steel.capability.steelSectionClassification': 'Section classification',
+  'steel.capability.steelTension': 'Tension',
+  'steel.capability.steelCompression': 'Compression',
+  'steel.capability.steelFlexure': 'Flexure',
+  'steel.capability.steelLateralTorsionalBuckling': 'Lateral-torsional buckling',
+  'steel.capability.steelShear': 'Shear',
+  'steel.capability.steelInteraction': 'Interaction',
+  'steel.capability.steelBracing': 'Bracing',
+  'steel.capability.steelConnections': 'Connections',
+  'steel.capability.steelMemberSchedules': 'Metallic schedule and take-off',
+
+  // ─── Regulations ───
+  'regulations.problem.experimentalAdapter': '{name} is declared experimental: it is recorded as the project\'s code, but the app produces no result under it.',
+
+  // ─── Generators: roles ───
+  'generator.role.chord': 'Chord',
+  'generator.role.post': 'Post',
+  'generator.role.diagonal': 'Diagonal',
+  'generator.role.rafter': 'Rafter',
+  'generator.role.column': 'Column',
+  'generator.role.beam': 'Beam',
+  'generator.role.purlin': 'Purlin',
+  'generator.role.bracing': 'Bracing',
+
+  // ─── Generators: problems ───
+  'generator.problem.spanPositive': 'The span must be greater than zero.',
+  'generator.problem.bayPositive': 'The bay spacing must be greater than zero.',
+  'generator.problem.panelsAtLeastOne': 'There must be at least one panel per half.',
+  'generator.problem.divisionsAtLeastOne': 'There must be at least one division.',
+  'generator.problem.framesAtLeastTwo': 'A shed needs at least two frames.',
+  'generator.problem.negative': 'The value cannot be negative.',
+  'generator.problem.heightPositive': 'The height must be greater than zero.',
+  'generator.problem.widthPositive': 'The width must be greater than zero.',
+  'generator.problem.depthPositive': 'The depth must be greater than zero.',
+  'generator.problem.plateauExceedsSpan': 'The plateau cannot be as long as the span.',
+  'generator.problem.archNeedsRise': 'An arch with no rise is a straight line of infinite radius.',
+  'generator.problem.portalNeedsRise': 'A pitched portal needs a ridge height.',
+  'generator.problem.trussHasNoDepth': 'The truss has no depth anywhere.',
+  'generator.problem.centroidUnknown': 'The centroid of {profile} ({family}) is not known, so no built-up arrangement of it can be composed.',
+  'generator.problem.profileMissing': 'No profile chosen for {role}.',
+  'generator.problem.profileUnknown': 'The profile {name} is not in the catalogue.',
+
+  // ─── Generators: assumptions ───
+  'generator.assume.chordsContinuous': 'Chords continuous through the panel points.',
+  'generator.assume.chordsPinned': 'Chords pin-ended at every panel.',
+  'generator.assume.webPinned': 'Posts and diagonals pin-ended.',
+  'generator.assume.webContinuous': 'Posts and diagonals continuous.',
+  'generator.assume.raftersContinuous': 'Rafters continuous through the apex.',
+  'generator.assume.supportsSimple': 'Simply supported: one pin and one roller.',
+  'generator.assume.baseFixed': 'Fixed bases.',
+  'generator.assume.baseChordsPinned': 'Each chord bears pinned on its own anchorage.',
+  'generator.assume.lacingZigzag': 'Zig-zag lacing, alternating panel to panel.',
+  'generator.assume.lacingParallel': 'Lacing with every diagonal leaning the same way.',
+  'generator.assume.columnCapSharesReaction': 'The column cap shares the reaction to both chords.',
+  'generator.assume.eaveBeamsContinuous': 'Eave beams continuous between frames.',
+  'generator.assume.headBeamMakesPortal': 'Transverse head beam: with no truss, it is what forms the portal.',
+  'generator.assume.purlinsRolledToPitch': 'Purlins rolled to the local roof pitch.',
+  'generator.assume.noRoofStructure': 'No roof structure.',
+  'generator.assume.solidColumns': 'Solid-web columns.',
+  'generator.assume.placeholderGrade': 'Placeholder steel grade: not taken from the grade catalogue.',
+  'generator.assume.propertiesOnlyProfile': 'The profile has no canonical outline; its published properties are used.',
+  'generator.assume.nominalDimensionFamily': 'Nominal-dimension family: the derived area differs from the tabulated one.',
+
+  // ─── Generators: built-up torsion ───
+  'generator.builtUp.torsion.singleProfile': 'Torsional constant from the catalogue.',
+  'generator.builtUp.torsion.sumOfOpenParts': 'Torsional constant taken as the sum of the open parts. An assumption, not a tabulated value.',
+  'generator.builtUp.torsion.closedCellNotComputed': 'Closed section: Bredt governs and the enclosed area cannot be determined from the catalogue, so no torsional constant is reported.',
+  'generator.builtUp.torsion.partHasNoJ': 'The profile publishes no torsional constant, so no assembly of it can have one.',
+};
+export default steelEn;

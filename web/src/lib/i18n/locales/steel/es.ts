@@ -1,0 +1,154 @@
+/**
+ * Claves de la superficie metálica y de los generadores, en un diccionario aparte.
+ *
+ * ── Por qué no están en `locales/es.ts` ────────────────────────────
+ *
+ * Porque PR #125 y PR #132 editan ese archivo con fuerza — 385 y 390 líneas
+ * respectivamente — y sumar sesenta claves nuevas repartidas por el medio sería un
+ * conflicto de merge por cada una, sin ningún beneficio: `store.svelte.ts` compone los
+ * diccionarios, así que una clave vale lo mismo esté en el archivo que esté.
+ *
+ * Cuando ambos PRs estén integrados, fusionar esto dentro de `es.ts` es un copiar y pegar.
+ * Hasta entonces vive acá y el merge cuesta cero.
+ */
+const steelEs: Record<string, string> = {
+  // ─── Familia de material ───
+  'steel.family.noMaterial': 'El elemento no tiene material asignado.',
+  'steel.family.noStrength': 'El material no declara resistencia, así que no puede clasificarse.',
+  'steel.family.inferredConcrete': 'Clasificado como hormigón por la magnitud de f\'c (≤ 80 MPa), no por una declaración.',
+  'steel.family.inferredMetalNotFerrousChecked': 'Clasificado como metal por la magnitud de fy (> 80 MPa). No se distingue acero de aluminio hasta que el material declare su grado.',
+
+  // ─── Estados ───
+  'steel.status.NOT_DESIGNED': 'Sin diseñar',
+  'steel.status.EXPERIMENTAL': 'Experimental',
+  'steel.status.DEMAND_UNAVAILABLE': 'Sin solicitaciones',
+  'steel.status.NOT_APPLICABLE': 'No aplica',
+  'steel.status.NOT_DESIGNED.desc': 'Reconocido como metálico. No se intentó diseñarlo.',
+  'steel.status.EXPERIMENTAL.desc': 'Hay un número calculado sin autoridad verificable detrás. No es una certificación.',
+  'steel.status.DEMAND_UNAVAILABLE.desc': 'Faltan resultados o combinaciones para este miembro.',
+  'steel.status.NOT_APPLICABLE.desc': 'El miembro no es metálico.',
+
+  // ─── Motivos ───
+  'steel.reason.noDemands': 'Resolvé el modelo y definí combinaciones antes de mirar el acero.',
+  'steel.reason.noMetallicAuthority': 'No hay un código de diseño metálico utilizable ligado al proyecto.',
+  'steel.reason.designNotRun': 'Hay un código metálico declarado, pero no se corrió ningún diseño.',
+
+  // ─── Avisos ───
+  'steel.notice.noAuthorityBound': 'Ningún código metálico puede producir resultados en esta versión. Los miembros de acero se listan, no se verifican.',
+  'steel.notice.noDemands': 'Todavía no hay solicitaciones: resolvé el modelo con combinaciones.',
+
+  // ─── Hipótesis del verificador existente ───
+  'steel.assume.unbracedLengthIsMemberLength': 'Longitud no arriostrada igual a la longitud del miembro (Lb = L).',
+  'steel.assume.webAndFlangeThicknessInferred': 'Espesores de alma y ala inferidos como fracciones del ancho cuando la sección no los declara.',
+  'steel.assume.ultimateStrengthInferred': 'Resistencia a rotura inferida como 1,25·fy cuando el material no la declara.',
+  'steel.assume.noSectionClassification': 'No se clasifica la sección (compacta / no compacta / esbelta).',
+  'steel.assume.noTests': 'El verificador no tiene tests ni benchmark externo.',
+  'steel.promotion.needsClauseMapAndBenchmark': 'Para dejar de ser experimental hace falta mapear las cláusulas de CIRSOC 301-2018 y validar contra al menos un ejemplo resuelto publicado.',
+
+  'steel.checker.experimentalTitle': 'Verificación metálica experimental',
+  'steel.checker.experimentalBody': 'Los números de esta tabla salen de un verificador sin tests, sin cláusulas mapeadas y fuera del modelo de madurez de la app. No son una verificación y no pueden usarse como tal. Se muestran porque un ingeniero que ve las hipótesis puede revisarlos; se ocultarían si no las viera.',
+
+  // ─── Panel ───
+  'steel.panel.title': 'Estructuras metálicas',
+  'steel.panel.subtitle': 'Inventario de miembros metálicos. No se verifica ninguno.',
+  'steel.panel.experimentalBanner': 'Superficie experimental. Esta pantalla informa qué miembros son metálicos y qué no se hizo con ellos. No calcula capacidades, no emite certificados y nada de lo que muestra puede usarse como verificación.',
+  'steel.panel.empty.noElements': 'El modelo no tiene elementos.',
+  'steel.panel.empty.noneMetallic': 'El modelo tiene {total} elementos y ninguno es metálico.',
+  'steel.panel.empty.allUnclassified': 'El modelo tiene {total} elementos y ninguno declara resistencia, así que no puede clasificarse su material.',
+  'steel.panel.summary': '{n} miembros metálicos · {beams} vigas · {columns} columnas · {length} m',
+  'steel.panel.censusTitle': 'Materiales del modelo',
+  'steel.panel.inferredWarning': 'La familia de material se dedujo de la magnitud de fy. No es una declaración del proyecto.',
+  'steel.panel.gapsTitle': 'Qué no puede hacer el código metálico',
+  'steel.panel.gapsIntro': 'Cada punto está sin implementar. Ninguno bloquea el modelo: bloquea que se lo reporte como completo.',
+  'steel.panel.codeDeclared': 'Código metálico declarado: {name}',
+  'steel.panel.codeNotDeclared': 'El proyecto no declara código metálico.',
+  'steel.panel.codeExperimental': 'experimental — no produce resultados',
+
+  // ─── Tabla ───
+  'steel.table.element': 'Elem',
+  'steel.table.kind': 'Tipo',
+  'steel.table.section': 'Sección',
+  'steel.table.material': 'Material',
+  'steel.table.length': 'Long.',
+  'steel.table.status': 'Estado',
+  'steel.kind.beam': 'Viga',
+  'steel.kind.column': 'Columna',
+  'steel.kind.wall': 'Tabique',
+  'steel.family.concrete': 'Hormigón',
+  'steel.family.steel': 'Acero',
+  'steel.family.timber': 'Madera',
+  'steel.family.masonry': 'Mampostería',
+  'steel.family.aluminium': 'Aluminio',
+  'steel.family.unknown': 'Sin clasificar',
+
+  // ─── Capacidades metálicas ───
+  'steel.capability.steelSectionClassification': 'Clasificación de sección',
+  'steel.capability.steelTension': 'Tracción',
+  'steel.capability.steelCompression': 'Compresión',
+  'steel.capability.steelFlexure': 'Flexión',
+  'steel.capability.steelLateralTorsionalBuckling': 'Pandeo lateral-torsional',
+  'steel.capability.steelShear': 'Corte',
+  'steel.capability.steelInteraction': 'Interacción',
+  'steel.capability.steelBracing': 'Arriostramientos',
+  'steel.capability.steelConnections': 'Uniones',
+  'steel.capability.steelMemberSchedules': 'Planilla y cómputo metálico',
+
+  // ─── Regulaciones ───
+  'regulations.problem.experimentalAdapter': '{name} está declarado como experimental: se registra como el código del proyecto, pero la app no produce ningún resultado bajo él.',
+
+  // ─── Generadores: roles ───
+  'generator.role.chord': 'Cordón',
+  'generator.role.post': 'Montante',
+  'generator.role.diagonal': 'Diagonal',
+  'generator.role.rafter': 'Cabio',
+  'generator.role.column': 'Columna',
+  'generator.role.beam': 'Viga',
+  'generator.role.purlin': 'Correa',
+  'generator.role.bracing': 'Arriostramiento',
+
+  // ─── Generadores: problemas ───
+  'generator.problem.spanPositive': 'La luz tiene que ser mayor que cero.',
+  'generator.problem.bayPositive': 'El vano entre pórticos tiene que ser mayor que cero.',
+  'generator.problem.panelsAtLeastOne': 'Tiene que haber al menos un panel por mitad.',
+  'generator.problem.divisionsAtLeastOne': 'Tiene que haber al menos una división.',
+  'generator.problem.framesAtLeastTwo': 'Una nave necesita al menos dos pórticos.',
+  'generator.problem.negative': 'El valor no puede ser negativo.',
+  'generator.problem.heightPositive': 'La altura tiene que ser mayor que cero.',
+  'generator.problem.widthPositive': 'El ancho tiene que ser mayor que cero.',
+  'generator.problem.depthPositive': 'El canto tiene que ser mayor que cero.',
+  'generator.problem.plateauExceedsSpan': 'La meseta no puede ser tan larga como la luz.',
+  'generator.problem.archNeedsRise': 'Un arco sin flecha es una recta de radio infinito.',
+  'generator.problem.portalNeedsRise': 'Un pórtico a dos aguas necesita altura de cumbrera.',
+  'generator.problem.trussHasNoDepth': 'La cercha no tiene canto en ningún punto.',
+  'generator.problem.centroidUnknown': 'No se conoce la posición del centroide de {profile} ({family}), así que no puede componerse un perfil múltiple con él.',
+  'generator.problem.profileMissing': 'Falta elegir perfil para {role}.',
+  'generator.problem.profileUnknown': 'El perfil {name} no está en el catálogo.',
+
+  // ─── Generadores: hipótesis ───
+  'generator.assume.chordsContinuous': 'Cordones continuos a través de los nudos.',
+  'generator.assume.chordsPinned': 'Cordones biarticulados en cada panel.',
+  'generator.assume.webPinned': 'Montantes y diagonales biarticulados.',
+  'generator.assume.webContinuous': 'Montantes y diagonales continuos.',
+  'generator.assume.raftersContinuous': 'Cabios continuos a través de la cumbrera.',
+  'generator.assume.supportsSimple': 'Apoyos simples: un fijo y un móvil.',
+  'generator.assume.baseFixed': 'Bases empotradas.',
+  'generator.assume.baseChordsPinned': 'Cada cordón apoya articulado en su propio anclaje.',
+  'generator.assume.lacingZigzag': 'Celosía en zigzag, alternando panel a panel.',
+  'generator.assume.lacingParallel': 'Celosía con todas las diagonales en el mismo sentido.',
+  'generator.assume.columnCapSharesReaction': 'El cabezal de columna reparte la reacción a los dos cordones.',
+  'generator.assume.eaveBeamsContinuous': 'Vigas de borde continuas entre pórticos.',
+  'generator.assume.headBeamMakesPortal': 'Viga transversal de cabezal: sin cercha, es lo que forma el pórtico.',
+  'generator.assume.purlinsRolledToPitch': 'Correas giradas a la pendiente local del faldón.',
+  'generator.assume.noRoofStructure': 'Sin estructura de techo.',
+  'generator.assume.solidColumns': 'Columnas de alma llena.',
+  'generator.assume.placeholderGrade': 'Grado de acero provisorio: no proviene del catálogo de grados.',
+  'generator.assume.propertiesOnlyProfile': 'El perfil no tiene contorno canónico; se usan las propiedades publicadas.',
+  'generator.assume.nominalDimensionFamily': 'Familia de dimensiones nominales: el área derivada difiere de la tabulada.',
+
+  // ─── Generadores: torsión de perfiles compuestos ───
+  'generator.builtUp.torsion.singleProfile': 'Constante torsional del catálogo.',
+  'generator.builtUp.torsion.sumOfOpenParts': 'Constante torsional tomada como la suma de las partes abiertas. Es una hipótesis, no un valor tabulado.',
+  'generator.builtUp.torsion.closedCellNotComputed': 'Sección cerrada: rige Bredt y el área encerrada no puede determinarse del catálogo, así que no se reporta constante torsional.',
+  'generator.builtUp.torsion.partHasNoJ': 'El perfil no publica constante torsional, así que ninguna composición suya puede tener una.',
+};
+export default steelEs;

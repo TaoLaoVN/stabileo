@@ -12,9 +12,27 @@ import ru from './locales/ru';
 import zh from './locales/zh';
 import ar from './locales/ar';
 import id from './locales/id';
+import steelEs from './locales/steel/es';
+import steelEn from './locales/steel/en';
 import type { Translations } from './types';
 
-const dicts: Record<string, Translations> = { es, en, pt, de, fr, it, tr, hi, ja, ko, ru, zh, ar, id };
+/**
+ * The shipped dictionaries.
+ *
+ * `steel/*` is folded in here rather than pasted into `es.ts` and `en.ts`. Those two files
+ * are being edited heavily by PR #125 and PR #132 at the same time as this branch, and a
+ * hundred keys inserted through the middle of them would be a hundred merge conflicts for
+ * no benefit — a key is worth the same whichever module it arrives from. Fold them into the
+ * main dictionaries once both PRs have landed; until then this costs nothing.
+ *
+ * Every other locale keeps falling back to English for those keys, which is what already
+ * happens for most namespaces outside `design.*`.
+ */
+const dicts: Record<string, Translations> = {
+  es: { ...es, ...steelEs },
+  en: { ...en, ...steelEn },
+  pt, de, fr, it, tr, hi, ja, ko, ru, zh, ar, id,
+};
 
 /** Safe localStorage check — vitest defines localStorage but without working methods. */
 function hasLocalStorage(): boolean {

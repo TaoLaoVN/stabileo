@@ -30,10 +30,11 @@
   import ProAdvancedTab from './ProAdvancedTab.svelte';
   import ProDiagnosticsTab from './ProDiagnosticsTab.svelte';
   import ProConnectionsTab from './ProConnectionsTab.svelte';
+  import SteelPanel from './steel/SteelPanel.svelte';
   import { checkModel } from '../../lib/engine/model-diagnostics';
   import { get2DDisplayNodalLoadMoment, get2DDisplayNodalLoadVertical } from '../../lib/geometry/coordinate-system';
 
-  type ProTab = 'project' | 'nodes' | 'elements' | 'shells' | 'materials' | 'sections' | 'supports' | 'constraints' | 'loads' | 'advanced' | 'results' | 'design' | 'connections' | 'diagnostics';
+  type ProTab = 'project' | 'nodes' | 'elements' | 'shells' | 'materials' | 'sections' | 'supports' | 'constraints' | 'loads' | 'advanced' | 'results' | 'design' | 'steel' | 'connections' | 'diagnostics';
 
   // Group tabs into logical categories
   interface TabGroup {
@@ -71,6 +72,7 @@
         { id: 'advanced' as ProTab, label: t('pro.tabAdvanced') },
         { id: 'results' as ProTab, label: t('pro.tabResults') },
         { id: 'design' as ProTab, label: 'RC Design' },
+        { id: 'steel' as ProTab, label: t('steel.panel.title') },
         { id: 'connections' as ProTab, label: t('pro.tabConnections') },
         { id: 'diagnostics' as ProTab, label: t('pro.tabDiagnostics') },
       ],
@@ -851,6 +853,8 @@
           <ProResultsTab />
         {:else if activeTab === 'design'}
           <ProRcWorkflowTab />
+        {:else if activeTab === 'steel'}
+          <SteelPanel />
         {:else if activeTab === 'connections'}
           <ProConnectionsTab />
         {:else if activeTab === 'diagnostics'}
