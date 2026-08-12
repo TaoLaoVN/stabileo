@@ -14,6 +14,7 @@
   import type { SectionShape } from '../../lib/data/steel-profiles';
   import { t } from '../../lib/i18n';
   import { fmt, stressColor } from './fmt';
+  import { stressMapRamp, rampDirection } from '../../lib/section/stress-map';
 
   interface Props {
     /**
@@ -512,46 +513,30 @@
            sigma is affine in (y, z), and a linear gradient is affine in the
            coordinates it spans. -->
       {#if showStressMap && stressField && canonicalGeometry && canonicalScale}
-        {@const sc = canonicalScale}
-        {@const f = stressField}
-        {@const [yMin, zMin, yMax, zMax] = canonicalGeometry.bbox}
-        <!-- sigma at a corner, straight from the plane's coefficients. -->
-        {@const sAt = (y: number, z: number) => f.axial + f.kz * z - f.ky * y}
-        {@const corners = [sAt(yMin, zMin), sAt(yMin, zMax), sAt(yMax, zMin), sAt(yMax, zMax)]}
-        {@const sLo = Math.min(...corners)}
-        {@const sHi = Math.max(...corners)}
-        {@const sMax = Math.max(Math.abs(sLo), Math.abs(sHi), 1e-9)}
-        <!-- Gradient direction in SVG units. The field grows along
-             (-ky, -kz) in section axes; dividing by `sc` converts the rate to
-             SVG units and the z sign flips because SVG y points down. -->
-        {@const gx = -f.ky / sc}
-        {@const gy = f.kz / sc}
-        {@const gLen = Math.hypot(gx, gy)}
-        {@const cx = (yMin + yMax) / 2 * sc}
-        {@const cy = -(zMin + zMax) / 2 * sc}
+        <!-- The ramp geometry comes from `stress-map.ts`, which is where the
+             section-axes → SVG sign change lives and where it is tested. It
+             was inline here, and one of its two minus signs was missing: the
+             map painted the compressed flange red and the tension flange blue,
+             opposite to the sigma diagram drawn beside it from the same three
+             numbers. -->
+        {@const ramp = stressMapRamp(stressField, canonicalGeometry.bbox, canonicalScale)}
+        {@const dir = rampDirection(ramp)}
         <defs>
-          {#if gLen > 1e-12}
-            <!-- Span the gradient across the section along its own direction,
-                 far enough that the whole outline falls inside it. -->
-            {@const half = Math.hypot((yMax - yMin) * sc, (zMax - zMin) * sc) / 2}
-            {@const ux = gx / gLen}
-            {@const uy = gy / gLen}
-            {@const sCentre = sAt((yMin + yMax) / 2, (zMin + zMax) / 2)}
+          {#if !ramp.uniform}
             <linearGradient
               id="ssp-stress-map"
               gradientUnits="userSpaceOnUse"
-              x1={cx - ux * half} y1={cy - uy * half}
-              x2={cx + ux * half} y2={cy + uy * half}
+              x1={ramp.x1} y1={ramp.y1} x2={ramp.x2} y2={ramp.y2}
             >
-              {#each mapStops(sCentre - gLen * half, sCentre + gLen * half, sMax) as st}
+              {#each mapStops(ramp.sigmaAt1, ramp.sigmaAt2, ramp.sMax) as st}
                 <stop offset={st.offset} stop-color={st.color} />
               {/each}
             </linearGradient>
           {:else}
             <!-- Pure axial: one stress everywhere, so no direction to span. -->
             <linearGradient id="ssp-stress-map">
-              <stop offset="0" stop-color={stressColor(f.axial, sMax)} />
-              <stop offset="1" stop-color={stressColor(f.axial, sMax)} />
+              <stop offset="0" stop-color={stressColor(ramp.sigmaAt1, ramp.sMax)} />
+              <stop offset="1" stop-color={stressColor(ramp.sigmaAt1, ramp.sMax)} />
             </linearGradient>
           {/if}
         </defs>
@@ -564,19 +549,18 @@
         <!-- Neutral axis: where the plane crosses zero. Drawn only when the
              crossing is actually inside the section, so a fully-compressed
              member does not get a line through empty space. -->
-        {#if gLen > 1e-12 && sLo < 0 && sHi > 0}
-          {@const ux = gx / gLen}
-          {@const uy = gy / gLen}
-          {@const sCentre = sAt((yMin + yMax) / 2, (zMin + zMax) / 2)}
-          {@const d0 = -sCentre / gLen}
-          {@const span = Math.hypot((yMax - yMin) * sc, (zMax - zMin) * sc)}
+        {#if ramp.neutralInside}
+          {@const cx = (canonicalGeometry.bbox[0] + canonicalGeometry.bbox[2]) / 2 * canonicalScale}
+          {@const cy = -(canonicalGeometry.bbox[1] + canonicalGeometry.bbox[3]) / 2 * canonicalScale}
+          {@const d0 = ramp.neutralOffset}
+          {@const span = Math.hypot(ramp.x2 - ramp.x1, ramp.y2 - ramp.y1)}
           <line
-            x1={cx + ux * d0 - uy * span / 2} y1={cy + uy * d0 + ux * span / 2}
-            x2={cx + ux * d0 + uy * span / 2} y2={cy + uy * d0 - ux * span / 2}
+            x1={cx + dir.ux * d0 - dir.uy * span / 2} y1={cy + dir.uy * d0 + dir.ux * span / 2}
+            x2={cx + dir.ux * d0 + dir.uy * span / 2} y2={cy + dir.uy * d0 - dir.ux * span / 2}
             stroke="var(--st-text-1)" stroke-width={0.9 * strokeK} stroke-dasharray="4,2" opacity="0.75"
           />
           <text
-            x={cx + ux * d0 - uy * span / 2} y={cy + uy * d0 + ux * span / 2 - 2}
+            x={cx + dir.ux * d0 - dir.uy * span / 2} y={cy + dir.uy * d0 + dir.ux * span / 2 - 2}
             fill="var(--st-text-1)" font-size={4.5 * textK} opacity="0.8"
           >EN</text>
         {/if}

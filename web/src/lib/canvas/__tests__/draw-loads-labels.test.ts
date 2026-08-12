@@ -76,15 +76,30 @@ describe('two distributed loads on one beam', () => {
     expect(overlap(big, small)).toBe(false);
   });
 
-  it('puts the larger load nearest the beam and stacks the smaller above it', () => {
+  it('lists them largest first, reading top to bottom', () => {
     const ctx = recordingCtx();
     drawDistributedLoads(loads, beamContext(ctx, true));
 
     const big = ctx.written.find((w) => w.text.startsWith('D:'))!;
     const small = ctx.written.find((w) => w.text.startsWith('L:'))!;
-    // The beam is at screen y = 300 and the arrows point down onto it, so the
-    // labels sit above: smaller screen y is further from the beam.
-    expect(small.y).toBeLessThan(big.y);
+    // Two loads on one beam are that beam's load table, and a table is read
+    // biggest first. Smaller screen y is higher up.
+    expect(big.y).toBeLessThan(small.y);
+  });
+
+  it('breaks ties between equal loads by case: D, then L, then W', () => {
+    const ctx = recordingCtx();
+    drawDistributedLoads([
+      { elementId: 1, qI: -8, qJ: -8, caseName: 'W', caseColor: '#0f0' },
+      { elementId: 1, qI: -8, qJ: -8, caseName: 'L', caseColor: '#00f' },
+      { elementId: 1, qI: -8, qJ: -8, caseName: 'D', caseColor: '#f00' },
+    ], beamContext(ctx, true));
+
+    const y = (p: string) => ctx.written.find((w) => w.text.startsWith(p))!.y;
+    // Passed in reverse on purpose: order must come from the case, not from
+    // however the loads happen to be stored.
+    expect(y('D:')).toBeLessThan(y('L:'));
+    expect(y('L:')).toBeLessThan(y('W:'));
   });
 
   it('does not depend on the order the loads are stored in', () => {
@@ -111,9 +126,9 @@ describe('two distributed loads on one beam', () => {
         expect(overlap(found[i], found[j])).toBe(false);
       }
     }
-    // Ordered by size: 10 closest to the beam, then 7, then 3.
-    expect(found[2].y).toBeLessThan(found[0].y); // S above D
-    expect(found[1].y).toBeLessThan(found[2].y); // L above S
+    // Ordered by size, top down: 10, then 7, then 3.
+    expect(found[0].y).toBeLessThan(found[2].y); // D above S
+    expect(found[2].y).toBeLessThan(found[1].y); // S above L
   });
 });
 

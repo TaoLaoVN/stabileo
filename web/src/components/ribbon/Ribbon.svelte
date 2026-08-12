@@ -365,13 +365,24 @@
      */
     if (cmd.id === 'data') return false;
     if (cmd.diagram) {
+      const shown = resultsStore.diagramType;
+      /*
+       * "None" lights only while the Results panel is the one open.
+       *
+       * It is the empty option of the diagram radio group, and "no diagram" is
+       * also the state of every model you are still building — so lighting it
+       * on the plain condition `diagramType === 'none'` put a Results command
+       * on beside Materials or Node, which is the very thing the group is
+       * supposed to prevent. Inside Results it is a real selection; outside, it
+       * is just the absence of one.
+       */
+      if (cmd.diagram === 'none') return solved && activePanel === 'results' && shown === 'none';
       /*
        * Axial stays lit whichever way it is being drawn. `axialColor` is the
        * same quantity as `axial` presented differently — the choice lives in
        * the panel — so treating it as a different diagram would leave N dark
        * while the members are coloured by exactly N.
        */
-      const shown = resultsStore.diagramType;
       if (cmd.diagram === 'axial') return solved && (shown === 'axial' || shown === 'axialColor');
       return solved && shown === cmd.diagram;
     }

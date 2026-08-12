@@ -12,6 +12,7 @@
   import SectionEditor from './components/SectionEditor.svelte';
   import DataTable from './components/DataTable.svelte';
   import { modelStore, uiStore, resultsStore, dsmStepsStore, tabManager, historyStore } from './lib/store';
+  import { syncModelTabWithResults } from './lib/store/view-mode';
   import { t, i18n, setLocale } from './lib/i18n';
   import { OFFERED_LOCALES } from './lib/i18n/store.svelte';
   import StepWizard from './components/dsm/StepWizard.svelte';
@@ -41,6 +42,16 @@
   let basicPanel = $state<string | null>(null);
   /** Which Model-data tab the last Properties command asked for. */
   let basicDataTab = $state<string>('nodes');
+
+  /*
+   * Editing and reading a result stay mutually exclusive.
+   *
+   * An effect rather than a line inside `openBasicPanel`, because the tab also
+   * changes from inside the panel — the Model table's own tab strip is bound to
+   * this same state — and that path never calls this function. Watching the
+   * state covers every path there is.
+   */
+  $effect(() => { syncModelTabWithResults(basicPanel, basicDataTab); });
 
   function openBasicPanel(panel: string | null, opts: { toggle?: boolean; dataTab?: string } = {}) {
     const toggle = opts.toggle !== false;

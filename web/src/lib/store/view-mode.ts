@@ -78,6 +78,34 @@ export function installViewModeRules(): void {
   });
 }
 
+/**
+ * The right panel's Model tabs. Reading one of these is editing, not analysing.
+ */
+export const MODEL_TABS = [
+  'nodes', 'elements', 'supports', 'loads', 'materials', 'sections',
+] as const;
+
+/**
+ * Keep "showing a diagram" and "showing the model" mutually exclusive.
+ *
+ * Expressed as an INVARIANT to be re-checked, not as an action performed by
+ * whoever switches. The action version has been written three times now and
+ * has missed a path every time: arming a tool was handled in the tool setter,
+ * picking a diagram in `showDiagram`, and pressing Materials in the ribbon's
+ * command handler — but the Materials TAB inside the panel changes the same
+ * state without going through any of them, so after solving you could put the
+ * panel on Materials and leave N lit in the ribbon beside it.
+ *
+ * Called from an effect on the panel state, so every path is covered by
+ * construction: whatever sets the tab, the rule sees the result.
+ */
+export function syncModelTabWithResults(panel: string | null, tab: string): void {
+  const showingModel = panel === 'data' && (MODEL_TABS as readonly string[]).includes(tab);
+  if (showingModel && resultsStore.diagramType !== 'none') {
+    resultsStore.diagramType = 'none';
+  }
+}
+
 /** Whether a result is currently on screen. */
 export function isShowingResult(): boolean {
   return resultsStore.diagramType !== 'none';

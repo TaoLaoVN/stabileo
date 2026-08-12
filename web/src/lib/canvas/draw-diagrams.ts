@@ -299,9 +299,8 @@ function drawValueLabel(
     font: '11px sans-serif',
     box: {
       x: diagramPt.x + ux * 5, y: diagramPt.y + uy * 5,
-      // Roughly what an 11 px "-24.9 kN·m" measures. Close enough: the cost of
-      // being a few pixels out is a slightly larger gap, not an overlap.
-      width: text.length * 6 + 4, height: 13,
+      // Measured by the collector against the real font; see there.
+      width: 0, height: 13,
       dirX: ux, dirY: uy, sweep: 'any', anchorX: 'left',
       // Bigger numbers keep their place: they are the ones being looked for.
       priority: Math.abs(parseFloat(text)) || 0,

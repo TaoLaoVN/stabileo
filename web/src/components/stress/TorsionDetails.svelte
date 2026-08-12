@@ -14,7 +14,7 @@
    * the one comparison that makes the distinction concrete.
    */
   import type { ResolvedSection } from '../../lib/engine/section-stress';
-  import { computeTorsionFlow, closedVersusOpen } from '../../lib/engine/torsion-flow';
+  import { computeTorsionFlow, closedVersusOpen, compareTorsionTheories } from '../../lib/engine/torsion-flow';
   import { warpingProperties, withLambda, warpingResponse } from '../../lib/engine/warping';
   import { t } from '../../lib/i18n';
   import { fmt } from './fmt';
@@ -35,6 +35,24 @@
 
   const flow = $derived(resolved ? computeTorsionFlow(torque, resolved) : null);
   const slitPenalty = $derived(resolved ? closedVersusOpen(resolved) : null);
+
+  /**
+   * All three theories, applicable or not.
+   *
+   * Shown together rather than one at a time because they are conceptually
+   * different models of the same twist that give different numbers, and a
+   * reader who only sees the winner has no way to know how much the choice
+   * mattered — or that using Bredt on an open section, which looks perfectly
+   * reasonable on paper, is wrong by two orders of magnitude.
+   */
+  const theories = $derived(resolved ? compareTorsionTheories(torque, resolved) : []);
+  const governingTau = $derived(theories.find((th) => th.governs)?.tauMax ?? null);
+
+  const FORMULA: Record<string, string> = {
+    cauchy: 'stress.tt.formulaCauchy',
+    bredt: 'stress.tt.formulaBredt',
+    saintVenant: 'stress.tt.formulaSV',
+  };
 
   /**
    * Warping — the other mechanism, and the one whose omission is not
@@ -80,6 +98,48 @@
       </div>
 
       <p class="ssp-tor-note">{t(`${flow.labelKey}Note`)}</p>
+
+      <!-- ── The three theories, side by side ──────────────────
+           Each row carries its own formula, the quantities that go into it and
+           a note saying why it applies here or why it does not. The "does not"
+           rows are the point of the table as much as the others. -->
+      <div class="ssp-tt">
+        <div class="ssp-tt-head">
+          {t('stress.tt.title')}
+          <span class="ssp-help ssp-help-inline" title={t('stress.tt.help')}>?</span>
+        </div>
+        {#each theories as th}
+          <div class="ssp-tt-row" class:na={!th.applies} class:governs={th.governs}>
+            <div class="ssp-tt-top">
+              <span class="ssp-tt-name">{t(`stress.tt.${th.id}`)}</span>
+              <span class="ssp-tt-formula">{t(FORMULA[th.id])}</span>
+              {#if th.governs}<span class="ssp-tt-badge">{t('stress.tt.governs')}</span>{/if}
+            </div>
+            {#if th.applies && th.tauMax !== null}
+              <div class="ssp-tt-value">
+                <span class="ssp-tt-tau">&tau;<sub>max</sub> = {fmt(th.tauMax)}<span class="ssp-tor-unit">MPa</span></span>
+                {#if !th.governs && governingTau && governingTau > 1e-9}
+                  <!-- The gap is the teaching: two valid theories, one section,
+                       different answers. -->
+                  <span class="ssp-tt-delta">
+                    {t('stress.tt.vsGoverning').replace('{pct}', (th.tauMax / governingTau * 100).toFixed(0))}
+                  </span>
+                {/if}
+              </div>
+              {#if th.terms.length}
+                <div class="ssp-tt-terms">
+                  {#each th.terms as term}
+                    <span class="ssp-tt-term">{term.symbol} = {fmt(term.value)} {term.unit}</span>
+                  {/each}
+                </div>
+              {/if}
+            {:else}
+              <div class="ssp-tt-value ssp-tt-na">{t('stress.tt.na')}</div>
+            {/if}
+            <p class="ssp-tt-why">{t(th.reasonKey)}</p>
+          </div>
+        {/each}
+      </div>
 
       <!-- ── Warping ────────────────────────────────────────────
            Inside Torsion because it IS torsion: the same torque, carried by a
@@ -156,6 +216,81 @@
 {/if}
 
 <style>
+  /* ── The three-theory table ─────────────────────────────────
+     Rows that do not apply are dimmed rather than hidden: "Bredt does not
+     apply here, and here is why" is information, and hiding it is how a reader
+     ends up applying it anyway. */
+  .ssp-tt {
+    margin-top: 0.6rem;
+    border-top: 1px solid var(--st-hair);
+    padding-top: 0.5rem;
+  }
+
+  .ssp-tt-head {
+    font-size: 0.68rem;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: var(--st-text-3);
+    margin-bottom: 0.35rem;
+  }
+
+  .ssp-tt-row {
+    padding: 0.4rem 0.5rem;
+    margin-bottom: 0.3rem;
+    border-left: 2px solid var(--st-hair);
+    background: rgba(255, 255, 255, 0.02);
+  }
+
+  .ssp-tt-row.governs { border-left-color: var(--st-accent); }
+  .ssp-tt-row.na { opacity: 0.55; }
+
+  .ssp-tt-top {
+    display: flex;
+    align-items: baseline;
+    gap: 0.4rem;
+    flex-wrap: wrap;
+  }
+
+  .ssp-tt-name { font-size: 0.78rem; color: var(--st-text); }
+  .ssp-tt-formula { font-size: 0.7rem; color: var(--st-text-3); font-family: ui-monospace, monospace; }
+
+  .ssp-tt-badge {
+    font-size: 0.6rem;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: var(--st-accent);
+    border: 1px solid var(--st-accent);
+    border-radius: 2px;
+    padding: 0 0.25rem;
+  }
+
+  .ssp-tt-value {
+    margin-top: 0.2rem;
+    display: flex;
+    align-items: baseline;
+    gap: 0.5rem;
+  }
+
+  .ssp-tt-tau { font-size: 0.85rem; color: var(--st-value); }
+  .ssp-tt-delta { font-size: 0.66rem; color: var(--st-text-3); }
+  .ssp-tt-na { font-size: 0.72rem; color: var(--st-text-3); font-style: italic; }
+
+  .ssp-tt-terms {
+    margin-top: 0.15rem;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+  }
+
+  .ssp-tt-term { font-size: 0.66rem; color: var(--st-text-2); font-family: ui-monospace, monospace; }
+
+  .ssp-tt-why {
+    margin: 0.25rem 0 0;
+    font-size: 0.68rem;
+    line-height: 1.35;
+    color: var(--st-text-3);
+  }
+
   .ssp-section-toggle {
     width: 100%;
     display: flex;

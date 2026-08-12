@@ -108,8 +108,21 @@ describe('the structure is an obstacle too', () => {
     // A value written across a column is exactly as unreadable as one written
     // across another value.
     const column = segmentToBox({ x1: 100, y1: 0, x2: 100, y2: 200 });
-    const [p] = placeLabels([label({ dirY: -1 })], [column]);
+    const [p] = placeLabels([label({ dirY: -1, sweep: 'any' })], [column]);
     expect(p.displaced).toBeGreaterThan(0);
+    expect(p.x + 40 < 97 || p.x - 40 > 103).toBe(true);
+  });
+
+  it('stays put rather than fleeing when its one direction is blocked all the way', () => {
+    /*
+     * A column taller than the search: sliding up never clears it. Staying is
+     * the better failure — the value is still beside the member it belongs to,
+     * whereas one parked at the end of the search is both overlapping AND
+     * attached to nothing.
+     */
+    const column = segmentToBox({ x1: 100, y1: -400, x2: 100, y2: 400 });
+    const [p] = placeLabels([label({ dirY: -1 })], [column]);
+    expect(p).toEqual({ x: 100, y: 100, displaced: 0 });
   });
 
   it('a segment becomes a box that covers it, with margin', () => {

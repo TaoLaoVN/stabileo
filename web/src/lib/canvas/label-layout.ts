@@ -63,14 +63,29 @@ export function createLabelCollector(): LabelCollector {
     flush(ctx, extra = []) {
       if (entries.length === 0) return;
       const obstacles = [...blockers, ...extra].flatMap((s) => segmentToBoxes(s));
-      const placed = placeLabels(entries.map((e) => e.box), obstacles);
+      /*
+       * Measure the text instead of trusting a declared width.
+       *
+       * Every caller was guessing — "about 84 px for a point load" — and a
+       * guess is wrong in both directions: too wide pushes a label clear of an
+       * obstacle it never touched (which is why point-load values drifted far
+       * from their node), too narrow lets it land on one it does. The canvas
+       * knows the answer once the font is set, and this is the one place that
+       * has both the font and the string.
+       */
+      const boxes = entries.map((e) => {
+        ctx.font = e.font;
+        const size = parseFloat(e.font) || 12;
+        return { ...e.box, width: ctx.measureText(e.text).width, height: size + 2 };
+      });
+      const placed = placeLabels(boxes, obstacles);
       const prevAlign = ctx.textAlign;
       const prevBaseline = ctx.textBaseline;
       // Everything is measured from the alphabetic baseline, so anything the
       // caller left set would move the text away from the box that was tested.
       ctx.textBaseline = 'alphabetic';
       for (let i = 0; i < entries.length; i++) {
-        ctx.textAlign = entries[i].box.anchorX === 'left' ? 'left' : 'center';
+        ctx.textAlign = entries[i].box.anchorX ?? 'center';
         ctx.font = entries[i].font;
         ctx.fillStyle = entries[i].colour;
         ctx.fillText(entries[i].text, placed[i].x, placed[i].y);
@@ -112,7 +127,26 @@ export interface LabelBox {
    * is tested somewhere it will not be drawn, so it dodges obstacles it does
    * not touch and lands on ones it does.
    */
-  anchorX?: 'left' | 'center';
+  anchorX?: 'left' | 'center' | 'right';
+  /**
+   * Labels that belong together and must be read as one list.
+   *
+   * Two loads on one beam are not two independent annotations that happen to
+   * be near each other — they are the load table for that beam. Sharing a
+   * group makes them a BLOCK: ordered by size with the largest on top, stacked
+   * at a fixed line spacing, and moved together when something is in the way.
+   * Placed independently they end up in whatever order the search happened to
+   * find room in, which reads as no order at all.
+   */
+  group?: string;
+  /**
+   * Tie-break within a group when two values are equal, lowest first.
+   *
+   * Equal magnitudes are common — the same UDL on every floor of a frame — and
+   * without this their order comes down to iteration order, so the same model
+   * can list them differently after an edit that changed nothing.
+   */
+  rank?: number;
   /**
    * How far the label is allowed to look for room.
    *
@@ -218,82 +252,183 @@ export function segmentToBoxes(s: SegmentObstacle, pad = 3, span = 24): Obstacle
  * `step` is how far each attempt moves; `maxSteps` bounds the search so a
  * hopeless case — a label boxed in on every side — degrades to "slightly
  * overlapping" rather than to an infinite loop or a label thrown off screen.
+ * The step is deliberately small: a label that ends up far from what it
+ * annotates has not been placed, it has been lost, so it is better to search
+ * finely nearby than coarsely over a wide area.
+ *
  * Returned in the SAME ORDER as the input, whatever order they were placed in,
  * because the caller indexes by its own list.
  */
 export function placeLabels(
   labels: LabelBox[],
   obstacles: Obstacle[] = [],
-  step = 14,
-  maxSteps = 8,
+  step = 10,
+  maxSteps = 10,
 ): PlacedLabel[] {
   const out: PlacedLabel[] = new Array(labels.length);
   const taken: Obstacle[] = [...obstacles];
 
-  // Largest first, so the number a reader looks for keeps its natural place and
-  // the smaller ones are the ones that move.
-  const order = labels
-    .map((l, i) => ({ l, i }))
-    .sort((a, b) => b.l.priority - a.l.priority);
+  /*
+   * Grouped labels are placed as one block, ungrouped ones on their own.
+   *
+   * Blocks go first, and largest block first, because a block is several lines
+   * of text: it needs the room while there is room to be had, and a single
+   * stray label displaced by 10 px costs far less than a load table broken
+   * apart.
+   */
+  const units = buildUnits(labels);
+  units.sort((a, b) => b.priority - a.priority);
 
-  for (const { l, i } of order) {
-    const len = Math.hypot(l.dirX, l.dirY);
-    const ux = len > 1e-9 ? l.dirX / len : 0;
-    const uy = len > 1e-9 ? l.dirY / len : 0;
-    const left = l.anchorX === 'left';
-    const boxAt = (dx: number, dy: number): Obstacle => ({
-      x: l.x + dx - (left ? 0 : l.width / 2),
-      y: l.y + dy - l.height,
-      width: l.width,
-      height: l.height,
-    });
+  for (const unit of units) {
+    const { ux, uy } = unitDir(labels[unit.members[0]]);
+    const slots = layoutSlots(unit, labels);
+    const bounds = unionBox(slots);
+    const sweep = labels[unit.members[0]].sweep ?? 'forward';
 
-    // Candidate displacements, nearest first: the preferred spot, then one
-    // ring at a time. Within a ring, the label's own direction comes first, so
-    // ties are broken toward where it wants to be.
-    const sweep = l.sweep ?? 'forward';
-    const candidates: Array<[number, number]> = [[0, 0]];
-    if (len > 1e-9) {
-      // Perpendicular in screen space; sign chosen so "up" is tried before
-      // "down" for a horizontal preference, matching how labels read.
-      const px = uy;
-      const py = -ux;
-      for (let k = 1; k <= maxSteps; k++) {
-        const d = k * step;
-        candidates.push([ux * d, uy * d]);
-        if (sweep !== 'forward') candidates.push([-ux * d, -uy * d]);
-        if (sweep === 'any') {
-          candidates.push([px * d, py * d]);
-          candidates.push([-px * d, -py * d]);
-        }
-      }
+    let shift: [number, number] = [0, 0];
+    let free = false;
+    for (const cand of candidateOffsets(ux, uy, sweep, step, maxSteps)) {
+      const moved = { ...bounds, x: bounds.x + cand[0], y: bounds.y + cand[1] };
+      if (!taken.some((o) => overlaps(moved, o))) { shift = cand; free = true; break; }
     }
+    /*
+     * Nothing free: keep the preferred spot rather than the last thing tried.
+     * A label that cannot avoid an overlap is at least still beside what it
+     * describes; one parked at the end of the search is both overlapping and
+     * detached, which reads as belonging to something else.
+     */
+    if (!free) shift = [0, 0];
 
-    let best = { x: l.x, y: l.y, displaced: 0 };
-    let placed = false;
-
-    for (const [dx, dy] of candidates) {
-      const box = boxAt(dx, dy);
-      if (!taken.some((o) => overlaps(box, o))) {
-        best = { x: l.x + dx, y: l.y + dy, displaced: Math.hypot(dx, dy) };
-        taken.push(box);
-        placed = true;
-        break;
-      }
+    taken.push({ ...bounds, x: bounds.x + shift[0], y: bounds.y + shift[1] });
+    for (let k = 0; k < unit.members.length; k++) {
+      const i = unit.members[k];
+      out[i] = {
+        x: slots[k].anchorX + shift[0],
+        y: slots[k].anchorY + shift[1],
+        displaced: Math.hypot(shift[0], shift[1]),
+      };
     }
-
-    if (!placed) {
-      /*
-       * Nothing was free. Keep the PREFERRED spot rather than the last thing
-       * tried: a label that cannot avoid an overlap is at least still beside
-       * what it describes, whereas one parked at the end of the search is both
-       * overlapping and detached — which reads as belonging to something else.
-       */
-      best = { x: l.x, y: l.y, displaced: 0 };
-      taken.push(boxAt(0, 0));
-    }
-    out[i] = best;
   }
 
+  return out;
+}
+
+interface Unit {
+  /** Indices into the caller's array, in the order they will be stacked. */
+  members: number[];
+  priority: number;
+}
+
+/** One unit per group, one per ungrouped label. */
+function buildUnits(labels: LabelBox[]): Unit[] {
+  const groups = new Map<string, number[]>();
+  const units: Unit[] = [];
+
+  labels.forEach((l, i) => {
+    if (l.group === undefined) {
+      units.push({ members: [i], priority: l.priority });
+    } else {
+      const g = groups.get(l.group);
+      if (g) g.push(i); else groups.set(l.group, [i]);
+    }
+  });
+
+  for (const members of groups.values()) {
+    /*
+     * Largest first, then by rank. Rank is what settles the common case of
+     * equal magnitudes — the same UDL on every floor — so that dead, live,
+     * wind and seismic always read in that order instead of in whatever order
+     * the model stored them.
+     */
+    members.sort((a, b) =>
+      labels[b].priority - labels[a].priority
+      || (labels[a].rank ?? 0) - (labels[b].rank ?? 0));
+    units.push({ members, priority: Math.max(...members.map((i) => labels[i].priority)) });
+  }
+  return units;
+}
+
+function unitDir(l: LabelBox): { ux: number; uy: number } {
+  const len = Math.hypot(l.dirX, l.dirY);
+  return len > 1e-9 ? { ux: l.dirX / len, uy: l.dirY / len } : { ux: 0, uy: 0 };
+}
+
+/** Where each member of a unit sits, before the unit is displaced. */
+interface Slot extends Obstacle { anchorX: number; anchorY: number }
+
+/**
+ * Stack a unit's members into lines.
+ *
+ * The block starts at the OUTERMOST preferred position of its members — the
+ * largest load's arrows are the longest, so anchoring to the innermost would
+ * put the whole table inside them — and grows away from the member. Lines are
+ * then handed out top to bottom on screen, so the biggest number is the top
+ * line however the escape direction happens to point.
+ */
+function layoutSlots(unit: Unit, labels: LabelBox[]): Slot[] {
+  const first = labels[unit.members[0]];
+  const { ux, uy } = unitDir(first);
+  const n = unit.members.length;
+  const lineHeight = Math.max(...unit.members.map((i) => labels[i].height)) + 1;
+
+  // Furthest preferred position along the escape direction.
+  let base = -Infinity;
+  let baseX = first.x;
+  let baseY = first.y;
+  for (const i of unit.members) {
+    const proj = labels[i].x * ux + labels[i].y * uy;
+    if (proj > base) { base = proj; baseX = labels[i].x; baseY = labels[i].y; }
+  }
+
+  const positions = Array.from({ length: n }, (_, k) => ({
+    x: baseX + ux * k * lineHeight,
+    y: baseY + uy * k * lineHeight,
+  }));
+  // Topmost line to the first member, which is the largest.
+  positions.sort((a, b) => a.y - b.y);
+
+  return unit.members.map((i, k) => {
+    const l = labels[i];
+    const p = positions[k];
+    const left = l.anchorX === 'left' ? 0 : l.anchorX === 'right' ? -l.width : -l.width / 2;
+    return {
+      anchorX: p.x, anchorY: p.y,
+      x: p.x + left, y: p.y - l.height,
+      width: l.width, height: l.height,
+    };
+  });
+}
+
+function unionBox(slots: Slot[]): Obstacle {
+  const x = Math.min(...slots.map((s) => s.x));
+  const y = Math.min(...slots.map((s) => s.y));
+  return {
+    x, y,
+    width: Math.max(...slots.map((s) => s.x + s.width)) - x,
+    height: Math.max(...slots.map((s) => s.y + s.height)) - y,
+  };
+}
+
+/**
+ * Displacements to try, nearest first: the preferred spot, then one ring at a
+ * time. Within a ring the unit's own direction comes first, so ties break
+ * toward where it wants to be.
+ */
+function candidateOffsets(
+  ux: number, uy: number, sweep: string, step: number, maxSteps: number,
+): Array<[number, number]> {
+  const out: Array<[number, number]> = [[0, 0]];
+  if (Math.hypot(ux, uy) < 1e-9) return out;
+  const px = uy;
+  const py = -ux;
+  for (let k = 1; k <= maxSteps; k++) {
+    const d = k * step;
+    out.push([ux * d, uy * d]);
+    if (sweep !== 'forward') out.push([-ux * d, -uy * d]);
+    if (sweep === 'any') {
+      out.push([px * d, py * d]);
+      out.push([-px * d, -py * d]);
+    }
+  }
   return out;
 }

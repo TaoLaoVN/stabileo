@@ -195,7 +195,12 @@
     if (is3D) {
       const ef = resultsStore.getElementForces3D(query.elementId);
       if (!ef) return null;
-      return canonicalPanelResult(sec, stationForces3D(ef as never, query.t));
+      /*
+       * No cast. `as never` was here, and it is what let the panel read a
+       * torsion field the result object does not have: the compiler had the
+       * information and was told not to look.
+       */
+      return canonicalPanelResult(sec, stationForces3D(ef, query.t));
     }
     const ef = resultsStore.getElementForces(query.elementId);
     if (!ef) return null;

@@ -274,3 +274,206 @@ export function closedVersusOpen(rs: ResolvedSection): number | null {
   if (!closed || jOpen <= 0) return null;
   return closed.j / jOpen;
 }
+
+// ── The three theories, side by side ──────────────────────────────
+
+/**
+ * The named theories, as a structural course states them.
+ *
+ * `computeTorsionFlow` above picks ONE — the one that governs — and draws it.
+ * That is what a design value needs, but it hides the thing worth
+ * understanding: these are different physical models of the same twist, they
+ * are each valid over a different topology of wall, and where two of them
+ * overlap they do NOT give the same number.
+ *
+ *   * **Cauchy** — circular sections, solid or hollow. `tau = T·r/Ip`. The one
+ *     case with an exact elementary solution: circular symmetry means plane
+ *     sections stay plane, there is no warping at all, and the stress runs
+ *     linearly from zero at the centre to a maximum at the outside fibre.
+ *
+ *   * **Bredt** — closed thin walls. `tau = T/(2·Am·t)`. A shear FLOW
+ *     `q = tau·t` circulates around the closed circuit and is constant along
+ *     it, so the thinnest wall carries the highest stress. `Am` is the area
+ *     enclosed by the wall's MID-LINE.
+ *
+ *   * **Saint-Venant** — the general theory of uniform torsion, valid for any
+ *     shape. `tau = T·t/J` with `J` depending on the shape: `(1/3)·sum(b·t³)`
+ *     for an open thin wall, Roark's series for a solid rectangle, and — this
+ *     is the part usually left unsaid — Bredt's own expression for a closed
+ *     thin wall, because Bredt IS the thin-wall solution of Saint-Venant's
+ *     problem, not a rival to it.
+ *
+ * Which is why they are shown together with their differences rather than one
+ * at a time: on a circular tube, Cauchy and Bredt differ by a few per cent
+ * because Bredt assumes the stress is constant across a thickness that Cauchy
+ * knows varies linearly, and seeing that gap is what tells a reader what "thin
+ * wall" is actually assuming.
+ */
+export type TorsionTheoryId = 'cauchy' | 'bredt' | 'saintVenant';
+
+export interface TorsionTheoryTerm {
+  /** Symbol as it appears in the formula. */
+  symbol: string;
+  value: number;
+  unit: string;
+}
+
+export interface TorsionTheoryResult {
+  id: TorsionTheoryId;
+  /** Whether this theory is valid for THIS section. */
+  applies: boolean;
+  /** Peak shear from the torque, MPa. Null when the theory does not apply. */
+  tauMax: number | null;
+  /** Torsion constant, m⁴. */
+  j: number | null;
+  /** The quantities that go into the formula, so the number can be checked. */
+  terms: TorsionTheoryTerm[];
+  /**
+   * i18n key explaining why it applies here, or why it does not.
+   *
+   * The "does not" case is the one that matters: applying Bredt to an open
+   * section is the classic error, and it is unconservative by two orders of
+   * magnitude — so the panel has to say so rather than silently omit the row.
+   */
+  reasonKey: string;
+  /** True for the theory whose value should be used for this section. */
+  governs: boolean;
+}
+
+/** Whether a resolved section is a closed circuit at all. */
+function isClosed(rs: ResolvedSection): boolean {
+  return (rs.shape === 'RHS' || rs.shape === 'CHS') && rs.t > 0;
+}
+
+function isCircular(rs: ResolvedSection): boolean {
+  return rs.shape === 'CHS';
+}
+
+/**
+ * Every theory evaluated for this section and torque, applicable or not.
+ *
+ * `T` in kN·m. Always returns three entries in a fixed order — general first,
+ * then the two special cases — so the panel never reorders itself between
+ * sections and a reader can compare two members at a glance.
+ */
+export function compareTorsionTheories(T: number, rs: ResolvedSection): TorsionTheoryResult[] {
+  const absT = Math.abs(T);
+  return [saintVenantEntry(absT, rs), bredtEntry(absT, rs), cauchyEntry(absT, rs)];
+}
+
+function saintVenantEntry(absT: number, rs: ResolvedSection): TorsionTheoryResult {
+  /*
+   * Evaluated at a UNIT torque and scaled. tau is linear in T, so this gives
+   * the section's J and its stress-per-torque even when the station carries no
+   * torque at all — which is what lets the panel show what the section WOULD
+   * do, rather than going blank.
+   */
+  const unit = computeTorsionFlow(1, rs);
+  const closed = isClosed(rs);
+  const circular = isCircular(rs);
+
+  const terms: TorsionTheoryTerm[] = [];
+  if (!closed && !circular) {
+    const strips = openStrips(rs).filter(([b, t]) => b > 0 && t > 0);
+    if (strips.length > 1) {
+      terms.push({ symbol: 'Σb·t³', value: strips.reduce((a, [b, t]) => a + b * t ** 3, 0) * 1e12, unit: 'mm⁴' });
+      terms.push({ symbol: 'tₘₐₓ', value: Math.max(...strips.map(([, t]) => t)) * 1000, unit: 'mm' });
+    }
+  }
+  if (unit) terms.push({ symbol: 'J', value: unit.j * 1e8, unit: 'cm⁴' });
+
+  return {
+    id: 'saintVenant',
+    applies: true,
+    tauMax: unit ? unit.tauMax * absT : null,
+    j: unit ? unit.j : null,
+    terms,
+    /*
+     * Saint-Venant always applies — it is the theory, not a special case — but
+     * WHICH closed form evaluates it depends on the wall, so the note names
+     * the one in use rather than pretending there is a single formula.
+     */
+    reasonKey: circular ? 'stress.tt.svCircular'
+      : closed ? 'stress.tt.svClosed'
+      : unit?.theory === 'openThinWall' ? 'stress.tt.svOpen'
+      : 'stress.tt.svSolid',
+    governs: !closed && !circular,
+  };
+}
+
+function bredtEntry(absT: number, rs: ResolvedSection): TorsionTheoryResult {
+  if (!isClosed(rs)) {
+    return {
+      id: 'bredt', applies: false, tauMax: null, j: null, terms: [],
+      reasonKey: rs.shape === 'RHS' || rs.shape === 'CHS'
+        ? 'stress.tt.bredtNoWall'
+        : 'stress.tt.bredtOpen',
+      governs: false,
+    };
+  }
+
+  const t = rs.t;
+  let am: number;
+  let perimeter: number;
+  if (isCircular(rs)) {
+    // Mid-line radius: halfway through the wall, not the outside.
+    const rm = (rs.h - t) / 2;
+    am = Math.PI * rm * rm;
+    perimeter = 2 * Math.PI * rm;
+  } else {
+    am = (rs.b - t) * (rs.h - t);
+    perimeter = 2 * ((rs.b - t) + (rs.h - t));
+  }
+  if (am <= 0 || perimeter <= 0) {
+    return {
+      id: 'bredt', applies: false, tauMax: null, j: null, terms: [],
+      reasonKey: 'stress.tt.bredtNoWall', governs: false,
+    };
+  }
+
+  const j = (4 * am * am) / (perimeter / t);
+  return {
+    id: 'bredt',
+    applies: true,
+    tauMax: absT > 0 ? toMPa(absT / (2 * am * t)) : 0,
+    j,
+    terms: [
+      { symbol: 'Aₘ', value: am * 1e6, unit: 'mm²' },
+      { symbol: 't', value: t * 1000, unit: 'mm' },
+      { symbol: 'q', value: absT > 0 ? absT / (2 * am) : 0, unit: 'kN/m' },
+      { symbol: 'J', value: j * 1e8, unit: 'cm⁴' },
+    ],
+    reasonKey: isCircular(rs) ? 'stress.tt.bredtCircular' : 'stress.tt.bredtClosed',
+    governs: !isCircular(rs),
+  };
+}
+
+function cauchyEntry(absT: number, rs: ResolvedSection): TorsionTheoryResult {
+  if (!isCircular(rs)) {
+    return {
+      id: 'cauchy', applies: false, tauMax: null, j: null, terms: [],
+      reasonKey: 'stress.tt.cauchyNotCircular', governs: false,
+    };
+  }
+  const R = rs.h / 2;
+  const Ri = rs.t > 0 ? Math.max(0, R - rs.t) : 0;
+  const ip = (Math.PI / 2) * (R ** 4 - Ri ** 4);
+  if (ip <= 0) {
+    return {
+      id: 'cauchy', applies: false, tauMax: null, j: null, terms: [],
+      reasonKey: 'stress.tt.cauchyNotCircular', governs: false,
+    };
+  }
+  return {
+    id: 'cauchy',
+    applies: true,
+    tauMax: absT > 0 ? toMPa((absT * R) / ip) : 0,
+    j: ip,
+    terms: [
+      { symbol: 'r', value: R * 1000, unit: 'mm' },
+      { symbol: 'Iₚ', value: ip * 1e8, unit: 'cm⁴' },
+    ],
+    reasonKey: Ri > 0 ? 'stress.tt.cauchyTube' : 'stress.tt.cauchySolid',
+    governs: true,
+  };
+}

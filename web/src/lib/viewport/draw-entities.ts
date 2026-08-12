@@ -654,7 +654,8 @@ export function drawNodalLoad(
       font: '12px sans-serif',
       box: {
         x: screen.x + 10, y: screen.y - arrowLen / 2 * dir,
-        width: 92, height: 14,
+        // Width is measured at draw time; whatever is put here is ignored.
+        width: 0, height: 14,
         dirX: 1, dirY: 0, sweep: 'any', anchorX: 'left',
         priority: Math.abs(vertical),
       },
@@ -682,14 +683,21 @@ export function drawNodalLoad(
       /*
        * A horizontal force is drawn as a horizontal arrow, so its value has
        * nowhere to go along the arrow — either end is on the node or past the
-       * tip. It is offered the tail end and told to escape vertically first,
-       * which is the direction with room.
+       * tip. It is offered the tail end, ANCHORED ON THE SIDE THE ARROW COMES
+       * FROM so it reads outward from the structure, and told to escape
+       * vertically first, which is the direction with room.
+       *
+       * The anchor is what keeps it close: this used to shift the position by
+       * a fixed 96 px to fake right-alignment, which is both a guess about the
+       * text width and, whenever the guess was long, a value floating out in
+       * empty canvas away from the node it belongs to.
        */
       font: '12px sans-serif',
       box: {
-        x: screen.x - arrowLen * dir - (dir > 0 ? 96 : 0), y: screen.y - 10,
-        width: 92, height: 14,
-        dirX: 0, dirY: -1, sweep: 'any', anchorX: 'left',
+        x: screen.x - arrowLen * dir - 6 * dir, y: screen.y - 10,
+        width: 0, height: 14,
+        dirX: 0, dirY: -1, sweep: 'any',
+        anchorX: dir > 0 ? 'right' : 'left',
         priority: Math.abs(loadData.fx),
       },
     });
@@ -706,7 +714,7 @@ export function drawNodalLoad(
       font: '12px sans-serif',
       box: {
         x: screen.x + r + 5, y: screen.y - r,
-        width: 104, height: 14,
+        width: 0, height: 14,
         dirX: 1, dirY: 0, sweep: 'any', anchorX: 'left',
         priority: Math.abs(moment),
       },

@@ -88,6 +88,28 @@ function normalize(x: number, y: number): { x: number; y: number } {
 /**
  * Draw distributed loads as arrows perpendicular to elements with an envelope line.
  */
+
+/**
+ * Reading order for load cases of equal magnitude.
+ *
+ * Equal values are the common case, not the exception — the same UDL on every
+ * floor of a frame — and without a rule their order falls out of however the
+ * model stored them, so the same building can list them differently after an
+ * edit that changed nothing. Dead, live, wind, seismic is the order these are
+ * written in every code and every hand calculation.
+ *
+ * Matched on the case's own name. A name outside the list sorts after all of
+ * them rather than being guessed at: inventing a category for "Grúa" would be
+ * worse than putting it last.
+ */
+const LOAD_CASE_ORDER = ['D', 'L', 'W', 'E'];
+
+function loadCaseRank(caseName?: string): number {
+  if (!caseName) return LOAD_CASE_ORDER.length;
+  const i = LOAD_CASE_ORDER.indexOf(caseName.trim().charAt(0).toUpperCase());
+  return i < 0 ? LOAD_CASE_ORDER.length : i;
+}
+
 export function drawDistributedLoads(
   loads: DistLoadInfo[],
   dc: DrawContext,
@@ -109,6 +131,12 @@ export function drawDistributedLoads(
    * against every other label on screen and not only against each other. A
    * caller without one gets a private collector flushed at the end here, which
    * is the same behaviour scoped to this renderer.
+   */
+  /*
+   * Label boxes below declare `width: 0` on purpose: the collector measures
+   * the text against the real font at draw time. A declared width is a guess,
+   * and a guess is wrong in both directions — too wide pushes a value clear of
+   * something it never touched, too narrow lets it land on something it does.
    */
   const labels = dc.labels ?? createLabelCollector();
   const ownsFlush = !dc.labels;
@@ -284,13 +312,20 @@ export function drawDistributedLoads(
         box: {
           x: midScreen.x + sn.x * (maxArrowLen + 12),
           y: midScreen.y + sn.y * (maxArrowLen + 12) + baseline,
-          width: 96, height: 14,
+          width: 0, height: 14,
           dirX: sn.x, dirY: sn.y,
           priority: Math.abs(load.qI),
+          /*
+           * Every uniform load on this member is one list, laid out as a block
+           * with the largest on top. They are not independent annotations that
+           * happen to be near each other — they are that beam's load table.
+           */
+          group: `udl-${load.elementId}`,
+          rank: loadCaseRank(load.caseName),
         },
       });
     } else {
-      for (const [t, q] of [[tStart, load.qI], [tEnd, load.qJ]] as [number, number][]) {
+      for (const [t, q, end] of [[tStart, load.qI, 'i'], [tEnd, load.qJ, 'j']] as [number, number, string][]) {
         const wx = nodeI.x + t * dx;
         const wy = nodeI.y + t * dy;
         const s = dc.worldToScreen(wx, wy);
@@ -304,7 +339,12 @@ export function drawDistributedLoads(
           box: {
             x: s.x + sn.x * (aLen + 10),
             y: s.y + sn.y * (aLen + 10) + (sn.y > 0 ? 11 : 0),
-            width: 88, height: 13, dirX: sn.x, dirY: sn.y, priority: Math.abs(q),
+            width: 0, height: 13, dirX: sn.x, dirY: sn.y, priority: Math.abs(q),
+            // Grouped per END of the member: two trapezoidal loads list their
+            // start values together and their end values together, which is
+            // where each pair actually competes for room.
+            group: `udl-${load.elementId}-${end}`,
+            rank: loadCaseRank(load.caseName),
           },
         });
       }
@@ -469,7 +509,7 @@ export function drawPointLoadsOnElements(
         font: '12px sans-serif',
         box: {
           x: fromX + 5, y: fromY - 5,
-          width: 84, height: 14,
+          width: 0, height: 14,
           // Leftward by preference — a value to the right of the arrow is the
           // one that lands on the next column along. `both` so a member on the
           // left does not simply trade one collision for another.
@@ -505,7 +545,7 @@ export function drawPointLoadsOnElements(
         box: {
           x: fromX + 5,
           y: fromY - 5 + (Math.abs(load.p) > 1e-10 ? 14 : 0),
-          width: 84, height: 14,
+          width: 0, height: 14,
           dirX: -1, dirY: 0, sweep: 'any', anchorX: 'left',
           priority: Math.abs(px),
         },
@@ -524,7 +564,7 @@ export function drawPointLoadsOnElements(
         font: '12px sans-serif',
         box: {
           x: base.x + 18, y: base.y - 18 + yOff,
-          width: 104, height: 14,
+          width: 0, height: 14,
           dirX: -1, dirY: 0, sweep: 'any', anchorX: 'left',
           priority: Math.abs(my),
         },
@@ -634,7 +674,7 @@ export function drawThermalLoads(
         box: {
           x: sI.x + 0.5 * sDx + nx * (OFFSET_PX + 14),
           y: sI.y + 0.5 * sDy + ny * (OFFSET_PX + 14) + 4,
-          width: 96, height: 13,
+          width: 0, height: 13,
           dirX: nx, dirY: ny, sweep: 'any',
           priority: Math.abs(load.dtUniform),
         },
@@ -688,7 +728,7 @@ export function drawThermalLoads(
         box: {
           x: sI.x + 0.5 * sDx - nx * labelOffset,
           y: sI.y + 0.5 * sDy - ny * labelOffset + 4,
-          width: 104, height: 13,
+          width: 0, height: 13,
           dirX: -nx, dirY: -ny, sweep: 'any',
           priority: Math.abs(load.dtGradient),
         },
