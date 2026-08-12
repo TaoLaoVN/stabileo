@@ -632,3 +632,50 @@ fn load_cases_3d_unknown_case_name_errors() {
     assert!(err.contains("TypoCombo") && err.contains("Ded"),
         "error should name the combo and the unknown case: {}", err);
 }
+
+
+#[test]
+fn load_cases_duplicate_case_name_errors() {
+    // Two cases named "Dead": case_map keeps only the LAST one, so a
+    // combination factor on "Dead" silently drops the first case's
+    // contribution. Reject the ambiguous input instead.
+    let case = |fz: f64| LoadCase {
+        name: "Dead".to_string(),
+        loads: vec![SolverLoad::Nodal(SolverNodalLoad {
+            node_id: 2, fx: 0.0, fz, my: 0.0,
+        })],
+    };
+    let input = MultiCaseInput {
+        solver: make_beam_2d(),
+        load_cases: vec![case(-10.0), case(-20.0)],
+        combinations: vec![CombinationDef {
+            name: "Combo".to_string(),
+            factors: { let mut m = HashMap::new(); m.insert("Dead".to_string(), 1.2); m },
+        }],
+    };
+    let err = solve_multi_case_2d(&input).unwrap_err();
+    assert!(err.contains("Dead") && err.contains("Duplicate"),
+        "error should name the duplicated case: {}", err);
+}
+
+#[test]
+fn load_cases_3d_duplicate_case_name_errors() {
+    let case = |fy: f64| LoadCase3D {
+        name: "Dead".to_string(),
+        loads: vec![SolverLoad3D::Nodal(SolverNodalLoad3D {
+            node_id: 2, fx: 0.0, fy, fz: 0.0,
+            mx: 0.0, my: 0.0, mz: 0.0, bw: None,
+        })],
+    };
+    let input = MultiCaseInput3D {
+        solver: make_beam_3d(),
+        load_cases: vec![case(-10.0), case(-20.0)],
+        combinations: vec![CombinationDef {
+            name: "Combo".to_string(),
+            factors: { let mut m = HashMap::new(); m.insert("Dead".to_string(), 1.2); m },
+        }],
+    };
+    let err = solve_multi_case_3d(&input).unwrap_err();
+    assert!(err.contains("Dead") && err.contains("Duplicate"),
+        "error should name the duplicated case: {}", err);
+}

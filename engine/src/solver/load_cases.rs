@@ -92,11 +92,20 @@ pub struct MultiCaseResult3D {
 /// An unknown case name used to be silently dropped from the combination,
 /// producing a combined result (and envelope) missing that case's
 /// contribution, presented as final.
+///
+/// Also fail fast on duplicate load case names: the case lookup map keeps
+/// only the last case with a given name, so a combination factor would
+/// silently drop the earlier case's contribution.
 fn validate_combination_case_names<'a>(
     load_case_names: impl Iterator<Item = &'a str>,
     combinations: &[CombinationDef],
 ) -> Result<(), String> {
-    let names: std::collections::HashSet<&str> = load_case_names.collect();
+    let mut names: std::collections::HashSet<&str> = std::collections::HashSet::new();
+    for name in load_case_names {
+        if !names.insert(name) {
+            return Err(format!("Duplicate load case name '{}'", name));
+        }
+    }
     for combo in combinations {
         for case_name in combo.factors.keys() {
             if !names.contains(case_name.as_str()) {
