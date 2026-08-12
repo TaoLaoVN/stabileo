@@ -72,6 +72,14 @@
      */
     eccentricPoint: [number, number] | null;
     /**
+     * Where the load PARALLEL to the section acts. Distinct from the point
+     * above because it is eccentric about the shear centre, not the centroid,
+     * and it twists rather than bends.
+     */
+    eccentricPointV: [number, number] | null;
+    /** Whether a parallel load exists, so its marker is only drawn if it does. */
+    hasParallelLoad: boolean;
+    /**
      * Shear centre, canonical `[y, z]` in metres. Drawn alongside the centroid
      * because the whole point of the exercise is that they are different
      * points — and for a channel this one sits outside the section entirely.
@@ -111,6 +119,8 @@
     stressField,
     showEccentric = $bindable(),
     eccentricPoint = $bindable(),
+    eccentricPointV = $bindable(),
+    hasParallelLoad,
     shearCentre,
     eccentricInsideKern,
   }: Props = $props();
@@ -183,6 +193,19 @@
    */
   const strokeK = $derived(maximized ? 0.4 : 1);
 
+  /**
+   * Type scale for the enlarged figure, and the reason it is not the same
+   * number as the strokes.
+   *
+   * Labels are in viewBox units too, so at three-and-a-half times the size a
+   * 4-unit caption becomes 14 device pixels — legible, but shouting, and it
+   * crowds the geometry it annotates. Shrinking it as hard as the strokes
+   * (0.4) would leave it at 5 px, which is smaller than it is in the panel and
+   * unreadable. A label has a floor that a line does not: it must stay
+   * readable at any figure size, so it scales less.
+   */
+  const textK = $derived(maximized ? 0.62 : 1);
+
   // Escape leaves the maximised view. It is the gesture every overlay teaches,
   // and the toolbar button can end up behind the enlarged figure on a short
   // window, so there has to be a way out that does not depend on hitting it.
@@ -213,11 +236,27 @@
     return [local.x / sc, -local.y / sc];
   }
 
-  function startDrag(ev: PointerEvent) {
+  /**
+   * Which marker the pointer drives.
+   *
+   * Two markers share one catch surface, so clicking the background has to mean
+   * something specific. It moves whichever was last grabbed, which keeps the
+   * click-anywhere gesture — the fast way to place a point — without it
+   * silently moving the marker the user was not thinking about.
+   */
+  let activeMarker = $state<'n' | 'v'>('n');
+
+  function setPoint(p: [number, number]) {
+    if (activeMarker === 'v') eccentricPointV = p;
+    else eccentricPoint = p;
+  }
+
+  function startDrag(ev: PointerEvent, which?: 'n' | 'v') {
+    if (which) activeMarker = which;
     const p = pointerToSection(ev);
     if (!p) return;
     dragging = true;
-    eccentricPoint = p;
+    setPoint(p);
     (ev.currentTarget as Element).setPointerCapture?.(ev.pointerId);
     ev.preventDefault();
   }
@@ -225,7 +264,7 @@
   function moveDrag(ev: PointerEvent) {
     if (!dragging) return;
     const p = pointerToSection(ev);
-    if (p) eccentricPoint = p;
+    if (p) setPoint(p);
   }
 
   function endDrag(ev: PointerEvent) {
@@ -238,8 +277,9 @@
    * mouse. The step is a fiftieth of the section's size, which keeps the
    * gesture proportionate on a 60 mm angle and on a 900 mm girder alike.
    */
-  function nudge(ev: KeyboardEvent) {
-    if (!eccentricPoint || !canonicalGeometry) return;
+  function nudge(ev: KeyboardEvent, which: 'n' | 'v') {
+    const current = which === 'v' ? eccentricPointV : eccentricPoint;
+    if (!current || !canonicalGeometry) return;
     const [yMin, zMin, yMax, zMax] = canonicalGeometry.bbox;
     const step = Math.max(yMax - yMin, zMax - zMin) / 50;
     const moves: Record<string, [number, number]> = {
@@ -248,7 +288,8 @@
     };
     const d = moves[ev.key];
     if (!d) return;
-    eccentricPoint = [eccentricPoint[0] + d[0], eccentricPoint[1] + d[1]];
+    activeMarker = which;
+    setPoint([current[0] + d[0], current[1] + d[1]]);
     ev.preventDefault();
   }
 
@@ -486,7 +527,7 @@
           />
           <text
             x={cx + ux * d0 - uy * span / 2} y={cy + uy * d0 + ux * span / 2 - 2}
-            fill="var(--st-text-1)" font-size="4.5" opacity="0.8"
+            fill="var(--st-text-1)" font-size={4.5 * textK} opacity="0.8"
           >EN</text>
         {/if}
       {/if}
@@ -516,7 +557,7 @@
         />
         <!-- NC label -->
         <text x="0" y={-centralCore.eyMax * scNC - 3} text-anchor="middle"
-          fill="var(--st-warn)" font-size="6" font-weight="600" opacity="0.85">NC</text>
+          fill="var(--st-warn)" font-size={6 * textK} font-weight="600" opacity="0.85">NC</text>
       {/if}
 
       <!-- Pressure center (centro de presiones) -->
@@ -530,19 +571,19 @@
         {@const isClamped = Math.abs(clampX - cpX) > 0.5 || Math.abs(clampY - cpY) > 0.5}
         <!-- Inside-NC glow -->
         {#if pressureCenter.insideCore}
-          <circle cx={clampX} cy={clampY} r="8" fill="rgba(42, 168, 105, 0.15)" stroke="var(--st-ok)" stroke-width="0.8" stroke-dasharray="2,1" opacity="0.9" />
+          <circle cx={clampX} cy={clampY} r="8" fill="rgba(42, 168, 105, 0.15)" stroke="var(--st-ok)" stroke-width={0.8 * strokeK} stroke-dasharray="2,1" opacity="0.9" />
         {/if}
         <!-- Crosshair marker -->
         <circle cx={clampX} cy={clampY} r="4" fill="none" stroke="var(--st-value)" stroke-width={1.5 * strokeK} opacity="0.95" />
-        <line x1={clampX - 6} y1={clampY} x2={clampX + 6} y2={clampY} stroke="var(--st-value)" stroke-width="1.2" opacity="0.9" />
-        <line x1={clampX} y1={clampY - 6} x2={clampX} y2={clampY + 6} stroke="var(--st-value)" stroke-width="1.2" opacity="0.9" />
+        <line x1={clampX - 6} y1={clampY} x2={clampX + 6} y2={clampY} stroke="var(--st-value)" stroke-width={1.2 * strokeK} opacity="0.9" />
+        <line x1={clampX} y1={clampY - 6} x2={clampX} y2={clampY + 6} stroke="var(--st-value)" stroke-width={1.2 * strokeK} opacity="0.9" />
         <!-- Label -->
-        <text x={clampX + 8} y={clampY - 4} fill="var(--st-value)" font-size="5.5" font-weight="600" text-anchor="start">CP</text>
+        <text x={clampX + 8} y={clampY - 4} fill="var(--st-value)" font-size={5.5 * textK} font-weight="600" text-anchor="start">CP</text>
         {#if pressureCenter.insideCore}
-          <text x={clampX + 8} y={clampY + 4} fill="var(--st-ok)" font-size="3.5" text-anchor="start">en NC: &sigma; mismo signo</text>
+          <text x={clampX + 8} y={clampY + 4} fill="var(--st-ok)" font-size={3.5 * textK} text-anchor="start">en NC: &sigma; mismo signo</text>
         {/if}
         {#if isClamped}
-          <text x={clampX + 8} y={clampY + (pressureCenter.insideCore ? 11 : 4)} fill="var(--st-value)" font-size="3" text-anchor="start" opacity="0.7">({t('stress.outOfView')})</text>
+          <text x={clampX + 8} y={clampY + (pressureCenter.insideCore ? 11 : 4)} fill="var(--st-value)" font-size={3 * textK} text-anchor="start" opacity="0.7">({t('stress.outOfView')})</text>
         {/if}
       {/if}
 
@@ -564,13 +605,13 @@
           <!-- Total mode: σ = N/A − My·y/Iy — signed bars -->
           <!-- Baseline (σ = 0) -->
           <line x1={xBaseR} y1={-rs.h / 2 * sc} x2={xBaseR} y2={rs.h / 2 * sc}
-            stroke="var(--st-text-2)" stroke-width="0.4" opacity="0.3" />
+            stroke="var(--st-text-2)" stroke-width={0.4 * strokeK} opacity="0.3" />
           <!-- N/A reference line (constant offset from axial) -->
           {#if Math.abs(sigmaN3d) > 0.01}
             {@const naDx = sigmaN3d / scaleY * 30}
             <line x1={xBaseR + naDx} y1={-rs.h / 2 * sc} x2={xBaseR + naDx} y2={rs.h / 2 * sc}
-              stroke="var(--st-warn)" stroke-width="0.8" stroke-dasharray="2,2" opacity="0.5" />
-            <text x={xBaseR + naDx} y={-rs.h / 2 * sc - 3} fill="var(--st-warn)" font-size="3.5" text-anchor="middle">N/A</text>
+              stroke="var(--st-warn)" stroke-width={0.8 * strokeK} stroke-dasharray="2,2" opacity="0.5" />
+            <text x={xBaseR + naDx} y={-rs.h / 2 * sc - 3} fill="var(--st-warn)" font-size={3.5 * textK} text-anchor="middle">N/A</text>
           {/if}
           {#each analysis3D.distributionY as pt}
             {@const yScreen = -pt.y * sc}
@@ -583,7 +624,7 @@
           {/each}
           <polyline
             points={analysis3D.distributionY.map(pt => `${xBaseR + pt.sigma / scaleY * 30},${-pt.y * sc}`).join(' ')}
-            fill="none" stroke="var(--st-text-2)" stroke-width="0.8" opacity="0.5" />
+            fill="none" stroke="var(--st-text-2)" stroke-width={0.8 * strokeK} opacity="0.5" />
           <!-- Neutral axis (zero-crossing) — EN marker -->
           {@const distY = analysis3D.distributionY}
           {#each distY as pt, i}
@@ -591,16 +632,16 @@
               {@const prev = distY[i - 1]}
               {@const yNA = prev.y + (pt.y - prev.y) * (-prev.sigma) / (pt.sigma - prev.sigma)}
               <line x1={xBaseR - 6} y1={-yNA * sc} x2={xBaseR + 6} y2={-yNA * sc}
-                stroke="var(--st-value)" stroke-width="1" stroke-dasharray="3,2" opacity="0.8" />
-              <text x={xBaseR + 8} y={-yNA * sc + 2} fill="var(--st-value)" font-size="3.5">EN</text>
+                stroke="var(--st-value)" stroke-width={1 * strokeK} stroke-dasharray="3,2" opacity="0.8" />
+              <text x={xBaseR + 8} y={-yNA * sc + 2} fill="var(--st-value)" font-size={3.5 * textK}>EN</text>
             {/if}
           {/each}
           <!-- Label with max stress values -->
-          <text x={xBaseR} y={-rs.h / 2 * sc - 7} fill="var(--st-text-2)" font-size="4" text-anchor="start">σ = N/A − My·y/Iy</text>
+          <text x={xBaseR} y={-rs.h / 2 * sc - 7} fill="var(--st-text-2)" font-size={4 * textK} text-anchor="start">σ = N/A − My·y/Iy</text>
         {:else}
           <!-- Default: solo −My·y/Iy (sin N/A) — signed bars -->
           <line x1={xBaseR} y1={-rs.h / 2 * sc} x2={xBaseR} y2={rs.h / 2 * sc}
-            stroke="var(--st-text-2)" stroke-width="0.4" opacity="0.3" />
+            stroke="var(--st-text-2)" stroke-width={0.4 * strokeK} opacity="0.3" />
           {#each analysis3D.distributionY as pt, i}
             {@const yScreen = -pt.y * sc}
             {@const sMy = sigmasMyY[i]}
@@ -613,10 +654,10 @@
           {/each}
           <polyline
             points={analysis3D.distributionY.map((pt, i) => `${xBaseR + sigmasMyY[i] / scaleY * 30},${-pt.y * sc}`).join(' ')}
-            fill="none" stroke="var(--st-text-2)" stroke-width="0.8" opacity="0.5" />
+            fill="none" stroke="var(--st-text-2)" stroke-width={0.8 * strokeK} opacity="0.5" />
           <!-- N/A annotation -->
           {#if Math.abs(sigmaN3d) > 0.001}
-            <text x={xBaseR} y={-rs.h / 2 * sc - 4} fill="var(--st-warn)" font-size="4.5" text-anchor="start">+ N/A = {fmt(sigmaN3d)} MPa</text>
+            <text x={xBaseR} y={-rs.h / 2 * sc - 4} fill="var(--st-warn)" font-size={4.5 * textK} text-anchor="start">+ N/A = {fmt(sigmaN3d)} MPa</text>
           {/if}
         {/if}
 
@@ -640,17 +681,17 @@
               points={analysis3D.distributionY
                 .map(pt => `${xBaseL - Math.abs(pt.tauVz) / maxTauY * 35},${-pt.y * sc}`)
                 .join(' ')}
-              fill="none" stroke="var(--st-accent)" stroke-width="1.2" opacity="0.8"
+              fill="none" stroke="var(--st-accent)" stroke-width={1.2 * strokeK} opacity="0.8"
             />
             <!-- Baseline -->
             <line
               x1={xBaseL} y1={-rs.h / 2 * sc}
               x2={xBaseL} y2={rs.h / 2 * sc}
-              stroke="var(--st-accent)" stroke-width="0.4" opacity="0.3"
+              stroke="var(--st-accent)" stroke-width={0.4 * strokeK} opacity="0.3"
             />
             <!-- Labels -->
-            <text x={xBaseL - 2} y={-rs.h / 2 * sc - 6} fill="var(--st-accent)" font-size="5.5" text-anchor="end">τ(y)</text>
-            <text x={xBaseL - 2} y={1} fill="var(--st-accent)" font-size="5" text-anchor="end">{fmt(maxTauY)} MPa</text>
+            <text x={xBaseL - 2} y={-rs.h / 2 * sc - 6} fill="var(--st-accent)" font-size={5.5 * textK} text-anchor="end">τ(y)</text>
+            <text x={xBaseL - 2} y={1} fill="var(--st-accent)" font-size={5 * textK} text-anchor="end">{fmt(maxTauY)} MPa</text>
           {/if}
         {/if}
 
@@ -665,12 +706,12 @@
           <!-- Total mode: σ = N/A + Mz·z/Iz — signed bars (+ down, − up) -->
           <!-- Baseline -->
           <line x1={-rs.b / 2 * sc} y1={yBaseBot} x2={rs.b / 2 * sc} y2={yBaseBot}
-            stroke="var(--st-text-2)" stroke-width="0.4" opacity="0.3" />
+            stroke="var(--st-text-2)" stroke-width={0.4 * strokeK} opacity="0.3" />
           <!-- N/A reference line -->
           {#if Math.abs(sigmaN3d) > 0.01}
             {@const naDy = sigmaN3d / scaleZ * 25}
             <line x1={-rs.b / 2 * sc} y1={yBaseBot + naDy} x2={rs.b / 2 * sc} y2={yBaseBot + naDy}
-              stroke="var(--st-warn)" stroke-width="0.8" stroke-dasharray="2,2" opacity="0.5" />
+              stroke="var(--st-warn)" stroke-width={0.8 * strokeK} stroke-dasharray="2,2" opacity="0.5" />
           {/if}
           {#each analysis3D.distributionZ as pt}
             {@const zScreen = pt.z * sc}
@@ -685,7 +726,7 @@
           <!-- Profile contour polyline -->
           <polyline
             points={analysis3D.distributionZ.map(pt => `${pt.z * sc},${yBaseBot + pt.sigma / scaleZ * 25}`).join(' ')}
-            fill="none" stroke="var(--st-text-2)" stroke-width="0.8" opacity="0.5" />
+            fill="none" stroke="var(--st-text-2)" stroke-width={0.8 * strokeK} opacity="0.5" />
           <!-- Neutral axis zero-crossing -->
           {@const distZ = analysis3D.distributionZ}
           {#each distZ as pt, i}
@@ -693,14 +734,14 @@
               {@const prev = distZ[i - 1]}
               {@const zNA = prev.z + (pt.z - prev.z) * (-prev.sigma) / (pt.sigma - prev.sigma)}
               <line x1={zNA * sc} y1={yBaseBot - 6} x2={zNA * sc} y2={yBaseBot + 6}
-                stroke="var(--st-value)" stroke-width="1" stroke-dasharray="3,2" opacity="0.8" />
+                stroke="var(--st-value)" stroke-width={1 * strokeK} stroke-dasharray="3,2" opacity="0.8" />
             {/if}
           {/each}
         {:else}
           <!-- Default: solo +Mz·z/Iz (sin N/A) — signed bars -->
           <!-- Baseline -->
           <line x1={-rs.b / 2 * sc} y1={yBaseBot} x2={rs.b / 2 * sc} y2={yBaseBot}
-            stroke="var(--st-text-2)" stroke-width="0.4" opacity="0.3" />
+            stroke="var(--st-text-2)" stroke-width={0.4 * strokeK} opacity="0.3" />
           {#each analysis3D.distributionZ as pt, i}
             {@const zScreen = pt.z * sc}
             {@const sMz = sigmasMzZ[i]}
@@ -715,10 +756,10 @@
           <!-- Profile contour polyline -->
           <polyline
             points={analysis3D.distributionZ.map((pt, i) => `${pt.z * sc},${yBaseBot + sigmasMzZ[i] / scaleZ * 25}`).join(' ')}
-            fill="none" stroke="var(--st-text-2)" stroke-width="0.8" opacity="0.5" />
+            fill="none" stroke="var(--st-text-2)" stroke-width={0.8 * strokeK} opacity="0.5" />
           <!-- N/A annotation -->
           {#if Math.abs(sigmaN3d) > 0.001}
-            <text x={-(rs.b / 2 * sc)} y={yBaseBot + 32} fill="var(--st-warn)" font-size="4.5" text-anchor="start">+ N/A = {fmt(sigmaN3d)} MPa</text>
+            <text x={-(rs.b / 2 * sc)} y={yBaseBot + 32} fill="var(--st-warn)" font-size={4.5 * textK} text-anchor="start">+ N/A = {fmt(sigmaN3d)} MPa</text>
           {/if}
         {/if}
         {/if}<!-- end showSigma && !showPerpNA -->
@@ -731,7 +772,7 @@
             <line
               x1={zNa * sc} y1={-rs.h / 2 * sc}
               x2={zNa * sc} y2={rs.h / 2 * sc}
-              stroke="var(--st-value)" stroke-width="2" opacity="0.9"
+              stroke="var(--st-value)" stroke-width={2 * strokeK} opacity="0.9"
             />
           {:else}
             <!-- Clip NA line y = slope·z + intercept, but extend beyond section for visibility -->
@@ -762,11 +803,11 @@
               <line
                 x1={candidates[0][0] * sc} y1={-candidates[0][1] * sc}
                 x2={candidates[1][0] * sc} y2={-candidates[1][1] * sc}
-                stroke="var(--st-value)" stroke-width="2" opacity="0.9"
+                stroke="var(--st-value)" stroke-width={2 * strokeK} opacity="0.9"
               />
             {/if}
           {/if}
-          <text x={rs.b / 2 * sc + 2} y={-rs.h / 2 * sc - 6} fill="var(--st-value)" font-size="6" font-weight="bold" opacity="0.9">EN</text>
+          <text x={rs.b / 2 * sc + 2} y={-rs.h / 2 * sc - 6} fill="var(--st-value)" font-size={6 * textK} font-weight="bold" opacity="0.9">EN</text>
         {/if}
 
         <!-- Perpendicular-to-NA stress distribution (3D, moments only) -->
@@ -813,7 +854,7 @@
           <line
             x1={firstPt.z * sc} y1={-firstPt.y * sc}
             x2={lastPt.z * sc} y2={-lastPt.y * sc}
-            stroke="var(--st-text-3)" stroke-width="0.8" stroke-dasharray="3,2" opacity="0.6"
+            stroke="var(--st-text-3)" stroke-width={0.8 * strokeK} stroke-dasharray="3,2" opacity="0.6"
           />
           <!-- Stress bars parallel to NA -->
           {#each perpNADist as pt}
@@ -825,7 +866,7 @@
               x1={zScr} y1={yScr}
               x2={zScr + barLen * parScreenX} y2={yScr + barLen * parScreenY}
               stroke={stressColor(pt.sigma, maxSigPerp)}
-              stroke-width="2" opacity="0.7"
+              stroke-width={2 * strokeK} opacity="0.7"
             />
             {/if}
           {/each}
@@ -837,23 +878,23 @@
               const barLen = (pt.sigma / maxSigPerp) * barScale;
               return `${zScr + barLen * parScreenX},${yScr + barLen * parScreenY}`;
             }).join(' ')}
-            fill="none" stroke="var(--st-value)" stroke-width="1.5" opacity="0.9"
+            fill="none" stroke="var(--st-value)" stroke-width={1.5 * strokeK} opacity="0.9"
           />
           <!-- σ_max (tension) label -->
           {#if maxTensionPt.sigma > 0.001}
             {@const tBarLen = (maxTensionPt.sigma / maxSigPerp) * barScale}
             {@const tEndX = maxTensionPt.z * sc + tBarLen * parScreenX}
             {@const tEndY = -maxTensionPt.y * sc + tBarLen * parScreenY}
-            <text x={tEndX + 3} y={tEndY - 3} fill="var(--st-danger)" font-size="5" text-anchor="start">&sigma;<tspan font-size="3.5" dy="1.5">max</tspan><tspan dy="-1.5"> = +{fmt(maxTensionPt.sigma)}</tspan></text>
+            <text x={tEndX + 3} y={tEndY - 3} fill="var(--st-danger)" font-size={5 * textK} text-anchor="start">&sigma;<tspan font-size={3.5 * textK} dy="1.5">max</tspan><tspan dy="-1.5"> = +{fmt(maxTensionPt.sigma)}</tspan></text>
           {/if}
           <!-- σ_min (compression) label -->
           {#if maxComprPt.sigma < -0.001}
             {@const cBarLen = (maxComprPt.sigma / maxSigPerp) * barScale}
             {@const cEndX = maxComprPt.z * sc + cBarLen * parScreenX}
             {@const cEndY = -maxComprPt.y * sc + cBarLen * parScreenY}
-            <text x={cEndX + 3} y={cEndY + 6} fill="var(--st-info)" font-size="5" text-anchor="start">&sigma;<tspan font-size="3.5" dy="1.5">min</tspan><tspan dy="-1.5"> = {fmt(maxComprPt.sigma)}</tspan></text>
+            <text x={cEndX + 3} y={cEndY + 6} fill="var(--st-info)" font-size={5 * textK} text-anchor="start">&sigma;<tspan font-size={3.5 * textK} dy="1.5">min</tspan><tspan dy="-1.5"> = {fmt(maxComprPt.sigma)}</tspan></text>
           {/if}
-          <text x="0" y={rs.h / 2 * sc + 46} fill="var(--st-value)" font-size="5.5" text-anchor="middle">{showTotalSigma ? 'σ total' : 'σ'} &perp; EN</text>
+          <text x="0" y={rs.h / 2 * sc + 46} fill="var(--st-value)" font-size={5.5 * textK} text-anchor="middle">{showTotalSigma ? 'σ total' : 'σ'} &perp; EN</text>
         {/if}
 
         <!-- Selected fiber point (y, z) -->
@@ -868,17 +909,17 @@
         <line
           x1={-rs.b / 2 * sc - 5} y1={-yF3 * sc}
           x2={rs.b / 2 * sc + 5} y2={-yF3 * sc}
-          stroke="var(--st-warn)" stroke-width="0.8" stroke-dasharray="3,2" opacity="0.5"
+          stroke="var(--st-warn)" stroke-width={0.8 * strokeK} stroke-dasharray="3,2" opacity="0.5"
         />
         <line
           x1={zF3 * sc} y1={-rs.h / 2 * sc - 5}
           x2={zF3 * sc} y2={rs.h / 2 * sc + 5}
-          stroke="var(--st-warn)" stroke-width="0.8" stroke-dasharray="3,2" opacity="0.5"
+          stroke="var(--st-warn)" stroke-width={0.8 * strokeK} stroke-dasharray="3,2" opacity="0.5"
         />
         <!-- Labels -->
         {#if showSigma && !showPerpNA}
-          <text x={rs.b / 2 * sc + 36} y="-60" fill="var(--st-text-2)" font-size="7" text-anchor="start">&sigma;(y)</text>
-          <text x="0" y={rs.h / 2 * sc + 38} fill="var(--st-text-2)" font-size="7" text-anchor="middle">&sigma;(z)</text>
+          <text x={rs.b / 2 * sc + 36} y="-60" fill="var(--st-text-2)" font-size={7 * textK} text-anchor="start">&sigma;(y)</text>
+          <text x="0" y={rs.h / 2 * sc + 38} fill="var(--st-text-2)" font-size={7 * textK} text-anchor="middle">&sigma;(z)</text>
         {/if}
       {:else if analysis2D}
         <!-- 2D: stress bars along Y (right side) -->
@@ -896,13 +937,13 @@
           <!-- Total mode: σ = N/A + M·y/I — signed bars (+ right, − left) -->
           <!-- Baseline -->
           <line x1={xBase2d} y1={-rs2d.h / 2 * sc2d} x2={xBase2d} y2={rs2d.h / 2 * sc2d}
-            stroke="var(--st-text-2)" stroke-width="0.4" opacity="0.3" />
+            stroke="var(--st-text-2)" stroke-width={0.4 * strokeK} opacity="0.3" />
           <!-- N/A reference line -->
           {#if Math.abs(sigmaN2d) > 0.01}
             {@const naDx2d = sigmaN2d / scale2d * 30}
             <line x1={xBase2d + naDx2d} y1={-rs2d.h / 2 * sc2d} x2={xBase2d + naDx2d} y2={rs2d.h / 2 * sc2d}
-              stroke="var(--st-warn)" stroke-width="0.8" stroke-dasharray="2,2" opacity="0.5" />
-            <text x={xBase2d + naDx2d} y={-rs2d.h / 2 * sc2d - 3} fill="var(--st-warn)" font-size="3.5" text-anchor="middle">N/A</text>
+              stroke="var(--st-warn)" stroke-width={0.8 * strokeK} stroke-dasharray="2,2" opacity="0.5" />
+            <text x={xBase2d + naDx2d} y={-rs2d.h / 2 * sc2d - 3} fill="var(--st-warn)" font-size={3.5 * textK} text-anchor="middle">N/A</text>
           {/if}
           {#each analysis2D.distribution as pt}
             {@const yScreen = -pt.y * sc2d}
@@ -919,7 +960,7 @@
             points={analysis2D.distribution
               .map(pt => `${xBase2d + pt.sigma / scale2d * 30},${-pt.y * sc2d}`)
               .join(' ')}
-            fill="none" stroke="var(--st-text-2)" stroke-width="0.8" opacity="0.6" />
+            fill="none" stroke="var(--st-text-2)" stroke-width={0.8 * strokeK} opacity="0.6" />
           <!-- Neutral axis marker (where σ crosses zero) — EN -->
           {@const distArr = analysis2D.distribution}
           {#each distArr as pt, i}
@@ -927,16 +968,16 @@
               {@const prev = distArr[i - 1]}
               {@const yNA = prev.y + (pt.y - prev.y) * (-prev.sigma) / (pt.sigma - prev.sigma)}
               <line x1={xBase2d - 8} y1={-yNA * sc2d} x2={xBase2d + 8} y2={-yNA * sc2d}
-                stroke="var(--st-value)" stroke-width="1" stroke-dasharray="3,2" opacity="0.8" />
-              <text x={xBase2d + 10} y={-yNA * sc2d + 3} fill="var(--st-value)" font-size="4" text-anchor="start">EN</text>
+                stroke="var(--st-value)" stroke-width={1 * strokeK} stroke-dasharray="3,2" opacity="0.8" />
+              <text x={xBase2d + 10} y={-yNA * sc2d + 3} fill="var(--st-value)" font-size={4 * textK} text-anchor="start">EN</text>
             {/if}
           {/each}
-          <text x={xBase2d} y={-rs2d.h / 2 * sc2d - 7} fill="var(--st-text-2)" font-size="4" text-anchor="start">σ = N/A + M·y/I</text>
+          <text x={xBase2d} y={-rs2d.h / 2 * sc2d - 7} fill="var(--st-text-2)" font-size={4 * textK} text-anchor="start">σ = N/A + M·y/I</text>
         {:else}
           <!-- Default: solo M·y/I (sin N/A) — signed bars -->
           <!-- Baseline -->
           <line x1={xBase2d} y1={-rs2d.h / 2 * sc2d} x2={xBase2d} y2={rs2d.h / 2 * sc2d}
-            stroke="var(--st-text-2)" stroke-width="0.4" opacity="0.3" />
+            stroke="var(--st-text-2)" stroke-width={0.4 * strokeK} opacity="0.3" />
           {#each analysis2D.distribution as pt, i}
             {@const yScreen = -pt.y * sc2d}
             {@const sM = sigmasM2d[i]}
@@ -953,10 +994,10 @@
             points={analysis2D.distribution
               .map((pt, i) => `${xBase2d + sigmasM2d[i] / scale2d * 30},${-pt.y * sc2d}`)
               .join(' ')}
-            fill="none" stroke="var(--st-text-2)" stroke-width="0.8" opacity="0.6" />
-          <text x={xBase2d} y={-rs2d.h / 2 * sc2d - 4} fill="var(--st-text-2)" font-size="4.5" text-anchor="start">M·y/I</text>
+            fill="none" stroke="var(--st-text-2)" stroke-width={0.8 * strokeK} opacity="0.6" />
+          <text x={xBase2d} y={-rs2d.h / 2 * sc2d - 4} fill="var(--st-text-2)" font-size={4.5 * textK} text-anchor="start">M·y/I</text>
           {#if Math.abs(sigmaN2d) > 0.001}
-            <text x={xBase2d} y={-rs2d.h / 2 * sc2d - 10} fill="var(--st-warn)" font-size="4.5" text-anchor="start">+ N/A = {fmt(sigmaN2d)} MPa</text>
+            <text x={xBase2d} y={-rs2d.h / 2 * sc2d - 10} fill="var(--st-warn)" font-size={4.5 * textK} text-anchor="start">+ N/A = {fmt(sigmaN2d)} MPa</text>
           {/if}
         {/if}
         {/if}<!-- end showSigma (2D) -->
@@ -1009,13 +1050,13 @@
                 }).join(' ')}
                 fill="none"
                 stroke="var(--st-accent)"
-                stroke-width="1.2"
+                stroke-width={1.2 * strokeK}
               />
               <polyline
                 points={pts.map(p => `${p.z * sc + gap * pz},${-p.y * sc - gap * py}`).join(' ')}
                 fill="none"
                 stroke="var(--st-accent)"
-                stroke-width="0.4"
+                stroke-width={0.4 * strokeK}
                 opacity="0.35"
               />
               {@const ai = Math.round(pts.length * 0.55)}
@@ -1033,7 +1074,7 @@
                 points="{ax + afw * 5.5},{ay + afh * 5.5} {ax - afw * 2 + afh * 3},{ay - afh * 2 - afw * 3} {ax - afw * 2 - afh * 3},{ay - afh * 2 + afw * 3}"
                 fill="var(--st-accent)"
                 stroke="var(--st-surface-2)"
-                stroke-width="0.5"
+                stroke-width={0.5 * strokeK}
                 opacity="0.95"
               />
             {/if}
@@ -1045,7 +1086,7 @@
             <text
               x={globalMax.z * gmSc + (globalMax.z >= 0 ? 5 : -5)}
               y={-globalMax.y * gmSc - 4}
-              fill="var(--st-accent)" font-size="6.5"
+              fill="var(--st-accent)" font-size={6.5 * textK}
               text-anchor={globalMax.z >= 0 ? 'start' : 'end'}
             >{globalMax.tau.toFixed(1)}</text>
           {/if}
@@ -1073,7 +1114,7 @@
           <text
             x={-(rs.b / 2 * sc + 6)}
             y={1}
-            fill="var(--st-accent)" font-size="5.5" text-anchor="end"
+            fill="var(--st-accent)" font-size={5.5 * textK} text-anchor="end"
           >{fmt(maxAbsTau)} MPa</text>
         {/if}
         <!-- 2D: Neutral axis line (EN button active, requires σ on) -->
@@ -1093,21 +1134,21 @@
               x2={rs2en.b / 2 * sc2en + 8}
               y2={enScreenY}
               stroke="var(--st-value)"
-              stroke-width="2"
+              stroke-width={2 * strokeK}
               opacity="0.9"
             />
             <!-- EN label -->
             <text
               x={-rs2en.b / 2 * sc2en - 10}
               y={enScreenY + 3}
-              fill="var(--st-value)" font-size="6" font-weight="bold" text-anchor="end"
+              fill="var(--st-value)" font-size={6 * textK} font-weight="bold" text-anchor="end"
             >EN</text>
             <!-- Show y-position when σ total shifts the NA -->
             {#if showTotalSigma && analysis2D.neutralAxisY !== null && Math.abs(enY2d) > 0.0001}
               <text
                 x={rs2en.b / 2 * sc2en + 10}
                 y={enScreenY + 3}
-                fill="var(--st-value)" font-size="4" text-anchor="start" opacity="0.8"
+                fill="var(--st-value)" font-size={4 * textK} text-anchor="start" opacity="0.8"
               >y = {fmt(enY2d * 1000, 1)} mm</text>
             {/if}
           {:else}
@@ -1116,7 +1157,7 @@
             <text
               x={-rs2en.b / 2 * sc2en - 10}
               y={arrowDir < 0 ? -rs2en.h / 2 * sc2en + 3 : rs2en.h / 2 * sc2en + 3}
-              fill="var(--st-value)" font-size="5" text-anchor="end" opacity="0.7"
+              fill="var(--st-value)" font-size={5 * textK} text-anchor="end" opacity="0.7"
             >EN {arrowDir < 0 ? '↑' : '↓'} fuera</text>
           {/if}
         {/if}
@@ -1132,14 +1173,14 @@
             x2={rs2.b / 2 * sc2 + 5}
             y2={fiberY}
             stroke="var(--st-warn)"
-            stroke-width="1.5"
+            stroke-width={1.5 * strokeK}
             stroke-dasharray="3,2"
           />
           {#if showSigma}
-            <text x={rs2.b / 2 * sc2 + 36} y="-60" fill="var(--st-text-2)" font-size="8" text-anchor="start">&sigma;</text>
+            <text x={rs2.b / 2 * sc2 + 36} y="-60" fill="var(--st-text-2)" font-size={8 * textK} text-anchor="start">&sigma;</text>
           {/if}
           {#if showShearOnDrawing}
-            <text x={-(rs2.b / 2 * sc2 + 6)} y="-68" fill="var(--st-accent)" font-size="6" text-anchor="end">{isMassive ? 'τ(y) Jourawski' : t('stress.shearFlow')}</text>
+            <text x={-(rs2.b / 2 * sc2 + 6)} y="-68" fill="var(--st-accent)" font-size={6 * textK} text-anchor="end">{isMassive ? 'τ(y) Jourawski' : t('stress.shearFlow')}</text>
           {/if}
         {/if}
       {/if}
@@ -1170,7 +1211,7 @@
           <circle cx="0" cy="0" r="2.2" fill="none" stroke="var(--st-text-2)" stroke-width={0.8 * strokeK} />
           <line x1="-3.6" y1="0" x2="3.6" y2="0" stroke="var(--st-text-2)" stroke-width={0.6 * strokeK} />
           <line x1="0" y1="-3.6" x2="0" y2="3.6" stroke="var(--st-text-2)" stroke-width={0.6 * strokeK} />
-          <text x="4.5" y="-2.5" fill="var(--st-text-2)" font-size="4" text-anchor="start">G</text>
+          <text x="4.5" y="-2.5" fill="var(--st-text-2)" font-size={4 * textK} text-anchor="start">G</text>
         </g>
 
         <!-- Shear centre: the reference SHEAR acts about. Drawn whenever it is
@@ -1183,42 +1224,72 @@
           <g opacity="0.95">
             <circle cx={scx} cy={scy} r="2.6" fill="none" stroke="var(--st-accent)" stroke-width={1 * strokeK} stroke-dasharray="1.5,1" />
             <circle cx={scx} cy={scy} r="0.9" fill="var(--st-accent)" />
-            <text x={scx + 4.5} y={scy + 1.5} fill="var(--st-accent)" font-size="4" text-anchor="start">CC</text>
+            <text x={scx + 4.5} y={scy + 1.5} fill="var(--st-accent)" font-size={4 * textK} text-anchor="start">CC</text>
           </g>
 
-          <!-- The torsion arm: the offset from the SHEAR CENTRE, not from the
-               centroid. Drawing it is the whole lesson — on a channel this
+          <!-- The torsion arm: from the SHEAR CENTRE to where the PARALLEL
+               load acts. Drawing it is the whole lesson — on a channel this
                segment is long precisely when the load looks centred. -->
-          {#if eccentricPoint}
+          {#if eccentricPointV && hasParallelLoad}
             <line
               x1={scx} y1={scy}
-              x2={eccentricPoint[0] * sc} y2={-eccentricPoint[1] * sc}
+              x2={eccentricPointV[0] * sc} y2={-eccentricPointV[1] * sc}
               stroke="var(--st-accent)" stroke-width={0.7 * strokeK} stroke-dasharray="2,1.5" opacity="0.7"
             />
           {/if}
         {/if}
 
-        <!-- The application point itself. -->
+        <!-- P⊥ — the load NORMAL to the section. Eccentric about the centroid,
+             so its colour tracks the kern: inside, the section stays in one
+             sign; outside, part of it goes into tension. -->
         {#if eccentricPoint}
           {@const px = eccentricPoint[0] * sc}
           {@const py = -eccentricPoint[1] * sc}
           {@const col = eccentricInsideKern ? 'var(--st-ok)' : 'var(--st-warn)'}
           <g
             class="ssp-ecc-marker"
-            class:dragging
+            class:dragging={dragging && activeMarker === 'n'}
             role="button"
             tabindex="0"
-            aria-label={t('stress.eccentricPoint')}
-            onpointerdown={startDrag}
+            aria-label={t('stress.eccentricPointN')}
+            onpointerdown={(e) => startDrag(e, 'n')}
             onpointermove={moveDrag}
             onpointerup={endDrag}
             onpointercancel={endDrag}
-            onkeydown={nudge}
+            onkeydown={(e) => nudge(e, 'n')}
           >
             <circle cx={px} cy={py} r="6.5" fill={col} opacity="0.14" />
             <circle cx={px} cy={py} r="3.2" fill="none" stroke={col} stroke-width={1.4 * strokeK} />
             <circle cx={px} cy={py} r="1" fill={col} />
-            <text x={px + 5.5} y={py - 4} fill={col} font-size="4.2" text-anchor="start" font-weight="600">P</text>
+            <text x={px + 5.5} y={py - 4} fill={col} font-size={4.2 * textK} text-anchor="start" font-weight="600">P⊥</text>
+          </g>
+        {/if}
+
+        <!-- P∥ — the load PARALLEL to the section. Drawn only when one exists,
+             because an arm to a marker carrying no force means nothing. Square,
+             not round: at a glance it must not be mistaken for the other. -->
+        {#if eccentricPointV && hasParallelLoad}
+          {@const qx = eccentricPointV[0] * sc}
+          {@const qy = -eccentricPointV[1] * sc}
+          <g
+            class="ssp-ecc-marker"
+            class:dragging={dragging && activeMarker === 'v'}
+            role="button"
+            tabindex="0"
+            aria-label={t('stress.eccentricPointV')}
+            onpointerdown={(e) => startDrag(e, 'v')}
+            onpointermove={moveDrag}
+            onpointerup={endDrag}
+            onpointercancel={endDrag}
+            onkeydown={(e) => nudge(e, 'v')}
+          >
+            <rect x={qx - 6} y={qy - 6} width="12" height="12" fill="var(--st-accent)" opacity="0.12" />
+            <rect
+              x={qx - 3} y={qy - 3} width="6" height="6"
+              fill="none" stroke="var(--st-accent)" stroke-width={1.4 * strokeK}
+            />
+            <circle cx={qx} cy={qy} r="1" fill="var(--st-accent)" />
+            <text x={qx + 5.5} y={qy + 6} fill="var(--st-accent)" font-size={4.2 * textK} text-anchor="start" font-weight="600">P∥</text>
           </g>
         {/if}
       {/if}

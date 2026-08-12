@@ -22,7 +22,7 @@
 
 import { describe, it, expect } from 'vitest';
 import { canonicalStressState } from '../stress-state';
-import { resolveEccentric } from '../eccentric';
+import { resolveEccentric, snapShearCentre } from '../eccentric';
 import { resolveSectionState } from '../state';
 import { analyzeSectionStressFromForces } from '../../engine/section-stress-3d';
 import type { Section } from '../../store/model.svelte';
@@ -171,5 +171,44 @@ describe('the custom load adds to the model rather than replacing it', () => {
     expect(total.mz).toBeCloseTo(-10, 9); // only the user's load is eccentric
     // The reported effect is the user's contribution, not the total.
     expect(own.effect.mzFromN).toBeCloseTo(-10, 9);
+  });
+});
+
+/**
+ * Solver noise in the shear centre.
+ *
+ * A doubly-symmetric section's shear centre is its centroid exactly, but a
+ * numerical solve lands microns away. As a coordinate that is irrelevant; as a
+ * lever arm it is not, and the panel used it as a lever arm — so merely
+ * switching the eccentric overlay ON produced a torque, which flipped the
+ * panel to a different analysis path and visibly moved every number. Opening a
+ * view must not change what it is a view of.
+ */
+describe('a shear centre that is numerically, but not exactly, the centroid', () => {
+  it('snaps to zero so it produces no torque', () => {
+    // 400 mm deep section, shear centre off by 10 microns.
+    const snapped = snapShearCentre([1e-5, -8e-6], 0.4);
+    expect(snapped).toEqual([0, 0]);
+    expect(resolveEccentric({ vz: 60 }, snapped).forces.t).toBe(0);
+  });
+
+  it('leaves a real shear centre alone', () => {
+    // A channel's sits outside the section — tens of millimetres, not microns.
+    const real: [number, number] = [-0.032, 0];
+    expect(snapShearCentre(real, 0.2)).toEqual(real);
+    expect(Math.abs(resolveEccentric({ vz: 60, at: [0, 0] }, real).forces.t)).toBeCloseTo(1.92, 6);
+  });
+
+  it('scales with the section, so the rule holds at any size', () => {
+    // The same absolute offset is noise on a girder and real on a small angle.
+    const off: [number, number] = [5e-5, 0];
+    expect(snapShearCentre(off, 0.9)).toEqual([0, 0]);      // 900 mm girder: noise
+    expect(snapShearCentre(off, 0.02)).toEqual(off);        // 20 mm angle: meaningful
+  });
+
+  it('treats a missing shear centre as the centroid', () => {
+    // No shear force means no shear solve, so there is nothing to snap.
+    expect(snapShearCentre(undefined, 0.4)).toEqual([0, 0]);
+    expect(snapShearCentre(null, 0.4)).toEqual([0, 0]);
   });
 });

@@ -119,6 +119,30 @@ export function resolveEccentric(
 }
 
 /**
+ * Clear solver noise out of a shear centre.
+ *
+ * For a doubly-symmetric section the shear centre IS the centroid — exactly,
+ * by symmetry. A numerical solve reaches that answer to within a few microns,
+ * which is fine as a coordinate and poisonous as an ARM: a 10 µm offset times
+ * a 60 kN shear is a torque, and a caller that treats "any torque at all" as
+ * an eccentric case will see one where there is none.
+ *
+ * Snapped relative to the section's own size so the rule holds for a 60 mm
+ * angle and a 900 mm plate girder alike. A real offset — a channel's, which
+ * lies outside the section entirely — is orders of magnitude larger and passes
+ * through untouched.
+ */
+export function snapShearCentre(
+  sc: [number, number] | undefined | null,
+  sectionSize: number,
+  relTol = 1e-4,
+): [number, number] {
+  if (!sc) return [0, 0];
+  const tol = Math.abs(sectionSize) * relTol;
+  return [Math.abs(sc[0]) < tol ? 0 : sc[0], Math.abs(sc[1]) < tol ? 0 : sc[1]];
+}
+
+/**
  * The kern — the region where an axial load causes no tension anywhere.
  *
  * Reported as the largest eccentricity along each centroidal axis that keeps
