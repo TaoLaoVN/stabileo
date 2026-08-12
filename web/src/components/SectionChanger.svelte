@@ -18,7 +18,17 @@
   interface Props {
     open: boolean;
     /** Called when a standard steel profile is selected */
-    onprofileselect: (profile: SteelProfile, section: { a: number; iy: number; iz: number; b: number; h: number }) => void;
+    /**
+     * A profile was chosen. `region` is the design code's region, or null when
+     * the user has not filtered by a code — a family is rolled in different
+     * steels in different countries, so the grade that travels with a profile
+     * depends on whose practice is meant.
+     */
+    onprofileselect: (
+      profile: SteelProfile,
+      section: { a: number; iy: number; iz: number; b: number; h: number },
+      region?: string | null,
+    ) => void;
     /** Called when a custom shape section is built */
     onshapeselect: (name: string, props: SectionProperties) => void;
     /** Called when an amorphous section is defined (no geometric shape) */
@@ -80,7 +90,17 @@
   });
 
   function handleProfileClick(p: SteelProfile) {
-    onprofileselect(p, profileToSection(p));
+    /*
+     * The chosen design code's region travels with the profile.
+     *
+     * A family is rolled in different steels in different countries — a W is
+     * A992 in the United States and F-36 here — so "which grade does this
+     * profile come in" has no answer without knowing whose practice is meant.
+     * The code filter is where the user already said that; passing it on saves
+     * asking them twice. Null when no code is selected, which the receiver
+     * reads as "no particular country".
+     */
+    onprofileselect(p, profileToSection(p), activeCodeDef?.region ?? null);
   }
 
   // ─── Shape Builder state ─────────────────────

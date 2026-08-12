@@ -1,5 +1,7 @@
 <script lang="ts">
   import { modelStore, historyStore, resultsStore, uiStore } from '../../lib/store';
+  import PairingNote from '../property/PairingNote.svelte';
+  import { isUnusualPairing } from '../../lib/data/structural-grades';
   import { t } from '../../lib/i18n';
 
   const is3DMode = $derived(uiStore.analysisMode === '3d' || uiStore.analysisMode === 'pro');
@@ -36,6 +38,25 @@
     modelStore.addElement(newElemNodeI, newElemNodeJ, newElemType);
     resultsStore.clear();
   }
+
+  /**
+   * Members whose section and material depart from every recorded practice.
+   *
+   * Computed once for the table rather than asked per row, so the notes can be
+   * rendered together below it — and so a model with none renders nothing at
+   * all, which is the common case.
+   */
+  const unusualPairings = $derived(
+    elementsArr.flatMap((elem) => {
+      const secOf = modelStore.sections.get(elem.sectionId);
+      const matOf = modelStore.materials.get(elem.materialId);
+      const family = secOf?.profileFamily;
+      const gradeId = matOf?.gradeId;
+      return isUnusualPairing(family ?? '', gradeId) === true
+        ? [{ elemId: elem.id, family, gradeId }]
+        : [];
+    }),
+  );
 </script>
 
 <table>
@@ -71,6 +92,26 @@
     {/each}
   </tbody>
 </table>
+
+<!--
+  Supply notes, below the table rather than interleaved with it.
+  
+  They lived only in the properties panel, which desktop Basic never renders —
+  the ribbon replaced that panel and the drawer it sits in is mobile-only — so
+  the one thing the pairing table exists to say was said nowhere at all.
+  
+  Below rather than as a row inside: this table is laid out at `max-content`,
+  so a cell spanning every column stretches to the width of the widest row and
+  carries the note off the right edge of the panel. Outside it, the note wraps
+  to the panel like any other block, and the table stays tabular.
+-->
+{#each unusualPairings as u}
+  <div class="pairing-note">
+    <span class="pairing-elem">#{u.elemId}</span>
+    <PairingNote family={u.family} gradeId={u.gradeId} />
+  </div>
+{/each}
+
 <div class="table-footer">
   <div class="add-row">
     <span class="add-label">I:</span>
@@ -90,6 +131,21 @@
 </div>
 
 <style>
+  .pairing-note {
+    display: flex;
+    align-items: flex-start;
+    gap: 6px;
+    padding: 0 0.5rem;
+  }
+  /* Which member the note is about. The table above is sorted by id, so the
+     number is enough to find it. */
+  .pairing-elem {
+    font-size: 0.66rem;
+    color: var(--st-text-3);
+    padding-top: 9px;
+    flex: none;
+  }
+
   table {
     width: max-content;
     min-width: 100%;

@@ -4,6 +4,8 @@
   import SectionChanger from '../SectionChanger.svelte';
   import { resolveDrawingGeometry as drawingGeometry } from '../../lib/section/drawing';
   import type { SteelProfile } from '../../lib/data/steel-profiles';
+  import { commercialDefaultFor, materialFromGrade, findMaterialWithGrade } from '../../lib/data/commercial-default';
+  import type { GradeRegion } from '../../lib/data/structural-grades';
   import { profileToSectionFull } from '../../lib/data/steel-profiles';
   import type { SectionProperties } from '../../lib/data/section-shapes';
   import { solverProperties } from '../../lib/section/state';
@@ -70,24 +72,73 @@
   }
 
   // Apply a standard profile to an EXISTING section (update in place) -- via SectionChanger
-  function handleSCProfileSelect(profile: SteelProfile) {
+  function handleSCProfileSelect(profile: SteelProfile, region?: string | null) {
     if (sectionChangerTargetSecId === null) return;
+    const secId = sectionChangerTargetSecId;
     const full = profileToSectionFull(profile);
-    modelStore.updateSection(sectionChangerTargetSecId, {
-      name: profile.name,
-      a: full.a,
-      iz: full.iz,
-      iy: full.iy,
-      b: full.b,
-      h: full.h,
-      shape: full.shape,
-      tw: full.tw,
-      tf: full.tf,
-      t: full.t,
+    /*
+     * One undo step for one action.
+     *
+     * The section change and the material reassignments are separate store
+     * mutations, and each pushes its own undo entry — so choosing a profile for
+     * a section used by four members cost FIVE presses of undo to reverse, four
+     * of them landing on states the user never asked for and cannot recognise.
+     */
+    modelStore.batch(() => {
+      modelStore.updateSection(secId, {
+        name: profile.name,
+        /*
+         * The family was NOT being stored on this path, and it is the key
+         * everything downstream reads: the pairing note asks a section which
+         * family it is, and a section that has forgotten answers nothing.
+         * Since this is how Basic actually chooses a profile — from the
+         * section table, not from an element — the note could never fire
+         * there at all.
+         */
+        profileFamily: profile.family,
+        a: full.a,
+        iz: full.iz,
+        iy: full.iy,
+        b: full.b,
+        h: full.h,
+        shape: full.shape,
+        tw: full.tw,
+        tf: full.tf,
+        t: full.t,
+      });
+      applyCommercialGrade(secId, profile.family, region as GradeRegion | null);
     });
     resultsStore.clear();
     showSectionChanger = false;
     sectionChangerTargetSecId = null;
+  }
+
+  /**
+   * Give the members using this section the steel its profile is rolled in.
+   *
+   * Only those whose material did not come from the catalogue — nobody has
+   * chosen a steel for them on purpose. See `commercial-default.ts`.
+   *
+   * Scoped to the members that use THIS section rather than applied globally:
+   * a model can hold several sections in several families, and choosing an IPN
+   * for one of them says nothing about the others.
+   */
+  function applyCommercialGrade(secId: number, family: string | undefined, region: GradeRegion | null) {
+    let matId: number | null = null;
+    for (const el of modelStore.elements.values()) {
+      if (el.sectionId !== secId) continue;
+      const current = modelStore.materials.get(el.materialId);
+      const grade = commercialDefaultFor(family, current, region);
+      if (!grade) continue;
+
+      if (matId === null) {
+        // Reused across the members of this section, and across the model:
+        // twenty IPN beams end up sharing one F-24, not carrying twenty.
+        const existing = findMaterialWithGrade(modelStore.materials.values(), grade.id);
+        matId = existing ? existing.id : modelStore.addMaterial(materialFromGrade(grade));
+      }
+      modelStore.updateElementMaterial(el.id, matId);
+    }
   }
 
   // Apply a custom shape to an EXISTING section -- via SectionChanger
@@ -218,7 +269,7 @@
 </div>
 <SectionChanger
   open={showSectionChanger}
-  onprofileselect={(p: SteelProfile, _s: { a: number; iy: number; iz: number; b: number; h: number }) => handleSCProfileSelect(p)}
+  onprofileselect={(p: SteelProfile, _s: { a: number; iy: number; iz: number; b: number; h: number }, region?: string | null) => handleSCProfileSelect(p, region)}
   onshapeselect={(name: string, props: SectionProperties) => handleSCShapeSelect(name, props)}
   onamorphousselect={(data) => handleSCAmorphousSelect(data)}
   onclose={() => { showSectionChanger = false; sectionChangerTargetSecId = null; }}

@@ -34,6 +34,15 @@ import {
 } from '../structural-grades';
 import type { GradeRegion } from '../structural-grades';
 import { DESIGN_CODES } from '../section-catalog';
+import en from '../../i18n/locales/en';
+import es from '../../i18n/locales/es';
+import pt from '../../i18n/locales/pt';
+
+/** Every family that records a commercial pairing. */
+const ALL_FAMILIES_WITH_PAIRINGS = [
+  'IPN', 'UPN', 'IPE', 'HEA', 'HEB', 'T', 'L', 'W', 'HP', 'C', 'MC', 'M',
+  'RHS', 'SHS', 'CHS',
+];
 
 const FAMILIES: GradeFamily[] = ['hot-rolled', 'cold-formed', 'aluminium', 'stainless'];
 
@@ -544,6 +553,26 @@ describe('what a profile family is actually rolled in', () => {
       }
     }
     expect(offenders, `flagged its own practice:\n${offenders.join('\n')}`).toEqual([]);
+  });
+
+  it('every source note it cites is translated in all three languages', () => {
+    /*
+     * These keys are asked for through a VARIABLE — `t(pairing.sourceKey)` —
+     * which the Basic i18n coverage guard cannot see: it scans for literal
+     * `t('...')` calls, by its own admission. That blind spot has already
+     * shipped English text into a Spanish dialog once in this codebase, so the
+     * keys that live in data get checked where the data is.
+     */
+    const missing: string[] = [];
+    for (const family of ALL_FAMILIES_WITH_PAIRINGS) {
+      for (const p of commercialGradesFor(family)) {
+        for (const [loc, dict] of [['en', en], ['es', es], ['pt', pt]] as const) {
+          const value = (dict as Record<string, string>)[p.sourceKey];
+          if (!value || value === p.sourceKey) missing.push(`${loc}: ${p.sourceKey}`);
+        }
+      }
+    }
+    expect([...new Set(missing)], `untranslated source notes:\n${missing.join('\n')}`).toEqual([]);
   });
 
   it('every recorded pairing points at a grade that exists', () => {
