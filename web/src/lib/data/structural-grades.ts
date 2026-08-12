@@ -130,16 +130,40 @@ export interface DesignCode {
 
 const EN_STEEL = { e: 210000, nu: 0.3, rho: 78.5 } as const;
 const US_STEEL = { e: 200000, nu: 0.3, rho: 78.5 } as const;
+// CIRSOC 301 chapter 2 fixes E = 210 000 N/mm2, G = 81 000, nu = 0,296 and
+// gamma = 78,5 kN/m3 for the IRAM grades — the European modulus, not the
+// American one, which is easy to assume from Argentina's use of AISC's method.
+// nu is rounded to 0,30 as every table does; the difference is below the
+// precision of anything downstream.
+const IRAM_STEEL = { e: 210000, nu: 0.3, rho: 78.5 } as const;
 
 export const HOT_ROLLED: StructuralGrade[] = [
   // ── Argentina — IRAM, the grades CIRSOC 301 is written around ──
   //
-  // The F-nn number is the yield strength in kgf/mm²: F-24 is 24 kgf/mm²,
-  // i.e. 235 MPa. Worth knowing, because the designation looks like a
-  // strength in MPa and is not one.
-  { id: 'iram-f24', designation: 'F-24', productStandard: 'IRAM-IAS U 500-42', region: 'AR', family: 'hot-rolled', ...US_STEEL, fy: 235, fu: 370 },
-  { id: 'iram-f26', designation: 'F-26', productStandard: 'IRAM-IAS U 500-42', region: 'AR', family: 'hot-rolled', ...US_STEEL, fy: 255, fu: 410 },
-  { id: 'iram-f36', designation: 'F-36', productStandard: 'IRAM-IAS U 500-42', region: 'AR', family: 'hot-rolled', ...US_STEEL, fy: 355, fu: 510 },
+  // The F-nn number is the yield strength in kgf/mm², and the conversion is the
+  // trap: CIRSOC 301 states `1 N/mm² = 1 MPa = 10 kgf/cm²`, so it works at
+  // 1 kgf = 10 N, NOT 9,81. F-24 is therefore 240 MPa, not the 235 that the
+  // physical conversion suggests — this table said 235 until IRAM-IAS
+  // U 500-503 was read directly.
+  //
+  // CIRSOC 301 also notes that yield drops by 20 MPa above 30 mm thick, which
+  // `byThickness` carries. F-20 and F-22 exist in CIRSOC's table 1 but its
+  // ultimate strengths are not in the source consulted, so they are left out
+  // rather than filled in with a plausible number.
+  {
+    id: 'iram-f24', designation: 'F-24', productStandard: 'IRAM-IAS U 500-503', region: 'AR', family: 'hot-rolled', ...IRAM_STEEL, fy: 240, fu: 370,
+    byThickness: [{ overMm: 0, upToMm: 30, fy: 240, fu: 370 }, { overMm: 30, upToMm: 100, fy: 220, fu: 370 }],
+    note: 'El grado más usado en perfiles argentinos (IPN, UPN, IPE, IPB, ángulos).',
+  },
+  {
+    id: 'iram-f26', designation: 'F-26', productStandard: 'IRAM-IAS U 500-503', region: 'AR', family: 'hot-rolled', ...IRAM_STEEL, fy: 260, fu: 420,
+    byThickness: [{ overMm: 0, upToMm: 30, fy: 260, fu: 420 }, { overMm: 30, upToMm: 100, fy: 240, fu: 420 }],
+  },
+  {
+    id: 'iram-f36', designation: 'F-36', productStandard: 'IRAM-IAS U 500-503', region: 'AR', family: 'hot-rolled', ...IRAM_STEEL, fy: 360, fu: 520,
+    byThickness: [{ overMm: 0, upToMm: 30, fy: 360, fu: 520 }, { overMm: 30, upToMm: 100, fy: 340, fu: 520 }],
+    note: 'Perfiles W laminados y estructuras de alta solicitación.',
+  },
 
   // ── ASTM ──
   { id: 'astm-a36', designation: 'A36', productStandard: 'ASTM A36', region: 'US', family: 'hot-rolled', ...US_STEEL, fy: 250, fu: 400 },
@@ -168,8 +192,8 @@ export const HOT_ROLLED: StructuralGrade[] = [
     byThickness: [{ overMm: 0, upToMm: 40, fy: 275, fu: 430 }, { overMm: 40, upToMm: 80, fy: 255, fu: 410 }],
   },
   {
-    id: 'en-s355', designation: 'S355', productStandard: 'EN 10025-2', region: 'EU', family: 'hot-rolled', ...EN_STEEL, fy: 355, fu: 510,
-    byThickness: [{ overMm: 0, upToMm: 40, fy: 355, fu: 510 }, { overMm: 40, upToMm: 80, fy: 335, fu: 470 }],
+    id: 'en-s355', designation: 'S355', productStandard: 'EN 10025-2', region: 'EU', family: 'hot-rolled', ...EN_STEEL, fy: 355, fu: 490,
+    byThickness: [{ overMm: 0, upToMm: 40, fy: 355, fu: 490 }, { overMm: 40, upToMm: 80, fy: 335, fu: 470 }],
   },
   {
     id: 'en-s450', designation: 'S450', productStandard: 'EN 10025-2', region: 'EU', family: 'hot-rolled', ...EN_STEEL, fy: 440, fu: 550,

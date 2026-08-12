@@ -277,3 +277,84 @@ describe('the picker defaults to CIRSOC', () => {
     expect(gradesForCode(fake, 'hot-rolled').length).toBe(gradesForFamily('hot-rolled').length);
   });
 });
+
+/**
+ * Values checked against their published source.
+ *
+ * These were first loaded from memory and then audited against the standards
+ * themselves. Four were wrong. Pinning the corrected ones stops a future edit
+ * from quietly reverting them, and each case records WHICH document settles it,
+ * because "someone said so" is what produced the errors in the first place.
+ */
+describe('audited against the published standards', () => {
+  const g = (id: string) => {
+    const found = gradeById(id);
+    if (!found) throw new Error(`${id} missing`);
+    return found;
+  };
+
+  it('IRAM grades follow IRAM-IAS U 500-503, where F-24 is 240 MPa — not 235', () => {
+    // The trap: F-nn is nn kgf/mm², and CIRSOC 301 states 1 MPa = 10 kgf/cm²,
+    // so it converts at 1 kgf = 10 N rather than 9,81. The physical conversion
+    // gives 235 and the standard says 240.
+    expect(g('iram-f24').fy).toBe(240);
+    expect(g('iram-f24').fu).toBe(370);
+    expect(g('iram-f26').fy).toBe(260);
+    expect(g('iram-f26').fu).toBe(420);
+    expect(g('iram-f36').fy).toBe(360);
+    expect(g('iram-f36').fu).toBe(520);
+  });
+
+  it('IRAM grades use E = 210 GPa, as CIRSOC 301 chapter 2 fixes it', () => {
+    // Easy to assume 200 GPa from Argentina adopting AISC's method. CIRSOC
+    // states the European value.
+    for (const id of ['iram-f24', 'iram-f26', 'iram-f36']) {
+      expect(g(id).e, id).toBe(210000);
+      expect(g(id).rho, id).toBe(78.5); // gamma = 78,5 kN/m³, also from CIRSOC
+    }
+  });
+
+  it('IRAM yield drops 20 MPa above 30 mm, per CIRSOC’s own note', () => {
+    expect(strengthAtThickness(g('iram-f24'), 20).fy).toBe(240);
+    expect(strengthAtThickness(g('iram-f24'), 50).fy).toBe(220);
+    expect(strengthAtThickness(g('iram-f36'), 50).fy).toBe(340);
+  });
+
+  it('S355 reaches 490 MPa, the nominal value of EN 1993-1-1 table 3.1', () => {
+    // Held 510 before the audit — the figure often quoted from EN 10025-2's
+    // range rather than the nominal one Eurocode 3 designs against.
+    expect(g('en-s355').fu).toBe(490);
+    expect(g('en-s355').fy).toBe(355);
+  });
+
+  it('the EN thickness bands match table 3.1 for every grade that has them', () => {
+    const expected: Record<string, [number, number]> = {
+      'en-s235': [235, 215], 'en-s275': [275, 255],
+      'en-s355': [355, 335], 'en-s450': [440, 410],
+    };
+    for (const [id, [thin, thick]] of Object.entries(expected)) {
+      expect(strengthAtThickness(g(id), 30).fy, id).toBe(thin);
+      expect(strengthAtThickness(g(id), 60).fy, id).toBe(thick);
+    }
+  });
+
+  it('stainless moduli follow EN 1993-1-4 clause 2.1.3: 200 GPa austenitic, 220 ferritic', () => {
+    expect(g('ss-1.4301').e).toBe(200000);   // austenitic
+    expect(g('ss-1.4462').e).toBe(200000);   // austenitic-ferritic (duplex)
+    expect(g('ss-1.4003').e).toBe(220000);   // ferritic
+    // The ferritics match table 2.1 exactly, cold rolled strip.
+    expect(g('ss-1.4003').fy).toBe(280);
+    expect(g('ss-1.4003').fu).toBe(450);
+    expect(g('ss-1.4016').fy).toBe(260);
+  });
+
+  it('ASTM grades match their specifications', () => {
+    expect(g('astm-a36').fy).toBe(250);
+    expect(g('astm-a572-50').fy).toBe(345);
+    expect(g('astm-a992').fy).toBe(345);
+    expect(g('astm-a992').fu).toBe(450);
+    for (const id of ['astm-a36', 'astm-a572-50', 'astm-a992']) {
+      expect(g(id).e, id).toBe(200000);
+    }
+  });
+});

@@ -101,7 +101,7 @@
    * produces. Both are legitimate questions and they are not the same one, so
    * the panel asks which rather than guessing.
    */
-  let eccSource = $state<'model' | 'custom'>('model');
+  let eccSource = $state<'model' | 'custom' | 'isolated'>('model');
   /** User-defined load components, kN. Only used when `eccSource` is 'custom'. */
   let eccCustom = $state({ n: 0, vy: 0, vz: 0 });
 
@@ -506,6 +506,13 @@
     const src = eccSource === 'model'
       ? { n: m.n, vy: m.vy ?? 0, vz: m.vz ?? 0 }
       : eccCustom;
+    // `isolated` studies the user's load ALONE: the member's own resultants are
+    // discarded rather than added, so the section shows what that one load does
+    // and nothing else. Useful for reading a single effect cleanly, and wrong
+    // to confuse with a verification — the member really does carry the rest.
+    const base = eccSource === 'isolated'
+      ? { n: 0, my: 0, mz: 0, vy: 0, vz: 0, t: 0 }
+      : { n: m.n, my: m.my, mz: m.mz, vy: m.vy ?? 0, vz: m.vz ?? 0, t: m.t ?? 0 };
     const rN = resolveEccentric({ n: src.n, at: eccentricPoint }, sc);
     const rV = resolveEccentric({ vy: src.vy, vz: src.vz, at: eccentricPointV ?? [0, 0] }, sc);
 
@@ -519,31 +526,32 @@
     if (eccSource === 'model') {
       // The member's own resultants, moved off the axis. The bending the model
       // reports stays — it is the consequence of the external loads and does
-      // not go away — and the eccentricity adds to it.
+      // not go away — and the eccentricity adds to it. The forces themselves
+      // are not added twice: they are the same forces, relocated.
       return {
         forces: {
-          n: m.n,
-          my: m.my + effect.myFromN,
-          mz: m.mz + effect.mzFromN,
-          vy: m.vy ?? 0,
-          vz: m.vz ?? 0,
-          t: (m.t ?? 0) + effect.tFromShear,
+          n: base.n,
+          my: base.my + effect.myFromN,
+          mz: base.mz + effect.mzFromN,
+          vy: base.vy,
+          vz: base.vz,
+          t: base.t + effect.tFromShear,
         },
         effect,
       };
     }
 
-    // A load of the user's own, ON TOP of everything the model already
-    // produces. `effect` reports what THIS load contributes rather than burying
-    // it in the model's totals.
+    // `custom` superposes the user's load on the model's; `isolated` puts it on
+    // an empty base. One expression covers both, which is what keeps them from
+    // drifting apart.
     return {
       forces: {
-        n: m.n + src.n,
-        my: m.my + effect.myFromN,
-        mz: m.mz + effect.mzFromN,
-        vy: (m.vy ?? 0) + src.vy,
-        vz: (m.vz ?? 0) + src.vz,
-        t: (m.t ?? 0) + effect.tFromShear,
+        n: base.n + src.n,
+        my: base.my + effect.myFromN,
+        mz: base.mz + effect.mzFromN,
+        vy: base.vy + src.vy,
+        vz: base.vz + src.vz,
+        t: base.t + effect.tFromShear,
       },
       effect,
     };
@@ -580,7 +588,7 @@
     if (Math.abs(e.tFromShear) > 1e-9) return true;
     // A custom load still counts even when applied dead on the reference
     // points: it adds to the forces, it just adds no eccentric effect.
-    return eccSource === 'custom' && (
+    return eccSource !== 'model' && (
       Math.abs(eccCustom.n) > 1e-12 ||
       Math.abs(eccCustom.vy) > 1e-12 ||
       Math.abs(eccCustom.vz) > 1e-12
@@ -594,7 +602,7 @@
    * editable) under `model`, and the user's own under `custom`.
    */
   const eccentricComponents = $derived.by(() => {
-    if (eccSource === 'custom') return eccCustom;
+    if (eccSource !== 'model') return eccCustom;
     const m = stateInputs?.forces;
     return { n: m?.n ?? 0, vy: m?.vy ?? 0, vz: m?.vz ?? 0 };
   });
@@ -1001,7 +1009,29 @@
               onclick={() => eccSource = 'custom'}
               title={t('stress.eccentricCustomHelp')}
             >{t('stress.eccentricCustom')}</button>
+            <button
+              class="ssp-ecc-tab" class:active={eccSource === 'isolated'}
+              onclick={() => eccSource = 'isolated'}
+              title={t('stress.eccentricIsolatedHelp')}
+            >{t('stress.eccentricIsolated')}</button>
           </div>
+          <!-- What the selected mode does, always visible rather than hidden in
+               a tooltip. The three differ in what they do with the member's own
+               forces — relocate, add to, or discard them — and that is not
+               guessable from a three-word label. -->
+          <p class="ssp-ecc-explain">
+            {eccSource === 'model'
+              ? t('stress.eccentricFromModelHelp')
+              : eccSource === 'custom'
+                ? t('stress.eccentricCustomHelp')
+                : t('stress.eccentricIsolatedHelp')}
+          </p>
+          {#if eccSource === 'isolated'}
+            <!-- A caveat, not a hint: the member is still carrying everything
+                 this mode is hiding. Reading these stresses as a verification
+                 would be unconservative. -->
+            <p class="ssp-ecc-note ssp-ecc-flag">{t('stress.eccentricIsolatedWarn')}</p>
+          {/if}
 
           <!-- The components, named by their direction relative to the section
                rather than by axis letters alone: which one twists the member
@@ -1489,6 +1519,12 @@
     gap: 3px;
     margin: 5px 0 6px;
   }
+  .ssp-ecc-explain {
+    margin: 0 0 6px;
+    font-size: 0.59rem;
+    line-height: 1.45;
+    color: var(--st-text-3);
+  }
   .ssp-ecc-tab {
     flex: 1;
     padding: 3px 4px;
@@ -1496,7 +1532,7 @@
     border: 1px solid rgba(255, 140, 0, 0.25);
     background: none;
     color: var(--st-text-3);
-    font-size: 0.6rem;
+    font-size: 0.57rem;
     cursor: pointer;
   }
   .ssp-ecc-tab:hover { color: var(--st-text-2); }
