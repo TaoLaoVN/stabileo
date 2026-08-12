@@ -142,6 +142,19 @@ export interface GenMember {
   b: number;
   role: MemberRole;
   type: 'frame' | 'truss';
+  /**
+   * Roll of the profile about the member axis, degrees, when the GENERATOR knows it.
+   *
+   * A purlin laid across a pitched roof has to be rolled by the roof's own slope for its
+   * web to stand perpendicular to the sheeting, and only the generator that placed it
+   * knows that angle. It is stored rather than recomputed at draw time on purpose: change
+   * the pitch afterwards and the purlin is already fixed to the rafters — recomputing
+   * would silently re-lay a roof that has been built.
+   *
+   * Absent means no roll, which is the answer for every member whose orientation is fully
+   * described by its own direction.
+   */
+  rollAngleDeg?: number;
 }
 
 export interface GenSupport {
