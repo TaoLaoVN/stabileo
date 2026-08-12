@@ -1287,6 +1287,7 @@ const pt: Translations = {
   'matCat.aluminum': 'Alumínio',
   'matCat.coldFormed': "Cold-formed",
   'matCat.stainless': "Stainless",
+  'grade.typicalHelp': "Typical values for this material, not read from the governing standard. Fine for modelling; check them against the standard before a professional verification.",
   'pairing.unusual': "{family} profiles are not normally rolled in {grade}. What mills supply:",
   'pairing.stillValid': "The model is valid either way — this is about availability and lead time, not correctness. Ordering another grade means a special production run.",
   'grade.src.iramAcindar': "IRAM-IAS U 500-503, Argentine mill catalogue",

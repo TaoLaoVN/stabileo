@@ -1888,6 +1888,7 @@ const es: Record<string, string> = {
   'matCat.aluminum': 'Aluminio',
   'matCat.coldFormed': "Conformados en frío",
   'matCat.stainless': "Inoxidables",
+  'grade.typicalHelp': "Valores típicos de este material, no leídos de la norma que lo rige. Sirven para modelar; cotejalos con la norma antes de una verificación profesional.",
   'pairing.unusual': "Los perfiles {family} no se laminan normalmente en {grade}. Lo que proveen las acerías:",
   'pairing.stillValid': "El modelo es válido igual — esto es disponibilidad y plazo de entrega, no corrección. Pedir otro grado implica una colada especial.",
   'grade.src.iramAcindar': "IRAM-IAS U 500-503, catálogo de acería argentina",

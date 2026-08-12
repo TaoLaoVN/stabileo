@@ -116,6 +116,12 @@
                    standards can give the same designation to different steels,
                    and a grade cannot be specified on a drawing without it. -->
               {#if p.standard}<span class="preset-std">{p.standard}</span>{/if}
+              <!-- A value carried from general knowledge rather than read from
+                   the standard. Small, but present: someone sizing a member
+                   deserves to know which kind of number they picked. -->
+              {#if p.verification === 'typical'}
+                <span class="preset-unver" title={t('grade.typicalHelp')}>~</span>
+              {/if}
             </span>
             <span class="preset-props">
               E={p.e >= 1000 ? `${(p.e/1000).toFixed(0)}GPa` : `${p.e}MPa`}
@@ -275,6 +281,16 @@
 
   /* Subordinate to the designation, but on the same line: it qualifies the
      name rather than describing the material. */
+  .preset-unver {
+    margin-left: 4px;
+    padding: 0 4px;
+    border-radius: 3px;
+    background: rgba(255, 140, 0, 0.14);
+    color: #e0a060;
+    font-size: 0.62rem;
+    font-weight: 700;
+    cursor: help;
+  }
   .preset-std {
     margin-left: 6px;
     font-weight: 400;

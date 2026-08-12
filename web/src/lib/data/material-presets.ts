@@ -29,6 +29,12 @@ export interface MaterialPreset {
   gradeId?: string;
   /** Origin of the product standard — absent for concrete, timber and rebar. */
   region?: GradeRegion;
+  /**
+   * Whether the values were read from the governing standard or carried from
+   * general knowledge of the material. Surfaced in the picker, because a user
+   * choosing a grade for a calculation deserves to know which they are getting.
+   */
+  verification?: 'standard' | 'typical';
 }
 
 /**
@@ -49,6 +55,7 @@ function fromGrade(g: StructuralGrade, category: MaterialPreset['category']): Ma
     standard: g.productStandard,
     gradeId: g.id,
     region: g.region,
+    verification: g.verification,
   };
 }
 

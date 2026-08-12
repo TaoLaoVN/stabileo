@@ -116,16 +116,22 @@ describe('strength falls with thickness where the standard says so', () => {
     expect(r.extrapolated).toBe(true);
   });
 
-  it('bands never increase with thickness, and never overlap', () => {
+  it('STEEL bands never increase with thickness, and no band overlaps', () => {
+    // Steel is quenched and worked less effectively as it gets thicker, so
+    // yield falls. Aluminium 6082 is the documented exception and is checked
+    // separately — asserting the rule globally would force the exception to be
+    // hidden, which is the wrong way round.
     for (const g of ALL_GRADES) {
       const bands = g.byThickness;
       if (!bands) continue;
       for (let i = 1; i < bands.length; i++) {
-        expect(bands[i].fy, g.designation).toBeLessThanOrEqual(bands[i - 1].fy);
         expect(bands[i].overMm, g.designation).toBe(bands[i - 1].upToMm);
+        if (g.family !== 'aluminium') {
+          expect(bands[i].fy, g.designation).toBeLessThanOrEqual(bands[i - 1].fy);
+        }
       }
-      // The headline value is the thin one, so a caller ignoring thickness is
-      // wrong in the known direction rather than in an arbitrary one.
+      // The headline value is the FIRST band either way, so a caller ignoring
+      // thickness is wrong in a known direction rather than an arbitrary one.
       expect(g.fy, g.designation).toBe(bands[0].fy);
     }
   });
@@ -475,5 +481,77 @@ describe('what a profile family is actually rolled in', () => {
     // order time, so there is no commercial default to depart from.
     expect(isUnusualPairing('MC', 'iram-f24')).toBeNull();
     expect(isUnusualPairing('IPN', undefined)).toBeNull();
+  });
+});
+
+/**
+ * Aluminium, audited against EN 1999-1-1, and the provenance field it produced.
+ *
+ * Eurocode 9's tables 3.2a/3.2b were only obtainable in part, so some tempers
+ * were checked and some were not. Rather than delete the unchecked ones — they
+ * are ordinary alloys carrying the usual values — or leave them looking as
+ * settled as the rest, every grade now says which it is.
+ */
+describe('aluminium against Eurocode 9', () => {
+  const g = (id: string) => {
+    const found = gradeById(id);
+    if (!found) throw new Error(`${id} missing`);
+    return found;
+  };
+
+  it('5083-H111 extruded is 110/270, not the alloy’s typical 125/275', () => {
+    // Characteristic values are guaranteed minima, so they sit BELOW the
+    // typical figures quoted for an alloy. Taking one for the other is
+    // unconservative, which is why this was worth checking.
+    expect([g('alu-5083-h111').fy, g('alu-5083-h111').fu]).toEqual([110, 270]);
+    expect(g('alu-5083-h111').verification).toBe('standard');
+  });
+
+  it('6060-T6 extruded is 140/170', () => {
+    expect([g('alu-6060-t6').fy, g('alu-6060-t6').fu]).toEqual([140, 170]);
+  });
+
+  it('6082-T6 gets STRONGER with thickness — the one alloy that does', () => {
+    // Eurocode 9's commentary flags this explicitly as not a misprint: a thin
+    // extrusion develops a coarser grain and ends up slightly weaker.
+    const s = g('alu-6082-t6');
+    expect(strengthAtThickness(s, 3).fy).toBe(250);
+    expect(strengthAtThickness(s, 10).fy).toBe(260);
+    expect(strengthAtThickness(s, 10).fy).toBeGreaterThan(strengthAtThickness(s, 3).fy);
+  });
+
+  it('the thickness bands may rise, which the general band rule must allow', () => {
+    // Every steel falls with thickness and a test asserts that. Aluminium 6082
+    // is the exception, so the rule cannot be "bands never increase" globally.
+    const rising = ALL_GRADES.filter((x) =>
+      x.byThickness?.some((b, i, arr) => i > 0 && b.fy > arr[i - 1].fy));
+    expect(rising.map((x) => x.id)).toEqual(['alu-6082-t6']);
+  });
+
+  it('keeps the modulus and density Eurocode 9 specifies', () => {
+    for (const x of ALL_GRADES.filter((y) => y.family === 'aluminium')) {
+      expect(x.e, x.designation).toBe(70000);
+      expect(x.rho, x.designation).toBe(27.0);
+    }
+  });
+});
+
+describe('every grade declares whether it was checked against its standard', () => {
+  it('says one or the other — never nothing', () => {
+    const silent = ALL_GRADES.filter((g) => !g.verification);
+    expect(silent.map((g) => g.id)).toEqual([]);
+  });
+
+  it('the audited steels are marked as read from the standard', () => {
+    for (const id of ['iram-f24', 'en-s355', 'astm-a992', 'nbr-mr250', 'ss-1.4003']) {
+      expect(gradeById(id)!.verification, id).toBe('standard');
+    }
+  });
+
+  it('most of the table is verified, so the mark means something', () => {
+    // If nearly everything were 'typical' the flag would be noise rather than
+    // a signal.
+    const verified = ALL_GRADES.filter((g) => g.verification === 'standard');
+    expect(verified.length).toBeGreaterThan(20);
   });
 });
