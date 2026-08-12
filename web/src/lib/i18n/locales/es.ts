@@ -2,6 +2,8 @@ const es: Record<string, string> = {
   // ─── Auth / Login ───
 
   // ─── Landing Page ───
+  'results.verification': "Verificación",
+  'resultsTable.diagnostics': "Diagnóstico",
   'landing.docs': 'Docs',
   'landing.demo': 'Demo',
   'landing.roadmap': 'Roadmap',
@@ -1426,6 +1428,10 @@ const es: Record<string, string> = {
   'template.cancel': 'Cancelar',
 
   // ─── SectionShapeBuilder.svelte ───
+  'shapeBuilder.thin': "De pared delgada",
+  'shapeBuilder.solid': "Macizas",
+  'shapeBuilder.thinHelp': "Paredes delgadas frente a las otras dimensiones de la sección: abollan localmente, toman el corte como un flujo a lo largo de la pared, y torsionan por Saint-Venant o Bredt. Acero laminado y soldado, conformado, aluminio extruido.",
+  'shapeBuilder.solidHelp': "Sin paredes delgadas: el corte sigue la distribución parabólica de Jouravsky y la torsión no tiene forma cerrada elemental. Hormigón, madera, barra maciza — sea cual sea el material.",
   'shapeBuilder.title': 'Construir sección',
   'shapeBuilder.steel': 'Acero',
   'shapeBuilder.concrete': 'Hormigón',
@@ -2170,6 +2176,8 @@ const es: Record<string, string> = {
   'cat.series.angle': 'Ángulos',
   'cat.series.tee': 'Perfiles T',
   'cat.series.hollow': 'Tubos',
+  'cat.note.aisc': "W, HP, M, C y MC son las series americanas, dimensionadas según ASTM A6/A6M. AISC 360 cubre los tubos por ASTM A500 y A1085.",
+  'cat.note.nbr': "Los perfiles laminados brasileños siguen la NBR 15980, dimensionalmente equivalente a ASTM A6/A6M — las mismas formas, así que las series americanas también sirven acá.",
   'cat.note.eurocodeTubes': 'Los tubos acá son los de IRAM-IAS; EN 10219-2 deja el radio de esquina como rango.',
   'cat.note.cirsoc': 'Reglamento de verificación; los perfiles vienen de las normas dimensionales que usa la práctica local.',
   'table.derivedFromGeometry': 'Derivado de la geometría del perfil — es el valor que usa el solver.',
@@ -3255,6 +3263,28 @@ const es: Record<string, string> = {
   'report.interactionDiagram': 'Diagrama de Interacción P-M',
 
   // ─── Education Mode ───
+  'edu.author.askKinematic': "Preguntar el grado cinemático",
+  'edu.author.detected': "Detectado",
+  'edu.author.degree': "grado",
+  'edu.author.kinUnavailable': "El grado cinemático no se puede determinar hasta que el modelo tenga nudos y apoyos.",
+  'edu.author.member': "Barra",
+  'edu.author.moment': "Momento flector",
+  'edu.author.shear': "Corte",
+  'edu.author.axial': "Esfuerzo axial",
+  'edu.author.steel': "Grado del acero",
+  'edu.author.pickSize': "Elegí una medida…",
+  'edu.author.needsProfile': "Esta pregunta necesita un perfil: elegí uno arriba.",
+  'edu.author.helpCharWhat': "Le pide al alumno decir qué tipo de estructura es —isostática o hiperestática— antes de resolver nada.",
+  'edu.author.helpCharEx': "«¿Esta estructura es isostática o hiperestática?»\nEl alumno responde antes de ver ningún diagrama.",
+  'edu.author.helpDiagWhat': "Pide un valor leído de un diagrama en una sección dada: el momento en el centro del tramo, el corte en un apoyo.",
+  'edu.author.helpDiagEx': "«¿Cuánto vale el momento flector en el centro de la barra 1?»\nSe responde en kN·m y se coteja contra el solver.",
+  'edu.author.helpKinWhat': "Pide el grado cinemático — cuántos movimientos independientes le quedan a la estructura.",
+  'edu.author.helpKinEx': "«¿Cuál es el grado cinemático de esta estructura?»\nLa respuesta es un número entero; 0 significa que no se puede mover.",
+  'edu.author.helpShapeWhat': "Le pide al alumno reconocer la FORMA de un diagrama en vez de un valor: dónde es constante, lineal o parabólico.",
+  'edu.author.helpShapeEx': "«¿Qué forma toma el diagrama de momentos bajo carga uniforme?»\nParabólica — porque la carga se integra dos veces.",
+  'edu.author.helpProfileWhat': "Fija un perfil laminado para el ejercicio, así todos los alumnos dimensionan contra la misma sección.",
+  'edu.author.helpProfileEx': "IPE 300, elegido del catálogo.\nSe usan sus propiedades reales, no aproximaciones.",
+  'edu.author.helpSteelWhat': "El grado de acero del que está hecho el perfil. Fija fy, que es contra lo que compara una verificación de tensiones.",
   'edu.title': 'Modo Educativo',
   'edu.subtitle': 'Resolvé ejercicios de estructuras paso a paso',
   'edu.easy': 'Fácil',

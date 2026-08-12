@@ -4,7 +4,7 @@
     type ProfileFamily, type SteelProfile, type SectionShape,
   } from '../lib/data/steel-profiles';
   import {
-    SECTION_SHAPES, STEEL_SHAPES, CONCRETE_SHAPES,
+    SECTION_SHAPES, THIN_SHAPES, SOLID_SHAPES,
     computeSectionProperties, generateSectionName,
     type ShapeType, type SectionProperties, type MaterialCategory,
   } from '../lib/data/section-shapes';
@@ -34,6 +34,12 @@
 
   type MainTab = 'profile' | 'shape' | 'amorphous';
   let activeMainTab = $state<MainTab>('profile');
+  /**
+   * Which series is expanded. Null means "whichever holds the active family",
+   * so opening the dialog shows the group you are already in rather than
+   * collapsing everything and making you find it again.
+   */
+  let openSeries = $state<string | null>(null);
 
   // Reset tab when opened
   $effect(() => {
@@ -78,12 +84,12 @@
   }
 
   // ─── Shape Builder state ─────────────────────
-  let activeCategory = $state<MaterialCategory>('steel');
+  let activeCategory = $state<MaterialCategory>('thin');
   let activeShape = $state<ShapeType>('rect');
   let paramValues = $state<Record<string, number>>({});
 
   const categoryShapes = $derived(
-    activeCategory === 'steel' ? STEEL_SHAPES : CONCRETE_SHAPES
+    activeCategory === 'thin' ? THIN_SHAPES : SOLID_SHAPES
   );
 
   let prevCategory = $state<MaterialCategory | null>(null);
@@ -91,7 +97,7 @@
     const cat = activeCategory;
     if (cat !== prevCategory) {
       prevCategory = cat;
-      const shapes = cat === 'steel' ? STEEL_SHAPES : CONCRETE_SHAPES;
+      const shapes = cat === 'thin' ? THIN_SHAPES : SOLID_SHAPES;
       if (shapes.length > 0 && !shapes.find(s => s.id === activeShape)) {
         activeShape = shapes[0].id;
       }
@@ -212,51 +218,73 @@
             {/each}
           </div>
 
-          <!-- One row per series, each with its own heading. These used to run
-               together in a single wrapping flow, so a series label could end
-               up mid-line between two families it did not belong to and the
-               grouping stopped being visible at all. -->
-          <div class="profile-tabs">
-            {#each familyGroups as group}
-              <div class="series-group">
-                <span class="series-label">{t('cat.series.' + group.series)}</span>
-                <div class="series-families">
-                  {#each group.families as fam}
-                    <button
-                      class="tab-btn"
-                      class:active={activeFamily === fam}
-                      class:approx={classifyFamily(fam)?.fidelity === 'propertiesOnly'}
-                      title={classifyFamily(fam)?.standard}
-                      onclick={() => { activeFamily = fam; searchQuery = ''; }}
-                    >{fam}</button>
-                  {/each}
-                </div>
-              </div>
-            {/each}
-          </div>
+          <!--
+            Preview on the left, families on the right.
 
-          <div class="profile-head">
-            {#if profilePreviewPath}
-              <div class="profile-preview">
-                <svg viewBox="-90 -90 180 180" class="preview-svg">
-                  <path d={profilePreviewPath} fill="none" stroke="var(--st-value)" stroke-width="1.5" fill-rule="evenodd" />
-                </svg>
+            The families used to be a wrapping strip of every series at once,
+            above a table that changed under it. Two problems: the strip was a
+            wall of abbreviations with no way to tell an I-beam from a channel
+            without knowing the codes already, and the drawing of what you had
+            chosen sat below the fold. Now the shape you are looking at is the
+            first thing on screen, and the families are grouped by SHAPE — which
+            is what a section is — with one series open at a time.
+          -->
+          <div class="profile-layout">
+            <div class="profile-aside">
+              {#if profilePreviewPath}
+                <div class="profile-preview">
+                  <svg viewBox="-90 -90 180 180" class="preview-svg">
+                    <path d={profilePreviewPath} fill="var(--st-value)" fill-opacity="0.12"
+                          stroke="var(--st-value)" stroke-width="2" fill-rule="evenodd" />
+                  </svg>
+                </div>
+              {/if}
+              <div class="profile-meta">
+                <div class="meta-family">{activeFamily}</div>
+                {#if activeClass}
+                  <div class="meta-row"><span class="meta-k">{t('cat.standard')}</span><span class="meta-v">{activeClass.standard}</span></div>
+                  <div class="meta-row"><span class="meta-k">{t('cat.geometry')}</span>
+                    <span class="meta-v" class:warn={activeClass.fidelity === 'propertiesOnly'}>
+                      {activeClass.fidelity === 'exact' ? t('cat.geomExact') : t('cat.geomApprox')}
+                    </span>
+                  </div>
+                {/if}
+                {#if activeCodeDef?.missingFamilies?.length}
+                  <div class="meta-missing">
+                    {t('cat.missing')}: {activeCodeDef.missingFamilies.join(', ')}
+                  </div>
+                {/if}
               </div>
-            {/if}
-            <div class="profile-meta">
-              {#if activeClass}
-                <div class="meta-row"><span class="meta-k">{t('cat.standard')}</span><span class="meta-v">{activeClass.standard}</span></div>
-                <div class="meta-row"><span class="meta-k">{t('cat.geometry')}</span>
-                  <span class="meta-v" class:warn={activeClass.fidelity === 'propertiesOnly'}>
-                    {activeClass.fidelity === 'exact' ? t('cat.geomExact') : t('cat.geomApprox')}
-                  </span>
+            </div>
+
+            <div class="profile-families">
+              {#each familyGroups as group}
+                {@const isOpen = openSeries === group.series || group.families.includes(activeFamily)}
+                <div class="series-block" class:open={isOpen}>
+                  <button
+                    class="series-head"
+                    onclick={() => openSeries = isOpen ? null : group.series}
+                    aria-expanded={isOpen}
+                  >
+                    <span class="series-chevron">{isOpen ? '▾' : '▸'}</span>
+                    {t('cat.series.' + group.series)}
+                    <span class="series-count">{group.families.length}</span>
+                  </button>
+                  {#if isOpen}
+                    <div class="series-families">
+                      {#each group.families as fam}
+                        <button
+                          class="tab-btn"
+                          class:active={activeFamily === fam}
+                          class:approx={classifyFamily(fam)?.fidelity === 'propertiesOnly'}
+                          title={classifyFamily(fam)?.standard}
+                          onclick={() => { activeFamily = fam; searchQuery = ''; }}
+                        >{fam}</button>
+                      {/each}
+                    </div>
+                  {/if}
                 </div>
-              {/if}
-              {#if activeCodeDef?.missingFamilies?.length}
-                <div class="meta-missing">
-                  {t('cat.missing')}: {activeCodeDef.missingFamilies.join(', ')}
-                </div>
-              {/if}
+              {/each}
             </div>
           </div>
 
@@ -369,8 +397,8 @@
       {:else}
         <div class="sc-body sc-shape-body">
           <div class="category-tabs">
-            <button class:active={activeCategory === 'steel'} onclick={() => { activeCategory = 'steel'; }}>{t('shapeBuilder.steel')}</button>
-            <button class:active={activeCategory === 'concrete'} onclick={() => { activeCategory = 'concrete'; }}>{t('shapeBuilder.concrete')}</button>
+            <button class:active={activeCategory === 'thin'} onclick={() => { activeCategory = 'thin'; }}>{t('shapeBuilder.thin')}</button>
+            <button class:active={activeCategory === 'solid'} onclick={() => { activeCategory = 'solid'; }}>{t('shapeBuilder.solid')}</button>
           </div>
 
           <div class="shape-tabs">
@@ -431,6 +459,73 @@
 {/if}
 
 <style>
+  /* ── Profile tab: preview beside the families ──────────────── */
+  .profile-layout {
+    display: grid;
+    grid-template-columns: 190px 1fr;
+    gap: 12px;
+    align-items: start;
+    padding: 10px 0;
+  }
+  .profile-aside { display: flex; flex-direction: column; gap: 8px; }
+  .profile-preview {
+    aspect-ratio: 1;
+    border-radius: var(--st-radius, 3px);
+    background: var(--st-surface-3);
+    border: 1px solid var(--st-border);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 8px;
+  }
+  .profile-preview .preview-svg { width: 100%; height: 100%; }
+  .meta-family {
+    font-family: var(--st-display, inherit);
+    font-size: 0.9rem;
+    font-weight: 600;
+    color: var(--st-text);
+  }
+
+  .profile-families {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    max-height: 260px;
+    overflow-y: auto;
+  }
+  /* One series open at a time: the strip used to show every family at once,
+     which is a wall of abbreviations rather than a choice. */
+  .series-head {
+    width: 100%;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 5px 8px;
+    background: none;
+    border: none;
+    border-radius: var(--st-radius, 3px);
+    color: var(--st-text-2);
+    font-family: var(--st-sans, inherit);
+    font-size: 0.78rem;
+    text-align: left;
+    cursor: pointer;
+  }
+  .series-head:hover { background: var(--st-surface-2); color: var(--st-text); }
+  .series-block.open .series-head { color: var(--st-text); }
+  .series-chevron { font-size: 0.62rem; width: 10px; color: var(--st-text-3); }
+  .series-count {
+    margin-left: auto;
+    font-size: 0.68rem;
+    color: var(--st-text-3);
+    font-family: var(--st-mono, monospace);
+  }
+  .series-families {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 3px;
+    padding: 2px 8px 6px 24px;
+  }
+
   /* Series grouping: a heading and its families on one row of their own. */
   .series-group {
     display: flex;
@@ -588,30 +683,43 @@
 
   .code-bar {
     display: flex; align-items: center; gap: 6px; flex-wrap: wrap;
-    padding: 6px 8px; border-bottom: 1px solid #2a2a2a;
+    padding: 6px 8px; border-bottom: 1px solid var(--st-border);
   }
-  .code-label { font-size: 0.68rem; color: #777; text-transform: uppercase; letter-spacing: 0.04em; }
+  .code-label { font-size: 0.68rem; color: var(--st-text-3); text-transform: uppercase; letter-spacing: 0.04em; }
   .code-btn {
-    background: #1c1c1c; border: 1px solid #333; color: #aaa;
-    font-size: 0.72rem; padding: 3px 9px; border-radius: 3px; cursor: pointer;
+    padding: 3px 9px;
+    border-radius: var(--st-radius, 3px);
+    background: transparent;
+    border: 1px solid var(--st-border);
+    color: var(--st-text-3);
+    font-family: var(--st-sans, inherit);
+    font-size: 0.72rem;
+    cursor: pointer;
   }
-  .code-btn:hover { border-color: var(--st-value); color: #ddd; }
-  .code-btn.active { background: var(--st-value); border-color: var(--st-value); color: #111; font-weight: 600; }
+  .code-btn:hover { border-color: var(--st-value); color: var(--st-text); }
+  .code-btn:hover { color: var(--st-text); border-color: var(--st-text-3); }
+  /* Selected reads as selected the same way every other control in the app
+     does — filled with the accent — rather than with a colour of its own. */
+  .code-btn.active {
+    background: var(--st-accent);
+    border-color: var(--st-accent);
+    color: var(--st-text-on-accent);
+  }
   .series-label {
-    font-size: 0.62rem; color: #666; text-transform: uppercase;
+    font-size: 0.62rem; color: var(--st-text-3); text-transform: uppercase;
     letter-spacing: 0.05em; margin: 0 2px 0 8px; align-self: center;
   }
   .series-label:first-child { margin-left: 0; }
   /* A family whose outline is approximate is marked in the picker itself, so
      the limitation is visible before the profile is chosen, not after. */
-  .tab-btn.approx { border-bottom: 2px dotted #d9a441; }
+  .tab-btn.approx { border-bottom: 2px dotted var(--st-amber-text); }
   .profile-head { display: flex; align-items: center; gap: 12px; padding: 0 8px; }
   .profile-meta { flex: 1; min-width: 0; font-size: 0.7rem; }
   .meta-row { display: flex; gap: 6px; }
-  .meta-k { color: #777; min-width: 74px; }
+  .meta-k { color: var(--st-text-3); min-width: 74px; }
   .meta-v { color: var(--st-text-2); font-family: monospace; }
-  .meta-v.warn { color: #d9a441; }
-  .meta-missing { margin-top: 6px; color: #8a7a55; font-size: 0.65rem; line-height: 1.35; }
+  .meta-v.warn { color: var(--st-amber-text); }
+  .meta-missing { margin-top: 6px; color: var(--st-amber); font-size: 0.65rem; line-height: 1.35; }
   .row-thumb { width: 18px; height: 18px; vertical-align: -4px; margin-right: 6px; }
 
   .profile-search {
@@ -754,8 +862,8 @@
     width: 100%;
     margin-top: 0.75rem;
     padding: 0.5rem;
-    background: #0f4a3a;
-    border: 1px solid #1a7a5a;
+    background: var(--st-accent);
+    border: 1px solid var(--st-accent);
     border-radius: 6px;
     color: var(--st-value);
     cursor: pointer;
@@ -763,7 +871,7 @@
     font-weight: 600;
     transition: all 0.15s;
   }
-  .confirm-btn:hover { background: #1a7a5a; color: white; }
+  .confirm-btn:hover { background: var(--st-accent); color: white; }
 
   .amorph-warning {
     margin-top: 0.5rem;
@@ -771,7 +879,7 @@
     background: rgba(233, 69, 96, 0.1);
     border: 1px solid rgba(233, 69, 96, 0.3);
     border-radius: 4px;
-    color: #e9a845;
+    color: var(--st-amber-text);
     font-size: 0.75rem;
   }
 </style>

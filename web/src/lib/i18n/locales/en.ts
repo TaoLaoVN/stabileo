@@ -2,6 +2,9 @@ const en: Record<string, string> = {
   // ─── Auth / Login ───
 
   // ─── Landing Page ───
+  'edu.author.exampleHint': "How it looks to a student",
+  'results.verification': "Verification",
+  'resultsTable.diagnostics': "Diagnostics",
   'landing.docs': 'Docs',
   'landing.demo': 'Demo',
   'landing.roadmap': 'Roadmap',
@@ -1383,6 +1386,10 @@ const en: Record<string, string> = {
   'template.cancel': 'Cancel',
 
   // ─── SectionShapeBuilder.svelte ───
+  'shapeBuilder.thin': "Thin-walled",
+  'shapeBuilder.solid': "Solid",
+  'shapeBuilder.thinHelp': "Walls thin against the section's other dimensions: they buckle locally, carry shear as a flow along the wall, and twist by Saint-Venant or Bredt. Rolled and welded steel, cold-formed, extruded aluminium.",
+  'shapeBuilder.solidHelp': "No thin walls: shear follows the parabolic Jourawski distribution and torsion has no elementary closed form. Concrete, timber, solid bar — whatever the material.",
   'shapeBuilder.title': 'Build section',
   'shapeBuilder.steel': 'Steel',
   'shapeBuilder.concrete': 'Concrete',
@@ -2177,6 +2184,8 @@ const en: Record<string, string> = {
   'cat.series.angle': 'Angles',
   'cat.series.tee': 'Tees',
   'cat.series.hollow': 'Hollow',
+  'cat.note.aisc': "W, HP, M, C and MC are the American series, dimensioned to ASTM A6/A6M. AISC 360 covers hollow sections through ASTM A500 and A1085.",
+  'cat.note.nbr': "Brazilian rolled profiles follow NBR 15980, which is dimensionally equivalent to ASTM A6/A6M — the same shapes, so the American series serve here too.",
   'cat.note.eurocodeTubes': 'Tube tables here are the IRAM-IAS ones; EN 10219-2 leaves the corner radius as a range.',
   'cat.note.cirsoc': 'Verification code; profiles come from the dimensional standards local practice uses.',
   'table.derivedFromGeometry': 'Derived from the profile geometry — the value the solver uses.',
@@ -3262,6 +3271,28 @@ const en: Record<string, string> = {
   'report.interactionDiagram': 'Interaction Diagram P-M',
 
   // ─── Education Mode ───
+  'edu.author.askKinematic': "Ask about the kinematic degree",
+  'edu.author.detected': "Detected",
+  'edu.author.degree': "degree",
+  'edu.author.kinUnavailable': "The kinematic degree cannot be determined until the model has nodes and supports.",
+  'edu.author.member': "Member",
+  'edu.author.moment': "Bending moment",
+  'edu.author.shear': "Shear",
+  'edu.author.axial': "Axial force",
+  'edu.author.steel': "Steel grade",
+  'edu.author.pickSize': "Pick a size…",
+  'edu.author.needsProfile': "This question needs a profile: choose one above.",
+  'edu.author.helpCharWhat': "Asks the student to state what kind of structure this is — isostatic or hyperstatic — before solving anything.",
+  'edu.author.helpCharEx': "«Is this structure isostatic or hyperstatic?»\nThe student answers before seeing any diagram.",
+  'edu.author.helpDiagWhat': "Asks for a value read off a diagram at a given station: the moment at mid-span, the shear at a support.",
+  'edu.author.helpDiagEx': "«What is the bending moment at mid-span of member 1?»\nAnswered in kN·m, checked against the solver.",
+  'edu.author.helpKinWhat': "Asks for the kinematic degree — how many independent movements the structure still has.",
+  'edu.author.helpKinEx': "«What is the kinematic degree of this structure?»\nThe answer is a whole number; 0 means it cannot move.",
+  'edu.author.helpShapeWhat': "Asks the student to recognise the SHAPE of a diagram rather than a value: where it is constant, linear or parabolic.",
+  'edu.author.helpShapeEx': "«What shape does the moment diagram take under a uniform load?»\nParabolic — because the load integrates twice.",
+  'edu.author.helpProfileWhat': "Fixes a rolled profile for the exercise, so every student sizes against the same section.",
+  'edu.author.helpProfileEx': "IPE 300, chosen from the catalogue.\nIts real properties are used, not approximations.",
+  'edu.author.helpSteelWhat': "The steel grade the profile is made of. It sets fy, which is what a stress check compares against.",
   'edu.title': 'Educational Mode',
   'edu.subtitle': 'Solve structural exercises step by step',
   'edu.easy': 'Easy',

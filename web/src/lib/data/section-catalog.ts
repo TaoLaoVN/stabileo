@@ -128,6 +128,29 @@ export const DESIGN_CODES: DesignCode[] = [
     families: ['IPE', 'HEA', 'HEB', 'IPN', 'UPN', 'L'],
     note: 'cat.note.eurocodeTubes',
   },
+  /*
+   * AISC was missing entirely, which is odd given that the W, HP, M, C and MC
+   * series shipped here ARE the American ones — the catalogue carried the
+   * shapes without naming the code they belong to, so a user working to AISC
+   * had no filter and no confirmation that these were their sections.
+   *
+   * The dimensional standard is ASTM A6/A6M; NBR 15980 is equivalent to it, so
+   * the same families serve Brazilian practice without duplicating a profile.
+   */
+  {
+    id: 'aisc-360',
+    label: 'AISC 360',
+    region: 'US',
+    families: ['W', 'HP', 'M', 'C', 'MC', 'L', 'T', 'CHS', 'RHS', 'SHS'],
+    note: 'cat.note.aisc',
+  },
+  {
+    id: 'nbr-8800',
+    label: 'NBR 8800',
+    region: 'BR',
+    families: ['W', 'HP', 'M', 'C', 'MC', 'L', 'CHS', 'RHS', 'SHS'],
+    note: 'cat.note.nbr',
+  },
 ];
 
 /** Every family the app ships, in picker order. */
