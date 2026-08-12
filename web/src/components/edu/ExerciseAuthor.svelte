@@ -201,6 +201,20 @@
 
   const addDiagram = () => (diagramQs = [...diagramQs, { question: '', unit: 'kN·m', force: 'moment', element: 0, t: 0 }]);
   const addShape = () => (shapeQs = [...shapeQs, { diagram: 'M', correct: 'linear' }]);
+
+  /*
+   * Diagrams the student DRAWS rather than names.
+   *
+   * Nothing to configure but which one: the answer is the solve, so there is
+   * no correct sketch to store and no way for a teacher to state it wrongly.
+   */
+  let sketchQs = $state<Array<{ diagram: 'N' | 'V' | 'M' }>>(
+    (editing?.diagramSketchQuestions ?? []).map((q) => ({ diagram: q.diagram })),
+  );
+  const addSketch = () => (sketchQs = [...sketchQs, { diagram: 'M' }]);
+
+  /** Practice lets a stuck student see the value; an assessment does not. */
+  let allowReveal = $state(editing?.allowReveal !== false);
   const addGiven = () => (givens = [...givens, { label: '', value: '' }]);
 
   /** Everything declared, assembled into one exercise. */
@@ -229,6 +243,8 @@
         ? { classification: detected.classification, degree: detected.degree || undefined }
         : undefined,
       diagramShapeQuestions: shapeQs.length ? shapeQs : undefined,
+      diagramSketchQuestions: sketchQs.length ? sketchQs : undefined,
+      allowReveal,
       sectionData: givens.filter((g) => g.label.trim()).length ? givens.filter((g) => g.label.trim()) : undefined,
     };
   });
@@ -461,6 +477,24 @@
     <section>
       <h4>4 · {t('edu.author.questions')}</h4>
 
+      <!--
+        Practice or assessment, decided here rather than assumed.
+        ────────────────────────────────────────────────────────
+        A stuck student being able to ask for the value is the right default
+        for homework and exactly wrong for a test. It sits at the top of the
+        questions because it applies to all of them.
+      -->
+      <div class="qgroup">
+        <div class="field-head">
+          <span class="qlabel">{t('edu.author.marking')}</span>
+          <FieldHelp what={t('edu.author.allowRevealHelpWhat')} example={t('edu.author.allowRevealHelpEx')} />
+        </div>
+        <label class="chk wide">
+          <input type="checkbox" bind:checked={allowReveal} data-testid="author-allow-reveal" />
+          {t('edu.author.allowReveal')}
+        </label>
+      </div>
+
       <div class="qgroup">
         <span class="qlabel">{t('edu.author.reactions')}</span>
         {#each askReactions as r, i}
@@ -600,6 +634,29 @@
           </div>
         {/each}
         <button class="btn-add" onclick={addShape}>+ {t('edu.author.add')}</button>
+      </div>
+
+      <!--
+        Drawing the diagram sits directly under naming its shape, because it
+        is the same question asked properly and a teacher looking for one will
+        look here for the other.
+      -->
+      <div class="qgroup">
+        <div class="field-head">
+          <span class="qlabel">{t('edu.author.sketchTitle')}</span>
+          <FieldHelp what={t('edu.author.sketchHelpWhat')} example={t('edu.author.sketchHelpEx')} />
+        </div>
+        {#each sketchQs as sq, i}
+          <div class="row">
+            <select bind:value={sq.diagram} data-testid="author-sketch-diagram-{i}">
+              <option value="N">{t('edu.author.axial')} (N)</option>
+              <option value="V">{t('edu.author.shear')} (V)</option>
+              <option value="M">{t('edu.author.moment')} (M)</option>
+            </select>
+            <button class="btn-del" onclick={() => (sketchQs = sketchQs.filter((_, k) => k !== i))} aria-label="✕">✕</button>
+          </div>
+        {/each}
+        <button class="btn-add" onclick={addSketch} data-testid="author-add-sketch">+ {t('edu.author.add')}</button>
       </div>
 
       <div class="qgroup">

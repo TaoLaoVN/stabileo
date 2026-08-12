@@ -9,6 +9,11 @@
     toSubmissionFile, toSubmissionCode,
     type Submission, type SubmittedAnswer,
   } from './exercise-submission';
+  import DiagramSketch from './DiagramSketch.svelte';
+  import {
+    emptySketch, gradeSketch, type Sketch, type SketchVerdict,
+  } from './diagram-sketch';
+  import { computeDiagramValueAt } from '../../lib/engine/diagrams';
 
   const SHAPE_OPTIONS: DiagramShape[] = ['zero', 'constant', 'linear', 'quadratic'];
 
@@ -68,6 +73,45 @@
 
   const TOLERANCE = 0.05;
 
+  // ─── Drawn diagrams ────────────────────────────────────────
+  //
+  // One sketch per question, and the real diagram sampled at the same
+  // stations the marker uses. The samples come from the solve, so an exercise
+  // never stores a "correct drawing" that could drift from its own structure.
+  const SKETCH_STATIONS = 41;
+  const sketchQuestions = $derived(exercise.diagramSketchQuestions ?? []);
+  let sketches = $state<Sketch[]>((exercise.diagramSketchQuestions ?? []).map(() => emptySketch()));
+  let sketchVerdicts = $state<Array<SketchVerdict | null>>((exercise.diagramSketchQuestions ?? []).map(() => null));
+
+  /** Whether the student may reveal an answer. Absent means yes, so every
+   *  exercise written before the teacher could choose keeps working. */
+  const canReveal = $derived(exercise.allowReveal !== false);
+
+  const DIAGRAM_KIND = { N: 'axial', V: 'shear', M: 'moment' } as const;
+
+  /** The real diagram for a question, sampled along the member. */
+  function trueSamplesFor(i: number): number[] | null {
+    const q = sketchQuestions[i];
+    const forces = eduStore.results?.elementForces;
+    if (!q || !forces?.length) return null;
+    const ef = forces[q.elementIndex ?? 0];
+    if (!ef) return null;
+    return Array.from({ length: SKETCH_STATIONS }, (_, k) =>
+      computeDiagramValueAt(DIAGRAM_KIND[q.diagram], k / (SKETCH_STATIONS - 1), ef as never));
+  }
+
+  function verifySketches() {
+    sketchVerdicts = sketchQuestions.map((_, i) => {
+      const truth = trueSamplesFor(i);
+      return truth ? gradeSketch(sketches[i], truth) : null;
+    });
+  }
+
+  const sketchesComplete = $derived(
+    sketchQuestions.length === 0 ||
+    sketchVerdicts.every(v => v !== null && v.curveOk && v.powersOk),
+  );
+
   // Solver insight for educational display
   const timings = $derived<SolveTimings | undefined>(eduStore.results?.timings);
 
@@ -86,7 +130,8 @@
     shapeVerif.every(s => s === 'correct')
   );
   const step2Complete = $derived(
-    (exercise.diagramQuestions.length === 0 || diagramVerif.every(s => s === 'correct')) && shapesComplete
+    (exercise.diagramQuestions.length === 0 || diagramVerif.every(s => s === 'correct'))
+    && shapesComplete && sketchesComplete
   );
   const step3Complete = $derived(
     charVerif.every(s => s === 'correct')
@@ -165,6 +210,19 @@
         unit: q.unit,
         outcome: diagramVerif[i],
         revealed: revealedDiagrams[i],
+      });
+    });
+    sketchQuestions.forEach((q, i) => {
+      const v = sketchVerdicts[i];
+      out.push({
+        label: `${t('edu.sketch.span')} ${q.diagram}`,
+        // The drawing itself, as the ordinates and powers that produced it —
+        // a teacher reading the record can see what was drawn, not only
+        // whether it passed.
+        answer: sketches[i].points
+          .map(pt => `${pt.t.toFixed(2)}:${pt.value.toFixed(2)}`)
+          .join(' ') + ' · ' + sketches[i].powers.join('/'),
+        outcome: v ? (v.curveOk && v.powersOk ? 'correct' : 'incorrect') : 'pending',
       });
     });
     exercise.characteristics.forEach((c, i) => {
@@ -408,7 +466,13 @@
   });
 </script>
 
-<div class="exercise-view">
+<!--
+  `data-solved` states, in the DOM, whether the results the marking needs have
+  arrived. Every answer here is graded against the solve, so "not solved yet"
+  and "wrong" look identical from outside — this is what tells them apart, for
+  a spec and for anyone debugging a verdict that will not appear.
+-->
+<div class="exercise-view" data-solved={eduStore.results ? 'yes' : 'no'}>
   <!--
     The stepper is navigation, not decoration.
     \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
@@ -505,7 +569,7 @@
                 />
                 <span class="dof-unit">{dof === 'M' ? 'kN·m' : 'kN'}</span>
               </label>
-              {#if reactionVerif[i][dof] === 'incorrect' && !revealedReactions[i][dof]}
+              {#if canReveal && reactionVerif[i][dof] === 'incorrect' && !revealedReactions[i][dof]}
                 <button class="reveal-btn" onclick={() => revealReaction(i, dof)} title={t('edu.reveal')}>
                   {t('edu.reveal')}
                 </button>
@@ -591,6 +655,58 @@
       </button>
     {/if}
 
+    <!--
+      Drawing it.
+      ───────────
+      Naming a shape checks recognition; drawing checks whether the student can
+      say where it jumps, which way it goes and what power each piece has. The
+      two verdicts are reported separately because they are separate mistakes,
+      and the real diagram is only drawn behind the answer once it has been
+      marked — before that it would be the answer key.
+    -->
+    {#each sketchQuestions as sq, i (i)}
+      <div class="sketch-block">
+        <p class="step-info">
+          {t('edu.sketch.prompt').replace('{diagram}', sq.diagram)}
+        </p>
+        <DiagramSketch
+          bind:sketch={sketches[i]}
+          unit={sq.diagram === 'M' ? 'kN·m' : 'kN'}
+          reference={sketchVerdicts[i] ? trueSamplesFor(i) : null}
+        />
+        {#if sketchVerdicts[i]}
+          {@const v = sketchVerdicts[i]!}
+          <div class="sketch-verdict">
+            <span class={v.curveOk ? 'sv-ok' : 'sv-bad'}>
+              {v.curveOk ? '✓' : '✗'} {t('edu.sketch.curve')}
+            </span>
+            <span class={v.powersOk ? 'sv-ok' : 'sv-bad'}>
+              {v.powersOk ? '✓' : '✗'} {t('edu.sketch.powers')}
+            </span>
+          </div>
+          {#if !v.powersOk}
+            <ul class="sketch-notes">
+              {#each v.powers as p, k}
+                {#if !p.ok}
+                  <li>
+                    {t('edu.sketch.spanWrong')
+                      .replace('{n}', String(k + 1))
+                      .replace('{chose}', t('edu.sketch.power.' + p.chose))
+                      .replace('{correct}', t('edu.sketch.power.' + p.correct))}
+                  </li>
+                {/if}
+              {/each}
+            </ul>
+          {/if}
+        {/if}
+      </div>
+    {/each}
+    {#if sketchQuestions.length > 0}
+      <button class="verify-btn verify-btn-small" onclick={verifySketches} disabled={sketchesComplete}>
+        {sketchesComplete ? '\u2713 ' + t('edu.verified') : t('edu.sketch.verify')}
+      </button>
+    {/if}
+
     {#if exercise.diagramQuestions.length > 0}
       <p class="step-info">{t('edu.step2DescNew')}</p>
 
@@ -611,7 +727,7 @@
               />
               <span class="char-unit">{dq.unit}</span>
             </label>
-            {#if diagramVerif[i] === 'incorrect' && !revealedDiagrams[i]}
+            {#if canReveal && diagramVerif[i] === 'incorrect' && !revealedDiagrams[i]}
               <button class="reveal-btn" onclick={() => revealDiagram(i)} title={t('edu.reveal')}>
                 {t('edu.reveal')}
               </button>
@@ -662,7 +778,7 @@
             />
             <span class="char-unit">{ch.unit}</span>
           </label>
-          {#if charVerif[i] === 'incorrect' && !revealedChars[i]}
+          {#if canReveal && charVerif[i] === 'incorrect' && !revealedChars[i]}
             <button class="reveal-btn" onclick={() => revealChar(i)} title={t('edu.reveal')}>
               {t('edu.reveal')}
             </button>
@@ -1211,6 +1327,27 @@
     font-size: 0.68rem;
     padding: 4px 12px;
     margin-bottom: 12px;
+  }
+
+  /* ─── The drawn diagram ─── */
+  .sketch-block { margin: 10px 0 6px; }
+
+  .sketch-verdict {
+    display: flex;
+    gap: 12px;
+    font-size: 0.7rem;
+    margin-top: 6px;
+  }
+
+  .sv-ok { color: var(--st-ok); }
+  .sv-bad { color: var(--st-danger); }
+
+  .sketch-notes {
+    margin: 4px 0 0;
+    padding-left: 16px;
+    font-size: 0.68rem;
+    color: var(--st-warn);
+    line-height: 1.4;
   }
 
   /* ─── Handing it in ─── */

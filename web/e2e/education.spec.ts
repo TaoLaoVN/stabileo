@@ -1,5 +1,9 @@
 import { test, expect, type Page } from '@playwright/test';
 
+declare global {
+  interface Window { __stabileo?: { solverReady?: () => boolean } }
+}
+
 /**
  * Education, driven the way the two people who use it do.
  *
@@ -49,6 +53,20 @@ function shareLink(): string {
   return `${EDU_URL}#edu-ex=${b64}`;
 }
 
+/**
+ * Boot Education and wait for the SOLVER, not only for the panel.
+ *
+ * Every answer in this mode is marked against the solve — including the drawn
+ * diagram, which is compared with the real one sampled from it. A spec that
+ * types an answer as soon as the panel appears is racing the engine, and gets
+ * a verdict of "not checked" that looks exactly like a broken feature.
+ */
+/** Open an exercise from the list and wait for it to be gradeable. */
+async function openExercise(page: Page, nth = 0) {
+  await page.locator('.exercise-card').nth(nth).click();
+  await expect(page.locator('.exercise-view')).toHaveAttribute('data-solved', 'yes', { timeout: 30_000 });
+}
+
 async function bootEducation(page: Page, url = EDU_URL) {
   await page.addInitScript(() => {
     try {
@@ -57,8 +75,22 @@ async function bootEducation(page: Page, url = EDU_URL) {
       localStorage.setItem('stabileo-lang-manual', '1');
     } catch { /* private mode */ }
   });
-  await page.goto(url);
+  const [path, hash] = url.split('#');
+  await page.goto(`${path}${path.includes('?') ? '&' : '?'}e2e=1${hash ? '#' + hash : ''}`);
   await expect(page.locator('.edu-panel')).toBeVisible({ timeout: 30_000 });
+  await page.waitForFunction(() => window.__stabileo?.solverReady?.() === true, null, { timeout: 60_000 });
+  /*
+   * And for the exercise's own model to be in the store.
+   *
+   * Opening an exercise clears the model, rebuilds it and solves it, and the
+   * view is keyed on the exercise — so anything typed while that is still in
+   * flight is discarded by the remount, and the spec sees empty fields it
+   * swears it filled. The status bar reports the built model, which is the
+   * first honest sign that the sequence is over.
+   */
+  if (hash) {
+    await expect(page.locator('.exercise-view')).toHaveAttribute('data-solved', 'yes', { timeout: 30_000 });
+  }
 }
 
 test.describe('@smoke Education — a handed-out exercise', () => {
@@ -121,6 +153,72 @@ test.describe('@smoke Education — a handed-out exercise', () => {
   });
 });
 
+test.describe('@smoke Education — drawing the diagram', () => {
+  test('the built-in beam asks for the diagram to be drawn, and marks it', async ({ page }) => {
+    await bootEducation(page);
+    await openExercise(page);
+    await page.getByTestId('edu-step-2').click();
+
+    // Shear and moment, each with its own strip and its own spans.
+    await expect(page.locator('.ds-plot')).toHaveCount(2);
+    await expect(page.locator('.ds-span')).toHaveCount(2);
+
+    // Draw the shear: +qL/2 to −qL/2, straight. q = 5 kN/m over 8 m.
+    const values = page.locator('.ds-val');
+    await values.nth(0).fill('20');
+    await values.nth(1).fill('-20');
+    await page.locator('.ds-pw', { hasText: /^lin$/ }).first().click();
+    await page.locator('.verify-btn', { hasText: /Verify the drawing/i }).click();
+
+    const verdict = page.locator('.sketch-verdict').first();
+    await expect(verdict.locator('.sv-ok')).toHaveCount(2);
+  });
+
+  test('a right picture with the wrong power named is told which one', async ({ page }) => {
+    await bootEducation(page);
+    await openExercise(page);
+    await page.getByTestId('edu-step-2').click();
+
+    // Left untouched, both spans say "constant". Under a uniform load the
+    // shear is linear and the moment quadratic, and the student is told which
+    // is which rather than just "wrong".
+    await page.locator('.verify-btn', { hasText: /Verify the drawing/i }).click();
+    const notes = page.locator('.sketch-notes');
+    await expect(notes.nth(0), 'the shear').toContainText(/you chose constant, it is linear/i);
+    await expect(notes.nth(1), 'the moment').toContainText(/you chose constant, it is quadratic/i);
+  });
+});
+
+test.describe('@smoke Education — the teacher decides about revealing', () => {
+  test('an exercise with reveal off never offers the answer', async ({ page }) => {
+    const locked = {
+      ...EXERCISE,
+      exercise: { ...EXERCISE.exercise, id: 'e2e-locked', allowReveal: false },
+    };
+    const b64 = Buffer.from(JSON.stringify(locked, null, 2), 'utf8').toString('base64');
+    await bootEducation(page, `${EDU_URL}#edu-ex=${b64}`);
+
+    // Get it wrong on purpose: that is when the reveal appears in practice.
+    const fields = page.locator('.dof-input input');
+    await fields.nth(0).fill('123');
+    await fields.nth(1).fill('456');
+    await page.locator('.verify-btn').first().click();
+
+    await expect(page.locator('.verif-incorrect').first()).toBeVisible();
+    await expect(page.locator('.reveal-btn'), 'no way to ask for the answer').toHaveCount(0);
+  });
+
+  test('the same exercise with reveal on does offer it', async ({ page }) => {
+    await bootEducation(page, shareLink());
+    const fields = page.locator('.dof-input input');
+    await fields.nth(0).fill('123');
+    await fields.nth(1).fill('456');
+    await page.locator('.verify-btn').first().click();
+
+    await expect(page.locator('.reveal-btn').first()).toBeVisible();
+  });
+});
+
 test.describe('@smoke Education — authoring', () => {
   test('the drawing tools exist in the mode that tells you to draw', async ({ page }) => {
     await bootEducation(page);
@@ -131,6 +229,23 @@ test.describe('@smoke Education — authoring', () => {
     for (const tool of ['Node', 'Element', 'Support', 'Load']) {
       await expect(page.locator('.ft-btn', { hasText: tool })).toBeVisible();
     }
+  });
+
+  test('asking for a drawn diagram is one control, beside naming its shape', async ({ page }) => {
+    await bootEducation(page);
+    await page.locator('.edu-author-btn').click();
+    // The questions only exist once there is a structure to ask about, so the
+    // shortest honest path to them is the example loader.
+    await page.locator('.src-tab', { hasText: /Example/i }).click();
+    await page.locator('.btn-primary', { hasText: /Load/i }).click();
+
+    // Beside the shape question it upgrades, not behind anything.
+    await expect(page.getByTestId('author-add-sketch')).toBeVisible({ timeout: 30_000 });
+    await page.getByTestId('author-add-sketch').click();
+    await expect(page.getByTestId('author-sketch-diagram-0')).toBeVisible();
+
+    // And the reveal switch, on by default.
+    await expect(page.getByTestId('author-allow-reveal')).toBeChecked();
   });
 
   test('both ways into a submission are named, and neither is a system widget', async ({ page }) => {

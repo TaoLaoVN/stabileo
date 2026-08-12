@@ -42,6 +42,13 @@ export interface DiagramShapeQuestion {
   correct: DiagramShape;
 }
 
+/** A diagram the student draws instead of naming. */
+export interface DiagramSketchQuestion {
+  diagram: 'N' | 'V' | 'M';
+  /** Index into the built model's elements; the first member when absent. */
+  elementIndex?: number;
+}
+
 export interface SectionDataItem {
   label: string;
   value: string;
@@ -73,6 +80,10 @@ export interface EduExercise {
   kinematicQuestion?: KinematicQuestion;
   /** Diagram shape questions — student picks shape for N, V, M (statics exercises) */
   diagramShapeQuestions?: DiagramShapeQuestion[];
+  /** Diagrams the student draws, ordinate by ordinate, with the power of each span */
+  diagramSketchQuestions?: DiagramSketchQuestion[];
+  /** Whether "show me the answer" is offered. Absent means yes. */
+  allowReveal?: boolean;
   /** Section data to display as given info (strength/advanced exercises) */
   sectionData?: SectionDataItem[];
 }
@@ -118,6 +129,8 @@ function fromSpec(spec: EduExerciseSpec): EduExercise {
     })),
     kinematicQuestion: spec.kinematicQuestion,
     diagramShapeQuestions: spec.diagramShapeQuestions,
+    diagramSketchQuestions: spec.diagramSketchQuestions,
+    allowReveal: spec.allowReveal,
     sectionData: spec.sectionData,
   };
 }

@@ -4,6 +4,7 @@
   import EduExerciseView from './EduExerciseView.svelte';
   import { t } from '../../lib/i18n';
   import { solveForEdu } from './edu-solver';
+  import { isSolverReady } from '../../lib/engine/wasm-solver';
   import { eduStore } from './edu-store.svelte';
   import ExerciseAuthor from './ExerciseAuthor.svelte';
   import { buildFromSpec, evaluateAnswer, type AnswerContext, type EduExerciseSpec } from './exercise-spec';
@@ -144,6 +145,8 @@
       })),
       kinematicQuestion: spec.kinematicQuestion,
       diagramShapeQuestions: spec.diagramShapeQuestions,
+      diagramSketchQuestions: spec.diagramSketchQuestions,
+      allowReveal: spec.allowReveal,
       sectionData: spec.sectionData,
     };
   }
@@ -178,8 +181,18 @@
     // Track in edu store
     eduStore.loadExercise(ex, builtNodeIds);
 
-    // Solve internally (results stored but hidden from viewport)
-    setTimeout(() => solveForEdu(), 100);
+    /*
+     * Solve once the engine can actually solve.
+     *
+     * This used to be a flat 100 ms timeout. Opening an exercise on a cold
+     * page — a student following a link, which is the common case — fired it
+     * while the WASM engine was still initialising, the solve failed, and
+     * NOTHING retried: `eduStore.results` stayed null, so every answer the
+     * student typed was graded against nothing and Verify appeared to do
+     * nothing at all. Same failure main fixed for the stress context, one
+     * layer up.
+     */
+    solveWhenReady();
 
     // Zoom to fit
     setTimeout(() => {
@@ -196,6 +209,17 @@
     editingSpec = spec;
     eduStore.authoring = false;
     loadExercise(specToExercise(spec));
+  }
+
+  /** Poll for the engine, then solve. Bounded, and it gives up in the open
+   *  rather than leaving a student wondering why nothing happens. */
+  function solveWhenReady(attempt = 0) {
+    if (isSolverReady() || attempt >= 60) {
+      if (!isSolverReady()) uiStore.toast(t('edu.engineNotReady'), 'error');
+      solveForEdu();
+      return;
+    }
+    setTimeout(() => solveWhenReady(attempt + 1), 100);
   }
 
   function goBack() {

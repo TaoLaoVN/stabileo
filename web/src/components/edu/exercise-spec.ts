@@ -225,6 +225,18 @@ export interface DiagramShapeQuestion {
   correct: DiagramShape;
 }
 
+/**
+ * "Draw this diagram."
+ *
+ * Nothing but which diagram, on which member: the answer is the solve, so
+ * there is no correct sketch to store and nothing for an author to get wrong.
+ */
+export interface DiagramSketchQuestion {
+  diagram: 'N' | 'V' | 'M';
+  /** Index into `model.elements`; the first member when absent. */
+  elementIndex?: number;
+}
+
 export interface SectionDataItem {
   label: string;
   value: string;
@@ -245,7 +257,18 @@ export interface EduExerciseSpec {
   diagramQuestions: Array<{ question: string; unit: string; answer: AnswerSpec }>;
   kinematicQuestion?: KinematicQuestion;
   diagramShapeQuestions?: DiagramShapeQuestion[];
+  /** Diagrams the student has to draw rather than name. */
+  diagramSketchQuestions?: DiagramSketchQuestion[];
   sectionData?: SectionDataItem[];
+  /**
+   * Whether the student may reveal an answer instead of solving it.
+   *
+   * Defaults to true, which is how every exercise written before this existed
+   * behaves. A teacher setting an assessment turns it off; one handing out
+   * practice leaves it on. Absent means "on", so no existing file changes
+   * meaning by being read with a newer app.
+   */
+  allowReveal?: boolean;
 }
 
 /**
