@@ -8,9 +8,8 @@
   import MaterialsTable from './tables/MaterialsTable.svelte';
   import SectionsTable from './tables/SectionsTable.svelte';
   import CombosTable from './tables/CombosTable.svelte';
-  import ResultsTable from './tables/ResultsTable.svelte';
 
-  type TabId = 'nodes' | 'elements' | 'supports' | 'loads' | 'materials' | 'sections' | 'combos' | 'results';
+  type TabId = 'nodes' | 'elements' | 'supports' | 'loads' | 'materials' | 'sections' | 'combos';
   interface Props {
     /**
      * The open tab, BOUND — the ribbon and this table are two views of one
@@ -50,7 +49,6 @@
   /** Tools that draw, so leaving them for a table means going back to select. */
   const EDIT_TOOL_IDS = ['node', 'element', 'support', 'load'];
 
-  const solved = $derived(resultsStore.results != null || resultsStore.results3D != null);
 
   /*
    * A solve going away must not leave the panel on a tab with nothing in it.
@@ -58,7 +56,6 @@
    * greying it means the move has to be explicit.
    */
   $effect(() => {
-    if (!solved && activeTab === 'results') activeTab = 'nodes';
   });
 
   function handleKeydown(e: KeyboardEvent) {
@@ -90,19 +87,15 @@
       {t('data.combinations')}
     </button>
     <!--
-      Always present, greyed until there is something in it — the same rule the
-      ribbon's Results group follows. Appearing only after a solve made the tab
-      strip change length under the cursor and gave a new user no clue that the
-      panel had a results view at all.
+      Results are NOT a tab here.
+      
+      This panel is the model: geometry, conditions, properties — the things you
+      build. Results are what the model produced, and they belong beside the
+      controls that choose which result to look at, which live in the results
+      toolbar. Having them here also let the ribbon show a construction tool and
+      a diagram lit at once, claiming you were editing and reading at the same
+      time.
     -->
-    <button
-      class:active={activeTab === 'results'}
-      disabled={!solved}
-      title={solved ? undefined : t('ribbon.needsSolve')}
-      onclick={() => pickTab('results')}
-    >
-      {t('data.results')}
-    </button>
   </div>
 
   <div class="table-wrapper">
@@ -120,8 +113,6 @@
       <SectionsTable />
     {:else if activeTab === 'combos'}
       <CombosTable />
-    {:else if activeTab === 'results' && solved}
-      <ResultsTable />
     {/if}
   </div>
 </div>

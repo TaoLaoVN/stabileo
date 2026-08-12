@@ -1,5 +1,6 @@
 <script lang="ts">
   import { t } from '../../lib/i18n';
+  import { showDiagram, armTool } from '../../lib/store/view-mode';
   import { TWO_D_INTERNAL_FORCE_LABELS as F2D } from '../../lib/geometry/coordinate-system';
   import { uiStore } from '../../lib/store/ui.svelte';
   import { historyStore } from '../../lib/store/history.svelte';
@@ -277,11 +278,7 @@
   function run(cmd: Cmd) {
     if (cmd.enabled && !cmd.enabled()) return;
     if (cmd.tool) {
-      uiStore.currentTool = cmd.tool as never;
-      // Back to editing: put the diagram away rather than draw on top of it.
-      if (EDIT_TOOLS.includes(cmd.tool) && resultsStore.diagramType !== 'none') {
-        resultsStore.diagramType = 'none';
-      }
+      armTool(cmd.tool);
       /*
        * Arming a tool now OPENS the data panel on that tool's own tab.
        *
@@ -306,9 +303,10 @@
        * closed the panel — the command reads as "show me this", and "show" has
        * no off state.
        */
-      resultsStore.diagramType = cmd.diagram as never;
-      // Reading a result: fall back to Select, which is the tool for reading.
-      if (EDIT_TOOLS.includes(uiStore.currentTool)) uiStore.currentTool = 'select';
+      // One call, because the rule that reading a result leaves editing belongs
+      // to the app rather than to this component — the results toolbar used to
+      // write `diagramType` directly and forgot it entirely.
+      showDiagram(cmd.diagram as never);
       if (cmd.action) cmd.action();
       onOpenPanel(cmd.panel ?? null, { toggle: false });
       return;
