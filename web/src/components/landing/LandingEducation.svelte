@@ -5,14 +5,21 @@
   /**
    * Education mode, split by what a visitor can actually do today.
    *
-   * The `now` column is verifiable in components/edu: six predefined exercises,
-   * solved by the engine, with tolerance-checked answers, generated hints and
-   * per-item reveal. The `next` column is intent, and the teacher side of it —
-   * authoring, submissions, grade records, sharing — does not exist in any form,
-   * which `eduNotYet` says outright rather than leaving to the badge.
+   * Everything in `now` is verifiable in components/edu: seven predefined
+   * exercises solved by the engine, tolerance-checked answers with generated
+   * hints, diagrams the student draws and that are marked span by span, an
+   * authoring form that reads the canvas, a handout link that opens a
+   * student's workspace, and submissions that come back as a file or a code.
+   *
+   * `next` is what is genuinely still missing, and it is now a different list
+   * from the one written when the teacher side did not exist at all: what is
+   * absent is the COURSE around the exercise — assignments, a class, attempts,
+   * a mark that lives somewhere — not the exercise itself. `eduNotYet` says
+   * that outright, including the boundary that causes it: nothing is stored on
+   * a server, so everything travels as a link, a file or a code.
    */
-  const now = ['eduNow1', 'eduNow2', 'eduNow3', 'eduNow4', 'eduNow5'];
-  const next = ['eduNext1', 'eduNext2', 'eduNext3', 'eduNext4', 'eduNext5', 'eduNext6', 'eduNext7', 'eduNext8'];
+  const now = ['eduNow1', 'eduNow2', 'eduNow3', 'eduNow4', 'eduNow5', 'eduNow6', 'eduNow7'];
+  const next = ['eduNext1', 'eduNext2', 'eduNext3', 'eduNext4', 'eduNext5', 'eduNext6'];
 </script>
 
 <section class="sec sec--ink edu reveal" data-section="education" id="education" aria-labelledby="edu-title">

@@ -1108,8 +1108,10 @@ test.describe('@landing landing page', () => {
       await expect(what.locator('.mode-row .badge-dev')).toHaveCount(3);
 
       const modes = await what.locator('.mode-list').innerText();
-      expect(modes).toMatch(/Predefined exercises run today/i);
-      expect(modes).toMatch(/teacher-created assignments and correction are in development/i);
+      // Education's line moved when the teacher side shipped: writing,
+      // handing out and reading back run; the course above them does not.
+      expect(modes).toMatch(/handing it out and reading the answers back all run today/i);
+      expect(modes).toMatch(/the course around them .* is in development/i);
       expect(modes).toMatch(/CIRSOC reinforced concrete has basic support today/i);
       expect(modes).toMatch(/steel design in development/i);
 
@@ -1186,27 +1188,39 @@ test.describe('@landing landing page', () => {
       await expect(page.locator('.landing iframe.demo-iframe')).toHaveAttribute('src', /\/app\/basic\?embed/);
     });
 
-    test('Education is labelled in development and does not claim teacher tooling', async ({ page }) => {
+    test('Education claims the round trip it has, and not the course it has not', async ({ page }) => {
       await bootLanding(page);
 
       const edu = page.locator('.landing [data-section="education"]');
       await edu.scrollIntoViewIfNeeded();
+      // Still in development as a whole: the exercise works, the course
+      // around it does not.
       await expect(edu.locator('.badge-dev')).toHaveText(/in development/i);
 
       const text = await sectionText(page, 'education');
-      // What exists today.
+
+      /*
+       * What now exists, and had to be claimed once it did. This half of the
+       * guard is as important as the other: a page that keeps saying the
+       * teacher side is "in development" after it ships is as dishonest as
+       * one that claims it early.
+       */
       expect(text).toMatch(/predefined exercises/i);
       expect(text).toMatch(/tolerance/i);
+      expect(text, 'the student draws the diagram').toMatch(/draws the diagram/i);
+      expect(text, 'a teacher writes the exercise in the app').toMatch(/writes an exercise in the app/i);
+      expect(text, 'and hands it out').toMatch(/hand(ing)? (out|back)/i);
+
       /*
-       * The teacher side must still be unmistakably future. Stated as work in
-       * progress rather than as a list of absences — but the words "in
-       * development" have to be attached to it, or the section would read as
-       * though authoring and grading already ship.
+       * And what still does not exist. Every one of these is absent from the
+       * product today; claiming any of them would be the failure this test was
+       * written for in the first place.
        */
-      expect(text).toMatch(/teacher side is in development/i);
-      expect(text).toMatch(/being built on top of the exercises that already run/i);
-      expect(text).not.toMatch(/teachers can (now|already)/i);
-      expect(text).not.toMatch(/grading (is|are) available/i);
+      expect(text, 'no class roster').not.toMatch(/class list is|roster (is|are) available/i);
+      expect(text, 'no marks stored anywhere').not.toMatch(/grades? (are|is) stored/i);
+      expect(text, 'nothing on a server').toMatch(/stores nothing on a server/i);
+      expect(text, 'assignments are still ahead').toMatch(/assignments that group/i);
+
       // The free-for-education commitment is phrased as intent, not as a live offer.
       expect(text).toMatch(/intended to stay free for educational use/i);
     });
@@ -1597,7 +1611,7 @@ test.describe('@landing landing page', () => {
       // Case-insensitive: the pill is uppercased by CSS, so innerText reports it that way.
       expect(body).toMatch(/100% modo Básico/i);
       // Same forward-looking statuses as the English page.
-      expect(body).toMatch(/el lado docente está en desarrollo/i);
+      expect(body).toMatch(/la cátedra alrededor —tareas, curso, una nota que viva en algún lado— está en desarrollo/i);
       expect(body).toMatch(/en desarrollo activo/i);
       expect(body).toMatch(/no un servicio que puedas abrir hoy/i);
       expect(body).toMatch(/ya sirve para cálculos complejos/i);
