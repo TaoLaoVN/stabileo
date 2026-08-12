@@ -81,6 +81,15 @@
 </script>
 
 <div class="floor-families" data-testid="floor-families">
+  <!--
+    What this stage is, said where it runs.
+
+    It is optional and it is a STEP, not an alternative: "Design all" on the command row designs
+    the frame — columns and beams — and this designs the shells the frame carries, plus footings
+    when they are asked for. A building with no slabs never needs it; a building with slabs needs
+    it BEFORE detailing, because the detailing coordinates whatever bars exist by then.
+  -->
+  <p class="stage-note" data-testid="floor-stage-note">{t('detailing.floorRun.whenToRun')}</p>
   <header class="commands">
     <!--
       One command, because design and detailing for these families are one production pass:
@@ -342,6 +351,9 @@
 </div>
 
 <style>
+  .stage-note {
+    margin: 0 0 0.5rem; font-size: 0.72rem; line-height: 1.4; color: var(--st-text-2);
+  }
   .floor-families { display: flex; flex-direction: column; gap: 0.6rem; padding: 0.75rem 1rem; font-size: 0.82rem; }
   .commands { display: flex; align-items: center; gap: 0.6rem; flex-wrap: wrap; }
   button { font: inherit; cursor: pointer; }

@@ -4789,5 +4789,40 @@ const pt: Translations = {
   'maturity.provisionalDrawingNote': 'CÁLCULO PROVISÓRIO — Uma ou mais verificações desta prancha estão implementadas e fundamentadas na norma, com hipóteses e equações expostas, mas ainda não contam com confronto contra um exemplo resolvido externo. Requerem revisão e aceitação expressa do profissional responsável. A aprovação por software não constitui assinatura profissional.',
   'maturity.unsupported.noClauseCited': 'Cálculo sem fundamento normativo citado.',
   'maturity.unsupported.notImplemented': 'Não implementado: a demanda ou a regra requerida não pode ser calculada com os dados disponíveis.',
+
+  // ─── The workflow strip (PR20 UX pass) ───
+  'design.stage.title': 'Fluxo de dimensionamento de concreto',
+  'design.stage.model': 'Modelo',
+  'design.stage.demands': 'Solicitações',
+  'design.stage.check': 'Verificação',
+  'design.stage.design': 'Dimensionamento',
+  'design.stage.detailing': 'Detalhamento',
+  'design.stage.documents': 'Documentos',
+  'design.stage.needModel': 'Carregue ou desenhe um modelo para começar.',
+  'design.stage.needSolve': 'Calcule o modelo — o dimensionamento lê os seus resultados.',
+  'design.stage.needDemands': 'Calcule as solicitações primeiro: as verificações leem-nas por estação.',
+  'design.stage.needDesign': 'Dimensione os elementos primeiro — o detalhamento coordena as barras que receberam.',
+  'design.stage.needDetailing': 'Gere o detalhamento coordenado — os desenhos e a planilha são projeções dele.',
+  'design.stage.allDone': 'Todas as etapas estão completas. Revise os estados e exporte.',
+  'design.stage.srDone': 'concluída',
+  'design.stage.srCurrent': 'etapa atual',
+  'design.stage.srBlocked': 'ainda não alcançável',
+
+  'design.group.verify': '1 · Verificar',
+  'design.group.design': '2 · Dimensionar',
+  'design.group.detailing': '3 · Detalhar',
+  'design.cmd.designAllScope': 'Dimensiona todos os elementos de pórtico (pilares e vigas). Lajes, paredes e fundações são dimensionadas em «Lajes, paredes e fundações».',
+  'detailing.cmd.autoShort': 'auto após dimensionar',
+
+  'design.families.subtitle': 'Dimensiona as famílias que você marcar, em todo o edifício — incluindo lajes e paredes, que «Dimensionar tudo» acima não toca.',
+  'design.families.runScoped': 'Dimensionar famílias selecionadas',
+
+  'detailing.sheet.expand': 'Ampliar',
+  'detailing.sheet.expandHint': 'Abrir esta prancha em tela cheia, num tamanho legível',
+  'detailing.sheet.close': 'Fechar',
+  'detailing.sheet.empty': 'Ainda não há prancha. Escolha um conjunto à esquerda e escolha Elevação ou Seção; a prancha é desenhada a partir do detalhamento coordenado.',
+
+  'design.families.optionalStage': 'etapa opcional',
+  'detailing.floorRun.whenToRun': 'Opcional, e roda ANTES do detalhamento. «Dimensionar tudo» dimensiona o pórtico — pilares e vigas; isto dimensiona as lajes e paredes que ele suporta, e as sapatas se você as pedir. Um edifício só de pórticos pode pulá-lo.',
 };
 export default pt;

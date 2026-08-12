@@ -114,20 +114,25 @@ test.describe('@smoke PRO shell — Ver modelo 3D on the Design row', () => {
       await expect(btn, 'and refuses honestly rather than vanishing').toBeDisabled();
 
       /**
-       * It is IN the command row, beside `Design all`.
+       * It is IN the command row, with `Design all`.
        *
-       * Asserted by DOM containment rather than by comparing y-coordinates: `.cmd-row` is
-       * `flex-wrap: wrap` and the PRO panel is a sidebar, so at some widths the commands
-       * legitimately run onto a second line. What must never happen again is this command
-       * living somewhere else entirely — under a disclosure, in another panel — and that is
-       * exactly what containment tests.
+       * Asserted by DOM containment rather than by comparing y-coordinates: the row wraps and the
+       * PRO panel is a sidebar, so at some widths the commands legitimately run onto a second
+       * line. What must never happen again is this command living somewhere else entirely — under
+       * a disclosure, in another panel — and that is exactly what containment tests.
+       *
+       * It used to compare `parentElement` directly, which held while the row was six flat
+       * buttons. PR20's UX pass groups them by stage — Verify / Design / Detail — so the two now
+       * sit in different groups OF THE SAME ROW, which is the arrangement the strip and the group
+       * labels exist to make legible. The claim is unchanged; the nesting is one level deeper.
        */
       const sameRow = await page.evaluate(() => {
         const b = document.querySelector('[data-testid="cmd-open-3d"]');
         const all = document.querySelector('[data-testid="cmd-design-all"]');
-        return !!b && !!all && b.parentElement === all.parentElement;
+        const row = document.querySelector('[data-testid="design-toolbar"] .cmd-row');
+        return !!b && !!all && !!row && row.contains(b) && row.contains(all);
       });
-      expect(sameRow, 'in the command row, beside Design all').toBe(true);
+      expect(sameRow, 'in the command row, with Design all').toBe(true);
     });
 
   test('it enables once detailing exists, reports the count, and opens the workspace',

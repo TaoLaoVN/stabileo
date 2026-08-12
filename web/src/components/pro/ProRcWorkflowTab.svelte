@@ -14,6 +14,7 @@
    * which edition and which aggregate size a result belongs to.
    */
   import ProDesignTab from './ProDesignTab.svelte';
+  import WorkflowStages from './design/WorkflowStages.svelte';
   import ProjectRegulationsPanel from './design/ProjectRegulationsPanel.svelte';
   import DetailingWorkflow from './design/DetailingWorkflow.svelte';
   import FloorFamiliesPanel from './design/FloorFamiliesPanel.svelte';
@@ -38,10 +39,48 @@
   const needsAttention = $derived(
     regulationsStore.pending.length > 0 || regulationsStore.validation.problems.length > 0,
   );
+
+  /**
+   * Navigation for the workflow strip.
+   *
+   * Opening a `<details>` and scrolling it into view is the whole of it. The strip deliberately
+   * does not RUN anything — the commands stay the single place work is started from — so this
+   * cannot become a second, competing command surface.
+   */
+  let regsEl = $state<HTMLDetailsElement | undefined>();
+  let detailingEl = $state<HTMLDetailsElement | undefined>();
+  let floorsEl = $state<HTMLDetailsElement | undefined>();
+
+  function reveal(el: HTMLDetailsElement | undefined) {
+    if (!el) return;
+    el.open = true;
+    el.scrollIntoView({ block: 'nearest' });
+  }
+
+  function goToStage(target: 'model' | 'design' | 'floors' | 'detailing' | 'documents') {
+    if (target === 'detailing' || target === 'documents') { reveal(detailingEl); return; }
+    if (target === 'floors') { reveal(floorsEl); return; }
+    // `model` and `design` both live in the design tab below, which is always mounted; closing
+    // the disclosures is what brings it back into view on a 720 px window.
+    if (regsEl) regsEl.open = false;
+    if (detailingEl) detailingEl.open = false;
+    if (floorsEl) floorsEl.open = false;
+    document.querySelector('[data-testid="design-toolbar"]')?.scrollIntoView({ block: 'nearest' });
+  }
 </script>
 
 <div class="rc-workflow">
-  <details class="code-settings-disclosure" data-testid="code-settings-disclosure">
+  <!--
+    Where you are, before what you can press.
+
+    The tab used to open on three collapsed disclosures and a wrapping row of six commands, in an
+    order a reader had to infer from which buttons were grey. The strip states the order once and
+    names what each unreached step is waiting for; clicking one opens the disclosure that owns it.
+    See `WorkflowStages.svelte` for why it navigates rather than acts.
+  -->
+  <WorkflowStages onGoTo={goToStage} />
+
+  <details class="code-settings-disclosure" data-testid="code-settings-disclosure" bind:this={regsEl}>
     <summary>
       {t('regulations.title')}
       {#if needsAttention}
@@ -52,7 +91,7 @@
     </summary>
     <ProjectRegulationsPanel />
   </details>
-  <details class="detailing-disclosure" data-testid="detailing-disclosure">
+  <details class="detailing-disclosure" data-testid="detailing-disclosure" bind:this={detailingEl}>
     <summary>
       {t('detailing.title')}
       {#if detailingStore.assemblies.length > 0}
@@ -67,9 +106,10 @@
     one regulation, one detailing store and one document. It sits below detailing because
     `generateFloors()` adds to the assemblies that panel lists.
   -->
-  <details class="floors-disclosure" data-testid="floor-families-disclosure">
+  <details class="floors-disclosure" data-testid="floor-families-disclosure" bind:this={floorsEl}>
     <summary>
       {t('detailing.floorRun.title')}
+      <span class="stage-tag" data-testid="floors-stage-tag">{t('design.families.optionalStage')}</span>
       {#if footingCount > 0}
         <span class="count" data-testid="floor-footing-count">{footingCount}</span>
       {/if}
@@ -112,6 +152,20 @@
   .code-settings-disclosure[open] { max-height: 55vh; overflow: auto; }
   .detailing-disclosure[open] { max-height: 70vh; overflow: auto; }
   .floors-disclosure[open] { max-height: 70vh; overflow: auto; }
+  /*
+    Why this stage carries a tag.
+
+    "Slabs, walls and foundations" sits beside "Coordinated detailing" as a peer, and a reader has
+    no way to tell that it is OPTIONAL and that it runs BEFORE detailing when the building has
+    shells. It stays a section of its own — a frame-only building never opens it, and folding it
+    into detailing would make every project pay for a step most do not need — but it now says
+    which step it is.
+  */
+  .stage-tag {
+    font-size: 0.65rem; font-weight: 600; letter-spacing: 0.03em;
+    padding: 0.05rem 0.35rem; border-radius: 3px;
+    border: 1px solid var(--st-hair-strong); color: var(--st-text-2);
+  }
   .count { font-size: 0.72rem; font-weight: 600; padding: 0.1rem 0.4rem; border-radius: 3px; background: rgba(143, 163, 179,0.3); }
   summary {
     cursor: pointer;

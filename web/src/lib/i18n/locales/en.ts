@@ -5808,5 +5808,40 @@ const en: Record<string, string> = {
   'design.editor.cornerShort': 'corner Ø',
   'design.editor.faceShort': 'face Ø',
   'design.nav.keyboardHint': 'j/k · ↵ · space',
+
+  // ─── The workflow strip (PR20 UX pass) ───
+  'design.stage.title': 'Concrete design workflow',
+  'design.stage.model': 'Model',
+  'design.stage.demands': 'Demands',
+  'design.stage.check': 'Code check',
+  'design.stage.design': 'Design',
+  'design.stage.detailing': 'Detailing',
+  'design.stage.documents': 'Documents',
+  'design.stage.needModel': 'Load or draw a model to begin.',
+  'design.stage.needSolve': 'Solve the model — the design reads its results.',
+  'design.stage.needDemands': 'Compute demands first: the checks read them per station.',
+  'design.stage.needDesign': 'Design the members first — detailing coordinates the bars they got.',
+  'design.stage.needDetailing': 'Generate the coordinated detailing — the drawings and the schedule are projections of it.',
+  'design.stage.allDone': 'Every stage is complete. Review the states, then export.',
+  'design.stage.srDone': 'completed',
+  'design.stage.srCurrent': 'current step',
+  'design.stage.srBlocked': 'not reachable yet',
+
+  'design.group.verify': '1 · Verify',
+  'design.group.design': '2 · Design',
+  'design.group.detailing': '3 · Detail',
+  'design.cmd.designAllScope': 'Designs every frame member (columns and beams). Slabs, walls and foundations are designed in "Slabs, walls and foundations".',
+  'detailing.cmd.autoShort': 'auto after design',
+
+  'design.families.subtitle': 'Designs the families you tick, across the whole building — including slabs and walls, which "Design all" above does not touch.',
+  'design.families.runScoped': 'Design selected families',
+
+  'detailing.sheet.expand': 'Enlarge',
+  'detailing.sheet.expandHint': 'Open this sheet full-window, at a size you can read',
+  'detailing.sheet.close': 'Close',
+  'detailing.sheet.empty': 'No sheet yet. Pick an assembly on the left and choose Elevation or Cross-section; the sheet is drawn from the coordinated detailing.',
+
+  'design.families.optionalStage': 'optional step',
+  'detailing.floorRun.whenToRun': 'Optional, and it runs BEFORE detailing. "Design all" designs the frame — columns and beams; this designs the slabs and walls it carries, and the footings if you ask for them. A frame-only building can skip it.',
 };
 export default en;

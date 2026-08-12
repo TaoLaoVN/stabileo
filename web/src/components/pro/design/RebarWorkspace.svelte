@@ -460,32 +460,47 @@
      never be tabbed TO and a ring around the whole window would only say "something is
      broken". Every control inside it keeps its own. */
   .workspace:focus { outline: none; }
+  /*
+    The workspace chrome speaks the application's palette.
+
+    It used to carry its own hexes — #141a23 for the bar, #232a35 for the hairlines, #1e2733 for
+    the buttons — which is why the viewer read as a separate program docked inside Stabileo. The
+    tokens are the same ones the PRO panel and the ribbon use, so the overlay is a VIEW of this
+    app rather than another one. Nothing about the scene, the batching or the states changed.
+  */
   .topbar {
     display: flex; align-items: center; gap: 0.6rem;
-    padding: 0.45rem 0.7rem;
-    border-bottom: 1px solid #232a35;
-    background: #141a23;
+    padding: 0.45rem 0.75rem;
+    border-bottom: 1px solid var(--st-hair);
+    background: var(--st-surface);
     flex: 0 0 auto;
     flex-wrap: wrap;
   }
-  .topbar h2 { margin: 0; font-size: 0.95rem; }
+  /* The same heading weight the panel headers use, so the two read as one hierarchy. */
+  .topbar h2 { margin: 0; font-size: 0.9rem; font-weight: 600; color: var(--st-text); }
   .spacer { flex: 1 1 auto; }
+  /* The same pill the design surface uses for a state, not a lookalike. */
   .badge {
-    font-size: 0.7rem; padding: 0.1rem 0.4rem; border-radius: 3px;
-    background: rgba(255, 255, 255, 0.1);
+    font-size: 0.7rem; padding: 0.1rem 0.45rem; border-radius: 3px; font-weight: 600;
+    background: var(--st-surface-3); color: var(--st-text);
   }
-  .rev, .sum { font-size: 0.74rem; color: var(--text-muted, #8b93a3); }
+  .rev, .sum { font-size: 0.74rem; color: var(--st-text-2); }
   .topbar button {
-    font-size: 0.76rem; padding: 0.25rem 0.55rem; cursor: pointer;
-    background: #1e2733; color: inherit; border: 1px solid #2c3644; border-radius: 4px;
+    font-size: 0.76rem; padding: 0.25rem 0.6rem; cursor: pointer;
+    background: var(--st-surface-3); color: var(--st-text);
+    border: 1px solid var(--st-hair-strong); border-radius: 4px;
   }
-  .topbar button.close { border-color: #3d4b5e; }
+  .topbar button:hover { background: var(--st-hair-strong); }
+  .topbar button:focus-visible { outline: 2px solid var(--st-value); outline-offset: 1px; }
+  /* Leaving is the one action here that changes where you are, so it carries the accent border. */
+  .topbar button.close { border-color: var(--st-interactive); }
   .rail-toggle { display: none; }
 
   .body { display: flex; flex: 1 1 auto; min-height: 0; }
   .rail {
     width: 17rem; flex: 0 0 auto; overflow-y: auto;
-    border-right: 1px solid #232a35; padding: 0.6rem;
+    border-right: 1px solid var(--st-hair); padding: 0.6rem;
+    background: var(--st-surface);
     display: flex; flex-direction: column; gap: 0.7rem;
   }
   /**
@@ -545,7 +560,7 @@
      person edits expecting an effect.
   */
 
-  .empty { padding: 2rem; text-align: center; color: var(--text-muted, #8b93a3); }
+  .empty { padding: 2rem; text-align: center; color: var(--st-text-2); }
 
   /**
    * Mobile: the rail becomes a sheet over the canvas rather than a column beside it.
@@ -561,7 +576,7 @@
     .rail {
       position: absolute; inset: 0 auto 0 0; z-index: 2;
       width: min(20rem, 88vw);
-      background: #141a23;
+      background: var(--st-surface);
       box-shadow: 0 0 24px rgba(0, 0, 0, 0.5);
     }
     /* `.inspector dl` went with the rest: the list is `SelectionDetails`' markup now, and it

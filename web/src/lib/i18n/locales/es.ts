@@ -5800,5 +5800,40 @@ const es: Record<string, string> = {
   'design.editor.cornerShort': 'esquina Ø',
   'design.editor.faceShort': 'cara Ø',
   'design.nav.keyboardHint': 'j/k · ↵ · espacio',
+
+  // ─── The workflow strip (PR20 UX pass) ───
+  'design.stage.title': 'Flujo de diseño de hormigón',
+  'design.stage.model': 'Modelo',
+  'design.stage.demands': 'Solicitaciones',
+  'design.stage.check': 'Verificación',
+  'design.stage.design': 'Diseño',
+  'design.stage.detailing': 'Detallado',
+  'design.stage.documents': 'Documentos',
+  'design.stage.needModel': 'Cargá o dibujá un modelo para empezar.',
+  'design.stage.needSolve': 'Calculá el modelo — el diseño lee sus resultados.',
+  'design.stage.needDemands': 'Calculá las solicitaciones primero: las verificaciones las leen por estación.',
+  'design.stage.needDesign': 'Diseñá los elementos primero — el detallado coordina las barras que recibieron.',
+  'design.stage.needDetailing': 'Generá el detallado coordinado — los planos y la planilla son proyecciones de él.',
+  'design.stage.allDone': 'Todas las etapas están completas. Revisá los estados y exportá.',
+  'design.stage.srDone': 'completada',
+  'design.stage.srCurrent': 'paso actual',
+  'design.stage.srBlocked': 'todavía no alcanzable',
+
+  'design.group.verify': '1 · Verificar',
+  'design.group.design': '2 · Diseñar',
+  'design.group.detailing': '3 · Detallar',
+  'design.cmd.designAllScope': 'Diseña todos los elementos de pórtico (columnas y vigas). Losas, tabiques y fundaciones se diseñan en «Losas, tabiques y fundaciones».',
+  'detailing.cmd.autoShort': 'auto tras diseñar',
+
+  'design.families.subtitle': 'Diseña las familias que tildes, en todo el edificio — incluidas losas y tabiques, que «Diseñar todo» de arriba no toca.',
+  'design.families.runScoped': 'Diseñar familias seleccionadas',
+
+  'detailing.sheet.expand': 'Ampliar',
+  'detailing.sheet.expandHint': 'Abrir esta lámina a ventana completa, en un tamaño legible',
+  'detailing.sheet.close': 'Cerrar',
+  'detailing.sheet.empty': 'Todavía no hay lámina. Elegí un conjunto a la izquierda y elegí Elevación o Sección; la lámina se dibuja a partir del detallado coordinado.',
+
+  'design.families.optionalStage': 'paso opcional',
+  'detailing.floorRun.whenToRun': 'Opcional, y va ANTES del detallado. «Diseñar todo» diseña el pórtico — columnas y vigas; esto diseña las losas y tabiques que soporta, y las zapatas si las pedís. Un edificio sólo de pórticos puede saltearlo.',
 };
 export default es;

@@ -3396,5 +3396,33 @@ const hi: Translations = {
   'design.editor.cornerShort': 'corner Ø',
   'design.editor.faceShort': 'face Ø',
   'design.nav.keyboardHint': 'j/k · ↵ · space',
+
+  // ─── PR20 UX pass: design.* keys, English pending translation ───
+  // Same rule as the block above: carried so the all-locale design.* parity gate stays
+  // meaningful. This dictionary is not offered by the picker.
+
+  'design.cmd.designAllScope': 'Designs every frame member (columns and beams). Slabs, walls and foundations are designed in "Slabs, walls and foundations".',
+  'design.families.optionalStage': 'optional step',
+  'design.families.runScoped': 'Design selected families',
+  'design.families.subtitle': 'Designs the families you tick, across the whole building — including slabs and walls, which "Design all" above does not touch.',
+  'design.group.design': '2 · Design',
+  'design.group.detailing': '3 · Detail',
+  'design.group.verify': '1 · Verify',
+  'design.stage.allDone': 'Every stage is complete. Review the states, then export.',
+  'design.stage.check': 'Code check',
+  'design.stage.demands': 'Demands',
+  'design.stage.design': 'Design',
+  'design.stage.detailing': 'Detailing',
+  'design.stage.documents': 'Documents',
+  'design.stage.model': 'Model',
+  'design.stage.needDemands': 'Compute demands first: the checks read them per station.',
+  'design.stage.needDesign': 'Design the members first — detailing coordinates the bars they got.',
+  'design.stage.needDetailing': 'Generate the coordinated detailing — the drawings and the schedule are projections of it.',
+  'design.stage.needModel': 'Load or draw a model to begin.',
+  'design.stage.needSolve': 'Solve the model — the design reads its results.',
+  'design.stage.srBlocked': 'not reachable yet',
+  'design.stage.srCurrent': 'current step',
+  'design.stage.srDone': 'completed',
+  'design.stage.title': 'Concrete design workflow',
 };
 export default hi;

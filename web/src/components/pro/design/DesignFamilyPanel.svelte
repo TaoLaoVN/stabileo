@@ -74,6 +74,15 @@
 
 <section class="families" data-testid="design-families">
   <h4>{t('design.families.title')}</h4>
+  <!--
+    What this runs, and how it differs from the command above.
+
+    Both buttons used to read "Design all". They are not the same command: the one on the command
+    row designs the FRAME, this one designs whichever families are ticked here — including slabs,
+    walls and, if asked, foundations. Two identical labels for two different scopes is the
+    ambiguity this subtitle and the button's new wording remove.
+  -->
+  <p class="subtitle" data-testid="design-families-subtitle">{t('design.families.subtitle')}</p>
 
   <div class="boxes">
     {#each DESIGN_FAMILIES as f (f)}
@@ -111,7 +120,7 @@
     disabled={!canDesign || selection.length === 0 || running}
     onclick={run}
   >
-    {running ? t('design.families.running') : t('design.cmd.designAll')}
+    {running ? t('design.families.running') : t('design.families.runScoped')}
   </button>
 
   {#if report}
@@ -164,6 +173,12 @@
 </section>
 
 <style>
+  .subtitle {
+    margin: 0 0 0.4rem;
+    font-size: 0.7rem;
+    color: var(--st-text-2);
+    line-height: 1.35;
+  }
   .families { display: flex; flex-direction: column; gap: 0.4rem; }
   h4, h5 { margin: 0; font-size: 0.85rem; }
   .boxes { display: flex; flex-wrap: wrap; gap: 0.1rem 0.75rem; }

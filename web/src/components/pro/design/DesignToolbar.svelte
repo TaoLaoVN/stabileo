@@ -132,8 +132,14 @@
 </script>
 
 <div class="toolbar" data-testid="design-toolbar">
-  <div class="cmd-row">
-    <!-- A read-out, not a selector. The regulation is chosen in Project Regulations. -->
+  <!--
+    The regulation, on its own line above the commands.
+
+    It is a READ-OUT and it was sitting inline with six buttons, so the row read as seven
+    controls of equal weight of which one did nothing when pressed. What binds it is Project
+    Regulations; what it is here for is to say which edition the buttons below are about.
+  -->
+  <div class="code-line">
     <span class="code-indicator" data-testid="active-concrete-code"
           class:unbound={!concreteReady}>
       <span class="code-role">{t('design.code.role')}</span>
@@ -147,12 +153,30 @@
                 onclick={openRegulations}>{t('design.code.openRegulations')}</button>
       </span>
     {/if}
+  </div>
 
-    <button class="cmd" data-testid="cmd-compute-demands" onclick={onComputeDemands}
-            disabled={!hasResults || busy}>{t('design.cmd.computeDemands')}</button>
-    <button class="cmd" data-testid="cmd-code-check" onclick={onCodeCheck}
-            disabled={!canDesign}>{t('design.cmd.codeCheck')}</button>
+  <!--
+    Three groups, in the order the work happens, each named.
 
+    They were one flat row of six buttons that wrapped onto three lines at 1280×720, with no
+    signal that "Compute demands" must precede "Run code check" or that "View 3-D model" is a
+    result rather than a step. The group labels are the same words the workflow strip uses, so
+    the strip and the commands name the same stages.
+  -->
+  <div class="cmd-row">
+    <div class="cmd-group" data-testid="cmd-group-verify">
+      <span class="group-label">{t('design.group.verify')}</span>
+      <div class="group-items">
+        <button class="cmd" data-testid="cmd-compute-demands" onclick={onComputeDemands}
+                disabled={!hasResults || busy}>{t('design.cmd.computeDemands')}</button>
+        <button class="cmd" data-testid="cmd-code-check" onclick={onCodeCheck}
+                disabled={!canDesign}>{t('design.cmd.codeCheck')}</button>
+      </div>
+    </div>
+
+    <div class="cmd-group" data-testid="cmd-group-design">
+      <span class="group-label">{t('design.group.design')}</span>
+      <div class="group-items">
     <div class="split">
       <button class="cmd cmd-primary" data-testid="cmd-autodesign" onclick={onAutoDesignSelected}
               disabled={!canDesign || selectedCount === 0}>
@@ -173,8 +197,14 @@
     </div>
 
     <button class="cmd cmd-all" data-testid="cmd-design-all" onclick={onDesignAll}
-            disabled={!canDesign}>{t('design.cmd.designAll')}</button>
+            disabled={!canDesign}
+            title={t('design.cmd.designAllScope')}>{t('design.cmd.designAll')}</button>
+      </div>
+    </div>
 
+    <div class="cmd-group" data-testid="cmd-group-detailing">
+      <span class="group-label">{t('design.group.detailing')}</span>
+      <div class="group-items">
     <button class="cmd cmd-detailing" data-testid="cmd-generate-detailing"
             onclick={generateDetailing}
             disabled={!detailingReady.ready || detailingBusy || busy}
@@ -183,6 +213,13 @@
         ? t('detailing.cmd.generating')
         : hasDetailing ? t('detailing.cmd.regenerate') : t('detailing.cmd.generate')}
     </button>
+        <!-- The preference that governs the button beside it, next to the button it governs. -->
+        <label class="detailing-auto" data-testid="detailing-auto-label">
+          <input type="checkbox" data-testid="detailing-auto"
+                 checked={detailingStore.autoGenerate}
+                 onchange={(e) => detailingStore.setAutoGenerate(e.currentTarget.checked)} />
+          {t('detailing.cmd.autoShort')}
+        </label>
 
     <!--
       `Ver modelo 3D` — the RESULT of everything to its left, and until PR20 it was reachable
@@ -206,6 +243,9 @@
         <span class="cmd-3d-count" data-testid="cmd-open-3d-count">{assemblyCount}</span>
       {/if}
     </button>
+
+      </div>
+    </div>
 
     {#if busy}
       <button class="cmd cmd-cancel" data-testid="cmd-cancel" onclick={() => designRunStore.cancel()}>
@@ -242,12 +282,6 @@
     </p>
   {/if}
 
-  <label class="detailing-auto" data-testid="detailing-auto-label">
-    <input type="checkbox" data-testid="detailing-auto"
-           checked={detailingStore.autoGenerate}
-           onchange={(e) => detailingStore.setAutoGenerate(e.currentTarget.checked)} />
-    {t('detailing.cmd.autoAfterDesign')}
-  </label>
 
   {#if busy && designRunStore.progress}
     {@const p = designRunStore.progress}
@@ -365,7 +399,24 @@
 <style>
   .toolbar { display: flex; flex-direction: column; gap: 6px; padding: 8px 12px;
     background: var(--st-surface); border-bottom: 1px solid var(--st-surface-3); flex-shrink: 0; }
-  .cmd-row { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
+  .code-line { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+  /*
+    Groups, not a row of buttons.
+
+    `align-items: flex-start` so a group whose items wrap does not stretch its neighbours, and a
+    hairline between groups so the boundary survives when the row itself wraps at 1280×720 — which
+    is exactly when a flat row stopped being readable.
+  */
+  .cmd-row { display: flex; gap: 10px; align-items: flex-start; flex-wrap: wrap; }
+  .cmd-group { display: flex; flex-direction: column; gap: 3px; padding-right: 10px; }
+  .cmd-group + .cmd-group { border-left: 1px solid var(--st-hair); padding-left: 10px; }
+  .group-label {
+    font-size: 0.62rem;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: var(--st-text-3);
+  }
+  .group-items { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
   .code-indicator {
     display: inline-flex; align-items: baseline; gap: 6px;
     padding: 4px 8px; border: 1px solid var(--st-surface-3); border-radius: 4px;
@@ -406,6 +457,11 @@
   .progress-text { font-size: 0.7rem; color: var(--st-text-2); font-family: monospace; }
 
   .cmd-detailing { background: var(--st-hair-strong); }
+  .detailing-auto {
+    display: inline-flex; align-items: center; gap: 4px;
+    font-size: 0.68rem; color: var(--st-text-2); white-space: nowrap; cursor: pointer;
+  }
+  .detailing-auto:focus-within { outline: 2px solid var(--st-value); outline-offset: 2px; }
 
   /*
      `Ver modelo 3D` reads as the end of the row, because it is: everything to its left
