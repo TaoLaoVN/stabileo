@@ -417,9 +417,16 @@ function rolledPortal(p: TrussParams, assumptions: string[]): Topology {
   return finish(nodes, members, supports, slopeOf(p), assumptions);
 }
 
-/** Roof slope in percent, or null for a shape whose top chord is level. */
+/**
+ * Roof slope in percent, or null when the shape does not have one.
+ *
+ * Null for a level top chord, and null for an ARCH — a curved chord's slope varies
+ * continuously from the springing to the crown, so a single percentage is not a property it
+ * has. Reporting rise/half-span there would put a number beside a label the number does not
+ * mean, which the preview would then display as fact.
+ */
 function slopeOf(p: TrussParams): number | null {
-  if (p.kind === 'pratt') return null;
+  if (p.kind === 'pratt' || p.kind === 'arch') return null;
   if (p.riseM === 0) return null;
   const run = p.halfTruss ? p.spanM : p.spanM / 2;
   if (run <= 0) return null;

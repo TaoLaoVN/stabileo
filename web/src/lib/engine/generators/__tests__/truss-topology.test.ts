@@ -247,6 +247,13 @@ describe('generateTruss — slope is derived, never asserted', () => {
     expect(generateTruss(P({ kind: 'pratt' })).slopePercent).toBeNull();
     expect(generateTruss(P({ kind: 'trapezoidal', riseM: 0, endDepthM: 1 })).slopePercent).toBeNull();
   });
+
+  it('reports no slope for an arch, because a curve does not have one', () => {
+    // A curved chord's slope varies from the springing to the crown, so a single percentage
+    // is not a property it has. The preview would show it as fact.
+    expect(generateTruss(P({ kind: 'arch', riseM: 2 })).slopePercent).toBeNull();
+    expect(generateTruss(P({ kind: 'arch', riseM: 2, archCurve: 'parallelChord' })).slopePercent).toBeNull();
+  });
 });
 
 describe('generateTruss — the half truss', () => {

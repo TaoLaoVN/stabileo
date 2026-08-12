@@ -25,7 +25,7 @@
   import { applyGeneratedModel, matchesPreview } from '../../../lib/store/generator-apply';
   import {
     DEFAULT_TRUSS_PARAMS, TRUSS_KINDS, ARCH_CURVES, WEB_PATTERNS,
-    generateTruss, validateTrussParams, type TrussParams,
+    generateTruss, validateTrussParams, type Topology, type TrussParams,
   } from '../../../lib/engine/generators/truss-topology';
   import {
     DEFAULT_LATTICE_COLUMN_PARAMS, LACING_PATTERNS,
@@ -38,10 +38,10 @@
     emitModel, requiredRoles, validateProfiles, defaultProfileSpec,
     type EmitOptions, type ProfileSpec,
   } from '../../../lib/engine/generators/emit';
-  import { rolesPresent } from '../../../lib/engine/generators/member-roles';
   import type { MemberRole } from '../../../lib/engine/generators/member-roles';
   import type { ProvenanceSource } from '../../../lib/model/provenance';
   import ProfilePicker from './ProfilePicker.svelte';
+  import TopologyPreview from './TopologyPreview.svelte';
 
   type Kind = 'truss' | 'column' | 'shed';
   let kind = $state<Kind>('truss');
@@ -85,11 +85,26 @@
    * try — a preview that swallowed the exception would show stale counts for parameters that
    * cannot be built.
    */
-  const topology = $derived.by(() => {
+  const topology = $derived.by((): Topology | null => {
     if (paramProblems.length > 0) return null;
     if (kind === 'truss') return generateTruss(truss);
     if (kind === 'column') return generateLatticeColumn(column);
     return generateShed(shed);
+  });
+
+  /**
+   * The transverse frame on its own, for the shed's elevation view.
+   *
+   * Generated from the shed's own truss parameters at the shed's span — the same call
+   * `generateShed` makes internally — so the elevation shows the frame that will actually be
+   * placed rather than a redrawing of it. Null when the shed has no roof: there is no frame
+   * to show, and an empty box would read as a failure rather than as an absence.
+   */
+  const frameElevation = $derived.by((): Topology | null => {
+    if (kind !== 'shed' || !shed.roof) return null;
+    const params = { ...shed.truss, spanM: shed.spanM } as TrussParams;
+    if (validateTrussParams(params).length > 0) return null;
+    return generateTruss(params);
   });
 
   const roles = $derived(topology ? requiredRoles(topology) : []);
@@ -98,7 +113,6 @@
     topology !== null && paramProblems.length === 0 && profileProblems.length === 0,
   );
 
-  const counts = $derived(topology ? rolesPresent(topology.counts) : []);
   let lastResult = $state<string | null>(null);
 
   const SOURCE: Record<Kind, ProvenanceSource> = {
@@ -253,8 +267,40 @@
     </ul>
   {/if}
 
-  <!-- ── The count, from the same object Generate emits ── -->
+  <!--
+    The drawing and the count, both from the same topology object Generate then emits — so
+    the picture, the numbers and the model agree by construction rather than by care.
+  -->
   {#if topology}
+    <div class="previews" data-testid="gen-previews">
+      {#if frameElevation}
+        <TopologyPreview
+          topology={frameElevation}
+          view="elevation"
+          label={t('generator.ui.previewFrame')}
+          heightPx={120}
+        />
+      {:else if kind !== 'shed'}
+        <TopologyPreview
+          topology={topology}
+          view="elevation"
+          label={t('generator.ui.previewElevation')}
+          heightPx={165}
+          showLegend
+        />
+      {/if}
+      {#if kind === 'shed'}
+        <TopologyPreview
+          topology={topology}
+          view="isometric"
+          footprint={{ spanM: shed.spanM, lengthM: shed.bayM * (shed.frames - 1) }}
+          label={t('generator.ui.previewIso')}
+          heightPx={195}
+          showLegend
+        />
+      {/if}
+    </div>
+
     <div class="preview" data-testid="gen-preview">
       <p class="totals">
         {tp('generator.ui.totals', {
@@ -269,11 +315,6 @@
           · {(topology as { areaM2: number }).areaM2.toFixed(0)} m²
         {/if}
       </p>
-      <ul class="legend">
-        {#each counts as role (role)}
-          <li><span>{t(`generator.role.${role}`)}</span><span class="num">{topology.counts[role]}</span></li>
-        {/each}
-      </ul>
       <details class="assume">
         <summary>{t('generator.ui.assumptions')} <span class="count">{topology.assumptions.length}</span></summary>
         <ul>
@@ -323,11 +364,10 @@
   .fields label.check > span { min-width: 0; }
   .fields input:focus-visible, .fields select:focus-visible { outline: 2px solid #4ecdc4; outline-offset: 1px; }
   .problems { margin: 0; padding-left: 16px; font-size: 0.68rem; color: #ff9a9a; }
+  .previews { display: flex; flex-direction: column; gap: 6px; }
   .preview { border: 1px solid #17324f; border-radius: 4px; padding: 6px 8px; }
   .totals { margin: 0; font-size: 0.72rem; color: #cde; font-variant-numeric: tabular-nums; }
-  .legend { list-style: none; margin: 4px 0 0; padding: 0; font-size: 0.68rem; }
-  .legend li { display: flex; justify-content: space-between; color: #9ab; }
-  .num { font-variant-numeric: tabular-nums; }
+  /* The per-role legend moved into the preview, beside the colours it names. */
   .assume { margin-top: 5px; }
   .assume summary { cursor: pointer; font-size: 0.68rem; color: #8fa0b4; }
   .assume summary:focus-visible { outline: 2px solid #4ecdc4; outline-offset: 2px; }
