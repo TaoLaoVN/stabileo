@@ -3,6 +3,7 @@
   import {
     MATERIAL_DESIGN_CODES, codesForFamily, codesForMode, defaultCodeFor,
   } from '../lib/data/structural-grades';
+  import { concreteCodes, timberCodes } from '../lib/data/non-metal-grades';
   import { uiStore } from '../lib/store';
   import { t } from '../lib/i18n';
 
@@ -20,10 +21,21 @@
   const isPro = $derived(uiStore.analysisMode === 'pro');
   const family = $derived(categoryFamily(activeCategory));
 
-  /** Codes offered for the active category, gated by mode. */
-  const codes = $derived(
-    family ? codesForMode(codesForFamily(family), isPro) : [],
-  );
+  /**
+   * Codes offered for the active category.
+   *
+   * Metals resolve theirs from the design-code table by family. Concrete and
+   * timber carry their code on each entry instead, because for them the code
+   * is part of the material's identity rather than a lens over it — the same
+   * concrete has a different modulus under each one, so "C25/30 to ACI" is not
+   * a thing that exists.
+   */
+  const codes = $derived.by(() => {
+    if (family) return codesForMode(codesForFamily(family), isPro).map((c) => ({ id: c.id, name: c.name }));
+    if (activeCategory === 'hormigon') return concreteCodes().map((c) => ({ id: c, name: c }));
+    if (activeCategory === 'madera') return timberCodes().map((c) => ({ id: c, name: c }));
+    return [];
+  });
 
   /**
    * The selected design code.
@@ -35,9 +47,16 @@
    */
   let codeId = $state<string | null>(null);
   const activeCode = $derived.by(() => {
-    if (!family) return null;
     const chosen = codeId ? codes.find((c) => c.id === codeId) : undefined;
-    return chosen ?? defaultCodeFor(family) ?? null;
+    if (chosen) return chosen;
+    if (family) {
+      const d = defaultCodeFor(family);
+      return d ? { id: d.id, name: d.name } : null;
+    }
+    // Non-metals default to the Argentine code where there is one, for the same
+    // reason the metals do: this is an Argentine tool.
+    const local = codes.find((c) => c.name.startsWith('CIRSOC'));
+    return local ?? codes[0] ?? null;
   });
 
   let filtered = $derived(
@@ -84,7 +103,7 @@
       <!-- Design code. Present only for the graded metals: concrete and timber
            have no code attached here, and an inert control would only suggest
            it does something. -->
-      {#if family && codes.length > 0}
+      {#if codes.length > 0}
         <div class="preset-code">
           <label for="preset-code-sel">{t('matCode.label')}</label>
           <!-- Driven by `activeCode`, not by `codeId`: the latter is null until

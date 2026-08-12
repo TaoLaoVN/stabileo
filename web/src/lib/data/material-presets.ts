@@ -7,6 +7,7 @@ import {
   BASIC_REGIONS, MATERIAL_DESIGN_CODES, gradesForCode,
   type StructuralGrade, type GradeFamily, type GradeRegion,
 } from './structural-grades';
+import { CONCRETE, TIMBER } from './non-metal-grades';
 
 export interface MaterialPreset {
   name: string;
@@ -75,19 +76,36 @@ export function getMaterialPresets(): MaterialPreset[] {
     // in the rolled-profile database but is still needed to model concrete.
     { name: t('material.steelADN420'),    category: 'acero', e: 200000, nu: 0.3, rho: 78.5, fy: 420 },
 
-    // ─── Hormigones argentinos (CIRSOC 201) ───
-    // E = 4700 √f'c (MPa), ν ≈ 0.2, ρ ≈ 24 kN/m³
-    { name: t('material.concreteH20'), category: 'hormigon', e: 21019, nu: 0.2, rho: 24.0, fy: 20 },
-    { name: t('material.concreteH25'), category: 'hormigon', e: 23500, nu: 0.2, rho: 24.0, fy: 25 },
-    { name: t('material.concreteH30'), category: 'hormigon', e: 25743, nu: 0.2, rho: 24.0, fy: 30 },
-    { name: t('material.concreteH35'), category: 'hormigon', e: 27806, nu: 0.2, rho: 24.0, fy: 35 },
-    { name: t('material.concreteH40'), category: 'hormigon', e: 29725, nu: 0.2, rho: 24.5, fy: 40 },
-    { name: t('material.concreteH45'), category: 'hormigon', e: 31529, nu: 0.2, rho: 24.5, fy: 45 },
-    { name: t('material.concreteH50'), category: 'hormigon', e: 33234, nu: 0.2, rho: 25.0, fy: 50 },
+    // ─── Hormigones, multinorma ───
+    //
+    // Projected from the grade database like the metals. The design code is
+    // part of each entry's identity rather than a filter over it, because for
+    // concrete the MODULUS depends on the code: the same 25 MPa concrete is
+    // 23 500 MPa under CIRSOC/ACI and 31 500 under Eurocode.
+    ...CONCRETE.map((c): MaterialPreset => ({
+      name: c.designation,
+      category: 'hormigon',
+      e: c.e, nu: c.nu, rho: c.rho,
+      // `fy` is the generic strength field the panels read; for concrete the
+      // meaningful strength is fck, so that is what goes in it.
+      fy: c.fck,
+      standard: c.code,
+      gradeId: c.id,
+      region: c.region as GradeRegion,
+      verification: 'standard',
+    })),
 
-    // ─── Maderas estructurales ───
-    { name: t('material.woodPine'),       category: 'madera', e: 10000, nu: 0.3, rho: 5.0 },
-    { name: t('material.woodEucalyptus'), category: 'madera', e: 15000, nu: 0.3, rho: 8.0 },
+    // ─── Maderas, clases EN 338 ───
+    ...TIMBER.map((w): MaterialPreset => ({
+      name: w.designation,
+      category: 'madera',
+      e: w.e, nu: w.nu, rho: w.rho,
+      fy: w.fmk,
+      standard: w.code,
+      gradeId: w.id,
+      region: w.region as GradeRegion,
+      verification: 'standard',
+    })),
 
     // ─── Aluminio ───
     ...ALUMINIUM.map((g) => fromGrade(g, 'aluminio')),
@@ -161,6 +179,12 @@ export function searchPresets(
     source = source.filter(p => !p.region || BASIC_REGIONS.includes(p.region));
   }
   const family = category ? categoryFamily(category) : null;
+  // Concrete and timber filter by the code NAME carried on the preset: they
+  // have no grade family in the metal sense, but the control means the same
+  // thing to a user, so it behaves the same way.
+  if (filter.codeId && !family) {
+    source = source.filter(p => !p.standard || p.standard === filter.codeId);
+  }
   if (filter.codeId && family) {
     const code = MATERIAL_DESIGN_CODES.find(c => c.id === filter.codeId);
     if (code) {
