@@ -13,8 +13,6 @@ import * as THREE from 'three';
 import { createSupportGizmo } from '../create-support-gizmo';
 import { disposeObject, setGroupColor } from '../selection-helpers';
 
-const ORIGIN = { x: 0, y: 0, z: 0 };
-
 /** Distinct geometry and material instances reachable from these objects. */
 function countDistinctResources(objects: THREE.Object3D[]) {
   const geometries = new Set<THREE.BufferGeometry>();

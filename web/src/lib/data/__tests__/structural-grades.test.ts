@@ -27,10 +27,13 @@ import {
   defaultCodeFor,
   gradesForCode,
   commercialGrade,
+  commercialGradesForRegion,
   commercialGradesFor,
   isUnusualPairing,
   type GradeFamily,
 } from '../structural-grades';
+import type { GradeRegion } from '../structural-grades';
+import { DESIGN_CODES } from '../section-catalog';
 
 const FAMILIES: GradeFamily[] = ['hot-rolled', 'cold-formed', 'aluminium', 'stainless'];
 
@@ -454,7 +457,93 @@ describe('what a profile family is actually rolled in', () => {
     // this cannot be a property of the family alone.
     expect(commercialGrade('W', 'BR')?.gradeId).toBe('astm-a572-50');
     expect(commercialGrade('W', 'US')?.gradeId).toBe('astm-a992');
-    expect(commercialGradesFor('W')).toHaveLength(3);
+    // Every ordinary grade across all three regions, de-duplicated.
+    expect(commercialGradesFor('W').length).toBeGreaterThanOrEqual(5);
+    expect(new Set(commercialGradesFor('W').map((p) => p.gradeId)).size)
+      .toBe(commercialGradesFor('W').length);
+  });
+
+  it('accepts the grade a family was rolled in BEFORE the current one', () => {
+    /*
+     * A W in A36 is not unusual, it is most of the existing building stock:
+     * A992 only arrived in 1998. Flagging it would fire on half the assessments
+     * an engineer does, and a warning that fires on ordinary work teaches the
+     * reader to ignore it.
+     */
+    expect(isUnusualPairing('W', 'astm-a36')).toBe(false);
+    expect(isUnusualPairing('CHS', 'astm-a500b-round')).toBe(false);
+    expect(isUnusualPairing('RHS', 'astm-a500b-shaped')).toBe(false);
+  });
+
+  it('covers every family Eurocode 3 offers, not only the European-named ones', () => {
+    /*
+     * IPN, UPN and L are on the Eurocode 3 list too — an IPN is a DIN section
+     * and is rolled in Europe in EN steel. Recording only the Argentine
+     * practice for them would flag S235 and S355 on a European frame, which
+     * is the same false positive as flagging an Argentine channel in F-24.
+     */
+    for (const family of ['IPE', 'HEA', 'HEB', 'IPN', 'UPN', 'L']) {
+      for (const g of ['en-s235', 'en-s275', 'en-s355']) {
+        expect(isUnusualPairing(family, g), `${family} in ${g}`).toBe(false);
+      }
+    }
+  });
+
+  it('treats all three ordinary European grades as ordinary', () => {
+    // S235, S275 and S355 are all stocked. Recording only one would flag the
+    // other two, which are on drawings all over the continent.
+    for (const g of ['en-s235', 'en-s275', 'en-s355']) {
+      expect(isUnusualPairing('IPE', g), g).toBe(false);
+      expect(isUnusualPairing('HEB', g), g).toBe(false);
+    }
+    // The default is the one current practice reaches for first.
+    expect(commercialGrade('IPE', 'EU')?.gradeId).toBe('en-s355');
+  });
+
+  it('records the American channels and angles that were missing', () => {
+    expect(commercialGrade('C', 'US')?.gradeId).toBe('astm-a36');
+    expect(commercialGrade('MC', 'US')?.gradeId).toBe('astm-a36');
+    expect(isUnusualPairing('C', 'astm-a572-50')).toBe(false);
+  });
+
+  it('keeps the local choice ordinary once a foreign one is recorded', () => {
+    // An Argentine channel is rolled in F-24 like everything else Acindar
+    // makes. Recording the American practice must not turn that into a
+    // departure — which is exactly what happened when C and MC gained a US
+    // entry with no AR entry beside it.
+    expect(isUnusualPairing('C', 'iram-f24')).toBe(false);
+    expect(isUnusualPairing('MC', 'iram-f24')).toBe(false);
+  });
+
+  it('records the Brazilian grades from NBR 7007, not only the ASTM ones', () => {
+    expect(isUnusualPairing('W', 'nbr-ar350')).toBe(false);
+    expect(isUnusualPairing('W', 'nbr-mr250')).toBe(false);
+  });
+
+  it('no design code offers a family whose ordinary grade it would then flag', () => {
+    /*
+     * The systematic version of the two false positives found by hand: adding
+     * a foreign practice to a family silently turns the LOCAL practice into a
+     * departure, because "unusual" means "in no list at all".
+     *
+     * So for every code, every family it offers, and every grade of that
+     * code's own region: the pairing must not be flagged. A code that offers a
+     * section and then objects to the steel it is made of is telling the user
+     * off for following it.
+     */
+    const offenders: string[] = [];
+    for (const code of DESIGN_CODES) {
+      for (const family of code.families) {
+        const local = commercialGradesForRegion(family, code.region as GradeRegion);
+        if (local.length === 0) continue;   // nothing recorded: says nothing
+        for (const pairing of local) {
+          if (isUnusualPairing(family, pairing.gradeId) !== false) {
+            offenders.push(`${code.label}: ${family} in ${pairing.gradeId}`);
+          }
+        }
+      }
+    }
+    expect(offenders, `flagged its own practice:\n${offenders.join('\n')}`).toEqual([]);
   });
 
   it('every recorded pairing points at a grade that exists', () => {
@@ -477,10 +566,13 @@ describe('what a profile family is actually rolled in', () => {
   });
 
   it('says nothing where no practice is recorded, rather than warning', () => {
-    // Silence is not the same as unusual. European practice names the grade at
-    // order time, so there is no commercial default to depart from.
-    expect(isUnusualPairing('MC', 'iram-f24')).toBeNull();
+    /*
+     * Silence is not the same as unusual. European structural hollow sections
+     * are the remaining case: EN 10210/10219 are not in this file, so nothing
+     * is recorded for a tube in Europe and nothing is claimed about one.
+     */
     expect(isUnusualPairing('IPN', undefined)).toBeNull();
+    expect(isUnusualPairing('nonesuch-family', 'iram-f24')).toBeNull();
   });
 });
 

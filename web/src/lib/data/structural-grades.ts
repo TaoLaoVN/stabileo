@@ -112,6 +112,14 @@ export interface StructuralGrade {
    * not, because EN 1999-1-1's tables 3.2a/3.2b were only obtainable in part.
    * Marking them beats deleting them — they are ordinary alloys and the values
    * are the usual ones — and beats leaving them looking as settled as the rest.
+   *
+   * DELIBERATELY NOT SHOWN IN THE INTERFACE, and this is a decision rather than
+   * an omission. The field was filled in conservatively, so it currently marks
+   * 45 of 68 grades — including A572, A500 and the stainless family, whose
+   * values are perfectly tabulated. A caveat attached to two thirds of a
+   * catalogue is not a caveat, it is noise, and it would teach a reader to
+   * ignore the one place it means something. It stays as an internal record so
+   * the distinction is not lost; surfacing it needs the field audited first.
    */
   verification?: 'standard' | 'typical';
 }
@@ -533,10 +541,32 @@ export function searchGrades(query: string, family?: GradeFamily): StructuralGra
  * combination departs from what is stocked, which is a question of cost and
  * lead time rather than of correctness.
  *
- * Only entries confirmed against a mill catalogue are listed. European practice
- * is deliberately absent: S235 and S355 are both ordinary there and the grade is
- * named when ordering, so there is no single commercial default to record and
- * inventing one would be worse than leaving it out.
+ * # Why a family has SEVERAL grades, not one
+ *
+ * This used to record exactly one grade per family and region, and that shape
+ * was wrong about how mills actually work. A W section is rolled in A992 today
+ * and was rolled in A36 for decades; both turn up on drawings, both are stocked,
+ * and a tool that calls one of them unusual is wrong about half the buildings
+ * in the country. The same holds for A500 Gr.B beside Gr.C in tubes, and for
+ * MR-250 beside AR-350 in Brazil.
+ *
+ * So each family lists every grade that is ordinary practice there. The first
+ * is the DEFAULT — what a new section gets — and the rest are simply not
+ * flagged. A warning that fires on a standard combination is worse than no
+ * warning at all, because it teaches the reader to ignore it.
+ *
+ * European practice was previously left out entirely on the grounds that there
+ * is no single default. That was the right observation and the wrong
+ * conclusion: with a list, "S235 and S355 are both ordinary" is a fact this can
+ * hold rather than a reason to hold nothing. S275 is in the list for the same
+ * reason — it is stocked across Europe, and omitting it would flag an ordinary
+ * choice.
+ *
+ * Only entries confirmed against a mill catalogue or a product standard are
+ * listed. Where the product standard for a family is not in this file at all —
+ * European structural hollow sections, EN 10210/10219 — nothing is recorded,
+ * because pairing a tube with a grade whose standard covers plate would be
+ * inventing a fact rather than recording one.
  */
 export interface CommercialPairing {
   gradeId: string;
@@ -544,34 +574,160 @@ export interface CommercialPairing {
   sourceKey: string;
 }
 
-const COMMERCIAL: Record<string, Partial<Record<GradeRegion, CommercialPairing>>> = {
-  // Argentina — Acindar's catalogue, which cites IRAM-IAS U 500-503 per family.
-  IPN: { AR: { gradeId: 'iram-f24', sourceKey: 'grade.src.iramAcindar' } },
-  UPN: { AR: { gradeId: 'iram-f24', sourceKey: 'grade.src.iramAcindar' } },
-  IPE: { AR: { gradeId: 'iram-f24', sourceKey: 'grade.src.iramAcindar' } },
-  HEA: { AR: { gradeId: 'iram-f24', sourceKey: 'grade.src.iramAcindar' } },
-  HEB: { AR: { gradeId: 'iram-f24', sourceKey: 'grade.src.iramAcindar' } },
-  T:   { AR: { gradeId: 'iram-f24', sourceKey: 'grade.src.iramAcindar' } },
-  L:   { AR: { gradeId: 'iram-f24', sourceKey: 'grade.src.iramAcindarAngle' } },
-  // The wide-flange series is the exception: rolled in F-36, not F-24.
+/**
+ * Ordinary grades per family and region, most typical first.
+ *
+ * The first entry is the default a new section takes; every entry is exempt
+ * from the "unusual pairing" note.
+ */
+/** Acindar's F-24, the grade most Argentine rolled sections are supplied in. */
+const F24 = (src: string): CommercialPairing => ({ gradeId: 'iram-f24', sourceKey: `grade.src.${src}` });
+/** The next grade up in the same IRAM standard, ordered when the design needs it. */
+const F26 = (): CommercialPairing => ({ gradeId: 'iram-f26', sourceKey: 'grade.src.iram' });
+
+/** EN 10025-2, most prevalent in current practice first. */
+const EN_ROLLED: CommercialPairing[] = [
+  { gradeId: 'en-s355', sourceKey: 'grade.src.en10025' },
+  { gradeId: 'en-s275', sourceKey: 'grade.src.en10025' },
+  { gradeId: 'en-s235', sourceKey: 'grade.src.en10025' },
+];
+
+/** The ordinary American grades for channels and angles. */
+const US_MILD: CommercialPairing[] = [
+  { gradeId: 'astm-a36', sourceKey: 'grade.src.astmA36' },
+  { gradeId: 'astm-a572-50', sourceKey: 'grade.src.aisc' },
+];
+
+/** The Brazilian equivalents, from NBR 7007. */
+const BR_MILD: CommercialPairing[] = [
+  { gradeId: 'nbr-mr250', sourceKey: 'grade.src.nbr7007' },
+  { gradeId: 'nbr-ar350', sourceKey: 'grade.src.nbr7007' },
+];
+
+const COMMERCIAL: Record<string, Partial<Record<GradeRegion, CommercialPairing[]>>> = {
+  /*
+   * Argentina — Acindar's catalogue, which cites IRAM-IAS U 500-503 per family.
+   * F-24 is what the mill rolls; F-26 is the next grade up in the same standard
+   * and is ordered when the design needs it, so it is ordinary rather than a
+   * special run.
+   */
+  IPN: { AR: [F24('iramAcindar'), F26()], EU: EN_ROLLED },
+  UPN: { AR: [F24('iramAcindar'), F26()], EU: EN_ROLLED },
+  T:   { AR: [F24('iramAcindar')] },
+  L:   { AR: [F24('iramAcindarAngle'), F26()], EU: EN_ROLLED, US: US_MILD },
+
+  /*
+   * Europe — EN 10025-2, the hot-rolled structural standard.
+   *
+   * All three are stocked. S235 is the historic default and still what most
+   * textbook tables and Eurocode worked examples use; S355 dominates new
+   * steelwork; S275 sits between them and is common across the continent. The
+   * order is by prevalence in current practice, so a new section defaults to
+   * S355 while neither of the others is ever flagged.
+   */
+  IPE: { EU: EN_ROLLED, AR: [F24('iramAcindar')] },
+  HEA: { EU: EN_ROLLED, AR: [F24('iramAcindar')] },
+  HEB: { EU: EN_ROLLED, AR: [F24('iramAcindar')] },
+
+  /*
+   * The wide-flange series, where the three regions genuinely differ.
+   *
+   * A992 was introduced in 1998 specifically for W shapes and is what a US mill
+   * ships today; A36 is what every W rolled before that was, and both appear on
+   * current drawings — one for new work, one for the assessment of existing
+   * buildings, which is half of what a structural engineer does.
+   *
+   * Brazil: Gerdau quotes perfis W in ASTM A572 Gr.50, and NBR 7007 gives the
+   * domestic equivalents — AR-350 at the same strength, MR-250 as the mild
+   * grade that corresponds to A36.
+   */
   W: {
-    AR: { gradeId: 'iram-f36', sourceKey: 'grade.src.iramW' },
-    BR: { gradeId: 'astm-a572-50', sourceKey: 'grade.src.gerdau' },
-    US: { gradeId: 'astm-a992', sourceKey: 'grade.src.aisc' },
+    AR: [{ gradeId: 'iram-f36', sourceKey: 'grade.src.iramW' }],
+    BR: [
+      { gradeId: 'astm-a572-50', sourceKey: 'grade.src.gerdau' },
+      { gradeId: 'nbr-ar350', sourceKey: 'grade.src.nbr7007' },
+      { gradeId: 'nbr-mr250', sourceKey: 'grade.src.nbr7007' },
+    ],
+    US: [
+      { gradeId: 'astm-a992', sourceKey: 'grade.src.aisc' },
+      { gradeId: 'astm-a36', sourceKey: 'grade.src.aiscLegacy' },
+    ],
   },
   HP: {
-    BR: { gradeId: 'astm-a572-50', sourceKey: 'grade.src.gerdau' },
-    US: { gradeId: 'astm-a992', sourceKey: 'grade.src.aisc' },
+    BR: [
+      { gradeId: 'astm-a572-50', sourceKey: 'grade.src.gerdau' },
+      { gradeId: 'nbr-ar350', sourceKey: 'grade.src.nbr7007' },
+    ],
+    US: [
+      { gradeId: 'astm-a992', sourceKey: 'grade.src.aisc' },
+      { gradeId: 'astm-a36', sourceKey: 'grade.src.aiscLegacy' },
+    ],
   },
-  // Hollow sections are a different product standard entirely.
-  RHS: { US: { gradeId: 'astm-a500c-shaped', sourceKey: 'grade.src.astmTube' } },
-  SHS: { US: { gradeId: 'astm-a500c-shaped', sourceKey: 'grade.src.astmTube' } },
-  CHS: { US: { gradeId: 'astm-a500c-round', sourceKey: 'grade.src.astmTube' } },
+  /*
+   * American channels, angles and the light M series.
+   *
+   * These were missing: only W, HP and the tubes were recorded, so a C or an L
+   * in any steel at all drew no comment. A36 remains the ordinary grade for
+   * them — A992 is specified for W shapes, not for channels — with A572 Gr.50
+   * where higher strength is wanted.
+   */
+  /*
+   * The Argentine entry matters as much as the other two. Without it a channel
+   * in F-24 — the ordinary local choice, the same steel every other Acindar
+   * section is rolled in — would be flagged as a departure the moment the
+   * American practice was recorded, which is the false positive this whole
+   * mechanism exists to avoid.
+   */
+  C:  { AR: [F24('iramAcindar')], US: US_MILD, BR: BR_MILD },
+  MC: { AR: [F24('iramAcindar')], US: US_MILD, BR: BR_MILD },
+  M:  { US: US_MILD },
+
+  /*
+   * Hollow sections are a different product standard entirely.
+   *
+   * Gr.C is what mills ship now and Gr.B is the long-standing grade still
+   * quoted on drawings and in older tables; flagging Gr.B would flag a great
+   * many perfectly ordinary tubes. Round and shaped are separate entries
+   * because A500 gives them different yields.
+   *
+   * Nothing is recorded for Europe: EN 10210/10219 are not in this file, and
+   * pairing a tube with a grade whose standard covers plate would be inventing
+   * a fact rather than recording one.
+   */
+  RHS: {
+    US: [
+      { gradeId: 'astm-a500c-shaped', sourceKey: 'grade.src.astmTube' },
+      { gradeId: 'astm-a500b-shaped', sourceKey: 'grade.src.astmTubeLegacy' },
+    ],
+  },
+  SHS: {
+    US: [
+      { gradeId: 'astm-a500c-shaped', sourceKey: 'grade.src.astmTube' },
+      { gradeId: 'astm-a500b-shaped', sourceKey: 'grade.src.astmTubeLegacy' },
+    ],
+  },
+  CHS: {
+    US: [
+      { gradeId: 'astm-a500c-round', sourceKey: 'grade.src.astmTube' },
+      { gradeId: 'astm-a500b-round', sourceKey: 'grade.src.astmTubeLegacy' },
+    ],
+  },
 };
 
-/** The grade a family is normally supplied in, or null if none is recorded. */
+/**
+ * The grade a family is normally supplied in, or null if none is recorded.
+ *
+ * The FIRST of the region's list: the one a new section should take. Callers
+ * that need to know whether some other grade is also ordinary want
+ * `commercialGradesFor` instead.
+ */
 export function commercialGrade(family: string, region: GradeRegion): CommercialPairing | null {
-  return COMMERCIAL[family]?.[region] ?? null;
+  return COMMERCIAL[family]?.[region]?.[0] ?? null;
+}
+
+/** Every grade recorded as ordinary for a family in one region. */
+export function commercialGradesForRegion(family: string, region: GradeRegion): CommercialPairing[] {
+  return COMMERCIAL[family]?.[region] ?? [];
 }
 
 /**
@@ -584,7 +740,20 @@ export function commercialGrade(family: string, region: GradeRegion): Commercial
  */
 export function commercialGradesFor(family: string): CommercialPairing[] {
   const byRegion = COMMERCIAL[family];
-  return byRegion ? Object.values(byRegion).filter((v): v is CommercialPairing => !!v) : [];
+  if (!byRegion) return [];
+  // Flattened across regions, de-duplicated: the same grade can be ordinary in
+  // more than one place, and listing it twice in the note would read as two
+  // separate pieces of evidence for the same fact.
+  const seen = new Set<string>();
+  const out: CommercialPairing[] = [];
+  for (const list of Object.values(byRegion)) {
+    for (const p of list ?? []) {
+      if (seen.has(p.gradeId)) continue;
+      seen.add(p.gradeId);
+      out.push(p);
+    }
+  }
+  return out;
 }
 
 /**
