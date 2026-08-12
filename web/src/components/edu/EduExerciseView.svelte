@@ -269,9 +269,12 @@
         // The drawing itself, as the ordinates and powers that produced it —
         // a teacher reading the record can see what was drawn, not only
         // whether it passed.
+        // The powers read as words, in the language the student worked in —
+        // the record is for a person, and `constant` in the middle of a
+        // Portuguese table is neither the student's answer nor the app's.
         answer: sketches[i].points
           .map(pt => `${pt.t.toFixed(2)}:${pt.value.toFixed(2)}`)
-          .join(' ') + ' · ' + sketches[i].powers.join('/'),
+          .join(' ') + ' · ' + sketches[i].powers.map(p => t('edu.sketch.power.' + p)).join('/'),
         outcome: v ? (v.curveOk && v.powersOk ? 'correct' : 'incorrect') : 'pending',
       });
     });

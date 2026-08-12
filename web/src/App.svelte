@@ -677,7 +677,7 @@
 <div class="app-container" class:embed-mode={uiStore.embedMode} class:hidden-behind-landing={showLanding}>
   <header class="app-header" class:has-autosave={showAutosaveBanner}>
     <div class="logo">
-      <button class="logo-home" onclick={() => { showLanding = true; history.pushState(null, '', '/'); }} title="Back to home">
+      <button class="logo-home" onclick={() => { showLanding = true; history.pushState(null, '', '/'); }} title={t('app.backHome')}>
         <span class="logo-icon">△</span>
         <span class="logo-text">Stabileo</span>
       </button>

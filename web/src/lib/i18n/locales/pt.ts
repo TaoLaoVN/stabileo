@@ -505,6 +505,7 @@ const pt: Translations = {
   // ─── StatusBar.svelte ───
   'status.tool': 'Ferramenta',
   'status.pos': 'Pos',
+  'app.backHome': 'Voltar ao início',
   'status.zoom': 'Zoom',
   'status.model': 'Modelo',
   'status.selection': 'Seleção',
@@ -2199,6 +2200,20 @@ const pt: Translations = {
   // ─── Education Mode ───
   'edu.title': 'Modo Educativo',
   // ─── Educational mode: the keys the mode actually renders ───
+  'edu.author.atEnd': 'no fim',
+  'edu.author.atMid': 'no meio do vão',
+  'edu.author.atQuarter': 'a 1/4',
+  'edu.author.atStart': 'no início',
+  'edu.author.atThreeQuarter': 'a 3/4',
+  'edu.author.gradeA36': 'Aço estrutural conforme a ASTM, comum nos livros-texto.',
+  'edu.author.gradeAdn420': 'Aço para concreto armado. O valor mais comum em exercícios.',
+  'edu.author.gradeCustom': 'Informe você mesmo o valor de fy.',
+  'edu.author.gradeF24': 'Aço estrutural F-24. É a classe para a qual estão tabelados os perfis CIRSOC que vêm com o app.',
+  'edu.author.gradeF36': 'Aço estrutural de maior resistência.',
+  'edu.author.shapeConstantHint': 'O diagrama tem o mesmo valor ao longo de toda a barra.',
+  'edu.author.shapeLinearHint': 'O diagrama é uma reta inclinada.',
+  'edu.author.shapeQuadraticHint': 'O diagrama é uma parábola: aparece com carga distribuída.',
+  'edu.author.shapeZeroHint': 'O diagrama é nulo ao longo de toda a barra.',
   'cad.badgeTooltipView': 'Rascunho CAD de {file} ({date}). Clique para ver hipóteses, mapeamento de camadas e marcar como revisado.',
   'cad.draftBadge': 'Rascunho CAD — não revisado',
   'diag.model.transverseOnTruss': 'Esta barra está modelada como treliça (só esforço normal). Cargas transversais sobre ela não serão transferidas como flexão/cortante. Considere aplicar a carga nos nós adjacentes ou modelar a barra como pórtico.',

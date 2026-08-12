@@ -805,6 +805,7 @@ const en: Record<string, string> = {
   // ─── StatusBar.svelte ───
   'status.tool': 'Tool',
   'status.pos': 'Pos',
+  'app.backHome': 'Back to home',
   'status.zoom': 'Zoom',
   'status.model': 'Model',
   'status.selection': 'Selection',

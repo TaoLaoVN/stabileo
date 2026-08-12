@@ -50,6 +50,18 @@ function literalKeys(): Set<string> {
     for (const m of src.matchAll(/\btr\(\s*'([^']+)'/g)) out.add(m[1]);
     for (const m of src.matchAll(/nameKey:\s*'([^']+)'/g)) out.add(m[1]);
   }
+  /*
+   * Keys a data table hands to `t()` rather than the source asking for them
+   * literally: `STATIONS`, the steel grades, the shape hints. The first pass
+   * of this gate missed them, and Portuguese was missing all fourteen while
+   * the test reported full coverage.
+   */
+  for (const file of ['exercise-presets.ts', 'exercise-source.ts', 'exercise-data.ts']) {
+    const src = readFileSync(join(ROOT, 'components', 'edu', file), 'utf8');
+    for (const m of src.matchAll(/\w*[Kk]ey\s*:\s*'([^']+)'/g)) out.add(m[1]);
+    for (const m of src.matchAll(/^\s*\w+:\s*'(edu\.[^']+)'/gm)) out.add(m[1]);
+  }
+
   // Built at runtime, so they have to be named here.
   for (const d of ['easy', 'medium', 'hard']) out.add(`edu.${d}`);
   for (const s of ['zero', 'constant', 'linear', 'quadratic', 'cubic']) {
@@ -73,6 +85,9 @@ describe('Education is fully translated in the supported languages', () => {
     expect(keys.size).toBeGreaterThan(300);
     expect(keys.has('edu.author.title')).toBe(true);
     expect(keys.has('edu.sketch.verify')).toBe(true);
+    // One from each indirect source, so a broken scan cannot pass quietly.
+    expect(keys.has('edu.author.atMid'), 'a STATIONS key').toBe(true);
+    expect(keys.has('edu.author.shapeQuadraticHint'), 'a SHAPE_HINTS key').toBe(true);
   });
 
   for (const locale of SUPPORTED) {

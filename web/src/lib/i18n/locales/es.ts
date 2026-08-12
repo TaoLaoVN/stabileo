@@ -798,6 +798,7 @@ const es: Record<string, string> = {
   // ─── StatusBar.svelte ───
   'status.tool': 'Herramienta',
   'status.pos': 'Pos',
+  'app.backHome': 'Volver al inicio',
   'status.zoom': 'Zoom',
   'status.model': 'Modelo',
   'status.selection': 'Selección',
