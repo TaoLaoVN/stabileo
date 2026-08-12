@@ -1,0 +1,345 @@
+<script lang="ts">
+  /**
+   * Generadores — the surface that invokes the parametric generators.
+   *
+   * ── Deliberately basic ────────────────────────────────────────────
+   *
+   * Numbers, selects, a live count and a Generate button. No canvas preview, no drag
+   * handles, no wizard. The engines behind it are complete and tested; this is the thinnest
+   * thing that reaches them, and the UI is expected to be reworked.
+   *
+   * ── The count is not decoration ───────────────────────────────────
+   *
+   * It comes from the SAME topology object that Generate then emits, so it cannot disagree
+   * with what lands in the model. `matchesPreview` asserts that after the fact, and the
+   * summary line reports the mismatch rather than hiding it.
+   *
+   * ── Generating replaces the model ─────────────────────────────────
+   *
+   * Said before the button, not after. One undo step gets it back, and that is also stated
+   * rather than assumed.
+   */
+  import { t, tp } from '../../../lib/i18n';
+  import { uiStore } from '../../../lib/store/ui.svelte';
+  import { modelStore } from '../../../lib/store/model.svelte';
+  import { applyGeneratedModel, matchesPreview } from '../../../lib/store/generator-apply';
+  import {
+    DEFAULT_TRUSS_PARAMS, TRUSS_KINDS, ARCH_CURVES, WEB_PATTERNS,
+    generateTruss, validateTrussParams, type TrussParams,
+  } from '../../../lib/engine/generators/truss-topology';
+  import {
+    DEFAULT_LATTICE_COLUMN_PARAMS, LACING_PATTERNS,
+    generateLatticeColumn, validateLatticeColumnParams, type LatticeColumnParams,
+  } from '../../../lib/engine/generators/lattice-column';
+  import {
+    DEFAULT_SHED_PARAMS, generateShed, validateShedParams, type ShedParams,
+  } from '../../../lib/engine/generators/shed';
+  import {
+    emitModel, requiredRoles, validateProfiles, defaultProfileSpec,
+    type EmitOptions, type ProfileSpec,
+  } from '../../../lib/engine/generators/emit';
+  import { rolesPresent } from '../../../lib/engine/generators/member-roles';
+  import type { MemberRole } from '../../../lib/engine/generators/member-roles';
+  import type { ProvenanceSource } from '../../../lib/model/provenance';
+  import ProfilePicker from './ProfilePicker.svelte';
+
+  type Kind = 'truss' | 'column' | 'shed';
+  let kind = $state<Kind>('truss');
+
+  let truss = $state<TrussParams>({ ...DEFAULT_TRUSS_PARAMS });
+  let column = $state<LatticeColumnParams>({ ...DEFAULT_LATTICE_COLUMN_PARAMS });
+  let shed = $state<ShedParams>({
+    ...DEFAULT_SHED_PARAMS,
+    column: { ...DEFAULT_SHED_PARAMS.column },
+    truss: { ...DEFAULT_SHED_PARAMS.truss },
+  });
+
+  /**
+   * One profile per role, kept across generator kinds.
+   *
+   * A user who set the chord profile for a truss and then switches to a shed means the same
+   * thing by "chord". Resetting it per kind would make them say it three times.
+   */
+  let profiles = $state<Record<MemberRole, ProfileSpec>>({
+    chord: defaultProfileSpec('IPE 100'),
+    post: defaultProfileSpec('L 50x50x5'),
+    diagonal: defaultProfileSpec('L 50x50x5'),
+    rafter: defaultProfileSpec('IPE 200'),
+    column: defaultProfileSpec('HEB 160'),
+    beam: defaultProfileSpec('IPE 200'),
+    purlin: defaultProfileSpec('UPN 100'),
+    bracing: defaultProfileSpec('L 50x50x5'),
+  });
+
+  /** Parameter problems, before anything is generated. */
+  const paramProblems = $derived(
+    kind === 'truss' ? validateTrussParams(truss)
+      : kind === 'column' ? validateLatticeColumnParams(column)
+        : validateShedParams(shed),
+  );
+
+  /**
+   * The topology, or null while the parameters are invalid.
+   *
+   * The generators throw on bad input by design, so the guard is here rather than inside a
+   * try — a preview that swallowed the exception would show stale counts for parameters that
+   * cannot be built.
+   */
+  const topology = $derived.by(() => {
+    if (paramProblems.length > 0) return null;
+    if (kind === 'truss') return generateTruss(truss);
+    if (kind === 'column') return generateLatticeColumn(column);
+    return generateShed(shed);
+  });
+
+  const roles = $derived(topology ? requiredRoles(topology) : []);
+  const profileProblems = $derived(topology ? validateProfiles(topology, profiles) : []);
+  const canGenerate = $derived(
+    topology !== null && paramProblems.length === 0 && profileProblems.length === 0,
+  );
+
+  const counts = $derived(topology ? rolesPresent(topology.counts) : []);
+  let lastResult = $state<string | null>(null);
+
+  const SOURCE: Record<Kind, ProvenanceSource> = {
+    truss: 'generator-truss',
+    column: 'generator-lattice-column',
+    shed: 'generator-shed',
+  };
+
+  function paramsOf(): Record<string, unknown> {
+    return kind === 'truss' ? { ...truss } : kind === 'column' ? { ...column } : { ...shed };
+  }
+
+  function nameOf(): string {
+    if (kind === 'truss') return `${t('generator.ui.kindTruss')} ${truss.spanM} m`;
+    if (kind === 'column') return `${t('generator.ui.kindColumn')} ${column.heightM} m`;
+    return `${t('generator.ui.kindShed')} ${shed.spanM}x${shed.bayM}x${shed.frames}`;
+  }
+
+  function generate() {
+    if (!topology || !canGenerate) return;
+    const opts: EmitOptions = { name: nameOf(), profiles };
+    const g = emitModel(topology, opts);
+    const r = applyGeneratedModel(g, {
+      source: SOURCE[kind],
+      // The clock is read HERE and nowhere below: every module under this one takes the
+      // timestamp as a parameter so its output is reproducible.
+      atIso: new Date().toISOString(),
+      params: paramsOf(),
+      name: opts.name,
+    });
+    lastResult = matchesPreview(g, r)
+      ? tp('generator.ui.generated', { nodes: r.nodes, elements: r.elements, name: opts.name })
+      : tp('generator.ui.mismatch', { promised: g.json.elements.length, got: r.elements });
+    uiStore.toast(lastResult, matchesPreview(g, r) ? 'success' : 'error');
+  }
+</script>
+
+<div class="gen" data-testid="pro-generators-panel">
+  <header>
+    <h3>{t('generator.ui.title')}</h3>
+    <p class="sub">{t('generator.ui.subtitle')}</p>
+  </header>
+
+  <div class="kinds" role="group" aria-label={t('generator.ui.title')}>
+    {#each [['truss', 'kindTruss'], ['column', 'kindColumn'], ['shed', 'kindShed']] as [k, key] (k)}
+      <button
+        type="button"
+        class:active={kind === k}
+        data-testid={`gen-kind-${k}`}
+        aria-pressed={kind === k}
+        onclick={() => { kind = k as Kind; }}
+      >{t(`generator.ui.${key}`)}</button>
+    {/each}
+  </div>
+
+  <!-- ── Parameters ── -->
+  <div class="fields">
+    {#if kind === 'truss'}
+      <label><span>{t('generator.ui.kindTruss')}</span>
+        <select bind:value={truss.kind}>
+          {#each TRUSS_KINDS as k (k)}<option value={k}>{t(`generator.truss.${k}`)}</option>{/each}
+        </select></label>
+      <label><span>{t('generator.ui.span')}</span><input type="number" min="0.5" step="0.5" bind:value={truss.spanM} /></label>
+      <label><span>{t('generator.ui.rise')}</span><input type="number" min="0" step="0.1" bind:value={truss.riseM} /></label>
+      {#if truss.kind === 'trapezoidal' || truss.kind === 'arch'}
+        <label><span>{t('generator.ui.endDepth')}</span><input type="number" min="0" step="0.1" bind:value={truss.endDepthM} /></label>
+      {/if}
+      {#if truss.kind === 'parallelChord' || truss.kind === 'pratt'}
+        <label><span>{t('generator.ui.depth')}</span><input type="number" min="0.1" step="0.1" bind:value={truss.depthM} /></label>
+      {/if}
+      {#if truss.kind === 'trapezoidal'}
+        <label><span>{t('generator.ui.plateau')}</span><input type="number" min="0" step="0.1" bind:value={truss.plateauM} /></label>
+      {/if}
+      {#if truss.kind === 'arch'}
+        <label><span>{t('generator.ui.archCurve')}</span>
+          <select bind:value={truss.archCurve}>
+            {#each ARCH_CURVES as c (c)}<option value={c}>{t(`generator.archCurve.${c}`)}</option>{/each}
+          </select></label>
+      {/if}
+      {#if truss.kind !== 'rolledPortal'}
+        <label><span>{t('generator.ui.panels')}</span><input type="number" min="1" step="1" bind:value={truss.panelsPerHalf} /></label>
+        <label><span>{t('generator.ui.webPattern')}</span>
+          <select bind:value={truss.webPattern}>
+            {#each WEB_PATTERNS as w (w)}<option value={w}>{t(`generator.webPattern.${w}`)}</option>{/each}
+          </select></label>
+      {/if}
+      <label class="check"><input type="checkbox" bind:checked={truss.halfTruss} /><span>{t('generator.ui.halfTruss')}</span></label>
+
+    {:else if kind === 'column'}
+      <label><span>{t('generator.ui.height')}</span><input type="number" min="0.5" step="0.5" bind:value={column.heightM} /></label>
+      <label><span>{t('generator.ui.width')}</span><input type="number" min="0.1" step="0.05" bind:value={column.widthM} /></label>
+      <label><span>{t('generator.ui.divisions')}</span><input type="number" min="1" step="1" bind:value={column.divisions} /></label>
+      <label><span>{t('generator.ui.lacing')}</span>
+        <select bind:value={column.lacing}>
+          {#each LACING_PATTERNS as l (l)}<option value={l}>{t(`generator.lacing.${l}`)}</option>{/each}
+        </select></label>
+      <label class="check"><input type="checkbox" bind:checked={column.fixedBase} /><span>{t('generator.ui.fixedBase')}</span></label>
+
+    {:else}
+      <label><span>{t('generator.ui.spanVT')}</span><input type="number" min="1" step="0.5" bind:value={shed.spanM} /></label>
+      <label><span>{t('generator.ui.bayVP')}</span><input type="number" min="1" step="0.5" bind:value={shed.bayM} /></label>
+      <label><span>{t('generator.ui.frames')}</span><input type="number" min="2" step="1" bind:value={shed.frames} /></label>
+      <label><span>{t('generator.ui.clearHeight')}</span><input type="number" min="1" step="0.5" bind:value={shed.clearHeightM} /></label>
+      <label><span>{t('generator.ui.columnKind')}</span>
+        <select bind:value={shed.columnKind}>
+          <option value="lattice">{t('generator.ui.columnLattice')}</option>
+          <option value="solid">{t('generator.ui.columnSolid')}</option>
+        </select></label>
+      {#if shed.columnKind === 'lattice'}
+        <label><span>{t('generator.ui.width')}</span><input type="number" min="0.1" step="0.05" bind:value={shed.column.widthM} /></label>
+        <label><span>{t('generator.ui.divisions')}</span><input type="number" min="1" step="1" bind:value={shed.column.divisions} /></label>
+      {/if}
+      <label class="check"><input type="checkbox" bind:checked={shed.longitudinalBeams} /><span>{t('generator.ui.beams')}</span></label>
+      <label class="check"><input type="checkbox" bind:checked={shed.roof} /><span>{t('generator.ui.roof')}</span></label>
+      {#if shed.roof}
+        <label><span>{t('generator.ui.kindTruss')}</span>
+          <select bind:value={shed.truss.kind}>
+            {#each TRUSS_KINDS as k (k)}<option value={k}>{t(`generator.truss.${k}`)}</option>{/each}
+          </select></label>
+        <label><span>{t('generator.ui.rise')}</span><input type="number" min="0" step="0.1" bind:value={shed.truss.riseM} /></label>
+        <label><span>{t('generator.ui.panels')}</span><input type="number" min="1" step="1" bind:value={shed.truss.panelsPerHalf} /></label>
+        <label class="check"><input type="checkbox" bind:checked={shed.truss.halfTruss} /><span>{t('generator.ui.halfTruss')}</span></label>
+        <label class="check"><input type="checkbox" bind:checked={shed.purlins} /><span>{t('generator.ui.purlins')}</span></label>
+      {/if}
+      <label class="check"><input type="checkbox" bind:checked={shed.fixedBase} /><span>{t('generator.ui.fixedBase')}</span></label>
+    {/if}
+  </div>
+
+  {#if paramProblems.length > 0}
+    <ul class="problems" data-testid="gen-param-problems">
+      {#each paramProblems as p, i (i)}<li>{t(p.key)}</li>{/each}
+    </ul>
+  {/if}
+
+  <!-- ── Profiles, only for the roles this topology actually places ── -->
+  {#if roles.length > 0}
+    <h4>{t('generator.ui.profiles')}</h4>
+    {#each roles as role (role)}
+      <ProfilePicker
+        {role}
+        spec={profiles[role]}
+        onChange={(next) => { profiles = { ...profiles, [role]: next }; }}
+      />
+    {/each}
+  {/if}
+
+  {#if profileProblems.length > 0}
+    <ul class="problems" data-testid="gen-profile-problems">
+      {#each profileProblems as p, i (i)}
+        <li>{t(p.key).replace('{role}', p.role ? t(`generator.role.${p.role}`) : '').replace('{name}', String(p.params?.name ?? ''))}</li>
+      {/each}
+    </ul>
+  {/if}
+
+  <!-- ── The count, from the same object Generate emits ── -->
+  {#if topology}
+    <div class="preview" data-testid="gen-preview">
+      <p class="totals">
+        {tp('generator.ui.totals', {
+          members: topology.members.length,
+          nodes: topology.nodes.length,
+          length: topology.totalLengthM.toFixed(2),
+        })}
+        {#if topology.slopePercent !== null}
+          · {topology.slopePercent.toFixed(0)}% {t('generator.ui.slope')}
+        {/if}
+        {#if 'areaM2' in topology}
+          · {(topology as { areaM2: number }).areaM2.toFixed(0)} m²
+        {/if}
+      </p>
+      <ul class="legend">
+        {#each counts as role (role)}
+          <li><span>{t(`generator.role.${role}`)}</span><span class="num">{topology.counts[role]}</span></li>
+        {/each}
+      </ul>
+      <details class="assume">
+        <summary>{t('generator.ui.assumptions')} <span class="count">{topology.assumptions.length}</span></summary>
+        <ul>
+          {#each topology.assumptions as key (key)}<li>{t(key)}</li>{/each}
+        </ul>
+      </details>
+    </div>
+  {/if}
+
+  <p class="warn">{t('generator.ui.replacesModel')}</p>
+
+  <button class="go" type="button" data-testid="gen-generate" disabled={!canGenerate} onclick={generate}>
+    {t('generator.ui.generate')}
+  </button>
+
+  {#if lastResult}
+    <p class="result" data-testid="gen-result" role="status">{lastResult}</p>
+  {/if}
+
+  <p class="model-note">
+    {tp('generator.ui.currentModel', {
+      nodes: modelStore.nodes.size, elements: modelStore.elements.size,
+    })}
+  </p>
+</div>
+
+<style>
+  .gen { display: flex; flex-direction: column; gap: 8px; padding: 10px 12px; height: 100%; overflow-y: auto; }
+  h3 { margin: 0; font-size: 0.86rem; font-weight: 600; }
+  h4 { margin: 6px 0 2px; font-size: 0.74rem; font-weight: 600; color: #bcd; }
+  .sub { margin: 2px 0 0; font-size: 0.7rem; color: #8fa0b4; }
+  .kinds { display: flex; gap: 4px; }
+  .kinds button {
+    flex: 1; padding: 4px 8px; font-size: 0.72rem; font-weight: 600; cursor: pointer;
+    background: #14304f; border: 1px solid #2a5a8a; border-radius: 3px; color: #dde;
+  }
+  .kinds button.active { background: #1e5a8a; border-color: #4ecdc4; }
+  .kinds button:focus-visible { outline: 2px solid #4ecdc4; outline-offset: 1px; }
+  .fields { display: flex; flex-direction: column; gap: 3px; }
+  .fields label { display: flex; align-items: center; gap: 6px; font-size: 0.7rem; color: #bcd; }
+  .fields label > span:first-child { min-width: 9rem; }
+  .fields input[type='number'], .fields select {
+    background: #0b1a2c; color: #dde; border: 1px solid #24486e;
+    border-radius: 3px; padding: 2px 4px; font-size: 0.7rem; width: 6rem; text-align: right;
+  }
+  .fields select { text-align: left; width: auto; min-width: 8rem; }
+  .fields label.check > span { min-width: 0; }
+  .fields input:focus-visible, .fields select:focus-visible { outline: 2px solid #4ecdc4; outline-offset: 1px; }
+  .problems { margin: 0; padding-left: 16px; font-size: 0.68rem; color: #ff9a9a; }
+  .preview { border: 1px solid #17324f; border-radius: 4px; padding: 6px 8px; }
+  .totals { margin: 0; font-size: 0.72rem; color: #cde; font-variant-numeric: tabular-nums; }
+  .legend { list-style: none; margin: 4px 0 0; padding: 0; font-size: 0.68rem; }
+  .legend li { display: flex; justify-content: space-between; color: #9ab; }
+  .num { font-variant-numeric: tabular-nums; }
+  .assume { margin-top: 5px; }
+  .assume summary { cursor: pointer; font-size: 0.68rem; color: #8fa0b4; }
+  .assume summary:focus-visible { outline: 2px solid #4ecdc4; outline-offset: 2px; }
+  .assume ul { margin: 4px 0 0; padding-left: 16px; font-size: 0.66rem; color: #9ab; line-height: 1.4; }
+  .count { padding: 0 4px; border-radius: 3px; background: rgba(128,128,128,0.3); }
+  .warn { margin: 0; font-size: 0.68rem; color: #f0cc66; }
+  .go {
+    padding: 6px 10px; font-size: 0.76rem; font-weight: 600; cursor: pointer;
+    background: #1e5a8a; border: 1px solid #4ecdc4; border-radius: 3px; color: #eef;
+  }
+  .go:disabled { opacity: 0.45; cursor: not-allowed; border-color: #2a5a8a; }
+  .go:focus-visible { outline: 2px solid #4ecdc4; outline-offset: 2px; }
+  .result { margin: 0; font-size: 0.7rem; color: #7ee2a8; }
+  .model-note { margin: 0; font-size: 0.66rem; color: #778; }
+</style>

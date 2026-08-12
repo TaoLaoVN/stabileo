@@ -46,6 +46,7 @@ function literalKeys(): Set<string> {
     ...walk('lib/engine/generators'),
     'lib/engine/design/adapters/cirsoc301-capabilities.ts',
     ...walk('components/pro/steel'),
+    ...walk('components/pro/generators'),
     'lib/store/steel.svelte.ts',
     'lib/engine/design/member-context.ts',
   ];
@@ -94,7 +95,8 @@ describe('steel and generator translation keys', () => {
     const { STRUCTURAL_MATERIAL_FAMILIES } = await import('../../engine/steel/material-family');
     const { STEEL_CAPABILITY_KEYS } = await import('../../engine/design/adapters/cirsoc301-capabilities');
     const { BUILT_UP_ARRANGEMENTS } = await import('../../engine/generators/built-up-section');
-    void BUILT_UP_ARRANGEMENTS;
+    const { TRUSS_KINDS, ARCH_CURVES, WEB_PATTERNS } = await import('../../engine/generators/truss-topology');
+    const { LACING_PATTERNS } = await import('../../engine/generators/lattice-column');
 
     const expected = [
       ...STEEL_MEMBER_STATUSES.map((s) => `steel.status.${s}`),
@@ -105,6 +107,13 @@ describe('steel and generator translation keys', () => {
       'steel.kind.beam', 'steel.kind.column', 'steel.kind.wall',
       'steel.panel.empty.noElements', 'steel.panel.empty.noneMetallic',
       'steel.panel.empty.allUnclassified',
+      // Everything the generators panel builds from an enumeration. A value added to any of
+      // these unions fails here until it is translated, which is the point.
+      ...BUILT_UP_ARRANGEMENTS.map((a) => `generator.arrangement.${a}`),
+      ...TRUSS_KINDS.map((k) => `generator.truss.${k}`),
+      ...ARCH_CURVES.map((c) => `generator.archCurve.${c}`),
+      ...WEB_PATTERNS.map((w) => `generator.webPattern.${w}`),
+      ...LACING_PATTERNS.map((l) => `generator.lacing.${l}`),
     ];
     const missing = expected.filter((k) => !(k in steelEs)).sort();
     expect(missing, `template keys not translated:\n${missing.join('\n')}`).toEqual([]);

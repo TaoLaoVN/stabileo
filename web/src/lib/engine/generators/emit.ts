@@ -30,7 +30,7 @@
 import type { JSONModel } from '../../templates/load-fixture';
 import type { MemberRole } from './member-roles';
 import { rolesPresent, tallyRoles } from './member-roles';
-import type { Topology } from './truss-topology';
+import type { GenSupport, Topology } from './truss-topology';
 import {
   composeBuiltUp, torsionBasisKey, type BuiltUpArrangement, type BuiltUpSection,
 } from './built-up-section';
@@ -225,13 +225,7 @@ export function emitModel(t: Topology, opts: EmitOptions): GeneratedModel {
     };
   });
 
-  const supports: JSONModel['supports'] = t.supports.map((s, i) => ({
-    id: i + 1,
-    nodeId: s.node + 1,
-    // The model's 3-D support vocabulary, since a generated frame is a 3-D model even when
-    // every node of it happens to lie in one plane.
-    type: s.type === 'fixed' ? 'fixed3d' : s.type === 'pinned' ? 'pinned3d' : 'rollerXZ',
-  }));
+  const supports: JSONModel['supports'] = t.supports.map((s, i) => support(i + 1, s));
 
   const json: JSONModel = {
     name: opts.name,
@@ -263,6 +257,37 @@ export function emitModel(t: Topology, opts: EmitOptions): GeneratedModel {
     slopePercent: t.slopePercent,
     assumptions: [...assumptions].sort(),
     sections: composed,
+  };
+}
+
+/**
+ * One support, in the 3-D vocabulary, because a generated frame is a 3-D model even when
+ * every node of it happens to lie in one plane.
+ *
+ * ── The roller had to be spelled out ───────────────────────────────
+ *
+ * The first version emitted `rollerXZ` for the sliding bearing, on the reading that a
+ * "roller in XZ" is a bearing that rolls along the span. It is the opposite:
+ * `solver-service.ts:1402` maps it to `{ rx: false, ry: true, rz: false }`, where those
+ * flags mean RESTRAINED — so it is free in X **and in Z**. The generated truss was standing
+ * on one pin and one bearing that did not hold it up at all, and the solver correctly
+ * reported a mechanism.
+ *
+ * A truss bearing slides along the span and is held laterally and vertically. There is no
+ * named type for that in 3-D — `rollerX` is right but lives in the 2-D vocabulary and is not
+ * in `types3D` — so it is written out as `custom3d` with the DOF stated. Explicit is also
+ * better here than a name that has to be looked up to be believed: the last one was.
+ *
+ * All three rotations stay free, which is what makes it a pin rather than a fixity.
+ */
+function support(id: number, s: GenSupport): JSONModel['supports'][number] {
+  const nodeId = s.node + 1;
+  if (s.type === 'fixed') return { id, nodeId, type: 'fixed3d' };
+  if (s.type === 'pinned') return { id, nodeId, type: 'pinned3d' };
+  return {
+    id, nodeId, type: 'custom3d',
+    dofRestraints: { tx: false, ty: true, tz: true, rx: false, ry: false, rz: false },
+    dofFrame: 'global',
   };
 }
 

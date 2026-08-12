@@ -134,6 +134,14 @@
             { id: 'nodes', labelKey: 'pro.tabNodes', icon: 'node', tab: 'nodes' },
             { id: 'elements', labelKey: 'pro.tabElements', icon: 'element', tab: 'elements' },
             { id: 'shells', labelKey: 'pro.tabShells', icon: 'shell', tab: 'shells' },
+            /*
+             * The generators draw too — a truss, a lattice column, a whole shed,
+             * from parameters instead of by hand. They produce geometry and
+             * nothing else (`generator.ui.subtitle` says so on the panel), so
+             * they belong beside the other three rather than in a stage of their
+             * own.
+             */
+            { id: 'generators', labelKey: 'generator.ui.title', icon: 'examples', tab: 'generators' },
           ],
         },
         {
@@ -247,6 +255,15 @@
           labelKey: 'proRibbon.groupDesign',
           cmds: [
             { id: 'design', labelKey: 'pro.tabDesign', icon: 'settings', tab: 'design' },
+            /*
+             * The metallic family sits in the same group as the concrete one and
+             * not in a stage of its own: they are two materials at one step of
+             * the workflow, and an engineer designing a mixed structure moves
+             * between them without changing stage. The group id stays `rc` for
+             * the specs that name it; its LABEL was always the neutral
+             * `proRibbon.groupDesign`.
+             */
+            { id: 'steel', labelKey: 'steel.panel.title', icon: 'section', tab: 'steel' },
             { id: 'connections', labelKey: 'pro.tabConnections', icon: 'element', tab: 'connections' },
           ],
         },
@@ -260,9 +277,10 @@
     // no stage — the tab row simply keeps showing the stage you came from.
     project: '',
     nodes: 'model', elements: 'model', shells: 'model', materials: 'model', sections: 'model',
+    generators: 'model',
     supports: 'conditions', constraints: 'conditions', loads: 'conditions',
     advanced: 'analyse', results: 'analyse', diagnostics: 'analyse',
-    design: 'design', connections: 'design',
+    design: 'design', steel: 'design', connections: 'design',
   };
 
   /*

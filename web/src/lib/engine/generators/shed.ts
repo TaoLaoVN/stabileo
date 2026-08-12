@@ -65,6 +65,24 @@ export interface ShedParams {
   truss: Omit<TrussParams, 'spanM'>;
   /** Purlins spanning between the frames on the top chord. */
   purlins: boolean;
+  /**
+   * Whether the column bases are fixed.
+   *
+   * ── Why this defaults to TRUE, unlike the standalone column ──────
+   *
+   * A latticed column is braced in its OWN plane by its lacing and nothing else. Out of
+   * that plane its two chords are a pair of vertical members, and with a pin under each one
+   * the pair can rotate about the line joining them: a real mechanism, which the solver
+   * correctly reports as a singular system. A real shed resists it with longitudinal
+   * bracing, which this generator does not place, or with base fixity, which it can.
+   *
+   * The standalone lattice column keeps a pinned default because on its own it solves — the
+   * difference is that a shed's columns carry a roof whose weight has nowhere to go if the
+   * frame can fold sideways.
+   *
+   * Setting this false is allowed and is disclosed: the model then has no out-of-plane
+   * restraint at all, and `generator.assume.latticeBasesPinnedNoOutOfPlane` says so.
+   */
   fixedBase: boolean;
 }
 
@@ -79,7 +97,7 @@ export const DEFAULT_SHED_PARAMS: ShedParams = Object.freeze({
   roof: true,
   truss: { ...DEFAULT_TRUSS_PARAMS, kind: 'trapezoidal' } as Omit<TrussParams, 'spanM'>,
   purlins: true,
-  fixedBase: false,
+  fixedBase: true,
 });
 
 export function validateShedParams(p: ShedParams): ParamProblem[] {
@@ -315,6 +333,11 @@ export function generateShed(params: Partial<ShedParams> = {}): ShedTopology {
 
   if (!p.roof) b.assumptions.add('generator.assume.noRoofStructure');
   if (p.columnKind === 'solid') b.assumptions.add('generator.assume.solidColumns');
+  // Stated rather than left for the solver to discover: a latticed column on pinned chord
+  // feet has no out-of-plane restraint, because the lacing only braces its own plane.
+  if (p.columnKind === 'lattice' && !(p.fixedBase || p.column.fixedBase)) {
+    b.assumptions.add('generator.assume.latticeBasesPinnedNoOutOfPlane');
+  }
 
   const t = finish(b, truss?.slopePercent ?? null);
   return {
