@@ -1,0 +1,162 @@
+/**
+ * Lattice column geometry: two chords, battens and lacing.
+ *
+ * ── The shape ──────────────────────────────────────────────────────
+ *
+ * Two vertical chords separated by `widthM`, divided into `divisions` panels, with a
+ * horizontal batten at every panel point and one diagonal per panel. That gives
+ *
+ *   chords    2 · divisions
+ *   posts     divisions + 1
+ *   diagonals divisions
+ *
+ * which is `4·divisions + 1` members in total — 25 for six divisions.
+ *
+ * ── Why the lacing alternates ──────────────────────────────────────
+ *
+ * A laced column with every diagonal leaning the same way is a real thing, but it is not
+ * the usual one: under axial load the parallel arrangement puts a net shear into the
+ * battens and racks the panel, while alternating lacing balances it panel to panel. So
+ * zig-zag is the default and the parallel arrangement is offered rather than assumed,
+ * because someone detailing a specific column may genuinely want it.
+ *
+ * ── The plane ──────────────────────────────────────────────────────
+ *
+ * XZ at y = 0, Z up, the chord separation along X — the same convention as the truss
+ * generator, so the shed generator can place either without re-deriving anything.
+ *
+ * Pure: no store, no runes, no i18n.
+ */
+
+import type { MemberRole } from './member-roles';
+import { tallyRoles } from './member-roles';
+import type { GenMember, GenNode, GenSupport, ParamProblem, Topology } from './truss-topology';
+
+export const LACING_PATTERNS = ['zigzag', 'parallel'] as const;
+export type LacingPattern = (typeof LACING_PATTERNS)[number];
+
+export interface LatticeColumnParams {
+  /** Overall height, base to top, m. */
+  heightM: number;
+  /** Centre-to-centre distance between the two chords, m. */
+  widthM: number;
+  /** Panels up the height. Battens sit at every panel point, ends included. */
+  divisions: number;
+  lacing: LacingPattern;
+  chordContinuity: 'frame' | 'truss';
+  webContinuity: 'frame' | 'truss';
+  /**
+   * Whether the base is fixed.
+   *
+   * A latticed column's two chords land on two separate anchor points, and pinning each
+   * of them ALREADY restrains the column against rotation in its own plane — the couple
+   * is carried by the pair, not by either base. So pinned chords are the honest default,
+   * and fixing them additionally restrains out-of-plane rotation, which is a different
+   * claim about the foundation and is therefore a choice.
+   */
+  fixedBase: boolean;
+}
+
+export const DEFAULT_LATTICE_COLUMN_PARAMS: LatticeColumnParams = Object.freeze({
+  heightM: 8,
+  widthM: 0.6,
+  divisions: 6,
+  lacing: 'zigzag',
+  chordContinuity: 'frame',
+  webContinuity: 'truss',
+  fixedBase: false,
+});
+
+export function validateLatticeColumnParams(p: LatticeColumnParams): ParamProblem[] {
+  const out: ParamProblem[] = [];
+  if (!(p.heightM > 0)) out.push({ field: 'spanM', key: 'generator.problem.heightPositive' });
+  if (!(p.widthM > 0)) out.push({ field: 'depthM', key: 'generator.problem.widthPositive' });
+  if (!Number.isInteger(p.divisions) || p.divisions < 1) {
+    out.push({ field: 'panelsPerHalf', key: 'generator.problem.divisionsAtLeastOne' });
+  }
+  return out;
+}
+
+/**
+ * Build the column.
+ *
+ * Node order is chord-by-chord — the whole left chord bottom to top, then the whole right
+ * one — so that the shed generator can splice a column into a frame by index arithmetic
+ * instead of by searching for coordinates.
+ */
+export function generateLatticeColumn(params: Partial<LatticeColumnParams> = {}): Topology {
+  const p: LatticeColumnParams = { ...DEFAULT_LATTICE_COLUMN_PARAMS, ...params };
+  const problems = validateLatticeColumnParams(p);
+  if (problems.length > 0) {
+    throw new Error(`generateLatticeColumn: invalid parameters — ${problems.map((x) => x.key).join(', ')}`);
+  }
+
+  const n = p.divisions;
+  const dz = p.heightM / n;
+  const halfW = p.widthM / 2;
+
+  const nodes: GenNode[] = [];
+  const left: number[] = [];
+  const right: number[] = [];
+  for (let i = 0; i <= n; i++) {
+    left.push(nodes.length);
+    nodes.push({ i: nodes.length, x: -halfW, y: 0, z: i * dz });
+  }
+  for (let i = 0; i <= n; i++) {
+    right.push(nodes.length);
+    nodes.push({ i: nodes.length, x: halfW, y: 0, z: i * dz });
+  }
+
+  const members: GenMember[] = [];
+  for (let i = 0; i < n; i++) {
+    members.push({ a: left[i], b: left[i + 1], role: 'chord', type: p.chordContinuity });
+    members.push({ a: right[i], b: right[i + 1], role: 'chord', type: p.chordContinuity });
+  }
+  for (let i = 0; i <= n; i++) {
+    members.push({ a: left[i], b: right[i], role: 'post', type: p.webContinuity });
+  }
+  for (let i = 0; i < n; i++) {
+    const leansRight = p.lacing === 'parallel' ? true : i % 2 === 0;
+    members.push(leansRight
+      ? { a: left[i], b: right[i + 1], role: 'diagonal', type: p.webContinuity }
+      : { a: right[i], b: left[i + 1], role: 'diagonal', type: p.webContinuity });
+  }
+
+  const baseType = p.fixedBase ? 'fixed' as const : 'pinned' as const;
+  const supports: GenSupport[] = [
+    { node: left[0], type: baseType },
+    { node: right[0], type: baseType },
+  ];
+
+  const assumptions = [
+    p.fixedBase ? 'generator.assume.baseFixed' : 'generator.assume.baseChordsPinned',
+    p.webContinuity === 'truss' ? 'generator.assume.webPinned' : 'generator.assume.webContinuous',
+    p.lacing === 'zigzag' ? 'generator.assume.lacingZigzag' : 'generator.assume.lacingParallel',
+  ];
+
+  let totalLengthM = 0;
+  for (const m of members) {
+    const a = nodes[m.a];
+    const b = nodes[m.b];
+    totalLengthM += Math.hypot(b.x - a.x, b.y - a.y, b.z - a.z);
+  }
+
+  return {
+    nodes,
+    members,
+    supports,
+    counts: tallyRoles(members),
+    totalLengthM,
+    slopePercent: null,
+    assumptions,
+  };
+}
+
+/** The node indices at the top of each chord — where a shed lands its truss or beam. */
+export function latticeTopNodes(p: Pick<LatticeColumnParams, 'divisions'>): [number, number] {
+  const n = p.divisions;
+  return [n, 2 * n + 1];
+}
+
+/** Roles a lattice column places, for a dialog that must not offer profiles it never uses. */
+export const LATTICE_COLUMN_ROLES: readonly MemberRole[] = Object.freeze(['chord', 'post', 'diagonal']);
