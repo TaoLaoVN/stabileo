@@ -506,6 +506,10 @@
           const f = perfAcc.frames || 1;
           perfHud = {
             on: true,
+            // Monotonic window id. A spec measuring a gesture waits for this to advance
+            // TWICE after the gesture starts: the first window straddles the gesture
+            // boundary, the second lies entirely inside it.
+            flush: perfHud.flush + 1,
             fps: perfAcc.frameMsSum > 0 ? Math.round(1000 / (perfAcc.frameMsSum / f)) : 0,
             renderMs: +(perfAcc.renderMsSum / f).toFixed(2),
             syncMs: +perfAcc.syncMs.toFixed(2), // CPU scene-sync since last flush
@@ -522,6 +526,19 @@
       // Keep looping if continuous rendering is needed
       if (needsContinuous() || needsRender) {
         animFrameId = requestAnimationFrame(renderOnce);
+      } else if (perfHud.on) {
+        // The loop is about to STOP. This viewport renders on demand, so the next
+        // frame may be seconds away — and without this, that idle gap would be
+        // charged to `frameMsSum` as if it were one frame interval, which is how a
+        // 60fps orbit after a 1.2s pause used to report ~11fps. Zeroing `lastFrameT`
+        // makes the `if (perfAcc.lastFrameT)` guard above skip that first interval.
+        //
+        // ONLY `lastFrameT`. Clearing the rest of the window (frames/sums/lastFlush)
+        // looks tidier and is a trap: a mouse-driven gesture stops and restarts the
+        // loop between input events, so a per-stop reset means the window never
+        // reaches 250ms and the HUD stops flushing entirely mid-gesture. The window
+        // must survive stutter; only the gap interval must not enter the timing.
+        perfAcc.lastFrameT = 0;
       }
     }
     // Kick off the first frame
@@ -683,9 +700,9 @@
   // GPU-bound (draw calls / fill rate). Enable with ?perf in the URL or
   // localStorage.stabileo_perf='1', or toggle live with Shift+P. Zero cost when
   // off (perfTimed early-returns; the render block is guarded). Not for prod.
-  let perfHud = $state<{ on: boolean; fps: number; renderMs: number; syncMs: number; calls: number; tris: number; geos: number; texs: number }>({
+  let perfHud = $state<{ on: boolean; flush: number; fps: number; renderMs: number; syncMs: number; calls: number; tris: number; geos: number; texs: number }>({
     on: (() => { try { return new URLSearchParams(location.search).has('perf') || localStorage.getItem('stabileo_perf') === '1'; } catch { return false; } })(),
-    fps: 0, renderMs: 0, syncMs: 0, calls: 0, tris: 0, geos: 0, texs: 0,
+    flush: 0, fps: 0, renderMs: 0, syncMs: 0, calls: 0, tris: 0, geos: 0, texs: 0,
   });
   // Non-reactive accumulators so the HUD's own reactivity doesn't perturb the measurement.
   const perfAcc = { syncMs: 0, frames: 0, frameMsSum: 0, renderMsSum: 0, lastFlush: 0, lastFrameT: 0 };
@@ -2397,10 +2414,12 @@
        draw-call bound; `geos`/`texs` spiking + high `syncMs` while editing = CPU
        teardown/rebuild churn. -->
   {#if perfHud.on}
-    <div class="perf-hud">
+    <div class="perf-hud" data-flush={perfHud.flush}>
       <div><b>3D perf</b> <span style="opacity:.6">(Shift+P)</span></div>
       <div>fps <b>{perfHud.fps}</b> · render <b>{perfHud.renderMs}</b>ms</div>
-      <div>sync <b>{perfHud.syncMs}</b>ms/250ms</div>
+      <!-- "/window", not "/250ms": the loop renders on demand, so a window is ≥250ms
+           and is however long it took to accumulate — it spans idle gaps. -->
+      <div>sync <b>{perfHud.syncMs}</b>ms/window</div>
       <div>draw calls <b>{perfHud.calls}</b> · tris <b>{(perfHud.tris / 1000).toFixed(0)}</b>k</div>
       <div>geos <b>{perfHud.geos}</b> · texs <b>{perfHud.texs}</b></div>
     </div>
