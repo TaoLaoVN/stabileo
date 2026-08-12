@@ -82,15 +82,21 @@ Restaurar.
 ### The transport that did not work, and why it matters beyond the tests
 
 The plan's preferred shape was to serialise the project through the production save path and load
-it per test. That was tried first and **fails on this project**:
+it per test. That was tried first and appeared to fail — and the diagnosis was WRONG, which is
+recorded here because the wrong version of it was committed:
 
-- `pro-project-save` (the real `.ded` download) produced no download in 180 s and the browser
-  context disappeared underneath the run;
-- `context.storageState({ indexedDB: true })` did not return in twenty minutes.
+- the `.ded` download was driven through `pro-project-save`, a control PR20 had already removed
+  from desktop PRO, so Playwright waited on a button that does not exist and the download timeout
+  racing it got the blame. Through `pr-save`, which does exist, the same project saves in 2 s;
+- `context.storageState({ indexedDB: true })` genuinely does not return on a payload this size,
+  which is a limit of that Playwright API and not of the app.
 
-Both of those turn the document into a string. The autosave keeps it an object and takes about
-two seconds. That is a product finding, not a harness detail — see
-`pr20-pro-design-matrix.md` §10.
+So the transport chosen here is not a workaround for a broken save. It is chosen because it is
+faster and because it never moves fifty megabytes through the test process: the autosave keeps the
+project an object inside the browser. `e2e/ded-roundtrip.spec.ts` now covers the file itself.
+
+The measurement did leave one real improvement behind: `serializeProject` was pretty-printing, and
+the 7-storey `.ded` went from 110,3 MB to 48,0 MB when it stopped.
 
 ### One regression this introduced, and what it cost
 

@@ -94,6 +94,14 @@ export interface PreparedProject {
   pieces: Record<string, number>;
   /** What the renderer was actually drawing, read off the meshes. */
   census: RebarSceneCensus;
+  /**
+   * Whether the workspace showed the "not for issue" banner for provisional members.
+   *
+   * Captured on the LIVE page, like the tally and the census, so a restore can be asserted to
+   * reproduce it. It is read off the DOCUMENT (`scene.provisionalMembers`) rather than off the
+   * design run, which is what makes it a fair thing to expect from a restored project at all.
+   */
+  provisionalBanner: boolean;
 }
 
 /** Coordinated assemblies currently in the model. */
@@ -250,6 +258,7 @@ async function prepare(page: Page): Promise<Omit<PreparedProject, 'context'>> {
   const pieces = await readPieces(page);
   const census = (await page.evaluate(() => window.__stabileo.rebarSceneCensus()))!;
   expect(census, 'the prepared scene is drawing something').not.toBeNull();
+  const provisionalBanner = await page.getByTestId('rebar-provisional-banner').count() > 0;
   await page.getByTestId('rebar-workspace-close').click();
   await expect(page.getByTestId('rebar-workspace')).toHaveCount(0);
 
@@ -266,7 +275,7 @@ async function prepare(page: Page): Promise<Omit<PreparedProject, 'context'>> {
   expect(stored.fingerprint.elements, 'and the save holds the model').toBe(elements);
   expect(stored.fingerprint.reinforced, 'and the design in it').toBe(reinforced);
 
-  return { elements, assemblies, reinforced, tally, pieces, census };
+  return { elements, assemblies, reinforced, tally, pieces, census, provisionalBanner };
 }
 
 /**

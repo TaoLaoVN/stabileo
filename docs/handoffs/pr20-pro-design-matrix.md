@@ -322,7 +322,8 @@ honest fix the plan already proposes.
 | cambio pendiente | `pending-load-change`, `pending-review-in-loads`, `pending-cancel` | `regulations.spec.ts` |
 | ediciones no disponibles | `unavailable-editions`, `unavailable-${id}` | `regulations.spec.ts` |
 | materiales | `regs-edit-materials` | `regulations.spec.ts` |
-| abrir / guardar proyecto | `pp-open`, `pp-save`, `pp-save-session` in the ribbon's Project view | **the spec that covers this tests controls PR20 removed — see §10.5** |
+| abrir / guardar proyecto | `pr-project` → `pp-open` / `pp-open-file`; `pr-save` and `pp-save` | `pro-project-files.spec.ts`, retargeted at the ribbon — open, save, round trip, "opening is not a silent solve" |
+| `.ded` round trip, small and 7-storey | the same controls | `ded-roundtrip.spec.ts` — save, reopen on a page that has never seen the project, and compare the model, the detailing and the drawn scene |
 | oferta de autoguardado | `autosave-prompt` (in `App.svelte`), `autosave-older-warning` | `project-restore.spec.ts` |
 | autor del detallado | `detailingAuthor` — resolved when the 3-D command builds the document | **PENDIENTE: no test id and no spec.** The author reaches the sheets and the report; today nothing asserts which name arrives there |
 
@@ -365,54 +366,78 @@ defect to patch here.
 
 ## 10. Findings that are not test gaps
 
-1. **`pro-project-save` does not survive the fully-detailed 7-storey project.** Driving the real
-   Save button after load → solve → design → detailing → floor design produced no `download`
-   event within 180 s and the browser context disappeared underneath the run. The same project
-   autosaves to IndexedDB in about two seconds, and `project-restore.spec.ts` restores it. The
-   difference between the two paths is that the autosave stores the OBJECT (structured clone)
-   while `saveProject` builds `JSON.stringify(buildProjectFile(), null, 2)` — a pretty-printed
-   string of a document carrying roughly 21 000 bars — and then a Blob of it.
+1. ~~**`pro-project-save` does not survive the fully-detailed 7-storey project.**~~
+   **RETRACTED — the measurement was wrong, and this is what it actually was.**
 
-   A second measurement points the same way: `context.storageState({ indexedDB: true })`, which
-   serialises the stored project to JSON outside the page, did not return within twenty minutes
-   on the same project. Both of the paths that turn this document into a string are unusable at
-   this size; the one that keeps it an object is fine.
+   The original claim was that the real Save button produced no download in 180 s and the browser
+   context died. What was actually clicked was `pro-project-save`, a control PR20 had already
+   removed from desktop PRO — the same missing-locator cause as §10.5 — so Playwright waited on a
+   button that does not exist while the download timeout it was racing fired first and got the
+   blame. `context.storageState({ indexedDB: true })` not returning is a real limit of that
+   Playwright API on a payload this size, and says nothing about the app.
 
-   Reported rather than fixed: it is outside both objectives of this pass, and the remedy is a
-   decision about the file format — drop the two-space indent, or stream the write — not a defect
-   to patch blind. **What it means for a user today: a 7-storey project can be autosaved and
-   restored but cannot be saved to a `.ded` file.** That is worth confirming by hand before PR20
-   goes to manual QA, because it is a data-export path, not a cosmetic one.
+   Driven through the control that DOES exist (`pr-save`), the same project saves in **2 s** with
+   the 3-D scene never built and **3 s** immediately after building and closing it. Nothing was
+   broken.
+
+   What the measurement did find is worth having, and is fixed:
+
+   | | before | after |
+   |---|---|---|
+   | 7-storey `.ded` | 110 341 310 B (110,3 MB) | **47 989 693 B (48,0 MB)** |
+   | `JSON.stringify` of the payload | 202 ms | 56 ms |
+   | small committed fixture | 11 778 B | 5 367 B |
+
+   `serializeProject` was pretty-printing with `null, 2`. On a document that is mostly nested
+   arrays of coordinates, that spent about twenty bytes of indentation per six-byte number:
+   sixty-two of the hundred-and-ten megabytes were whitespace. Whitespace is not part of the
+   format — both sides go through `JSON.parse` — so dropping it needs no migration and every
+   existing `.ded`, including the pretty-printed committed fixture, still opens.
+
 2. **`cmd-cancel` has no coverage**, and it is the only way out of a long design run.
 3. **`footing-delete` has no coverage and no confirmation.**
 4. **The conflict inspector is unreachable by keyboard and untested.**
-5. **Fourteen e2e tests are red on this branch for ONE reason, and the product is not the reason.**
+5. ~~**Fourteen e2e tests are red for one reason.**~~ **FIXED.**
 
    `pro-project-files.spec.ts` (4), `rc-cad-handoff.spec.ts` (8) and
-   `rc-cad-production-download.spec.ts` (2) all fail on the same missing locator:
-   `getByTestId('project-open-file')` is not attached on desktop PRO. Measured on a clean
-   checkout of this branch with every change from this pass stashed, so it is not a consequence
-   of the test restructure.
+   `rc-cad-production-download.spec.ts` (2) were all reaching for controls PR20's ribbon replaced.
+   The product was never broken; the tests were describing the previous shell. The equivalences,
+   for anyone reading an older spec:
 
-   The cause is deliberate. PR20's two-level ribbon replaced PR19's `pro-bar` and stopped
-   mounting `ProProjectFileActions` on the desktop; open and save moved into the ribbon's Project
-   view (`ProProjectTab`), which has its own controls — `pp-open`, `pp-save`, `pp-save-session` —
-   and its own hidden file input. **The capability is intact; the test ids are not.** The new
-   input carries no `data-testid` at all, so no spec can reach it.
+   | PR19 | PR20 |
+   |---|---|
+   | `pro-project-open` (PRO desktop bar) | `pr-project` → the panel's `pp-open` |
+   | `pro-project-save` | `pr-save` on the ribbon, `pp-save` in the panel — both `saveProject` |
+   | `project-open-file` on PRO desktop | `pp-open-file` in the ribbon's Project view |
+   | Básico's `project-open-file`, always mounted | same input, inside the panel `hdr-project` opens |
+   | `ANALYSIS` menu → `Design` | `pr-stage-design` → `pr-cmd-design` |
+   | toolbar `Solve` | `pr-stage-analyse` → `pr-cmd-solve` |
 
-   What that costs today: the whole PR19 footing-CAD handoff journey — the production download,
-   the schema validation, the "never converts an unevaluated check into a pass" guarantee and
-   both Spanish-translation journeys — is unverified on this branch, because every one of those
-   tests opens its committed fixture through that input.
+   The ribbon's file input needed a test id and now has `pp-open-file` rather than a third copy of
+   `project-open-file`: `ProPanel` renders the mobile action row and the active tab as siblings,
+   so on a phone with the Project tab open it is the one input that CAN be mounted beside another.
 
-   The smallest honest fix is two steps and neither is in this pass's scope: give the ribbon's
-   input the same `data-testid="project-open-file"` the other two carry (they are never mounted
-   at once — `ProProjectFileActions` documents exactly that convention), and retarget
-   `pro-project-files.spec.ts` at `pp-open`/`pp-save` after selecting the Project view.
+6. **A restored project stopped saying which of its members are proposals. FIXED.**
 
-   **This is the reason to answer "not yet" to "is PR20 ready for manual QA".**
+   Found by the file round trip this pass added. `migrateDetailingStore` rebuilds every assembly
+   from an explicit allow-list, and `provisionalMembers` and `torsionUnevaluatedMembers` were not
+   on it — while `bars` is carried through whole. So after any restore (`.ded`, autosave, undo,
+   tab switch) the bars kept `provisional = 'biaxial'` and their violet, and the assembly stopped
+   carrying the member-level fact that the workspace banner, the sheet note and the report section
+   all read. The picture said "proposal" and the words said nothing.
 
----
+   That is the exact disagreement `run-detailing` records the field to prevent. Both fields are
+   now carried through when present and left absent when not — never recomputed, because they are
+   stamped from design outcomes that a snapshot does not contain, and deriving them from a
+   restored project would be inventing a verdict rather than remembering one.
+
+## Typecheck baseline
+
+`npm run typecheck` reports **479 errors against a baseline of 490** and passes: no new type
+errors. The eleven that are no longer reported are baseline DEBT, not a regression — the baseline
+was recorded before this branch and nothing in this pass touched them. It is deliberately not
+re-recorded here: lowering it is a separate change whose diff should be reviewed on its own, and
+doing it inside a test pass would hide which errors went away and why.
 
 ## 11. What this document does not cover
 
