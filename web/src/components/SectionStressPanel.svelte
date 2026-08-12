@@ -49,6 +49,7 @@
   import GeometricPropertyWorking from './stress/GeometricPropertyWorking.svelte';
   import { resolveEccentric, snapShearCentre, kernLimits } from '../lib/section/eccentric';
   import { computeTorsionFlow } from '../lib/engine/torsion-flow';
+  import { crossCheckShearPeak } from '../lib/section/shear-crosscheck';
 
   // Fiber position sliders: 0 = bottom/left, 1 = top/right
   let fiberRatioY = $state(1.0); // default to top fiber (extreme)
@@ -691,6 +692,28 @@
     return kernLimits(st.a, st.iy, st.iz, { zMax, zMin, yMax, yMin });
   });
 
+  /**
+   * The drawn shear diagram, checked against the canonical solve.
+   *
+   * The diagram comes from a hand-derived formula per shape; the solver meshes
+   * the real polygon. Both are legitimate — one gives the field a diagram needs,
+   * the other gives an exact value at a point — but only one is authoritative,
+   * and a wrong formula draws a picture that looks entirely reasonable. The
+   * circular tube reported half its true stress for exactly that reason.
+   *
+   * One solve, comparing the number the diagram claims most loudly.
+   */
+  const shearCheck = $derived.by(() => {
+    if (shearFlow.length === 0 || !canonical?.ok || !stateInputs) return null;
+    const st = stateInputs.sec.canonical;
+    if (!st || st.kind !== 'geometry-backed') return null;
+    const peak = Math.max(
+      ...shearFlow.flatMap((g) => g.points.map((pt) => Math.abs(pt.tau))), 0,
+    );
+    const f = stateInputs.forces;
+    return crossCheckShearPeak(st.geometry, peak, f.vy ?? 0, f.vz ?? 0);
+  });
+
   /** Torque at the queried station, kN·m — used by the drawing and the panel. */
   const activeTorque = $derived(eccentric?.forces.t ?? stateInputs?.forces.t ?? 0);
   const torsionFlow = $derived(resolved ? computeTorsionFlow(activeTorque, resolved) : null);
@@ -1166,6 +1189,21 @@
         {analysis3D}
       />
 
+      <!-- The drawn diagram disagreeing with the solver is worth interrupting
+           for: it means the picture is not the physics. -->
+      {#if shearCheck && !shearCheck.agrees}
+        <div class="ssp-shear-warn" role="alert">
+          <span class="ssp-shear-warn-icon" aria-hidden="true">⚠</span>
+          <div>
+            <p class="ssp-shear-warn-text">{t('stress.shearMismatch')}</p>
+            <p class="ssp-shear-warn-nums">
+              {t('stress.shearDiagram')}: {fmtForce(shearCheck.closedForm)} MPa ·
+              {t('stress.shearSolved')}: {fmtForce(shearCheck.solved)} MPa
+            </p>
+          </div>
+        </div>
+      {/if}
+
       <!-- Torsional shear: which theory applies and what it gives. Before the
            tensors because it is a component OF the state they summarise. -->
       <TorsionDetails
@@ -1501,6 +1539,29 @@
     flex-wrap: wrap;
     gap: 4px;
     padding: 4px 0;
+  }
+
+  .ssp-shear-warn {
+    display: flex;
+    gap: 7px;
+    margin: 4px 0 6px;
+    padding: 7px 9px;
+    border-radius: 4px;
+    background: rgba(214, 69, 69, 0.1);
+    border-left: 2px solid var(--st-bad);
+  }
+  .ssp-shear-warn-icon { color: var(--st-bad); flex: none; }
+  .ssp-shear-warn-text {
+    margin: 0;
+    font-size: 0.63rem;
+    line-height: 1.45;
+    color: var(--st-text-2);
+  }
+  .ssp-shear-warn-nums {
+    margin: 3px 0 0;
+    font-family: 'Courier New', monospace;
+    font-size: 0.6rem;
+    color: var(--st-text-3);
   }
 
   /* Eccentric-load readout. Sits under the drawing, always expanded while the
