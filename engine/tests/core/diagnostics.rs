@@ -721,6 +721,38 @@ fn pre_solve_instability_risk_truss_no_rotation() {
 }
 
 #[test]
+fn pre_solve_instability_risk_guided_z_not_flagged() {
+    // guidedZ restrains ux + ry (see dof::is_dof_restrained_2d, where it is
+    // an alias of guidedY). A truss-only node with a guidedZ support HAS
+    // rotational restraint and must not be flagged as an instability risk.
+    // The gate used to miss "guidedZ" in its rotation-restraint list.
+    // L-shaped stable truss: node 0 guidedZ, node 1 rollerX, node 2 pinned.
+    let input = make_input(
+        vec![(0, 0.0, 0.0), (1, 6.0, 0.0), (2, 0.0, 6.0)],
+        vec![(1, 200e3, 0.3)],
+        vec![(1, 0.01, 1e-4)],
+        vec![
+            (1, "truss", 0, 1, 1, 1, false, false),
+            (2, "truss", 0, 2, 1, 1, false, false),
+        ],
+        vec![(1, 0, "guidedZ"), (2, 1, "rollerX"), (3, 2, "pinned")],
+        vec![SolverLoad::Nodal(SolverNodalLoad {
+            node_id: 1, fx: 10.0, fz: 0.0, my: 0.0,
+        })],
+    );
+    let results = solve_2d(&input).unwrap();
+
+    let flagged_nodes: std::collections::HashSet<usize> = results.structured_diagnostics.iter()
+        .filter(|d| d.code == DiagnosticCode::InstabilityRisk)
+        .flat_map(|d| d.node_ids.iter().copied())
+        .collect();
+    assert!(!flagged_nodes.contains(&0),
+        "node 0 (guidedZ — ry restrained) must not be flagged, got {:?}", flagged_nodes);
+    assert!(flagged_nodes.contains(&1),
+        "node 1 (rollerX, truss-only) should still be flagged, got {:?}", flagged_nodes);
+}
+
+#[test]
 fn pre_solve_clean_model_no_warnings() {
     // A clean 2D model with frame elements and proper supports should have
     // no pre-solve diagnostics (DisconnectedNode, NearDuplicateNodes, InstabilityRisk).
