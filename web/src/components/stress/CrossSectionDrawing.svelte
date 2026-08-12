@@ -137,6 +137,51 @@
 
   /** Figure lifted to the centre of the screen. Local: nothing else needs it. */
   let maximized = $state(false);
+  let wrapEl = $state<HTMLDivElement | null>(null);
+
+  /**
+   * The area the enlarged figure occupies: the canvas, and only the canvas.
+   *
+   * Measured from the viewport container rather than from the window. Anchoring
+   * to the window put the figure under the header — which then swallowed clicks
+   * meant for the toolbar — and over the right panel, whose controls drive this
+   * very figure. Both are the same mistake: the figure belongs where the model
+   * is drawn, not on top of the chrome around it.
+   *
+   * Re-measured on resize and on the panel splitter, which fires no window
+   * resize event of its own.
+   */
+  let overlayBox = $state<{ top: number; left: number; width: number; height: number } | null>(null);
+
+  $effect(() => {
+    if (!maximized) return;
+    const host = document.querySelector('.viewport-container') as HTMLElement | null;
+    if (!host) return;
+    const measure = () => {
+      const r = host.getBoundingClientRect();
+      overlayBox = { top: r.top, left: r.left, width: r.width, height: r.height };
+    };
+    measure();
+    const ro = new ResizeObserver(measure);
+    ro.observe(host);
+    window.addEventListener('resize', measure);
+    return () => { ro.disconnect(); window.removeEventListener('resize', measure); };
+  });
+
+  /**
+   * Stroke scale for the enlarged figure.
+   *
+   * Stroke widths are in viewBox units, so blowing the figure up from 200 to
+   * 700 pixels multiplies every line by the same factor — and a 1.5-unit
+   * outline that read as a crisp edge at panel size becomes a heavy black band
+   * around a large drawing. Thinning the strokes keeps the line weight
+   * proportionate to the figure instead of to the coordinate system.
+   *
+   * Not `non-scaling-stroke`, which would pin the outline to a constant pixel
+   * width: at this size that reads as too thin, and the geometry stops being
+   * the dominant thing on screen.
+   */
+  const strokeK = $derived(maximized ? 0.4 : 1);
 
   // Escape leaves the maximised view. It is the gesture every overlay teaches,
   // and the toolbar button can end up behind the enlarged figure on a short
@@ -283,7 +328,14 @@
     does, so the panel behind stays usable — which is the point of leaving the
     controls there.
   -->
-  <div class="ssp-cross-wrap" class:maximized>
+  <div
+    class="ssp-cross-wrap"
+    class:maximized
+    bind:this={wrapEl}
+    style={maximized && overlayBox
+      ? `top:${overlayBox.top}px; left:${overlayBox.left}px; width:${overlayBox.width}px; height:${overlayBox.height}px`
+      : ''}
+  >
   <!-- Toggle toolbar — outside SVG to avoid overlap with diagram labels -->
   <div class="ssp-svg-toggles">
     <button
@@ -430,7 +482,7 @@
           <line
             x1={cx + ux * d0 - uy * span / 2} y1={cy + uy * d0 + ux * span / 2}
             x2={cx + ux * d0 + uy * span / 2} y2={cy + uy * d0 - ux * span / 2}
-            stroke="var(--st-text-1)" stroke-width="0.9" stroke-dasharray="4,2" opacity="0.75"
+            stroke="var(--st-text-1)" stroke-width={0.9 * strokeK} stroke-dasharray="4,2" opacity="0.75"
           />
           <text
             x={cx + ux * d0 - uy * span / 2} y={cy + uy * d0 + ux * span / 2 - 2}
@@ -444,7 +496,7 @@
         d={canonicalGeometry ? canonicalPath(canonicalGeometry) : sectionPathFromResolved(resolved)}
         fill="none"
         stroke="var(--st-value)"
-        stroke-width="1.5"
+        stroke-width={1.5 * strokeK}
         fill-rule="evenodd"
       />
 
@@ -459,7 +511,7 @@
           points={centralCore.vertices.map(v => `${v.ez * scNC},${-v.ey * scNC}`).join(' ')}
           fill={showStressMap ? 'none' : 'rgba(255, 140, 0, 0.15)'}
           stroke="var(--st-warn)"
-          stroke-width={showStressMap ? 1.1 : 0.8}
+          stroke-width={(showStressMap ? 1.1 : 0.8) * strokeK}
           stroke-dasharray="3,2"
         />
         <!-- NC label -->
@@ -481,7 +533,7 @@
           <circle cx={clampX} cy={clampY} r="8" fill="rgba(42, 168, 105, 0.15)" stroke="var(--st-ok)" stroke-width="0.8" stroke-dasharray="2,1" opacity="0.9" />
         {/if}
         <!-- Crosshair marker -->
-        <circle cx={clampX} cy={clampY} r="4" fill="none" stroke="var(--st-value)" stroke-width="1.5" opacity="0.95" />
+        <circle cx={clampX} cy={clampY} r="4" fill="none" stroke="var(--st-value)" stroke-width={1.5 * strokeK} opacity="0.95" />
         <line x1={clampX - 6} y1={clampY} x2={clampX + 6} y2={clampY} stroke="var(--st-value)" stroke-width="1.2" opacity="0.9" />
         <line x1={clampX} y1={clampY - 6} x2={clampX} y2={clampY + 6} stroke="var(--st-value)" stroke-width="1.2" opacity="0.9" />
         <!-- Label -->
@@ -1115,9 +1167,9 @@
 
         <!-- Centroid: the reference AXIAL force acts about. -->
         <g opacity="0.9">
-          <circle cx="0" cy="0" r="2.2" fill="none" stroke="var(--st-text-2)" stroke-width="0.8" />
-          <line x1="-3.6" y1="0" x2="3.6" y2="0" stroke="var(--st-text-2)" stroke-width="0.6" />
-          <line x1="0" y1="-3.6" x2="0" y2="3.6" stroke="var(--st-text-2)" stroke-width="0.6" />
+          <circle cx="0" cy="0" r="2.2" fill="none" stroke="var(--st-text-2)" stroke-width={0.8 * strokeK} />
+          <line x1="-3.6" y1="0" x2="3.6" y2="0" stroke="var(--st-text-2)" stroke-width={0.6 * strokeK} />
+          <line x1="0" y1="-3.6" x2="0" y2="3.6" stroke="var(--st-text-2)" stroke-width={0.6 * strokeK} />
           <text x="4.5" y="-2.5" fill="var(--st-text-2)" font-size="4" text-anchor="start">G</text>
         </g>
 
@@ -1129,7 +1181,7 @@
           {@const scx = shearCentre[0] * sc}
           {@const scy = -shearCentre[1] * sc}
           <g opacity="0.95">
-            <circle cx={scx} cy={scy} r="2.6" fill="none" stroke="var(--st-accent)" stroke-width="1" stroke-dasharray="1.5,1" />
+            <circle cx={scx} cy={scy} r="2.6" fill="none" stroke="var(--st-accent)" stroke-width={1 * strokeK} stroke-dasharray="1.5,1" />
             <circle cx={scx} cy={scy} r="0.9" fill="var(--st-accent)" />
             <text x={scx + 4.5} y={scy + 1.5} fill="var(--st-accent)" font-size="4" text-anchor="start">CC</text>
           </g>
@@ -1141,7 +1193,7 @@
             <line
               x1={scx} y1={scy}
               x2={eccentricPoint[0] * sc} y2={-eccentricPoint[1] * sc}
-              stroke="var(--st-accent)" stroke-width="0.7" stroke-dasharray="2,1.5" opacity="0.7"
+              stroke="var(--st-accent)" stroke-width={0.7 * strokeK} stroke-dasharray="2,1.5" opacity="0.7"
             />
           {/if}
         {/if}
@@ -1164,7 +1216,7 @@
             onkeydown={nudge}
           >
             <circle cx={px} cy={py} r="6.5" fill={col} opacity="0.14" />
-            <circle cx={px} cy={py} r="3.2" fill="none" stroke={col} stroke-width="1.4" />
+            <circle cx={px} cy={py} r="3.2" fill="none" stroke={col} stroke-width={1.4 * strokeK} />
             <circle cx={px} cy={py} r="1" fill={col} />
             <text x={px + 5.5} y={py - 4} fill={col} font-size="4.2" text-anchor="start" font-weight="600">P</text>
           </g>
@@ -1313,8 +1365,11 @@
      figure is capped and the wrapper lets pointer events through everywhere
      except the figure itself. */
   .ssp-cross-wrap.maximized {
+    /* Position and size come from the measured canvas area, inline. The panel
+       and the header keep their own colours, their focus and their clicks: the
+       panel holds the controls for the very figure on display, so dimming it
+       would be backwards. */
     position: fixed;
-    inset: 0;
     z-index: 90;
     display: flex;
     flex-direction: column;
@@ -1323,10 +1378,9 @@
     gap: 8px;
     padding: 24px;
     pointer-events: none;
-    /* A wash rather than a dimming backdrop: the model behind stays legible,
-       which matters because the section belongs to a member on that canvas. */
-    background: rgba(8, 16, 22, 0.72);
-    backdrop-filter: blur(2px);
+    /* Enough to lift the figure off the model behind it, with no blur: the
+       structure stays readable, and the section belongs to a member on it. */
+    background: rgba(8, 16, 22, 0.82);
   }
   /* Give the interactive parts their events back. */
   .ssp-cross-wrap.maximized :global(.ssp-svg-toggles),
@@ -1334,10 +1388,21 @@
     pointer-events: auto;
   }
   .ssp-cross-wrap.maximized :global(.ssp-cross-svg) {
-    /* Square, and bounded by the SHORTER viewport dimension so the figure
-       never runs off the top on a wide window or off the side on a tall one. */
-    width: min(76vh, 62vw);
-    height: min(76vh, 62vw);
+    /* Square, sized from the height and then capped by the width of the area
+       LEFT OF THE PANEL — `100%` here is the wrapper, which already stops at
+       the panel edge, so a narrow canvas shrinks the figure instead of sliding
+       it under the controls. */
+    height: min(78vh, 100%);
+    width: auto;
+    max-width: 100%;
+    aspect-ratio: 1;
+  }
+  .ssp-cross-wrap.maximized :global(.ssp-svg-container) {
+    flex: 1;
+    min-height: 0;
+    width: 100%;
+    justify-content: center;
+    align-items: center;
   }
   .ssp-cross-wrap.maximized :global(.ssp-svg-toggles) {
     padding: 4px 8px;
