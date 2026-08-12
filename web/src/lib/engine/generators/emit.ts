@@ -35,6 +35,7 @@ import {
   composeBuiltUp, torsionBasisKey, type BuiltUpArrangement, type BuiltUpSection,
 } from './built-up-section';
 import { canCompose, resolveProfile, type ResolvedProfile } from './profile-resolve';
+import { familyToShape } from '../../data/steel-profiles';
 
 /** What a role is made of. */
 export interface ProfileSpec {
@@ -186,7 +187,7 @@ export function emitModel(t: Topology, opts: EmitOptions): GeneratedModel {
 
     const id = index + 1;
     sectionIdOf.set(role, id);
-    sections.push(sectionJson(id, built, resolved));
+    sections.push(sectionJson(id, built, resolved, spec));
 
     assumptions.add(torsionBasisKey(built.jBasis));
     if (resolved.basis === 'catalogueDeclared') assumptions.add('generator.assume.propertiesOnlyProfile');
@@ -304,6 +305,7 @@ function sectionJson(
   id: number,
   built: BuiltUpSection,
   resolved: ResolvedProfile,
+  spec: ProfileSpec,
 ): JSONModel['sections'][number] {
   const single = built.count === 1;
   return {
@@ -315,6 +317,34 @@ function sectionJson(
     ...(built.j !== null ? { j: built.j } : {}),
     b: built.b,
     h: built.h,
+    /*
+     * What the section is made of, declaratively.
+     *
+     * The 3-D viewport reads this to draw the REAL outline of the assembly. Without it a
+     * generated section carried no `shape` either, and `createSectionShape`'s `default:`
+     * branch says "Default to I-shape" — so a double-channel box chord and a back-to-back
+     * angle post both rendered as a fabricated I-beam. Measured, before this field existed.
+     *
+     * Emitted for a single profile too, so nothing has to infer "one part" from an absence.
+     */
+    composition: {
+      profileName: resolved.name,
+      arrangement: spec.arrangement,
+      gapMm: Math.max(0, spec.gapMm),
+    },
+    /*
+     * `shape` ONLY for a single profile, and this is not a stylistic choice.
+     *
+     * `resolveCanonicalSection` switches on `shape`, and for a compound section that would
+     * make it rebuild ONE part's outline from b/h/tw/tf, mark the section geometry-backed and
+     * silently replace the assembly's composed A, Iy and Iz with a single profile's. The
+     * solver would then analyse a double-channel member as one channel.
+     *
+     * Today an assembly also happens to lack `tw`/`tf`, so that branch would fall back to
+     * properties-only anyway — but relying on a missing dimension to avoid a wrong answer is
+     * accidental safety, and `emit.test.ts` pins the deliberate kind.
+     */
+    ...(single ? { shape: familyToShape(resolved.family) } : {}),
     // `profileFamily` is the field PR #132 adds to `Section`, recorded at selection time
     // rather than parsed back out of a name. Emitted now so a model generated today is
     // already answerable by that catalogue once it lands; until then it is an inert extra

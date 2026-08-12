@@ -121,6 +121,35 @@ export interface Section {
    */
   profileFamily?: string;
   /**
+   * What this section is MADE OF, when it is an assembly of catalogue profiles.
+   *
+   * ── The defect this closes ────────────────────────────────────────
+   *
+   * The one industrial example in this repository carries its double angles as
+   * `{ name: 'Col cord 2L75', shape: 'L', a: 0.00114 }` — the composition stated in the NAME
+   * and nowhere a reader or a renderer can act on. The 3-D viewport therefore drew a
+   * double-angle chord as a single fabricated I-beam, because with no `shape` it defaults to
+   * one, and with `shape: 'L'` it would have drawn one angle where there are two.
+   *
+   * So the composition is data. It is DECLARATIVE and deliberately not geometry: nothing in
+   * the properties path reads it, `a`/`iy`/`iz`/`j` on this section stay authoritative, and
+   * `resolveCanonicalSection` continues to treat an assembly as properties-only. That
+   * separation is load-bearing — a `shape` or a `polygon` on a compound section would make
+   * the canonical resolver rebuild ONE part's outline and silently replace the assembly's
+   * properties with it.
+   *
+   * Present on every generated section, `single` included, so a reader never has to infer
+   * "one profile" from the absence of a record.
+   */
+  composition?: {
+    /** Exact catalogue name of the part, e.g. `UPN 100`. */
+    profileName: string;
+    /** Arrangement id — see `engine/generators/built-up-section.ts`. */
+    arrangement: string;
+    /** Gap between the parts, mm. Zero for a single profile. */
+    gapMm: number;
+  };
+  /**
    * Explicit canonical outline, in metres, section coordinates.
    *
    * When present this IS the section's geometry — it wins over `shape` and

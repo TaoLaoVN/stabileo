@@ -66,13 +66,37 @@ export interface OutlineOptions {
 }
 
 /**
+ * Memoised, because the 3-D viewport asks per ELEMENT.
+ *
+ * Switching a 625-member shed into extruded-section mode calls this once per member, and
+ * every miss reaches the WASM geometry engine through `resolveProfile`. The answer depends
+ * only on the four inputs and the engine is deterministic, so a plain map is the whole
+ * cache-invalidation story: there is no state that can go stale.
+ */
+const cache = new Map<string, SectionOutline>();
+
+/** Test hook. Never called by app code. */
+export function _clearOutlineCache(): void {
+  cache.clear();
+}
+
+/**
  * Build the outline.
  *
  * Never throws. Every refusal comes back as `unavailable` with a reason the caller can show,
- * because this runs on every keystroke in a profile row and an exception there would take
- * the panel down.
+ * because this runs on every keystroke in a profile row and on every element of a render, and
+ * an exception in either place would take the surface down.
  */
 export function buildSectionOutline(opts: OutlineOptions): SectionOutline {
+  const key = `${opts.profileName}|${opts.arrangement}|${Math.max(0, opts.gapMm)}|${opts.rotationDeg}|${opts.marginFraction ?? ''}`;
+  const hit = cache.get(key);
+  if (hit) return hit;
+  const built = compute(opts);
+  cache.set(key, built);
+  return built;
+}
+
+function compute(opts: OutlineOptions): SectionOutline {
   const resolved = resolveProfile(opts.profileName);
   if (!resolved) return EMPTY('unknownProfile');
   if (resolved.polygons.length === 0) return EMPTY('noGeometry');

@@ -23,7 +23,9 @@ de escribir nada.
 | `lib/i18n/store.svelte.ts` | +19/−1 | **no** | fusiona los diccionarios de acero |
 | `lib/templates/load-fixture.ts` | +19/−5 | **no** | passthrough de `rollAngle` |
 | `lib/codes/__tests__/roles-revisions.test.ts` | +32/−1 | **no** | el test que fijaba el error rojo |
-| `lib/store/model.svelte.ts` | +22/−10 | **sí, ambos** | extraer `fixtureApi()` de `loadExample` |
+| `lib/store/model.svelte.ts` | +52/−10 | **sí, ambos** | `fixtureApi()` extraído + `Section.composition` |
+| `lib/three/section-profiles.ts` | +52/−0 | **no** | `createSectionShapes` para perfiles compuestos |
+| `lib/three/create-element-mesh.ts` | +9/−5 | **no** | extruir una lista de contornos |
 | `components/pro/ProPanel.svelte` | +9/−1 | **sí, #125** | registrar Metálicas y Generadores |
 | `components/pro/ProVerificationTab.svelte` | +3/−0 | **sí, #125** | banner experimental sobre la tabla 301 |
 | `App.svelte` | +3/−1 | **sí, #125** | las dos entradas del desplegable Análisis |
@@ -277,9 +279,6 @@ Ordenado según tu taxonomía.
 - **Arriostramientos longitudinales** en la nave. Su ausencia es la razón por la que las bases
   de columna reticulada van empotradas por defecto (§7). Generarlos permitiría volver a
   articularlas, que es el modelo más honesto.
-- **Perfiles metálicos en el visor 3D con su sección extruida.** Hoy el visor los dibuja como
-  barras; `lib/three/section-profiles.ts` ya sabe extruir una sección, y el contorno canónico
-  del perfil compuesto ya se calcula (`section-outline.ts`).
 - **Cargas.** Un modelo generado sale sin casos de carga a propósito, y por eso apretar
   Resolver informa "sin resultados". Un generador de cargas de cubierta y viento sobre la
   nave sería el siguiente paso natural, y es trabajo de las autoridades CIRSOC 101/102, no
@@ -317,7 +316,37 @@ detecta un mecanismo, y un mecanismo es el modo de falla propio de un generador 
 
 ---
 
-## 8. Un defecto encontrado que conviene no repetir
+## 8. El visor 3D dibujaba un perfil I para todo lo generado
+
+Medido, no deducido. Con una cercha de cordón cajón y montante espalda-con-espalda:
+
+```
+2x UPN 100 []            shape=undefined → THREE.Shape de 13 puntos
+2x L 50x50x5 ][ (h=8mm)  shape=undefined → THREE.Shape de 13 puntos
+IPE 100                  shape=undefined → THREE.Shape de 13 puntos
+```
+
+Trece puntos es `createIShape`. Una sección generada no llevaba `shape`, así que **todas** —
+compuestas y simples, canal y ángulo — caían en el `default:` de `createSectionShape`, que dice
+*"Default to I-shape if we have h and b"* e inventa `tw` y `tf` a partir del canto.
+
+Dos arreglos:
+
+- **`Section.composition`** — qué es la sección, declarativamente. El visor lee eso y arma el
+  contorno **real** desde la misma tabla de posiciones de la que salieron las propiedades, así
+  que dibujo y números describen un solo conjunto. `createSectionShapes` devuelve una lista y
+  `ExtrudeGeometry` la toma entera: las partes son una malla, una llamada de dibujo.
+- **`shape` sólo para perfil simple**, y no es una elección estética.
+  `resolveCanonicalSection` conmuta sobre `shape`, y en una sección compuesta eso lo llevaría a
+  reconstruir el contorno de **una** parte, marcar la sección geometry-backed y **reemplazar en
+  silencio** el A/Iy/Iz del conjunto por el de un perfil solo — el solver analizaría un doble
+  canal como un canal. Hoy además falta `tw`/`tf`, así que caería en properties-only de todos
+  modos, pero apoyarse en una dimensión ausente para no dar una respuesta equivocada es
+  seguridad accidental. `built-up-extrusion.test.ts` fija la deliberada.
+
+---
+
+## 9. Un defecto encontrado que conviene no repetir
 
 `steelStore` usaba un `$derived` a nivel de store. Un `$derived` así **sólo recomputa dentro
 de un contexto reactivo**: leído desde una función común devuelve lo que tenía cuando se
@@ -330,7 +359,7 @@ revisar si el mismo patrón aparece en otros stores.
 
 ---
 
-## 9. Y una que no era un defecto
+## 10. Y una que no era un defecto
 
 `buildSolverInput3D` compone `element.rollAngle + section.rotation`. Escribir los dos campos
 para expresar una sola rotación da el doble del giro pedido — y eso era un error **mío**, en
