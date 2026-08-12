@@ -272,8 +272,27 @@
   </section>
 </div>
 
+<!--
+  The production Open path, driven by `pp-open` above.
+
+  ── Why this id is `pp-open-file` and not `project-open-file` ──────
+
+  It carries a different id from the other two file inputs in the application on purpose.
+  `ToolbarProject` (Básico, inside the Project panel) and `ProProjectFileActions` (PRO on mobile)
+  share `project-open-file` because they are never mounted at the same time — that convention is
+  stated where it is written, and it holds for those two.
+
+  It does NOT hold here. `ProPanel` renders the mobile action row and the active tab as siblings,
+  so on a phone with the Project tab open, `ProProjectFileActions` and this component are both on
+  the page. Giving this input the same id would make every strict-mode locator for it resolve to
+  two elements, and the failure would appear on a viewport nobody was thinking about.
+
+  So: `pp-open-file`, in the `pp-*` family this panel already uses. `e2e/pro-project-files.spec.ts`
+  documents the equivalence — same `loadFile` entry point, same `.ded`, same behaviour.
+-->
 <input
   bind:this={fileInput}
+  data-testid="pp-open-file"
   type="file"
   accept=".ded,.json"
   style="display:none"
