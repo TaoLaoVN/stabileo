@@ -3,7 +3,7 @@
   import { saveProject, loadFile, saveSession } from '../lib/store/file';
   import { t } from '../lib/i18n';
   import { countCollapsedElements, buildSimplified2DModel, type DrawPlane } from '../lib/geometry/plane-projection';
-  import { TOOL_KEY_MAP } from '../lib/tool-keys';
+  import { TOOL_KEYS, type ToolKeyId } from '../lib/tool-keys';
 
   import ToolbarResults from './toolbar/ToolbarResults.svelte';
   import ToolbarAdvanced from './toolbar/ToolbarAdvanced.svelte';
@@ -112,19 +112,15 @@
   }
 
   // Keys come from lib/tool-keys.ts, like every other toolbar in the app.
-  const tools = [
-    { id: 'pan', icon: '✋', labelKey: 'toolbar.pan' },
-    { id: 'select', icon: '↖', labelKey: 'toolbar.select' },
-    { id: 'node', icon: '●', labelKey: 'toolbar.node' },
-    { id: 'element', icon: '—', labelKey: 'toolbar.element' },
-    { id: 'support', icon: '▽', labelKey: 'toolbar.support' },
-    { id: 'load', icon: '↓', labelKey: 'toolbar.load' },
-  ].map((tool) => ({ ...tool, key: TOOL_KEY_MAP[tool.id as keyof typeof TOOL_KEY_MAP] })) as Array<{
-    id: string;
-    icon: string;
-    labelKey: string;
-    key: string;
-  }>;
+  const TOOL_DISPLAY: Record<ToolKeyId, { icon: string; labelKey: string }> = {
+    pan: { icon: '✋', labelKey: 'toolbar.pan' },
+    select: { icon: '↖', labelKey: 'toolbar.select' },
+    node: { icon: '●', labelKey: 'toolbar.node' },
+    element: { icon: '—', labelKey: 'toolbar.element' },
+    support: { icon: '▽', labelKey: 'toolbar.support' },
+    load: { icon: '↓', labelKey: 'toolbar.load' },
+  };
+  const tools = TOOL_KEYS.map((tool) => ({ ...tool, ...TOOL_DISPLAY[tool.id] }));
 
 
   async function handleLoadFile(e: Event) {

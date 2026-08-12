@@ -8,7 +8,7 @@
   import ToolLoadOptions from './floating-tools/ToolLoadOptions.svelte';
   import SelectedEntityPanel from './floating-tools/SelectedEntityPanel.svelte';
   import Icon from './ribbon/Icon.svelte';
-  import { TOOL_KEY_MAP } from '../lib/tool-keys';
+  import { TOOL_KEYS, type ToolKeyId } from '../lib/tool-keys';
   import { IL_QUANTITY_GROUPS } from '../lib/influence-line-quantities';
 
   // If the active load case is deleted, reset to the first available case
@@ -20,19 +20,15 @@
 
   // Keys come from lib/tool-keys.ts — the tooltip used to promise (H) for pan
   // while the keyboard armed it with A, and H toggles the axes.
-  const tools = [
-    { id: 'pan', icon: 'pan', labelKey: 'float.pan' },
-    { id: 'select', icon: 'select', labelKey: 'float.select' },
-    { id: 'node', icon: 'node', labelKey: 'float.node' },
-    { id: 'element', icon: 'element', labelKey: 'float.element' },
-    { id: 'support', icon: 'support', labelKey: 'float.support' },
-    { id: 'load', icon: 'load', labelKey: 'float.load' },
-  ].map((tool) => ({ ...tool, key: TOOL_KEY_MAP[tool.id as keyof typeof TOOL_KEY_MAP] })) as Array<{
-    id: string;
-    icon: string;
-    labelKey: string;
-    key: string;
-  }>;
+  const TOOL_DISPLAY: Record<ToolKeyId, { icon: string; labelKey: string }> = {
+    pan: { icon: 'pan', labelKey: 'float.pan' },
+    select: { icon: 'select', labelKey: 'float.select' },
+    node: { icon: 'node', labelKey: 'float.node' },
+    element: { icon: 'element', labelKey: 'float.element' },
+    support: { icon: 'support', labelKey: 'float.support' },
+    load: { icon: 'load', labelKey: 'float.load' },
+  };
+  const tools = TOOL_KEYS.map((tool) => ({ ...tool, ...TOOL_DISPLAY[tool.id] }));
 
   // Check if current tool has options
   const hasOptions = $derived(
