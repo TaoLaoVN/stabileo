@@ -222,7 +222,7 @@ test.describe('@smoke Education — the whole flow', () => {
     // their flat end at the peak — where the shear crosses zero.
     const moment = page.locator('.ds').nth(1);
     await moment.locator('.ds-add').click();
-    await moment.locator('.ds-val').nth(1).fill('-40');
+    await moment.locator('.ds-val').nth(1).fill('40');
     const spans = moment.locator('.ds-span');
     await spans.nth(0).locator('.ds-pw', { hasText: '²' }).click();
     await spans.nth(1).locator('.ds-pw', { hasText: '²' }).click();
@@ -234,7 +234,7 @@ test.describe('@smoke Education — the whole flow', () => {
 
     const numeric = page.locator('.diagram-questions input');
     await numeric.nth(0).fill('20');
-    await numeric.nth(1).fill('-40');
+    await numeric.nth(1).fill('40');
     await page.locator('.verify-btn', { hasText: /Verify diagrams/i }).click();
     await expect(page.getByTestId('edu-step-2')).toHaveClass(/done/);
 

@@ -132,8 +132,31 @@ export type StressMeasure = 'sigmaMax' | 'sigmaMin' | 'tauMax' | 'vonMises';
 /** Stations per element when sweeping. Odd, so mid-span is sampled exactly. */
 const SWEEP = 41;
 
+/**
+ * A diagram value in the convention the student is taught, and shown.
+ *
+ * The engine carries moments HOGGING-positive: the sagging moment at the
+ * middle of a simply supported beam comes out negative. The canvas already
+ * knows this — `diagramSideFactor` in draw-diagrams.ts flips nothing for
+ * moment precisely because a negative engine value lands on the structural
+ * side, which is where an engineer expects to see it drawn.
+ *
+ * A student writes that same moment as +40 kN·m sagging, and every course
+ * does. Grading them against −40 would be marking them wrong for using the
+ * convention the subject uses — so the sign is turned here, once, at the only
+ * point where a diagram value is compared with something a student wrote.
+ *
+ * Deliberately NOT applied to stresses: those consume the raw element forces
+ * through `ctx.stress`, where the engine's own convention is what the section
+ * formulas expect.
+ */
+export function diagramValueAsShown(force: ForceKind, t: number, ef: ElementForces): number {
+  const raw = computeDiagramValueAt(force, t, ef);
+  return force === 'moment' ? -raw : raw;
+}
+
 function valueAt(force: ForceKind, t: number, ef: ElementForces): number {
-  return computeDiagramValueAt(force, t, ef);
+  return diagramValueAsShown(force, t, ef);
 }
 
 function sweep(

@@ -164,3 +164,54 @@ describe('the degree of one span of a diagram', () => {
     expect(degreeOfSpan(anything, 0.5, 0.51)).toBe('linear');
   });
 });
+
+/**
+ * The sign a student is marked against.
+ *
+ * The engine carries moments hogging-positive: the sagging moment at the
+ * middle of a simply supported beam is negative in its output, and the canvas
+ * relies on that to plot it on the tension side. A student writes the same
+ * moment as +40 kN·m, because that is what the subject calls it — so the edu
+ * layer turns the sign once, at the only point where a diagram value meets
+ * something a person wrote.
+ *
+ * This is the test that stops it being turned back, or turned twice.
+ */
+describe('the convention a diagram value is shown in', () => {
+  // 8 m simply supported beam, q = 5 kN/m down: V(0) = +20, engine M is
+  // hogging-positive so mid-span comes out negative.
+  const beam = {
+    elementId: 1,
+    nStart: 0, nEnd: 0,
+    vStart: 20, vEnd: -20,
+    mStart: 0, mEnd: 0,
+    length: 8,
+    qI: -5, qJ: -5,
+    pointLoads: [],
+    distributedLoads: [{ qI: -5, qJ: -5, a: 0, b: 8 }],
+    hingeStart: false, hingeEnd: false,
+  };
+
+  it('reports a sagging moment as positive, whatever the engine calls it', async () => {
+    const { computeDiagramValueAt } = await import('../../../lib/engine/diagrams');
+    const { diagramValueAsShown } = await import('../exercise-spec');
+
+    const raw = computeDiagramValueAt('moment', 0.5, beam as never);
+    const shown = diagramValueAsShown('moment', 0.5, beam as never);
+
+    expect(raw, 'the engine is hogging-positive').toBeLessThan(0);
+    expect(shown, 'the student writes it sagging-positive').toBeGreaterThan(0);
+    expect(shown).toBeCloseTo(40, 6);
+    expect(shown).toBeCloseTo(-raw, 9);
+  });
+
+  it('leaves shear and axial exactly as the engine reports them', async () => {
+    const { computeDiagramValueAt } = await import('../../../lib/engine/diagrams');
+    const { diagramValueAsShown } = await import('../exercise-spec');
+
+    for (const force of ['shear', 'axial'] as const) {
+      expect(diagramValueAsShown(force, 0.25, beam as never))
+        .toBe(computeDiagramValueAt(force, 0.25, beam as never));
+    }
+  });
+});

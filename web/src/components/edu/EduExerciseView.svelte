@@ -14,7 +14,8 @@
   import {
     emptySketch, gradeSketch, type Sketch, type SketchVerdict,
   } from './diagram-sketch';
-  import { computeDiagramValueAt, computeDisplacementAt } from '../../lib/engine/diagrams';
+  import { computeDisplacementAt } from '../../lib/engine/diagrams';
+  import { diagramValueAsShown } from './exercise-spec';
   import { modelStore } from '../../lib/store';
   import { effectiveBendingInertia } from '../../lib/engine/solver-service';
   import { get2DDisplayDisplacementVertical } from '../../lib/geometry/coordinate-system';
@@ -111,8 +112,10 @@
     // not survive the closure below.
     const which = q.diagram;
     if (which !== 'D') {
+      // The same funnel every other answer goes through, so the drawing and
+      // the typed value can never disagree about which way is positive.
       return Array.from({ length: SKETCH_STATIONS }, (_, k) =>
-        computeDiagramValueAt(DIAGRAM_KIND[which], k / (SKETCH_STATIONS - 1), ef as never));
+        diagramValueAsShown(DIAGRAM_KIND[which], k / (SKETCH_STATIONS - 1), ef as never));
     }
 
     /*
@@ -718,7 +721,8 @@
         </p>
         <DiagramSketch
           bind:sketch={sketches[i]}
-          unit={sq.diagram === 'M' ? 'kN·m' : 'kN'}
+          unit={sq.diagram === 'M' ? 'kN·m' : sq.diagram === 'D' ? 'mm' : 'kN'}
+          positiveDown={sq.diagram === 'M'}
           reference={sketchVerdicts[i] ? trueSamplesFor(i) : null}
         />
         {#if sketchVerdicts[i]}

@@ -27,9 +27,19 @@
     unit?: string;
     /** Drawn behind the student's line, once they have been marked. */
     reference?: number[] | null;
+    /**
+     * Plot positive DOWNWARD, which is how this application draws a moment:
+     * a sagging moment goes on the tension side, under the member. Shear and
+     * axial keep positive up. Getting this wrong would teach a convention the
+     * rest of the app contradicts.
+     */
+    positiveDown?: boolean;
     onchange?: (s: Sketch) => void;
   }
-  let { sketch = $bindable(emptySketch()), readonly = false, unit = '', reference = null, onchange }: Props = $props();
+  let {
+    sketch = $bindable(emptySketch()), readonly = false, unit = '',
+    reference = null, positiveDown = false, onchange,
+  }: Props = $props();
 
   const W = 320, H = 116, PAD = 10;
   const MID = H / 2;
@@ -44,7 +54,8 @@
   ) * 1.25);
 
   const xOf = (t: number) => PAD + t * (W - 2 * PAD);
-  const yOf = (v: number) => MID - (v / scale) * (MID - PAD);
+  const sign = $derived(positiveDown ? -1 : 1);
+  const yOf = (v: number) => MID - (sign * v / scale) * (MID - PAD);
 
   /** The drawn curve as an SVG path, sampled densely enough for a cubic. */
   const path = $derived.by(() => {
@@ -87,7 +98,7 @@
 
     const pts = sketch.points.map(p => ({ ...p }));
     const i = dragging;
-    pts[i].value = ((MID - py) / (MID - PAD)) * scale;
+    pts[i].value = (((MID - py) / (MID - PAD)) * scale) / sign;
     // The ends belong to the member's ends; only interior ordinates slide.
     if (i > 0 && i < pts.length - 1) {
       const t = (px - PAD) / (W - 2 * PAD);
@@ -167,8 +178,8 @@
       can start, and a diagram drawn perfectly upside down fails for a reason
       that has nothing to do with what the exercise is asking.
     -->
-    <text class="ds-sign" x={2} y={PAD + 4}>+</text>
-    <text class="ds-sign" x={2} y={H - 3}>−</text>
+    <text class="ds-sign" x={2} y={PAD + 4}>{positiveDown ? '−' : '+'}</text>
+    <text class="ds-sign" x={2} y={H - 3}>{positiveDown ? '+' : '−'}</text>
 
     {#if refPath}
       <!-- The real diagram, shown only once the answer has been marked. -->
