@@ -17,10 +17,9 @@
  *
  * ── It derives, it does not accumulate ─────────────────────────────
  *
- * There is nothing to cache. The inventory is a pure function of the model plus two
- * booleans, and it costs one pass over the elements — cheaper than the invalidation logic
- * that keeping a copy in sync would need. So this store holds no `$state` of its own beyond
- * the model version it reads, and cannot go stale.
+ * The inventory is a pure function of the model plus two booleans, so nothing here is state
+ * that can drift out of step — see the note on the memo below for why it is a keyed cache
+ * rather than a `$derived`.
  */
 
 import { modelStore } from './model.svelte';
@@ -59,28 +58,49 @@ function createSteelStore() {
     return regulationsStore.binding('steel').adapterId !== null;
   }
 
-  const inventory = $derived.by((): SteelInventory => {
-    void modelStore.modelVersion;
-    return buildSteelInventory(inventoryModel(), {
-      hasDemands: resultsStore.results3D !== null && resultsStore.hasCombinations3D,
-      authorityBound: authorityBound(),
+  /**
+   * Memoised on what the answer actually depends on, rather than on `$derived`.
+   *
+   * A `$derived` declared at store scope only recomputes inside a reactive context. Read
+   * from a plain function — a test, a report builder, anything outside a component — it
+   * returns whatever it held when it was created, which for a store created at import time
+   * is an inventory of the empty model. That is not a hypothetical: the first version of
+   * this file used `$derived.by` and the test that loads a generated truss and asks for its
+   * inventory got zero members while the pure function got seventeen.
+   *
+   * Reading `modelStore.modelVersion` inside a getter still registers the dependency for
+   * any component that reads through it, so the panel updates as before. The cache key just
+   * makes the same getter correct everywhere else too.
+   */
+  let cache: { key: string; value: SteelInventory } | null = null;
+
+  function inventory(): SteelInventory {
+    const hasDemands = resultsStore.results3D !== null && resultsStore.hasCombinations3D;
+    const bound = authorityBound();
+    const key = `${modelStore.modelVersion}|${hasDemands}|${bound}`;
+    if (cache && cache.key === key) return cache.value;
+    const value = buildSteelInventory(inventoryModel(), {
+      hasDemands,
+      authorityBound: bound,
       // PR #132's grade catalogue is not on this branch. When it lands, this is the one
       // call site that changes: pass `(id) => gradeById(id)?.family ?? null` mapped onto
       // `StructuralMaterialFamily`, and every inference in the app becomes a declaration.
       lookupGrade: undefined,
     });
-  });
+    cache = { key, value };
+    return value;
+  }
 
   return {
-    get inventory() { return inventory; },
-    get members() { return inventory.members; },
-    get census() { return inventory.census; },
-    get notices() { return inventory.notices; },
-    get isEmpty() { return inventory.members.length === 0; },
-    get emptyReason() { return inventory.emptyReason; },
-    get anyInferred() { return inventory.anyInferred; },
-    get countByKind() { return countByKind(inventory); },
-    get totalLengthM() { return totalSteelLength(inventory); },
+    get inventory() { return inventory(); },
+    get members() { return inventory().members; },
+    get census() { return inventory().census; },
+    get notices() { return inventory().notices; },
+    get isEmpty() { return inventory().members.length === 0; },
+    get emptyReason() { return inventory().emptyReason; },
+    get anyInferred() { return inventory().anyInferred; },
+    get countByKind() { return countByKind(inventory()); },
+    get totalLengthM() { return totalSteelLength(inventory()); },
 
     /** True when the project names a metallic code at all, usable or not. */
     get steelCodeDeclared() { return steelDeclared(); },

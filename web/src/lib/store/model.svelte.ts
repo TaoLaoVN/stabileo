@@ -2921,16 +2921,16 @@ function createModelStore() {
 
     // ─── Example Structures ───
 
-    async loadExample(name: string): Promise<void> {
-      const loader = getFixture(name);
-      if (!loader) return;
-
-      if (!_undoBatching) _pushUndo?.();
-      _undoBatching = true;
-      this.clear();
-
-      const json = await loader();
-      const api = {
+    /**
+     * The `FixtureLoader` surface, built once.
+     *
+     * Extracted from `loadExample` so a generated model can be replayed through exactly the
+     * same path — see `store/generator-apply.ts`. Two copies of this binding list would
+     * drift the first time a loader gained a method, and the generated model would silently
+     * lose whatever the second copy forgot.
+     */
+    fixtureApi() {
+      return {
         addNode: this.addNode.bind(this),
         addElement: this.addElement.bind(this),
         addSupport: this.addSupport.bind(this),
@@ -2954,6 +2954,18 @@ function createModelStore() {
         model,
         nextId,
       };
+    },
+
+    async loadExample(name: string): Promise<void> {
+      const loader = getFixture(name);
+      if (!loader) return;
+
+      if (!_undoBatching) _pushUndo?.();
+      _undoBatching = true;
+      this.clear();
+
+      const json = await loader();
+      const api = this.fixtureApi();
 
       this.bulkMutate(() => {
         loadFixture(json as any, api as any);
