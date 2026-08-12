@@ -120,9 +120,9 @@
       <caption class="sr-only">{t('design.table.governing')}</caption>
       <thead>
         <tr>
-          <th scope="col">Check</th><th scope="col">Demand / Req.</th><th scope="col">Capacity / Prov.</th>
+          <th scope="col">{t('design.detail.check')}</th><th scope="col">{t('design.detail.demandReq')}</th><th scope="col">{t('design.detail.capacityProv')}</th>
           <th scope="col">u = D/C</th><th scope="col">{t('design.table.status')}</th>
-          <th scope="col">Swept</th><th scope="col">{t('design.table.combo')}</th>
+          <th scope="col">{t('design.detail.swept')}</th><th scope="col">{t('design.table.combo')}</th>
         </tr>
       </thead>
       <tbody>
@@ -152,9 +152,9 @@
   <!-- ─── Design-driving demands ─── -->
   {#if demands.length > 0}
     <details class="fold">
-      <summary>Design-driving demands ({demands.length})</summary>
+      <summary>{tp('design.detail.drivingDemands', { n: demands.length })}</summary>
       <table class="checks">
-        <thead><tr><th scope="col">Category</th><th scope="col">Value</th><th scope="col">Station</th><th scope="col">Combo</th></tr></thead>
+        <thead><tr><th scope="col">{t('design.detail.category')}</th><th scope="col">{t('design.detail.value')}</th><th scope="col">{t('design.detail.station')}</th><th scope="col">{t('design.table.combo')}</th></tr></thead>
         <tbody>
           {#each demands as d (d.category)}
             <tr>
@@ -174,14 +174,14 @@
     {@const ip = codeDetail.interactionParams}
     {@const diagram = generateInteractionDiagram({ b: ip.b, h: ip.h, fc: ip.fc, fy: ip.fy, cover: ip.cover, AsProv: ip.AsProv, barCount: ip.barCount, barDia: ip.barDia })}
     <details class="fold">
-      <summary>P-M interaction diagram</summary>
+      <summary>{t('design.detail.interactionDiagram')}</summary>
       <div class="diagram">{@html generateInteractionSvg(diagram, { Nu: ip.Nu, Mu: ip.Mu }, 220, 280)}</div>
     </details>
   {/if}
 
   {#if codeDetail && codeDetail.memos.length > 0}
     <details class="fold">
-      <summary>CIRSOC 201 — calculation details</summary>
+      <summary>{tp('design.detail.calcDetails', { code: 'CIRSOC 201' })}</summary>
       <div class="memos">
         {#each codeDetail.memos as memo (memo.title)}
           <div class="memo">
@@ -191,9 +191,9 @@
         {/each}
         {#if codeDetail.detailing}
           <div class="memo">
-            <div class="memo-title">Detailing</div>
+            <div class="memo-title">{t('design.detail.detailing')}</div>
             {#each codeDetail.detailing.bars as b}
-              <div class="memo-step">Ø{b.diameter}: ld={b.ld.toFixed(2)} m, ldh={b.ldh.toFixed(2)} m, splice={b.lapSplice.toFixed(2)} m</div>
+              <div class="memo-step">{tp('design.detail.barLengths', { diameter: b.diameter, ld: b.ld.toFixed(2), ldh: b.ldh.toFixed(2), splice: b.lapSplice.toFixed(2) })}</div>
             {/each}
           </div>
         {/if}

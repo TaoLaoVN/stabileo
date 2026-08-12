@@ -825,15 +825,19 @@
       <button class="btn btn-help" onclick={() => uiStore.showHelp = true} title={t('app.keyboardShortcuts')}>
         ?
       </button>
-      <!-- Three languages, fully maintained. The other dictionaries still
-           exist but are largely English underneath, so offering them promised a
-           translation the app could not keep. -->
+      <!--
+        Three languages, fully maintained. The other eleven dictionaries still exist and still
+        work — `tAt` falls back to English per key — but they are largely English underneath, so
+        offering them promised a translation the app could not keep. See `OFFERED_LOCALES`.
+      -->
       <select
         class="lang-select"
+        data-testid="lang-select"
+        aria-label={t('app.language')}
         value={i18n.locale}
         onchange={(e) => { setLocale((e.currentTarget as HTMLSelectElement).value); tabManager.updateDefaultNames(); }}
       >
-        {#each OFFERED_LOCALES as code}
+        {#each OFFERED_LOCALES as code (code)}
           <option value={code}>{t(`lang.${code}`)}</option>
         {/each}
       </select>

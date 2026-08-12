@@ -51,15 +51,15 @@
   <div class="region">
     <div class="region-head"><span class="region-title">{t('design.batch.fieldColumnBars')}</span></div>
     <div class="line">
-      <span class="sub">corner Ø</span>
+      <span class="sub">{t('design.editor.cornerShort')}</span>
       <select class="sel" value={state.cornerDia} data-testid={`col-corner-dia-${elementId}`}
-              aria-label="corner diameter"
+              aria-label={t('design.editor.cornerDiameter')}
               onchange={(e) => setColumnBars(elementId, { cornerDia: +e.currentTarget.value })}>
         {#each LONG_DIAS as d (d)}<option value={d}>Ø{d}</option>{/each}
       </select>
-      <span class="sub">face Ø</span>
+      <span class="sub">{t('design.editor.faceShort')}</span>
       <select class="sel" value={state.faceDia} data-testid={`col-face-dia-${elementId}`}
-              aria-label="face diameter"
+              aria-label={t('design.editor.faceDiameter')}
               onchange={(e) => setColumnBars(elementId, { faceDia: +e.currentTarget.value })}>
         {#each LONG_DIAS as d (d)}<option value={d}>Ø{d}</option>{/each}
       </select>

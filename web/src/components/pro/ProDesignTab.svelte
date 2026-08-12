@@ -365,7 +365,7 @@
       <button class="act" data-testid="review-changes" onclick={() => (showChanged = !showChanged)}>
         {t('design.changed.title')} ({designRunStore.manualOverrides.size})
       </button>
-      <span class="hint">j/k · ↵ · space</span>
+      <span class="hint">{t('design.nav.keyboardHint')}</span>
     </div>
 
     <DesignTable

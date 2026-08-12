@@ -2959,6 +2959,7 @@ const en: Record<string, string> = {
   'influence.label': 'IL',
   'influence.node': 'Node',
   'influence.elem': 'Elem',
+  'app.language': 'Language',
   'lang.es': 'Espa\u00F1ol',
   'lang.en': 'English',
   'lang.pt': 'Portugu\u00EAs',
@@ -5785,5 +5786,27 @@ const en: Record<string, string> = {
   'ribbon.nameShearY': 'Shear along y',
   'ribbon.nameShearZ': 'Shear along z',
 
+
+  // ─── PRO design detail: copy that was hard-coded in English (PR20 i18n pass) ───
+  'design.detail.check': 'Check',
+  'design.detail.demandReq': 'Demand / Req.',
+  'design.detail.capacityProv': 'Capacity / Prov.',
+  'design.detail.swept': 'Swept',
+  'design.detail.drivingDemands': 'Design-driving demands ({n})',
+  'design.detail.category': 'Category',
+  'design.detail.value': 'Value',
+  'design.detail.station': 'Station',
+  'design.detail.interactionDiagram': 'P-M interaction diagram',
+  'design.detail.calcDetails': '{code} — calculation details',
+  'design.detail.detailing': 'Detailing',
+  'design.detail.barLengths': 'Ø{diameter}: ld={ld} m, ldh={ldh} m, splice={splice} m',
+  'design.editor.addRow': 'add row',
+  'design.editor.removeRow': 'remove row',
+  'design.editor.doesNotFit': 'does not fit in the clear width',
+  'design.editor.cornerDiameter': 'corner diameter',
+  'design.editor.faceDiameter': 'face diameter',
+  'design.editor.cornerShort': 'corner Ø',
+  'design.editor.faceShort': 'face Ø',
+  'design.nav.keyboardHint': 'j/k · ↵ · space',
 };
 export default en;

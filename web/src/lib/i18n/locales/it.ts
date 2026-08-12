@@ -3372,5 +3372,30 @@ const it: Translations = {
   'design.error.noConcreteMembersMixed': '{code} found no checkable member: {steel} steel and {other} with no usable section or material.',
   'design.error.nothingChecked': 'Nessun elemento è stato verificato da {code} per questo modello.',
   'design.error.emptySelection': 'Seleziona almeno un elemento da progettare.',
+
+  // ─── PR20 i18n pass: design.* keys, English pending translation ───
+  // Carried here so the design.* parity gate stays meaningful. This dictionary is not
+  // offered by the picker (see OFFERED_LOCALES); when it is, these are what to translate.
+
+  'design.detail.check': 'Check',
+  'design.detail.demandReq': 'Demand / Req.',
+  'design.detail.capacityProv': 'Capacity / Prov.',
+  'design.detail.swept': 'Swept',
+  'design.detail.drivingDemands': 'Design-driving demands ({n})',
+  'design.detail.category': 'Category',
+  'design.detail.value': 'Value',
+  'design.detail.station': 'Station',
+  'design.detail.interactionDiagram': 'P-M interaction diagram',
+  'design.detail.calcDetails': '{code} — calculation details',
+  'design.detail.detailing': 'Detailing',
+  'design.detail.barLengths': 'Ø{diameter}: ld={ld} m, ldh={ldh} m, splice={splice} m',
+  'design.editor.addRow': 'add row',
+  'design.editor.removeRow': 'remove row',
+  'design.editor.doesNotFit': 'does not fit in the clear width',
+  'design.editor.cornerDiameter': 'corner diameter',
+  'design.editor.faceDiameter': 'face diameter',
+  'design.editor.cornerShort': 'corner Ø',
+  'design.editor.faceShort': 'face Ø',
+  'design.nav.keyboardHint': 'j/k · ↵ · space',
 };
 export default it;

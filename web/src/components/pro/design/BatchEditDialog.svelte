@@ -220,11 +220,11 @@
     {#if kinds.columns > 0}
       <fieldset>
         <legend>{t('design.batch.fieldColumnBars')}</legend>
-        <label>corner Ø<select data-testid="batch-col-corner" value={colCorner ?? ''}
+        <label>{t('design.editor.cornerShort')}<select data-testid="batch-col-corner" value={colCorner ?? ''}
                   onchange={(e) => colCorner = e.currentTarget.value === '' ? undefined : +e.currentTarget.value}>
             <option value="">—</option>{#each LONG_DIAS as d (d)}<option value={d}>Ø{d}</option>{/each}
           </select></label>
-        <label>face Ø<select data-testid="batch-col-face" value={colFace ?? ''}
+        <label>{t('design.editor.faceShort')}<select data-testid="batch-col-face" value={colFace ?? ''}
                   onchange={(e) => colFace = e.currentTarget.value === '' ? undefined : +e.currentTarget.value}>
             <option value="">—</option>{#each LONG_DIAS as d (d)}<option value={d}>Ø{d}</option>{/each}
           </select></label>

@@ -2952,6 +2952,7 @@ const es: Record<string, string> = {
   'influence.label': 'LI',
   'influence.node': 'Nodo',
   'influence.elem': 'Elem',
+  'app.language': 'Idioma',
   'lang.es': 'Español',
   'lang.en': 'English',
   'lang.pt': 'Português',
@@ -5777,5 +5778,27 @@ const es: Record<string, string> = {
   'ribbon.nameShearY': 'Corte según y',
   'ribbon.nameShearZ': 'Corte según z',
 
+
+  // ─── PRO design detail: copy that was hard-coded in English (PR20 i18n pass) ───
+  'design.detail.check': 'Verificación',
+  'design.detail.demandReq': 'Solicitación / Req.',
+  'design.detail.capacityProv': 'Capacidad / Prov.',
+  'design.detail.swept': 'Barrido',
+  'design.detail.drivingDemands': 'Solicitaciones que gobiernan el diseño ({n})',
+  'design.detail.category': 'Categoría',
+  'design.detail.value': 'Valor',
+  'design.detail.station': 'Estación',
+  'design.detail.interactionDiagram': 'Diagrama de interacción P-M',
+  'design.detail.calcDetails': '{code} — detalle del cálculo',
+  'design.detail.detailing': 'Detalle constructivo',
+  'design.detail.barLengths': 'Ø{diameter}: ld={ld} m, ldh={ldh} m, empalme={splice} m',
+  'design.editor.addRow': 'agregar fila',
+  'design.editor.removeRow': 'quitar fila',
+  'design.editor.doesNotFit': 'no entra en el ancho libre',
+  'design.editor.cornerDiameter': 'diámetro de esquina',
+  'design.editor.faceDiameter': 'diámetro de cara',
+  'design.editor.cornerShort': 'esquina Ø',
+  'design.editor.faceShort': 'cara Ø',
+  'design.nav.keyboardHint': 'j/k · ↵ · espacio',
 };
 export default es;

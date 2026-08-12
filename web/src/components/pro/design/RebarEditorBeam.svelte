@@ -74,7 +74,7 @@
       <div class="region-head">
         <span class="region-title">{t(reg.key)}</span>
         <button class="mini" data-testid={`add-row-${reg.field}-${elementId}`}
-                onclick={() => addLayerRow(elementId, reg.field)}>+ row</button>
+                onclick={() => addLayerRow(elementId, reg.field)}>+ {t('design.editor.addRow')}</button>
         {#if reg.layers.length > 0}
           <button class="mini" data-testid={`auto-split-${reg.field}-${elementId}`}
                   onclick={() => autoSplit(reg.field)}>auto</button>
@@ -96,9 +96,9 @@
           </select>
           <span class="area">{rebarGroupArea(layer).toFixed(2)} cm²</span>
           {#if !fits(layer.count, layer.diameter)}
-            <span class="warn" title={`max ${perRow(layer.diameter)} bars/row`}>! fit</span>
+            <span class="warn" title={`max ${perRow(layer.diameter)} · ${t('design.editor.doesNotFit')}`}>! {t('design.editor.doesNotFit')}</span>
           {/if}
-          <button class="mini mini-rm" aria-label="remove row"
+          <button class="mini mini-rm" aria-label={t('design.editor.removeRow')}
                   data-testid={`rm-row-${reg.field}-${layer.row}-${elementId}`}
                   onclick={() => removeLayerRow(elementId, reg.field, layer.row)}>×</button>
         </div>
