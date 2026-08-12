@@ -67,9 +67,10 @@ describe('strength classes are named differently and are not interchangeable', (
   });
 
   it('Argentine and Brazilian classes are cylinder strengths, with no cube figure', () => {
-    expect(byId('cirsoc-h25').fck).toBe(25);
-    expect((byId('cirsoc-h25') as { fckCube?: number }).fckCube).toBeUndefined();
-    expect(byId('nbr-c25').fck).toBe(25);
+    const h25 = byId('cirsoc-h25') as { fck: number; fckCube?: number };
+    expect(h25.fck).toBe(25);
+    expect(h25.fckCube).toBeUndefined();
+    expect((byId('nbr-c25') as { fck: number }).fck).toBe(25);
   });
 
   it('American classes are specified in psi, so their MPa values are the odd ones', () => {
