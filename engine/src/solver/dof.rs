@@ -86,7 +86,7 @@ impl DofNumbering {
         // makes that DOF restrained). Sort supports by ID for determinism.
         let mut sorted_supports: Vec<&SolverSupport3D> = input.supports.values().collect();
         sorted_supports.sort_by_key(|s| {
-            // Sort by node_id (primary), then by number of restrained DOFs descending
+            // Sort by node_id (primary), then by number of restrained DOFs ascending
             // so the most-restrained support is last (wins on overwrite)
             let n_restrained = [s.rx, s.ry, s.rz, s.rrx, s.rry, s.rrz]
                 .iter().filter(|&&b| b).count();
