@@ -45,6 +45,7 @@
   import MohrCircleDisplay from './stress/MohrCircleDisplay.svelte';
   import CentralCoreDetails from './stress/CentralCoreDetails.svelte';
   import StressTensorDetails from './stress/StressTensorDetails.svelte';
+  import TorsionDetails from './stress/TorsionDetails.svelte';
   import { resolveEccentric, snapShearCentre } from '../lib/section/eccentric';
 
   // Fiber position sliders: 0 = bottom/left, 1 = top/right
@@ -66,7 +67,8 @@
   let showPressureCenter = $state(false);      // CP: centro de presiones overlay
   let showCentralCoreInfo = $state(false);     // NC details section (closed by default)
   let useGlobalScale = $state(true);           // Local/global stress scaling toggle (global by default)
-  let showTensors = $state(false);             // Stress/strain tensor section (closed by default)
+  let showTensors = $state(false);
+  let showTorsion = $state(false);      // Torsional shear section (closed by default)             // Stress/strain tensor section (closed by default)
   let showStressMap = $state(false);           // MAP: paint sigma over the section instead of at a point
   let showEccentric = $state(false);           // CE: eccentric application point
   /**
@@ -1088,6 +1090,14 @@
         {isMassive}
         {analysis2D}
         {analysis3D}
+      />
+
+      <!-- Torsional shear: which theory applies and what it gives. Before the
+           tensors because it is a component OF the state they summarise. -->
+      <TorsionDetails
+        bind:showTorsion
+        torque={eccentric?.forces.t ?? stateInputs?.forces.t ?? 0}
+        {resolved}
       />
 
       <!-- Stress and strain tensors. Above Mohr on purpose: the circle is a
