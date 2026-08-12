@@ -119,9 +119,45 @@ test.describe('@smoke commands are grouped, and none of them is ambiguous', () =
     await expect(group.getByTestId('cmd-generate-detailing')).toBeVisible();
   });
 
-  test('the optional stage says it is optional', async ({ pro: page }) => {
-    await expect(page.getByTestId('floors-stage-tag'))
-      .toHaveText(en['design.families.optionalStage']);
+  test('every stage states its step, its purpose and its state in words', async ({ pro: page }) => {
+    /**
+     * The repeatable pattern, asserted on the three stages that use it.
+     *
+     * The sections used to be identical grey bars: no number, no purpose, no state. `optional` in
+     * particular was carried by a separate inline tag; it is now the stage's own state chip, which
+     * is where every other stage says the same kind of thing. The chip carries a glyph AND a word,
+     * so this assertion is on TEXT — a state told only in colour would pass nothing here.
+     */
+    await expect(page.getByTestId('floor-families-disclosure-state'))
+      .toContainText(en['design.stageCard.optional']);
+    await expect(page.getByTestId('floor-families-disclosure-purpose'))
+      .toHaveText(en['design.stagePurpose.floors']);
+
+    await expect(page.getByTestId('code-settings-disclosure-purpose'))
+      .toHaveText(en['design.stagePurpose.regulations']);
+
+    // Detailing cannot run before a design exists, and the shell says what it is waiting for
+    // instead of showing its purpose.
+    await expect(page.getByTestId('detailing-disclosure')).toHaveAttribute('data-state', 'blocked');
+    await expect(page.getByTestId('detailing-disclosure-purpose'))
+      .toHaveText(en['design.stage.needDesign']);
+  });
+
+  test('a stage that has run says so, and carries its count', async ({ pro: page }) => {
+    await loadModel(page, 'rc-design-qa-8');
+    await designAll(page);
+    await expect(page.getByTestId('detailing-disclosure')).toHaveAttribute('data-state', 'done');
+    await expect(page.getByTestId('detailing-disclosure-state'))
+      .toContainText(en['design.stageCard.done']);
+    /**
+     * The badge is the assembly count, visible without opening the stage.
+     *
+     * Addressed by `detailing-count` and not by the shell's default `…-badge`: that id predates
+     * the shell and `floor-design.spec.ts` asserts on it. The chip moved into a new container;
+     * renaming its id would have broken coverage for no user-visible reason, so the shell takes
+     * the id as a prop.
+     */
+    expect(Number(await page.getByTestId('detailing-count').innerText())).toBeGreaterThan(0);
   });
 });
 

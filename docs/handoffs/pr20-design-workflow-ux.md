@@ -131,3 +131,45 @@ sheet has a caption, a readable preview, and an enlarge dialog that is `aria-mod
 the preview, reachable by scroll rather than cropped, backed by exactly one `<svg>` from the same
 source, closed by Escape with focus restored to the control that opened it; and the strip names
 every stage and its instruction in **English, Español and Português**.
+
+---
+
+## 7. Second pass: one shape for every stage
+
+The first pass fixed the pipeline's *legibility* — a strip, grouped commands, a readable sheet. It
+left the sections themselves as they were: three identical grey `<summary>` bars and one section
+with no header at all. Nothing on them said what the section was FOR, whether it had run, or where
+it sat in the order, so the tab still read as four small applications stacked vertically.
+
+`StageSection.svelte` is the repeatable shell every stage now uses:
+
+| Slot | What it carries |
+|---|---|
+| marker | the step number, or `✓` once the stage is done |
+| title | the stage's name |
+| state | a **glyph and a word** — `done` / `now` / `waiting` / `optional` — never colour alone |
+| purpose | one sentence saying what the stage is for, replaced by the missing requirement while it is blocked |
+| badge | a count worth seeing without opening — assemblies, footings |
+| attention | a warning chip, which is never green |
+
+It runs nothing. A stage's primary action lives in its own body, beside the things it acts on; a
+shell that also held buttons would put every command two owners away from its context and compete
+with the command row.
+
+**Order changed.** "Slabs, walls and foundations" moved ABOVE "Coordinated detailing". It is
+optional and it must run BEFORE detailing when the building has shells, and it used to sit after
+it — so reading order contradicted execution order. Its position now says what its copy says.
+
+**A numbering clash, introduced and removed.** The command groups were labelled `1 · Verify`,
+`2 · Design`, `3 · Detail` in the first pass. Once the sections carried their own numbers (1, 4,
+5) the screen showed two different numbering schemes at once. The group labels lost their numbers;
+the sections keep theirs, because they are the ones the strip counts.
+
+### Still open after this pass
+
+- The counts strip is still an undifferentiated monospace line.
+- The workflow strip wraps to two lines at 1280×720, leaving a dangling chevron.
+- Toasts still land on the command row at that width.
+- The detailing panel is a review screen in structure — summary, conflicts, sheet, exports — but
+  its conflict list and its sheet still share one column rather than being ranked.
+- The 3-D viewer's chrome is on the tokens; its rail is not yet grouped by family.

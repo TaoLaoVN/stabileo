@@ -5819,9 +5819,9 @@ const es: Record<string, string> = {
   'design.stage.srCurrent': 'paso actual',
   'design.stage.srBlocked': 'todavía no alcanzable',
 
-  'design.group.verify': '1 · Verificar',
-  'design.group.design': '2 · Diseñar',
-  'design.group.detailing': '3 · Detallar',
+  'design.group.verify': 'Verificar',
+  'design.group.design': 'Diseñar',
+  'design.group.detailing': 'Detallar',
   'design.cmd.designAllScope': 'Diseña todos los elementos de pórtico (columnas y vigas). Losas, tabiques y fundaciones se diseñan en «Losas, tabiques y fundaciones».',
   'detailing.cmd.autoShort': 'auto tras diseñar',
 
@@ -5842,5 +5842,14 @@ const es: Record<string, string> = {
   'design.memo.torsion': 'Torsión',
   'design.memo.torsionNegligible': 'Torsión (despreciable)',
   'design.memo.biaxial': 'Biaxial (Bresler)',
+
+  'design.stageCard.done': 'completa',
+  'design.stageCard.current': 'ahora',
+  'design.stageCard.blocked': 'en espera',
+  'design.stageCard.optional': 'opcional',
+  'design.stagePurpose.regulations': 'Bajo qué edición del reglamento se produce todo lo de abajo. Un reglamento por rol.',
+  'design.stagePurpose.floors': 'Diseña losas, tabiques y —si las pedís— zapatas. Ejecutalo antes del detallado; un edificio sólo de pórticos puede saltearlo.',
+  'design.stagePurpose.floorsNotVerified': '{n} zapata(s) sin verificar',
+  'design.stagePurpose.detailing': 'Coordina en conjuntos las barras que produjo el diseño. Los planos, la planilla, el informe y la vista 3D son proyecciones de él.',
 };
 export default es;

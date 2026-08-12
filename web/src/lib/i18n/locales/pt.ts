@@ -4808,9 +4808,9 @@ const pt: Translations = {
   'design.stage.srCurrent': 'etapa atual',
   'design.stage.srBlocked': 'ainda não alcançável',
 
-  'design.group.verify': '1 · Verificar',
-  'design.group.design': '2 · Dimensionar',
-  'design.group.detailing': '3 · Detalhar',
+  'design.group.verify': 'Verificar',
+  'design.group.design': 'Dimensionar',
+  'design.group.detailing': 'Detalhar',
   'design.cmd.designAllScope': 'Dimensiona todos os elementos de pórtico (pilares e vigas). Lajes, paredes e fundações são dimensionadas em «Lajes, paredes e fundações».',
   'detailing.cmd.autoShort': 'auto após dimensionar',
 
@@ -4831,5 +4831,14 @@ const pt: Translations = {
   'design.memo.torsion': 'Torção',
   'design.memo.torsionNegligible': 'Torção (desprezível)',
   'design.memo.biaxial': 'Biaxial (Bresler)',
+
+  'design.stageCard.done': 'concluída',
+  'design.stageCard.current': 'agora',
+  'design.stageCard.blocked': 'em espera',
+  'design.stageCard.optional': 'opcional',
+  'design.stagePurpose.regulations': 'Sob qual edição da norma tudo o que está abaixo é produzido. Uma norma por papel.',
+  'design.stagePurpose.floors': 'Dimensiona lajes, paredes e — se você as pedir — sapatas. Execute antes do detalhamento; um edifício só de pórticos pode pulá-lo.',
+  'design.stagePurpose.floorsNotVerified': '{n} sapata(s) não verificada(s)',
+  'design.stagePurpose.detailing': 'Coordena em conjuntos as barras que o dimensionamento produziu. Os desenhos, a planilha, o relatório e a vista 3D são projeções dele.',
 };
 export default pt;

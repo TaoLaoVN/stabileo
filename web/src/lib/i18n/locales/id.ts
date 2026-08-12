@@ -3395,9 +3395,9 @@ const id: Translations = {
   'design.families.optionalStage': 'optional step',
   'design.families.runScoped': 'Design selected families',
   'design.families.subtitle': 'Designs the families you tick, across the whole building — including slabs and walls, which "Design all" above does not touch.',
-  'design.group.design': '2 · Design',
-  'design.group.detailing': '3 · Detail',
-  'design.group.verify': '1 · Verify',
+  'design.group.design': 'Design',
+  'design.group.detailing': 'Detail',
+  'design.group.verify': 'Verify',
   'design.stage.allDone': 'Every stage is complete. Review the states, then export.',
   'design.stage.check': 'Code check',
   'design.stage.demands': 'Demands',
@@ -3421,6 +3421,15 @@ const id: Translations = {
   'design.memo.torsion': 'Torsion',
   'design.memo.torsionNegligible': 'Torsion (negligible)',
   'design.memo.biaxial': 'Biaxial (Bresler)',
+
+  'design.stageCard.done': 'done',
+  'design.stageCard.current': 'now',
+  'design.stageCard.blocked': 'waiting',
+  'design.stageCard.optional': 'optional',
+  'design.stagePurpose.regulations': 'Which code edition every result below is produced under. One regulation per role.',
+  'design.stagePurpose.floors': 'Designs slabs, walls and — if you ask for them — footings. Run it before detailing; a frame-only building can skip it.',
+  'design.stagePurpose.floorsNotVerified': '{n} footing(s) not verified',
+  'design.stagePurpose.detailing': 'Coordinates the bars the design produced into assemblies. The drawings, the schedule, the report and the 3-D view are projections of it.',
 } as const satisfies Record<string, string>;
 
 export default id;

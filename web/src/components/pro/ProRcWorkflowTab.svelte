@@ -15,12 +15,14 @@
    */
   import ProDesignTab from './ProDesignTab.svelte';
   import WorkflowStages from './design/WorkflowStages.svelte';
+  import StageSection from './design/StageSection.svelte';
   import ProjectRegulationsPanel from './design/ProjectRegulationsPanel.svelte';
   import DetailingWorkflow from './design/DetailingWorkflow.svelte';
   import FloorFamiliesPanel from './design/FloorFamiliesPanel.svelte';
   import { detailingStore } from '../../lib/store/detailing.svelte';
+  import { verificationStore } from '../../lib/store';
   import { modelStore } from '../../lib/store/model.svelte';
-  import { t } from '../../lib/i18n/store.svelte';
+  import { t, tp } from '../../lib/i18n/store.svelte';
   import { regulationsStore } from '../../lib/store/regulations.svelte';
 
   const footingCount = $derived(modelStore.model.footings.size);
@@ -47,26 +49,44 @@
    * does not RUN anything — the commands stay the single place work is started from — so this
    * cannot become a second, competing command surface.
    */
-  let regsEl = $state<HTMLDetailsElement | undefined>();
-  let detailingEl = $state<HTMLDetailsElement | undefined>();
-  let floorsEl = $state<HTMLDetailsElement | undefined>();
+  let regsOpen = $state(false);
+  let detailingOpen = $state(false);
+  let floorsOpen = $state(false);
 
-  function reveal(el: HTMLDetailsElement | undefined) {
-    if (!el) return;
-    el.open = true;
-    el.scrollIntoView({ block: 'nearest' });
+  function scrollTo(testid: string) {
+    document.querySelector(`[data-testid="${testid}"]`)?.scrollIntoView({ block: 'nearest' });
   }
 
   function goToStage(target: 'model' | 'design' | 'floors' | 'detailing' | 'documents') {
-    if (target === 'detailing' || target === 'documents') { reveal(detailingEl); return; }
-    if (target === 'floors') { reveal(floorsEl); return; }
-    // `model` and `design` both live in the design tab below, which is always mounted; closing
-    // the disclosures is what brings it back into view on a 720 px window.
-    if (regsEl) regsEl.open = false;
-    if (detailingEl) detailingEl.open = false;
-    if (floorsEl) floorsEl.open = false;
-    document.querySelector('[data-testid="design-toolbar"]')?.scrollIntoView({ block: 'nearest' });
+    if (target === 'detailing' || target === 'documents') {
+      detailingOpen = true;
+      queueMicrotask(() => scrollTo('detailing-disclosure'));
+      return;
+    }
+    if (target === 'floors') {
+      floorsOpen = true;
+      queueMicrotask(() => scrollTo('floor-families-disclosure'));
+      return;
+    }
+    // `model` and `design` live in the design tab below, which is always mounted; closing the
+    // stages is what brings it back into view on a 720 px window.
+    regsOpen = false; detailingOpen = false; floorsOpen = false;
+    queueMicrotask(() => scrollTo('design-toolbar'));
   }
+
+  /**
+   * Each stage's own state, from the same facts the commands and the strip read.
+   *
+   * Derived here rather than inside the shell so the shell stays a presentation component and
+   * cannot acquire opinions about the pipeline.
+   */
+  const detailed = $derived(detailingStore.assemblies.length > 0);
+  const designed = $derived(verificationStore.providedSummary.total > 0);
+  const regsState = $derived(needsAttention ? 'current' as const : 'done' as const);
+  const detailingState = $derived(
+    detailed ? 'done' as const : designed ? 'current' as const : 'blocked' as const);
+  const floorsState = $derived(
+    detailingStore.lastFloorRun ? 'done' as const : 'optional' as const);
 </script>
 
 <div class="rc-workflow">
@@ -80,45 +100,57 @@
   -->
   <WorkflowStages onGoTo={goToStage} />
 
-  <details class="code-settings-disclosure" data-testid="code-settings-disclosure" bind:this={regsEl}>
-    <summary>
-      {t('regulations.title')}
-      {#if needsAttention}
-        <span class="attention" data-testid="code-settings-attention" aria-label={t('codes.provenance.assumed')}>
-          {t('codes.provenance.assumed')}
-        </span>
-      {/if}
-    </summary>
+  <StageSection
+    testid="code-settings-disclosure"
+    step={1}
+    title={t('regulations.title')}
+    purpose={t('design.stagePurpose.regulations')}
+    state={regsState}
+    attention={needsAttention ? t('codes.provenance.assumed') : undefined}
+    attentionTestid="code-settings-attention"
+    bind:open={regsOpen}
+  >
     <ProjectRegulationsPanel />
-  </details>
-  <details class="detailing-disclosure" data-testid="detailing-disclosure" bind:this={detailingEl}>
-    <summary>
-      {t('detailing.title')}
-      {#if detailingStore.assemblies.length > 0}
-        <span class="count" data-testid="detailing-count">{detailingStore.assemblies.length}</span>
-      {/if}
-    </summary>
-    <DetailingWorkflow />
-  </details>
+  </StageSection>
+
   <!--
-    Slabs, walls and foundations. A sibling disclosure rather than a nested one, because they
-    are element FAMILIES of the same workflow — the beams and columns above and these share
-    one regulation, one detailing store and one document. It sits below detailing because
-    `generateFloors()` adds to the assemblies that panel lists.
+    Slabs, walls and foundations, ABOVE detailing.
+
+    It used to sit below, which put an optional step that must run BEFORE detailing after it in
+    reading order. Its own copy says when to run it; its position now says the same thing without
+    being read. It stays a section of its own because a frame-only building never opens it.
   -->
-  <details class="floors-disclosure" data-testid="floor-families-disclosure" bind:this={floorsEl}>
-    <summary>
-      {t('detailing.floorRun.title')}
-      <span class="stage-tag" data-testid="floors-stage-tag">{t('design.families.optionalStage')}</span>
-      {#if footingCount > 0}
-        <span class="count" data-testid="floor-footing-count">{footingCount}</span>
-      {/if}
-      {#if notVerifiedCount > 0}
-        <span class="attention" data-testid="floor-not-verified-count">{notVerifiedCount}</span>
-      {/if}
-    </summary>
+  <StageSection
+    testid="floor-families-disclosure"
+    step={4}
+    title={t('detailing.floorRun.title')}
+    purpose={t('design.stagePurpose.floors')}
+    state={floorsState}
+    badge={footingCount > 0 ? footingCount : undefined}
+    badgeTestid="floor-footing-count"
+    attentionTestid="floor-not-verified-count"
+    attention={notVerifiedCount > 0
+      ? tp('design.stagePurpose.floorsNotVerified', { n: notVerifiedCount })
+      : undefined}
+    bind:open={floorsOpen}
+  >
     <FloorFamiliesPanel />
-  </details>
+  </StageSection>
+
+  <StageSection
+    testid="detailing-disclosure"
+    step={5}
+    title={t('detailing.title')}
+    purpose={t('design.stagePurpose.detailing')}
+    state={detailingState}
+    blockedBy={t('design.stage.needDesign')}
+    badge={detailed ? detailingStore.assemblies.length : undefined}
+    badgeTestid="detailing-count"
+    bind:open={detailingOpen}
+  >
+    <DetailingWorkflow />
+  </StageSection>
+
   <ProDesignTab />
 </div>
 
