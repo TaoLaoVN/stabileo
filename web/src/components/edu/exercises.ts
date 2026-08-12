@@ -26,7 +26,7 @@ export interface DiagramQuestion {
 
 export type ExerciseCategory = 'statics' | 'strength' | 'advanced';
 
-export type DiagramShape = 'zero' | 'constant' | 'linear' | 'quadratic';
+export type DiagramShape = 'zero' | 'constant' | 'linear' | 'quadratic' | 'cubic';
 
 export interface KinematicQuestion {
   /** Correct classification */
@@ -40,6 +40,20 @@ export interface DiagramShapeQuestion {
   diagram: 'N' | 'V' | 'M';
   /** Correct shape */
   correct: DiagramShape;
+}
+
+/** A diagram the student draws instead of naming. */
+export interface DiagramSketchQuestion {
+  /**
+   * Which one to draw. `D` is the deflected shape, and it belongs in this
+   * list for the reason the chain V → M → D exists at all: each is the
+   * integral of the one before, so each is one power higher. A triangular
+   * load gives a quadratic shear, a cubic moment and a quartic deflection —
+   * and a student who has seen that once stops guessing.
+   */
+  diagram: 'N' | 'V' | 'M' | 'D';
+  /** Index into the built model's elements; the first member when absent. */
+  elementIndex?: number;
 }
 
 export interface SectionDataItem {
@@ -73,6 +87,10 @@ export interface EduExercise {
   kinematicQuestion?: KinematicQuestion;
   /** Diagram shape questions — student picks shape for N, V, M (statics exercises) */
   diagramShapeQuestions?: DiagramShapeQuestion[];
+  /** Diagrams the student draws, ordinate by ordinate, with the power of each span */
+  diagramSketchQuestions?: DiagramSketchQuestion[];
+  /** Whether "show me the answer" is offered. Absent means yes. */
+  allowReveal?: boolean;
   /** Section data to display as given info (strength/advanced exercises) */
   sectionData?: SectionDataItem[];
 }
@@ -118,6 +136,8 @@ function fromSpec(spec: EduExerciseSpec): EduExercise {
     })),
     kinematicQuestion: spec.kinematicQuestion,
     diagramShapeQuestions: spec.diagramShapeQuestions,
+    diagramSketchQuestions: spec.diagramSketchQuestions,
+    allowReveal: spec.allowReveal,
     sectionData: spec.sectionData,
   };
 }

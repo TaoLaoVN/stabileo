@@ -102,8 +102,21 @@ export const SHAPE_HINTS: Record<string, string> = {
  * parabolic moment, and offering that as the default answer would be inviting a
  * mistake. The teacher can always override.
  */
-export function suggestShapes(hasDistributed: boolean): Array<{ diagram: 'N' | 'V' | 'M'; correct: string }> {
-  return hasDistributed
-    ? [{ diagram: 'V', correct: 'linear' }, { diagram: 'M', correct: 'quadratic' }]
-    : [{ diagram: 'V', correct: 'constant' }, { diagram: 'M', correct: 'linear' }];
+export function suggestShapes(
+  load: 'none' | 'uniform' | 'varying',
+): Array<{ diagram: 'N' | 'V' | 'M'; correct: string }> {
+  /*
+   * Each diagram is the integral of the one before it, so the load sets the
+   * whole chain: a point load gives constant shear and a linear moment, a
+   * uniform load pushes both up one, and a triangular load pushes them up
+   * again — quadratic shear, CUBIC moment. That last case had no suggestion
+   * because the format had no cubic to suggest.
+   */
+  if (load === 'varying') {
+    return [{ diagram: 'V', correct: 'quadratic' }, { diagram: 'M', correct: 'cubic' }];
+  }
+  if (load === 'uniform') {
+    return [{ diagram: 'V', correct: 'linear' }, { diagram: 'M', correct: 'quadratic' }];
+  }
+  return [{ diagram: 'V', correct: 'constant' }, { diagram: 'M', correct: 'linear' }];
 }

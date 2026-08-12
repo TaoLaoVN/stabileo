@@ -132,8 +132,31 @@ export type StressMeasure = 'sigmaMax' | 'sigmaMin' | 'tauMax' | 'vonMises';
 /** Stations per element when sweeping. Odd, so mid-span is sampled exactly. */
 const SWEEP = 41;
 
+/**
+ * A diagram value in the convention the student is taught, and shown.
+ *
+ * The engine carries moments HOGGING-positive: the sagging moment at the
+ * middle of a simply supported beam comes out negative. The canvas already
+ * knows this — `diagramSideFactor` in draw-diagrams.ts flips nothing for
+ * moment precisely because a negative engine value lands on the structural
+ * side, which is where an engineer expects to see it drawn.
+ *
+ * A student writes that same moment as +40 kN·m sagging, and every course
+ * does. Grading them against −40 would be marking them wrong for using the
+ * convention the subject uses — so the sign is turned here, once, at the only
+ * point where a diagram value is compared with something a student wrote.
+ *
+ * Deliberately NOT applied to stresses: those consume the raw element forces
+ * through `ctx.stress`, where the engine's own convention is what the section
+ * formulas expect.
+ */
+export function diagramValueAsShown(force: ForceKind, t: number, ef: ElementForces): number {
+  const raw = computeDiagramValueAt(force, t, ef);
+  return force === 'moment' ? -raw : raw;
+}
+
 function valueAt(force: ForceKind, t: number, ef: ElementForces): number {
-  return computeDiagramValueAt(force, t, ef);
+  return diagramValueAsShown(force, t, ef);
 }
 
 function sweep(
@@ -213,7 +236,15 @@ export function evaluateAnswer(
 // ─── The exercise ──────────────────────────────────────────────────
 
 export type ExerciseCategory = 'statics' | 'strength' | 'advanced';
-export type DiagramShape = 'zero' | 'constant' | 'linear' | 'quadratic';
+/**
+ * The shapes a diagram can have, up to the one a triangular load produces.
+ *
+ * Cubic was missing, and it is not exotic: a linearly varying load makes the
+ * shear quadratic and the moment cubic, which is the second case any course
+ * covers. Without it the only honest answer to that exercise was absent from
+ * the list.
+ */
+export type DiagramShape = 'zero' | 'constant' | 'linear' | 'quadratic' | 'cubic';
 
 export interface KinematicQuestion {
   classification: 'isostatic' | 'hyperstatic';
@@ -223,6 +254,25 @@ export interface KinematicQuestion {
 export interface DiagramShapeQuestion {
   diagram: 'N' | 'V' | 'M';
   correct: DiagramShape;
+}
+
+/**
+ * "Draw this diagram."
+ *
+ * Nothing but which diagram, on which member: the answer is the solve, so
+ * there is no correct sketch to store and nothing for an author to get wrong.
+ */
+export interface DiagramSketchQuestion {
+  /**
+   * Which one to draw. `D` is the deflected shape, and it belongs in this
+   * list for the reason the chain V → M → D exists at all: each is the
+   * integral of the one before, so each is one power higher. A triangular
+   * load gives a quadratic shear, a cubic moment and a quartic deflection —
+   * and a student who has seen that once stops guessing.
+   */
+  diagram: 'N' | 'V' | 'M' | 'D';
+  /** Index into `model.elements`; the first member when absent. */
+  elementIndex?: number;
 }
 
 export interface SectionDataItem {
@@ -245,7 +295,18 @@ export interface EduExerciseSpec {
   diagramQuestions: Array<{ question: string; unit: string; answer: AnswerSpec }>;
   kinematicQuestion?: KinematicQuestion;
   diagramShapeQuestions?: DiagramShapeQuestion[];
+  /** Diagrams the student has to draw rather than name. */
+  diagramSketchQuestions?: DiagramSketchQuestion[];
   sectionData?: SectionDataItem[];
+  /**
+   * Whether the student may reveal an answer instead of solving it.
+   *
+   * Defaults to true, which is how every exercise written before this existed
+   * behaves. A teacher setting an assessment turns it off; one handing out
+   * practice leaves it on. Absent means "on", so no existing file changes
+   * meaning by being read with a newer app.
+   */
+  allowReveal?: boolean;
 }
 
 /**

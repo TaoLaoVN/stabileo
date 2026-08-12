@@ -2443,10 +2443,12 @@
   .viewport-controls button {
     width: 32px;
     height: 32px;
-    border: 1px solid #445;
-    border-radius: 4px;
-    background: rgba(22, 33, 62, 0.9);
-    color: #aabbcc;
+    /* The one control that floats over the canvas in every mode, so it wears
+       the shell's surface rather than a navy of its own. */
+    border: 1px solid var(--st-hair-strong);
+    border-radius: var(--st-radius);
+    background: color-mix(in srgb, var(--st-surface) 90%, transparent);
+    color: var(--st-text-2);
     font-size: 14px;
     cursor: pointer;
     display: flex;
@@ -2456,7 +2458,7 @@
   }
 
   .viewport-controls button:hover {
-    background: rgba(40, 60, 100, 0.95);
-    color: #ddeeff;
+    background: var(--st-surface-3);
+    color: var(--st-text);
   }
 </style>

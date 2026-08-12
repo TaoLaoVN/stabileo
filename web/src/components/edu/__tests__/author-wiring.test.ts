@@ -21,7 +21,10 @@ const author = readFileSync(join(process.cwd(), 'src/components/edu/ExerciseAuth
 
 describe('the author panel can be reached', () => {
   it('the authoring branch is tested before the exercise-list branch', () => {
-    const authoringBranch = panel.indexOf('{#if authoring}');
+    // The flag moved into the store — the shell mounts the drawing tools off
+    // it — so the branch reads `eduStore.authoring`. What this test is about
+    // is the ORDER of the two branches, which is unchanged.
+    const authoringBranch = panel.indexOf('{#if eduStore.authoring}');
     const listBranch = panel.indexOf('!eduStore.hasExercise');
     expect(authoringBranch, 'authoring must be a branch of its own').toBeGreaterThan(-1);
     expect(listBranch).toBeGreaterThan(-1);
@@ -34,6 +37,16 @@ describe('the author panel can be reached', () => {
 
   it('something actually sets authoring to true', () => {
     expect(panel).toMatch(/authoring\s*=\s*true/);
+  });
+
+  it('the shell mounts the drawing tools while authoring', () => {
+    // The form's default option is "draw the structure with the usual tools".
+    // Education renders no ribbon and no toolbar of its own, so if App stops
+    // mounting the tool bar for this case that instruction becomes a dead end
+    // again — which is exactly how it shipped.
+    const app = readFileSync(join(process.cwd(), 'src/App.svelte'), 'utf8');
+    expect(app).toMatch(/educativo'\s*&&\s*eduStore\.authoring/);
+    expect(app).toMatch(/<FloatingTools \/>/);
   });
 
   it('the props the panel passes are the props the author declares', () => {
