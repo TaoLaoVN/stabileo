@@ -94,7 +94,10 @@ describe('the thumbnail and the committed section are the same geometry', () => 
 });
 
 describe('the outline is framed so it always fits its box', () => {
-  it('every geometry-backed profile stays inside the shared viewBox', () => {
+  // CPU-bound loop over ~700 profiles: 1.5 s on a quiet machine, well over
+  // the 5 s default when the suite shares cores with a build. The budget is
+  // generous on purpose — a genuine hang still fails, contention does not.
+  it('every geometry-backed profile stays inside the shared viewBox', { timeout: 30000 }, () => {
     expect(OUTLINE_VIEWBOX).toBe('-90 -90 180 180');
     for (const p of ALL_PROFILES) {
       const o = profileOutline(p);

@@ -18,7 +18,6 @@
 import type { Section } from '../store/model.svelte';
 import type { CanonicalSectionState } from './state';
 import type { BendingResponse } from '../engine/wasm-solver';
-import { CANONICAL_STATE_VERSION } from './version';
 
 /** Everything a canonical detailed-analysis drawing needs. */
 export interface DrawingGeometry {
@@ -72,7 +71,10 @@ export function drawingGeometry(state: CanonicalSectionState): DrawingGeometry {
     rotation: state.geometry.rotation,
     bbox: [yMin, zMin, yMax, zMax],
     digest: state.digest,
-    version: state.version,
+    // The geometry WIRE version, not the persisted-state version: this is the
+    // number the engine echoes as `geometryVersion` in its responses, and the
+    // one assertSameGeometry can meaningfully compare against.
+    version: state.geometry.version,
   };
 }
 
@@ -118,8 +120,13 @@ export function assertSameGeometry(
   if (geometry.digest !== numerical.digest) {
     return { kind: 'digestMismatch', drawing: geometry.digest, numerical: numerical.digest };
   }
-  if (geometry.version !== CANONICAL_STATE_VERSION) {
-    return { kind: 'versionMismatch', drawing: geometry.version, numerical: CANONICAL_STATE_VERSION };
+  // The drawing's version is the geometry wire version (state.geometry.version)
+  // and the engine echoes that same number as `geometryVersion`, so this guard
+  // fires when the two sides speak different schemas. (It used to compare
+  // against CANONICAL_STATE_VERSION, which drawingGeometry always copied from
+  // the state — a guard that could never fire.)
+  if (geometry.version !== numerical.geometryVersion) {
+    return { kind: 'versionMismatch', drawing: geometry.version, numerical: numerical.geometryVersion };
   }
   return null;
 }

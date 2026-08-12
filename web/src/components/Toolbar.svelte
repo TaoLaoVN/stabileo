@@ -2,10 +2,8 @@
   import { uiStore, resultsStore, modelStore, historyStore } from '../lib/store';
   import { saveProject, loadFile, saveSession } from '../lib/store/file';
   import { t } from '../lib/i18n';
-  import { hasInvalid2DDisplacements, hasInvalid3DDisplacements } from '../lib/geometry/coordinate-system';
   import { countCollapsedElements, buildSimplified2DModel, type DrawPlane } from '../lib/geometry/plane-projection';
-  import { initSolver, isWasmReady } from '../lib/engine/wasm-solver';
-  import { transverseOnTrussWarnings } from '../lib/engine/model-diagnostics';
+  import { TOOL_KEYS, type ToolKeyId } from '../lib/tool-keys';
 
   import ToolbarResults from './toolbar/ToolbarResults.svelte';
   import ToolbarAdvanced from './toolbar/ToolbarAdvanced.svelte';
@@ -113,125 +111,16 @@
     resultsStore.clear();
   }
 
-  const tools = [
-    { id: 'pan', icon: '✋', labelKey: 'toolbar.pan', key: 'A' },
-    { id: 'select', icon: '↖', labelKey: 'toolbar.select', key: 'V' },
-    { id: 'node', icon: '●', labelKey: 'toolbar.node', key: 'N' },
-    { id: 'element', icon: '—', labelKey: 'toolbar.element', key: 'E' },
-    { id: 'support', icon: '▽', labelKey: 'toolbar.support', key: 'S' },
-    { id: 'load', icon: '↓', labelKey: 'toolbar.load', key: 'L' },
-  ] as const;
-
-
-  function handleSolve() {
-    if (uiStore.analysisMode === '3d') {
-      handleSolve3D();
-      return;
-    }
-    const results = modelStore.solve(uiStore.includeSelfWeight, uiStore.drawPlane2D);
-    if (typeof results === 'string') {
-      uiStore.toast(results, 'error');
-    } else if (results) {
-      // Validate results aren't degenerate
-      const hasNaN = hasInvalid2DDisplacements(results.displacements);
-      if (hasNaN) {
-        uiStore.toast(t('results.numericError'), 'error');
-        return;
-      }
-      resultsStore.setResults(results);
-      // Show classification in success toast
-      const kin = modelStore.kinematicResult;
-      let classText = '';
-      if (kin) {
-        if (kin.classification === 'isostatic') classText = t('toast.isostatic');
-        else if (kin.classification === 'hyperstatic') classText = t('toast.hyperstatic').replace('{degree}', String(kin.degree));
-      }
-      // Auto-solve combinations if they exist
-      let comboText = '';
-      if (modelStore.model.combinations.length > 0) {
-        const comboResult = modelStore.solveCombinations(uiStore.includeSelfWeight, uiStore.drawPlane2D);
-        if (comboResult && typeof comboResult !== 'string') {
-          resultsStore.setCombinationResults(comboResult.perCase, comboResult.perCombo, comboResult.envelope);
-          comboText = t('toast.plusCombinations').replace('{n}', String(comboResult.perCombo.size));
-        }
-      }
-      uiStore.toast(`${t('results.calcSuccess')}${classText} — ${results.elementForces.length} ${t('results.bars')}, ${results.reactions.length} ${t('results.reactions')}${comboText}`, 'success');
-      // Show diagnostics toast if any issues were found
-      showDiagnosticsToast(false);
-    } else {
-      uiStore.toast(t('results.emptyModelError'), 'error');
-    }
-    // Auto-close drawer on mobile after solve, show floating results panel
-    if (uiStore.isMobile) {
-      uiStore.leftDrawerOpen = false;
-      uiStore.mobileResultsPanelOpen = true;
-    }
-  }
-
-  function showDiagnosticsToast(is3D: boolean) {
-    // Educational pre-solve model warning the solver itself never emits: a
-    // transverse load on an axial-only (truss) member is not carried as
-    // bending/shear. checkModel surfaces this only in PRO, so without this the
-    // Basic solve path would show no warning for a loaded model that was never
-    // edited through the load editor. (Toolbar is mounted only in Basic mode.)
-    const transverse = transverseOnTrussWarnings(modelStore.loads as any, modelStore.elements, modelStore.nodes);
-    if (transverse.length > 0) uiStore.toast(t(transverse[0].message), 'info');
-
-    const diags = is3D ? resultsStore.diagnostics3D : resultsStore.diagnostics;
-    if (diags.length === 0) return;
-    const errors = diags.filter(d => d.severity === 'error').length;
-    const warnings = diags.filter(d => d.severity === 'warning').length;
-    if (errors === 0 && warnings === 0) return;
-    const msg = t('diag.toastSummary').replace('{errors}', String(errors)).replace('{warnings}', String(warnings));
-    uiStore.toast(msg, errors > 0 ? 'error' : 'info');
-  }
-
-  async function handleSolve3D() {
-    if (!isWasmReady()) {
-      try { await initSolver(); } catch (e: any) {
-        uiStore.toast(e?.message || 'WASM solver initialization failed', 'error');
-        return;
-      }
-    }
-    const isPro = uiStore.analysisMode === 'pro';
-    const versionAtStart = modelStore.modelVersion;
-    const results = await modelStore.solve3DAsync(uiStore.includeSelfWeight, uiStore.axisConvention3D === 'leftHand', isPro);
-    if (modelStore.modelVersion !== versionAtStart) return; // stale — user edited mid-solve
-    if (typeof results === 'string') {
-      uiStore.toast(results, 'error');
-    } else if (results) {
-      // Validate results aren't degenerate
-      const hasNaN = hasInvalid3DDisplacements(results.displacements as Array<{ ux: number; uy: number; uz: number }>);
-      if (hasNaN) {
-        uiStore.toast(t('results.numericError3d'), 'error');
-        return;
-      }
-      resultsStore.setResults3D(results);
-      // Auto-solve 3D combinations if they exist
-      let comboText = '';
-      if (modelStore.model.combinations.length > 0) {
-        const comboResult = modelStore.solveCombinations3D(uiStore.includeSelfWeight, uiStore.axisConvention3D === 'leftHand', isPro);
-        if (comboResult && typeof comboResult !== 'string') {
-          resultsStore.setCombinationResults3D(comboResult.perCase, comboResult.perCombo, comboResult.envelope);
-          comboText = t('toast.plusCombinations').replace('{n}', String(comboResult.perCombo.size));
-        }
-      }
-      uiStore.toast(
-        `${t('results.analysis3dSuccess')} — ${results.elementForces.length} ${t('results.bars')}, ${results.reactions.length} ${t('results.reactions')}${comboText}`,
-        'success',
-      );
-      // Show diagnostics toast if any issues were found
-      showDiagnosticsToast(true);
-    } else {
-      uiStore.toast(t('results.emptyModelError'), 'error');
-    }
-    if (uiStore.isMobile) {
-      uiStore.leftDrawerOpen = false;
-      uiStore.mobileResultsPanelOpen = true;
-    }
-  }
-
-
+  // Keys come from lib/tool-keys.ts, like every other toolbar in the app.
+  const TOOL_DISPLAY: Record<ToolKeyId, { icon: string; labelKey: string }> = {
+    pan: { icon: '✋', labelKey: 'toolbar.pan' },
+    select: { icon: '↖', labelKey: 'toolbar.select' },
+    node: { icon: '●', labelKey: 'toolbar.node' },
+    element: { icon: '—', labelKey: 'toolbar.element' },
+    support: { icon: '▽', labelKey: 'toolbar.support' },
+    load: { icon: '↓', labelKey: 'toolbar.load' },
+  };
+  const tools = TOOL_KEYS.map((tool) => ({ ...tool, ...TOOL_DISPLAY[tool.id] }));
 
 
   async function handleLoadFile(e: Event) {

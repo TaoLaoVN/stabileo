@@ -1448,8 +1448,11 @@ export function buildSolverInput3D(
           // pre-existing fabrication, retained only so 3D models without any
           // J keep solving; it is tagged `unavailable` in the provenance so
           // it is visible rather than silent, and Checkpoint 2C replaces it
-          // with a validated Saint-Venant constant.
-          j: props.j ?? s.j ?? outOfPlaneIz * 0.001,
+          // with a validated Saint-Venant constant. (No `?? s.j` here:
+          // solverProperties already returns a valid declared j, so the term
+          // would only fire for an INVALID one — null, NaN or negative — and
+          // passing that through would be worse than the placeholder.)
+          j: props.j ?? outOfPlaneIz * 0.001,
         }];
       }
       // s.iy = about Y-axis (horizontal), s.iz = about Z-axis (vertical)
@@ -1466,7 +1469,7 @@ export function buildSolverInput3D(
         iz: aboutZ,   // solver iz = Iz (about Z vertical) → controls Y-displacement bending (v, θz)
         // See the note on the projected branch above: J never comes from the
         // polygon engine's Routh approximation.
-        j: props.j ?? s.j ?? aboutY * 0.001,
+        j: props.j ?? aboutY * 0.001,
       }];
     })),
     elements: new Map(Array.from(model.elements.entries()).map(([id, e]) => {

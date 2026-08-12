@@ -5,6 +5,7 @@
   import type { ClipboardData } from '../lib/store/ui.svelte.ts';
   import { hasExplicitLocalY, pickElement3DMetadata } from '../lib/model/element-3d-metadata';
   import { runSolve } from '../lib/actions/solve';
+  import { TOOL_KEYS } from '../lib/tool-keys';
   import { t } from '../lib/i18n';
 
   /**
@@ -26,11 +27,9 @@
    */
 
   /**
-   * Which letter arms which tool.
-   *
-   * Toolbar keeps its own copy for the mobile button labels; this is the
-   * keyboard's copy, and it is deliberately just the bindings — no icons, no
-   * label keys — so it says what it is for.
+   * Which letter arms which tool comes from `lib/tool-keys.ts` — the one
+   * table every display (ribbon, floating tools, mobile toolbar) reads too,
+   * because four copies of it had already drifted.
    */
   /*
    * Ctrl+O needs a file input to click, and the one it used to click belonged
@@ -54,14 +53,7 @@
     input.value = ''; // reset so same file can be loaded again
   }
 
-  const tools = [
-    { id: 'pan', key: 'A' },
-    { id: 'select', key: 'V' },
-    { id: 'node', key: 'N' },
-    { id: 'element', key: 'E' },
-    { id: 'support', key: 'S' },
-    { id: 'load', key: 'L' },
-  ] as const;
+  const tools = TOOL_KEYS;
 
   function zoomToFit() {
     if (modelStore.nodes.size === 0) return;

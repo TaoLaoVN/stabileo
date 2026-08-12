@@ -70,7 +70,7 @@ export const FAMILY_CLASSIFICATION: Record<ProfileFamily, FamilyClassification> 
   HP:  { family: 'HP',  standard: 'IRAM-IAS U 500-215-7', standardsBody: 'IRAM-IAS', country: 'AR', material: 'hot-rolled-steel', series: 'i-beam', fidelity: 'nominalDimensions' },
   M:   { family: 'M',   standard: 'IRAM-IAS U 500-215-8', standardsBody: 'IRAM-IAS', country: 'AR', material: 'hot-rolled-steel', series: 'i-beam', fidelity: 'nominalDimensions' },
   IPN: { family: 'IPN', standard: 'DIN 1025-1', standardsBody: 'DIN', country: 'DE', material: 'hot-rolled-steel', series: 'i-beam', fidelity: 'exact' },
-  UPN: { family: 'UPN', standard: 'DIN 1025-5', standardsBody: 'DIN', country: 'DE', material: 'hot-rolled-steel', series: 'channel', fidelity: 'exact' },
+  UPN: { family: 'UPN', standard: 'DIN 1026-1', standardsBody: 'DIN', country: 'DE', material: 'hot-rolled-steel', series: 'channel', fidelity: 'exact' },
   C:   { family: 'C',   standard: 'IRAM-IAS U 500-509-4', standardsBody: 'IRAM-IAS', country: 'AR', material: 'hot-rolled-steel', series: 'channel', fidelity: 'nominalDimensions' },
   T:   { family: 'T',   standard: 'IRAM-IAS U 500-561', standardsBody: 'IRAM-IAS', country: 'AR', material: 'hot-rolled-steel', series: 'tee', fidelity: 'exact' },
   MC:  { family: 'MC',  standard: 'IRAM-IAS U 500-509-4', standardsBody: 'IRAM-IAS', country: 'AR', material: 'hot-rolled-steel', series: 'channel', fidelity: 'propertiesOnly' },

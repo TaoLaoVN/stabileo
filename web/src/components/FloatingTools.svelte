@@ -8,6 +8,8 @@
   import ToolLoadOptions from './floating-tools/ToolLoadOptions.svelte';
   import SelectedEntityPanel from './floating-tools/SelectedEntityPanel.svelte';
   import Icon from './ribbon/Icon.svelte';
+  import { TOOL_KEYS, type ToolKeyId } from '../lib/tool-keys';
+  import { IL_QUANTITY_GROUPS } from '../lib/influence-line-quantities';
 
   // If the active load case is deleted, reset to the first available case
   $effect(() => {
@@ -16,14 +18,17 @@
     }
   });
 
-  const tools = [
-    { id: 'pan', icon: 'pan', labelKey: 'float.pan', key: 'H' },
-    { id: 'select', icon: 'select', labelKey: 'float.select', key: 'V' },
-    { id: 'node', icon: 'node', labelKey: 'float.node', key: 'N' },
-    { id: 'element', icon: 'element', labelKey: 'float.element', key: 'E' },
-    { id: 'support', icon: 'support', labelKey: 'float.support', key: 'S' },
-    { id: 'load', icon: 'load', labelKey: 'float.load', key: 'L' },
-  ] as const;
+  // Keys come from lib/tool-keys.ts — the tooltip used to promise (H) for pan
+  // while the keyboard armed it with A, and H toggles the axes.
+  const TOOL_DISPLAY: Record<ToolKeyId, { icon: string; labelKey: string }> = {
+    pan: { icon: 'pan', labelKey: 'float.pan' },
+    select: { icon: 'select', labelKey: 'float.select' },
+    node: { icon: 'node', labelKey: 'float.node' },
+    element: { icon: 'element', labelKey: 'float.element' },
+    support: { icon: 'support', labelKey: 'float.support' },
+    load: { icon: 'load', labelKey: 'float.load' },
+  };
+  const tools = TOOL_KEYS.map((tool) => ({ ...tool, ...TOOL_DISPLAY[tool.id] }));
 
   // Check if current tool has options
   const hasOptions = $derived(
@@ -98,18 +103,15 @@
         {/if}
 
         {#if uiStore.currentTool === 'influenceLine'}
-          <span class="ft-il-group">
-            <span class="ft-il-label">{t('float.reactions')}</span>
-            <button class="ft-opt-btn" class:active={uiStore.ilQuantity === 'Rz'} onclick={() => uiStore.ilQuantity = 'Rz'}>{t('float.rzVertical')}</button>
-            <button class="ft-opt-btn" class:active={uiStore.ilQuantity === 'Rx'} onclick={() => uiStore.ilQuantity = 'Rx'}>{t('float.rxHoriz')}</button>
-            <button class="ft-opt-btn" class:active={uiStore.ilQuantity === 'My'} onclick={() => uiStore.ilQuantity = 'My'}>{t('float.mySupport')}</button>
-          </span>
-          <span class="ft-sep">|</span>
-          <span class="ft-il-group">
-            <span class="ft-il-label">{t('float.internal')}</span>
-            <button class="ft-opt-btn" class:active={uiStore.ilQuantity === 'M'} onclick={() => uiStore.ilQuantity = 'M'}>{t('float.mMoment')}</button>
-            <button class="ft-opt-btn" class:active={uiStore.ilQuantity === 'V'} onclick={() => uiStore.ilQuantity = 'V'}>{t('float.vShear')}</button>
-          </span>
+          {#each IL_QUANTITY_GROUPS as group, gi}
+            {#if gi > 0}<span class="ft-sep">|</span>{/if}
+            <span class="ft-il-group">
+              <span class="ft-il-label">{t(group.labelKey)}</span>
+              {#each group.quantities as q}
+                <button class="ft-opt-btn" class:active={uiStore.ilQuantity === q.id} onclick={() => uiStore.ilQuantity = q.id}>{t(q.labelKey)}</button>
+              {/each}
+            </span>
+          {/each}
           <span class="ft-hint">{t('float.ilHint')}</span>
         {/if}
       </div>

@@ -2,6 +2,7 @@
 
 import type { InfluenceLineResult } from '../store/model.svelte';
 import { t } from '../i18n';
+import { canvasTheme } from './theme';
 
 interface DrawContext {
   ctx: CanvasRenderingContext2D;
@@ -177,8 +178,8 @@ export function drawInfluenceLine(
     const elem = dc.getElement(unitLoadElemId);
     const s = dc.worldToScreen(unitLoadWorldX, unitLoadWorldY);
     const arrowLen = 30;
-    ctx.strokeStyle = '#d9a441';
-    ctx.fillStyle = '#d9a441';
+    ctx.strokeStyle = canvasTheme().amber;
+    ctx.fillStyle = canvasTheme().amber;
     ctx.lineWidth = 2;
 
     if (elem) {
