@@ -356,30 +356,35 @@
         if (absN > globalMaxN) globalMaxN = absN;
       }
       if (globalMaxN > 1e-10) {
+        const axTheme = canvasTheme();
+        /*
+         * Tension and compression are the palette's, not screen primaries.
+         *
+         * These ramped toward `rgb(255,0,0)` and `rgb(0,0,255)` — colours
+         * that appear nowhere else in the application and read as a
+         * different program's output beside the vermillion and steel blue
+         * the landing's truss figure, the 3D axial map and the diagrams all
+         * use. Magnitude still drives intensity; it now fades the palette
+         * hue toward the neutral member instead of toward black.
+         *
+         * Hoisted out of the loop: the closure and the hex parsing are
+         * per-redraw work, not per-element.
+         */
+        const parse = (hex: string) => [0, 1, 2].map((i) => parseInt(hex.slice(1 + i * 2, 3 + i * 2), 16));
+        const tensionRgb = parse(axTheme.tension);
+        const compressionRgb = parse(axTheme.compression);
+        const mix = (rgb: number[], k: number) => {
+          const n = 0.35 + 0.65 * k;
+          const g = (i: number, base: number) => Math.round(rgb[i] * n + base * (1 - n));
+          return `rgb(${g(0, 143)},${g(1, 163)},${g(2, 179)})`;
+        };
         for (const ef of resultsStore.results.elementForces) {
           const avgN = (ef.nStart + ef.nEnd) / 2;
           const intensity = Math.min(Math.abs(avgN) / globalMaxN, 1.0);
-          /*
-           * Tension and compression are the palette's, not screen primaries.
-           *
-           * These ramped toward `rgb(255,0,0)` and `rgb(0,0,255)` — colours
-           * that appear nowhere else in the application and read as a
-           * different program's output beside the vermillion and steel blue
-           * the landing's truss figure, the 3D axial map and the diagrams all
-           * use. Magnitude still drives intensity; it now fades the palette
-           * hue toward the neutral member instead of toward black.
-           */
-          const mix = (hex: string, k: number) => {
-            const n = 0.35 + 0.65 * k;
-            const c = (i: number) => parseInt(hex.slice(1 + i * 2, 3 + i * 2), 16);
-            const g = (i: number, base: number) => Math.round(c(i) * n + base * (1 - n));
-            return `rgb(${g(0, 143)},${g(1, 163)},${g(2, 179)})`;
-          };
-          const axTheme = canvasTheme();
           if (avgN > 0.001) {
-            colorMapOverrides.set(ef.elementId, mix(axTheme.tension, intensity));
+            colorMapOverrides.set(ef.elementId, mix(tensionRgb, intensity));
           } else if (avgN < -0.001) {
-            colorMapOverrides.set(ef.elementId, mix(axTheme.compression, intensity));
+            colorMapOverrides.set(ef.elementId, mix(compressionRgb, intensity));
           } else {
             colorMapOverrides.set(ef.elementId, axTheme.neutralMember);
           }

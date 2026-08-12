@@ -1,6 +1,9 @@
 <script lang="ts">
   import { uiStore, modelStore, resultsStore, historyStore } from '../lib/store';
   import { saveProject, saveSession, loadFile } from '../lib/store/file';
+  import { resolveDeleteTargets } from '../lib/store/delete-selection';
+  import type { ClipboardData } from '../lib/store/ui.svelte.ts';
+  import { hasExplicitLocalY, pickElement3DMetadata } from '../lib/model/element-3d-metadata';
   import { runSolve } from '../lib/actions/solve';
   import { t } from '../lib/i18n';
 

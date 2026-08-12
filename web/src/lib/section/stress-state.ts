@@ -28,7 +28,13 @@ import type { Section } from '../store/model.svelte';
 import {
   analyzeSectionBending,
   analyzeSectionShear,
+  analyzeSectionShearField,
   analyzeSectionTorsion,
+  analyzeSectionTorsionField,
+  hasSectionFieldExport,
+  type BendingResponse,
+  type ShearFieldResponse,
+  type TorsionFieldResponse,
 } from '../engine/wasm-solver';
 import { computeMohrCircle, checkFailure } from '../engine/section-stress';
 import type { MohrCircle, FailureCheck } from '../engine/section-stress';
@@ -81,19 +87,90 @@ export type StressStateResult =
   | { ok: true; state: CanonicalStressState }
   | { ok: false; reason: 'notResolved' | 'engineError'; message?: string };
 
+// ── Solved-field cache ─────────────────────────────────────────
+//
+// The shear and torsion solves depend only on the geometry, but the point
+// query used to be folded into the same WASM call — so a caller sweeping many
+// points (the panel's fibre slider, one call per drag tick) re-meshed and
+// re-solved the identical system every tick. The field exports split solve
+// from query: solve once per geometry, cache by digest, and locate the
+// triangle locally per point — a few thousand barycentric tests, which is
+// free by comparison.
+
+interface SectionFields {
+  shear?: ShearFieldResponse;
+  torsion?: TorsionFieldResponse;
+}
+
+/** A field is ~12k numbers (~100 KB); 16 entries bounds the cache at ~2 MB. */
+const FIELD_CACHE_LIMIT = 16;
+const fieldCache = new Map<string, SectionFields>();
+
+function fieldsFor(digest: string): SectionFields {
+  let f = fieldCache.get(digest);
+  if (!f) {
+    if (fieldCache.size >= FIELD_CACHE_LIMIT) {
+      // Map iterates in insertion order, so the first key is the oldest.
+      fieldCache.delete(fieldCache.keys().next().value!);
+    }
+    f = {};
+    fieldCache.set(digest, f);
+  }
+  return f;
+}
+
+/**
+ * Index of the triangle containing `p`, or the nearest one by centroid — the
+ * same contract as the engine's `SectionMesh::locate`. The nearest-fallback
+ * is deliberate: a query point comes from a user dragging a fibre on a
+ * drawing and can land a hair outside the outline through rounding; snapping
+ * to the nearest element is wrong by at most one element's width, which the
+ * mesh already bounds.
+ */
+function locateTriangle(
+  nodes: Array<[number, number]>,
+  triangles: Array<[number, number, number]>,
+  p: [number, number],
+): number {
+  let bestDist = Infinity;
+  let best = 0;
+  for (let i = 0; i < triangles.length; i++) {
+    const t = triangles[i];
+    const a = nodes[t[0]], b = nodes[t[1]], c = nodes[t[2]];
+    const d = (b[0] - a[0]) * (c[1] - a[1]) - (c[0] - a[0]) * (b[1] - a[1]);
+    if (d !== 0) {
+      const l1 = ((b[0] - p[0]) * (c[1] - p[1]) - (c[0] - p[0]) * (b[1] - p[1])) / d;
+      const l2 = ((c[0] - p[0]) * (a[1] - p[1]) - (a[0] - p[0]) * (c[1] - p[1])) / d;
+      const l3 = 1 - l1 - l2;
+      if (l1 >= -1e-9 && l2 >= -1e-9 && l3 >= -1e-9) return i;
+    }
+    const cy = (a[0] + b[0] + c[0]) / 3 - p[0];
+    const cz = (a[1] + b[1] + c[1]) / 3 - p[1];
+    const dist = cy * cy + cz * cz;
+    if (dist < bestDist) {
+      bestDist = dist;
+      best = i;
+    }
+  }
+  return best;
+}
+
 /**
  * Assemble the stress state at `point` from canonical geometry.
  *
- * Shear and torsion are solved on the section's mesh, so this is a
- * mesh-and-solve per call. The panel queries one point at a time as the user
- * drags a fibre, which is exactly the pattern this suits; a caller sweeping
- * many points should solve once and interpolate instead.
+ * Bending is closed-form and cheap, so it runs per call — or is taken from
+ * `opts.bending` when the caller already computed it for the same forces (the
+ * panel does, for its own plot, and re-solving would duplicate the work).
+ * Shear and torsion come from the cached unit-load fields when the WASM build
+ * exports them (one mesh-and-solve per geometry digest); on a build that
+ * predates the field exports they fall back to a per-point mesh-and-solve.
  */
 export function canonicalStressState(
   sec: Section,
   forces: SectionForces,
   point: [number, number],
   fy?: number,
+  opts: { bending?: BendingResponse } = {},
 ): StressStateResult {
   const st = sec.canonical;
   if (!st || st.kind !== 'geometry-backed') return { ok: false, reason: 'notResolved' };
@@ -104,7 +181,7 @@ export function canonicalStressState(
     // Every quantity below is in kN and metres, so every stress comes out in
     // kPa and is converted once, at the end. Mixing that up is the classic way
     // to be wrong by a thousand and still look plausible.
-    const bending = analyzeSectionBending({
+    const bending = opts.bending ?? analyzeSectionBending({
       geometry: st.geometry,
       n: forces.n,
       my: forces.my,
@@ -125,34 +202,64 @@ export function canonicalStressState(
     let tauXz = 0;
     let shearCentre: [number, number] | undefined;
     if (forces.vy || forces.vz) {
-      const sh = analyzeSectionShear({ geometry: st.geometry, at: point });
-      shearCentre = sh.shearCentre;
       // The solve is per UNIT force, so scaling is linear and superposable.
-      if (forces.vy && sh.vy.at) {
-        tauXy += sh.vy.at[0] * forces.vy;
-        tauXz += sh.vy.at[1] * forces.vy;
-        shearY = Math.hypot(sh.vy.at[0], sh.vy.at[1]) * forces.vy;
-      }
-      if (forces.vz && sh.vz.at) {
-        tauXy += sh.vz.at[0] * forces.vz;
-        tauXz += sh.vz.at[1] * forces.vz;
-        shearZ = Math.hypot(sh.vz.at[0], sh.vz.at[1]) * forces.vz;
+      if (hasSectionFieldExport()) {
+        const fields = fieldsFor(st.digest);
+        fields.shear ??= analyzeSectionShearField({ geometry: st.geometry });
+        const sh = fields.shear;
+        shearCentre = sh.shearCentre;
+        const i = locateTriangle(sh.nodes, sh.triangles, point);
+        if (forces.vy) {
+          tauXy += sh.vy.tau[i][0] * forces.vy;
+          tauXz += sh.vy.tau[i][1] * forces.vy;
+          shearY = Math.hypot(sh.vy.tau[i][0], sh.vy.tau[i][1]) * forces.vy;
+        }
+        if (forces.vz) {
+          tauXy += sh.vz.tau[i][0] * forces.vz;
+          tauXz += sh.vz.tau[i][1] * forces.vz;
+          shearZ = Math.hypot(sh.vz.tau[i][0], sh.vz.tau[i][1]) * forces.vz;
+        }
+      } else {
+        const sh = analyzeSectionShear({ geometry: st.geometry, at: point });
+        shearCentre = sh.shearCentre;
+        if (forces.vy && sh.vy.at) {
+          tauXy += sh.vy.at[0] * forces.vy;
+          tauXz += sh.vy.at[1] * forces.vy;
+          shearY = Math.hypot(sh.vy.at[0], sh.vy.at[1]) * forces.vy;
+        }
+        if (forces.vz && sh.vz.at) {
+          tauXy += sh.vz.at[0] * forces.vz;
+          tauXz += sh.vz.at[1] * forces.vz;
+          shearZ = Math.hypot(sh.vz.at[0], sh.vz.at[1]) * forces.vz;
+        }
       }
     }
 
     // ── Torsion ──────────────────────────────────────────────────
     let torsion = 0;
     if (forces.t) {
-      const to = analyzeSectionTorsion({ geometry: st.geometry, at: point });
-      if (to.at && to.j > 0) {
-        // The field is per unit twist rate, with the shear modulus factored
-        // out; a torque T gives twist T/(GJ), so G cancels and what remains is
-        // T/J applied to the unit-rate field. The circle test pins this: there
-        // the unit field's magnitude IS the radius, so tau = T r / J falls out.
-        const k = forces.t / to.j;
-        tauXy += to.at[0] * k;
-        tauXz += to.at[1] * k;
-        torsion = Math.hypot(to.at[0], to.at[1]) * k;
+      // The field is per unit twist rate, with the shear modulus factored
+      // out; a torque T gives twist T/(GJ), so G cancels and what remains is
+      // T/J applied to the unit-rate field. The circle test pins this: there
+      // the unit field's magnitude IS the radius, so tau = T r / J falls out.
+      let tauAt: [number, number] | undefined;
+      let j = 0;
+      if (hasSectionFieldExport()) {
+        const fields = fieldsFor(st.digest);
+        fields.torsion ??= analyzeSectionTorsionField({ geometry: st.geometry });
+        const to = fields.torsion;
+        j = to.j;
+        if (j > 0) tauAt = to.tau[locateTriangle(to.nodes, to.triangles, point)];
+      } else {
+        const to = analyzeSectionTorsion({ geometry: st.geometry, at: point });
+        j = to.j;
+        tauAt = to.at;
+      }
+      if (tauAt && j > 0) {
+        const k = forces.t / j;
+        tauXy += tauAt[0] * k;
+        tauXz += tauAt[1] * k;
+        torsion = Math.hypot(tauAt[0], tauAt[1]) * k;
       }
     }
 

@@ -6,7 +6,7 @@
   import { solveForEdu } from './edu-solver';
   import { eduStore } from './edu-store.svelte';
   import ExerciseAuthor from './ExerciseAuthor.svelte';
-  import { buildFromSpec, evaluateAnswer, type EduExerciseSpec } from './exercise-spec';
+  import { buildFromSpec, evaluateAnswer, type AnswerContext, type EduExerciseSpec } from './exercise-spec';
   import { stressContext } from './exercise-stress';
   import { loadLibrary, removeFromLibrary, saveToLibrary, fromShareLink } from './exercise-library';
   import SubmissionReview from './SubmissionReview.svelte';
@@ -109,6 +109,22 @@
 
   /** Adapt an authored spec to the shape the exercise view consumes. */
   function specToExercise(spec: EduExerciseSpec): EduExercise {
+    // The stress resolver is built at most once per exercise — it meshes and
+    // solves the section, which is far too costly to repeat per question or
+    // per click. But it must stay LAZY: it only works once the WASM engine is
+    // ready (the first verify happens after the solve pipeline has awaited
+    // it), while specToExercise runs at panel mount, possibly before. An eager
+    // call — or caching the empty context an early call returns — would mark
+    // students against a fabricated 0 for the panel's whole lifetime.
+    let ctx: AnswerContext | undefined;
+    const stressCtx = (): AnswerContext => {
+      if (ctx) return ctx;
+      const built = stressContext(spec.model.profile, spec.model.fy);
+      // Empty means "no profile / no geometry" (stable) or "engine not ready"
+      // (must be retried). Only the stable cases get cached.
+      if (built.stress || !spec.model.profile) ctx = built;
+      return built;
+    };
     return {
       id: spec.id,
       title: spec.title,
@@ -118,15 +134,13 @@
       solverType: spec.solverType,
       build: (api) => buildFromSpec(spec.model, api),
       supports: spec.supports,
-      // The stress resolver is built once per exercise, not per question: it
-      // meshes and solves the section, which is far too costly to repeat.
       characteristics: spec.characteristics.map((c) => ({
         label: c.label, unit: c.unit,
-        getCorrect: (f) => evaluateAnswer(c.answer, f, stressContext(spec.model.profile, spec.model.fy)) ?? 0,
+        getCorrect: (f) => evaluateAnswer(c.answer, f, stressCtx()) ?? 0,
       })),
       diagramQuestions: spec.diagramQuestions.map((q) => ({
         question: q.question, unit: q.unit,
-        getCorrect: (f) => evaluateAnswer(q.answer, f, stressContext(spec.model.profile, spec.model.fy)) ?? 0,
+        getCorrect: (f) => evaluateAnswer(q.answer, f, stressCtx()) ?? 0,
       })),
       kinematicQuestion: spec.kinematicQuestion,
       diagramShapeQuestions: spec.diagramShapeQuestions,

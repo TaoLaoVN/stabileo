@@ -50,6 +50,8 @@ let wasmBuildSectionGeometry: ((json: string) => string) | null = null;
 let wasmAnalyzeSectionBending: ((json: string) => string) | null = null;
 let wasmAnalyzeSectionTorsion: ((json: string) => string) | null = null;
 let wasmAnalyzeSectionShear: ((json: string) => string) | null = null;
+let wasmAnalyzeSectionTorsionField: ((json: string) => string) | null = null;
+let wasmAnalyzeSectionShearField: ((json: string) => string) | null = null;
 let wasmAnalyzeSectionPlastic: ((json: string) => string) | null = null;
 let wasmSectionGeometryDigest: ((json: string) => string) | null = null;
 let wasmComputeSectionStress2d: ((json: string) => string) | null = null;
@@ -214,6 +216,8 @@ export async function initSolver(): Promise<void> {
     wasmAnalyzeSectionBending = wasm.analyze_section_bending ?? null;
     wasmAnalyzeSectionTorsion = wasm.analyze_section_torsion ?? null;
     wasmAnalyzeSectionShear = wasm.analyze_section_shear ?? null;
+    wasmAnalyzeSectionTorsionField = wasm.analyze_section_torsion_field ?? null;
+    wasmAnalyzeSectionShearField = wasm.analyze_section_shear_field ?? null;
     wasmAnalyzeSectionPlastic = wasm.analyze_section_plastic ?? null;
     wasmSectionGeometryDigest = wasm.section_geometry_digest ?? null;
 
@@ -322,6 +326,14 @@ export function isSolverReady(): boolean {
  *  have it, and `buildSectionGeometry` would throw on call. */
 export function hasCanonicalGeometryExport(): boolean {
   return wasmBuildSectionGeometry !== null;
+}
+
+/** Check if the reusable section-field exports are present. They were added
+ *  after the point-query exports, so a WASM build can have
+ *  `build_section_geometry` and still lack these — in that case callers fall
+ *  back to the per-point exports. */
+export function hasSectionFieldExport(): boolean {
+  return wasmAnalyzeSectionShearField !== null && wasmAnalyzeSectionTorsionField !== null;
 }
 
 // ─── Serialization helpers ──────────────────────────────────────
@@ -1493,6 +1505,55 @@ export function analyzeSectionShear(input: {
 }): ShearResponse {
   if (!wasmReady || !wasmAnalyzeSectionShear) throw new Error('WASM solver not initialized. Call initSolver() first.');
   return JSON.parse(wasmAnalyzeSectionShear(JSON.stringify(input)));
+}
+
+/**
+ * The torsion solve as a reusable field: the mesh plus the per-triangle shear
+ * under unit twist rate. Solve once per section (cache by geometry digest),
+ * then locate triangles locally for any number of query points — calling
+ * `analyzeSectionTorsion` per point re-meshes and re-solves every time.
+ *
+ * Nodes and `tau` are centroid-relative in the geometry's own units, so a
+ * query point in that frame needs no further conversion.
+ */
+export interface TorsionFieldResponse {
+  j: number;
+  tauMax: number;
+  nodes: Array<[number, number]>;
+  triangles: Array<[number, number, number]>;
+  /** `[tau_xy, tau_xz]` per triangle under unit twist rate. */
+  tau: Array<[number, number]>;
+  residual: number;
+}
+
+export function analyzeSectionTorsionField(input: {
+  geometry: CanonicalGeometry;
+  maxArea?: number;
+}): TorsionFieldResponse {
+  if (!wasmReady || !wasmAnalyzeSectionTorsionField) throw new Error('WASM solver not initialized (or predates the field exports). Call initSolver() first.');
+  return JSON.parse(wasmAnalyzeSectionTorsionField(JSON.stringify(input)));
+}
+
+/**
+ * The shear solve as a reusable field: per-triangle stress for a unit force
+ * on each axis. Same caching contract as `TorsionFieldResponse`.
+ */
+export interface ShearFieldResponse {
+  vy: { tauMax: number; kappa: number; tau: Array<[number, number]> };
+  vz: { tauMax: number; kappa: number; tau: Array<[number, number]> };
+  /** Shear centre, centroid-relative. */
+  shearCentre: [number, number];
+  nodes: Array<[number, number]>;
+  triangles: Array<[number, number, number]>;
+  residual: number;
+}
+
+export function analyzeSectionShearField(input: {
+  geometry: CanonicalGeometry;
+  maxArea?: number;
+}): ShearFieldResponse {
+  if (!wasmReady || !wasmAnalyzeSectionShearField) throw new Error('WASM solver not initialized (or predates the field exports). Call initSolver() first.');
+  return JSON.parse(wasmAnalyzeSectionShearField(JSON.stringify(input)));
 }
 
 /** Plastic and elastic section moduli, plus the warping constant. */

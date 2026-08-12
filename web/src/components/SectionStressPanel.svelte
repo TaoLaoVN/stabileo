@@ -353,6 +353,9 @@
       { n: f.n, my: f.my, mz: f.mz, vy: f.vy, vz: f.vz, t: f.tx },
       [py, pz],
       mat?.fy,
+      // The panel already solved bending for these exact forces — reuse it
+      // rather than paying a second identical WASM call per slider tick.
+      { bending: canonical.bending },
     );
     return r.ok ? r.state : null;
   });

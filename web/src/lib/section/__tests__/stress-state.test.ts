@@ -15,6 +15,11 @@
 import { describe, it, expect } from 'vitest';
 import { canonicalStressState } from '../stress-state';
 import { resolveSectionState } from '../state';
+import {
+  analyzeSectionShear,
+  analyzeSectionTorsion,
+  hasSectionFieldExport,
+} from '../../engine/wasm-solver';
 import type { Section } from '../../store/model.svelte';
 
 function sec(over: Partial<Section>): Section {
@@ -169,5 +174,82 @@ describe('the shear centre is reported when it is not at the centroid', () => {
     const r = canonicalStressState(rect(), { n: 100, my: 50, mz: 0 }, [0, 0]);
     if (!r.ok) throw new Error('expected ok');
     expect(r.state.shearCentre).toBeUndefined();
+  });
+});
+
+
+// These pin the solve-once/locate-locally path against the per-point exports.
+// They skip on a WASM build that predates the field exports — and CI fails
+// the whole suite on such a build (vitest.setup.ts), so a skip here can only
+// happen locally.
+const describeField = hasSectionFieldExport() ? describe : describe.skip;
+
+describeField('the cached field path agrees with the per-point solves', () => {
+  // Shear and torsion are compared separately: the state combines them
+  // vectorially before the magnitude, so a combined reference cannot be
+  // rebuilt from magnitudes.
+  const shearForces = { n: 0, my: 0, mz: 0, vy: 60, vz: 160 };
+  const POINTS: Array<[number, number]> = [
+    [0, 0],
+    [0.05, 0.1],
+    [-0.07, -0.15],
+    [0.09, 0.199],
+    [-0.02, 0.05],
+  ];
+
+  it('shear components match the per-point shear solve at every fibre', () => {
+    const s = rect();
+    const st = s.canonical!;
+    if (st.kind !== 'geometry-backed') throw new Error('expected geometry-backed');
+    for (const p of POINTS) {
+      const sh = analyzeSectionShear({ geometry: st.geometry, at: p });
+      const r = canonicalStressState(s, shearForces, p);
+      if (!r.ok) throw new Error(r.message ?? r.reason);
+      // Reassemble the per-point answer the same way the state does.
+      const refXy = sh.vy.at![0] * shearForces.vy + sh.vz.at![0] * shearForces.vz;
+      const refXz = sh.vy.at![1] * shearForces.vy + sh.vz.at![1] * shearForces.vz;
+      const refTau = Math.hypot(refXy, refXz) * 1e-3;
+      expect(r.state.tau).toBeCloseTo(refTau, 6);
+    }
+  });
+
+  it('torsion matches the per-point torsion solve at every fibre', () => {
+    const s = rect();
+    const st = s.canonical!;
+    if (st.kind !== 'geometry-backed') throw new Error('expected geometry-backed');
+    for (const p of POINTS) {
+      const to = analyzeSectionTorsion({ geometry: st.geometry, at: p });
+      const r = canonicalStressState(s, { n: 0, my: 0, mz: 0, t: 20 }, p);
+      if (!r.ok) throw new Error(r.message ?? r.reason);
+      const refTau = (Math.hypot(to.at![0], to.at![1]) * 20) / to.j * 1e-3;
+      expect(r.state.tau).toBeCloseTo(refTau, 6);
+    }
+  });
+
+  it('repeated queries across many fibres stay consistent (the cache-hit path)', () => {
+    // Twenty-five fibres on one section: the first call solves and caches, the
+    // rest are local triangle locates. A stale or mis-keyed cache shows up as
+    // a mismatch against the per-point solve — so the loop interleaves a
+    // second section with a different digest: a cache keyed on nothing (or on
+    // a constant) would serve the wrong geometry's field and fail here.
+    const a = rect();
+    const b = sec({ shape: 'rect', b: 0.1, h: 0.3 });
+    for (const s of [a, b]) {
+      const st = s.canonical!;
+      if (st.kind !== 'geometry-backed') throw new Error('expected geometry-backed');
+    }
+    for (let iy = -2; iy <= 2; iy++) {
+      for (let iz = -2; iz <= 2; iz++) {
+        const s = (iy + iz) % 2 === 0 ? a : b;
+        const st = s.canonical!;
+        if (st.kind !== 'geometry-backed') throw new Error('expected geometry-backed');
+        const p: [number, number] = [iy * 0.02, iz * 0.05];
+        const sh = analyzeSectionShear({ geometry: st.geometry, at: p });
+        const r = canonicalStressState(s, { n: 0, my: 0, mz: 0, vz: 100 }, p);
+        if (!r.ok) throw new Error(r.message ?? r.reason);
+        const refTau = Math.hypot(sh.vz.at![0], sh.vz.at![1]) * 100 * 1e-3;
+        expect(r.state.tau).toBeCloseTo(refTau, 6);
+      }
+    }
   });
 });
