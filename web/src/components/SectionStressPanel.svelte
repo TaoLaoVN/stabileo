@@ -77,6 +77,18 @@
    * reference does this", which is the relationship worth showing.
    */
   let eccentricPoint = $state<[number, number] | null>([0, 0]);
+  /**
+   * Where the eccentric load comes from.
+   *
+   * `model` relocates the forces the member ALREADY carries at this station to
+   * the chosen point — "what if this same load acted here instead of on the
+   * axis". `custom` adds a load of your own on top of everything the model
+   * produces. Both are legitimate questions and they are not the same one, so
+   * the panel asks which rather than guessing.
+   */
+  let eccSource = $state<'model' | 'custom'>('model');
+  /** User-defined load components, kN. Only used when `eccSource` is 'custom'. */
+  let eccCustom = $state({ n: 0, vy: 0, vz: 0 });
 
   const is3D = $derived(uiStore.analysisMode === '3d' || uiStore.analysisMode === 'pro');
   const query = $derived(resultsStore.stressQuery);
@@ -177,6 +189,10 @@
 
   // ── 2D analysis (skip if section is rotated → uses biaxial path instead) ──
   const analysis2D = $derived.by((): SectionStressResult | null => {
+    // An eccentric load is biaxial in general — moving an axial force sideways
+    // produces Mz, which a plane-frame result cannot represent — so that case
+    // is handed to the biaxial path below, exactly as a rotated section is.
+    if (eccentricActive) return null;
     if (is3D || isRotated2D || !query || !resultsStore.results || isAmorphous) return null;
     const elem = modelStore.elements.get(query.elementId);
     if (!elem) return null;
@@ -195,6 +211,34 @@
   // ── 3D analysis (also handles rotated 2D sections via force decomposition) ──
   const analysis3D = $derived.by((): SectionStressResult3D | null => {
     if (isAmorphous || !query) return null;
+
+    // ── Eccentric load: plot the RESOLVED forces ─────────────────
+    //
+    // This is what makes the eccentricity visible in the diagrams instead of
+    // only in the readout. It also has to run through the biaxial path even
+    // for a plane frame: an axial force moved off the vertical axis produces
+    // Mz, and bending about the weak axis simply does not exist in a 2D result.
+    //
+    // The two paths disagree on sign. `stationForces2D` reports `my = M`, while
+    // this function wants the opposite sign to place tension on the same fibre
+    // — the same inversion the rotated-2D branch below applies. The axes also
+    // swap names: `yFiber` here is the DEPTH, which is the canonical z, and
+    // `zFiber` is the width, which is the canonical y. Both were established by
+    // measurement, and `eccentric-diagrams.test.ts` pins them.
+    if (eccentricActive && eccentric && stateInputs) {
+      const elem = modelStore.elements.get(query.elementId);
+      const sec = elem ? modelStore.sections.get(elem.sectionId) : null;
+      const mat = elem ? modelStore.materials.get(elem.materialId) : null;
+      if (!sec || !mat) return null;
+      const f = eccentric.forces;
+      const [py, pz] = stateInputs.point;
+      return analyzeSectionStressFromForces(
+        f.n, f.vy, f.vz, f.t,
+        -f.my, -f.mz,
+        sec, mat.fy,
+        pz, py,
+      );
+    }
 
     // ── True 3D mode ──
     if (is3D) {
@@ -251,7 +295,7 @@
 
   // Unified accessors (panel uses these)
   // When isRotated2D, analysis3D is populated (from decomposed forces), analysis2D is null
-  const uses3DPath = $derived(is3D || isRotated2D);
+  const uses3DPath = $derived(is3D || isRotated2D || eccentricActive);
   const hasAnalysis = $derived(uses3DPath ? analysis3D !== null : analysis2D !== null);
   const resolved = $derived(uses3DPath ? analysis3D?.resolved : analysis2D?.resolved);
 
@@ -416,12 +460,76 @@
    */
   const eccentric = $derived.by(() => {
     if (!showEccentric || !eccentricPoint || !stateInputs) return null;
-    const f = stateInputs.forces;
-    return resolveEccentric(
-      { n: f.n, vy: f.vy, vz: f.vz, my: f.my, mz: f.mz, t: f.t, at: eccentricPoint },
-      canonicalState?.shearCentre ?? [0, 0],
+    const m = stateInputs.forces;
+    const sc = canonicalState?.shearCentre ?? [0, 0] as [number, number];
+
+    if (eccSource === 'model') {
+      // The member's own resultants, moved off the axis. The bending the model
+      // reports stays — it is the consequence of the external loads and does
+      // not go away — and the eccentricity adds to it.
+      return resolveEccentric(
+        { n: m.n, vy: m.vy, vz: m.vz, my: m.my, mz: m.mz, t: m.t, at: eccentricPoint },
+        sc,
+      );
+    }
+
+    // A load of the user's own, applied at the point, ON TOP of everything the
+    // model already produces. Resolved alone first so `effect` reports what
+    // THIS load contributes rather than burying it in the model's totals.
+    const r = resolveEccentric(
+      { n: eccCustom.n, vy: eccCustom.vy, vz: eccCustom.vz, at: eccentricPoint },
+      sc,
     );
+    return {
+      forces: {
+        n: m.n + r.forces.n,
+        my: m.my + r.forces.my,
+        mz: m.mz + r.forces.mz,
+        vy: (m.vy ?? 0) + r.forces.vy,
+        vz: (m.vz ?? 0) + r.forces.vz,
+        t: (m.t ?? 0) + r.forces.t,
+      },
+      effect: r.effect,
+    };
   });
+
+  /**
+   * Whether the eccentric case is actually driving the panel.
+   *
+   * Every diagram below keys off this. Without it the eccentricity reached
+   * Mohr's circle, the tensors and the stress map but NOT the stress diagrams,
+   * which kept plotting the model's own forces — so the panel showed two
+   * different load cases at once and only the small print said which.
+   */
+  const eccentricActive = $derived(showEccentric && eccentric !== null);
+
+  /**
+   * The load components on display, whichever source is active.
+   *
+   * Read by the editor so the model's own forces are visible (and not
+   * editable) under `model`, and the user's own under `custom`.
+   */
+  const eccentricComponents = $derived.by(() => {
+    if (eccSource === 'custom') return eccCustom;
+    const m = stateInputs?.forces;
+    return { n: m?.n ?? 0, vy: m?.vy ?? 0, vz: m?.vz ?? 0 };
+  });
+
+  /**
+   * Nothing at this station to relocate.
+   *
+   * Mid-span of a simply supported beam is exactly this case: the shear is zero
+   * and there is no axial force, so the only resultant is a bending moment —
+   * and a moment is a free vector, unchanged by where you apply it. Dragging
+   * the point then does nothing at all, which reads as a broken feature rather
+   * than as the correct answer it is. Saying so is the difference.
+   */
+  const eccentricNothingToMove = $derived(
+    eccSource === 'model' &&
+    Math.abs(eccentricComponents.n) < 1e-9 &&
+    Math.abs(eccentricComponents.vy) < 1e-9 &&
+    Math.abs(eccentricComponents.vz) < 1e-9,
+  );
 
   /**
    * The state under the eccentric forces — what the panel shows while the
@@ -776,12 +884,68 @@
               title={t('stress.eccentricResetHelp')}
             >{t('stress.eccentricReset')}</button>
           </div>
+
+          <!-- Where the load comes from. Without this the panel showed forces
+               with no stated origin — on a simply supported beam with no axial
+               load, an "eccentric load" appeared from nowhere. -->
+          <div class="ssp-ecc-src">
+            <button
+              class="ssp-ecc-tab" class:active={eccSource === 'model'}
+              onclick={() => eccSource = 'model'}
+              title={t('stress.eccentricFromModelHelp')}
+            >{t('stress.eccentricFromModel')}</button>
+            <button
+              class="ssp-ecc-tab" class:active={eccSource === 'custom'}
+              onclick={() => eccSource = 'custom'}
+              title={t('stress.eccentricCustomHelp')}
+            >{t('stress.eccentricCustom')}</button>
+          </div>
+
+          <!-- The components, named by their direction relative to the section
+               rather than by axis letters alone: which one twists the member
+               and which one bends it is the whole point. -->
+          <div class="ssp-ecc-fields">
+            <div class="ssp-ecc-field">
+              <span class="ssp-ecc-flabel">N <em>{t('stress.eccentricPerp')}</em></span>
+              {#if eccSource === 'custom'}
+                <input type="number" step="1" bind:value={eccCustom.n} />
+              {:else}
+                <span class="ssp-ecc-fixed">{fmtForce(eccentricComponents.n)}</span>
+              {/if}
+              <span class="ssp-ecc-unit">kN</span>
+            </div>
+            <div class="ssp-ecc-field">
+              <span class="ssp-ecc-flabel">V<sub>y</sub> <em>{t('stress.eccentricParH')}</em></span>
+              {#if eccSource === 'custom'}
+                <input type="number" step="1" bind:value={eccCustom.vy} />
+              {:else}
+                <span class="ssp-ecc-fixed">{fmtForce(eccentricComponents.vy)}</span>
+              {/if}
+              <span class="ssp-ecc-unit">kN</span>
+            </div>
+            <div class="ssp-ecc-field">
+              <span class="ssp-ecc-flabel">V<sub>z</sub> <em>{t('stress.eccentricParV')}</em></span>
+              {#if eccSource === 'custom'}
+                <input type="number" step="1" bind:value={eccCustom.vz} />
+              {:else}
+                <span class="ssp-ecc-fixed">{fmtForce(eccentricComponents.vz)}</span>
+              {/if}
+              <span class="ssp-ecc-unit">kN</span>
+            </div>
+          </div>
+
           <div class="ssp-ecc-row">
             <span class="ssp-ecc-label">{t('stress.eccentricAt')}</span>
             <span class="ssp-ecc-val">
               y {fmtForce(eccentricPoint[0] * 1000)} · z {fmtForce(eccentricPoint[1] * 1000)} mm
             </span>
           </div>
+
+          {#if eccentricNothingToMove}
+            <p class="ssp-ecc-note ssp-ecc-flag">{t('stress.eccentricNothingToMove')}</p>
+          {/if}
+
+          <div class="ssp-ecc-sep">{t('stress.eccentricProduces')}</div>
           <div class="ssp-ecc-row">
             <span class="ssp-ecc-label">&Delta;M<sub>y</sub> / &Delta;M<sub>z</sub></span>
             <span class="ssp-ecc-val">
@@ -792,6 +956,13 @@
             <span class="ssp-ecc-label">&Delta;T</span>
             <span class="ssp-ecc-val">{fmtForce(eccentric.effect.tFromShear)} kN·m</span>
           </div>
+
+          <!-- Weak-axis bending on a plane frame is worth calling out: it is a
+               stress the 2D model cannot produce on its own, and seeing it
+               appear is the point of moving the load sideways. -->
+          {#if !is3D && Math.abs(eccentric.forces.mz) > 1e-9}
+            <p class="ssp-ecc-note ssp-ecc-flag">{t('stress.eccentricBiaxialNote')}</p>
+          {/if}
           <p class="ssp-ecc-note">
             {eccentricInsideKern ? t('stress.eccentricInKern') : t('stress.eccentricOutKern')}
           </p>
@@ -1174,6 +1345,79 @@
     margin: 4px 0 0;
     font-size: 0.58rem;
     line-height: 1.4;
+    color: var(--st-text-3);
+  }
+  .ssp-ecc-flag { color: var(--st-warn); opacity: 0.95; }
+
+  .ssp-ecc-src {
+    display: flex;
+    gap: 3px;
+    margin: 5px 0 6px;
+  }
+  .ssp-ecc-tab {
+    flex: 1;
+    padding: 3px 4px;
+    border-radius: 3px;
+    border: 1px solid rgba(255, 140, 0, 0.25);
+    background: none;
+    color: var(--st-text-3);
+    font-size: 0.6rem;
+    cursor: pointer;
+  }
+  .ssp-ecc-tab:hover { color: var(--st-text-2); }
+  .ssp-ecc-tab.active {
+    background: rgba(255, 140, 0, 0.16);
+    border-color: var(--st-warn);
+    color: var(--st-warn);
+  }
+
+  .ssp-ecc-fields {
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+    margin-bottom: 5px;
+  }
+  .ssp-ecc-field {
+    display: flex;
+    align-items: baseline;
+    gap: 5px;
+    font-size: 0.65rem;
+  }
+  .ssp-ecc-flabel { flex: 1; color: var(--st-text-3); min-width: 0; }
+  /* The direction reminder, subordinate to the symbol it qualifies. */
+  .ssp-ecc-flabel em {
+    font-style: normal;
+    opacity: 0.7;
+    font-size: 0.9em;
+  }
+  .ssp-ecc-field input {
+    width: 62px;
+    padding: 1px 4px;
+    border-radius: 3px;
+    border: 1px solid rgba(255, 140, 0, 0.3);
+    background: rgba(0, 0, 0, 0.25);
+    color: var(--st-text);
+    font-family: 'Courier New', monospace;
+    font-size: 0.65rem;
+    text-align: right;
+  }
+  /* Model forces are shown in the same column as the inputs but visibly not
+     editable: they are a reading of the member, not a setting. */
+  .ssp-ecc-fixed {
+    width: 62px;
+    text-align: right;
+    font-family: 'Courier New', monospace;
+    color: var(--st-text-2);
+  }
+  .ssp-ecc-unit { color: var(--st-text-3); opacity: 0.7; width: 22px; }
+
+  .ssp-ecc-sep {
+    margin: 6px 0 3px;
+    padding-top: 5px;
+    border-top: 1px solid rgba(255, 140, 0, 0.2);
+    font-size: 0.58rem;
+    text-transform: uppercase;
+    letter-spacing: 0.4px;
     color: var(--st-text-3);
   }
 

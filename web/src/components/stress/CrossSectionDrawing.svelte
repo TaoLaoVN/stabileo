@@ -135,6 +135,19 @@
   let gEl = $state<SVGGElement | null>(null);
   let dragging = $state(false);
 
+  /** Figure lifted to the centre of the screen. Local: nothing else needs it. */
+  let maximized = $state(false);
+
+  // Escape leaves the maximised view. It is the gesture every overlay teaches,
+  // and the toolbar button can end up behind the enlarged figure on a short
+  // window, so there has to be a way out that does not depend on hitting it.
+  $effect(() => {
+    if (!maximized) return;
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') maximized = false; };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  });
+
   /**
    * Pointer position in canonical section coordinates.
    *
@@ -258,6 +271,19 @@
   {t('stress.crossSection')}
 </button>
 {#if showCrossSection && resolved}
+  <!--
+    Maximised, the figure and its own toolbar lift out to the centre of the
+    screen while every other control stays in the panel. It is the same markup
+    moved by CSS rather than a second copy: the drawing reads the pointer
+    through `getScreenCTM`, so dragging keeps working at the new size without
+    knowing anything changed, and a duplicate would be one more thing to keep
+    in step.
+
+    The wrapper does not capture pointer events, only the figure inside it
+    does, so the panel behind stays usable — which is the point of leaving the
+    controls there.
+  -->
+  <div class="ssp-cross-wrap" class:maximized>
   <!-- Toggle toolbar — outside SVG to avoid overlap with diagram labels -->
   <div class="ssp-svg-toggles">
     <button
@@ -326,6 +352,13 @@
       onclick={() => useGlobalScale = !useGlobalScale}
       title={useGlobalScale ? t('stress.scaleGlobalOn') : t('stress.scaleGlobalOff')}
     >{useGlobalScale ? 'G' : 'L'}</button>
+    <button
+      class="ssp-svg-toggle ssp-toggle-max"
+      class:active={maximized}
+      onclick={() => maximized = !maximized}
+      title={maximized ? t('stress.minimiseSection') : t('stress.maximiseSection')}
+      aria-label={maximized ? t('stress.minimiseSection') : t('stress.maximiseSection')}
+    >{maximized ? '⤡' : '⛶'}</button>
   </div>
   <div class="ssp-svg-container">
     <svg viewBox="-90 -90 180 180" class="ssp-cross-svg">
@@ -1140,6 +1173,7 @@
       </g>
     </svg>
   </div>
+  </div>
 
   <!-- Fiber sliders -->
   {#if is3D && analysis3D}
@@ -1268,6 +1302,52 @@
   }
 
   .ssp-toggle-cp.active {
+    color: var(--st-value);
+    border-color: var(--st-value);
+    background: rgba(127, 212, 204, 0.12);
+  }
+
+  /* ── Maximised figure ─────────────────────────────────────────
+     Fixed to the viewport and horizontally centred, but NOT stretched across
+     it: the right panel keeps its controls and must stay reachable, so the
+     figure is capped and the wrapper lets pointer events through everywhere
+     except the figure itself. */
+  .ssp-cross-wrap.maximized {
+    position: fixed;
+    inset: 0;
+    z-index: 90;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    padding: 24px;
+    pointer-events: none;
+    /* A wash rather than a dimming backdrop: the model behind stays legible,
+       which matters because the section belongs to a member on that canvas. */
+    background: rgba(8, 16, 22, 0.72);
+    backdrop-filter: blur(2px);
+  }
+  /* Give the interactive parts their events back. */
+  .ssp-cross-wrap.maximized :global(.ssp-svg-toggles),
+  .ssp-cross-wrap.maximized :global(.ssp-svg-container) {
+    pointer-events: auto;
+  }
+  .ssp-cross-wrap.maximized :global(.ssp-cross-svg) {
+    /* Square, and bounded by the SHORTER viewport dimension so the figure
+       never runs off the top on a wide window or off the side on a tall one. */
+    width: min(76vh, 62vw);
+    height: min(76vh, 62vw);
+  }
+  .ssp-cross-wrap.maximized :global(.ssp-svg-toggles) {
+    padding: 4px 8px;
+    border-radius: 6px;
+    background: rgba(12, 22, 32, 0.9);
+    border: 1px solid rgba(26, 74, 122, 0.5);
+  }
+
+  .ssp-toggle-max { font-size: 0.62rem; }
+  .ssp-toggle-max.active {
     color: var(--st-value);
     border-color: var(--st-value);
     background: rgba(127, 212, 204, 0.12);
