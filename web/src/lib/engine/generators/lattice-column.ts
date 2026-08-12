@@ -55,6 +55,19 @@ export interface LatticeColumnParams {
    * claim about the foundation and is therefore a choice.
    */
   fixedBase: boolean;
+  /**
+   * Add a node on the column's centreline at the top, tied to both chord heads.
+   *
+   * A latticed column has no material on its own axis, so a truss bearing on it has
+   * nowhere to land: the two chord heads are `widthM` apart and the centreline between
+   * them is empty. The cap is the node that makes the joint expressible — the truss
+   * reaction arrives on the axis and is shared to the two chords through a pair of short
+   * members, which is what a real cap plate does.
+   *
+   * Off by default: a column generated on its own has nothing to carry, and an unused
+   * cap would be two members and a node that exist for no reason.
+   */
+  capTop: boolean;
 }
 
 export const DEFAULT_LATTICE_COLUMN_PARAMS: LatticeColumnParams = Object.freeze({
@@ -65,6 +78,7 @@ export const DEFAULT_LATTICE_COLUMN_PARAMS: LatticeColumnParams = Object.freeze(
   chordContinuity: 'frame',
   webContinuity: 'truss',
   fixedBase: false,
+  capTop: false,
 });
 
 export function validateLatticeColumnParams(p: LatticeColumnParams): ParamProblem[] {
@@ -122,6 +136,14 @@ export function generateLatticeColumn(params: Partial<LatticeColumnParams> = {})
       : { a: right[i], b: left[i + 1], role: 'diagonal', type: p.webContinuity });
   }
 
+  // The cap: one node on the axis at the head, tied to both chord tops.
+  if (p.capTop) {
+    const cap = nodes.length;
+    nodes.push({ i: cap, x: 0, y: 0, z: p.heightM });
+    members.push({ a: left[n], b: cap, role: 'post', type: p.webContinuity });
+    members.push({ a: right[n], b: cap, role: 'post', type: p.webContinuity });
+  }
+
   const baseType = p.fixedBase ? 'fixed' as const : 'pinned' as const;
   const supports: GenSupport[] = [
     { node: left[0], type: baseType },
@@ -133,6 +155,7 @@ export function generateLatticeColumn(params: Partial<LatticeColumnParams> = {})
     p.webContinuity === 'truss' ? 'generator.assume.webPinned' : 'generator.assume.webContinuous',
     p.lacing === 'zigzag' ? 'generator.assume.lacingZigzag' : 'generator.assume.lacingParallel',
   ];
+  if (p.capTop) assumptions.push('generator.assume.columnCapSharesReaction');
 
   let totalLengthM = 0;
   for (const m of members) {
@@ -156,6 +179,11 @@ export function generateLatticeColumn(params: Partial<LatticeColumnParams> = {})
 export function latticeTopNodes(p: Pick<LatticeColumnParams, 'divisions'>): [number, number] {
   const n = p.divisions;
   return [n, 2 * n + 1];
+}
+
+/** The index of the cap node, or null when the column was generated without one. */
+export function latticeCapNode(p: Pick<LatticeColumnParams, 'divisions' | 'capTop'>): number | null {
+  return p.capTop ? 2 * (p.divisions + 1) : null;
 }
 
 /** Roles a lattice column places, for a dialog that must not offer profiles it never uses. */
