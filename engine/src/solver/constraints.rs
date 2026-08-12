@@ -797,6 +797,15 @@ pub fn solve_constrained_2d(input: &ConstrainedInput) -> Result<AnalysisResults,
         Some(&input.solver.nodes), None,
     );
 
+    // Error-severity constraint diagnostics (e.g. circular chains) mean the
+    // transform cannot represent the model: chained substitution leaves the
+    // cycled DOFs with all-zero C rows, which silently drops their stiffness
+    // AND their loads from the reduced system. That result must not be
+    // presented as final.
+    if let Some(d) = constraint_diags.iter().find(|d| d.severity == Severity::Error) {
+        return Err(format!("Invalid constraints: {}", d.message));
+    }
+
     // Build constraint transform on free DOFs only
     let ct = build_constraint_transform(
         &input.constraints, &dof_num,
@@ -1072,6 +1081,15 @@ pub fn solve_constrained_3d(input: &ConstrainedInput3D) -> Result<AnalysisResult
         &input.constraints, &dof_num,
         None, Some(&input.solver.nodes),
     );
+
+    // Error-severity constraint diagnostics (e.g. circular chains) mean the
+    // transform cannot represent the model: chained substitution leaves the
+    // cycled DOFs with all-zero C rows, which silently drops their stiffness
+    // AND their loads from the reduced system. That result must not be
+    // presented as final.
+    if let Some(d) = constraint_diags.iter().find(|d| d.severity == Severity::Error) {
+        return Err(format!("Invalid constraints: {}", d.message));
+    }
 
     let ct = build_constraint_transform(
         &input.constraints, &dof_num,
@@ -1758,6 +1776,29 @@ mod tests {
             "Diaphragm ux: got {} expected {}", d2.ux, expected_ux);
         assert!((d2.uz - expected_uy).abs() < 1e-8,
             "Diaphragm uz: got {} expected {}", d2.uz, expected_uy);
+    }
+
+    #[test]
+    fn test_circular_constraint_chain_returns_error() {
+        // A -> B -> A EqualDOF cycle: the transformation method cannot
+        // represent it (both DOFs become dependent with all-zero C rows,
+        // silently dropping their stiffness and loads). Must be a hard
+        // error, not partial results presented as final.
+        let solver = make_two_beam_model();
+        let input = ConstrainedInput {
+            solver,
+            constraints: vec![
+                Constraint::EqualDOF(EqualDOFConstraint {
+                    master_node: 2, slave_node: 1, dofs: vec![1],
+                }),
+                Constraint::EqualDOF(EqualDOFConstraint {
+                    master_node: 1, slave_node: 2, dofs: vec![1],
+                }),
+            ],
+        };
+        let err = solve_constrained_2d(&input).unwrap_err();
+        assert!(err.contains("Invalid constraints"),
+            "expected hard error for circular constraint chain, got: {}", err);
     }
 
     #[test]
