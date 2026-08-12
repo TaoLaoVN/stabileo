@@ -10,7 +10,8 @@
 
 import { describe, it, expect } from 'vitest';
 import {
-  buildSectionOutline, outlineExtentMm, outlineUnavailableKey,
+  buildSectionOutline, outlineExtentMm, outlineUnavailableKey, _clearOutlineCache,
+  OUTLINE_UNAVAILABLE_REASONS,
 } from '../section-outline';
 import { BUILT_UP_ARRANGEMENTS, ARRANGEMENTS, composeBuiltUp } from '../built-up-section';
 import { resolveProfile, availableArrangements } from '../profile-resolve';
@@ -207,5 +208,48 @@ describe('nothing is invented when there is nothing to draw', () => {
       profileName: CHANNEL, arrangement: 'doubleBack', gapMm: 0, rotationDeg: 'auto',
     }));
     expect(neg).toEqual(zero);
+  });
+});
+
+describe('the outline is memoised, because the 3-D viewport asks per element', () => {
+  /**
+   * The property that makes switching a 625-member shed into extruded-section mode cheap.
+   *
+   * Every miss reaches the WASM geometry engine through `resolveProfile`. Identity of the
+   * returned object is the observable: a memo hands back the same object, a recompute cannot.
+   */
+  it('returns the identical object for identical inputs', () => {
+    _clearOutlineCache();
+    const opts = { profileName: 'UPN 100', arrangement: 'doubleBack' as const, gapMm: 8, rotationDeg: 'auto' as const };
+    const first = buildSectionOutline(opts);
+    const second = buildSectionOutline({ ...opts });
+    expect(second).toBe(first);
+  });
+
+  it('does not confuse two different requests', () => {
+    _clearOutlineCache();
+    const base = { profileName: 'UPN 100', arrangement: 'doubleBack' as const, rotationDeg: 'auto' as const };
+    const a = buildSectionOutline({ ...base, gapMm: 0 });
+    const b = buildSectionOutline({ ...base, gapMm: 20 });
+    expect(b).not.toBe(a);
+    expect(outlineExtentMm(b).widthMm).toBe(outlineExtentMm(a).widthMm + 20);
+
+    // Rotation and arrangement are part of the key too.
+    expect(buildSectionOutline({ ...base, gapMm: 0, rotationDeg: 90 })).not.toBe(a);
+    expect(buildSectionOutline({ ...base, arrangement: 'doubleFacing', gapMm: 0 })).not.toBe(a);
+  });
+
+  it('treats a negative gap as the same request as none, since it is clamped', () => {
+    _clearOutlineCache();
+    const base = { profileName: 'UPN 100', arrangement: 'doubleBack' as const, rotationDeg: 'auto' as const };
+    expect(buildSectionOutline({ ...base, gapMm: -5 })).toBe(buildSectionOutline({ ...base, gapMm: 0 }));
+  });
+});
+
+describe('every refusal reason has a key, and the list is exhaustive', () => {
+  it('maps each reason to its own key', () => {
+    const keys = OUTLINE_UNAVAILABLE_REASONS.map(outlineUnavailableKey);
+    expect(new Set(keys).size).toBe(OUTLINE_UNAVAILABLE_REASONS.length);
+    for (const k of keys) expect(k).toMatch(/^generator\.outline\./);
   });
 });

@@ -196,8 +196,20 @@ lo que ya pasa con casi todos los namespaces fuera de `design.*`).
 3. **Rebase de PR21 sobre `main`**, no merge. Hoy la rama tiene 8 commits y ninguno depende
    de los otros dos PRs, así que el rebase es mecánico salvo por §3.4–3.6.
 4. Correr `npm run typecheck`, `npx vitest run --project unit`, `--project build`,
-   `npm run build` y `npm run check:gate`. La huella del hormigón
-   (`rc-baseline-digest.test.ts`) tiene que seguir dando `1bd4d9c1d575b085`.
+   `npm run build`, `npm run check:gate` y `npx playwright test e2e/generators-steel.spec.ts`.
+   La huella del hormigón (`rc-baseline-digest.test.ts`) tiene que seguir dando
+   `1bd4d9c1d575b085`.
+
+**Sobre el único error de typecheck que reporta el gate hoy:**
+
+```
+src/lib/three/__tests__/support-gizmo-sharing.test.ts(16,7): 'ORIGIN' is declared but never read
+```
+
+No es de esta rama — está en `main` y lo verifiqué stasheando todos mis archivos y volviendo
+a correr el gate. **#125 lo arregla**: borra esa constante. Así que después del merge el gate
+queda en cero y ahí sí "typecheck limpio" vuelve a ser una señal utilizable. Hasta entonces la
+lectura correcta es "1 error, preexistente, ajeno".
 
 ---
 

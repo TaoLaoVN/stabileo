@@ -94,7 +94,8 @@ describe('steel and generator translation keys', () => {
     const { MEMBER_ROLES } = await import('../../engine/generators/member-roles');
     const { STRUCTURAL_MATERIAL_FAMILIES } = await import('../../engine/steel/material-family');
     const { STEEL_CAPABILITY_KEYS } = await import('../../engine/design/adapters/cirsoc301-capabilities');
-    const { BUILT_UP_ARRANGEMENTS } = await import('../../engine/generators/built-up-section');
+    const { BUILT_UP_ARRANGEMENTS, BUILT_UP_TORSION_BASES } = await import('../../engine/generators/built-up-section');
+    const { OUTLINE_UNAVAILABLE_REASONS } = await import('../../engine/generators/section-outline');
     const { TRUSS_KINDS, ARCH_CURVES, WEB_PATTERNS } = await import('../../engine/generators/truss-topology');
     const { LACING_PATTERNS } = await import('../../engine/generators/lattice-column');
 
@@ -114,6 +115,11 @@ describe('steel and generator translation keys', () => {
       ...ARCH_CURVES.map((c) => `generator.archCurve.${c}`),
       ...WEB_PATTERNS.map((w) => `generator.webPattern.${w}`),
       ...LACING_PATTERNS.map((l) => `generator.lacing.${l}`),
+      // Built from templates by `torsionBasisKey` and `outlineUnavailableKey`, so a regex over
+      // the source cannot see them — which is exactly how one of these would ship rendering
+      // its own key.
+      ...BUILT_UP_TORSION_BASES.map((b) => `generator.builtUp.torsion.${b}`),
+      ...OUTLINE_UNAVAILABLE_REASONS.map((u) => `generator.outline.${u}`),
     ];
     const missing = expected.filter((k) => !(k in steelEs)).sort();
     expect(missing, `template keys not translated:\n${missing.join('\n')}`).toEqual([]);

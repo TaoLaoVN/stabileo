@@ -34,13 +34,22 @@ export interface OutlinePolygon {
   isVoid: boolean;
 }
 
-export type OutlineUnavailable =
-  /** The name is not in the catalogue. */
-  | 'unknownProfile'
-  /** The family is properties-only: there is no outline to draw. */
-  | 'noGeometry'
-  /** The arrangement cannot be built from this profile — see `canCompose`. */
-  | 'arrangementRefused';
+/**
+ * Why there is no outline to draw.
+ *
+ *   `unknownProfile`      the name is not in the catalogue
+ *   `noGeometry`          the family is properties-only: no outline exists
+ *   `arrangementRefused`  the arrangement cannot be built from this profile — `canCompose`
+ *
+ * An array with the type derived from it, for the same reason as `BUILT_UP_TORSION_BASES`:
+ * each becomes an i18n key through `outlineUnavailableKey`, and the locale test enumerates
+ * the list so a value added here fails until it is translated.
+ */
+export const OUTLINE_UNAVAILABLE_REASONS = [
+  'unknownProfile', 'noGeometry', 'arrangementRefused',
+] as const;
+
+export type OutlineUnavailable = (typeof OUTLINE_UNAVAILABLE_REASONS)[number];
 
 export interface SectionOutline {
   polygons: OutlinePolygon[];

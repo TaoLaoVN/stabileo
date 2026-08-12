@@ -261,16 +261,25 @@ export const ARRANGEMENTS: Record<BuiltUpArrangement, ArrangementSpec> = {
 
 // ─── The result ──────────────────────────────────────────────────────
 
-/** Why a built-up assembly has no torsional constant. Never an empty explanation. */
-export type BuiltUpTorsionBasis =
-  /** One profile: the catalogue value, unchanged. */
-  | 'singleProfile'
-  /** Open assembly, no continuous connection: Σ Jᵢ. An assumption, and labelled one. */
-  | 'sumOfOpenParts'
-  /** Closed cell: Bredt governs and the mid-line is not determinable from the catalogue. */
-  | 'closedCellNotComputed'
-  /** The profile itself publishes no J, so no assembly of it can have one. */
-  | 'partHasNoJ';
+/**
+ * Why a built-up assembly has the torsional constant it has — or none. Never an empty
+ * explanation.
+ *
+ *   `singleProfile`         one profile: the catalogue value, unchanged
+ *   `sumOfOpenParts`        open assembly, no continuous connection: Σ Jᵢ. An assumption
+ *   `closedCellNotComputed` closed cell: Bredt governs, mid-line not in the catalogue
+ *   `partHasNoJ`            the profile publishes no J, so no assembly of it can have one
+ *
+ * An ARRAY with the type derived from it, not a bare union: every one of these becomes an
+ * i18n key through `torsionBasisKey`, and the locale test enumerates this list so a value
+ * added here fails until it is translated. A union cannot be enumerated at runtime, and the
+ * key would silently render as itself.
+ */
+export const BUILT_UP_TORSION_BASES = [
+  'singleProfile', 'sumOfOpenParts', 'closedCellNotComputed', 'partHasNoJ',
+] as const;
+
+export type BuiltUpTorsionBasis = (typeof BUILT_UP_TORSION_BASES)[number];
 
 export interface BuiltUpSection {
   arrangement: BuiltUpArrangement;
