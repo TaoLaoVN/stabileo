@@ -523,17 +523,36 @@
 
   .submit-code:focus { outline: none; border-color: var(--st-focus); }
 
+  /* The last two washes of the old brand turquoise. This one carries an
+     error about a link or a submission, so it is a surface with a warn rule
+     rather than a tint of a colour the app no longer uses. */
   .edu-link-notice {
-    background: rgba(78,205,196,0.08); border-left: 2px solid var(--st-text-2);
-    padding: 6px 9px; color: var(--st-text-2); font-size: 0.72rem; border-radius: 3px;
+    background: var(--st-surface-2);
+    border-left: 2px solid var(--st-warn);
+    padding: 6px 9px;
+    color: var(--st-text-2);
+    font-size: 0.72rem;
+    border-radius: var(--st-radius);
   }
 
   .edu-author-btn {
-    background: none; border: 1px solid var(--st-text-2); color: var(--st-text-2);
-    padding: 5px 14px; border-radius: 3px; cursor: pointer;
-    font-size: 0.78rem; margin-top: 8px;
+    background: none;
+    border: 1px solid var(--st-hair);
+    color: var(--st-text-2);
+    font-family: var(--st-sans);
+    padding: 5px 14px;
+    border-radius: var(--st-radius);
+    cursor: pointer;
+    font-size: 0.78rem;
+    margin-top: 8px;
+    transition: border-color 0.12s, color 0.12s, background 0.12s;
   }
-  .edu-author-btn:hover { background: rgba(78,205,196,0.1); }
+
+  .edu-author-btn:hover {
+    background: var(--st-surface-3);
+    border-color: var(--st-hair-strong);
+    color: var(--st-text);
+  }
 
   .edu-footer {
     margin-top: 24px;

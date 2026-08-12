@@ -136,7 +136,7 @@
   .score.all-right {
     color: var(--st-ok);
     border-color: var(--st-ok);
-    background: rgba(42, 168, 105, 0.10);
+    background: color-mix(in srgb, var(--st-ok) 10%, transparent);
   }
 
   .answers {

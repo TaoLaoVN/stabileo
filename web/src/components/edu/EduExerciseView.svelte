@@ -720,7 +720,7 @@
         {t('edu.handin.copyCode')}
       </button>
     </div>
-    {#if handinNote}<p class="hint">{handinNote}</p>{/if}
+    {#if handinNote}<p class="handin-note">{handinNote}</p>{/if}
     {#if submissionCode}
       <textarea class="handin-code" readonly rows="3" value={submissionCode}></textarea>
     {/if}
@@ -779,7 +779,7 @@
   }
 
   .progress-step.done .step-check {
-    background: rgba(42, 168, 105, 0.12);
+    background: color-mix(in srgb, var(--st-ok) 12%, transparent);
     color: var(--st-ok);
     border-color: var(--st-ok);
   }
@@ -953,19 +953,19 @@
      ─────────────────────────────────────────────────────────────────── */
   .verif-correct input, input.verif-correct {
     border-color: var(--st-ok) !important;
-    background: rgba(42, 168, 105, 0.10);
+    background: color-mix(in srgb, var(--st-ok) 10%, transparent);
   }
 
   .verif-incorrect input, input.verif-incorrect {
     border-color: var(--st-danger) !important;
-    background: rgba(232, 112, 95, 0.10);
+    background: color-mix(in srgb, var(--st-danger) 10%, transparent);
   }
 
   input.revealed {
     color: var(--st-warn) !important;
     font-style: italic;
     cursor: default;
-    background: rgba(217, 164, 65, 0.10) !important;
+    background: color-mix(in srgb, var(--st-warn) 10%, transparent) !important;
     border-color: var(--st-warn) !important;
   }
 
@@ -1150,13 +1150,13 @@
 
   .radio-option.verif-correct {
     border-color: var(--st-ok);
-    background: rgba(42, 168, 105, 0.10);
+    background: color-mix(in srgb, var(--st-ok) 10%, transparent);
     color: var(--st-ok);
   }
 
   .radio-option.verif-incorrect {
     border-color: var(--st-danger);
-    background: rgba(232, 112, 95, 0.10);
+    background: color-mix(in srgb, var(--st-danger) 10%, transparent);
     color: var(--st-danger);
   }
 
@@ -1186,12 +1186,12 @@
 
   .shape-row.verif-correct {
     border-color: var(--st-ok);
-    background: rgba(42, 168, 105, 0.08);
+    background: color-mix(in srgb, var(--st-ok) 8%, transparent);
   }
 
   .shape-row.verif-incorrect {
     border-color: var(--st-danger);
-    background: rgba(232, 112, 95, 0.08);
+    background: color-mix(in srgb, var(--st-danger) 8%, transparent);
   }
 
   .shape-diagram-label {
@@ -1292,7 +1292,11 @@
     resize: vertical;
   }
 
-  .hint {
+  /* Its own name: `.hint` is the pedagogical hint — "check the sign" — and it
+     is deliberately warn-coloured. A second rule with the same selector at the
+     bottom of the file quietly repainted every one of them the colour of
+     incidental text. */
+  .handin-note {
     font-size: 0.68rem;
     color: var(--st-text-3);
     margin: 6px 0 0;
@@ -1300,7 +1304,7 @@
 
   /* ─── Success banner ─── */
   .success-banner {
-    background: rgba(42, 168, 105, 0.12);
+    background: color-mix(in srgb, var(--st-ok) 12%, transparent);
     border: 1px solid var(--st-ok);
     border-radius: var(--st-radius-lg);
     padding: 12px 16px;
