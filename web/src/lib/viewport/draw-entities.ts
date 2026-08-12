@@ -598,7 +598,7 @@ export function drawNodalLoad(
   labelYOffset?: number,
 ): void {
   const arrowLen = 40;
-  const color = caseColor ?? '#e5482a';
+  const color = caseColor ?? canvasTheme().accent;
   const prefix = caseName ? `${caseName}: ` : '';
   const yOff = labelYOffset ?? 0;
   const vertical = loadData.fz ?? loadData.fy ?? 0;

@@ -56,8 +56,9 @@ pub struct ShearField {
     pub tau_max: f64,
     /// Triangle carrying `tau_max`.
     pub tau_max_triangle: usize,
-    /// Effective shear area, `A_s = V / tau_mean_over_the_resisting_direction`,
-    /// reported as the ratio `A_s / A` so it is dimensionless and comparable.
+    /// Shear correction factor `κ = A_s / A` by energy equivalence,
+    /// `1 / (A ∫τ² dA)` for a unit force. 5/6 for a rectangle, less for
+    /// sections that concentrate shear in a web.
     pub kappa: f64,
 }
 
@@ -120,24 +121,25 @@ fn solve_one(
 
     let mut tau_max = 0.0;
     let mut tau_max_triangle = 0;
-    // Mean stress in the loaded direction, area-weighted, gives the effective
-    // shear area: a unit force spread over A would give 1/A, so the ratio of
-    // that to the actual mean is the familiar shape factor.
-    let mut resisting = 0.0;
+    // Shear energy, up to the 1/(2G) factor that cancels below.
+    let mut energy = 0.0;
     let mut area = 0.0;
     for (i, g) in sol.grad.iter().enumerate() {
-        let mag = (g[0] * g[0] + g[1] * g[1]).sqrt();
-        if mag > tau_max {
-            tau_max = mag;
+        let mag2 = g[0] * g[0] + g[1] * g[1];
+        if mag2.sqrt() > tau_max {
+            tau_max = mag2.sqrt();
             tau_max_triangle = i;
         }
         let a = mesh.triangle_area(mesh.triangles[i]).abs();
-        resisting += g[coord] * a;
+        energy += mag2 * a;
         area += a;
     }
-    // `resisting` integrates tau over the section and must recover the unit
-    // force it was built from; that it does is a check on the whole assembly.
-    let kappa = if resisting.abs() > 0.0 { (resisting / area).abs() * area } else { 0.0 };
+    // The shear correction factor by energy equivalence: a unit force does
+    // work 1/(2·G·A_s), and the solved field stores U = ∫τ²/(2G) dA, so
+    // A_s = 1/∫τ² dA and κ = A_s/A. For a rectangle this converges to 5/6.
+    // (What stood here before — (∫τ/A)·A — reduces to |∫τ| ≈ 1 for every
+    // section by equilibrium, which is not a shape factor at all.)
+    let kappa = if energy > 0.0 && area > 0.0 { 1.0 / (energy * area) } else { 0.0 };
 
     Ok((
         ShearField {
@@ -430,6 +432,35 @@ mod tests {
         let err = ((r.shear_centre[0] - want[0]).powi(2) + (r.shear_centre[1] - want[1]).powi(2))
             .sqrt();
         assert!(err < 0.25 * leg, "shear centre {:?} vs corner {want:?} (off by {err:.1})", r.shear_centre);
+    }
+
+    /// The shear correction factor the energy definition gives a rectangle is
+    /// the textbook 5/6 — this is the test that pins `kappa` to a real shape
+    /// factor rather than to a number that is 1.0 for every section.
+    #[test]
+    fn a_rectangles_kappa_converges_to_five_sixths() {
+        let g = cat::rectangle(60.0, 100.0).unwrap();
+        let (mesh, c, i) = setup(&g, 1.0);
+        let r = solve_shear(&mesh, c, i, SolveStrategy::Sparse).unwrap();
+        assert!(
+            (r.vz.kappa - 5.0 / 6.0).abs() < 0.04,
+            "kappa = {:.4}, expected ≈ 0.833",
+            r.vz.kappa
+        );
+    }
+
+    /// A section that concentrates shear in its web has a meaningfully smaller
+    /// shear area than its gross area — the case the shape factor exists for.
+    #[test]
+    fn an_i_profile_has_a_smaller_kappa_than_a_rectangle() {
+        let g = cat::i_section(300.0, 150.0, 7.1, 10.7, 15.0, 8, src()).unwrap();
+        let (mesh, c, i) = setup(&g, 3.0);
+        let r = solve_shear(&mesh, c, i, SolveStrategy::Sparse).unwrap();
+        assert!(
+            r.vz.kappa < 0.6 && r.vz.kappa > 0.15,
+            "I-profile kappa = {:.3}, expected well below 5/6 but above zero",
+            r.vz.kappa
+        );
     }
 
     #[test]

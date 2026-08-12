@@ -392,7 +392,7 @@ export function syncColorMap3D(ctx: ResultsSyncContext): void {
         showOriginalMeshes(group, true);
         const elem = modelStore.elements.get(id);
         const isTruss = elem?.type === 'truss';
-        const wireBaseColor = isTruss ? 0x9fb2c2 : 0xa8b8c6;
+        const wireBaseColor = isTruss ? COLORS.truss : COLORS.frameWire;
         const baseColor = wireframe ? wireBaseColor : (isTruss ? COLORS.truss : COLORS.frame);
         const selected = uiStore.selectedElements.has(id);
         const finalColor = selected ? COLORS.elementSelected : baseColor;

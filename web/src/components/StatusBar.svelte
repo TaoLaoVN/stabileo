@@ -1,23 +1,10 @@
 <script lang="ts">
-  import { uiStore, modelStore, resultsStore } from '../lib/store';
+  import { uiStore, modelStore } from '../lib/store';
   import { toDisplay, unitLabel } from '../lib/utils/units';
   import { t } from '../lib/i18n';
   import CadProvenancePanel from './CadProvenancePanel.svelte';
 
   let showProvenance = $state(false);
-
-  function getToolName(tool: string): string {
-    const keyMap: Record<string, string> = {
-      select: 'status.toolSelect',
-      node: 'status.toolNode',
-      element: 'status.toolElement',
-      support: 'status.toolSupport',
-      load: 'status.toolLoad',
-      pan: 'status.toolPan',
-      influenceLine: 'status.toolInfluence',
-    };
-    return keyMap[tool] ? t(keyMap[tool]) : tool;
-  }
 
   function getSelectionText(): string {
     const nNodes = uiStore.selectedNodes.size;
@@ -62,21 +49,6 @@
     if (s > 0) parts.push(`${s} ${s > 1 ? t('status.supportsPlural') : t('status.supports')}`);
     return parts.length > 0 ? parts.join(', ') : t('status.empty');
   }
-
-  const hint = $derived.by(() => {
-    const n = modelStore.nodes.size;
-    const e = modelStore.elements.size;
-    const s = modelStore.supports.size;
-    const l = modelStore.model.loads.length;
-    if (resultsStore.results) return { text: t('status.resolved'), color: '#4caf50' };
-    // In Education mode, suppress step-by-step build guidance — exercises auto-load
-    if (uiStore.appMode === 'educativo') return { text: '', color: 'transparent' };
-    if (n === 0) return { text: t('status.hintCreateNodes'), color: '#888' };
-    if (e === 0) return { text: t('status.hintConnectBars'), color: '#888' };
-    if (s === 0) return { text: t('status.hintAddSupports'), color: '#888' };
-    if (l === 0) return { text: t('status.hintAddLoads'), color: '#888' };
-    return { text: t('status.hintReadyToSolve'), color: '#f0a500' };
-  });
 </script>
 
 <!--
@@ -177,10 +149,5 @@
     */
     color: var(--st-text-2);
     font-family: monospace;
-  }
-
-  .status-hint {
-    font-weight: 600;
-    font-style: italic;
   }
 </style>

@@ -79,15 +79,20 @@ describe('influence lines ask for quantities the engine accepts', () => {
   });
 
   it('the UI offers the Z-up names', () => {
+    // The quantity list lives in one shared module both toolbars iterate —
+    // that is the point of the extraction — so the names are pinned there,
+    // and the components are pinned to consuming the module rather than
+    // carrying their own copies.
+    const groups = read('lib/influence-line-quantities.ts');
+    expect(groups).toContain("'Rz'");
+    expect(groups).toContain("'My'");
+    expect(groups).not.toMatch(/'Ry'/);
+    expect(groups).not.toMatch(/'Mz'/);
     for (const file of [
       'components/ribbon/ToolOptionsBar.svelte',
       'components/FloatingTools.svelte',
     ]) {
-      const src = read(file);
-      expect(src).toMatch(/ilQuantity === 'Rz'/);
-      expect(src).toMatch(/ilQuantity === 'My'/);
-      expect(src).not.toMatch(/ilQuantity === 'Ry'/);
-      expect(src).not.toMatch(/ilQuantity === 'Mz'/);
+      expect(read(file), `${file} must render the shared quantity groups`).toContain('IL_QUANTITY_GROUPS');
     }
   });
 
@@ -95,6 +100,6 @@ describe('influence lines ask for quantities the engine accepts', () => {
     const ui = read('lib/store/ui.svelte.ts');
     const dflt = ui.match(/ilQuantity = \$state<ILQuantity>\('(\w+)'\)/)?.[1];
     expect(dflt).toBe('Rz');
-    expect(read('components/ribbon/ToolOptionsBar.svelte')).toContain(`ilQuantity === '${dflt}'`);
+    expect(read('lib/influence-line-quantities.ts')).toContain(`'${dflt}'`);
   });
 });

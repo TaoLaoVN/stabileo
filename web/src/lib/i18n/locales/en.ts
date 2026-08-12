@@ -1963,7 +1963,7 @@ const en: Record<string, string> = {
   'stress.criticalSectionsHelp': 'Positions along the element where stresses should be checked.\n\nIncludes points of maximum moment (V=0), supports, point loads and intermediate points.\nClick each chip to navigate to that section.',
   'stress.noGeomMsg1': 'The exact outline of <strong>{name}</strong> is not available yet, so the stress distribution, Mohr circle and failure criteria cannot be computed for it.',
   'stress.noGeomMsg2': 'This is a missing-data limitation, not a property of the section: the profile is perfectly well defined and the global analysis uses its published values normally.',
-  'stress.noGeomMsg3': 'Every catalogue family except RHS supports detailed analysis. Assign one of those, or build a section with explicit dimensions.',
+  'stress.noGeomMsg3': 'Every catalogue family except MC supports detailed analysis. Assign one of those, or build a section with explicit dimensions.',
   'stress.amorphMsg1': 'The selected section is <strong>amorphous</strong> (no defined geometric shape).',
   'stress.amorphMsg2': 'Amorphous sections do not support stress distribution analysis, Mohr\u2019s circle, or failure criteria.',
   'stress.amorphMsg3': 'To enable section analysis, assign a standard profile or build a section with geometric shape.',
