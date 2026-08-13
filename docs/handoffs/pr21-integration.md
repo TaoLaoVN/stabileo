@@ -207,6 +207,21 @@ lo que ya pasa con casi todos los namespaces fuera de `design.*`).
    La huella del hormigón (`rc-baseline-digest.test.ts`) tiene que seguir dando
    `1bd4d9c1d575b085`.
 
+**Sobre la única falla que da la suite E2E completa en macOS:**
+
+`rc-design-visual.spec.ts › overlay legend` — comparación de captura. **No es de esta rama.**
+Comprobado: las imágenes *actual* y *expected* tienen contenido idéntico (mismas etiquetas,
+mismos swatches, mismo orden) y el diff está repartido sobre todos los glifos, que es la firma
+del rasterizado de fuentes y no de un cambio de contenido. Además:
+
+- el `README.md` de `e2e/__screenshots__/` dice que las baselines `darwin/` son **sólo para
+  desarrollo local y que el CI nunca las lee** — la autoritativa es `linux/`;
+- el test usa `expect.soft` y su describe se llama *"visual baselines (non-blocking)"*;
+- está marcado `@slow`, así que no entra en el gate de CI, que corre sólo `@smoke`.
+
+No la regrabé: no es mía, el CI no la mira, y reescribir la baseline darwin desde otra máquina
+sólo mueve el desajuste al que la grabó. Para regenerarla, el README explica el procedimiento.
+
 **Sobre el único error de typecheck que reporta el gate hoy:**
 
 ```
