@@ -127,6 +127,21 @@ test.describe('@landing blog', () => {
     await expect(first).toContainText('105.6');
   });
 
+  test('no horizontal overflow at the QA widths', async ({ page }) => {
+    // A seven-column table on a phone must scroll inside its own box. If it
+    // ever widens the document instead, the whole article slides sideways.
+    for (const width of [390, 768, 1280]) {
+      await page.setViewportSize({ width, height: 900 });
+      await boot(page, `/blog/${SLUG}`);
+      await expect(page.locator('.post-title')).toBeVisible();
+      const overflow = await page.evaluate(() => {
+        const el = document.querySelector('.landing.blog') as HTMLElement;
+        return { scroll: el.scrollWidth, client: el.clientWidth };
+      });
+      expect(overflow.scroll, `overflows at ${width}px`).toBeLessThanOrEqual(overflow.client + 1);
+    }
+  });
+
   test('the landing offers a way in, at the foot of the deck', async ({ page }) => {
     await boot(page, '/');
 
