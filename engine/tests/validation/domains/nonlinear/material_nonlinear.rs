@@ -360,3 +360,31 @@ fn validation_material_nonlinear_pure_settlement() {
         nl_tip.ry
     );
 }
+
+// ================================================================
+// 5. Reported load_factor must reflect the last CONVERGED increment
+// ================================================================
+//
+// With max_iter = 1 no increment can converge; the run must report
+// converged = false AND load_factor = 0.0 — not 1.0 (full load).
+
+#[test]
+fn validation_material_nonlinear_failed_run_reports_partial_load_factor() {
+    let l = 4.0;
+    let n = 8;
+    let mid_node = n / 2 + 1;
+    let loads = vec![SolverLoad::Nodal(SolverNodalLoad {
+        node_id: mid_node, fx: 0.0, fz: -100.0, my: 0.0,
+    })];
+    let mut input = make_nonlinear_beam(n, l, "fixed", Some("fixed"), loads);
+    input.max_iter = 1;
+    input.n_increments = 4;
+
+    let res = material_nonlinear::solve_nonlinear_material_2d(&input).unwrap();
+    assert!(!res.converged, "max_iter=1 cannot converge");
+    assert!(
+        res.load_factor == 0.0,
+        "No increment converged: load_factor should be 0.0, got {:.3}",
+        res.load_factor
+    );
+}

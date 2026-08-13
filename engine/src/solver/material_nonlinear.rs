@@ -108,6 +108,9 @@ pub fn solve_nonlinear_material_2d(
     let mut load_displacement: Vec<[f64; 2]> = Vec::with_capacity(n_increments);
     let mut total_nr_iterations: usize = 0;
     let mut converged_global = true;
+    // Last increment that actually converged — reported as load_factor so a
+    // failed run does not claim the full load was applied.
+    let mut last_converged_factor = 0.0f64;
 
     for inc in 1..=n_increments {
         let load_factor = inc as f64 / n_increments as f64;
@@ -217,6 +220,8 @@ pub fn solve_nonlinear_material_2d(
 
         if !converged_increment {
             converged_global = false;
+        } else {
+            last_converged_factor = load_factor;
         }
 
         // Record load-displacement point.
@@ -269,7 +274,7 @@ pub fn solve_nonlinear_material_2d(
     // Build element plastic status.
     let element_status = build_element_status(solver, input, &dof_num, &u_geom, &states);
 
-    let final_load_factor = if n_increments > 0 { 1.0 } else { 0.0 };
+    let final_load_factor = last_converged_factor;
 
     // Compute constraint forces if constraints are active
     let constraint_forces = if let Some(ref fcs) = cs {
@@ -902,6 +907,8 @@ pub fn solve_nonlinear_material_3d(
     let mut load_displacement: Vec<[f64; 2]> = Vec::with_capacity(n_increments);
     let mut total_nr_iterations: usize = 0;
     let mut converged_global = true;
+    // Last increment that actually converged — see the 2D solver.
+    let mut last_converged_factor = 0.0f64;
 
     for inc in 1..=n_increments {
         let load_factor = inc as f64 / n_increments as f64;
@@ -978,6 +985,8 @@ pub fn solve_nonlinear_material_3d(
 
         if !converged_increment {
             converged_global = false;
+        } else {
+            last_converged_factor = load_factor;
         }
 
         let max_disp = compute_max_displacement_3d_nl(&dof_num, &u_full);
@@ -1057,7 +1066,7 @@ pub fn solve_nonlinear_material_3d(
         },
         converged: converged_global,
         iterations: total_nr_iterations,
-        load_factor: if n_increments > 0 { 1.0 } else { 0.0 },
+        load_factor: last_converged_factor,
         element_status,
         load_displacement,
     })
