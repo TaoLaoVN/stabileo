@@ -32,6 +32,19 @@ export function enterApp() {
   window.dispatchEvent(new CustomEvent('stabileo-enter-app'));
 }
 
+/**
+ * Move between the public pages — the landing and the blog — without
+ * reloading the document.
+ *
+ * A plain `<a href="/blog">` would work in production and would be wrong
+ * anyway: the site is static, so the browser would fetch /blog, get the 404
+ * page, and bounce through `/?route=/blog` with a visible flash. App.svelte
+ * listens for this and swaps the page in place.
+ */
+export function goPublic(path: string) {
+  window.dispatchEvent(new CustomEvent('stabileo-navigate', { detail: path }));
+}
+
 export function scrollToId(id: string, root?: HTMLElement | null) {
   const el = (root ?? document).querySelector(`#${CSS.escape(id)}`) as HTMLElement | null;
   el?.scrollIntoView({ behavior: 'smooth', block: 'start' });

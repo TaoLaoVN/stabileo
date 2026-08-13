@@ -542,6 +542,46 @@ const pt: Translations = {
 
   'landing.navPrimary': 'Principal',
 
+  'blog.allPosts': 'Todas as notas',
+
+  'blog.backHome': 'Voltar a stabileo.com',
+
+  'blog.by': 'Por',
+
+  'blog.empty': 'Ainda não há nada publicado.',
+
+  'blog.eyebrow': 'BLOG',
+
+  'blog.lead': 'Notas sobre o solver, as verificações normativas e as decisões por trás delas, escritas por quem escreve o código.',
+
+  'blog.notFound': 'Essa nota não existe.',
+
+  'blog.notFoundBody': 'Talvez o link seja antigo ou o endereço tenha um erro. Tudo o que foi publicado está no índice.',
+
+  'blog.openEditor': 'Abrir o editor',
+
+  'blog.readMore': 'Ler a nota',
+
+  'blog.readingTime': '{n} min de leitura',
+
+  'blog.tag.ai': 'IA',
+
+  'blog.tag.research': 'Pesquisa',
+
+  'blog.tag.solver': 'Solver',
+
+  'blog.title': 'Blog',
+
+  'landing.blogBody': 'Notas longas sobre como o solver funciona, o que os módulos normativos realmente verificam e a arquitetura por trás da camada de IA. A primeira trata de por que um agente nunca deve produzir o número por conta própria.',
+
+  'landing.blogEyebrow': 'BLOG',
+
+  'landing.blogLink': 'Ir para o blog',
+
+  'landing.blogTitle': 'Acesse o nosso blog',
+
+  'landing.footBlog': 'Blog',
+
   'landing.navLanguage': 'Idioma',
 
   'landing.navMenuOpen': 'Menu',

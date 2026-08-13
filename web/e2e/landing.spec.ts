@@ -42,6 +42,7 @@ const SECTIONS = [
   'status',
   'docs',
   'cta',
+  'blog',
 ] as const;
 
 async function bootLanding(page: Page, opts: { locale?: string; manual?: boolean } = {}) {
@@ -161,13 +162,24 @@ test.describe('@landing landing page', () => {
     expect(await page.evaluate(() => localStorage.getItem('stabileo-lang-manual'))).toBe('1');
   });
 
-  test('the landing offers English and Spanish only', async ({ page }) => {
+  test('the landing offers exactly the languages it fully speaks', async ({ page }) => {
     await bootLanding(page);
 
+    // PUBLIC_LOCALES. Portuguese joined once every landing key existed — the
+    // list and the copy are kept in step by landing-i18n-parity.test.ts.
     const values = await page
       .locator('.landing select.nav-lang option')
       .evaluateAll((els) => els.map((e) => (e as HTMLOptionElement).value));
-    expect(values).toEqual(['en', 'es']);
+    expect(values).toEqual(['en', 'es', 'pt']);
+  });
+
+  test('a Brazilian browser gets the Portuguese landing', async ({ browser }) => {
+    const ctx = await browser.newContext({ locale: 'pt-BR' });
+    const page = await ctx.newPage();
+    await bootLanding(page, { manual: false });
+    await expect(page.locator('.landing h1')).toHaveText('Análise estrutural, em uma aba do navegador.');
+    await expect(page.locator('.landing select.nav-lang')).toHaveValue('pt');
+    await ctx.close();
   });
 
   test('a Spanish browser gets the Spanish landing', async ({ browser }) => {
@@ -1727,7 +1739,8 @@ test.describe('@landing landing page', () => {
       expect(one(h, 'og:url')).toBe('https://stabileo.com/');
       expect(one(h, 'og:site_name')).toBe('Stabileo');
       expect(one(h, 'og:locale')).toBe('en_US');
-      expect(one(h, 'og:locale:alternate')).toBe('es_AR');
+      // One tag per alternate language, which is how Open Graph reads them.
+      expect(h.meta['og:locale:alternate']).toEqual(['es_AR', 'pt_BR']);
       expect(one(h, 'og:title')).toBe(EN_TITLE);
       expect(one(h, 'twitter:card')).toBe('summary_large_image');
       expect(one(h, 'twitter:title')).toBe(EN_TITLE);
@@ -1781,7 +1794,7 @@ test.describe('@landing landing page', () => {
       expect(h.title).toBe('Stabileo — Análisis estructural, en una pestaña del navegador.');
       expect(one(h, 'og:title')).toBe(h.title);
       expect(one(h, 'og:locale')).toBe('es_AR');
-      expect(one(h, 'og:locale:alternate')).toBe('en_US');
+      expect(h.meta['og:locale:alternate']).toEqual(['en_US', 'pt_BR']);
       // The description is the hero lead, which now carries the positioning:
       // a free, open platform with three modes, rather than live re-solving.
       expect(one(h, 'description')).toMatch(/plataforma gratuita y abierta/);
@@ -1790,6 +1803,35 @@ test.describe('@landing landing page', () => {
       // The canonical and the social image do not vary by locale.
       expect(h.canonicals).toEqual(['https://stabileo.com/']);
       expect(one(h, 'og:image')).toBe(SOCIAL);
+    });
+
+    test('the Portuguese landing carries Portuguese metadata', async ({ page }) => {
+      await bootLanding(page);
+      await page.locator('.landing select.nav-lang').selectOption('pt');
+      await expect(page.locator('.landing h1')).toHaveText('Análise estrutural, em uma aba do navegador.');
+      const h = await readHead(page);
+
+      expect(h.headTitles).toBe(1);
+      expect(h.lang).toBe('pt');
+      expect(h.title).toBe('Stabileo — Análise estrutural, em uma aba do navegador.');
+      expect(one(h, 'og:title')).toBe(h.title);
+      expect(one(h, 'og:locale')).toBe('pt_BR');
+      expect(h.meta['og:locale:alternate']).toEqual(['en_US', 'es_AR']);
+      expect(one(h, 'twitter:description')).toBe(one(h, 'description'));
+      expect(h.canonicals).toEqual(['https://stabileo.com/']);
+    });
+
+    test('leaving a translated page restores the static alternates', async ({ page }) => {
+      // The set of alternate tags is rewritten, not patched, so a restore that
+      // forgot them would leave a Portuguese page's pair behind in the head.
+      await bootLanding(page);
+      await page.locator('.landing select.nav-lang').selectOption('pt');
+      await page.locator('.landing .hero-ctas .btn-primary').click();
+      await expect(page.locator('.landing')).toHaveCount(0);
+
+      const h = await readHead(page);
+      expect(h.meta['og:locale:alternate']).toEqual(['es_AR', 'pt_BR']);
+      expect(one(h, 'og:locale')).toBe('en_US');
     });
 
     test('a Spanish browser gets Spanish metadata without touching the switcher', async ({ browser }) => {

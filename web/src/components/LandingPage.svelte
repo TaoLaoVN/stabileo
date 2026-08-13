@@ -1,6 +1,7 @@
 <script lang="ts">
   import { onMount } from 'svelte';
-  import { tPublic as t, publicI18n, PUBLIC_LOCALES, type PublicLocale } from '../lib/i18n/store.svelte';
+  import { tPublic as t, publicI18n } from '../lib/i18n/store.svelte';
+  import { applyPageMeta, restorePageMeta } from '../lib/page-meta';
   import LandingNav from './landing/LandingNav.svelte';
   import LandingHero from './landing/LandingHero.svelte';
   import LandingProblem from './landing/LandingProblem.svelte';
@@ -16,6 +17,7 @@
   import LandingStatus from './landing/LandingStatus.svelte';
   import LandingDocs from './landing/LandingDocs.svelte';
   import LandingCTA from './landing/LandingCTA.svelte';
+  import LandingBlog from './landing/LandingBlog.svelte';
   import LandingFooter from './landing/LandingFooter.svelte';
   import { enterApp } from './landing/landing-utils';
   import './landing/landing.css';
@@ -25,78 +27,22 @@
   let prefersReducedMotion = $state(false);
 
   /**
-   * Reactive metadata, applied by mutating the static tags in index.html
-   * rather than appending a second set through `svelte:head`.
-   *
-   * The landing is client-rendered, so index.html holds the English metadata a
-   * non-JS crawler sees and this only refines it for a real browser: the
-   * Spanish landing gets Spanish title, description and og:locale. The
-   * originals are captured once and restored when the landing unmounts, so
-   * entering the application never leaves landing copy behind.
+   * Reactive metadata. The landing is client-rendered, so index.html holds the
+   * English set a non-JS crawler sees and this only refines it for a real
+   * browser: the Spanish and Portuguese landings get their own title,
+   * description and og:locale. See src/lib/page-meta.ts — the blog uses it too.
    */
-  const OG_LOCALE: Record<PublicLocale, string> = { en: 'en_US', es: 'es_AR', pt: 'pt_BR' };
-
-  const META_TAGS = [
-    ['meta[name="description"]', 'content'],
-    ['meta[property="og:title"]', 'content'],
-    ['meta[property="og:description"]', 'content'],
-    ['meta[property="og:locale"]', 'content'],
-    ['meta[property="og:locale:alternate"]', 'content'],
-    ['meta[name="twitter:title"]', 'content'],
-    ['meta[name="twitter:description"]', 'content'],
-  ] as const;
-
-  let originalMeta: { title: string; lang: string; tags: (string | null)[] } | null = null;
-
-  function captureMetadata() {
-    if (originalMeta) return;
-    originalMeta = {
-      title: document.title,
-      lang: document.documentElement.lang,
-      tags: META_TAGS.map(([sel, attr]) => document.querySelector(sel)?.getAttribute(attr) ?? null),
-    };
-  }
-
-  function setMeta(selector: string, value: string) {
-    document.querySelector(selector)?.setAttribute('content', value);
-  }
-
   function syncMetadata() {
-    const locale = publicI18n.locale;
-    const title = `Stabileo — ${t('landing.heroH')}`;
-    const description = t('landing.heroP');
-    document.title = title;
-    document.documentElement.lang = locale;
-    setMeta('meta[name="description"]', description);
-    setMeta('meta[property="og:title"]', title);
-    setMeta('meta[property="og:description"]', description);
-    // A ternary here read Portuguese as English once pt joined the landing.
-    const og = OG_LOCALE[locale];
-    setMeta('meta[property="og:locale"]', og);
-    setMeta(
-      'meta[property="og:locale:alternate"]',
-      PUBLIC_LOCALES.filter((l) => l !== locale)
-        .map((l) => OG_LOCALE[l])
-        .join(','),
-    );
-    setMeta('meta[name="twitter:title"]', title);
-    setMeta('meta[name="twitter:description"]', description);
-  }
-
-  function restoreMetadata() {
-    if (!originalMeta) return;
-    document.title = originalMeta.title;
-    document.documentElement.lang = originalMeta.lang;
-    META_TAGS.forEach(([sel, attr], i) => {
-      const v = originalMeta!.tags[i];
-      if (v !== null) document.querySelector(sel)?.setAttribute(attr, v);
+    applyPageMeta({
+      title: `Stabileo — ${t('landing.heroH')}`,
+      description: t('landing.heroP'),
+      locale: publicI18n.locale,
     });
   }
 
   $effect(() => {
-    captureMetadata();
     syncMetadata();
-    return restoreMetadata;
+    return restorePageMeta;
   });
 
   onMount(() => {
@@ -227,5 +173,6 @@
   <LandingStatus />
   <LandingDocs />
   <LandingCTA />
+  <LandingBlog />
   <LandingFooter />
 </div>

@@ -173,6 +173,16 @@ export function tPublic(key: string): string {
 	return (dict as any)[key] ?? (dicts.en as any)[key] ?? key;
 }
 
+/** `tPublic()` with `{placeholder}` interpolation, for the blog's reading time. */
+export function tpPublic(key: string, params?: Record<string, string | number>): string {
+	const raw = tPublic(key);
+	if (!params) return raw;
+	return raw.replace(/\{(\w+)\}/g, (m, name) => {
+		const v = params[name];
+		return v === undefined || v === null ? m : String(v);
+	});
+}
+
 /** Reactive read-only view of the locale the landing is rendering in. */
 export const publicI18n = {
 	get locale(): PublicLocale {

@@ -1957,3 +1957,27 @@
     transform: none;
   }
 }
+
+/* ─── BLOG ENTRY POINT ───────────────────────────────────────────────────── */
+
+.landing .blog-cta-inner {
+  display: grid;
+  gap: 1.25rem;
+  max-width: 46rem;
+}
+
+.landing .blog-cta-inner .lead {
+  margin: 0;
+}
+
+/* The latest post's title, offered as evidence that the blog has something in
+   it. Quieter than the copy above it — it is a pointer, not a headline. */
+.landing .blog-cta-latest {
+  margin: 0;
+  font-family: var(--lp-mono);
+  font-size: 0.85rem;
+  line-height: 1.5;
+  color: var(--fg-2);
+  padding-left: 0.9rem;
+  border-left: 2px solid var(--lp-accent);
+}
