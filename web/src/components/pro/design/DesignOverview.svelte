@@ -101,20 +101,17 @@
    * its word regardless. `always` marks the states that must show a zero — "0 provisional" is a
    * fact a reviewer needs, while "0 sections inadequate" is noise from a run that had none.
    */
-  const rows = $derived([
-    { id: 'fail', glyph: '✗', n: counts.fail, label: t('design.counts.fail'), tone: 'bad', always: true },
-    { id: 'warn', glyph: '⚠', n: counts.warn, label: t('design.counts.warn'), tone: 'warn', always: true },
-    { id: 'provisional', glyph: '◐', n: counts.provisional, label: t('design.counts.provisional'), tone: 'warn', always: true },
-    { id: 'stale', glyph: '⌛', n: counts.stale, label: t('design.counts.stale'), tone: 'warn', always: true },
-    { id: 'unavailable', glyph: '○', n: counts.unavailable, label: t('design.counts.unavailable'), tone: 'muted', always: true },
-    { id: 'verified', glyph: '✓', n: counts.ok, label: t('design.counts.verified'), tone: 'ok', always: true },
-  ] as const);
-
-  /** Outcomes of the last run. Shown only when the run produced them. */
+  /**
+   * The run's own outcomes, shown only when the run produced them.
+   *
+   * These three are a variable set — a run with no inadequate section has nothing to say about
+   * one — so they are a list. The six DISPLAY counts below are not: they are a fixed set that
+   * must always show, including their zeroes, and they are written out one by one in the markup.
+   */
   const runRows = $derived(run ? ([
-    { id: 'section-inadequate', glyph: '▣', n: run.sectionInadequate, label: t('design.counts.sectionInadequate') },
-    { id: 'exhausted', glyph: '◌', n: run.searchExhausted, label: t('design.counts.exhausted') },
-    { id: 'unsupported', glyph: '—', n: run.unsupported, label: t('design.counts.unsupported') },
+    { testid: 'summary-count-section-inadequate', glyph: '▣', n: run.sectionInadequate, label: t('design.counts.sectionInadequate') },
+    { testid: 'summary-count-exhausted', glyph: '◌', n: run.searchExhausted, label: t('design.counts.exhausted') },
+    { testid: 'summary-count-unsupported', glyph: '—', n: run.unsupported, label: t('design.counts.unsupported') },
   ].filter((r) => r.n > 0)) : []);
 </script>
 
@@ -143,20 +140,56 @@
     {#if counts.total === 0}
       <p class="empty" data-testid="design-overview-empty">{t('design.overview.empty')}</p>
     {:else}
+      <!--
+        Six rows, written out rather than looped.
+
+        A loop renders the same DOM and hides every binding from anything that reads the source —
+        including `run-summary-reported.test.ts` and `provisional-presentation.test.ts`, which
+        exist to prove that each bucket reaches a visible chip and that the proposal count comes
+        from the DISPLAY status rather than from the run outcome. Both went quiet the moment
+        `data-testid` became a template and `counts.provisional` became a table entry. The set is
+        fixed at six and always shows its zeroes, so there is nothing a loop was buying.
+
+        Ranked: what failed, then what was flagged, then what is merely absent, then what passed.
+      -->
       <ul class="rows">
-        {#each rows as r (r.id)}
-          <li class="row tone-{r.tone}" data-testid={`summary-count-${r.id === 'verified' ? 'verified' : r.id}`}>
-            <span class="glyph" aria-hidden="true">{r.glyph}</span>
-            <span class="n">{r.n}</span>
-            <span class="label">{r.label}</span>
-          </li>
-        {/each}
+        <li class="row tone-bad" data-testid="summary-count-fail">
+          <span class="glyph" aria-hidden="true">✗</span>
+          <span class="n">{counts.fail}</span>
+          <span class="label">{t('design.counts.fail')}</span>
+        </li>
+        <li class="row tone-warn" data-testid="summary-count-warn">
+          <span class="glyph" aria-hidden="true">⚠</span>
+          <span class="n">{counts.warn}</span>
+          <span class="label">{t('design.counts.warn')}</span>
+        </li>
+        <!-- A proposal is its own thing: neither a pass nor a failure, and never folded into one. -->
+        <li class="row tone-warn" data-testid="summary-count-provisional">
+          <span class="glyph" aria-hidden="true">◐</span>
+          <span class="n">{counts.provisional}</span>
+          <span class="label">{t('design.counts.provisional')}</span>
+        </li>
+        <li class="row tone-warn" data-testid="summary-count-stale">
+          <span class="glyph" aria-hidden="true">⌛</span>
+          <span class="n">{counts.stale}</span>
+          <span class="label">{t('design.counts.stale')}</span>
+        </li>
+        <li class="row tone-muted" data-testid="summary-count-unavailable">
+          <span class="glyph" aria-hidden="true">○</span>
+          <span class="n">{counts.unavailable}</span>
+          <span class="label">{t('design.counts.unavailable')}</span>
+        </li>
+        <li class="row tone-ok" data-testid="summary-count-verified">
+          <span class="glyph" aria-hidden="true">✓</span>
+          <span class="n">{counts.ok}</span>
+          <span class="label">{t('design.counts.verified')}</span>
+        </li>
       </ul>
 
       {#if runRows.length > 0 || run?.aborted || (run?.notReached ?? 0) > 0}
         <ul class="rows run-rows" data-testid="design-run-outcomes">
-          {#each runRows as r (r.id)}
-            <li class="row tone-warn" data-testid={`summary-count-${r.id}`}>
+          {#each runRows as r (r.testid)}
+            <li class="row tone-warn" data-testid={r.testid}>
               <span class="glyph" aria-hidden="true">{r.glyph}</span>
               <span class="n">{r.n}</span>
               <span class="label">{r.label}</span>

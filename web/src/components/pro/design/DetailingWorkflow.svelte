@@ -13,136 +13,18 @@
    * refusal reason is shown verbatim rather than being turned into a disabled button
    * with no explanation.
    */
-  import { t, tp, i18n } from '../../../lib/i18n';
+  import { t, tp } from '../../../lib/i18n';
   import SheetPreview from './SheetPreview.svelte';
   import DetailingProblems from './DetailingProblems.svelte';
   import { uiStore } from '../../../lib/store';
   import { detailingStore } from '../../../lib/store/detailing.svelte';
   import { REVIEW_STATES, reviewRank } from '../../../lib/engine/detailing/assembly';
   import { maturityLabelKey } from '../../../lib/codes/maturity';
-  import {
-    renderReportHtml, renderDrawings, renderSchedule,
-  } from '../../../lib/engine/detailing/document-render';
-  import { exportToExcel } from '../../../lib/export/excel';
-  import RebarScenePanel from './RebarScenePanel.svelte';
-  import { openRebar3D } from '../../../lib/store/rebar-open';
-  import { detailingAuthor } from '../../../lib/store/detailing-author.svelte';
 
-  // The engineer's name is read from `detailingAuthor` rather than held here: the Design row's
-  // `Ver modelo 3D` builds the same revision and has to sign it the same way.
-  let docError = $state<string | null>(null);
-  let show3d = $state(false);
   /** Bound to the sheet dialog, so a conflict can open the drawing it is on. */
   let sheetOpen = $state(false);
 
-  /**
-   * Build the document, or say why not.
-   *
-   * Every export goes through this, so all three consume the SAME model instance and the
-   * same revision. Building one per button would let a report and a drawing disagree about
-   * what they describe, which is the failure the DocumentModel exists to prevent.
-   */
-  function currentDoc() {
-    docError = null;
-    const doc = detailingStore.buildDocument({
-      author: detailingAuthor.resolve(t('detailing.doc.unnamedAuthor')),
-      at: new Date().toISOString(),
-    });
-    if (!doc) docError = t('detailing.doc.noCoordinated');
-    return doc;
-  }
-
-  function downloadBlob(name: string, type: string, content: string) {
-    const url = URL.createObjectURL(new Blob([content], { type }));
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = name;
-    a.click();
-    URL.revokeObjectURL(url);
-  }
-
-  function exportReport() {
-    const doc = currentDoc();
-    if (!doc) return;
-    const html = renderReportHtml(
-      doc,
-      { locale: i18n.locale, projectName: t('detailing.doc.project') },
-      (k, params) => tp(k, params ?? {}),
-    );
-    // Printed through the browser rather than a bundled PDF writer: better typography,
-    // no dependency, and the user picks the paper size.
-    const w = window.open('', '_blank');
-    if (w) { w.document.write(html); w.document.close(); w.focus(); w.print(); }
-    else downloadBlob(`detailing-rev${doc.revision.number}.html`, 'text/html', html);
-  }
-
-  function exportDxf() {
-    const doc = currentDoc();
-    if (!doc) return;
-    const set = renderDrawings(doc, {
-      locale: i18n.locale, projectName: t('detailing.doc.project'),
-    });
-    downloadBlob(`detailing-rev${doc.revision.number}.dxf`, 'application/dxf', set.dxf);
-  }
-
-  /**
-   * Open the 3-D view on a FRESHLY built document.
-   *
-   * Not on `detailingStore.document`, which may be a revision built before the last edit.
-   * Going through `currentDoc()` is what makes the picture and the three exports above
-   * projections of the same instance rather than of two documents that happen to agree.
-   */
-  function open3d() {
-    docError = null;
-    // Delegated so that this button and the `Ver modelo 3D` command on the Design row are ONE
-    // operation rather than two that resemble each other. See `lib/store/rebar-open.ts`.
-    const r = openRebar3D({
-      author: detailingAuthor.resolve(t('detailing.doc.unnamedAuthor')),
-      at: new Date().toISOString(),
-    });
-    if (!r.ok) { docError = t('detailing.doc.noCoordinated'); return; }
-    // The sidebar panel keeps the summary and the export; the inspection surface is the
-    // overlay, and making the user find a second button to reach it is the friction this pass
-    // exists to remove.
-    show3d = true;
-  }
-
-  function exportXlsx() {
-    const doc = currentDoc();
-    if (!doc) return;
-    const sheets = renderSchedule(doc, {
-      locale: i18n.locale, projectName: t('detailing.doc.project'),
-    });
-    exportToExcel({
-      filename: `detailing-rev${doc.revision.number}.xlsx`,
-      onlyExtras: true,
-      extraSheets: sheets.map((s) => ({ name: s.name, rows: s.aoa })),
-    });
-  }
-  let notes = $state('');
-  let acknowledged = $state<string[]>([]);
-
   const selected = $derived(detailingStore.selected);
-  const provisional = $derived(detailingStore.provisional);
-  const allAcknowledged = $derived(provisional.every((k) => acknowledged.includes(k)));
-
-  function toggleAck(key: string) {
-    acknowledged = acknowledged.includes(key)
-      ? acknowledged.filter((k) => k !== key)
-      : [...acknowledged, key];
-  }
-
-  function submitReview(state: 'REVIEWED' | 'ISSUED') {
-    detailingStore.review({
-      engineer: detailingAuthor.name,
-      // The store never reads the clock itself; the timestamp comes from the action.
-      at: new Date().toISOString(),
-      state,
-      notes: notes.trim() || undefined,
-      provisionalAcknowledged: provisional.length === 0 || allAcknowledged,
-      acknowledgedProvisional: acknowledged,
-    });
-  }
 
   /**
    * Follow a conflict to the member it is in.
@@ -369,118 +251,15 @@
       <!-- ── Documents ──────────────────────────────────────────────
            All three exports build from ONE DocumentModel, so a report, a drawing set and
            a schedule of the same floor cannot disagree about what they describe. -->
-      <section class="documents" data-testid="documents" aria-labelledby="documents-title">
-        <h3 id="documents-title">{t('detailing.doc.title')}</h3>
+      <!--
+        Documents and professional review moved OUT, to `DocumentsSection.svelte`.
 
-        {#if detailingStore.document}
-          {@const d = detailingStore.document}
-          <p class="doc-state" data-testid="doc-readiness">
-            <span class="badge badge-{d.readiness.toLowerCase()}">{t(`detailing.doc.readiness.${d.readiness}`)}</span>
-            <span data-testid="doc-revision">{tp('detailing.doc.revision', { n: d.revision.number })}</span>
-            <span data-testid="doc-maturity">{t(maturityLabelKey(d.maturity))}</span>
-          </p>
-          {#if d.openConflicts.length > 0}
-            <p class="warn" data-testid="doc-conflicts">
-              {tp('detailing.doc.conflicts', { n: d.openConflicts.length })}
-            </p>
-          {/if}
-        {:else}
-          <p class="muted" data-testid="doc-none">{t('detailing.doc.notBuilt')}</p>
-        {/if}
-
-        <div class="doc-actions">
-          <button data-testid="doc-report" onclick={exportReport}>{t('detailing.doc.report')}</button>
-          <button data-testid="doc-dxf" onclick={exportDxf}>{t('detailing.doc.dxf')}</button>
-          <button data-testid="doc-xlsx" onclick={exportXlsx}>{t('detailing.doc.xlsx')}</button>
-          <button data-testid="doc-3d" onclick={open3d}>{t('detailing.scene.open')}</button>
-        </div>
-
-        {#if docError}
-          <p class="err" role="alert" data-testid="doc-error">{docError}</p>
-        {/if}
-
-        <!-- ── The fourth projection ────────────────────────────────
-             Same document instance as the three exports above, so what is orbited, what is
-             dimensioned and what is ordered cannot come apart. -->
-        {#if show3d}
-          <RebarScenePanel doc={detailingStore.document} ondownload={downloadBlob} />
-        {/if}
-
-        {#if detailingStore.supersededDocuments.length > 0}
-          <details class="superseded-docs" data-testid="superseded-docs">
-            <summary>{tp('detailing.doc.supersededCount',
-              { n: detailingStore.supersededDocuments.length })}</summary>
-            <ul>
-              {#each detailingStore.supersededDocuments as sd (sd.revision.number)}
-                <li data-testid={`superseded-${sd.revision.number}`}>
-                  {tp('detailing.doc.supersededItem',
-                    { n: sd.revision.number, by: sd.supersededBy ?? 0 })}
-                </li>
-              {/each}
-            </ul>
-          </details>
-        {/if}
-      </section>
-
-      <section class="review" aria-labelledby="review-title">
-        <h5 id="review-title">{t('detailing.review')}</h5>
-        <p class="disclaimer" data-testid="review-disclaimer">{t('detailing.notLegalSignoff')}</p>
-
-        {#if selected.review}
-          <p class="reviewed" data-testid="review-record">
-            {tp('detailing.reviewedBy', {
-              engineer: selected.review.engineer,
-              at: selected.review.at,
-              revision: selected.review.revision,
-            })}
-          </p>
-        {/if}
-
-        {#if provisional.length > 0}
-          <div class="notice warning" data-testid="provisional-ack">
-            <strong>{t('detailing.provisionalPresent')}</strong>
-            {#each provisional as key (key)}
-              <label class="ack">
-                <input
-                  type="checkbox"
-                  data-testid={`ack-${key}`}
-                  checked={acknowledged.includes(key)}
-                  onchange={() => toggleAck(key)}
-                />
-                {tp('detailing.acknowledge', { key })}
-              </label>
-            {/each}
-          </div>
-        {/if}
-
-        <label class="field">
-          {t('detailing.engineer')}
-          <input type="text" data-testid="review-engineer"
-                 value={detailingAuthor.name}
-                 oninput={(e) => detailingAuthor.set(e.currentTarget.value)} />
-        </label>
-        <label class="field">
-          {t('detailing.notes')}
-          <textarea data-testid="review-notes" bind:value={notes} rows="2"></textarea>
-        </label>
-
-        <div class="actions">
-          <button data-testid="review-submit" onclick={() => submitReview('REVIEWED')}>
-            {t('detailing.recordReview')}
-          </button>
-          <button
-            data-testid="issue-submit"
-            disabled={reviewRank(selected.state) < reviewRank('REVIEWED')}
-            onclick={() => submitReview('ISSUED')}
-          >
-            {t('detailing.issue')}
-          </button>
-        </div>
-
-        {#if detailingStore.lastError}
-          <p class="notice error" role="alert" data-testid="review-error">{detailingStore.lastError}</p>
-        {/if}
-      </section>
+        The report, the drawings, the schedule, the 3-D view, the provisional acknowledgements and
+        `Issue for construction` used to live at the bottom of this panel: to reach the control
+        that issues drawings for construction you opened detailing, selected an assembly, and
+        scrolled past the bar list, the conflicts, the sheet and the schedule. They are a stage of
+        the workflow, so they are a stage of the panel.
+      -->
     {/if}
   </section>
 </div>

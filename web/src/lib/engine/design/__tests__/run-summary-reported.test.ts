@@ -35,11 +35,18 @@ import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 
 const OUTCOME = fileURLToPath(new URL('../outcome.ts', import.meta.url));
-const TOOLBAR = fileURLToPath(
-  new URL('../../../../components/pro/design/DesignToolbar.svelte', import.meta.url));
+/**
+ * The counts moved out of the command bar and into `DesignOverview.svelte`, the section that now
+ * opens the tab. Every assertion below is about where a run outcome SURFACES, not about which
+ * file holds it, so both are read.
+ */
+const TOOLBAR_FILES = [
+  fileURLToPath(new URL('../../../../components/pro/design/DesignToolbar.svelte', import.meta.url)),
+  fileURLToPath(new URL('../../../../components/pro/design/DesignOverview.svelte', import.meta.url)),
+];
 
 const outcomeSrc = readFileSync(OUTCOME, 'utf8');
-const toolbarSrc = readFileSync(TOOLBAR, 'utf8');
+const toolbarSrc = TOOLBAR_FILES.map((f) => readFileSync(f, 'utf8')).join('\n');
 
 /**
  * The summary field each outcome is tallied into, read from the switch that does it.

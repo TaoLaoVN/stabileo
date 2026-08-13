@@ -19,6 +19,7 @@
   import StageSection from './design/StageSection.svelte';
   import ProjectRegulationsPanel from './design/ProjectRegulationsPanel.svelte';
   import DetailingWorkflow from './design/DetailingWorkflow.svelte';
+  import DocumentsSection from './design/DocumentsSection.svelte';
   import FloorFamiliesPanel from './design/FloorFamiliesPanel.svelte';
   import { detailingStore } from '../../lib/store/detailing.svelte';
   import { verificationStore } from '../../lib/store';
@@ -55,6 +56,7 @@
   let floorsOpen = $state(false);
   /** Open by default: it answers the question a reviewer arrives with. */
   let overviewOpen = $state(true);
+  let documentsOpen = $state(false);
 
   /**
    * Open the Project Regulations stage and put the caret in its selector.
@@ -76,7 +78,12 @@
   }
 
   function goToStage(target: 'model' | 'design' | 'floors' | 'detailing' | 'documents') {
-    if (target === 'detailing' || target === 'documents') {
+    if (target === 'documents') {
+      documentsOpen = true;
+      queueMicrotask(() => scrollTo('documents-disclosure'));
+      return;
+    }
+    if (target === 'detailing') {
       detailingOpen = true;
       queueMicrotask(() => scrollTo('detailing-disclosure'));
       return;
@@ -111,6 +118,9 @@
   const regsState = $derived(needsAttention ? 'current' as const : 'done' as const);
   const detailingState = $derived(
     detailed ? 'done' as const : designed ? 'current' as const : 'blocked' as const);
+  const documentsState = $derived(
+    detailingStore.document !== null ? 'done' as const
+      : detailed ? 'current' as const : 'blocked' as const);
   const floorsState = $derived(
     detailingStore.lastFloorRun ? 'done' as const : 'optional' as const);
 </script>
@@ -197,6 +207,26 @@
     bind:open={detailingOpen}
   >
     <DetailingWorkflow />
+  </StageSection>
+
+  <!--
+    Documents and professional review, as stage 6.
+
+    They were the tail of the detailing panel: to reach `Issue for construction` you opened
+    detailing, selected an assembly and scrolled past the bar list, the conflicts, the sheet and
+    the schedule. The workflow strip has always counted Documents as a stage of its own; the panel
+    now agrees with it.
+  -->
+  <StageSection
+    testid="documents-disclosure"
+    step={6}
+    title={t('detailing.doc.title')}
+    purpose={t('design.stagePurpose.documents')}
+    state={documentsState}
+    blockedBy={t('design.stage.needDetailing')}
+    bind:open={documentsOpen}
+  >
+    <DocumentsSection />
   </StageSection>
 
   <ProDesignTab />

@@ -188,11 +188,28 @@ test.describe('@smoke PRO shell — Ver modelo 3D on the Design row', () => {
     await page.getByTestId('rebar-workspace-close').click();
     await expect(page.getByTestId('rebar-workspace')).toHaveCount(0);
 
+    // `doc-3d` moved into the Documents stage, which is collapsed by default.
+    const docs = page.getByTestId('documents-disclosure');
+    if (await docs.getAttribute('open') === null) await docs.locator('> summary').click();
     await page.getByTestId('doc-3d').click();
     await expect(page.getByTestId('rebar-workspace')).toBeVisible();
     const viaPanel = await page.evaluate(() => window.__stabileo.rebarSceneCensus());
+    await page.getByTestId('rebar-workspace-close').click();
+    await expect(page.getByTestId('rebar-workspace')).toHaveCount(0);
+
+    /**
+     * The third entry point, added by this pass.
+     *
+     * `View 3-D model` is now offered at the top of the panel as well, because reaching it used
+     * to mean opening detailing and scrolling. Three ways in is only acceptable while all three
+     * are ONE operation — so the census is compared across all of them, not just two.
+     */
+    await page.getByTestId('overview-open-3d').click();
+    await expect(page.getByTestId('rebar-workspace')).toBeVisible();
+    const viaOverview = await page.evaluate(() => window.__stabileo.rebarSceneCensus());
 
     expect(viaPanel, 'the same scene, from either button').toEqual(viaToolbar);
+    expect(viaOverview, 'and from the one at the top of the panel').toEqual(viaToolbar);
   });
 });
 
