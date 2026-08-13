@@ -29,14 +29,31 @@ async function loadFrame(page: Page) {
   await page.waitForTimeout(800);
 }
 
-/** Open Model data on a given tab, via the ribbon. */
+/**
+ * Show one tab of the Model data panel.
+ *
+ * The ribbon carries Materials and Sections as commands but NOT Elements —
+ * "Element" there is the drawing tool, a different thing with a nearly
+ * identical name. So the panel is opened by whichever route exists and the tab
+ * is then picked inside it, which is also what a user does.
+ */
 async function openTab(page: Page, label: string) {
   await page.evaluate((l) => {
     const cmd = [...document.querySelectorAll('.rb-cmd')]
       .find((e) => e.textContent?.trim() === l) as HTMLElement | undefined;
-    cmd?.click();
+    if (cmd) { cmd.click(); return; }
+    // No ribbon command for this tab: open the data panel, then the tab.
+    const dataCmd = [...document.querySelectorAll('.rb-cmd')]
+      .find((e) => /model data|^data$/i.test(e.textContent?.trim() ?? '')) as HTMLElement | undefined;
+    dataCmd?.click();
   }, label);
-  await page.waitForTimeout(500);
+  await page.waitForTimeout(400);
+  await page.evaluate((l) => {
+    const tab = [...document.querySelectorAll('.tabs button')]
+      .find((e) => new RegExp(`^${l}`, 'i').test(e.textContent?.trim() ?? '')) as HTMLElement | undefined;
+    tab?.click();
+  }, label);
+  await page.waitForTimeout(400);
 }
 
 /** Names in the Materials tab. */
@@ -46,15 +63,28 @@ async function materialNames(page: Page): Promise<string[]> {
 }
 
 /**
+ * Open the section picker for one row of the section table.
+ *
+ * By its button's accessible title, not by coordinates. The first draft of this
+ * clicked a measured pixel, which is a test that passes on the machine it was
+ * written on and reports a fake defect everywhere else — the row's position
+ * depends on the panel's contents, and the panel's contents are the thing
+ * under test.
+ */
+async function openPickerForSection(page: Page, row: number) {
+  await openTab(page, 'Sections');
+  await page.getByTitle('Change section').nth(row).click();
+  await expect(page.locator('.profile-aside')).toBeVisible({ timeout: 10_000 });
+}
+
+/**
  * Put a catalogue profile into the section that the columns use.
  *
- * Row 2 of the section table is the concrete section four members share, which
- * is what makes the material reassignment observable.
+ * Row index 1 is the concrete section four members share, which is what makes
+ * the material reassignment observable.
  */
-async function chooseProfileForSharedSection(page: Page, code: RegExp, rowIndex: number) {
-  await openTab(page, 'Sections');
-  await page.mouse.click(1420, 320);           // the row's "change section" button
-  await expect(page.locator('.profile-aside')).toBeVisible({ timeout: 10_000 });
+async function chooseProfileForSharedSection(page: Page, code: RegExp, rowIndex: number, secRow = 1) {
+  await openPickerForSection(page, secRow);
   await page.evaluate((src) => {
     const re = new RegExp(src);
     const btn = [...document.querySelectorAll('.code-btn')]
@@ -126,9 +156,7 @@ test.describe('the steel a profile arrives in', () => {
       [...(el as HTMLSelectElement).options].map((o) => o.text));
     // Make an A992 exist by putting a W in the other section.
     if (!options.some((o) => /A992/.test(o))) {
-      await openTab(page, 'Sections');
-      await page.mouse.click(1420, 346);
-      await expect(page.locator('.profile-aside')).toBeVisible({ timeout: 10_000 });
+      await openPickerForSection(page, 2);
       await page.evaluate(() => {
         const btn = [...document.querySelectorAll('.code-btn')]
           .find((e) => /AISC/.test(e.textContent ?? '')) as HTMLElement | undefined;
