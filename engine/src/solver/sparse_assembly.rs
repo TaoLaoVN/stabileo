@@ -150,7 +150,17 @@ pub fn assemble_2d_sparse(input: &SolverInput, dof_num: &DofNumbering) -> Triple
                 diag_vals[truss_dofs[i]] += k_elem[i * 4 + i];
             }
         } else {
-            let k_local = frame_local_stiffness_2d(e, sec.a, sec.iz, l, elem.hinge_start, elem.hinge_end, 0.0);
+            // Timoshenko shear parameter, matching the dense path (and the
+            // FEF builder below, which already computes phi from as_y —
+            // passing 0.0 here paired Euler-Bernoulli stiffness with
+            // Timoshenko fixed-end forces).
+            let phi = if let Some(as_y) = sec.as_y {
+                let g = e / (2.0 * (1.0 + mat.nu));
+                12.0 * e * sec.iz / (g * as_y * l * l)
+            } else {
+                0.0
+            };
+            let k_local = frame_local_stiffness_2d(e, sec.a, sec.iz, l, elem.hinge_start, elem.hinge_end, phi);
             let t = frame_transform_2d(cos, sin);
             let k_glob = transform_stiffness(&k_local, &t, 6);
             let elem_dofs = dof_num.element_dofs(elem.node_i, elem.node_j);
@@ -694,7 +704,17 @@ pub fn assemble_elements_parallel_2d(input: &SolverInput, dof_num: &DofNumbering
                 local_diag.push((truss_dofs[i], k_elem[i * 4 + i]));
             }
         } else {
-            let k_local = frame_local_stiffness_2d(e, sec.a, sec.iz, l, elem.hinge_start, elem.hinge_end, 0.0);
+            // Timoshenko shear parameter, matching the dense path (and the
+            // FEF builder below, which already computes phi from as_y —
+            // passing 0.0 here paired Euler-Bernoulli stiffness with
+            // Timoshenko fixed-end forces).
+            let phi = if let Some(as_y) = sec.as_y {
+                let g = e / (2.0 * (1.0 + mat.nu));
+                12.0 * e * sec.iz / (g * as_y * l * l)
+            } else {
+                0.0
+            };
+            let k_local = frame_local_stiffness_2d(e, sec.a, sec.iz, l, elem.hinge_start, elem.hinge_end, phi);
             let t = frame_transform_2d(cos, sin);
             let k_glob = transform_stiffness(&k_local, &t, 6);
             let elem_dofs = dof_num.element_dofs(elem.node_i, elem.node_j);
@@ -713,15 +733,9 @@ pub fn assemble_elements_parallel_2d(input: &SolverInput, dof_num: &DofNumbering
                 local_diag.push((elem_dofs[i], k_glob[i * ndof + i]));
             }
 
-            // Timoshenko shear parameter for hinge FEF condensation. The sparse
-            // stiffness path above still uses phi=0 (legacy), but the FEF must
-            // at least be consistent with the dense solve for as_y sections.
-            let phi = if let Some(as_y) = sec.as_y {
-                let g = e / (2.0 * (1.0 + mat.nu));
-                12.0 * e * sec.iz / (g * as_y * l * l)
-            } else {
-                0.0
-            };
+            // The stiffness path's phi above is reused for hinge FEF
+            // condensation, so fixed-end forces stay consistent with the
+            // element stiffness for as_y sections.
 
             // Compute FEF contributions for this element
             for load in &input.loads {

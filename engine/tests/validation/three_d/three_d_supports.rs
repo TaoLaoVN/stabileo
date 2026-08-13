@@ -505,3 +505,53 @@ fn validation_3d_combined_springs() {
         drift_spring, drift_fixed, drift_pinned
     );
 }
+
+// ================================================================
+// 8. Flag + spring on the same DOF: reaction must report the spring force
+// ================================================================
+//
+// DofNumbering gives springs precedence over restraint flags (a DOF with
+// k > 0 is free with added stiffness). build_reactions_3d used to consult
+// the flag on free DOFs, reporting 0 for a real spring force.
+
+#[test]
+fn validation_3d_flag_plus_spring_reaction() {
+    // Beam 1→2 along X. Node 1: all DOFs restrained by flags, but ux ALSO
+    // has a translational spring kx — so ux is an elastic (free) DOF.
+    // Axial load at node 2: the spring force must appear as the reaction.
+    let k_spring = 1.0e4; // kN/m
+    let f_axial = 100.0;  // kN
+
+    let nodes = vec![(1, 0.0, 0.0, 0.0), (2, 5.0, 0.0, 0.0)];
+    let elems = vec![(1, "frame", 1, 2, 1, 1)];
+    let sups = vec![(1, vec![true, true, true, true, true, true])];
+    let loads = vec![SolverLoad3D::Nodal(SolverNodalLoad3D {
+        node_id: 2, fx: f_axial, fy: 0.0, fz: 0.0,
+        mx: 0.0, my: 0.0, mz: 0.0, bw: None,
+    })];
+
+    let mut input = make_3d_input(
+        nodes, vec![(1, E, NU)], vec![(1, A, IY, IZ, J)],
+        elems, sups, loads,
+    );
+    for sup in input.supports.values_mut() {
+        sup.kx = Some(k_spring);
+    }
+
+    let res = linear::solve_3d(&input).unwrap();
+
+    // Sanity: node 1 ux is the spring deflection F/k (series: spring carries
+    // the full axial load), node 2 adds the beam elongation.
+    let ux1 = res.displacements.iter().find(|d| d.node_id == 1).unwrap().ux;
+    assert_close(ux1, f_axial / k_spring, 1e-6, "spring deflection at node 1");
+
+    // The reaction must be the spring force -k·u (≈ -F), not zero.
+    let r1 = res.reactions.iter().find(|r| r.node_id == 1).unwrap();
+    assert!(
+        r1.fx.abs() > 1.0,
+        "flag+spring DOF reported zero reaction (spring force lost): fx={}",
+        r1.fx
+    );
+    assert_close(r1.fx, -k_spring * ux1, 1e-6, "spring reaction at node 1");
+    assert_close(r1.fx, -f_axial, 1e-6, "reaction balances applied load");
+}
