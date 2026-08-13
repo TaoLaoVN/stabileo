@@ -16,7 +16,7 @@ pub use sparse::CscMatrix;
 pub use sparse_chol::{
     SymbolicCholesky, NumericCholesky, CholOrdering,
     symbolic_cholesky, symbolic_cholesky_with,
-    numeric_cholesky, numeric_cholesky_perturbed,
+    numeric_cholesky,
     sparse_cholesky_solve, sparse_cholesky_solve_full,
     sparse_condition_estimate,
 };
