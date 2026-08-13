@@ -54,6 +54,73 @@ is visible in the one heavy failure.
 
 Nothing classified as **producto** and nothing as **test obsoleto**.
 
+### The post-fix run at `5cb9088d` + the stage redesign
+
+**323 passed · 9 failed · 4 skipped · 1 did not run · 46,0 min.** Nine failures, three causes.
+
+| # | Test | Class | Evidence |
+|---|---|---|---|
+| 1 | `ded-roundtrip › the 7-storey project survives the file` | **producto (del test)** — see §2.1 | `the solve did not finish in 480 s`. Fifth consecutive occurrence at position #2. **Not saturation.** Diagnosed and fixed. |
+| 2–7 | `rebar-3d › the drawings exported…`, `rebar-viewport-cost` × 5 | **infraestructura** | Every one: `Failed to load resource: net::ERR_INTERNET_DISCONNECTED`. The machine's network dropped during a contiguous window; six tests fell inside it. |
+| 8 | `rebar-3d › the workspace is quiet` | **infraestructura** | `Test timeout of 60000ms exceeded while setting up "pro"` — the same window, one test earlier. A page that cannot fetch never boots. |
+| 9 | `rc-design-visual › overlay legend` | **screenshot** | 696→697 px, 645 px differing, ratio 0,03 — the same signature as every prior run. |
+
+Nothing classified as **producto (de la aplicación)** and nothing as **test obsoleto**.
+
+### 2.1 `ded-roundtrip`, diagnosed rather than classified
+
+Five runs were written off as saturation on the strength of one line of output. That line named
+neither the stage that stalled nor a baseline to compare it against, so it could not have
+supported the classification it was given. Two things were done about that.
+
+**The chain now times itself.** `prepare()` prints a duration per stage. Measured on a quiet
+machine: boot 0,4 s · load + solve **0,8 s** · design all 9,1 s · detailing 4,3 s · floor design
+3,5 s · scene census 8,6 s — about 27 s for the whole preparation. A solve that has not finished
+in 480 s is not a busy machine; it is six hundred times the baseline, and it is a stall.
+
+**The cause.** The test declared its fixtures as
+`{ preparedPage: page, preparedProject, pro: fresh }`. Playwright builds every declared fixture
+**before the body runs**, so `pro` booted a second full application — its WASM module and its
+worker pool — alongside the 7-storey solve that `preparedProject` was in the middle of. Three live
+browser contexts, each holding a solver. It was the only test in the suite that did this, which is
+exactly why the identical preparation succeeds for `rebar-3d.spec.ts`, whose uses of the same
+fixture never hold a `pro` page next to it.
+
+**The fix, and what it is not.** The fresh page is not needed until the 48 MB file has been
+written, minutes after the solve. It is now created in the test body at the moment it is first
+used, and closed by hand. No budget was raised, no assertion weakened, no coverage dropped: it is
+the same fresh context opening the same file and asserting the same things. Isolated: **5/5 in
+1,3 min**, the `@slow` case itself in 18,2 s.
+
+### 2.2 After the fix — and a machine that stopped being trustworthy
+
+Two runs were started after the fix landed and **neither produced a clean measurement**, for a
+reason that has nothing to do with this branch.
+
+**Run A (full suite).** Reached test 217 of 337 and was killed by the harness, not by a test.
+`ded-roundtrip` **passed in-suite, at the same position #2 that had failed five times**, with the
+preparation timing normal (`load + solve 0,1 s`). One failure in those 217:
+`landing › the embed is rendered at native size` — the flake already recorded below, on a file
+this branch never touched. **The Priority 2 fix is confirmed in-suite as well as isolated.**
+
+**Run B (`rebar-3d` + `rebar-viewport-cost` + `ded-roundtrip`).** 33 passed, 3 failed:
+
+| Test | Class | Evidence |
+|---|---|---|
+| `ded-roundtrip` × 2 | **infraestructura** | `net::ERR_ADDRESS_UNREACHABLE`. Not the solve: the preparation completed, `load + solve` measured **0,0 s**. |
+| `rebar-viewport-cost › 7-storey › showing columns with the markers off` | **saturación**, unverified | A latency budget: 5 282 ms against 2 500 ms. A timing assertion on a machine that was dropping packets in the same minute. |
+
+**The honest statement about the machine.** Across the last three runs the host has produced
+`ERR_INTERNET_DISCONNECTED` (six tests, one contiguous window) and `ERR_ADDRESS_UNREACHABLE`
+(two tests). That is not a property of PR20 and it is not saturation either — it is a host whose
+network is dropping. **No full-suite result taken on it since is worth quoting**, and the last
+uninterrupted full run remains the one at the head of this section.
+
+**What is therefore NOT verified**: one uninterrupted full-suite pass with the review screen and
+the fixture fix both in. The viewport-cost latency budget above needs one re-check on a healthy
+machine before it can be called saturation rather than a regression; nothing in this pass touches
+the viewer's geometry or its switches, but that is an argument, not a measurement.
+
 ### Standing classification, from repeated measurement across this session
 
 | Test | Class | Evidence |

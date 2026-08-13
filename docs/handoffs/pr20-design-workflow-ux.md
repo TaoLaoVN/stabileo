@@ -165,11 +165,66 @@ it — so reading order contradicted execution order. Its position now says what
 5) the screen showed two different numbering schemes at once. The group labels lost their numbers;
 the sections keep theirs, because they are the ones the strip counts.
 
+## 8. Third pass: the detailing panel becomes a review screen
+
+The second pass gave every stage a shape. Inside the detailing stage, the facts were still in the
+order somebody had added them in.
+
+Reading down the column you met: header, review-state track, **unsupported warnings**, the whole
+bar list, then the **conflicts**. So the errors that stop a sheet being issued sat below several
+hundred bar rows — the one thing a reviewer looks for first was behind the most scrolling — and
+the warnings outranked them for no reason at all.
+
+`DetailingProblems.svelte` puts all of it directly under the header in one order:
+
+```
+summary (counts)  ›  blocking errors  ›  warnings  ›  the all-clear
+```
+
+**Ranked.** Conflicts and state blockers first, unsupported cases after, and a summary line that
+counts both before anything is expanded. Glyph and word on every chip (`✕ 3 blocking`,
+`⚠ 1 warning(s)`), so severity never rides on colour. The shortfall is printed as a number
+(`−14 mm`) rather than implied by how red the row is.
+
+**Reachable.** `BarConflict.elementIds` has carried the comment *"for routing the conflict to a
+member in the UI"* since it was written, and nothing consumed it: a conflict named two bar ids and
+left the reviewer to find the member by hand. Each conflict now offers
+
+- **the members it involves** — routed through `uiStore.selectElement`, the same selection the
+  design table and the 3-D scene already follow, so this is routing and not a second highlight;
+- **the sheet it is drawn on** — which opens the same dialog the enlarge control opens. One
+  drawing, one way to close it.
+
+`goToConflict(i)` addresses a conflict directly. Stepping to the fortieth with `next` forty times
+is not navigation.
+
+**Nothing was renamed.** `no-conflicts`, `conflict-nav`, `conflict-prev`/`next`,
+`conflict-counter`, `conflict-detail`, `unsupported-list` and `state-blockers` are contracts other
+specs depend on; the second pass broke two specs by renaming ids under a new shell, and that is
+not repeated here.
+
+`DetailingWorkflow` went 585 → 571 lines by extracting it, so the 600-line ceiling is honoured
+rather than approached.
+
+### Tests
+
+`e2e/detailing-review.spec.ts` (10, all `@smoke`), **seeded rather than designed** — a suite that
+asserts conflict behaviour only when a real run happens to produce a conflict reports green for
+the wrong reason.
+
+R1 measures the rank as **DOM order**, not by screenshot · R2 counts errors and warnings ·
+R3 says nothing-is-wrong exactly once and invents no chips · R4 follows a conflict to its members
+and reads it back off `__stabileo.selection()` · R5 opens the sheet and closes it with Escape ·
+R6 reaches the fifth conflict in one click and the pager follows · R7 checks glyph and number
+survive the colour being removed · R8 does the three languages through the picker.
+
 ### Still open after this pass
 
 - The counts strip is still an undifferentiated monospace line.
 - The workflow strip wraps to two lines at 1280×720, leaving a dangling chevron.
 - Toasts still land on the command row at that width.
-- The detailing panel is a review screen in structure — summary, conflicts, sheet, exports — but
-  its conflict list and its sheet still share one column rather than being ranked.
-- The 3-D viewer's chrome is on the tokens; its rail is not yet grouped by family.
+- The 3-D viewer's chrome is on the tokens; its rail is not yet grouped by family, and the
+  selection/isolation/section/opacity controls have no visible help.
+- The floors section states when to run and that it is optional; it does not yet distinguish
+  *omitido* from *no existen* from *no ejecutado* per family.
+- The sheet `<fieldset>` keeps a native legend border.
