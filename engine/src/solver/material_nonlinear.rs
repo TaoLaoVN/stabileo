@@ -461,7 +461,12 @@ fn assemble_tangent_stiffness(
         let mut rot_restrained: std::collections::HashSet<usize> =
             std::collections::HashSet::new();
         for sup in solver.supports.values() {
-            if sup.support_type == "fixed" || sup.support_type == "guidedX" || sup.support_type == "guidedY" {
+            // guidedY/guidedZ restrain ux+ry (dof.rs), so they belong here
+            // like guidedX. (The `idx < n_free` guard below already makes
+            // this set redundant for any rotation-restraining support — a
+            // restrained ry is numbered at index >= n_free — but keep the
+            // enumeration complete for clarity.)
+            if sup.support_type == "fixed" || sup.support_type == "guidedX" || sup.support_type == "guidedY" || sup.support_type == "guidedZ" {
                 rot_restrained.insert(sup.node_id);
             }
             if sup.support_type == "spring" && sup.kz.unwrap_or(0.0) > 0.0 {
