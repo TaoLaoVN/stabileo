@@ -88,35 +88,35 @@
 
 <style>
   .step { display: flex; flex-direction: column; gap: 0.6rem; }
-  .explanation { font-size: 0.72rem; color: #bbb; line-height: 1.5; }
+  .explanation { font-size: 0.72rem; color: var(--st-text-2); line-height: 1.5; }
   .explanation p { margin: 0 0 0.2rem; }
 
   .elem-selector {
     display: flex; align-items: center; gap: 0.5rem;
-    font-size: 0.7rem; color: #ccc;
+    font-size: 0.7rem; color: var(--st-text-2);
   }
   .elem-selector select {
-    background: #16213e; color: #eee; border: 1px solid #0f3460;
+    background: var(--st-surface-2); color: var(--st-text); border: 1px solid var(--st-surface-3);
     border-radius: 3px; padding: 0.2rem 0.4rem; font-size: 0.65rem;
   }
 
   .angle-info {
-    font-size: 0.65rem; color: #aaa;
+    font-size: 0.65rem; color: var(--st-text-2);
     font-family: 'Courier New', monospace;
-    background: #16213e; padding: 0.3rem 0.5rem;
-    border-radius: 3px; border: 1px solid #0f3460;
+    background: var(--st-surface-2); padding: 0.3rem 0.5rem;
+    border-radius: 3px; border: 1px solid var(--st-surface-3);
   }
 
-  .separator { border-top: 1px solid #0f3460; margin: 0.2rem 0; }
+  .separator { border-top: 1px solid var(--st-surface-3); margin: 0.2rem 0; }
 
   .dof-mapping {
     display: flex; gap: 0.3rem; flex-wrap: wrap; align-items: center;
     font-size: 0.6rem;
   }
-  .map-label { color: #888; }
+  .map-label { color: var(--st-text-3); }
   .dof-chip {
-    background: #16213e; border: 1px solid #0f3460;
+    background: var(--st-surface-2); border: 1px solid var(--st-surface-3);
     border-radius: 3px; padding: 0.1rem 0.3rem;
-    color: #4ecdc4; font-family: 'Courier New', monospace;
+    color: var(--st-value); font-family: 'Courier New', monospace;
   }
 </style>

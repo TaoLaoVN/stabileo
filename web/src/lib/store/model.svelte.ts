@@ -17,6 +17,13 @@ import {
 } from '../model/geotechnical';
 // Model store - manages the structural model
 import type { KinematicResult } from '../engine/kinematic-2d';
+import {
+  refreshCanonicalSections as refreshCanonicalSectionsImpl,
+  restoreCanonicalSections,
+  resolveDefaultSection,
+  resolveOnCreate,
+  resolveOnUpdate,
+} from './canonical-sections';
 import type { SolverInput, FullEnvelope, AnalysisResults } from '../engine/types';
 import type { SolverInput3D, AnalysisResults3D, FullEnvelope3D, Constraint3D, ConnectorElement } from '../engine/types-3d';
 export type { ConnectorElement };
@@ -95,6 +102,27 @@ export interface Section {
   iy?: number;  // m⁴ — moment of inertia about Y-axis (horizontal) (3D only)
   j?: number;   // m⁴ — torsional constant Saint-Venant (3D only)
   rotation?: number;  // degrees — rotation of section profile around bar axis (0-360)
+  /**
+   * Explicit canonical outline, in metres, section coordinates.
+   *
+   * When present this IS the section's geometry — it wins over `shape` and
+   * over any catalogue lookup, and nothing is inferred from the name. Absent
+   * means the geometry comes from `shape` plus dimensions, or the section is
+   * properties-only. See `lib/section/canonical.ts`.
+   */
+  polygon?: Array<[number, number]>;
+  /** Holes in `polygon`, same units and frame. */
+  holes?: Array<Array<[number, number]>>;
+  /**
+   * Solver-ready canonical state, resolved at the edges (create, edit,
+   * catalogue selection, migration, load) and read synchronously by
+   * `buildSolverInput`.
+   *
+   * Resolving inside solver preparation would make that path async or risk
+   * publishing unverified numbers, so it is cached here with a `digest` that
+   * identifies the exact geometry it came from. See `lib/section/state.ts`.
+   */
+  canonical?: import('../section/state').SectionState;
 }
 
 /** Which relative translation a 2D sliding joint releases at an element end.
@@ -1122,7 +1150,17 @@ function createModelStore() {
         name: snap.name,
         nodes: Array.from(snap.nodes.entries()) as ModelSnapshot['nodes'],
         materials: Array.from(snap.materials.entries()) as ModelSnapshot['materials'],
-        sections: Array.from(snap.sections.entries()) as ModelSnapshot['sections'],
+        // `canonical` is a DERIVED cache keyed by the section's own dimensions,
+        // not model data. Keeping it out of snapshots keeps the undo stack and
+        // the saved file small, makes save/open inherently idempotent, and
+        // means a restored model always re-derives and re-verifies rather than
+        // trusting whatever a file happened to contain. See section/migration.
+        sections: Array.from(snap.sections.entries()).map(
+          ([k, v]) => {
+            const { canonical: _drop, ...rest } = v as Section;
+            return [k, rest];
+          },
+        ) as ModelSnapshot['sections'],
         elements: Array.from(snap.elements.entries()).map(([k, v]) => [k, {
           ...v,
           releaseI: { ...(v.releaseI ?? NO_RELEASE) },
@@ -1230,7 +1268,15 @@ function createModelStore() {
       if (s.name) model.name = s.name;
       model.nodes = new Map(s.nodes.map(([k, v]) => [k, { ...v }]));
       model.materials = new Map(s.materials.map(([k, v]) => [k, { ...v }]));
-      model.sections = new Map(s.sections.map(([k, v]) => [k, { ...v } as Section]));
+      // Canonical section state is re-derived from each section's own
+      // dimensions rather than trusted as stored: a saved digest is a claim to
+      // be checked, and solver preparation reads these values synchronously,
+      // so a stale one would become wrong numbers with no later chance to
+      // notice. `restoreSections` also deep-copies, so a restored model never
+      // shares polygon arrays with the snapshot it came from.
+      model.sections = restoreCanonicalSections(
+        new Map(s.sections.map(([k, v]) => [k, { ...v } as Section])),
+      );
       model.elements = new Map(s.elements.map(([k, v]) => [k, {
         ...v,
         releaseI: { ...(v.releaseI ?? NO_RELEASE) },
@@ -2140,7 +2186,11 @@ function createModelStore() {
       model.detailing = emptyDetailingStore();
       // Reset materials/sections to defaults
       model.materials = new Map([[1, { ...defaultMaterial }]]);
-      model.sections = new Map([[1, { ...defaultSection }]]);
+      // Resolve the default profile's canonical state too. `clear()` runs on
+      // every new model and before every example load, so leaving it
+      // unresolved is what made a freshly loaded example report its section as
+      // amorphous even after the engine was up.
+      model.sections = new Map([[1, resolveDefaultSection(defaultSection)]]);
       model.loadCases = [
         { id: 1, type: 'D', name: 'Dead Load' },
         { id: 2, type: 'L', name: 'Live Load' },
@@ -2891,6 +2941,13 @@ function createModelStore() {
         loadFixture(json as any, api as any);
       });
 
+      // Settle canonical state once the whole model is in place. Sections the
+      // fixture added are already resolved (addSection resolves per add, and
+      // the refresh skips those), so this repairs only sections that loaded
+      // before the engine was ready — without it those would keep reporting
+      // no known geometry for the rest of the session.
+      this.refreshCanonicalSections();
+
       if (is2DFixture(name) && (uiStore.analysisMode === '3d' || uiStore.analysisMode === 'pro')) {
         uiStore.useUpright2DIn3DPresentation();
       } else {
@@ -2950,23 +3007,65 @@ function createModelStore() {
     addSection(data: Omit<Section, 'id'>): number {
       if (!_undoBatching) _pushUndo?.();
       const id = nextId.section++;
+      // Resolve canonical state at creation, the same way `updateSection`
+      // does on edit. Without this a freshly added section carries no
+      // canonical state at all, and every consumer that asks whether it has
+      // known geometry — the detailed stress panel above all — correctly
+      // concludes it does not, which reads to the user as "amorphous section"
+      // for a perfectly ordinary catalogue profile.
+      const created: Section = resolveOnCreate({ id, ...data });
       if (_bulkMutating) {
-        model.sections.set(id, { id, ...data });
+        model.sections.set(id, created);
       } else {
         const m = new Map(model.sections);
-        m.set(id, { id, ...data });
+        m.set(id, created);
         model.sections = m;
       }
       return id;
+    },
+
+    /**
+     * Re-resolve canonical state for every section.
+     *
+     * The engine initialises asynchronously, so at app start — and for a
+     * model loaded before the WASM module is ready — `resolveSectionState`
+     * can only report properties-only. Nothing would ever revisit that
+     * decision, leaving otherwise fine catalogue profiles permanently without
+     * geometry. This is the hook that runs once the engine is up.
+     *
+     * Idempotent: re-resolving an already-resolved section reproduces the
+     * same digest, so calling it more than once is harmless. It deliberately
+     * does NOT bump `modelVersion` or fire the mutation hook — deriving
+     * geometry is not a model edit and must not invalidate existing results.
+     */
+    refreshCanonicalSections(): void {
+      const updated = refreshCanonicalSectionsImpl(model.sections);
+      if (updated) model.sections = updated;
     },
 
     updateSection(id: number, data: Partial<Omit<Section, 'id'>>): void {
       if (!_undoBatching) _pushUndo?.();
       const sec = model.sections.get(id);
       if (!sec) return;
-      const updated: Section = { ...sec, ...data, id };
-      // Auto-calculate A, Iy, Iz, J from b×h ONLY for manual edits (no shape specified)
-      if (data.shape === undefined) {
+
+      // Derived properties of a geometry-backed section are OUTPUTS of its
+      // polygons. Letting them be set independently is how geometry and
+      // properties came to contradict each other in the first place, so the
+      // guard lives here rather than in one table component: no call site can
+      // bypass it. Geometry and rotation stay editable, and changing either
+      // regenerates the derived values atomically below.
+      let patch = data;
+      if (sec.canonical?.kind === 'geometry-backed') {
+        const { a: _a, iy: _iy, iz: _iz, j: _j, ...rest } = data;
+        patch = rest;
+      }
+      const updated: Section = { ...sec, ...patch, id };
+      // Auto-calculate A, Iy, Iz, J from b×h ONLY for manual edits (no shape
+      // specified) on sections WITHOUT canonical geometry: on a geometry-backed
+      // section the derived values are outputs of the polygons, and writing
+      // rectangle-formula numbers over them is how a catalogue IPE ends up
+      // displaying a rectangle's area in the table.
+      if (data.shape === undefined && sec.canonical?.kind !== 'geometry-backed') {
         const b = data.b ?? sec.b;
         const h = data.h ?? sec.h;
         if (b !== undefined && h !== undefined && b > 0 && h > 0 && (data.b !== undefined || data.h !== undefined)) {
@@ -2982,8 +3081,32 @@ function createModelStore() {
           }
         }
       }
+      // Geometry changed, so the derived state must be regenerated in the same
+      // step. Doing it here keeps geometry and properties atomically
+      // consistent: there is no window in which a section carries new
+      // dimensions and stale canonical values.
+      //
+      // The exception is a patch that cannot change the resolution: for a
+      // geometry-backed section a/iy/iz/j were stripped above, so an empty
+      // patch means the edit touched only derived scalars — and re-resolving
+      // would run a Saint-Venant mesh-and-solve the table's inline edit could
+      // never need.
+      const withCanonical =
+        Object.keys(patch).length === 0 && sec.canonical ? updated : resolveOnUpdate(updated);
+      // Mirror the resolved values back into the declared scalars. Declared
+      // values are the designed fallback — engine down, feature-flag rollback,
+      // readers that cannot see canonical state — and with the auto-calc guard
+      // above nothing else keeps them current on a geometry-backed section.
+      const st = withCanonical.canonical;
+      if (st?.kind === 'geometry-backed') {
+        withCanonical.a = st.a;
+        withCanonical.iy = st.iy;
+        withCanonical.iz = st.iz;
+        if (st.j != null) withCanonical.j = st.j;
+      }
+
       const m = new Map(model.sections);
-      m.set(id, updated);
+      m.set(id, withCanonical);
       model.sections = m;
       this.bumpModelVersion();
     },

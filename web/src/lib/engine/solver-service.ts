@@ -2,6 +2,7 @@
 // Each function takes a ModelData parameter instead of accessing reactive store state.
 
 import { solve as solveStructure, solve3D as solve3DEngine, analyzeKinematics, combineResults, combineResults3D, computeEnvelope, computeEnvelope3D, solveMultiCase2D, solveMultiCase3D, input2DToWireObject, input3DToWireObject } from './wasm-solver';
+import { solverProperties } from '../section/state';
 import type { SolverInput, FullEnvelope, AnalysisResults } from './types';
 import { computeLocalAxes3D } from './local-axes-3d';
 import type { SolverInput3D, SolverLoad3D, AnalysisResults3D, FullEnvelope3D, Constraint3D } from './types-3d';
@@ -99,10 +100,19 @@ function getElemAngleAtNode(nodeId: number, nodes: Map<number, Node>, elements: 
  *  When the section is rotated by angle α around the bar axis,
  *  the effective inertia for 2D bending is:
  *    I_eff = Iy·cos²α + Iz·sin²α
- *  This is exported so Viewport.svelte can reuse it for deformed-shape rendering. */
-export function effectiveBendingInertia(sec: Section): number {
-  const Iy = sec.iy ?? sec.iz;  // about Y horizontal (strong for IPN)
-  const Iz = sec.iz;             // about Z vertical (weak for IPN)
+ *  This is exported so Viewport.svelte can reuse it for deformed-shape rendering.
+ *  Callers that already resolved the section's properties may pass them in and
+ *  save the second lookup (`props` defaults to a fresh `solverProperties`). */
+export function effectiveBendingInertia(
+  sec: Section,
+  props: ReturnType<typeof solverProperties> = solverProperties(sec),
+): number {
+  // A geometry-backed section reports the inertia its canonical polygons
+  // actually have; a properties-only section keeps what it declared. This is
+  // the single point both the 2D wire and the projected 3D wire read, so
+  // making it canonical-aware here keeps them consistent by construction.
+  const Iy = props.source === 'canonical' ? props.iy : (sec.iy ?? sec.iz);  // about Y horizontal
+  const Iz = props.source === 'canonical' ? props.iz : sec.iz;              // about Z vertical
   const alpha = (sec.rotation ?? 0) * Math.PI / 180;
   if (Math.abs(alpha) < 1e-10) return Iy;  // fast path: no rotation
   return Iy * Math.cos(alpha) ** 2 + Iz * Math.sin(alpha) ** 2;
@@ -307,6 +317,9 @@ interface Solve2DPreparation {
   input: SolverInput;
   slidingHelperIds: Set<number>;
   modelNodeIds: Set<number>;
+  /** Wire key computed once during preparation — reused as the solve-cache key
+   *  by the async path (avoids re-stringifying the wire). */
+  wireKey: string;
 }
 
 /**
@@ -435,8 +448,9 @@ function prepareSolve2D(
     const startNode = connectedNodes.values().next().value!;
     const queue = [startNode];
     visited.add(startNode);
-    while (queue.length > 0) {
-      const cur = queue.shift()!;
+    // Index-based queue: shift() would make the walk O(n²) in node moves.
+    for (let qi = 0; qi < queue.length; qi++) {
+      const cur = queue[qi];
       for (const nb of adj.get(cur)!) {
         if (!visited.has(nb)) {
           visited.add(nb);
@@ -603,7 +617,10 @@ function prepareSolve2D(
     nodes: new Map(Array.from(model.nodes.entries()).map(([id, n]) => [id, { id: n.id, x: n.x, z: n.y }])),
     materials: new Map(Array.from(model.materials.entries()).map(([id, m]) => [id, { id: m.id, e: m.e, nu: m.nu }])),
     // 2D solver uses the effective bending inertia (accounts for section rotation via Mohr)
-    sections: new Map(Array.from(model.sections.entries()).map(([id, s]) => [id, { id: s.id, a: s.a, iz: effectiveBendingInertia(s) }])),
+    sections: new Map(Array.from(model.sections.entries()).map(([id, s]) => {
+      const props = solverProperties(s);
+      return [id, { id: s.id, a: props.a, iz: effectiveBendingInertia(s, props) }];
+    })),
     elements: new Map(Array.from(model.elements.entries()).map(([id, e]) => [id, {
       id: e.id, type: e.type, nodeI: e.nodeI, nodeJ: e.nodeJ,
       materialId: e.materialId, sectionId: e.sectionId,
@@ -619,15 +636,30 @@ function prepareSolve2D(
     connectors: model.connectors,
   };
 
-  // Kinematic analysis
-  try {
-    const kinematic = analyzeKinematics(input);
-    if (onKinematic) onKinematic(kinematic);
-    if (!kinematic.isSolvable) {
-      return kinematic.diagnosis;
+  // Kinematic analysis — memoized on the wire key. A full WASM round trip per
+  // solve (serialize → analyze → parse) is by far the most expensive part of
+  // validation, and the async path calls prepare on every edit even when the
+  // solve itself is memoized. The wire key is also reused by the caller as the
+  // solve-cache key, so it is computed once.
+  const wireKey = `2d:${JSON.stringify(input2DToWireObject(input))}`;
+  const cachedKin = kinematicCacheGet(wireKey);
+  if (cachedKin !== undefined) {
+    if (onKinematic) onKinematic(cachedKin);
+    if (cachedKin && !cachedKin.isSolvable) {
+      return cachedKin.diagnosis;
     }
-  } catch {
-    if (onKinematic) onKinematic(null);
+  } else {
+    try {
+      const kinematic = analyzeKinematics(input);
+      kinematicCacheSet(wireKey, kinematic);
+      if (onKinematic) onKinematic(kinematic);
+      if (!kinematic.isSolvable) {
+        return kinematic.diagnosis;
+      }
+    } catch {
+      kinematicCacheSet(wireKey, null);
+      if (onKinematic) onKinematic(null);
+    }
   }
 
   // Basic 2D sliding joints: ephemerally expand each translational release into
@@ -640,7 +672,7 @@ function prepareSolve2D(
     ? expandSlidingJoints2D(input, model.elements)
     : new Set<number>();
 
-  return { input, slidingHelperIds, modelNodeIds: new Set(model.nodes.keys()) };
+  return { input, slidingHelperIds, modelNodeIds: new Set(model.nodes.keys()), wireKey };
 }
 
 /** Prune ephemeral sliding-joint helper-node results (no-op without sliders). */
@@ -673,6 +705,26 @@ export function validateAndSolve2D(
 
 // ─── Solve-result memoization (LRU) ─────────────────────────────
 
+const KINEMATIC_CACHE_MAX = 12;
+const kinematicCache = new Map<string, KinematicResult | null>();
+
+function kinematicCacheGet(key: string): KinematicResult | null | undefined {
+  const value = kinematicCache.get(key);
+  if (value !== undefined) {
+    kinematicCache.delete(key);
+    kinematicCache.set(key, value);
+  }
+  return value;
+}
+
+function kinematicCacheSet(key: string, value: KinematicResult | null): void {
+  kinematicCache.delete(key);
+  kinematicCache.set(key, value);
+  if (kinematicCache.size > KINEMATIC_CACHE_MAX) {
+    kinematicCache.delete(kinematicCache.keys().next().value!);
+  }
+}
+
 /**
  * Small LRU over finalized solve results, keyed by the serialized wire input.
  * The wire already encodes every analysis-relevant option: includeSelfWeight
@@ -704,6 +756,7 @@ function solveCacheSet(key: string, value: AnalysisResults | AnalysisResults3D):
 /** Test hook: clear the solve-result memoization cache. */
 export function clearSolveResultCache(): void {
   solveResultCache.clear();
+  kinematicCache.clear();
 }
 
 /** Test hook: current number of memoized solve results. */
@@ -725,8 +778,7 @@ export async function validateAndSolve2DAsync(
   const prep = prepareSolve2D(model, includeSelfWeight, onKinematic);
   if (prep === null || typeof prep === 'string') return prep;
 
-  const wire = input2DToWireObject(prep.input);
-  const cacheKey = `2d:${JSON.stringify(wire)}`;
+  const cacheKey = prep.wireKey;
   const cached = solveCacheGet(cacheKey);
   if (cached) {
     console.log(`Estructura resuelta (caché) — ${model.nodes.size} nodos, ${model.elements.size} elementos`);
@@ -737,7 +789,7 @@ export async function validateAndSolve2DAsync(
     const t0 = performance.now();
     let results: AnalysisResults;
     try {
-      results = await solve2DInWorker(wire);
+      results = await solve2DInWorker(input2DToWireObject(prep.input));
     } catch (e) {
       if (!(e instanceof PoolUnavailableError)) throw e;
       results = solveStructure(prep.input);
@@ -909,7 +961,10 @@ export function buildSolverInput2D(model: ModelData, includeSelfWeight = false):
     nodes: new Map(Array.from(model.nodes.entries()).map(([id, n]) => [id, { id: n.id, x: n.x, z: n.y }])),
     materials: new Map(Array.from(model.materials.entries()).map(([id, m]) => [id, { id: m.id, e: m.e, nu: m.nu }])),
     // 2D solver uses the effective bending inertia (accounts for section rotation via Mohr)
-    sections: new Map(Array.from(model.sections.entries()).map(([id, s]) => [id, { id: s.id, a: s.a, iz: effectiveBendingInertia(s) }])),
+    sections: new Map(Array.from(model.sections.entries()).map(([id, s]) => {
+      const props = solverProperties(s);
+      return [id, { id: s.id, a: props.a, iz: effectiveBendingInertia(s, props) }];
+    })),
     elements: new Map(Array.from(model.elements.entries()).map(([id, e]) => [id, {
       id: e.id, type: e.type, nodeI: e.nodeI, nodeJ: e.nodeJ,
       materialId: e.materialId, sectionId: e.sectionId,
@@ -1364,25 +1419,54 @@ export function buildSolverInput3D(
     nodes: new Map(Array.from(model.nodes.entries()).map(([id, n]) => [id, mapModelNodeToSolver3D(n, project2DToXZ)])),
     materials: new Map(Array.from(model.materials.entries()).map(([id, m]) => [id, { id: m.id, e: m.e, nu: m.nu }])),
     sections: new Map(Array.from(model.sections.entries()).map(([id, s]) => {
+      const props = solverProperties(s);
       if (project2DToXZ) {
-        const inPlaneIy = effectiveBendingInertia(s);
-        const outOfPlaneIz = s.iy ?? s.iz;
+        const inPlaneIy = effectiveBendingInertia(s, props);
+        // Out-of-plane bending happens about the section's WEAK axis, which is
+        // `iz`. This read `s.iy ?? s.iz` — the strong axis — which overstated
+        // out-of-plane stiffness and so understated lateral displacement and
+        // the lateral buckling that follows from it. The `??` fallback belongs
+        // on the in-plane term above, where a section with only one declared
+        // inertia should reuse it; here it silently picked the wrong axis.
+        //
+        // It survived because it is invisible on any symmetric section: an
+        // angle, a circular tube or a square tube has iy == iz. It only shows
+        // on an asymmetric properties-only section, which is also the only
+        // case that still reaches this line — a geometry-backed section takes
+        // the canonical branch below, which was always correct.
+        const outOfPlaneIz = s.iz;
         return [id, {
-          id: s.id, name: s.name, a: s.a,
+          id: s.id, name: s.name, a: props.a,
           iy: inPlaneIy,
-          iz: outOfPlaneIz,
-          j: s.j ?? outOfPlaneIz * 0.001,
+          iz: props.source === 'canonical' ? props.iz : outOfPlaneIz,
+          // `J` is NEVER taken from the polygon engine: it computes Routh's
+          // approximation, which is exact only for a circle or ellipse and
+          // measured 56.9 % low on a rectangle and 37.0 % high on an
+          // I-section. `solverProperties` returns an exact analytical value
+          // for circle/CHS, otherwise the authoritative or legacy one, and
+          // `null` when none exists. The `* 0.001` placeholder below is the
+          // pre-existing fabrication, retained only so 3D models without any
+          // J keep solving; it is tagged `unavailable` in the provenance so
+          // it is visible rather than silent, and Checkpoint 2C replaces it
+          // with a validated Saint-Venant constant.
+          j: props.j ?? s.j ?? outOfPlaneIz * 0.001,
         }];
       }
       // s.iy = about Y-axis (horizontal), s.iz = about Z-axis (vertical)
       // Solver convention: iy controls bending about Y (w, θy DOFs), iz controls bending about Z (v, θz DOFs)
-      const aboutY = s.iy ?? (s.b && s.h ? (s.b * s.h ** 3) / 12 : s.iz);  // Iy: about Y horizontal
-      const aboutZ = s.iz;  // Iz: about Z vertical
+      // A geometry-backed section reports the inertia its canonical polygons
+      // actually have; a properties-only section keeps what it declared.
+      const aboutY = props.source === 'canonical'
+        ? props.iy
+        : (s.iy ?? (s.b && s.h ? (s.b * s.h ** 3) / 12 : s.iz));  // Iy: about Y horizontal
+      const aboutZ = props.source === 'canonical' ? props.iz : s.iz;  // Iz: about Z vertical
       return [id, {
-        id: s.id, name: s.name, a: s.a,
+        id: s.id, name: s.name, a: props.a,
         iy: aboutY,   // solver iy = Iy (about Y horizontal) → controls Z-displacement bending (w, θy)
         iz: aboutZ,   // solver iz = Iz (about Z vertical) → controls Y-displacement bending (v, θz)
-        j: s.j ?? aboutY * 0.001,
+        // See the note on the projected branch above: J never comes from the
+        // polygon engine's Routh approximation.
+        j: props.j ?? s.j ?? aboutY * 0.001,
       }];
     })),
     elements: new Map(Array.from(model.elements.entries()).map(([id, e]) => {
@@ -1625,8 +1709,9 @@ function prepareSolve3D(model: ModelData, includeSelfWeight = false, leftHand = 
   const startNode = connectedNodes.values().next().value!;
   const queue = [startNode];
   visited.add(startNode);
-  while (queue.length > 0) {
-    const cur = queue.shift()!;
+  // Index-based queue: shift() would make the walk O(n²) in node moves.
+  for (let qi = 0; qi < queue.length; qi++) {
+    const cur = queue[qi];
     for (const nb of adj.get(cur)!) {
       if (!visited.has(nb)) { visited.add(nb); queue.push(nb); }
     }

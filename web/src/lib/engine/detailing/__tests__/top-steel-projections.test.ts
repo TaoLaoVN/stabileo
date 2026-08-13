@@ -157,15 +157,27 @@ describe('top assembly reinforcement, across every projection', { timeout: 60_00
     expect(report.hangerTopMembers).toEqual(hangers.filter(
       (id) => report.entries.some((e) => e.elementId === id)));
 
-    // The state stays whatever the design made it. 62 proposals must still read as proposals.
+    // The state stays whatever the design made it: a member the design verified must not be
+    // demoted by a top-steel projection, and one it left provisional must not be promoted.
     for (const id of report.hangerTopMembers) {
       const e = report.entries.find((x) => x.elementId === id)!;
       expect(e.topSteel).toBe('hangerProvisional');
       expect(['PROVISIONAL', 'MODELLED'], `member ${id}`).toContain(e.status);
     }
+    // The set is substantial, so "nobody's state moved" is a real claim rather than a
+    // statement about an empty list.
+    expect(report.hangerTopMembers.length, 'hanger top steel reaches many members').toBe(74);
+    // None of them is PROVISIONAL any more. This assertion used to require the opposite —
+    // over 50 proposals — because the fixture's transposed section inertias inflated
+    // secondary moments until almost every beam was refused, and the canonical-section work
+    // that came with the merge now derives those inertias from geometry. See
+    // beam-reinforcement-audit.test.ts. With the axes right these members are verified, and
+    // their top steel is still projected as
+    // `hangerProvisional`: an assembly proposal on a member whose flexural design passed.
+    // That distinction is the thing worth pinning, and the loop above pins it.
     const proposals = report.hangerTopMembers.filter((id) =>
       report.entries.find((x) => x.elementId === id)!.status === 'PROVISIONAL');
-    expect(proposals.length).toBeGreaterThan(50);
+    expect(proposals.length, 'no hanger-top member is a flexural proposal now').toBe(0);
   });
 
   it('never lets an assembly bar acquire a certificate', () => {

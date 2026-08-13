@@ -93,15 +93,15 @@
 
 <style>
   .step { display: flex; flex-direction: column; gap: 0.6rem; }
-  .explanation { font-size: 0.72rem; color: #bbb; line-height: 1.5; }
+  .explanation { font-size: 0.72rem; color: var(--st-text-2); line-height: 1.5; }
   .explanation p { margin: 0 0 0.3rem; }
-  .free { color: #4ecdc4; font-weight: 600; }
-  .restr { color: #e94560; font-weight: 600; }
+  .free { color: var(--st-value); font-weight: 600; }
+  .restr { color: var(--st-accent); font-weight: 600; }
 
   .info-row { display: flex; gap: 0.4rem; flex-wrap: wrap; }
   .info-card {
-    background: #16213e;
-    border: 1px solid #0f3460;
+    background: var(--st-surface-2);
+    border: 1px solid var(--st-surface-3);
     border-radius: 4px;
     padding: 0.3rem 0.5rem;
     display: flex;
@@ -110,10 +110,10 @@
     flex: 1;
     min-width: 60px;
   }
-  .info-label { font-size: 0.55rem; color: #888; }
-  .info-value { font-size: 0.9rem; font-weight: 700; color: #eee; }
-  .info-value.free { color: #4ecdc4; }
-  .info-value.restr { color: #e94560; }
+  .info-label { font-size: 0.55rem; color: var(--st-text-3); }
+  .info-value { font-size: 0.9rem; font-weight: 700; color: var(--st-text); }
+  .info-value.free { color: var(--st-value); }
+  .info-value.restr { color: var(--st-accent); }
 
   .dof-table-scroll { overflow: auto; max-height: 350px; }
   .dof-table {
@@ -123,8 +123,8 @@
     font-family: 'Courier New', monospace;
   }
   .dof-table th {
-    background: #16213e;
-    color: #888;
+    background: var(--st-surface-2);
+    color: var(--st-text-3);
     padding: 0.2rem 0.4rem;
     font-weight: 600;
     position: sticky;
@@ -134,14 +134,14 @@
   }
   .dof-table td {
     padding: 0.15rem 0.4rem;
-    border-bottom: 1px solid #1e1e3a;
+    border-bottom: 1px solid var(--st-surface-2);
   }
-  .free-row td { color: #bbb; }
-  .restr-row td { color: #999; }
+  .free-row td { color: var(--st-text-2); }
+  .restr-row td { color: var(--st-text-3); }
   .idx { font-weight: 700; }
-  .free-row .idx { color: #4ecdc4; }
-  .restr-row .idx { color: #e94560; }
-  .label-cell { color: #ccc; }
+  .free-row .idx { color: var(--st-value); }
+  .restr-row .idx { color: var(--st-accent); }
+  .label-cell { color: var(--st-text-2); }
 
   .badge {
     font-size: 0.55rem;
@@ -149,6 +149,6 @@
     border-radius: 3px;
     font-weight: 600;
   }
-  .badge-free { background: rgba(78, 205, 196, 0.15); color: #4ecdc4; }
-  .badge-restr { background: rgba(233, 69, 96, 0.15); color: #e94560; }
+  .badge-free { background: rgba(127, 212, 204, 0.15); color: var(--st-value); }
+  .badge-restr { background: rgba(229, 72, 42, 0.15); color: var(--st-accent); }
 </style>

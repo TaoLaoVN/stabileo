@@ -27,16 +27,52 @@
   import CadImportWizard from './components/CadImportWizard.svelte';
   import IfcImportDialog from './components/IfcImportDialog.svelte';
   import FloatingTools from './components/FloatingTools.svelte';
+  import Ribbon from './components/ribbon/Ribbon.svelte';
+  import BasicPanel from './components/ribbon/BasicPanel.svelte';
+  import ToolOptionsBar from './components/ribbon/ToolOptionsBar.svelte';
+
+  /**
+   * Which right-hand panel the ribbon has opened, if any.
+   *
+   * Basic used to keep a 250 px left panel open permanently for controls that
+   * are used once and then ignored. The ribbon opens them on demand, on the
+   * right, so the canvas keeps the window and the drawing does not shift
+   * sideways when a panel appears.
+   */
+  let basicPanel = $state<string | null>(null);
+  function openBasicPanel(panel: string | null, opts: { toggle?: boolean } = {}) {
+    const toggle = opts.toggle !== false;
+    if (panel === null) { basicPanel = null; return; }
+    // Toggling is right for a command that owns its panel (Settings, Examples).
+    // It is wrong for a selection like a diagram, which only ever means "show".
+    basicPanel = toggle && basicPanel === panel ? null : panel;
+  }
+
+  /*
+   * The step-by-step wizard is started from Advanced but renders in the Model
+   * data panel, which is the only place with room for a 10×10 matrix. Pressing
+   * the button therefore lit it up and showed nothing: the wizard was mounted
+   * behind the panel the user was already looking at. Following the wizard here
+   * is what the ribbon does for every other command that owns a panel.
+   */
+  $effect(() => {
+    if (dsmStepsStore.isOpen && uiStore.appMode === 'basico' && !uiStore.isMobile) {
+      basicPanel = 'data';
+    }
+  });
   import WhatIfPanel from './components/WhatIfPanel.svelte';
   import SectionStressPanel from './components/SectionStressPanel.svelte';
   import KinematicPanel from './components/KinematicPanel.svelte';
   import TabBar from './components/TabBar.svelte';
   import MobileResultsPanel from './components/MobileResultsPanel.svelte';
+  import KeyboardShortcuts from './components/KeyboardShortcuts.svelte';
+  import Icon from './components/ribbon/Icon.svelte';
   import ProPanel from './components/pro/ProPanel.svelte';
   import RebarWorkspace from './components/pro/design/RebarWorkspace.svelte';
   import ProProjectFileActions from './components/pro/ProProjectFileActions.svelte';
   import ToolbarConfig from './components/toolbar/ToolbarConfig.svelte';
   import EducativePanel from './components/edu/EducativePanel.svelte';
+  import { eduStore } from './components/edu/edu-store.svelte';
   import TourOverlay from './components/TourOverlay.svelte';
   import HelpOverlay from './components/HelpOverlay.svelte';
   import ContextMenu from './components/ContextMenu.svelte';
@@ -93,7 +129,19 @@
     } else {
       url.searchParams.delete('tab');
     }
-    history.replaceState(null, '', `${url.pathname}${url.search}`);
+    /*
+     * The fragment survives.
+     *
+     * This function's job is the path and the query, but it rewrote the URL
+     * from `pathname + search` and so silently dropped whatever was after the
+     * `#`. It runs while the mode is being resolved — before the Education
+     * panel mounts — which is how a teacher's exercise link stopped working:
+     * `#edu-ex=…` was gone by the time anything looked for it, and the student
+     * landed on the exercise list wondering what they had been sent. Shared
+     * MODEL links (`#…` from url-sharing) load from an earlier startup step, so
+     * they were not caught by the same race, which is why this went unseen.
+     */
+    history.replaceState(null, '', `${url.pathname}${url.search}${url.hash}`);
   }
 
   function findTabBySlug(tabSlug: string | null) {
@@ -350,7 +398,12 @@
     }
 
     // Initialize WASM solver (non-blocking, fallback to JS if it fails)
-    import('./lib/engine/wasm-solver').then(m => m.initSolver()).catch(() => {
+    import('./lib/engine/wasm-solver').then(m => m.initSolver()).then(() => {
+      // Canonical section geometry needs the engine. Sections created or
+      // loaded before it was ready could only resolve as properties-only, and
+      // nothing else revisits that, so resolve them now that it is up.
+      modelStore.refreshCanonicalSections();
+    }).catch(() => {
       console.warn('WASM solver unavailable, using JS fallback');
     });
 
@@ -640,13 +693,24 @@
 {/if}
 
 <div class="app-container" class:embed-mode={uiStore.embedMode} class:hidden-behind-landing={showLanding}>
-  <header class="app-header">
+  <header class="app-header" class:has-autosave={showAutosaveBanner}>
     <div class="logo">
-      <button class="logo-home" onclick={() => { showLanding = true; history.pushState(null, '', '/'); }} title="Back to home">
+      <button class="logo-home" onclick={() => { showLanding = true; history.pushState(null, '', '/'); }} title={t('app.backHome')}>
         <span class="logo-icon">△</span>
         <span class="logo-text">Stabileo</span>
       </button>
-      {#if uiStore.isMobile}
+      <!--
+        A handed-out exercise is not a session with three modes in it.
+        ─────────────────────────────────────────────────────────────
+        A student who follows a teacher's link was given ONE thing to do.
+        Offering them Basic and PRO, a tab strip and a "+" for a new project
+        is offering exits from the only room they were sent to — and the tab
+        said "New Structure" while the panel said "Simply supported beam",
+        so the window disagreed with itself about what was open.
+      -->
+      {#if eduStore.isHandout}
+        <span class="handout-title" data-testid="edu-handout-title">{eduStore.exercise?.title}</span>
+      {:else if uiStore.isMobile}
         <select class="mode-select-mobile" value={uiStore.appMode} onchange={(e) => switchAppMode(e.currentTarget.value as AppMode)}>
           <option value="basico">{t('app.modeBasic')}</option>
           <option value="educativo">{t('app.modeEdu')} (Beta)</option>
@@ -662,8 +726,39 @@
         </div>
       {/if}
     </div>
-    <span class="separator">|</span>
-    <TabBar />
+    {#if !eduStore.isHandout}
+      <span class="separator">|</span>
+      <TabBar />
+    {/if}
+
+    <!--
+      "A saved project was found — Restore / Discard", beside the tabs.
+      ────────────────────────────────────────────────────────────────
+      This used to be a full-width banner under the header, which pushed the
+      whole application down by its own height the moment the page loaded. It
+      was replaced with an inline prompt next to the tab strip — the tabs are
+      what it is about, since restoring opens one — but only the styles landed:
+      the markup was deleted with the banner and never put back, so the offer to
+      restore your last session simply stopped appearing.
+    -->
+    {#if showAutosaveBanner}
+      <div class="autosave-inline" class:autosave-older={autosaveStamp.older} data-testid="autosave-prompt">
+        <span class="autosave-text">
+          {t('app.autosaveFound')} <strong>{autosaveData?.name}</strong>
+          {#if autosaveStamp.timestamp}
+            <span class="autosave-stamp">({new Date(autosaveStamp.timestamp).toLocaleString()})</span>
+          {/if}
+        </span>
+        {#if autosaveStamp.older}
+          <!-- Said here, not only in a toast: a user who dismissed the toast must still be
+               able to see that what they are about to restore is not their newest save. -->
+          <span class="autosave-warning">{t('file.autosaveOlderRestored')}</span>
+        {/if}
+        <button class="banner-btn restore" onclick={restoreAutosave}>{t('app.restore')}</button>
+        <button class="banner-btn discard" onclick={discardAutosave}>{t('app.discard')}</button>
+      </div>
+    {/if}
+
     <div class="header-actions">
       <button class="btn btn-help" onclick={() => uiStore.showHelp = true} title={t('app.keyboardShortcuts')}>
         ?
@@ -684,38 +779,37 @@
         <option value="ar">{t('lang.ar')}</option>
         <option value="id">{t('lang.id')}</option>
       </select>
+
+      <!--
+        Settings sits with the other application-level controls — help and
+        language — rather than in the ribbon. It configures the application,
+        not the document, which is what everything else in this corner does.
+      -->
+      {#if uiStore.appMode === 'basico' && !uiStore.isMobile}
+        <button
+          class="btn btn-settings"
+          class:on={basicPanel === 'settings'}
+          onclick={() => openBasicPanel('settings')}
+          title={t('ribbon.settings')}
+          aria-label={t('ribbon.settings')}
+          data-testid="rb-settings"
+        ><Icon name="settings" size={16} /></button>
+      {/if}
     </div>
   </header>
 
-  {#if showAutosaveBanner}
-    <div class="autosave-banner" class:autosave-banner-older={autosaveStamp.older}>
-      <span>
-        {t('app.autosaveFound')} <strong>{autosaveData?.name}</strong>
-        {#if autosaveStamp.timestamp}
-          <span class="autosave-stamp">({new Date(autosaveStamp.timestamp).toLocaleString()})</span>
-        {/if}
-      </span>
-      {#if autosaveStamp.older}
-        <!-- The banner says it, not only a toast: a user who dismissed the toast must still
-             be able to see that what they are about to restore is not their newest save. -->
-        <span class="autosave-warning">{t('file.autosaveOlderRestored')}</span>
-      {/if}
-      <button class="banner-btn restore" onclick={restoreAutosave}>{t('app.restore')}</button>
-      <button class="banner-btn discard" onclick={discardAutosave}>{t('app.discard')}</button>
-    </div>
+  {#if uiStore.appMode === 'basico' && !uiStore.isMobile}
+    <Ribbon onOpenPanel={openBasicPanel} activePanel={basicPanel} />
+    <ToolOptionsBar />
   {/if}
 
   <div class="app-body" class:app-body-pro={uiStore.appMode === 'pro'}>
-    {#if uiStore.appMode === 'basico'}
-      {#if !uiStore.isMobile}
-        {#if uiStore.leftSidebarOpen}
-          <aside class="sidebar left">
-            <Toolbar />
-          </aside>
-        {/if}
-        <button class="sidebar-toggle-btn left-toggle" class:sidebar-closed={!uiStore.leftSidebarOpen} onclick={() => uiStore.leftSidebarOpen = !uiStore.leftSidebarOpen} title={uiStore.leftSidebarOpen ? t('app.hideLeftPanel') : t('app.showLeftPanel')}>
-          {uiStore.leftSidebarOpen ? '◂' : '▸'}
-        </button>
+    {#if uiStore.appMode === 'basico' && uiStore.isMobile}
+      <!-- Mobile keeps the old panel: a ribbon needs width the phone does not have. -->
+      {#if uiStore.leftSidebarOpen}
+        <aside class="sidebar left">
+          <Toolbar />
+        </aside>
       {/if}
     {/if}
 
@@ -867,15 +961,52 @@
             {/if}
           </div>
         {/if}
-        {#if uiStore.appMode === 'basico'}
+        <!--
+          Education gets the drawing tools while a teacher is authoring.
+          ─────────────────────────────────────────────────────────────
+          The authoring form's first and default option reads "draw the
+          structure with the usual tools, then take it" — and Education
+          mounts no ribbon, no toolbar and no floating tools, so there were
+          no tools to draw with. The form even said so two lines below, and
+          sent the teacher to Basic to build the model, save a file and come
+          back to open it.
+
+          This is the bar Basic already uses on a phone: node, element,
+          support, load and their options, and nothing about solving or
+          results, which an exercise author has no use for.
+        -->
+        {#if (uiStore.appMode === 'basico' && uiStore.isMobile) || (uiStore.appMode === 'educativo' && eduStore.authoring)}
           <FloatingTools />
         {/if}
-        <WhatIfPanel />
-        <SectionStressPanel />
-        <KinematicPanel />
+        <!--
+          Advanced analyses float over the canvas only where there is nothing to
+          dock them into. In desktop Basic the right panel is that place, and
+          BasicPanel renders them there instead — otherwise Kinematic and
+          Explore end up as two boxes covering the structure they describe.
+        -->
+        {#if !(uiStore.appMode === 'basico' && !uiStore.isMobile)}
+          <WhatIfPanel />
+          <SectionStressPanel />
+          <KinematicPanel />
+        {/if}
         <MobileResultsPanel />
+        <!--
+          Basic only, but in BOTH its layouts. The shortcuts used to ride along
+          inside the left Toolbar, which desktop no longer renders — so they
+          worked on the phone and nowhere else.
+
+          Not in PRO: `handleProKeydown` above already owns Ctrl+Z/Y there, and
+          mounting both made one keystroke undo twice.
+        -->
+        {#if uiStore.appMode === 'basico'}
+          <KeyboardShortcuts />
+        {/if}
       </main>
     </div>
+
+    {#if uiStore.appMode === 'basico' && basicPanel && !uiStore.isMobile}
+      <BasicPanel panel={basicPanel} onClose={() => (basicPanel = null)} />
+    {/if}
 
     {#if !uiStore.isMobile}
       {#if uiStore.appMode === 'pro' && uiStore.proPanelVisible}
@@ -888,7 +1019,12 @@
         <aside class="sidebar right edu-sidebar">
           <EducativePanel />
         </aside>
-      {:else if uiStore.appMode === 'basico'}
+      {:else if uiStore.appMode === 'basico' && uiStore.isMobile}
+        <!--
+          Desktop Basic serves model data and the DSM wizard through the one
+          ribbon panel. This legacy sidebar, with its own edge toggle, stays only
+          for mobile, where there is no ribbon to route them through.
+        -->
         {#if !uiStore.aiDrawerOpen}
           <button class="sidebar-toggle-btn right-toggle" class:sidebar-closed={!uiStore.rightSidebarOpen} onclick={() => uiStore.rightSidebarOpen = !uiStore.rightSidebarOpen} title={uiStore.rightSidebarOpen ? t('app.hideRightPanel') : t('app.showRightPanel')}>
             {uiStore.rightSidebarOpen ? '▸' : '◂'}
@@ -1108,11 +1244,11 @@
 <style>
   .import-textarea {
     width: 100%;
-    background: #0f3460;
-    border: 1px solid #1a4a7a;
+    background: var(--st-surface-2);
+    border: 1px solid var(--st-hair-strong);
     border-radius: 4px;
-    color: #eee;
-    font-family: monospace;
+    color: var(--st-text);
+    font-family: var(--st-mono);
     font-size: 0.85rem;
     padding: 0.5rem;
     resize: vertical;
@@ -1123,8 +1259,15 @@
     flex-direction: column;
     height: 100vh;
     height: 100dvh;
-    background: #1a1a2e;
-    color: #eee;
+    background: var(--st-bg);
+    color: var(--st-text);
+    /*
+      The application declared no font and inherited the system stack from
+      index.html, so it rendered in San Francisco on a Mac and Segoe on
+      Windows while the landing rendered in IBM Plex on both. One declaration
+      here reaches every descendant that does not override it.
+    */
+    font-family: var(--st-sans);
   }
 
   .hidden-behind-landing {
@@ -1138,8 +1281,8 @@
     justify-content: space-between;
     align-items: center;
     padding: 0.5rem 1rem;
-    background: #16213e;
-    border-bottom: 1px solid #0f3460;
+    background: var(--st-surface);
+    border-bottom: 1px solid var(--st-hair);
     position: relative;
     z-index: 400;
   }
@@ -1161,12 +1304,12 @@
     cursor: pointer;
     color: inherit;
   }
-  .logo-home:hover .logo-text { color: #fff; }
-  .logo-home:hover .logo-icon { color: #ff5a75; }
+  .logo-home:hover .logo-text { color: var(--st-text); }
+  .logo-home:hover .logo-icon { color: var(--st-accent-hover); }
 
   .logo-icon {
     font-size: 1.5rem;
-    color: #e94560;
+    color: var(--st-accent);
   }
 
   .logo-text {
@@ -1176,9 +1319,22 @@
   }
 
   .separator {
-    color: #444;
+    color: var(--st-text-3);
     font-size: 1.25rem;
     margin: 0 0.25rem;
+  }
+
+  /* The exercise, where the mode switcher would be: in a handout the title
+     is the one piece of identity the window has. */
+  .handout-title {
+    font-family: var(--st-display);
+    font-size: 0.9rem;
+    color: var(--st-text);
+    padding: 0 0.5rem;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    max-width: 46vw;
   }
 
   .mode-toggle {
@@ -1187,7 +1343,7 @@
     gap: 0;
     border-radius: 4px;
     overflow: hidden;
-    border: 1px solid #334;
+    border: 1px solid var(--st-hair);
     margin-left: 0.25rem;
     min-width: 180px;
     position: relative;
@@ -1197,7 +1353,7 @@
   .mode-toggle button {
     background: transparent;
     border: none;
-    color: #888;
+    color: var(--st-text-3);
     font-size: 0.68rem;
     font-weight: 600;
     padding: 0.2rem 0.35rem;
@@ -1209,34 +1365,34 @@
   }
 
   .mode-toggle button:hover {
-    background: #1a2a4a;
-    color: #ccc;
+    background: var(--st-surface-2);
+    color: var(--st-text);
   }
 
   .mode-toggle button.active {
-    background: #e94560;
+    background: var(--st-accent);
     color: white;
   }
 
   .mode-toggle button.edu-mode-btn {
-    background: linear-gradient(135deg, #1a1a3a, #0f1a30);
-    color: #4ecdc4;
-    border-left: 1px solid #334;
+    background: var(--st-surface-2);
+    color: var(--st-value);
+    border-left: 1px solid var(--st-hair);
   }
 
   .mode-toggle button.edu-mode-btn.active {
-    background: linear-gradient(135deg, #2a8a7a, #1a6a5a);
+    background: var(--st-surface-3);
     color: white;
   }
 
   .mode-toggle button.pro-mode-btn {
-    background: linear-gradient(135deg, #1a1a3a, #0f1a30);
-    color: #f0a500;
-    border-left: 1px solid #334;
+    background: var(--st-surface-2);
+    color: var(--st-warn);
+    border-left: 1px solid var(--st-hair);
   }
 
   .mode-toggle button.pro-mode-btn.active {
-    background: linear-gradient(135deg, #e94560, #c73e54);
+    background: var(--st-accent);
     color: white;
   }
 
@@ -1270,8 +1426,8 @@
     display: flex;
     align-items: center;
     gap: 3px;
-    background: #0a1a30;
-    border-bottom: 1px solid #1a4a7a;
+    background: var(--st-surface-2);
+    border-bottom: 1px solid var(--st-hair-strong);
     padding: 5px 10px;
     flex-shrink: 0;
     width: 100%;
@@ -1280,22 +1436,22 @@
     display: flex; align-items: center; justify-content: center; gap: 2px;
     height: 30px; min-width: 30px; padding: 0 6px;
     font-size: 0.88rem;
-    color: #899;
+    color: var(--st-text-2);
     background: transparent;
     border: 1px solid transparent;
     border-radius: 5px;
     cursor: pointer;
     transition: all 0.12s;
   }
-  .pb-tool:hover { color: #ddd; background: rgba(26, 74, 122, 0.4); }
-  .pb-tool.active { color: #fff; background: #e94560; border-color: #ff6b6b; }
+  .pb-tool:hover { color: var(--st-text); background: rgba(26, 74, 122, 0.4); }
+  .pb-tool.active { color: var(--st-text); background: var(--st-accent); border-color: var(--st-danger); }
   .pb-group {
     display: flex; align-items: center; gap: 3px;
     height: 30px; padding: 0 10px;
     font-size: 0.7rem; font-weight: 600;
-    color: #8899aa;
+    color: var(--st-text-2);
     background: transparent;
-    border: 1px solid #152a45;
+    border: 1px solid var(--st-hair);
     border-radius: 5px;
     cursor: pointer;
     transition: all 0.12s;
@@ -1303,23 +1459,23 @@
     text-transform: uppercase;
     letter-spacing: 0.03em;
   }
-  .pb-group:hover { color: #cde; background: rgba(26, 74, 122, 0.3); border-color: #1e4570; }
-  .pb-group.group-active { color: #fff; border-color: #e94560; background: rgba(233, 69, 96, 0.12); }
+  .pb-group:hover { color: var(--st-text); background: rgba(26, 74, 122, 0.3); border-color: var(--st-hair-strong); }
+  .pb-group.group-active { color: var(--st-text); border-color: var(--st-accent); background: rgba(233, 69, 96, 0.12); }
   .pb-caret { font-size: 0.55rem; opacity: 0.6; }
   .pb-undo {
     display: flex; align-items: center; justify-content: center;
     width: 28px; height: 30px;
     font-size: 0.9rem;
-    color: #899;
+    color: var(--st-text-2);
     background: transparent;
     border: none;
     border-radius: 4px;
     cursor: pointer;
     transition: all 0.12s;
   }
-  .pb-undo:hover:not(:disabled) { color: #ddd; background: rgba(26, 74, 122, 0.4); }
+  .pb-undo:hover:not(:disabled) { color: var(--st-text); background: rgba(26, 74, 122, 0.4); }
   .pb-undo:disabled { opacity: 0.25; cursor: not-allowed; }
-  .pb-divider { width: 1px; height: 20px; background: #1a3050; margin: 0 4px; flex-shrink: 0; }
+  .pb-divider { width: 1px; height: 20px; background: var(--st-surface-3); margin: 0 4px; flex-shrink: 0; }
   .pb-spacer { flex: 1; }
   /* Dropdown */
   .pb-dd-wrap { position: relative; }
@@ -1329,8 +1485,8 @@
     left: 0;
     z-index: 300;
     min-width: 150px;
-    background: #0d1b2e;
-    border: 1px solid #1a4a7a;
+    background: var(--st-surface);
+    border: 1px solid var(--st-hair-strong);
     border-radius: 6px;
     padding: 3px 0;
     box-shadow: 0 8px 28px rgba(0,0,0,0.55);
@@ -1339,30 +1495,30 @@
     display: block; width: 100%;
     padding: 7px 14px;
     font-size: 0.72rem; font-weight: 500;
-    color: #aab;
+    color: var(--st-text-2);
     background: transparent;
     border: none;
     text-align: left;
     cursor: pointer;
     transition: all 0.1s;
   }
-  .pb-dd-item:hover { color: #fff; background: rgba(26, 74, 122, 0.4); }
-  .pb-dd-item.active { color: #fff; background: #e94560; }
+  .pb-dd-item:hover { color: var(--st-text); background: rgba(26, 74, 122, 0.4); }
+  .pb-dd-item.active { color: var(--st-text); background: var(--st-accent); }
   .pb-dd-item:first-child { border-radius: 4px 4px 0 0; }
   .pb-dd-item:last-child { border-radius: 0 0 4px 4px; }
   .pn-toggle {
     padding: 4px 8px;
     font-size: 0.9rem;
     line-height: 1;
-    color: #aaa;
+    color: var(--st-text-2);
     background: transparent;
-    border: 1px solid #334;
+    border: 1px solid var(--st-hair);
     border-radius: 4px;
     cursor: pointer;
     flex-shrink: 0;
     margin-left: 6px;
   }
-  .pn-toggle:hover { color: #fff; border-color: #4ecdc4; }
+  .pn-toggle:hover { color: var(--st-text); border-color: var(--st-interactive); }
   .pn-settings-gear { font-size: 1rem; }
   .simplified-banner {
     position: absolute;
@@ -1390,8 +1546,8 @@
     width: 260px;
     max-height: 70vh;
     overflow-y: auto;
-    background: #0d1b2e;
-    border: 1px solid #1a4a7a;
+    background: var(--st-surface);
+    border: 1px solid var(--st-hair-strong);
     border-radius: 6px;
     padding: 0.5rem;
     box-shadow: 0 4px 20px rgba(0,0,0,0.5);
@@ -1414,14 +1570,14 @@
     white-space: nowrap;
   }
   .pn-action:disabled { opacity: 0.35; cursor: not-allowed; }
-  .pn-example { color: #fff; background: linear-gradient(135deg, #f0a500, #d99200); border-color: #f0a500; }
-  .pn-example:hover { background: linear-gradient(135deg, #ffb820, #f0a500); }
-  .pn-cad { color: #4ecdc4; border-color: #2a7a74; background: rgba(78, 205, 196, 0.08); }
+  .pn-example { color: var(--st-text); background: var(--st-warn); border-color: var(--st-warn); }
+  .pn-example:hover { background: var(--st-amber-text); }
+  .pn-cad { color: var(--st-value); border-color: var(--st-interactive); background: rgba(78, 205, 196, 0.08); }
   .pn-cad:hover { background: rgba(78, 205, 196, 0.2); }
-  .pn-solve { color: #fff; background: linear-gradient(135deg, #4ecdc4, #3ab8b0); border-color: #4ecdc4; }
-  .pn-solve:hover { background: linear-gradient(135deg, #5fe0d7, #4ecdc4); }
-  .pn-report { color: #fff; background: linear-gradient(135deg, #e94560, #c73e54); border-color: #e94560; }
-  .pn-report:hover { background: linear-gradient(135deg, #ff5a75, #e94560); }
+  .pn-solve { color: var(--st-text); background: var(--st-accent); border-color: var(--st-interactive); }
+  .pn-solve:hover { background: var(--st-accent-hover); }
+  .pn-report { color: var(--st-text); background: var(--st-accent); border-color: var(--st-accent); }
+  .pn-report:hover { background: linear-gradient(135deg, var(--st-accent-hover), var(--st-accent)); }
 
   .pro-resize-handle {
     position: absolute;
@@ -1448,7 +1604,7 @@
     background: transparent;
     border: 1px solid transparent;
     border-radius: 4px;
-    color: #aaa;
+    color: var(--st-text-2);
     font-size: 1rem;
     padding: 0.2rem 0.4rem;
     width: 200px;
@@ -1456,32 +1612,25 @@
   }
 
   .project-name:hover {
-    border-color: #333;
+    border-color: var(--st-hair);
   }
 
   .project-name:focus {
     outline: none;
-    border-color: #e94560;
-    color: #eee;
-    background: #0f3460;
+    border-color: var(--st-accent);
+    color: var(--st-text);
+    background: var(--st-surface-2);
   }
 
-  .autosave-banner {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    gap: 1rem;
-    padding: 0.5rem 1rem;
-    background: #2a1a3e;
-    border-bottom: 1px solid #4a2a6e;
-    font-size: 0.875rem;
-    color: #ddd;
-  }
-
-  /* An older-than-newest save is not the normal case and must not look like it. */
-  .autosave-banner-older {
+  /* An older-than-newest save is not the normal case and must not look like it.
+     Tinted in place rather than as a full-width band: the standalone banner this
+     replaced pushed the whole application down by its own height on load, which is
+     why it was removed upstream. */
+  .autosave-older {
     background: #3e2a1a;
-    border-bottom-color: #6e4a2a;
+    border: 1px solid #6e4a2a;
+    border-radius: 4px;
+    padding: 0.15rem 0.5rem;
   }
 
   .autosave-stamp {
@@ -1504,21 +1653,21 @@
   }
 
   .banner-btn.restore {
-    background: #e94560;
+    background: var(--st-accent);
     color: white;
   }
 
   .banner-btn.restore:hover {
-    background: #ff6b6b;
+    background: var(--st-danger);
   }
 
   .banner-btn.discard {
-    background: #333;
-    color: #aaa;
+    background: var(--st-surface-3);
+    color: var(--st-text-2);
   }
 
   .banner-btn.discard:hover {
-    background: #444;
+    background: var(--st-hair-strong);
     color: white;
   }
 
@@ -1539,34 +1688,40 @@
   }
 
   .btn-primary {
-    background: #e94560;
+    background: var(--st-accent);
     color: white;
   }
 
   .btn-primary:hover {
-    background: #ff6b6b;
+    background: var(--st-danger);
   }
 
   .btn-secondary {
-    background: #0f3460;
-    color: #eee;
+    background: var(--st-surface-2);
+    color: var(--st-text);
   }
 
   .btn-secondary:hover {
-    background: #1a4a7a;
+    background: var(--st-surface-3);
   }
 
   .ai-fab {
     position: fixed;
     bottom: 24px;
-    right: 24px;
+    /*
+       Over the canvas, not over the panel. Fixed at the viewport's corner it
+       covered the bottom-right of the right panel — enough to swallow the last
+       row of the step-by-step wizard, and enough to intercept clicks meant for
+       whatever was underneath it.
+    */
+    right: calc(24px + var(--st-right-panel-w, 0px));
     z-index: 100;
     width: 48px;
     height: 48px;
     border-radius: 50%;
-    background: #0f3460;
-    border: 2px solid #1a4a7a;
-    color: #ccc;
+    background: var(--st-surface-2);
+    border: 2px solid var(--st-hair-strong);
+    color: var(--st-text);
     font-size: 1.1rem;
     font-weight: 700;
     letter-spacing: 0;
@@ -1579,23 +1734,23 @@
   }
 
   .ai-fab:hover {
-    background: #1a4a7a;
-    border-color: #4ecdc4;
-    color: #4ecdc4;
+    background: var(--st-surface-3);
+    border-color: var(--st-interactive);
+    color: var(--st-value);
     transform: scale(1.05);
   }
 
   .ai-fab.active {
-    background: #1a4a7a;
-    border-color: #4ecdc4;
-    color: #4ecdc4;
+    background: var(--st-surface-3);
+    border-color: var(--st-interactive);
+    color: var(--st-value);
     box-shadow: 0 4px 16px rgba(78, 205, 196, 0.3);
   }
 
   .btn-help {
     background: transparent;
-    border: 1px solid #555;
-    color: #888;
+    border: 1px solid var(--st-hair-strong);
+    color: var(--st-text-3);
     width: 32px;
     height: 32px;
     padding: 0;
@@ -1608,33 +1763,54 @@
   }
 
   .btn-help:hover {
-    border-color: #4ecdc4;
-    color: #4ecdc4;
+    border-color: var(--st-interactive);
+    color: var(--st-value);
   }
+
+  /*
+     `.btn` sets no background, so a button that does not set one of its own
+     falls back to the browser's native ButtonFace — a light grey slab in a dark
+     shell. Every other button here declares its own; this one had only a colour.
+  */
+  .btn-settings {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 26px;
+    height: 26px;
+    padding: 0;
+    background: transparent;
+    border: 1px solid var(--st-hair-strong);
+    border-radius: 50%;
+    color: var(--st-text-3);
+  }
+
+  .btn-settings:hover { color: var(--st-text); border-color: var(--st-hair-strong); }
+  .btn-settings.on { color: var(--st-accent); border-color: var(--st-accent); }
 
   .lang-select {
     background: transparent;
-    border: 1px solid #555;
+    border: 1px solid var(--st-hair-strong);
     border-radius: 4px;
-    color: #aaa;
+    color: var(--st-text-2);
     font-size: 0.75rem;
     padding: 0.2rem 0.3rem;
     cursor: pointer;
     height: 32px;
   }
   .lang-select:hover {
-    border-color: #4ecdc4;
-    color: #4ecdc4;
+    border-color: var(--st-interactive);
+    color: var(--st-value);
   }
   .lang-select option {
-    background: #16213e;
-    color: #eee;
+    background: var(--st-surface);
+    color: var(--st-text);
   }
 
   .btn-toggle {
     background: transparent;
-    border: 1px solid #555;
-    color: #666;
+    border: 1px solid var(--st-hair-strong);
+    color: var(--st-text-3);
     height: 32px;
     padding: 0 0.5rem;
     font-size: 0.75rem;
@@ -1645,14 +1821,14 @@
   }
 
   .btn-toggle:hover {
-    border-color: #4ecdc4;
-    color: #4ecdc4;
+    border-color: var(--st-interactive);
+    color: var(--st-value);
   }
 
   .btn-toggle.active {
-    background: #1a4a7a;
-    border-color: #4ecdc4;
-    color: #4ecdc4;
+    background: var(--st-surface-3);
+    border-color: var(--st-interactive);
+    color: var(--st-value);
   }
 
   .app-body {
@@ -1675,15 +1851,15 @@
 
   .sidebar {
     width: 250px;
-    background: #16213e;
-    border-right: 1px solid #0f3460;
+    background: var(--st-surface);
+    border-right: 1px solid var(--st-hair);
     overflow-y: auto;
   }
 
   .sidebar.right {
     width: 340px;
     border-right: none;
-    border-left: 1px solid #0f3460;
+    border-left: 1px solid var(--st-hair);
     display: flex;
     flex-direction: column;
     overflow: hidden;
@@ -1703,18 +1879,18 @@
   .sidebar-toggle-btn {
     position: absolute;
     z-index: 20;
-    background: #16213e;
-    border: 1px solid #0f3460;
-    color: #888;
+    background: var(--st-surface);
+    border: 1px solid var(--st-hair);
+    color: var(--st-text-3);
     cursor: pointer;
     font-size: 0.75rem;
     padding: 0.6rem 0.2rem;
     transition: all 0.2s;
   }
   .sidebar-toggle-btn:hover {
-    background: #1a1a2e;
-    color: #4ecdc4;
-    border-color: #4ecdc4;
+    background: var(--st-bg);
+    color: var(--st-value);
+    border-color: var(--st-interactive);
   }
   .left-toggle {
     top: 50%;
@@ -1741,10 +1917,10 @@
   .datatable-toggle {
     width: 100%;
     padding: 0.35rem 0.5rem;
-    background: #12192e;
+    background: var(--st-bg);
     border: none;
-    border-bottom: 1px solid #0f3460;
-    color: #aaa;
+    border-bottom: 1px solid var(--st-hair);
+    color: var(--st-text-2);
     cursor: pointer;
     font-size: 0.7rem;
     font-weight: 600;
@@ -1755,8 +1931,8 @@
     flex-shrink: 0;
   }
   .datatable-toggle:hover {
-    background: #1a1a2e;
-    color: #ccc;
+    background: var(--st-bg);
+    color: var(--st-text);
   }
 
   .main-area {
@@ -1773,15 +1949,23 @@
   }
 
   .app-footer {
-    background: #16213e;
-    border-top: 1px solid #0f3460;
+    background: var(--st-surface);
+    border-top: 1px solid var(--st-hair);
   }
 
   /* Toast notifications */
   .toast-container {
     position: fixed;
-    top: 60px;
-    right: 270px;
+    /*
+       Below the ribbon and its options bar, not over them. At 60px the toast
+       landed across the last commands in the Results group — so the message
+       telling you the analysis succeeded covered the diagrams you would press
+       next. Anchored to the bottom-right instead: out of the command surface,
+       and out of the way of the model's left-anchored drawing.
+    */
+    bottom: 46px;
+    /* Clear of the right panel when one is open — BasicPanel publishes its width. */
+    right: calc(24px + var(--st-right-panel-w, 0px));
     z-index: 1100;
     display: flex;
     flex-direction: column;
@@ -1818,8 +2002,8 @@
   .toast-action {
     align-self: flex-end;
     background: none;
-    border: 1px solid #4ecdc4;
-    color: #4ecdc4;
+    border: 1px solid var(--st-interactive);
+    color: var(--st-value);
     padding: 0.25rem 0.6rem;
     border-radius: 4px;
     font-size: 0.75rem;
@@ -1828,26 +2012,26 @@
     transition: all 0.15s;
   }
   .toast-action:hover {
-    background: #4ecdc4;
-    color: #0a1628;
+    background: var(--st-accent);
+    color: var(--st-text-on-accent);
   }
 
   .toast-success {
-    background: #1a3a2a;
-    border: 1px solid #4caf50;
-    color: #4caf50;
+    background: rgba(42, 168, 105, 0.16);
+    border: 1px solid var(--st-ok);
+    color: var(--st-ok);
   }
 
   .toast-error {
-    background: #3a1a1a;
-    border: 1px solid #e94560;
-    color: #ff6b6b;
+    background: rgba(232, 112, 95, 0.16);
+    border: 1px solid var(--st-accent);
+    color: var(--st-danger);
   }
 
   .toast-info {
-    background: #1a2a3a;
-    border: 1px solid #4ecdc4;
-    color: #4ecdc4;
+    background: var(--st-surface-2);
+    border: 1px solid var(--st-interactive);
+    color: var(--st-value);
   }
 
   @keyframes toast-in {
@@ -1873,8 +2057,8 @@
 
   .help-content {
     position: relative;
-    background: #16213e;
-    border: 1px solid #0f3460;
+    background: var(--st-surface);
+    border: 1px solid var(--st-hair);
     border-radius: 8px;
     padding: 1.5rem 2rem;
     max-width: 600px;
@@ -1893,21 +2077,21 @@
 
   .help-header h2 {
     font-size: 1.1rem;
-    color: #4ecdc4;
+    color: var(--st-value);
     margin: 0;
   }
 
   .help-close {
     background: none;
     border: none;
-    color: #888;
+    color: var(--st-text-3);
     font-size: 1.2rem;
     cursor: pointer;
     padding: 0.25rem;
   }
 
   .help-close:hover {
-    color: #eee;
+    color: var(--st-text);
   }
 
   /* Embed mode: hide everything except viewport */
@@ -1924,27 +2108,27 @@
   :global(.edu-tooltip) {
     position: absolute;
     z-index: 10000;
-    background: #2a2a4e;
-    border: 1px solid #4ecdc4;
+    background: var(--st-surface-3);
+    border: 1px solid var(--st-interactive);
     border-radius: 6px;
     padding: 0.5rem 0.75rem;
     max-width: 250px;
     font-size: 0.78rem;
     line-height: 1.4;
-    color: #ddd;
+    color: var(--st-text);
     pointer-events: none;
     animation: tooltip-fade-in 0.15s ease;
   }
 
   :global(.edu-tooltip strong) {
-    color: #4ecdc4;
+    color: var(--st-value);
     display: block;
     margin-bottom: 0.25rem;
     font-size: 0.82rem;
   }
 
   :global(.edu-tooltip span) {
-    color: #bbb;
+    color: var(--st-text-2);
   }
 
   @keyframes tooltip-fade-in {
@@ -1965,7 +2149,7 @@
     top: 0;
     bottom: 0;
     width: min(85vw, 320px);
-    background: #16213e;
+    background: var(--st-surface);
     z-index: 201;
     overflow-y: auto;
     box-shadow: 4px 0 16px rgba(0, 0, 0, 0.4);
@@ -2018,17 +2202,17 @@
     display: flex;
     justify-content: space-around;
     align-items: center;
-    background: #16213e;
-    border-top: 1px solid #0f3460;
+    background: var(--st-surface);
+    border-top: 1px solid var(--st-hair);
     padding: 8px 8px;
     padding-bottom: max(8px, env(safe-area-inset-bottom));
     gap: 8px;
   }
 
   .mobile-bar-btn {
-    background: #0f3460;
-    border: 1px solid #1a4a7a;
-    color: #ccc;
+    background: var(--st-surface-2);
+    border: 1px solid var(--st-hair-strong);
+    color: var(--st-text);
     width: 44px;
     height: 44px;
     border-radius: 8px;
@@ -2041,7 +2225,7 @@
   }
 
   .mobile-bar-btn:active {
-    background: #1a4a7a;
+    background: var(--st-surface-3);
     color: white;
   }
 
@@ -2051,8 +2235,8 @@
     align-items: center;
     gap: 3px;
     padding: 4px 8px;
-    background: #0a1a30;
-    border-bottom: 1px solid #1a4a7a;
+    background: var(--st-surface-2);
+    border-bottom: 1px solid var(--st-hair-strong);
     flex-shrink: 0;
     flex-wrap: wrap;
   }
@@ -2060,28 +2244,28 @@
     width: 36px; height: 34px;
     display: flex; align-items: center; justify-content: center;
     font-size: 1rem;
-    color: #899;
-    background: #0f2840;
-    border: 1px solid #1a3050;
+    color: var(--st-text-2);
+    background: var(--st-surface-2);
+    border: 1px solid var(--st-hair);
     border-radius: 6px;
     cursor: pointer;
   }
-  .pmt-btn:hover { color: #ddd; }
-  .pmt-btn.active { color: #fff; background: #e94560; border-color: #ff6b6b; }
+  .pmt-btn:hover { color: var(--st-text); }
+  .pmt-btn.active { color: var(--st-text); background: var(--st-accent); border-color: var(--st-danger); }
   .pmt-btn.pmt-undo { font-size: 0.9rem; width: 34px; }
   .pmt-btn.pmt-undo:disabled { opacity: 0.2; cursor: not-allowed; }
   .pmt-btn.pmt-results { padding: 0 8px; }
-  .pmt-btn.pmt-results.active { background: rgba(233, 69, 96, 0.2); border-color: #e94560; }
+  .pmt-btn.pmt-results.active { background: rgba(233, 69, 96, 0.2); border-color: var(--st-accent); }
   .pmt-sel {
     padding: 4px 8px;
     font-size: 0.7rem;
-    color: #aab;
-    background: #0f3460;
-    border: 1px solid #1a4a7a;
+    color: var(--st-text-2);
+    background: var(--st-surface-2);
+    border: 1px solid var(--st-hair-strong);
     border-radius: 4px;
     cursor: pointer;
   }
-  .pmt-sel.active { color: #fff; background: #e94560; border-color: #ff6b6b; }
+  .pmt-sel.active { color: var(--st-text); background: var(--st-accent); border-color: var(--st-danger); }
 
   /* ─── Mobile mode selector ─── */
   .mode-select-mobile {
@@ -2089,9 +2273,9 @@
     font-size: 0.75rem;
     font-weight: 700;
     letter-spacing: 0.02em;
-    color: #e0e8f0;
-    background: linear-gradient(135deg, #0f3460, #162a50);
-    border: 1px solid #2a5a90;
+    color: var(--st-text);
+    background: var(--st-surface-2);
+    border: 1px solid var(--st-hair-strong);
     border-radius: 6px;
     cursor: pointer;
     -webkit-appearance: none;
@@ -2102,8 +2286,8 @@
     box-shadow: 0 1px 4px rgba(0,0,0,0.3), inset 0 1px 0 rgba(255,255,255,0.05);
     text-shadow: 0 1px 2px rgba(0,0,0,0.4);
   }
-  .mode-select-mobile:focus { border-color: #4ecdc4; outline: none; box-shadow: 0 0 0 2px rgba(78, 205, 196, 0.25); }
-  .mode-select-mobile option { background: #0d1b2e; color: #ccc; font-weight: 500; padding: 6px; }
+  .mode-select-mobile:focus { border-color: var(--st-interactive); outline: none; box-shadow: 0 0 0 2px rgba(78, 205, 196, 0.25); }
+  .mode-select-mobile option { background: var(--st-surface); color: var(--st-text); font-weight: 500; padding: 6px; }
 
   /* ===== Mobile Responsive ===== */
   @media (max-width: 767px) {
@@ -2206,4 +2390,171 @@
     color: rgba(255, 255, 255, 0.5);
     font-size: 0.7rem;
   }
+
+
+  /* Document-level commands: examples and project, beside the document name. */
+  .btn-doc {
+    background: none;
+    border: 1px solid var(--st-hair);
+    border-radius: var(--st-radius);
+    color: var(--st-text-2);
+    font-size: 0.8rem;
+    padding: 0.3rem 0.6rem;
+    cursor: pointer;
+    white-space: nowrap;
+    transition: background 0.12s, color 0.12s, border-color 0.12s;
+  }
+
+  .btn-doc:hover { background: var(--st-surface-3); color: var(--st-text); }
+
+  .btn-doc.on {
+    color: var(--st-accent);
+    border-color: var(--st-accent);
+  }
+
+  @media (max-width: 1100px) {
+    .btn-doc-label { display: none; }
+  }
+
+  /* ── Autosave prompt, inline with the tabs ──────────────────────────── */
+
+  .autosave-inline :global(.banner-btn),
+  .autosave-inline .banner-btn {
+    padding: 0.18rem 0.5rem;
+    font-size: 0.72rem;
+    border-radius: var(--st-radius);
+  }
+
+  /* The name is the only part that may give way when the tabs get long. */
+  .autosave-text {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    min-width: 0;
+  }
+
+  /*
+     `.tab-bar` is `flex: 1`, so it eats the header's spare width and pushes
+     anything after it to the far right — the prompt landed beside the help
+     button rather than beside the tabs it is about. While the prompt is up the
+     tabs take their natural width and the prompt absorbs the slack instead, so
+     it sits directly against them and the right-hand controls stay put. The
+     tabs get their growth back the moment the prompt is answered.
+  */
+  .app-header.has-autosave :global(.tab-bar) { flex: 0 1 auto; }
+  .autosave-inline { margin-right: auto; }
+  .autosave-inline {
+    display: flex;
+    align-items: center;
+    gap: 0.45rem;
+    margin-left: 0.6rem;
+    padding: 0.25rem 0.5rem;
+    border: 1px solid var(--st-hair);
+    border-left: 2px solid var(--st-warn);
+    border-radius: var(--st-radius);
+    background: var(--st-surface-2);
+    font-size: 0.78rem;
+    color: var(--st-text-2);
+    white-space: nowrap;
+    min-width: 0;
+  }
+
+  .ai-text { overflow: hidden; text-overflow: ellipsis; max-width: 30ch; }
+
+  .ai-btn {
+    background: none;
+    border: 1px solid var(--st-hair);
+    border-radius: var(--st-radius);
+    color: var(--st-text-2);
+    font-size: 0.74rem;
+    padding: 0.15rem 0.45rem;
+    cursor: pointer;
+    flex: none;
+  }
+
+  .ai-btn:hover { background: var(--st-surface-3); color: var(--st-text); }
+  .ai-btn.restore { color: var(--st-accent); border-color: var(--st-accent); }
+
+  @media (max-width: 1100px) { .ai-text { max-width: 16ch; } }
+
+  /* ── Header, brought into the token system ──────────────────────────── */
+
+  .app-header { gap: 0.75rem; }
+
+  .logo-text {
+    font-family: var(--st-display);
+    font-weight: 600;
+    font-size: 1.05rem;
+    letter-spacing: -0.01em;
+  }
+
+  .logo-icon { color: var(--st-accent); font-size: 1.15rem; }
+
+  /*
+     The mode switch is the one place the accent belongs up here: it says which
+     product you are in. It was a filled pill with a hard red; a rule under the
+     active mode reads as navigation rather than as an alert, and matches the
+     ribbon's own active treatment.
+  */
+  .mode-toggle {
+    display: flex;
+    gap: 0.1rem;
+    background: none;
+    border: none;
+    padding: 0;
+  }
+
+  .mode-toggle button {
+    background: none;
+    border: none;
+    border-bottom: 2px solid transparent;
+    color: var(--st-text-2);
+    font-family: var(--st-sans);
+    font-size: 0.82rem;
+    font-weight: 500;
+    padding: 0.3rem 0.6rem 0.25rem;
+    cursor: pointer;
+    border-radius: 0;
+    transition: color 0.12s, border-color 0.12s;
+  }
+
+  .mode-toggle button:hover { color: var(--st-text); background: none; }
+
+  .mode-toggle button.active {
+    color: var(--st-text);
+    background: none;
+    border-bottom-color: var(--st-accent);
+  }
+
+  .demo-badge {
+    font-family: var(--st-mono);
+    font-size: 0.55rem;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--st-text-3);
+    background: none;
+    border: 1px solid var(--st-hair);
+    border-radius: var(--st-radius);
+    padding: 0.05rem 0.25rem;
+    margin-left: 0.3rem;
+    vertical-align: middle;
+  }
+
+  .separator { color: var(--st-hair); font-size: 1rem; }
+
+  .btn-help,
+  .lang-select {
+    background: none;
+    border: 1px solid var(--st-hair);
+    border-radius: var(--st-radius);
+    color: var(--st-text-2);
+    font-family: var(--st-sans);
+    font-size: 0.8rem;
+    padding: 0.3rem 0.5rem;
+    cursor: pointer;
+  }
+
+  .btn-help:hover,
+  .lang-select:hover { background: var(--st-surface-3); color: var(--st-text); }
+
+  .btn-help { width: 26px; padding: 0.3rem 0; text-align: center; }
 </style>

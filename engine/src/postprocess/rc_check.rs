@@ -5,6 +5,8 @@
 
 use serde::{Deserialize, Serialize};
 
+use crate::postprocess::check_ledger::{CheckLedger, Unevaluated};
+
 // ==================== Types ====================
 
 /// RC section geometry type.
@@ -121,21 +123,35 @@ pub struct RCCheckResult {
     pub phi_flexure: f64,
     /// Whether the section is tension-controlled
     pub tension_controlled: bool,
+    /// Checks whose capacity could not be evaluated.
+    #[serde(default)]
+    pub unevaluated: Unevaluated,
 }
 
 // ==================== ACI 318-19 Design Checks ====================
 
 const PHI_V: f64 = 0.75; // Shear
 
+
+/// Index the force records by id so each member is a hash lookup rather than a
+/// scan of the whole list. The pairing was O(members x forces): fine at 100
+/// members, quadratic at 10,000 — and this runs on every edit.
+fn index_forces<T>(forces: &[T], id_of: impl Fn(&T) -> usize) -> std::collections::HashMap<usize, &T> {
+    let mut map = std::collections::HashMap::with_capacity(forces.len());
+    for f in forces {
+        map.entry(id_of(f)).or_insert(f);
+    }
+    map
+}
+
 /// Run ACI 318-19 RC design checks on all members.
 pub fn check_rc_members(input: &RCCheckInput) -> Vec<RCCheckResult> {
     let mut results = Vec::new();
 
+    let by_id = index_forces(&input.forces, |f| f.element_id);
+
     for member in &input.members {
-        let forces = input
-            .forces
-            .iter()
-            .find(|f| f.element_id == member.element_id);
+        let forces = by_id.get(&member.element_id).copied();
 
         let forces = match forces {
             Some(f) => f,
@@ -153,10 +169,20 @@ pub fn check_rc_members(input: &RCCheckInput) -> Vec<RCCheckResult> {
 fn check_single_rc_member(m: &RCMemberData, f: &RCDesignForces) -> RCCheckResult {
     let es = m.es.unwrap_or(200e9);
 
-    // Flexural capacity
-    let (phi_mn, a, c, epsilon_t, phi_flex) = match m.section_type {
-        RCSectionType::Rectangular => flexural_capacity_rectangular(m, es),
-        RCSectionType::TBeam => flexural_capacity_tbeam(m, es),
+    // Flexural capacity. With an axial force present the moment capacity is the
+    // point on the P-M interaction diagram at that axial load, not the
+    // pure-flexure value: `nu` was accepted and dropped, so every column was
+    // checked as if it were a beam.
+    let nu = f.nu.unwrap_or(0.0);
+    let (phi_mn, a, c, epsilon_t, phi_flex) = if nu != 0.0
+        && matches!(m.section_type, RCSectionType::Rectangular)
+    {
+        axial_flexure_capacity(m, es, -nu)
+    } else {
+        match m.section_type {
+            RCSectionType::Rectangular => flexural_capacity_rectangular(m, es),
+            RCSectionType::TBeam => flexural_capacity_tbeam(m, es),
+        }
     };
 
     // Shear capacity
@@ -166,14 +192,17 @@ fn check_single_rc_member(m: &RCMemberData, f: &RCDesignForces) -> RCCheckResult
     let mu_abs = f.mu.abs();
     let vu_abs = f.vu.unwrap_or(0.0).abs();
 
-    let flexure_ratio = if phi_mn > 0.0 { mu_abs / phi_mn } else { 0.0 };
-    let shear_ratio = if phi_vn > 0.0 {
-        vu_abs / phi_vn
-    } else {
-        0.0
-    };
+    let mut ledger = CheckLedger::new();
+    let flexure_ratio = ledger.ratio("Flexure ACI 318", mu_abs, phi_mn);
+    let shear_ratio = ledger.ratio_if_loaded("Shear ACI 318", vu_abs, phi_vn);
 
-    let tension_controlled = epsilon_t >= 0.005;
+    // ACI 318-19 Table 21.2.2 defines both phi and the tension-controlled
+    // classification by the same limit, eps_ty + 0.003. A fixed 0.005 (the
+    // 318-14 Grade 60 value) disagrees with `compute_phi` for any other grade:
+    // at fy = 550 MPa the limit is 0.00575, so eps_t = 0.0052 would be flagged
+    // tension-controlled while phi was still 0.85.
+    let epsilon_ty = if es > 0.0 { m.fy / es } else { 0.0 };
+    let tension_controlled = epsilon_t >= epsilon_ty + 0.003;
 
     // Governing
     let checks = [
@@ -181,11 +210,12 @@ fn check_single_rc_member(m: &RCMemberData, f: &RCDesignForces) -> RCCheckResult
         (shear_ratio, "Shear ACI 318"),
     ];
 
-    let (unity_ratio, governing_check) = checks
-        .iter()
-        .max_by(|a, b| a.0.partial_cmp(&b.0).unwrap())
-        .map(|(r, name)| (*r, name.to_string()))
-        .unwrap_or((0.0, "None".to_string()));
+    let (unity_ratio, governing) = ledger.governing(&checks);
+    let governing_check = if ledger.all_evaluated() {
+        governing.to_string()
+    } else {
+        format!("{governing} (incomplete)")
+    };
 
     RCCheckResult {
         element_id: m.element_id,
@@ -200,7 +230,67 @@ fn check_single_rc_member(m: &RCMemberData, f: &RCDesignForces) -> RCCheckResult
         epsilon_t,
         phi_flexure: phi_flex,
         tension_controlled,
+        unevaluated: ledger.into_unevaluated(),
     }
+}
+
+/// ACI 318-19 Sec 22.4: moment capacity of a rectangular section at a given
+/// factored axial load, by strain compatibility.
+///
+/// Solves for the neutral axis depth `c` at which phi·Pn(c) equals the applied
+/// `pu` (compression positive), then reports phi·Mn at that same `c` — the
+/// point on the P-M interaction diagram the member actually sits on. Below the
+/// balance point compression raises the moment capacity; above it, compression
+/// lowers it, and that is the case a flexure-only check gets dangerously wrong.
+///
+/// Returns (phi*Mn, a, c, epsilon_t, phi).
+fn axial_flexure_capacity(m: &RCMemberData, es: f64, pu: f64) -> (f64, f64, f64, f64, f64) {
+    let beta1 = compute_beta1(m.fc);
+    let as_comp = m.as_compression.unwrap_or(0.0);
+    let d_prime = m.d_prime.unwrap_or(0.0);
+
+    // Section forces at a trial neutral axis depth, moments taken about
+    // mid-depth so that P and M share one origin.
+    let evaluate = |c: f64| -> (f64, f64, f64, f64) {
+        let a = (beta1 * c).min(m.h);
+        let cc = 0.85 * m.fc * a * m.b;
+
+        let strain_at = |depth: f64| if c > 0.0 { 0.003 * (c - depth) / c } else { 0.0 };
+
+        // Compression steel: net of the concrete it displaces.
+        let fs_comp = (strain_at(d_prime) * es).clamp(-m.fy, m.fy);
+        let cs = as_comp * (fs_comp - 0.85 * m.fc);
+
+        // Tension steel: positive strain_at means compression, so flip.
+        let epsilon_t = -strain_at(m.d);
+        let fs_tens = (epsilon_t * es).clamp(-m.fy, m.fy);
+        let t = m.as_tension * fs_tens;
+
+        let pn = cc + cs - t;
+        let mn = cc * (m.h / 2.0 - a / 2.0)
+            + cs * (m.h / 2.0 - d_prime)
+            + t * (m.d - m.h / 2.0);
+        let phi = compute_phi(epsilon_t, m.fy, es);
+        (phi * pn, phi * mn, epsilon_t, phi)
+    };
+
+    // phi*Pn is monotonic in c over the practical range, so bisect. The upper
+    // bound is generous enough to cover pure compression on a deep section.
+    let mut lo = 1e-6_f64;
+    let mut hi = 10.0 * m.h.max(m.d);
+    for _ in 0..200 {
+        let mid = 0.5 * (lo + hi);
+        if evaluate(mid).0 < pu {
+            lo = mid;
+        } else {
+            hi = mid;
+        }
+    }
+    let c = 0.5 * (lo + hi);
+
+    let (_, phi_mn, epsilon_t, phi) = evaluate(c);
+    let a = (beta1 * c).min(m.h);
+    (phi_mn.max(0.0), a, c, epsilon_t, phi)
 }
 
 /// ACI 318-19 Sec 22.2: Flexural capacity of rectangular section.
@@ -338,21 +428,51 @@ fn flexural_capacity_tbeam(m: &RCMemberData, es: f64) -> (f64, f64, f64, f64, f6
     }
 }
 
-/// ACI 318M-19 Sec 22.5: Shear capacity.
+/// ACI 318M-19 Sec 22.5.5.1: Shear capacity.
 /// Formula uses f'c in MPa and dimensions in mm (empirical, not dimensionally homogeneous).
+///
+/// 318-19 replaced the single 0.17·lambda·sqrt(f'c) expression of 318-14 with a
+/// table keyed on whether at least minimum shear reinforcement is present. Where
+/// it is not, the size-effect factor lambda_s applies — and since it only bites
+/// for d > 250 mm, leaving it out was unconservative for essentially every beam.
 fn shear_capacity(m: &RCMemberData) -> f64 {
     let lambda = m.lambda.unwrap_or(1.0);
     let fc_mpa = m.fc / 1e6;
     let bw_mm = m.b * 1000.0;
     let d_mm = m.d * 1000.0;
-
-    // Vc = 0.17 * lambda * sqrt(f'c_MPa) * bw_mm * d_mm  (N)
-    let vc = 0.17 * lambda * fc_mpa.sqrt() * bw_mm * d_mm;
+    let sqrt_fc = fc_mpa.sqrt();
 
     // Vs = Av * fy * d / s  (all in base SI: m², Pa, m, m → N)
     let vs = match (m.av, m.s_stirrup) {
         (Some(av), Some(s)) if s > 0.0 => av * m.fy * m.d / s,
         _ => 0.0,
+    };
+
+    // ACI 318-19 9.6.3.4: Av,min = max(0.062·sqrt(f'c)·bw·s/fyt, 0.35·bw·s/fyt)
+    let has_min_shear_reinf = match (m.av, m.s_stirrup) {
+        (Some(av), Some(s)) if s > 0.0 && m.fy > 0.0 => {
+            let s_mm = s * 1000.0;
+            let fy_mpa = m.fy / 1e6;
+            let av_min_mm2 = (0.062 * sqrt_fc * bw_mm * s_mm / fy_mpa)
+                .max(0.35 * bw_mm * s_mm / fy_mpa);
+            av * 1e6 >= av_min_mm2
+        }
+        _ => false,
+    };
+
+    let vc = if has_min_shear_reinf {
+        // 22.5.5.1(a): Vc = 0.17·lambda·sqrt(f'c)·bw·d, no size effect.
+        0.17 * lambda * sqrt_fc * bw_mm * d_mm
+    } else {
+        // 22.5.5.1(c): Vc = 0.66·lambda_s·lambda·rho_w^(1/3)·sqrt(f'c)·bw·d
+        // 22.5.5.1.3: lambda_s = sqrt(2/(1 + d/250)) <= 1.0, d in mm.
+        let lambda_s = (2.0 / (1.0 + d_mm / 250.0)).sqrt().min(1.0);
+        let rho_w = if m.b > 0.0 && m.d > 0.0 {
+            m.as_tension / (m.b * m.d)
+        } else {
+            0.0
+        };
+        0.66 * lambda_s * lambda * rho_w.cbrt() * sqrt_fc * bw_mm * d_mm
     };
 
     // Maximum Vs limit: 0.66 * sqrt(f'c_MPa) * bw_mm * d_mm (N)

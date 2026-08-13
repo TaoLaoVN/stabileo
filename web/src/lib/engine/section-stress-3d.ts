@@ -16,7 +16,7 @@ import type { Section } from '../store/model.svelte';
 import { computeSectionStress3D, computeSectionStress3DFromForces, isWasmReady } from './wasm-solver';
 import { t } from '../i18n';
 import {
-  resolveSectionGeometry,
+  resolveSectionGeometryLegacy,
   computeMohrCircle,
   checkFailure,
   shearStress,
@@ -674,7 +674,7 @@ function analyzeSectionStressFromForcesTS(
   yFiber?: number,
   zFiber?: number,
 ): SectionStressResult3D {
-  const resolved = resolveSectionGeometry(sec);
+  const resolved = resolveSectionGeometryLegacy(sec);
   const halfH = resolved.h / 2;
 
   const Iz = resolved.iz;

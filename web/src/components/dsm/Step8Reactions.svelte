@@ -62,9 +62,9 @@
 
 <style>
   .step { display: flex; flex-direction: column; gap: 0.6rem; }
-  .explanation { font-size: 0.72rem; color: #bbb; line-height: 1.5; }
+  .explanation { font-size: 0.72rem; color: var(--st-text-2); line-height: 1.5; }
   .explanation p { margin: 0; }
-  .separator { border-top: 1px solid #0f3460; margin: 0.2rem 0; }
+  .separator { border-top: 1px solid var(--st-surface-3); margin: 0.2rem 0; }
 
   .reactions-table-scroll { overflow: auto; max-height: 250px; }
   .reactions-table {
@@ -72,17 +72,17 @@
     font-size: 0.65rem; font-family: 'Courier New', monospace;
   }
   .reactions-table th {
-    background: #16213e; color: #888; padding: 0.2rem 0.4rem;
+    background: var(--st-surface-2); color: var(--st-text-3); padding: 0.2rem 0.4rem;
     font-weight: 600; position: sticky; top: 0; text-align: left;
     font-size: 0.6rem;
   }
   .reactions-table td {
-    padding: 0.15rem 0.4rem; border-bottom: 1px solid #1e1e3a;
+    padding: 0.15rem 0.4rem; border-bottom: 1px solid var(--st-surface-2);
   }
-  .idx { color: #888; }
-  .label-cell { color: #ccc; }
+  .idx { color: var(--st-text-3); }
+  .label-cell { color: var(--st-text-2); }
   .val-cell { text-align: right; font-weight: 600; }
-  .val-cell.pos { color: #4ecdc4; }
-  .val-cell.neg { color: #e94560; }
-  .val-cell.zero { color: #444; }
+  .val-cell.pos { color: var(--st-value); }
+  .val-cell.neg { color: var(--st-accent); }
+  .val-cell.zero { color: var(--st-text-3); }
 </style>

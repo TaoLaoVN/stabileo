@@ -121,12 +121,26 @@ function isDofRestrained(sup: SolverSupport, localDof: number): boolean {
   }
 }
 
+/*
+ * The 2D wire plane is x–z, not x–y.
+ *
+ * `SolverNode` carries `x` and `z`; there is no `y` on it. Both helpers read
+ * `b.y - a.y`, which is `undefined - undefined` — NaN — so every element got a
+ * NaN length and a NaN angle. Nodal loads survived (they never ask for
+ * geometry), but every distributed, point-on-element and thermal load produced
+ * NaN fixed-end forces, and `addLC` lets NaN through because `Math.abs(NaN) <
+ * 1e-15` is false. The step-by-step wizard therefore showed an entire load
+ * vector of NaN at Step 5 and carried it into every step after it.
+ *
+ * Only the pedagogical path was affected: the analysis the user sees on the
+ * canvas comes from the WASM solver, which has its own geometry.
+ */
 function nodeDistance(a: SolverNode, b: SolverNode): number {
-  return Math.sqrt((b.x - a.x) ** 2 + (b.y - a.y) ** 2);
+  return Math.sqrt((b.x - a.x) ** 2 + (b.z - a.z) ** 2);
 }
 
 function nodeAngle(a: SolverNode, b: SolverNode): number {
-  return Math.atan2(b.y - a.y, b.x - a.x);
+  return Math.atan2(b.z - a.z, b.x - a.x);
 }
 
 function frameLocalStiffness(

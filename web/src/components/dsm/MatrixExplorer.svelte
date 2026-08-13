@@ -166,12 +166,12 @@
     flex-direction: column;
     gap: 10px;
     font-size: 0.82rem;
-    color: #ddd;
+    color: var(--st-text);
   }
 
   .explanation {
     font-size: 0.72rem;
-    color: #aaa;
+    color: var(--st-text-2);
     line-height: 1.4;
   }
   .explanation p {
@@ -185,19 +185,19 @@
   }
   .elem-selector label {
     font-size: 0.75rem;
-    color: #888;
+    color: var(--st-text-3);
   }
   .elem-selector select {
-    background: #16213e;
-    color: #ddd;
-    border: 1px solid #0f3460;
+    background: var(--st-surface-2);
+    color: var(--st-text);
+    border: 1px solid var(--st-surface-3);
     border-radius: 4px;
     padding: 3px 8px;
     font-size: 0.78rem;
     cursor: pointer;
   }
   .elem-selector select:hover {
-    border-color: #4ecdc4;
+    border-color: var(--st-value);
   }
 
   .props-row {
@@ -212,17 +212,17 @@
   }
   .prop-label {
     font-size: 0.7rem;
-    color: #888;
+    color: var(--st-text-3);
     font-weight: 600;
   }
   .prop-val {
     font-family: 'Fira Code', 'JetBrains Mono', monospace;
     font-size: 0.72rem;
-    color: #4ecdc4;
+    color: var(--st-value);
   }
   .dof-list {
     font-size: 0.68rem;
-    color: #bbb;
+    color: var(--st-text-2);
   }
 
   .matrix-tabs {
@@ -232,21 +232,21 @@
   }
   .matrix-tabs button {
     padding: 4px 10px;
-    border: 1px solid #0f3460;
+    border: 1px solid var(--st-surface-3);
     border-radius: 4px 4px 0 0;
-    background: #16213e;
-    color: #888;
+    background: var(--st-surface-2);
+    color: var(--st-text-3);
     font-size: 0.72rem;
     cursor: pointer;
     transition: all 0.15s;
   }
   .matrix-tabs button:hover {
-    color: #ccc;
-    background: #1a2a4e;
+    color: var(--st-text-2);
+    background: var(--st-surface-3);
   }
   .matrix-tabs button.active {
-    background: #1a1a2e;
-    color: #4ecdc4;
+    background: var(--st-surface);
+    color: var(--st-value);
     border-bottom-color: transparent;
   }
   .tab-spacer {
@@ -258,16 +258,16 @@
   }
 
   .matrix-panel {
-    border: 1px solid #0f3460;
+    border: 1px solid var(--st-surface-3);
     border-radius: 0 0 4px 4px;
     padding: 8px;
-    background: rgba(22, 33, 62, 0.4);
+    background: rgba(19, 33, 45, 0.4);
     margin-top: -1px;
   }
 
   .matrix-note {
     font-size: 0.68rem;
-    color: #777;
+    color: var(--st-text-3);
     margin-top: 6px;
     font-style: italic;
   }
@@ -282,27 +282,27 @@
   }
   .rel-item {
     padding: 3px 8px;
-    border: 1px solid #0f3460;
+    border: 1px solid var(--st-surface-3);
     border-radius: 4px;
-    background: #16213e;
-    color: #888;
+    background: var(--st-surface-2);
+    color: var(--st-text-3);
     font-family: 'Fira Code', 'JetBrains Mono', monospace;
     transition: all 0.15s;
   }
   .rel-item.active {
-    color: #4ecdc4;
-    border-color: #4ecdc4;
-    background: rgba(78, 205, 196, 0.1);
+    color: var(--st-value);
+    border-color: var(--st-value);
+    background: rgba(127, 212, 204, 0.1);
   }
   .rel-arrow {
-    color: #555;
+    color: var(--st-text-3);
     font-size: 0.7rem;
   }
 
   .global-k-section {
-    border: 1px solid #0f3460;
+    border: 1px solid var(--st-surface-3);
     border-radius: 4px;
     padding: 8px;
-    background: rgba(22, 33, 62, 0.3);
+    background: rgba(19, 33, 45, 0.3);
   }
 </style>

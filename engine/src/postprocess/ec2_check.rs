@@ -6,6 +6,8 @@
 
 use serde::{Deserialize, Serialize};
 
+use crate::postprocess::check_ledger::{CheckLedger, Unevaluated};
+
 // ==================== Types ====================
 
 /// EC2 concrete class (e.g., C25/30, C30/37).
@@ -109,19 +111,33 @@ pub struct Ec2CheckResult {
     pub z: f64,
     /// Overall pass
     pub pass: bool,
+    /// Checks whose capacity could not be evaluated.
+    #[serde(default)]
+    pub unevaluated: Unevaluated,
 }
 
 // ==================== Implementation ====================
+
+
+/// Index the force records by id so each member is a hash lookup rather than a
+/// scan of the whole list. The pairing was O(members x forces): fine at 100
+/// members, quadratic at 10,000 — and this runs on every edit.
+fn index_forces<T>(forces: &[T], id_of: impl Fn(&T) -> usize) -> std::collections::HashMap<usize, &T> {
+    let mut map = std::collections::HashMap::with_capacity(forces.len());
+    for f in forces {
+        map.entry(id_of(f)).or_insert(f);
+    }
+    map
+}
 
 /// Check all EC2 members.
 pub fn check_ec2_members(input: &Ec2CheckInput) -> Vec<Ec2CheckResult> {
     let mut results = Vec::new();
 
+    let by_id = index_forces(&input.forces, |f| f.element_id);
+
     for member in &input.members {
-        let forces = input
-            .forces
-            .iter()
-            .find(|f| f.element_id == member.element_id);
+        let forces = by_id.get(&member.element_id).copied();
         let forces = match forces {
             Some(f) => f,
             None => continue,
@@ -194,7 +210,8 @@ fn check_single_ec2_member(m: &Ec2MemberData, f: &Ec2DesignForces) -> Ec2CheckRe
         (m_rd_val, z_val)
     };
 
-    let flexure_ratio = if m_rd > 0.0 { m_ed / m_rd } else { 0.0 };
+    let mut ledger = CheckLedger::new();
+    let flexure_ratio = ledger.ratio("Flexure 6.1", m_ed, m_rd);
 
     // ==================== Shear (EC2 Sec 6.2) ====================
 
@@ -204,31 +221,59 @@ fn check_single_ec2_member(m: &Ec2MemberData, f: &Ec2DesignForces) -> Ec2CheckRe
     let k_shear = (1.0 + (200.0 / d_mm).sqrt()).min(2.0);
     let rho_l = (m.as_tension / (bw * m.d)).min(0.02);
     let c_rdc = 0.18 / gamma_c;
-    let v_rdc = c_rdc * k_shear * (100.0 * rho_l * fck_mpa).powf(1.0 / 3.0) * bw_mm * d_mm;
+
+    // EC2 6.2.2(1) adds k1·sigma_cp, the axial contribution. `n_ed` was
+    // accepted and never read, so a column under compression lost the benefit
+    // and — the case that matters — a member in net tension kept a capacity it
+    // does not have. sigma_cp is compression-positive and capped at 0.2·fcd;
+    // `n_ed` is tension-positive here, hence the sign flip.
+    const K1_AXIAL: f64 = 0.15;
+    let n_ed = f.n_ed.unwrap_or(0.0);
+    let ac = m.b * m.h;
+    let sigma_cp_mpa = if ac > 0.0 {
+        ((-n_ed / ac) / 1e6).min(0.2 * fcd / 1e6)
+    } else {
+        0.0
+    };
+    let axial_term = K1_AXIAL * sigma_cp_mpa * bw_mm * d_mm;
+
+    let v_rdc = c_rdc * k_shear * (100.0 * rho_l * fck_mpa).powf(1.0 / 3.0) * bw_mm * d_mm
+        + axial_term;
 
     // Minimum VRd,c
-    let v_min = 0.035 * k_shear.powf(1.5) * fck_mpa.sqrt() * bw_mm * d_mm;
-    let v_rdc = v_rdc.max(v_min);
+    let v_min = 0.035 * k_shear.powf(1.5) * fck_mpa.sqrt() * bw_mm * d_mm + axial_term;
+    let v_rdc = v_rdc.max(v_min).max(0.0);
 
     // VRd,s — shear reinforcement capacity (EC2 6.2.3)
     let z_shear = m.z.unwrap_or(0.9 * m.d);
-    let theta = m.theta_shear.unwrap_or(std::f64::consts::FRAC_PI_4 / 2.0 + std::f64::consts::FRAC_PI_4 / 2.0);
-    // Default theta = 21.8 degrees (cot = 2.5, minimum angle)
-    let theta = if m.theta_shear.is_none() {
-        (1.0_f64 / 2.5_f64).atan() // 21.8 deg
-    } else {
-        theta
+    // EC2 6.2.3(2) bounds the strut inclination to 1 <= cot(theta) <= 2.5,
+    // i.e. 21.8 deg <= theta <= 45 deg. Working directly in cot(theta) keeps
+    // the clamp exact and avoids the singularity at theta = 0, where an
+    // unvalidated angle produced an unbounded VRd,s (and a shear ratio of 0).
+    // The default is the flattest permitted strut, cot = 2.5.
+    const COT_THETA_MAX: f64 = 2.5; // theta = 21.8 deg
+    const COT_THETA_MIN: f64 = 1.0; // theta = 45 deg
+    let cot_theta = match m.theta_shear {
+        Some(t) if t.is_finite() && t > 0.0 => {
+            (1.0 / t.tan()).clamp(COT_THETA_MIN, COT_THETA_MAX)
+        }
+        _ => COT_THETA_MAX,
     };
-    let cot_theta = 1.0 / theta.tan();
 
     let v_rds = match (m.asw, m.s_stirrup) {
         (Some(asw), Some(s)) if s > 0.0 => asw * z_shear * fyd * cot_theta / s,
         _ => 0.0,
     };
 
-    // VRd,max — maximum strut capacity
+    // VRd,max — maximum strut capacity (EC2 6.2.3(3), Eq. 6.9):
+    //   VRd,max = alpha_cw · bw · z · nu1 · fcd / (cot θ + tan θ)
+    // alpha_cw accounts for the state of stress in the compression chord and is
+    // 1.0 for non-prestressed members. It is *not* alpha_cc, which scales the
+    // long-term compressive strength and is already inside `fcd` above —
+    // reusing it here applied a national-annex 0.85 twice.
+    let alpha_cw = 1.0;
     let nu1 = 0.6 * (1.0 - fck_mpa / 250.0);
-    let v_rd_max = alpha_cc * nu1 * fcd * bw * z_shear * cot_theta
+    let v_rd_max = alpha_cw * nu1 * fcd * bw * z_shear * cot_theta
         / (1.0 + cot_theta * cot_theta);
 
     // Design shear capacity
@@ -238,9 +283,9 @@ fn check_single_ec2_member(m: &Ec2MemberData, f: &Ec2DesignForces) -> Ec2CheckRe
         v_rdc
     };
 
-    let shear_ratio = if v_rd > 0.0 { v_ed / v_rd } else { 0.0 };
+    let shear_ratio = ledger.ratio_if_loaded("Shear 6.2", v_ed, v_rd);
 
-    let pass = flexure_ratio <= 1.0 && shear_ratio <= 1.0;
+    let pass = ledger.all_evaluated() && flexure_ratio <= 1.0 && shear_ratio <= 1.0;
 
     Ec2CheckResult {
         element_id: m.element_id,
@@ -254,5 +299,6 @@ fn check_single_ec2_member(m: &Ec2MemberData, f: &Ec2DesignForces) -> Ec2CheckRe
         x_na,
         z,
         pass,
+        unevaluated: ledger.into_unevaluated(),
     }
 }

@@ -518,20 +518,24 @@ pub fn assemble_load_vector_2d(
     let sec_map: std::collections::HashMap<usize, &SolverSection> =
         input.sections.values().map(|s| (s.id, s)).collect();
 
-    // Index elements carrying element-bound loads so unloaded elements are skipped
-    let mut loaded_elems: std::collections::HashSet<usize> = std::collections::HashSet::new();
+    // Group element-bound loads by element id so each element only scans its own
+    // loads instead of the full load list (O(E_loaded × L) → O(L)).
+    let mut loads_by_elem: std::collections::HashMap<usize, Vec<&SolverLoad>> = std::collections::HashMap::new();
     for load in loads {
         match load {
-            SolverLoad::Distributed(dl) => { loaded_elems.insert(dl.element_id); }
-            SolverLoad::PointOnElement(pl) => { loaded_elems.insert(pl.element_id); }
-            SolverLoad::Thermal(tl) => { loaded_elems.insert(tl.element_id); }
+            SolverLoad::Distributed(dl) => { loads_by_elem.entry(dl.element_id).or_default().push(load); }
+            SolverLoad::PointOnElement(pl) => { loads_by_elem.entry(pl.element_id).or_default().push(load); }
+            SolverLoad::Thermal(tl) => { loads_by_elem.entry(tl.element_id).or_default().push(load); }
             _ => {}
         }
     }
 
     // Assemble element loads (FEF) — same element iteration order as assemble_stiffness_2d
     for elem in input.elements.values() {
-        if !loaded_elems.contains(&elem.id) { continue; }
+        let elem_loads = match loads_by_elem.get(&elem.id) {
+            Some(v) => v,
+            None => continue,
+        };
 
         let node_i = node_map[&elem.node_i];
         let node_j = node_map[&elem.node_j];
@@ -555,7 +559,7 @@ pub fn assemble_load_vector_2d(
                 dof_num.global_dof(elem.node_j, 0).unwrap(),
                 dof_num.global_dof(elem.node_j, 1).unwrap(),
             ];
-            for load in loads {
+            for load in elem_loads {
                 if let SolverLoad::Thermal(tl) = load {
                     if tl.element_id == elem.id {
                         let alpha = 12e-6; // Steel default
@@ -570,7 +574,7 @@ pub fn assemble_load_vector_2d(
         } else {
             let t = frame_transform_2d(cos, sin);
             let elem_dofs = dof_num.element_dofs(elem.node_i, elem.node_j);
-            assemble_element_loads_2d(loads, elem, &t, l, e, sec, &elem_dofs, &mut f_global);
+            assemble_element_loads_2d(elem_loads, elem, &t, l, e, mat.nu, sec, &elem_dofs, &mut f_global);
         }
     }
 
@@ -615,15 +619,27 @@ pub fn assemble_2d(input: &SolverInput, dof_num: &DofNumbering) -> AssemblyResul
 }
 
 pub fn assemble_element_loads_2d(
-    loads: &[SolverLoad],
+    loads: &[&SolverLoad],
     elem: &SolverElement,
     t: &[f64],
     l: f64,
     e: f64,
+    nu: f64,
     sec: &SolverSection,
     elem_dofs: &[usize],
     f_global: &mut [f64],
 ) {
+    // Timoshenko shear parameter, matching the one used for the stiffness
+    // matrix in assemble_stiffness_2d. The hinge FEF condensation uses the same
+    // phi; passing 0.0 here would build an inconsistent system (Timoshenko K
+    // with Euler-Bernoulli FEF) whenever as_y is set and a hinge is present.
+    let phi = if let Some(as_y) = sec.as_y {
+        let g = e / (2.0 * (1.0 + nu));
+        12.0 * e * sec.iz / (g * as_y * l * l)
+    } else {
+        0.0
+    };
+
     for load in loads {
         match load {
             SolverLoad::Distributed(dl) if dl.element_id == elem.id => {
@@ -639,7 +655,7 @@ pub fn assemble_element_loads_2d(
                 };
 
                 // Adjust for hinges
-                adjust_fef_for_hinges(&mut fef, l, elem.hinge_start, elem.hinge_end, 0.0);
+                adjust_fef_for_hinges(&mut fef, l, elem.hinge_start, elem.hinge_end, phi);
 
                 // Transform to global and add
                 let fef_global = transform_force(&fef, t, 6);
@@ -652,7 +668,7 @@ pub fn assemble_element_loads_2d(
                 let mz = pl.my.unwrap_or(0.0);
                 let mut fef = fef_point_load_2d(pl.p, px, mz, pl.a, l);
 
-                adjust_fef_for_hinges(&mut fef, l, elem.hinge_start, elem.hinge_end, 0.0);
+                adjust_fef_for_hinges(&mut fef, l, elem.hinge_start, elem.hinge_end, phi);
 
                 let fef_global = transform_force(&fef, t, 6);
                 for (i, &dof) in elem_dofs.iter().enumerate() {
@@ -667,7 +683,7 @@ pub fn assemble_element_loads_2d(
                     tl.dt_uniform, tl.dt_gradient, alpha, h,
                 );
 
-                adjust_fef_for_hinges(&mut fef, l, elem.hinge_start, elem.hinge_end, 0.0);
+                adjust_fef_for_hinges(&mut fef, l, elem.hinge_start, elem.hinge_end, phi);
 
                 let fef_global = transform_force(&fef, t, 6);
                 for (i, &dof) in elem_dofs.iter().enumerate() {
@@ -1909,7 +1925,8 @@ pub fn assemble_sparse_2d(input: &SolverInput, dof_num: &DofNumbering) -> Sparse
                 diag_vals[elem_dofs[i]] += k_glob[i * ndof + i];
             }
 
-            assemble_element_loads_2d(&input.loads, elem, &t, l, e, sec, &elem_dofs, &mut f_global);
+            let load_refs: Vec<&SolverLoad> = input.loads.iter().collect();
+            assemble_element_loads_2d(&load_refs, elem, &t, l, e, mat.nu, sec, &elem_dofs, &mut f_global);
         }
     }
 
@@ -2631,6 +2648,12 @@ pub fn assemble_load_vector_3d_sparse(
         input.plates.values().map(|p| (p.id, p)).collect();
     let quad_map: std::collections::HashMap<usize, &SolverQuadElement> =
         input.quads.values().map(|q| (q.id, q)).collect();
+    let quad9_map: std::collections::HashMap<usize, &crate::types::SolverQuad9Element> =
+        input.quad9s.values().map(|q| (q.id, q)).collect();
+    let solid_shell_map: std::collections::HashMap<usize, &crate::types::SolverSolidShellElement> =
+        input.solid_shells.values().map(|s| (s.id, s)).collect();
+    let curved_shell_map: std::collections::HashMap<usize, &crate::types::SolverCurvedShellElement> =
+        input.curved_shells.values().map(|s| (s.id, s)).collect();
 
     // Frame/truss element loads (FEF + thermal)
     assemble_frame_loads_3d(input, loads, dof_num, &mut f_global);
@@ -2739,7 +2762,7 @@ pub fn assemble_load_vector_3d_sparse(
         }
         // Quad9 (MITC9) load dispatch — sparse path
         if let SolverLoad3D::Quad9Pressure(pl) = load {
-            if let Some(q9) = input.quad9s.values().find(|q| q.id == pl.element_id) {
+            if let Some(q9) = quad9_map.get(&pl.element_id) {
                 let coords = quad9_coords(&node_map, q9);
                 let f_p = crate::element::quad9::quad9_pressure_load(&coords, pl.pressure);
                 let dofs = dof_num.quad9_element_dofs(&q9.nodes);
@@ -2749,7 +2772,7 @@ pub fn assemble_load_vector_3d_sparse(
             }
         }
         if let SolverLoad3D::Quad9Thermal(tl) = load {
-            if let Some(q9) = input.quad9s.values().find(|q| q.id == tl.element_id) {
+            if let Some(q9) = quad9_map.get(&tl.element_id) {
                 let mat = mat_map[&q9.material_id];
                 let e = mat.e * 1000.0;
                 let nu = mat.nu;
@@ -2765,7 +2788,7 @@ pub fn assemble_load_vector_3d_sparse(
             }
         }
         if let SolverLoad3D::Quad9SelfWeight(sw) = load {
-            if let Some(q9) = input.quad9s.values().find(|q| q.id == sw.element_id) {
+            if let Some(q9) = quad9_map.get(&sw.element_id) {
                 let coords = quad9_coords(&node_map, q9);
                 let f_sw_local = crate::element::quad9::quad9_self_weight_load(
                     &coords, sw.density, q9.thickness, sw.gx, sw.gy, sw.gz,
@@ -2779,7 +2802,7 @@ pub fn assemble_load_vector_3d_sparse(
             }
         }
         if let SolverLoad3D::Quad9Edge(el) = load {
-            if let Some(q9) = input.quad9s.values().find(|q| q.id == el.element_id) {
+            if let Some(q9) = quad9_map.get(&el.element_id) {
                 let coords = quad9_coords(&node_map, q9);
                 let f_edge = crate::element::quad9::quad9_edge_load(&coords, el.edge, el.qn, el.qt);
                 let dofs = dof_num.quad9_element_dofs(&q9.nodes);
@@ -2790,7 +2813,7 @@ pub fn assemble_load_vector_3d_sparse(
         }
         // Solid-shell load dispatch — sparse path
         if let SolverLoad3D::SolidShellPressure(pl) = load {
-            if let Some(ss) = input.solid_shells.values().find(|s| s.id == pl.element_id) {
+            if let Some(ss) = solid_shell_map.get(&pl.element_id) {
                 let coords = solid_shell_coords(&node_map, ss);
                 let f_p = crate::element::solid_shell::solid_shell_pressure_load(&coords, pl.pressure);
                 let dofs = dof_num.solid_shell_element_dofs(&ss.nodes);
@@ -2800,7 +2823,7 @@ pub fn assemble_load_vector_3d_sparse(
             }
         }
         if let SolverLoad3D::SolidShellSelfWeight(sw) = load {
-            if let Some(ss) = input.solid_shells.values().find(|s| s.id == sw.element_id) {
+            if let Some(ss) = solid_shell_map.get(&sw.element_id) {
                 let coords = solid_shell_coords(&node_map, ss);
                 let f_sw = crate::element::solid_shell::solid_shell_self_weight_load(
                     &coords, sw.density, sw.gx, sw.gy, sw.gz,
@@ -2813,7 +2836,7 @@ pub fn assemble_load_vector_3d_sparse(
         }
         // Curved shell loads (sparse path)
         if let SolverLoad3D::CurvedShellPressure(pl) = load {
-            if let Some(cs) = input.curved_shells.values().find(|s| s.id == pl.element_id) {
+            if let Some(cs) = curved_shell_map.get(&pl.element_id) {
                 let coords = curved_shell_coords(&node_map, cs);
                 let dirs = cs.normals.unwrap_or_else(|| crate::element::curved_shell::compute_element_directors(&coords));
                 let f_p = crate::element::curved_shell::curved_shell_pressure_load(&coords, &dirs, cs.thickness, pl.pressure);
@@ -2824,7 +2847,7 @@ pub fn assemble_load_vector_3d_sparse(
             }
         }
         if let SolverLoad3D::CurvedShellThermal(tl) = load {
-            if let Some(cs) = input.curved_shells.values().find(|s| s.id == tl.element_id) {
+            if let Some(cs) = curved_shell_map.get(&tl.element_id) {
                 let mat = mat_map[&cs.material_id];
                 let e = mat.e * 1000.0;
                 let nu = mat.nu;
@@ -2841,7 +2864,7 @@ pub fn assemble_load_vector_3d_sparse(
             }
         }
         if let SolverLoad3D::CurvedShellSelfWeight(sw) = load {
-            if let Some(cs) = input.curved_shells.values().find(|s| s.id == sw.element_id) {
+            if let Some(cs) = curved_shell_map.get(&sw.element_id) {
                 let coords = curved_shell_coords(&node_map, cs);
                 let dirs = cs.normals.unwrap_or_else(|| crate::element::curved_shell::compute_element_directors(&coords));
                 let f_sw = crate::element::curved_shell::curved_shell_self_weight_load(
@@ -2854,7 +2877,7 @@ pub fn assemble_load_vector_3d_sparse(
             }
         }
         if let SolverLoad3D::CurvedShellEdge(el) = load {
-            if let Some(cs) = input.curved_shells.values().find(|s| s.id == el.element_id) {
+            if let Some(cs) = curved_shell_map.get(&el.element_id) {
                 let coords = curved_shell_coords(&node_map, cs);
                 let dirs = cs.normals.unwrap_or_else(|| crate::element::curved_shell::compute_element_directors(&coords));
                 let f_e = crate::element::curved_shell::curved_shell_edge_load(

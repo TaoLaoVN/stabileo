@@ -1,14 +1,91 @@
 /**
  * Capture screenshots for the landing page using Playwright.
  *
- * Usage:  npx tsx scripts/take-screenshots.ts
+ * Usage:
+ *   npm run dev -- --port 4001 --strictPort      # in another terminal
+ *   npx tsx scripts/take-screenshots.ts
+ *   npx tsx scripts/take-screenshots.ts --base http://127.0.0.1:5173
+ *   STABILEO_SCREENSHOT_BASE=http://127.0.0.1:4001 npx tsx scripts/take-screenshots.ts
  *
- * Requires dev server running on localhost:4000.
+ * The base URL is configurable and defaults to the landing workstream's
+ * reserved preview port (4001). Port 4000 belongs to another workstream's dev
+ * server and this script refuses to touch it.
+ *
+ * Output filenames are the exact asset names the landing consumes (see
+ * CONSUMED_ASSETS below), and every capture here has a consumer. Do not
+ * rename an output without renaming its consumer.
+ *
+ * These PNGs are the capture SOURCE, not what ships. The landing serves AVIF
+ * with a WebP fallback at two widths (`<base>-800.avif`, `<base>-1600.webp`,
+ * …) via Shot.svelte, and only those derivatives are committed. After running
+ * this script, convert the PNGs and delete them:
+ *
+ *   for f in 2d-moments 2d-section-analysis 3d-industrial 3d-section-analysis; do
+ *     for w in 800 1600; do
+ *       npx --yes sharp-cli -i public/screenshots/$f.png -o public/screenshots \
+ *         resize $w -- avif --quality 52
+ *       npx --yes sharp-cli -i public/screenshots/$f.png -o public/screenshots \
+ *         resize $w -- webp --quality 78
+ *     done
+ *   done
+ *
+ * `npx --yes` is used deliberately: an image encoder is a one-off authoring
+ * tool and must not become a dependency in web/package.json.
+ *
+ * No PNG is committed any more. `3d-industrial.png` used to be kept because
+ * index.html's Open Graph tag pointed at it; the social card is now a
+ * purpose-built 1200x630 image at public/og/stabileo-social.png (see
+ * scripts/make-og-card.ts), so every PNG here is a capture source to be
+ * converted and deleted.
  */
 import { chromium } from 'playwright';
 
-const BASE = 'http://localhost:4000';
+/** Port reserved by another workstream's dev server. Never contact it. */
+const FORBIDDEN_PORT = '4000';
+const DEFAULT_BASE = 'http://127.0.0.1:4001';
+
+function resolveBase(): string {
+  const flagIdx = process.argv.indexOf('--base');
+  const raw =
+    (flagIdx !== -1 ? process.argv[flagIdx + 1] : undefined) ??
+    process.env.STABILEO_SCREENSHOT_BASE ??
+    DEFAULT_BASE;
+
+  let url: URL;
+  try {
+    url = new URL(raw);
+  } catch {
+    throw new Error(`Invalid base URL: ${raw}`);
+  }
+  if (url.port === FORBIDDEN_PORT) {
+    throw new Error(
+      `Refusing to use port ${FORBIDDEN_PORT}: it is reserved for another workstream's dev server. ` +
+        `Start this workstream's preview with \`npm run dev -- --port 4001 --strictPort\` and re-run.`,
+    );
+  }
+  return url.origin;
+}
+
+const BASE = resolveBase();
 const OUT = 'public/screenshots';
+
+/**
+ * Assets the landing actually references, and which capture below produces
+ * each one. Kept next to the captures so a rename cannot drift again.
+ */
+const CONSUMED_ASSETS = [
+  '2d-moments.png',
+  '2d-section-analysis.png',
+  '3d-industrial.png',
+  '3d-section-analysis.png',
+] as const;
+
+const captured: string[] = [];
+
+function record(name: string, note = '') {
+  captured.push(name);
+  console.log(`✓ ${name}${note ? ` (${note})` : ''}`);
+}
 
 // Use a reasonable viewport with 2x DPR for crisp retina images
 const VP = { width: 1440, height: 900 };
@@ -25,6 +102,9 @@ const CROP = {
   height: VP.height - HEADER_H - STATUS_H,
 };
 
+// NOTE: the event names below are `stabileo-*`. They were `dedaliano-*` until
+// this repair — names that stopped existing at the rebrand, so the captures had
+// silently not been solving or zooming to fit for months.
 function sleep(ms: number) {
   return new Promise((r) => setTimeout(r, ms));
 }
@@ -55,24 +135,6 @@ async function main() {
 
   // ═══ 1. BASIC 2D ═══
 
-  // 1.1 — Portal frame with loads, no results
-  // Show sidebar with structure info for context
-  {
-    const page = await freshPage();
-    await page.evaluate(async () => {
-      const { modelStore, resultsStore, uiStore } = await import('/src/lib/store/index.ts');
-      modelStore.loadExample('portal-frame');
-      resultsStore.clear();
-      uiStore.leftSidebarOpen = false;
-      uiStore.rightSidebarOpen = false;
-      setTimeout(() => window.dispatchEvent(new Event('dedaliano-zoom-to-fit')), 100);
-    });
-    await sleep(1500);
-    await page.screenshot({ path: `${OUT}/basic-2d-loads.png`, clip: CROP });
-    console.log('✓ basic-2d-loads.png');
-    await page.close();
-  }
-
   // 1.2 — Portal frame solved with moment diagram
   {
     const page = await freshPage();
@@ -82,18 +144,18 @@ async function main() {
       resultsStore.clear();
       uiStore.leftSidebarOpen = true;
       uiStore.rightSidebarOpen = false;
-      setTimeout(() => window.dispatchEvent(new Event('dedaliano-zoom-to-fit')), 100);
+      setTimeout(() => window.dispatchEvent(new Event('stabileo-zoom-to-fit')), 100);
     });
     await sleep(500);
-    await page.evaluate(() => window.dispatchEvent(new Event('dedaliano-solve')));
+    await page.evaluate(() => window.dispatchEvent(new Event('stabileo-solve')));
     await sleep(2000);
     await page.evaluate(async () => {
       const { resultsStore } = await import('/src/lib/store/index.ts');
       resultsStore.diagramType = 'moment';
     });
     await sleep(500);
-    await page.screenshot({ path: `${OUT}/basic-2d-moments.png`, clip: CROP });
-    console.log('✓ basic-2d-moments.png');
+    await page.screenshot({ path: `${OUT}/2d-moments.png`, clip: CROP });
+    record('2d-moments.png');
     await page.close();
   }
 
@@ -106,10 +168,10 @@ async function main() {
       resultsStore.clear();
       uiStore.leftSidebarOpen = false;
       uiStore.rightSidebarOpen = false;
-      setTimeout(() => window.dispatchEvent(new Event('dedaliano-zoom-to-fit')), 100);
+      setTimeout(() => window.dispatchEvent(new Event('stabileo-zoom-to-fit')), 100);
     });
     await sleep(500);
-    await page.evaluate(() => window.dispatchEvent(new Event('dedaliano-solve')));
+    await page.evaluate(() => window.dispatchEvent(new Event('stabileo-solve')));
     await sleep(2000);
     await page.evaluate(async () => {
       const { resultsStore, uiStore, modelStore } = await import('/src/lib/store/index.ts');
@@ -139,34 +201,12 @@ async function main() {
     await sleep(500);
 
     // Full viewport screenshot (structure + stress panel visible)
-    await page.screenshot({ path: `${OUT}/basic-2d-stress.png`, clip: CROP });
-    console.log('✓ basic-2d-stress.png');
+    await page.screenshot({ path: `${OUT}/2d-section-analysis.png`, clip: CROP });
+    record('2d-section-analysis.png');
     await page.close();
   }
 
   // ═══ 2. BASIC 3D ═══
-
-  // 2.1 — 3D building with loads
-  {
-    const page = await freshPage();
-    await page.evaluate(async () => {
-      const { modelStore, resultsStore, uiStore } = await import('/src/lib/store/index.ts');
-      uiStore.analysisMode = '3d';
-      uiStore.leftSidebarOpen = false;
-      uiStore.rightSidebarOpen = false;
-    });
-    await sleep(1500);
-    await page.evaluate(async () => {
-      const { modelStore, resultsStore } = await import('/src/lib/store/index.ts');
-      modelStore.loadExample('3d-building');
-      resultsStore.clear3D();
-      setTimeout(() => window.dispatchEvent(new Event('dedaliano-zoom-to-fit')), 200);
-    });
-    await sleep(3000);
-    await page.screenshot({ path: `${OUT}/basic-3d-loads.png`, clip: CROP });
-    console.log('✓ basic-3d-loads.png');
-    await page.close();
-  }
 
   // 2.2 — Nave industrial with stress ratio color map (σ/fy)
   {
@@ -182,11 +222,11 @@ async function main() {
       const { modelStore, resultsStore } = await import('/src/lib/store/index.ts');
       modelStore.loadExample('3d-nave-industrial');
       resultsStore.clear3D();
-      setTimeout(() => window.dispatchEvent(new Event('dedaliano-zoom-to-fit')), 200);
+      setTimeout(() => window.dispatchEvent(new Event('stabileo-zoom-to-fit')), 200);
     });
     await sleep(2000);
     // Solve
-    await page.evaluate(() => window.dispatchEvent(new Event('dedaliano-solve')));
+    await page.evaluate(() => window.dispatchEvent(new Event('stabileo-solve')));
     await sleep(5000);
     // Set color map mode with stress ratio σ/fy
     await page.evaluate(async () => {
@@ -195,81 +235,83 @@ async function main() {
       resultsStore.colorMapKind = 'stressRatio';
     });
     await sleep(2000);
-    await page.screenshot({ path: `${OUT}/basic-3d-deformed.png`, clip: CROP });
-    console.log('✓ basic-3d-deformed.png (stress ratio color map)');
+    await page.screenshot({ path: `${OUT}/3d-industrial.png`, clip: CROP });
+    record('3d-industrial.png', 'stress ratio color map');
     await page.close();
   }
 
   // ═══ 3. EDUCATIONAL ═══
+  //
+  // Removed. These two captures wrote `edu-exercises.png` and
+  // `edu-exercise.png`, which no landing component has ever referenced, under
+  // names that did not even match the two Education assets that were sitting
+  // unused in public/screenshots (`edu-panel.png`, `edu-exercise-new.png`,
+  // both deleted). If the landing gains an Education section, add captures
+  // here named after whatever assets that section consumes.
 
-  // 3.1 — Exercise list panel
+  // ═══ 4. 3D SECTION STRESS ═══
+  //
+  // Added because `3d-section-analysis` is consumed by the landing and had no
+  // producer. Same store API as the 2D stress shot — `resultsStore.stressQuery`
+  // takes an optional worldZ and is shared between the 2D and 3D viewports.
   {
     const page = await freshPage();
     await page.evaluate(async () => {
       const { uiStore } = await import('/src/lib/store/index.ts');
-      uiStore.analysisMode = 'edu';
+      uiStore.analysisMode = '3d';
+      uiStore.leftSidebarOpen = false;
+      uiStore.rightSidebarOpen = false;
     });
     await sleep(1500);
-    await page.waitForSelector('.exercise-card', { timeout: 5000 }).catch(() => {});
+    await page.evaluate(async () => {
+      const { modelStore, resultsStore } = await import('/src/lib/store/index.ts');
+      modelStore.loadExample('3d-portal-frame');
+      resultsStore.clear3D();
+      setTimeout(() => window.dispatchEvent(new Event('stabileo-zoom-to-fit')), 200);
+    });
+    await sleep(2000);
+    await page.evaluate(() => window.dispatchEvent(new Event('stabileo-solve')));
+    await sleep(4000);
+    await page.evaluate(async () => {
+      const { modelStore, resultsStore, uiStore } = await import('/src/lib/store/index.ts');
+      uiStore.currentTool = 'select';
+      uiStore.selectMode = 'stress';
+      const [first] = [...modelStore.elements.keys()];
+      const elem = modelStore.elements.get(first);
+      if (!elem) return;
+      const nI = modelStore.nodes.get(elem.nodeI);
+      const nJ = modelStore.nodes.get(elem.nodeJ);
+      if (!nI || !nJ) return;
+      resultsStore.stressQuery = {
+        elementId: first,
+        t: 0.5,
+        worldX: (nI.x + nJ.x) / 2,
+        worldY: (nI.y + nJ.y) / 2,
+        worldZ: ((nI.z ?? 0) + (nJ.z ?? 0)) / 2,
+      };
+    });
+    await sleep(2500);
+    await page.evaluate(() => {
+      document.querySelectorAll('.ssp-panel details:not([open])').forEach((d) => ((d as HTMLDetailsElement).open = true));
+    });
     await sleep(500);
-    await page.screenshot({ path: `${OUT}/edu-exercises.png`, clip: CROP });
-    console.log('✓ edu-exercises.png');
-    await page.close();
-  }
-
-  // 3.2 — First exercise selected (with exercise panel visible)
-  {
-    const page = await freshPage();
-    await page.evaluate(async () => {
-      const { uiStore } = await import('/src/lib/store/index.ts');
-      uiStore.analysisMode = 'edu';
-    });
-    await sleep(1500);
-    await page.waitForSelector('.exercise-card', { timeout: 5000 }).catch(() => {});
-    const cardCount = await page.locator('.exercise-card').count();
-    if (cardCount > 0) {
-      await page.locator('.exercise-card').first().click();
-      await sleep(2000);
-    }
-    await page.evaluate(() => window.dispatchEvent(new Event('dedaliano-zoom-to-fit')));
-    await sleep(500);
-    await page.screenshot({ path: `${OUT}/edu-exercise.png`, clip: CROP });
-    console.log('✓ edu-exercise.png');
-    await page.close();
-  }
-
-  // ═══ 4. PRO ═══
-
-  // 4.1 — PRO example solved with results tab
-  {
-    const page = await freshPage();
-    await page.evaluate(async () => {
-      const { uiStore } = await import('/src/lib/store/index.ts');
-      uiStore.analysisMode = 'pro';
-    });
-    await sleep(1500);
-    await page.waitForSelector('.pro-example-btn', { timeout: 5000 }).catch(() => {});
-    const proBtnCount = await page.locator('.pro-example-btn').count();
-    if (proBtnCount > 0) {
-      await page.locator('.pro-example-btn').click();
-      await sleep(3000);
-    }
-    await page.evaluate(() => window.dispatchEvent(new Event('dedaliano-solve')));
-    await sleep(5000);
-    const resultsTab = page.locator('button').filter({ hasText: /result/i });
-    if (await resultsTab.count() > 0) {
-      await resultsTab.first().click();
-      await sleep(500);
-    }
-    await page.evaluate(() => window.dispatchEvent(new Event('dedaliano-zoom-to-fit')));
-    await sleep(1000);
-    await page.screenshot({ path: `${OUT}/pro-results.png`, clip: CROP });
-    console.log('✓ pro-results.png');
+    await page.screenshot({ path: `${OUT}/3d-section-analysis.png`, clip: CROP });
+    record('3d-section-analysis.png');
     await page.close();
   }
 
   await browser.close();
-  console.log('\n✅ All 8 screenshots captured!');
+
+  const missing = CONSUMED_ASSETS.filter((a) => !captured.includes(a));
+  console.log(`\n✅ ${captured.length} screenshot(s) captured from ${BASE}`);
+  if (missing.length) {
+    console.log(
+      `\n⚠️  ${missing.length} asset(s) the landing consumes have no capture in this script:\n` +
+        missing.map((m) => `   · ${m}`).join('\n') +
+        `\n   The committed files for those are whatever was checked in previously.` +
+        `\n   Add a capture above (or drop the consumer) rather than hand-editing them.`,
+    );
+  }
 }
 
 main().catch((e) => {

@@ -404,7 +404,7 @@ test.describe('what the switches survive', () => {
       // No workspace, so no scene: the overlay does not survive a reload either.
       expect(await page.evaluate(() => window.__stabileo.rebarSceneCensus())).toBeNull();
 
-      const banner = page.locator('.autosave-banner');
+      const banner = page.getByTestId('autosave-prompt');
       await expect(banner, 'the saved project is offered back').toBeVisible({ timeout: 30_000 });
       await banner.locator('button.restore').click();
       await expect

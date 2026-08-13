@@ -2,7 +2,7 @@
   import { uiStore, resultsStore, modelStore } from '../../lib/store';
   import { t } from '../../lib/i18n';
   import { hasInvalid2DDisplacements, hasInvalid3DDisplacements } from '../../lib/geometry/coordinate-system';
-  import { initSolver, isWasmReady } from '../../lib/engine/wasm-solver';
+  import { runSolve } from '../../lib/actions/solve';
 
   // ─── Educational Tooltips (subset used by Results) ─────────────
   const HELP_TEXTS: Record<string, { title: string; desc: string }> = {
@@ -80,123 +80,49 @@
   let showResultsViewSub = $state(false);
 
   // ─── Handlers ──────────────────────────────────────────────────
-  function handleSolve() {
-    if (uiStore.analysisMode === '3d') {
-      handleSolve3D();
-      return;
-    }
-    const results = modelStore.solve(uiStore.includeSelfWeight, uiStore.drawPlane2D);
-    if (typeof results === 'string') {
-      uiStore.toast(results, 'error');
-    } else if (results) {
-      // Validate results aren't degenerate
-      const hasNaN = hasInvalid2DDisplacements(results.displacements);
-      if (hasNaN) {
-        uiStore.toast(t('results.numericError'), 'error');
-        return;
-      }
-      resultsStore.setResults(results);
-      // Show classification in success toast
-      const kin = modelStore.kinematicResult;
-      let classText = '';
-      if (kin) {
-        if (kin.classification === 'isostatic') classText = t('toast.isostatic');
-        else if (kin.classification === 'hyperstatic') classText = t('toast.hyperstatic').replace('{degree}', String(kin.degree));
-      }
-      // Auto-solve combinations if they exist
-      let comboText = '';
-      if (modelStore.model.combinations.length > 0) {
-        const comboResult = modelStore.solveCombinations(uiStore.includeSelfWeight, uiStore.drawPlane2D);
-        if (comboResult && typeof comboResult !== 'string') {
-          resultsStore.setCombinationResults(comboResult.perCase, comboResult.perCombo, comboResult.envelope);
-          comboText = t('toast.plusCombinations').replace('{n}', String(comboResult.perCombo.size));
-        }
-      }
-      // Show diagnostics warnings if present
-      const diagWarnings = [
-        ...(results.diagnostics ?? []).filter(d => d.metric === 'negative_jacobian').map(d => d.message),
-        ...(results.solverDiagnostics ?? []).filter(d => d.severity === 'warning').map(d => d.message),
-      ];
-      if (diagWarnings.length > 0) {
-        uiStore.toast(diagWarnings.join(' | '), 'info');
-      }
-      uiStore.toast(`${t('results.calcSuccess')}${classText} — ${results.elementForces.length} ${t('results.bars')}, ${results.reactions.length} ${t('results.reactions')}${comboText}`, 'success');
-    } else {
-      uiStore.toast(t('results.emptyModelError'), 'error');
-    }
-    // Auto-close drawer on mobile after solve, show floating results panel
-    if (uiStore.isMobile) {
-      uiStore.leftDrawerOpen = false;
-      uiStore.mobileResultsPanelOpen = true;
-    }
-  }
+  const handleSolve = () => runSolve();
 
-  async function handleSolve3D() {
-    if (!isWasmReady()) {
-      try { await initSolver(); } catch (e: any) {
-        uiStore.toast(e?.message || 'WASM solver initialization failed', 'error');
-        return;
-      }
-    }
-    const isPro = uiStore.analysisMode === 'pro';
-    const versionAtStart = modelStore.modelVersion;
-    const results = await modelStore.solve3DAsync(uiStore.includeSelfWeight, uiStore.axisConvention3D === 'leftHand', isPro);
-    if (modelStore.modelVersion !== versionAtStart) return; // stale — user edited mid-solve
-    if (typeof results === 'string') {
-      uiStore.toast(results, 'error');
-    } else if (results) {
-      // Validate results aren't degenerate
-      const hasNaN = hasInvalid3DDisplacements(results.displacements as Array<{ ux: number; uy: number; uz: number }>);
-      if (hasNaN) {
-        uiStore.toast(t('results.numericError3d'), 'error');
-        return;
-      }
-      resultsStore.setResults3D(results);
-      // Auto-solve 3D combinations if they exist
-      let comboText = '';
-      if (modelStore.model.combinations.length > 0) {
-        const comboResult = modelStore.solveCombinations3D(uiStore.includeSelfWeight, uiStore.axisConvention3D === 'leftHand', isPro);
-        if (comboResult && typeof comboResult !== 'string') {
-          resultsStore.setCombinationResults3D(comboResult.perCase, comboResult.perCombo, comboResult.envelope);
-          comboText = t('toast.plusCombinations').replace('{n}', String(comboResult.perCombo.size));
-        }
-      }
-      // Show diagnostics warnings if present
-      const diagWarnings3D = [
-        ...(results.diagnostics ?? []).filter((d: { metric: string }) => d.metric === 'negative_jacobian').map((d: { message: string }) => d.message),
-        ...(results.solverDiagnostics ?? []).filter((d: { severity: string }) => d.severity === 'warning').map((d: { message: string }) => d.message),
-      ];
-      if (diagWarnings3D.length > 0) {
-        uiStore.toast(diagWarnings3D.join(' | '), 'info');
-      }
-      uiStore.toast(
-        `${t('results.analysis3dSuccess')} — ${results.elementForces.length} ${t('results.bars')}, ${results.reactions.length} ${t('results.reactions')}${comboText}`,
-        'success',
-      );
-    } else {
-      uiStore.toast(t('results.emptyModelError'), 'error');
-    }
-    if (uiStore.isMobile) {
-      uiStore.leftDrawerOpen = false;
-      uiStore.mobileResultsPanelOpen = true;
-    }
-  }
 
+  /**
+   * Hide the diagram buttons when the ribbon is already showing them.
+   *
+   * In Basic the ribbon owns diagram selection, so repeating the grid here gave
+   * two controls for one piece of state — and they disagreed, because this list
+   * is mode-aware and the ribbon's was not. The panel keeps what the ribbon has
+   * no room for: the scale, the animation and the view options.
+   */
+  let { hideDiagrams = false, flat = false }: { hideDiagrams?: boolean; flat?: boolean } = $props();
 </script>
 
+<!--
+  The solve button belongs to the ribbon now. Keeping a second one here meant a
+  panel opened BY solving still offered to solve, and the two would have needed
+  to agree about 3D, readiness and disabled state forever.
+-->
+{#if !flat}
 <div class="toolbar-section">
-  <h3>{t('results.solve')}</h3>
+  {#if !flat}<h3>{t('results.solve')}</h3>{/if}
   <button class="solve-btn" data-tour="calcular-btn" class:ready={modelReady} onclick={handleSolve} use:tooltip={'solve'} title={uiStore.analysisMode === '3d' ? t('results.analysis3dTooltip') : ''}>
     {uiStore.analysisMode === '3d' ? t('results.solve3d') : t('results.solve')}
   </button>
 </div>
+{/if}
 
 <div class="toolbar-section" data-tour="results-section">
-  <button class="section-toggle" onclick={() => showResultsPanel = !showResultsPanel}>
-    {showResultsPanel ? '▾' : '▸'} {t('results.results')}
-  </button>
-  {#if showResultsPanel}
+  <!--
+    The header is a real toggle only where it toggles something. In the right
+    panel the body below renders regardless (`|| flat`), so this was a chevron
+    that changed direction and did nothing else — the panel already carries the
+    heading "RESULTS" two lines above it.
+  -->
+  {#if !flat}
+    <button class="section-toggle" onclick={() => showResultsPanel = !showResultsPanel}>
+      {showResultsPanel ? '▾' : '▸'} {t('results.results')}
+    </button>
+  {/if}
+  {#if showResultsPanel || flat}
     {#if resultsStore.results || resultsStore.results3D || resultsStore.influenceLine}
+      {#if !hideDiagrams}
       <div class="diagram-grid">
         <button class="diagram-btn" class:active={resultsStore.diagramType === 'none'} onclick={() => resultsStore.diagramType = 'none'} title={t('results.noDiagramTooltip')} use:tooltip={'diag-none'}>{t('results.none')}</button>
         <button class="diagram-btn" class:active={resultsStore.diagramType === 'deformed'} onclick={() => resultsStore.diagramType = 'deformed'} title={t('results.deformedTooltip')} use:tooltip={'diag-deformed'}>{t('results.deformed')}</button>
@@ -216,6 +142,7 @@
           <button class="diagram-btn" class:active={resultsStore.diagramType === 'colorMap'} onclick={() => resultsStore.diagramType = 'colorMap'} title={t('results.colorMapTooltip')}>{t('results.colorMap')}</button>
         {/if}
       </div>
+      {/if}
       {#if resultsStore.diagramType === 'deformed'}
         <div class="input-group">
           <label>{t('results.diagramScale')}:</label>
@@ -274,15 +201,53 @@
           </select>
         </div>
       {/if}
+        <!--
+          How the axial result is DRAWN, next to the result itself.
+          ──────────────────────────────────────────────────────────
+          Axial has two presentations: the diagram plotted along each member,
+          and the members themselves coloured by sign — red in tension, blue in
+          compression — which for a truss is the reading most engineers want
+          first. They used to be two separate entries in a diagram grid, so the
+          ribbon, which lists QUANTITIES, had nowhere to put the second one and
+          it became unreachable.
+
+          It is not a quantity, it is a way of showing one, so it belongs here
+          beside the scale rather than up in the ribbon. Only axial has it, so
+          it only appears for axial.
+        -->
+        {#if resultsStore.diagramType === 'axial' || resultsStore.diagramType === 'axialColor'}
+          <div class="input-group">
+            <label>{t('results.axialShownAs')}:</label>
+            <div class="seg" role="group" aria-label={t('results.axialShownAs')}>
+              <button
+                class="seg-btn"
+                class:on={resultsStore.diagramType === 'axial'}
+                onclick={() => (resultsStore.diagramType = 'axial')}
+                data-testid="axial-as-diagram"
+              >{t('results.asDiagram')}</button>
+              <button
+                class="seg-btn"
+                class:on={resultsStore.diagramType === 'axialColor'}
+                onclick={() => (resultsStore.diagramType = 'axialColor')}
+                data-testid="axial-as-colour"
+              >{t('results.asMemberColour')}</button>
+            </div>
+          </div>
+        {/if}
       {#if resultsStore.hasCombinations && (resultsStore.diagramType === 'moment' || resultsStore.diagramType === 'shear' || resultsStore.diagramType === 'axial' || resultsStore.diagramType === 'momentY' || resultsStore.diagramType === 'momentZ' || resultsStore.diagramType === 'shearY' || resultsStore.diagramType === 'shearZ' || resultsStore.diagramType === 'torsion' || resultsStore.diagramType === 'deformed' || resultsStore.diagramType === 'axialColor')}
         {@const is3D = uiStore.analysisMode === '3d'}
         {@const caseKeys = is3D ? [...resultsStore.perCase3D.keys()] : [...resultsStore.perCase.keys()]}
         {@const comboKeys = is3D ? [...resultsStore.perCombo3D.keys()] : [...resultsStore.perCombo.keys()]}
         {@const hasEnvelope = is3D ? resultsStore.fullEnvelope3D !== null : resultsStore.fullEnvelope !== null}
-        <button class="sub-toggle" onclick={() => showResultsViewSub = !showResultsViewSub}>
-          {showResultsViewSub ? '▾' : '▸'} {t('results.changeResultsView')}
-        </button>
-        {#if showResultsViewSub}
+        <!-- Open in the panel: no accordions there. -->
+        {#if !flat}
+          <button class="sub-toggle" onclick={() => showResultsViewSub = !showResultsViewSub}>
+            {showResultsViewSub ? '▾' : '▸'} {t('results.changeResultsView')}
+          </button>
+        {:else}
+          <span class="sub-heading">{t('results.changeResultsView')}</span>
+        {/if}
+        {#if showResultsViewSub || flat}
           <div class="sub-content">
             {#if uiStore.showPrimarySelector}
               <div class="input-group">
@@ -398,7 +363,7 @@
   .toolbar-section h3 {
     font-size: 0.75rem;
     text-transform: uppercase;
-    color: #888;
+    color: var(--st-text-3);
     letter-spacing: 0.05em;
   }
 
@@ -420,26 +385,26 @@
   .input-group input {
     width: 70px;
     padding: 0.25rem;
-    background: #0f3460;
-    border: 1px solid #1a4a7a;
+    background: var(--st-surface-2);
+    border: 1px solid var(--st-hair-strong);
     border-radius: 4px;
-    color: #eee;
+    color: var(--st-text);
   }
 
   .input-group input[type="range"] {
     -webkit-appearance: auto;
     appearance: auto;
-    accent-color: #e94560;
+    accent-color: var(--st-accent);
     background: transparent;
     border: none;
   }
 
   .input-group select {
     padding: 0.25rem;
-    background: #0f3460;
-    border: 1px solid #1a4a7a;
+    background: var(--st-surface-2);
+    border: 1px solid var(--st-hair-strong);
     border-radius: 4px;
-    color: #eee;
+    color: var(--st-text);
   }
 
   .diagram-grid {
@@ -450,10 +415,10 @@
 
   .diagram-btn {
     padding: 0.3rem 0.25rem;
-    background: #0f3460;
-    border: 1px solid #1a4a7a;
+    background: var(--st-surface-2);
+    border: 1px solid var(--st-hair-strong);
     border-radius: 4px;
-    color: #ccc;
+    color: var(--st-text);
     cursor: pointer;
     font-size: 0.75rem;
     font-weight: 600;
@@ -462,19 +427,19 @@
   }
 
   .diagram-btn:hover {
-    background: #1a4a7a;
+    background: var(--st-surface-3);
     color: white;
   }
 
   .diagram-btn.active {
-    background: #e94560;
-    border-color: #ff6b6b;
+    background: var(--st-accent);
+    border-color: var(--st-danger);
     color: white;
   }
 
   .no-results-msg {
     font-size: 0.72rem;
-    color: #888;
+    color: var(--st-text-3);
     font-style: italic;
     padding: 0.4rem 0.2rem;
     margin: 0;
@@ -483,26 +448,26 @@
 
   .scale-step-btn {
     padding: 1px 4px;
-    border: 1px solid #333;
+    border: 1px solid var(--st-hair);
     border-radius: 3px;
     background: transparent;
-    color: #888;
+    color: var(--st-text-3);
     font-size: 0.55rem;
     cursor: pointer;
     line-height: 1;
     transition: all 0.12s;
   }
   .scale-step-btn:hover {
-    background: #333;
-    color: #4ecdc4;
-    border-color: #4ecdc4;
+    background: var(--st-surface-3);
+    color: var(--st-value);
+    border-color: var(--st-interactive);
   }
 
   .solve-btn {
     width: 100%;
     padding: 0.5rem 0.5rem;
-    background: #e94560;
-    border: 1px solid #ff6b6b;
+    background: var(--st-accent);
+    border: 1px solid var(--st-danger);
     border-radius: 4px;
     color: white;
     cursor: pointer;
@@ -513,7 +478,7 @@
   }
 
   .solve-btn:hover:not(:disabled) {
-    background: #ff6b6b;
+    background: var(--st-danger);
   }
 
   .solve-btn:disabled {
@@ -534,13 +499,47 @@
     }
   }
 
+  /* A two-state choice reads as one control, not two buttons. */
+  .seg {
+    display: inline-flex;
+    border: 1px solid var(--st-hair);
+    border-radius: var(--st-radius);
+    overflow: hidden;
+  }
+
+  .seg-btn {
+    background: none;
+    border: none;
+    color: var(--st-text-2);
+    font-family: var(--st-sans);
+    font-size: 0.72rem;
+    padding: 0.22rem 0.5rem;
+    cursor: pointer;
+    white-space: nowrap;
+    transition: background 0.12s, color 0.12s;
+  }
+
+  .seg-btn + .seg-btn { border-left: 1px solid var(--st-hair); }
+  .seg-btn:hover { background: var(--st-surface-3); color: var(--st-text); }
+  .seg-btn.on { background: var(--st-selected-bg); color: var(--st-accent); }
+
+  .sub-heading {
+    display: block;
+    font-family: var(--st-mono);
+    font-size: 0.66rem;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: var(--st-text-3);
+    padding: 0.4rem 0 0.25rem;
+  }
+
   .section-toggle {
     width: 100%;
     padding: 0.4rem 0.5rem;
     background: none;
-    border: 1px solid #333;
+    border: 1px solid var(--st-hair);
     border-radius: 4px;
-    color: #aaa;
+    color: var(--st-text-2);
     cursor: pointer;
     font-size: 0.75rem;
     font-weight: 600;
@@ -551,18 +550,18 @@
   }
 
   .section-toggle:hover {
-    background: #1a1a2e;
-    color: #ccc;
-    border-color: #555;
+    background: var(--st-bg);
+    color: var(--st-text);
+    border-color: var(--st-hair-strong);
   }
 
   .sub-toggle {
     width: 100%;
     padding: 0.25rem 0.4rem;
     background: none;
-    border: 1px solid #2a2a3e;
+    border: 1px solid var(--st-hair);
     border-radius: 3px;
-    color: #999;
+    color: var(--st-text-2);
     cursor: pointer;
     font-size: 0.68rem;
     font-weight: 500;
@@ -571,9 +570,9 @@
     transition: all 0.2s;
   }
   .sub-toggle:hover {
-    background: #1a1a2e;
-    color: #ccc;
-    border-color: #444;
+    background: var(--st-bg);
+    color: var(--st-text);
+    border-color: var(--st-hair-strong);
   }
 
   .sub-content {
@@ -581,7 +580,7 @@
     display: flex;
     flex-direction: column;
     gap: 0.35rem;
-    border: 1px solid #2a2a3e;
+    border: 1px solid var(--st-hair);
     border-radius: 4px;
     margin-top: 0.15rem;
     overflow: hidden;

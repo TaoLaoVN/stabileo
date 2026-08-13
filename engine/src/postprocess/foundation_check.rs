@@ -5,6 +5,8 @@
 
 use serde::{Deserialize, Serialize};
 
+use crate::postprocess::check_ledger::{CheckLedger, Unevaluated};
+
 // ==================== Types ====================
 
 /// Spread footing geometry and soil data.
@@ -89,21 +91,33 @@ pub struct SpreadFootingResult {
     pub eccentricity_y: f64,
     /// Overall pass (all ratios acceptable)
     pub pass: bool,
+    /// Checks whose capacity could not be evaluated.
+    #[serde(default)]
+    pub unevaluated: Unevaluated,
 }
 
 // ==================== Implementation ====================
 
 const PHI_SHEAR: f64 = 0.75;
 
+/// Index the force records by id so each footing is a hash lookup rather than a
+/// scan of the whole list.
+fn index_forces<T>(forces: &[T], id_of: impl Fn(&T) -> usize) -> std::collections::HashMap<usize, &T> {
+    let mut map = std::collections::HashMap::with_capacity(forces.len());
+    for f in forces {
+        map.entry(id_of(f)).or_insert(f);
+    }
+    map
+}
+
 /// Check all spread footings.
 pub fn check_spread_footings(input: &SpreadFootingInput) -> Vec<SpreadFootingResult> {
     let mut results = Vec::new();
 
+    let by_id = index_forces(&input.forces, |f| f.footing_id);
+
     for footing in &input.footings {
-        let forces = input
-            .forces
-            .iter()
-            .find(|f| f.footing_id == footing.footing_id);
+        let forces = by_id.get(&footing.footing_id).copied();
         let forces = match forces {
             Some(f) => f,
             None => continue,
@@ -134,24 +148,26 @@ fn check_single_footing(
     let ex = if p.abs() > 0.0 { my / p } else { 0.0 };
     let ey = if p.abs() > 0.0 { mx / p } else { 0.0 };
 
-    // Bearing pressure (Meyerhof effective area for eccentric loads)
-    // q = P / A' where A' = L' * B'
-    // L' = L - 2*ey, B' = B - 2*ex
-    let l_eff = (l - 2.0 * ey.abs()).max(0.0);
-    let b_eff = (b - 2.0 * ex.abs()).max(0.0);
+    // Bearing pressure (Meyerhof effective area for eccentric loads).
+    // `ex` offsets the load along the length, so it shortens L; `ey` offsets it
+    // across the width, so it shortens B.
+    // q = P / A' where A' = L' * B',  L' = L - 2*ex,  B' = B - 2*ey
+    let l_eff = (l - 2.0 * ex.abs()).max(0.0);
+    let b_eff = (b - 2.0 * ey.abs()).max(0.0);
     let a_eff = l_eff * b_eff;
 
+    let mut ledger = CheckLedger::new();
     let max_bearing = if a_eff > 0.0 { p / a_eff } else { f64::INFINITY };
-    let bearing_ratio = max_bearing / ftg.q_allowable;
+    let bearing_ratio = ledger.ratio("Bearing", max_bearing, ftg.q_allowable);
 
-    // Overturning stability
-    // Resisting moment = P * L/2 (or B/2)
-    // Overturning moment = Mx or My + H * depth
-    let mr_x = p * l / 2.0;
+    // Overturning stability. Tipping about the length axis (driven by `mx`)
+    // rotates the footing across its width, so the stabilising arm is B/2;
+    // tipping about the width axis (`my`) rotates it along the length: L/2.
+    let mr_x = p * b / 2.0;
     let mo_x = mx.abs() + h.abs() * ftg.depth;
     let overturning_sf_x = if mo_x > 0.0 { mr_x / mo_x } else { f64::INFINITY };
 
-    let mr_y = p * b / 2.0;
+    let mr_y = p * l / 2.0;
     let mo_y = my.abs() + h.abs() * ftg.depth;
     let overturning_sf_y = if mo_y > 0.0 { mr_y / mo_y } else { f64::INFINITY };
 
@@ -164,25 +180,40 @@ fn check_single_footing(
         f64::INFINITY
     };
 
-    // One-way shear (beam shear) — critical section at d from column face
-    // Vu = q * B * (L/2 - col_L/2 - d)
-    let oneway_dist = l / 2.0 - ftg.col_length / 2.0 - d;
-    let vu_oneway = if oneway_dist > 0.0 && area > 0.0 {
-        (p / area) * b * oneway_dist
-    } else {
-        0.0
-    };
+    // One-way shear (beam shear) — critical section at d from the column face.
+    // Both directions must be checked: on a footing that cantilevers further
+    // across its width than along its length, the width direction governs and
+    // checking only the length direction misses it entirely.
+    let fc_mpa = ftg.fc / 1e6;
+    let d_mm = d * 1000.0;
 
     // phi*Vc = phi * 0.17 * sqrt(f'c_MPa) * bw_mm * d_mm (ACI 318 metric)
-    let fc_mpa = ftg.fc / 1e6;
-    let bw_mm = b * 1000.0;
-    let d_mm = d * 1000.0;
-    let phi_vc_oneway = PHI_SHEAR * 0.17 * fc_mpa.sqrt() * bw_mm * d_mm;
-    let oneway_shear_ratio = if phi_vc_oneway > 0.0 {
-        vu_oneway / phi_vc_oneway
-    } else {
-        0.0
+    // Demand and capacity for one direction: the strip cantilevering past the
+    // critical section, resisted by the perpendicular width.
+    let oneway = |cantilever: f64, loaded_width: f64, resisting_width: f64| -> (f64, f64) {
+        let vu = if cantilever > 0.0 && area > 0.0 {
+            (p / area) * loaded_width * cantilever
+        } else {
+            0.0
+        };
+        // phi*Vc = phi * 0.17 * sqrt(f'c_MPa) * bw_mm * d_mm (ACI 318 metric)
+        let phi_vc = PHI_SHEAR * 0.17 * fc_mpa.sqrt() * (resisting_width * 1000.0) * d_mm;
+        (vu, phi_vc)
     };
+
+    // Cantilever along the length, resisted by the full width, and vice versa.
+    let along = oneway(l / 2.0 - ftg.col_length / 2.0 - d, b, b);
+    let across = oneway(b / 2.0 - ftg.col_width / 2.0 - d, l, l);
+    // Report the direction that governs — the higher demand/capacity — so the
+    // ledger still sees a real (demand, capacity) pair and can flag a footing
+    // whose capacity could not be evaluated.
+    let (vu_oneway, phi_vc_oneway) = match (along.1 > 0.0, across.1 > 0.0) {
+        (true, true) if across.0 / across.1 > along.0 / along.1 => across,
+        (true, _) => along,
+        (false, true) => across,
+        (false, false) => along,
+    };
+    let oneway_shear_ratio = ledger.ratio("One-way shear", vu_oneway, phi_vc_oneway);
 
     // Two-way (punching) shear — critical section at d/2 from column face
     let b0 = 2.0 * ((ftg.col_length + d) + (ftg.col_width + d)); // perimeter (m)
@@ -205,13 +236,10 @@ fn check_single_footing(
     let vc_punch = vc1.min(vc2).min(vc3);
     let phi_vc_punch = PHI_SHEAR * vc_punch;
 
-    let punching_shear_ratio = if phi_vc_punch > 0.0 {
-        vu_punch / phi_vc_punch
-    } else {
-        0.0
-    };
+    let punching_shear_ratio = ledger.ratio("Punching shear", vu_punch, phi_vc_punch);
 
-    let pass = bearing_ratio <= 1.0
+    let pass = ledger.all_evaluated()
+        && bearing_ratio <= 1.0
         && overturning_sf_x >= 1.5
         && overturning_sf_y >= 1.5
         && sliding_sf >= 1.5
@@ -230,5 +258,6 @@ fn check_single_footing(
         eccentricity_x: ex,
         eccentricity_y: ey,
         pass,
+        unevaluated: ledger.into_unevaluated(),
     }
 }

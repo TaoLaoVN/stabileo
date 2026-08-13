@@ -78,7 +78,9 @@ fn build_sampling_positions(
 /// record instead of on every station evaluation.
 pub fn sorted_point_loads(ef: &ElementForces) -> Vec<PointLoadInfo> {
     let mut pl = ef.point_loads.clone();
-    pl.sort_by(|a, b| a.a.partial_cmp(&b.a).unwrap());
+    // `total_cmp` rather than `partial_cmp().unwrap()`: a NaN position from a
+    // diverged solve would panic, and in WASM a panic aborts the module.
+    pl.sort_by(|a, b| a.a.total_cmp(&b.a));
     pl
 }
 
@@ -105,14 +107,11 @@ pub fn compute_diagram_value_at_sorted(
     let v_start = ef.v_start;
     let m_start = ef.m_start;
 
-    // Build distributed loads list
-    let d_loads: Vec<&DistributedLoadInfo> = if !ef.distributed_loads.is_empty() {
-        ef.distributed_loads.iter().collect()
-    } else if ef.q_i.abs() > 1e-10 || ef.q_j.abs() > 1e-10 {
-        Vec::new()
-    } else {
-        Vec::new()
-    };
+    // Both non-first branches of the original expression were `Vec::new()`, so
+    // the whole thing collapsed to "iterate the slice" — but it allocated a Vec
+    // of references on *every* station evaluation, which in the envelope path is
+    // elements x 21 stations x load cases x diagram kinds allocations.
+    let d_loads = &ef.distributed_loads;
     let use_legacy_q = ef.distributed_loads.is_empty() && (ef.q_i.abs() > 1e-10 || ef.q_j.abs() > 1e-10);
 
     match kind {
@@ -124,7 +123,7 @@ pub fn compute_diagram_value_at_sorted(
                 let dq = ef.q_j - ef.q_i;
                 value -= ef.q_i * xi * xi / 2.0 + dq * xi * xi * xi / (6.0 * ef.length);
             }
-            for dl in &d_loads {
+            for dl in d_loads {
                 if xi > dl.a + 1e-10 {
                     let x_end = xi.min(dl.b);
                     let s = x_end - dl.a;
@@ -155,7 +154,7 @@ pub fn compute_diagram_value_at_sorted(
                 let dq = ef.q_j - ef.q_i;
                 value += ef.q_i * xi + dq * xi * xi / (2.0 * ef.length);
             }
-            for dl in &d_loads {
+            for dl in d_loads {
                 if xi > dl.a + 1e-10 {
                     let x_end = xi.min(dl.b);
                     let s = x_end - dl.a;
@@ -174,13 +173,16 @@ pub fn compute_diagram_value_at_sorted(
             value
         }
         "axial" => {
-            let n_start = ef.n_start;
-            let n_end = ef.n_end;
-            let mut value = n_start + t * (n_end - n_start);
+            // Axial force is piecewise constant with jumps at concentrated axial
+            // loads. `n_start` already is the internal force at node I; each load
+            // px at a<x changes the constant level by -px. Do NOT interpolate
+            // n_start -> n_end here: n_end already accounts for all px via
+            // equilibrium, so interpolating would double-count the jumps.
+            let mut value = ef.n_start;
             for pl in sorted_pl {
                 if let Some(px) = pl.px {
                     if pl.a < xi - 1e-10 {
-                        value += px;
+                        value -= px;
                     }
                 }
             }
@@ -195,29 +197,20 @@ pub fn compute_diagram_value_at_sorted(
 fn compute_single_diagram(
     kind: &str,
     ef: &ElementForces,
-    node_ix: f64,
-    node_iy: f64,
-    node_jx: f64,
-    node_jy: f64,
+    geom: (f64, f64, f64, f64),
+    positions: &[f64],
+    sorted_pl: &[PointLoadInfo],
 ) -> ElementDiagram {
-    let has_axial_pl = kind == "axial" && ef.point_loads.iter().any(|pl| pl.px.map_or(false, |px| px.abs() > 1e-15));
-    let positions = if kind == "axial" && !has_axial_pl {
-        (0..NUM_POINTS).map(|i| i as f64 / (NUM_POINTS - 1) as f64).collect()
-    } else {
-        build_sampling_positions(ef.length, &ef.point_loads)
-    };
+    let (node_ix, node_iy, node_jx, node_jy) = geom;
 
-    // Sort point loads once per element instead of per station evaluation
-    let sorted_pl = sorted_point_loads(ef);
-
-    let mut points = Vec::new();
+    let mut points = Vec::with_capacity(positions.len());
     let mut max_val = f64::NEG_INFINITY;
     let mut min_val = f64::INFINITY;
     let mut max_abs_t = 0.0;
     let mut max_abs_value: f64 = 0.0;
 
-    for &t in &positions {
-        let value = compute_diagram_value_at_sorted(kind, t, ef, &sorted_pl);
+    for &t in positions {
+        let value = compute_diagram_value_at_sorted(kind, t, ef, sorted_pl);
         let x = node_ix + t * (node_jx - node_ix);
         let y = node_iy + t * (node_jy - node_iy);
 
@@ -250,12 +243,16 @@ pub fn compute_diagrams_2d(
     let mut shear = Vec::new();
     let mut axial = Vec::new();
 
+    // O(1) lookups once — the per-element .values().find() scans made this
+    // O(E·(E+N)) per call on big models.
+    let elem_by_id: std::collections::HashMap<usize, &crate::types::SolverElement> =
+        input.elements.values().map(|e| (e.id, e)).collect();
+    let node_by_id: std::collections::HashMap<usize, &crate::types::SolverNode> =
+        input.nodes.values().map(|n| (n.id, n)).collect();
+
     for ef in &results.element_forces {
-        let elem = input.elements.values().find(|e| e.id == ef.element_id);
-        let (node_ix, node_iy, node_jx, node_jy) = if let Some(elem) = elem {
-            let ni = input.nodes.values().find(|n| n.id == elem.node_i);
-            let nj = input.nodes.values().find(|n| n.id == elem.node_j);
-            match (ni, nj) {
+        let (node_ix, node_iy, node_jx, node_jy) = if let Some(elem) = elem_by_id.get(&ef.element_id) {
+            match (node_by_id.get(&elem.node_i), node_by_id.get(&elem.node_j)) {
                 (Some(ni), Some(nj)) => (ni.x, ni.z, nj.x, nj.z),
                 _ => (0.0, 0.0, ef.length, 0.0),
             }
@@ -263,9 +260,31 @@ pub fn compute_diagrams_2d(
             (0.0, 0.0, ef.length, 0.0)
         };
 
-        moment.push(compute_single_diagram("moment", ef, node_ix, node_iy, node_jx, node_jy));
-        shear.push(compute_single_diagram("shear", ef, node_ix, node_iy, node_jx, node_jy));
-        axial.push(compute_single_diagram("axial", ef, node_ix, node_iy, node_jx, node_jy));
+        // Sort the point loads and build the station list once per element
+        // rather than once per diagram kind: the previous code redid both
+        // three times over, for identical inputs.
+        let sorted_pl = sorted_point_loads(ef);
+        let loaded_positions = build_sampling_positions(ef.length, &ef.point_loads);
+        let plain_positions: Vec<f64> =
+            (0..NUM_POINTS).map(|i| i as f64 / (NUM_POINTS - 1) as f64).collect();
+        let has_axial_pl = ef
+            .point_loads
+            .iter()
+            .any(|pl| pl.px.is_some_and(|px| px.abs() > 1e-15));
+
+        let geom = (node_ix, node_iy, node_jx, node_jy);
+        for (kind, out) in [
+            ("moment", &mut moment),
+            ("shear", &mut shear),
+            ("axial", &mut axial),
+        ] {
+            let positions = if kind == "axial" && !has_axial_pl {
+                &plain_positions
+            } else {
+                &loaded_positions
+            };
+            out.push(compute_single_diagram(kind, ef, geom, positions, &sorted_pl));
+        }
     }
 
     DiagramResults { moment, shear, axial }

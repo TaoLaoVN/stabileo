@@ -2,6 +2,7 @@
 
 import type { AnalysisResults } from '../engine/types';
 import { computeDeformedShape } from '../engine/diagrams';
+import { canvasTheme } from './theme';
 
 interface DrawContext {
   ctx: CanvasRenderingContext2D;
@@ -35,7 +36,7 @@ export function drawDeformed(
 
   const scale = userScale;
 
-  ctx.strokeStyle = 'rgba(255, 165, 0, 0.8)';
+  ctx.strokeStyle = canvasTheme().deformed;
   ctx.setLineDash([6, 4]);
   ctx.lineWidth = 2;
 
@@ -83,7 +84,7 @@ export function drawDeformed(
   ctx.setLineDash([]);
 
   // Draw displaced nodes
-  ctx.fillStyle = 'rgba(255, 165, 0, 0.6)';
+  ctx.fillStyle = canvasTheme().deformedFill;
   for (const d of results.displacements) {
     const node = dc.getNode(d.nodeId);
     if (!node) continue;

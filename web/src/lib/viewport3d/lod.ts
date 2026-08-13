@@ -96,13 +96,33 @@ export function applyLowDetail(
 export const HEAVY_MODEL_VISUALS = 3000;
 export const HEAVY_MODEL_VISUALS_SECTIONS = 1200;
 
+/** Objects a single support gizmo puts in the scene.
+ *
+ *  Measured per type: spring 3, pinned 4, roller 6, custom 6, fixed 8,
+ *  rollerXY 8. This is the WORST case, chosen deliberately — for an LOD budget
+ *  the safe error is to overestimate. Overshooting engages the LOD a little
+ *  early and costs some detail during motion; undershooting is what produced
+ *  the stutter this constant exists to fix. Fixed and pinned dominate real
+ *  models, so the typical error is small.
+ *
+ *  Supports were missing from the budget, and on a real model they dominate it:
+ *  la Bombonera has 2476 elements, 120 shells and 205 supports, and 1640 of its
+ *  1763 scene objects (93 %) are the support gizmos. All 2476 frame elements
+ *  together are one batched draw call. Counting only elements and shells scored
+ *  that model at 2596 against a 3000 threshold, so the LOD never engaged during
+ *  a zoom — while in `sections`, with its lower threshold, the same model *did*
+ *  qualify. The lightest render mode was the one that stuttered. */
+export const SUPPORT_VISUAL_COST = 8;
+
 /** Single policy point for the orbit LOD decision (kept here, next to the
  *  visibility rules it gates, so callers can't drift on the criteria). */
 export function isHeavyModel(
-  counts: { elements: number; shells?: number },
+  counts: { elements: number; shells?: number; supports?: number },
   renderMode: RenderMode3D,
 ): boolean {
-  const visuals = counts.elements + (counts.shells ?? 0);
+  const visuals = counts.elements
+    + (counts.shells ?? 0)
+    + (counts.supports ?? 0) * SUPPORT_VISUAL_COST;
   return visuals > (renderMode === 'sections' ? HEAVY_MODEL_VISUALS_SECTIONS : HEAVY_MODEL_VISUALS);
 }
 

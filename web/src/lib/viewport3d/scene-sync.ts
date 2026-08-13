@@ -29,6 +29,19 @@ import {
   projectNodeToScene,
   shouldProjectModelToXZ,
 } from '../geometry/coordinate-system';
+import { computeLoadDirection } from '../canvas/draw-loads';
+
+/** Stable per-axis release fingerprint for the two ends of an element — 6 bits
+ *  (I: my,mz,t then J: my,mz,t) so the element-cache signature rebuilds the mesh
+ *  whenever ANY axis is toggled, not just mz (the old mz-only fragment silently
+ *  ignored my/t changes). Pure — exported for the release-signature test. */
+export function elementReleaseKey(
+  ri: { my: boolean; mz: boolean; t: boolean } | undefined,
+  rj: { my: boolean; mz: boolean; t: boolean } | undefined,
+): string {
+  const bit = (b?: boolean) => (b ? '1' : '0');
+  return bit(ri?.my) + bit(ri?.mz) + bit(ri?.t) + bit(rj?.my) + bit(rj?.mz) + bit(rj?.t);
+}
 
 /** Compute shouldProjectModelToXZ with per-pass caching keyed on modelVersion. */
 function projectFlag(): boolean {
@@ -151,14 +164,21 @@ export function syncElements(ctx: SceneSyncContext): void {
   const eb = ctx.elementsBatched;
   const ep = ctx.elementsPicking;
 
-  // Remove stale (groups, batched segments, picking instances)
+  // Remove stale (groups, batched segments, picking instances).
+  // Driven off the batched structures, not `elementGroups`: in wireframe a
+  // plain member has no group, so the group map is only a partial registry and
+  // using it here left deleted elements in the picking mesh forever.
+  for (const id of eb.ids()) {
+    if (!storeElements.has(id)) eb.remove(id);
+  }
+  for (const id of ep.ids()) {
+    if (!storeElements.has(id)) ep.remove(id);
+  }
   for (const [id, group] of ctx.elementGroups) {
     if (!storeElements.has(id)) {
       ctx.elementsParent.remove(group);
       disposeObject(group);
       ctx.elementGroups.delete(id);
-      eb.remove(id);
-      ep.remove(id);
     }
   }
 
@@ -181,23 +201,56 @@ export function syncElements(ctx: SceneSyncContext): void {
     // mesh keeps the default COLORS.frame for every element on first load
     // and trusses look identical to frames until syncSelection runs.
     // Mirror the wireframe-vs-solid color choice from syncSelection.
+    // Skip the write when the color is already right: setBaseColor marks the
+    // whole buffer dirty, and on a 2476-element model that forced a GPU upload
+    // per sync even when nothing had changed.
     {
       const isTruss = elem.type === 'truss';
       const baseColor = (renderMode === 'wireframe')
-        ? (isTruss ? 0xf0b848 : 0x6cb4ff)
+        ? (isTruss ? 0x9fb2c2 : 0xa8b8c6)
         : (isTruss ? COLORS.truss : COLORS.frame);
-      eb.setBaseColor(id, baseColor);
+      if (eb.getBaseColor(id) !== baseColor) {
+        eb.setBaseColor(id, baseColor);
+      }
     }
     // BVH-accelerated picking surface (invisible) — kept in sync with positions.
     ep.upsert(id, posI, posJ);
 
-    const signature =
-      `${renderMode}|${elem.type}|${elem.releaseI?.mz === true ? 1 : 0}${elem.releaseJ?.mz === true ? 1 : 0}` +
-      `|${posI.x}:${posI.y}:${posI.z}|${posJ.x}:${posJ.y}:${posJ.z}` +
-      `|${elem.sectionId}:${sec?.shape ?? ''}:${sec?.a ?? ''}:${sec?.b ?? ''}:${sec?.h ?? ''}:${sec?.tw ?? ''}:${sec?.tf ?? ''}:${sec?.t ?? ''}:${sec?.tl ?? ''}:${sec?.rotation ?? ''}` +
-      `|${elem.rollAngle ?? ''}:${elem.localYx ?? ''}:${elem.localYy ?? ''}:${elem.localYz ?? ''}|${leftHand ? 'L' : 'R'}` +
-      `|off:${elem.offset ? JSON.stringify(elem.offset) : ''}` +
-      `|jnt:${elem.jointI ? 'I' + elem.jointI.dof.map(b => b ? 1 : 0).join('') : ''}${elem.jointJ ? 'J' + elem.jointJ.dof.map(b => b ? 1 : 0).join('') : ''}`;
+    // In wireframe the member is drawn by the batched LineSegments2, so the
+    // per-element Group exists only to carry a hinge marker or an internal-joint
+    // glyph. With neither it would be empty — and an empty Object3D still costs
+    // a matrix update and a cull test on every frame. On a stadium-sized model
+    // that is thousands of objects in the graph drawing nothing at all.
+    const releaseKey = elementReleaseKey(elem.releaseI, elem.releaseJ);
+    const hasRelease = releaseKey !== '000000';
+    const hasJoint = jointHasRelease(elem.jointI) || jointHasRelease(elem.jointJ);
+    const needsGroup = renderMode !== 'wireframe' || hasRelease || hasJoint;
+
+    if (!needsGroup) {
+      // Drop a group left over from solid/sections mode.
+      const stale = ctx.elementGroups.get(id);
+      if (stale) {
+        ctx.elementsParent.remove(stale);
+        disposeObject(stale);
+        ctx.elementGroups.delete(id);
+      }
+      continue;
+    }
+
+    // Signature captures everything that forces a rebuild. In wireframe the
+    // group holds only markers, so section geometry, roll and offsets cannot
+    // change it; building the full string for every element was the bulk of the
+    // per-edit cost and none of it was load-bearing.
+    const jointKey = `${elem.jointI ? 'I' + elem.jointI.dof.map(b => b ? 1 : 0).join('') : ''}${elem.jointJ ? 'J' + elem.jointJ.dof.map(b => b ? 1 : 0).join('') : ''}`;
+    const signature = renderMode === 'wireframe'
+      ? `wireframe|${elem.type}|${releaseKey}` +
+        `|${posI.x}:${posI.y}:${posI.z}|${posJ.x}:${posJ.y}:${posJ.z}|jnt:${jointKey}`
+      : `${renderMode}|${elem.type}|${releaseKey}` +
+        `|${posI.x}:${posI.y}:${posI.z}|${posJ.x}:${posJ.y}:${posJ.z}` +
+        `|${elem.sectionId}:${sec?.shape ?? ''}:${sec?.a ?? ''}:${sec?.b ?? ''}:${sec?.h ?? ''}:${sec?.tw ?? ''}:${sec?.tf ?? ''}:${sec?.t ?? ''}:${sec?.tl ?? ''}:${sec?.rotation ?? ''}` +
+        `|${elem.rollAngle ?? ''}:${elem.localYx ?? ''}:${elem.localYy ?? ''}:${elem.localYz ?? ''}|${leftHand ? 'L' : 'R'}` +
+        `|off:${elem.offset ? JSON.stringify(elem.offset) : ''}` +
+        `|jnt:${jointKey}`;
 
     const existing = ctx.elementGroups.get(id);
     if (existing && existing.userData.elementSig === signature) continue;
@@ -257,8 +310,8 @@ export function syncElements(ctx: SceneSyncContext): void {
       {
         elementId: id,
         elementType: elem.type,
-        hingeStart: elem.releaseI?.mz === true,
-        hingeEnd: elem.releaseJ?.mz === true,
+        releaseI: elem.releaseI,
+        releaseJ: elem.releaseJ,
         section: sec,
         sectionRotation: sec?.rotation,
         elementRollAngle: elem.rollAngle,
@@ -694,7 +747,8 @@ export function syncLoads(ctx: SceneSyncContext): void {
         load.data.q, maxQ, cc,
       );
     }
-    // pointOnElement and pointOnElement3d: simplified as nodal for now
+    // pointOnElement (2D): draw the applied load in its actual local direction
+    // instead of a hard-coded downward arrow.
     else if (load.type === 'pointOnElement') {
       const elem = modelStore.elements.get(load.data.elementId);
       if (!elem) continue;
@@ -708,9 +762,62 @@ export function syncLoads(ctx: SceneSyncContext): void {
       const px = sceneI.x + (sceneJ.x - sceneI.x) * t;
       const py = sceneI.y + (sceneJ.y - sceneI.y) * t;
       const pz = sceneI.z + (sceneJ.z - sceneI.z) * t;
+
+      // Local frame in scene coordinates: ex along the element, ey perpendicular
+      // in the model plane. For 2D-in-XZ projection the model y maps to scene z.
+      const dx = sceneJ.x - sceneI.x;
+      const dz = sceneJ.z - sceneI.z;
+      const len = Math.sqrt(dx * dx + dz * dz);
+      let fx = 0, fz = 0;
+      if (len > 1e-12) {
+        const cosTheta = dx / len;
+        const sinTheta = dz / len;
+        // Honor angle/isGlobal exactly like the 2D canvas renderer
+        // (computeLoadDirection returns viewport xy, which maps to scene xz).
+        const dir = computeLoadDirection(load.data.angle ?? 0, load.data.isGlobal ?? false, cosTheta, sinTheta);
+        const ex = cosTheta, ez = sinTheta;
+        fx = (load.data.px ?? 0) * ex + load.data.p * dir.dx;
+        fz = (load.data.px ?? 0) * ez + load.data.p * dir.dy;
+      }
       batch.addNodalLoadArrow(
         { x: px, y: py, z: pz },
-        0, 0, -Math.abs(load.data.p),
+        fx, 0, fz,
+        0, load.data.my ?? load.data.mz ?? 0, 0,
+        maxForce,
+        'double-arrow', cc,
+      );
+    }
+    // pointOnElement3d: resolve the local Y/Z load components into global space
+    // using the element's local frame, then draw the resulting arrow.
+    else if (load.type === 'pointOnElement3d') {
+      const elem = modelStore.elements.get(load.data.elementId);
+      if (!elem) continue;
+      const nI = modelStore.nodes.get(elem.nodeI);
+      const nJ = modelStore.nodes.get(elem.nodeJ);
+      if (!nI || !nJ) continue;
+      const L = Math.sqrt((nJ.x-nI.x)**2 + (nJ.y-nI.y)**2 + ((nJ.z??0)-(nI.z??0))**2);
+      const t = L > 0 ? load.data.a / L : 0.5;
+      const sceneI = projectNodeToScene(nI, project2D);
+      const sceneJ = projectNodeToScene(nJ, project2D);
+      const px = sceneI.x + (sceneJ.x - sceneI.x) * t;
+      const py = sceneI.y + (sceneJ.y - sceneI.y) * t;
+      const pz = sceneI.z + (sceneJ.z - sceneI.z) * t;
+
+      const posI = { id: 0, x: nI.x, y: nI.y, z: nI.z ?? 0 } as SolverNode3D;
+      const posJ = { id: 0, x: nJ.x, y: nJ.y, z: nJ.z ?? 0 } as SolverNode3D;
+      const elemLocalY = (elem.localYx !== undefined && elem.localYy !== undefined && elem.localYz !== undefined)
+        ? { x: elem.localYx, y: elem.localYy, z: elem.localYz } : undefined;
+      const localAxes = computeLocalAxes3D(posI, posJ, elemLocalY, elem.rollAngle);
+      const ey = { x: localAxes.ey[0], y: localAxes.ey[1], z: localAxes.ey[2] };
+      const ez = { x: localAxes.ez[0], y: localAxes.ez[1], z: localAxes.ez[2] };
+
+      const fx = load.data.py * ey.x + load.data.pz * ez.x;
+      const fy = load.data.py * ey.y + load.data.pz * ez.y;
+      const fz = load.data.py * ey.z + load.data.pz * ez.z;
+
+      batch.addNodalLoadArrow(
+        { x: px, y: py, z: pz },
+        fx, fy, fz,
         0, 0, 0,
         maxForce,
         'double-arrow', cc,
@@ -752,7 +859,7 @@ export function syncSelection(ctx: SceneSyncContext): void {
     const isTruss = elem?.type === 'truss';
     // Use brightened colors in wireframe mode for grid contrast
     const baseColor = wireframe
-      ? (isTruss ? 0xf0b848 : 0x6cb4ff)
+      ? (isTruss ? 0x9fb2c2 : 0xa8b8c6)
       : (isTruss ? COLORS.truss : COLORS.frame);
     const color = selected ? COLORS.elementSelected : baseColor;
     setGroupColor(group, color);

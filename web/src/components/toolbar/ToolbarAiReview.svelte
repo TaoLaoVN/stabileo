@@ -192,9 +192,9 @@
     width: 100%;
     padding: 0.4rem 0.5rem;
     background: none;
-    border: 1px solid #333;
+    border: 1px solid var(--st-hair);
     border-radius: 4px;
-    color: #aaa;
+    color: var(--st-text-2);
     cursor: pointer;
     font-size: 0.75rem;
     font-weight: 600;
@@ -205,9 +205,9 @@
   }
 
   .section-toggle:hover {
-    background: #1a1a2e;
-    color: #ccc;
-    border-color: #555;
+    background: var(--st-bg);
+    color: var(--st-text);
+    border-color: var(--st-hair-strong);
   }
 
   .section-content {
@@ -220,10 +220,10 @@
   .review-btn {
     width: 100%;
     padding: 0.5rem;
-    background: #0f3460;
-    border: 1px solid #1a4a7a;
+    background: var(--st-surface-2);
+    border: 1px solid var(--st-hair-strong);
     border-radius: 4px;
-    color: #ccc;
+    color: var(--st-text);
     cursor: pointer;
     font-size: 0.75rem;
     font-weight: 600;
@@ -237,7 +237,7 @@
   }
 
   .review-btn:hover:not(:disabled) {
-    background: #1a4a7a;
+    background: var(--st-surface-3);
     color: white;
   }
 
@@ -250,8 +250,8 @@
     display: inline-block;
     width: 12px;
     height: 12px;
-    border: 2px solid #555;
-    border-top-color: #ccc;
+    border: 2px solid var(--st-hair-strong);
+    border-top-color: var(--st-text);
     border-radius: 50%;
     animation: spin 0.6s linear infinite;
   }
@@ -261,7 +261,7 @@
   }
 
   .hint {
-    color: #666;
+    color: var(--st-text-3);
     font-size: 0.7rem;
     font-style: italic;
     margin: 0;
@@ -269,10 +269,10 @@
 
   .error-box {
     background: rgba(233, 69, 96, 0.15);
-    border: 1px solid #e94560;
+    border: 1px solid var(--st-accent);
     border-radius: 4px;
     padding: 0.4rem 0.5rem;
-    color: #e94560;
+    color: var(--st-accent);
     font-size: 0.7rem;
     word-break: break-word;
   }
@@ -294,7 +294,7 @@
   }
 
   .risk-label {
-    color: #888;
+    color: var(--st-text-3);
     font-size: 0.65rem;
     text-transform: uppercase;
     letter-spacing: 0.05em;
@@ -306,7 +306,7 @@
   }
 
   .summary {
-    color: #bbb;
+    color: var(--st-text-2);
     font-size: 0.72rem;
     line-height: 1.4;
     margin: 0;
@@ -321,21 +321,21 @@
   .finding {
     width: 100%;
     background: rgba(255, 255, 255, 0.03);
-    border: 1px solid #2a2a3a;
+    border: 1px solid var(--st-hair);
     border-radius: 4px;
     padding: 0;
     cursor: pointer;
     text-align: left;
-    color: #ccc;
+    color: var(--st-text);
     transition: border-color 0.2s;
   }
 
   .finding:hover {
-    border-color: #444;
+    border-color: var(--st-hair-strong);
   }
 
   .finding.expanded {
-    border-color: #555;
+    border-color: var(--st-hair-strong);
   }
 
   .finding-header {
@@ -359,33 +359,33 @@
   }
 
   .finding-chevron {
-    color: #666;
+    color: var(--st-text-3);
     font-size: 0.65rem;
   }
 
   .finding-body {
     padding: 0 0.5rem 0.4rem;
-    border-top: 1px solid #2a2a3a;
+    border-top: 1px solid var(--st-hair);
   }
 
   .finding-body p {
     margin: 0.3rem 0 0;
     font-size: 0.68rem;
-    color: #999;
+    color: var(--st-text-2);
     line-height: 1.35;
   }
 
   .recommendation {
-    color: #aaa !important;
+    color: var(--st-text-2) !important;
   }
 
   .affected {
-    color: #888 !important;
+    color: var(--st-text-3) !important;
     font-size: 0.65rem !important;
   }
 
   .no-findings {
-    color: #4caf50;
+    color: var(--st-ok);
     font-size: 0.7rem;
     margin: 0;
   }
@@ -395,7 +395,7 @@
   }
 
   .sub-label {
-    color: #888;
+    color: var(--st-text-3);
     font-size: 0.65rem;
     text-transform: uppercase;
     letter-spacing: 0.05em;
@@ -404,15 +404,15 @@
   .review-order ol, .assumptions ul {
     margin: 0.2rem 0 0;
     padding-left: 1.2rem;
-    color: #999;
+    color: var(--st-text-2);
     line-height: 1.4;
   }
 
   .meta {
-    color: #555;
+    color: var(--st-text-3);
     font-size: 0.6rem;
     text-align: right;
     padding-top: 0.2rem;
-    border-top: 1px solid #1a1a2e;
+    border-top: 1px solid var(--st-hair);
   }
 </style>

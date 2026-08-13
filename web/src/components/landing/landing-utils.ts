@@ -4,6 +4,30 @@ export const QUICK_START_URL = `${REPO_URL}/blob/main/docs/QUICKSTART.md`;
 export const AI_WORKFLOW_URL = `${REPO_URL}/blob/main/docs/AI_MODELING_WORKFLOW.md`;
 export const SOLVER_REF_URL = `${REPO_URL}/blob/main/docs/SOLVER_REFERENCE.md`;
 
+/** Example ids the demo offers. `?example=<id>` is App.svelte's existing contract. */
+export type DemoExample = { id: string; key: string };
+
+export const DEMO_EXAMPLES: DemoExample[] = [
+  { id: 'cantilever', key: 'landing.demoEx1' },
+  { id: 'portal-frame', key: 'landing.demoEx2' },
+  { id: 'truss', key: 'landing.demoEx3' },
+  { id: '3d-portal-frame', key: 'landing.demoEx4' },
+];
+
+/** URL for the embedded demo iframe. Unchanged embed/example contract. */
+export function demoEmbedUrl(id: string) {
+  return `/app/basic?embed&example=${id}`;
+}
+
+/**
+ * URL that opens the full editor with the same example preloaded.
+ * `?example=` is read by App.svelte independently of `embed`, so this needs no
+ * change to the application.
+ */
+export function editorExampleUrl(id: string) {
+  return `/app/basic?example=${id}`;
+}
+
 export function enterApp() {
   window.dispatchEvent(new CustomEvent('stabileo-enter-app'));
 }
@@ -17,24 +41,44 @@ const GITHUB_API = `https://api.github.com/repos/lambdaclass/stabileo`;
 const CACHE_KEY = 'stabileo-gh-stars';
 const CACHE_TTL = 6 * 60 * 60 * 1000;
 
-export async function fetchGithubStars(): Promise<number | null> {
+/** Last value we successfully read, fresh or not. `null` when nothing is cached. */
+function cachedStars(): { stars: number; ts: number } | null {
   try {
-    const cached = localStorage.getItem(CACHE_KEY);
-    if (cached) {
-      const { stars, ts } = JSON.parse(cached);
-      if (Date.now() - ts < CACHE_TTL && typeof stars === 'number') return stars;
-    }
-  } catch {}
-  try {
-    const res = await fetch(GITHUB_API);
-    if (!res.ok) return null;
-    const data = await res.json();
-    const stars = typeof data?.stargazers_count === 'number' ? data.stargazers_count : null;
-    if (stars != null) {
-      try { localStorage.setItem(CACHE_KEY, JSON.stringify({ stars, ts: Date.now() })); } catch {}
-    }
-    return stars;
+    const raw = localStorage.getItem(CACHE_KEY);
+    if (!raw) return null;
+    const { stars, ts } = JSON.parse(raw);
+    return typeof stars === 'number' && typeof ts === 'number' ? { stars, ts } : null;
   } catch {
     return null;
+  }
+}
+
+/**
+ * Star count, with a stale cache preferred over no answer at all.
+ *
+ * The unauthenticated GitHub API allows 60 requests an hour per IP, and it
+ * answers 403 rather than 0 once that is spent. This used to return `null` on
+ * any non-OK response, so the moment the cache went stale AND the limit was
+ * spent the page rendered an em dash where a number had been — which reads as
+ * a broken counter, not as a rate limit.
+ *
+ * A star count changes slowly, so a value from yesterday is honest and useful
+ * where "—" is neither. The fresh path is unchanged; only the failure path is,
+ * and the em dash now means "never fetched" rather than "not fetched today".
+ */
+export async function fetchGithubStars(): Promise<number | null> {
+  const cached = cachedStars();
+  if (cached && Date.now() - cached.ts < CACHE_TTL) return cached.stars;
+
+  try {
+    const res = await fetch(GITHUB_API);
+    if (!res.ok) return cached?.stars ?? null;
+    const data = await res.json();
+    const stars = typeof data?.stargazers_count === 'number' ? data.stargazers_count : null;
+    if (stars == null) return cached?.stars ?? null;
+    try { localStorage.setItem(CACHE_KEY, JSON.stringify({ stars, ts: Date.now() })); } catch {}
+    return stars;
+  } catch {
+    return cached?.stars ?? null;
   }
 }
