@@ -537,37 +537,40 @@ pub fn lanczos_generalized_eigen(
         return Some(EigenResult { values, vectors });
     }
 
-    // Build shift-invert operator
-    let si_op = ShiftInvertOp::new(a, b, n, sigma)?;
-    let params = LanczosParams {
-        max_iter: 300,
-        tol: 1e-10,
-        subspace_dim: Some((4 * k).max(40).min(n)),
-    };
+    // Build shift-invert operator. Cholesky of (A − σB) fails when the shift
+    // moves past the smallest eigenvalue (A − σB indefinite); fall through to
+    // the dense path in that case, as documented, instead of returning None.
+    if let Some(si_op) = ShiftInvertOp::new(a, b, n, sigma) {
+        let params = LanczosParams {
+            max_iter: 300,
+            tol: 1e-10,
+            subspace_dim: Some((4 * k).max(40).min(n)),
+        };
 
-    if let Some(mut result) = lanczos_irlm(&si_op, k, true, &params) {
-        // Back-transform: λ = 1/θ + σ
-        for val in result.values.iter_mut() {
-            if val.abs() > 1e-30 {
-                *val = 1.0 / *val + sigma;
-            } else {
-                *val = f64::INFINITY;
+        if let Some(mut result) = lanczos_irlm(&si_op, k, true, &params) {
+            // Back-transform: λ = 1/θ + σ
+            for val in result.values.iter_mut() {
+                if val.abs() > 1e-30 {
+                    *val = 1.0 / *val + sigma;
+                } else {
+                    *val = f64::INFINITY;
+                }
             }
-        }
-        // Sort by ascending eigenvalue
-        let nk = result.values.len();
-        let mut pairs: Vec<(f64, usize)> = result.values.iter().copied().enumerate().map(|(i, v)| (v, i)).collect();
-        pairs.sort_by(|a, b| a.0.partial_cmp(&b.0).unwrap());
-        let sorted_vals: Vec<f64> = pairs.iter().map(|(v, _)| *v).collect();
-        let mut sorted_vecs = vec![0.0; n * nk];
-        for (new_col, &(_, old_col)) in pairs.iter().enumerate() {
-            for row in 0..n {
-                sorted_vecs[row * nk + new_col] = result.vectors[row * nk + old_col];
+            // Sort by ascending eigenvalue
+            let nk = result.values.len();
+            let mut pairs: Vec<(f64, usize)> = result.values.iter().copied().enumerate().map(|(i, v)| (v, i)).collect();
+            pairs.sort_by(|a, b| a.0.partial_cmp(&b.0).unwrap());
+            let sorted_vals: Vec<f64> = pairs.iter().map(|(v, _)| *v).collect();
+            let mut sorted_vecs = vec![0.0; n * nk];
+            for (new_col, &(_, old_col)) in pairs.iter().enumerate() {
+                for row in 0..n {
+                    sorted_vecs[row * nk + new_col] = result.vectors[row * nk + old_col];
+                }
             }
+            result.values = sorted_vals;
+            result.vectors = sorted_vecs;
+            return Some(result);
         }
-        result.values = sorted_vals;
-        result.vectors = sorted_vecs;
-        return Some(result);
     }
 
     // Fallback to dense
@@ -1014,6 +1017,36 @@ mod tests {
         for i in 0..2 {
             assert!((lanczos.values[i] - jacobi.values[i]).abs() < 1e-6,
                 "gen eigenvalue {}: lanczos={}, jacobi={}", i, lanczos.values[i], jacobi.values[i]);
+        }
+    }
+
+    #[test]
+    fn test_lanczos_generalized_indefinite_shift_falls_back_to_dense() {
+        // n > 80 so the shift-invert path is taken. With σ = 1.0 the shifted
+        // matrix A − σB is indefinite (λ_min(A) ≈ 9.7e-4 ≪ σ), so dense
+        // Cholesky of A − σB fails. The function must fall back to the dense
+        // generalized solve (documented behavior) instead of returning None.
+        let n = 100;
+        let mut a = vec![0.0; n * n];
+        let mut b = vec![0.0; n * n];
+        for i in 0..n {
+            a[i * n + i] = 2.0;
+            b[i * n + i] = 1.0;
+            if i > 0 {
+                a[i * n + (i - 1)] = -1.0;
+                a[(i - 1) * n + i] = -1.0;
+            }
+        }
+        let k = 3;
+        let result = lanczos_generalized_eigen(&a, &b, n, k, 1.0)
+            .expect("indefinite shift must fall back to dense solve, not None");
+        assert_eq!(result.values.len(), k);
+        // λ_j of the 1-2-1 tridiagonal (B = I): 2 − 2cos(jπ/(n+1))
+        for j in 0..k {
+            let expected = 2.0 - 2.0 * ((j + 1) as f64 * std::f64::consts::PI / (n as f64 + 1.0)).cos();
+            let rel_err = (result.values[j] - expected).abs() / expected;
+            assert!(rel_err < 1e-6,
+                "eigenvalue {}: got {:.10}, expected {:.10}", j, result.values[j], expected);
         }
     }
 
