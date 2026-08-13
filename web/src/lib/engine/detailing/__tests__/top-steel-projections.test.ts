@@ -163,9 +163,18 @@ describe('top assembly reinforcement, across every projection', { timeout: 60_00
       expect(e.topSteel).toBe('hangerProvisional');
       expect(['PROVISIONAL', 'MODELLED'], `member ${id}`).toContain(e.status);
     }
+    // The set is substantial, so "nobody's state moved" is a real claim rather than a
+    // statement about an empty list.
+    expect(report.hangerTopMembers.length, 'hanger top steel reaches many members').toBe(74);
+    // None of them is PROVISIONAL any more. This assertion used to require the opposite —
+    // over 50 proposals — because the out-of-plane inertia axis bug (fixed upstream in
+    // 7e982403) inflated secondary moments until almost every beam was refused. With the
+    // axis corrected these members are verified, and their top steel is still projected as
+    // `hangerProvisional`: an assembly proposal on a member whose flexural design passed.
+    // That distinction is the thing worth pinning, and the loop above pins it.
     const proposals = report.hangerTopMembers.filter((id) =>
       report.entries.find((x) => x.elementId === id)!.status === 'PROVISIONAL');
-    expect(proposals.length).toBeGreaterThan(50);
+    expect(proposals.length, 'no hanger-top member is a flexural proposal now').toBe(0);
   });
 
   it('never lets an assembly bar acquire a certificate', () => {

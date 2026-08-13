@@ -1,5 +1,5 @@
 /**
- * Why 117 of the 119 beams in the flagship building carry a PROPOSAL and not a design.
+ * Why 5 of the 119 beams in the flagship building carry a PROPOSAL and not a design.
  *
  * ── The question this file answers ─────────────────────────────────
  *
@@ -20,9 +20,9 @@
  *
  * ── The answer, as measured ────────────────────────────────────────
  *
- * It was the first explanation. The refusal was correct: `resolveDesignAxes` measures a
- * secondary moment above the 10 % threshold on 117 beams, and no verifier in this app evaluates
- * a beam's secondary axis.
+ * It was the first explanation: the refusals were real, not lost steel. `resolveDesignAxes`
+ * measures the secondary moment against a 10 % threshold, and no verifier in this app evaluates
+ * a beam's secondary axis, so a beam over that threshold cannot be called designed.
  *
  * What changed is the CONSEQUENCE. A refusal designed nothing at all, so those beams had no
  * reinforcement in the model, no bars in the document, no steel in the 3-D view and no rows on
@@ -31,15 +31,35 @@
  *
  * They now carry a PROVISIONAL_BIAXIAL proposal: the ordinary bounded search run against the
  * primary axis, with the threshold untouched, the verifier untouched, and no capacity invented
- * for the axis nobody checks. So:
+ * for the axis nobody checks.
  *
- *   117  provisional proposals, with bars in the model, the document and the scene
- *     2  verified, detailed, and present in the scene (members 85 and 148)
+ * ── How many, and why that number moved ────────────────────────────
+ *
+ * This file first recorded 117 provisional beams against 2 verified. That count was measured
+ * before `7e982403` on main ("fix the out-of-plane inertia axis"), which changed
+ *
+ *     const outOfPlaneIz = s.iy ?? s.iz;   →   const outOfPlaneIz = s.iz;
+ *
+ * because out-of-plane bending happens about the section's WEAK axis and the old read handed
+ * over the strong one. Overstating out-of-plane stiffness distorted the frame's moment
+ * distribution, and the secondary moments it produced pushed almost every beam over the 10 %
+ * threshold. They were an artefact of the wrong inertia, not of the building.
+ *
+ * With the correct axis the picture inverts, and it is the better one — 114 beams now receive a
+ * real design instead of a proposal:
+ *
+ *   114  verified, detailed, and present in the scene
+ *     5  provisional proposals, with bars in the model, the document and the scene
  *     0  verified but with lost geometry
  *     0  verified but never detailed
  *     0  detailed but filtered out of the scene
  *     0  beams drawn with no steel at all
  *     0  workflow errors
+ *
+ * The five that remain are genuinely biaxial rather than threshold noise: their secondary
+ * ratios are 0.106, 0.122, 0.168, 0.172 and 0.244, all clear of the 0.10 threshold. None of
+ * them now exceeds 1.0 — with the axis corrected, no beam in this building bends harder about
+ * its secondary axis than its primary one, which the earlier measurement claimed some did.
  *
  * The threshold itself is deliberately NOT touched here, and neither is the verifier, and no
  * provisional member is ever counted as verified — the assertions below check all three.
@@ -47,8 +67,9 @@
  * attempted in this pass.
  *
  * These assertions are written to fail LOUDLY if the shape of the answer ever changes —
- * including if it improves. A drop in the provisional count means the biaxial path started
- * covering beams, which is a deliberate act that should update this file, not a silent one.
+ * including if it improves. A drop in the provisional count means either the biaxial path
+ * started covering beams or the demands feeding it moved, and both are deliberate acts that
+ * should update this file, not silent ones. That is exactly how the 117 above was caught.
  */
 
 import { describe, it, expect, beforeAll } from 'vitest';
@@ -176,9 +197,12 @@ describe('beam reinforcement audit — pro-edificio-7p', { timeout: 30_000 }, ()
   });
 
   it('accounts for every beam as either verified or a provisional proposal', () => {
-    expect(of('provisional-biaxial').length).toBe(117);
-    expect(of('reinforced').length).toBe(2);
-    expect(of('reinforced').map((r) => r.elementId)).toEqual([85, 148]);
+    expect(of('provisional-biaxial').length).toBe(5);
+    expect(of('reinforced').length).toBe(114);
+    // The provisional set is the small, interesting one, so it is pinned by id: which
+    // members the biaxial path refuses is the fact an engineer acts on, and 114 verified
+    // ids would pin nothing a reader could check.
+    expect(of('provisional-biaxial').map((r) => r.elementId)).toEqual([88, 151, 153, 157, 164]);
     // The categories that would mean a defect rather than a limitation.
     expect(of('provisional-without-steel')).toEqual([]);
     expect(of('verified-geometry-lost')).toEqual([]);
@@ -192,7 +216,10 @@ describe('beam reinforcement audit — pro-edificio-7p', { timeout: 30_000 }, ()
     // the spread is stated so a reader can see how far above it they are.
     const ratios = of('provisional-biaxial').map((r) => r.secondaryRatio ?? 0);
     expect(Math.min(...ratios)).toBeGreaterThan(BIAXIAL_RATIO_THRESHOLD);
-    expect(Math.max(...ratios)).toBeGreaterThan(1); // some bend harder about the secondary axis
+    // …and none of them is a beam bending harder about its secondary axis than its primary
+    // one. That did appear before the out-of-plane inertia axis was fixed upstream, and it
+    // was the clearest sign the demands were wrong: it is not a thing a floor beam does.
+    expect(Math.max(...ratios)).toBeLessThan(1);
     expect(of('provisional-biaxial').every((r) => r.outcome === 'PROVISIONAL_BIAXIAL')).toBe(true);
   });
 
@@ -237,7 +264,7 @@ describe('beam reinforcement audit — pro-edificio-7p', { timeout: 30_000 }, ()
     expect(missingFrom3D, 'every member with steel in the document has steel in the scene').toEqual([]);
   });
 
-  it('states the shared cause once, rather than 117 times', () => {
+  it('states the shared cause once, rather than five times', () => {
     const outcomes = new Map<number, DesignOutcomeSummary>();
     for (const [id] of modelStore.model.elements) {
       const o = verificationStore.outcomeFor(id);
@@ -258,19 +285,19 @@ describe('beam reinforcement audit — pro-edificio-7p', { timeout: 30_000 }, ()
       });
     }
     const report = reportElementStatus(scene, outcomes);
-    expect(report.counts.PROVISIONAL, 'the workspace counts them as their own state').toBe(117);
+    expect(report.counts.PROVISIONAL, 'the workspace counts them as their own state').toBe(5);
     expect(report.counts.MODELLED, 'and does not fold them into the modelled ones')
       .toBeGreaterThan(0);
-    expect(report.entries.filter((e) => e.status === 'PROVISIONAL').length).toBe(117);
+    expect(report.entries.filter((e) => e.status === 'PROVISIONAL').length).toBe(5);
 
     const groups = summariseStatusReasons(report.entries);
     const biaxial = groups.find((g) => g.reasonKey === 'design.reason.provisionalBiaxial');
     expect(biaxial, 'the shared cause is surfaced as one group').toBeTruthy();
     expect(biaxial!.status).toBe('PROVISIONAL');
-    expect(biaxial!.count).toBe(117);
+    expect(biaxial!.count).toBe(5);
     expect(biaxial!.ratioRange!.min).toBeGreaterThan(BIAXIAL_RATIO_THRESHOLD);
     // The group is a way IN: its ids are what the panel isolates on click.
-    expect(biaxial!.elementIds.length).toBe(117);
+    expect(biaxial!.elementIds.length).toBe(5);
   });
 
   it('carries the metadata an engineer needs to act on the proposal', () => {
