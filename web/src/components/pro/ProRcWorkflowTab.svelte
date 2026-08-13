@@ -15,6 +15,7 @@
    */
   import ProDesignTab from './ProDesignTab.svelte';
   import WorkflowStages from './design/WorkflowStages.svelte';
+  import DesignOverview from './design/DesignOverview.svelte';
   import StageSection from './design/StageSection.svelte';
   import ProjectRegulationsPanel from './design/ProjectRegulationsPanel.svelte';
   import DetailingWorkflow from './design/DetailingWorkflow.svelte';
@@ -52,6 +53,23 @@
   let regsOpen = $state(false);
   let detailingOpen = $state(false);
   let floorsOpen = $state(false);
+  /** Open by default: it answers the question a reviewer arrives with. */
+  let overviewOpen = $state(true);
+
+  /**
+   * Open the Project Regulations stage and put the caret in its selector.
+   *
+   * Lives here rather than in the overview because this component owns `regsOpen`; the overview
+   * asks, and does not reach across the tree to force a `<details>` open.
+   */
+  function openRegulations() {
+    regsOpen = true;
+    queueMicrotask(() => {
+      scrollTo('project-regulations');
+      (document.querySelector('[data-testid="project-regulations"] select') as HTMLElement | null)
+        ?.focus();
+    });
+  }
 
   function scrollTo(testid: string) {
     document.querySelector(`[data-testid="${testid}"]`)?.scrollIntoView({ block: 'nearest' });
@@ -82,6 +100,14 @@
    */
   const detailed = $derived(detailingStore.assemblies.length > 0);
   const designed = $derived(verificationStore.providedSummary.total > 0);
+  const overviewTotal = $derived(verificationStore.providedSummary.total);
+  /**
+   * The overview is `current` until there is something to report and `done` once there is.
+   *
+   * Never `blocked`: it is a read-out, and a read-out that refuses to show you an empty project is
+   * withholding the very fact you opened it for.
+   */
+  const overviewState = $derived(overviewTotal > 0 ? 'done' as const : 'current' as const);
   const regsState = $derived(needsAttention ? 'current' as const : 'done' as const);
   const detailingState = $derived(
     detailed ? 'done' as const : designed ? 'current' as const : 'blocked' as const);
@@ -99,6 +125,28 @@
     See `WorkflowStages.svelte` for why it navigates rather than acts.
   -->
   <WorkflowStages onGoTo={goToStage} />
+
+  <!--
+    The state of the project, FIRST.
+
+    The regulation in force and the count of every member used to be the last things in the tab —
+    inside the command bar, below three collapsible stages. On a 720 px window that meant scrolling
+    past regulations, floors and detailing to learn which code the project is checked against and
+    that five members do not verify. It opens expanded because it is the answer to the first
+    question; it collapses because a reviewer working inside a later stage does not need it.
+  -->
+  <StageSection
+    testid="design-overview-disclosure"
+    step={0}
+    title={t('design.overview.title')}
+    purpose={t('design.overview.purpose')}
+    state={overviewState}
+    badge={overviewTotal > 0 ? overviewTotal : undefined}
+    badgeTestid="design-overview-count"
+    bind:open={overviewOpen}
+  >
+    <DesignOverview onOpenRegulations={openRegulations} />
+  </StageSection>
 
   <StageSection
     testid="code-settings-disclosure"
@@ -178,12 +226,18 @@
     overflow-x: hidden;
   }
   .rc-workflow > :global(*:last-child) { flex: 1 1 auto; min-height: 18rem; overflow: hidden; }
-  .code-settings-disclosure,
-  .detailing-disclosure,
-  .floors-disclosure { flex: 0 0 auto; min-height: 0; border-bottom: 1px solid rgba(143, 163, 179, 0.3); }
-  .code-settings-disclosure[open] { max-height: 55vh; overflow: auto; }
-  .detailing-disclosure[open] { max-height: 70vh; overflow: auto; }
-  .floors-disclosure[open] { max-height: 70vh; overflow: auto; }
+  /*
+    The per-section height caps that used to live here are gone.
+
+    `.code-settings-disclosure[open] { max-height: 55vh; overflow: auto }` and its two siblings gave
+    each open section its own scrollbar inside a column that already scrolls. Two consequences, both
+    real: crossing one section took two wheel gestures, and a sticky section title stuck to the
+    NESTED box — which is why scrolling inside "Slabs, walls and foundations" left the regulations
+    title pinned above it, naming a section the reader had already left.
+
+    (They were also dead selectors: `StageSection` renders `class="stage"`, not these names, so they
+    matched nothing. Removed rather than corrected — the caps are the wrong idea, not a typo.)
+  */
   /*
     Why this stage carries a tag.
 

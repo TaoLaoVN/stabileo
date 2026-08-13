@@ -85,24 +85,11 @@
    * Project Regulations is the one selector. This is a read-out of what it chose.
    */
   const concreteBinding = $derived(regulationsStore.binding('concrete'));
-  const concreteProblem = $derived(regulationsStore.concreteDesignProblem());
   const concreteReady = $derived(regulationsStore.concreteDesignCode() !== null);
   // `bindingLabel` is the same labeller Project Regulations uses, so the read-out and the
   // selector can never print the regulation differently.
-  const concreteLabel = $derived(te(bindingLabel(concreteBinding)));
 
-  /** Open the Project Regulations disclosure and put the caret in it. */
-  function openRegulations() {
-    const panel = document.querySelector('[data-testid="code-settings-disclosure"]');
-    if (panel instanceof HTMLDetailsElement) panel.open = true;
-    document.querySelector('[data-testid="project-regulations"]')
-      ?.scrollIntoView({ block: 'nearest' });
-    (document.querySelector('[data-testid="project-regulations"] select') as HTMLElement | null)
-      ?.focus();
-  }
 
-  const counts = $derived(verificationStore.providedSummary);
-  const run = $derived(verificationStore.runSummary);
   const busy = $derived(designRunStore.running);
   // No usable concrete code means no design. Gating beats defaulting: silently falling back
   // to CIRSOC would verify a project against rules it never chose.
@@ -133,28 +120,12 @@
 
 <div class="toolbar" data-testid="design-toolbar">
   <!--
-    The regulation, on its own line above the commands.
+    The regulation read-out and the member counts moved to `DesignOverview.svelte`.
 
-    It is a READ-OUT and it was sitting inline with six buttons, so the row read as seven
-    controls of equal weight of which one did nothing when pressed. What binds it is Project
-    Regulations; what it is here for is to say which edition the buttons below are about.
+    They were the FIRST questions a reviewer asks — which code, and what state is the project in —
+    answered at the very bottom of the tab, below three collapsible stages. They are now the tab's
+    opening section. Nothing was duplicated: this bar no longer renders either of them.
   -->
-  <div class="code-line">
-    <span class="code-indicator" data-testid="active-concrete-code"
-          class:unbound={!concreteReady}>
-      <span class="code-role">{t('design.code.role')}</span>
-      <span class="code-name">{concreteLabel}</span>
-    </span>
-
-    {#if !concreteReady && concreteProblem}
-      <span class="code-gate" role="alert" data-testid="concrete-code-gate">
-        {te(concreteProblem)}
-        <button class="code-gate-link" data-testid="goto-project-regulations"
-                onclick={openRegulations}>{t('design.code.openRegulations')}</button>
-      </span>
-    {/if}
-  </div>
-
   <!--
     Three groups, in the order the work happens, each named.
 
@@ -291,53 +262,6 @@
     </div>
   {/if}
 
-  <!-- Honest counts: non-passing states are NEVER folded into "verified". -->
-  <div class="counts" data-testid="design-counts" aria-live="polite">
-    <span class="count" data-testid="summary-count-total">{tp('design.counts.total', { n: counts.total })}</span>
-    <span class="count c-ok" data-testid="summary-count-verified">✓ {counts.ok} {t('design.counts.verified')}</span>
-    <span class="count c-warn" data-testid="summary-count-warn">⚠ {counts.warn} {t('design.counts.warn')}</span>
-    <span class="count c-fail" data-testid="summary-count-fail">✗ {counts.fail} {t('design.counts.fail')}</span>
-    <!--
-      Beside `fail`, and no longer inside it.
-
-      These members' steel does fail the authoritative verifier — by construction, on the
-      biaxial refusal the outcome already declares. Reporting that as "✗ N no verifica" put
-      twenty-two red crosses on the bar that meant "we did not look" next to crosses that mean
-      "we looked and it does not hold". Same glyph, opposite claims.
-
-      Always rendered, like every other display chip, so "0 provisional" is a visible zero
-      rather than an absent count: the run-outcome chips below hide at zero, these do not.
-    -->
-    <span class="count c-prov" data-testid="summary-count-provisional">◐ {counts.provisional} {t('design.counts.provisional')}</span>
-    <span class="count c-unavail" data-testid="summary-count-unavailable">○ {counts.unavailable} {t('design.counts.unavailable')}</span>
-    <span class="count c-stale" data-testid="summary-count-stale">⌛ {counts.stale} {t('design.counts.stale')}</span>
-    {#if run}
-      <span class="count-sep">|</span>
-      {#if run.sectionInadequate > 0}
-        <span class="count c-sect" data-testid="summary-count-section-inadequate">
-          ▣ {run.sectionInadequate} {t('design.counts.sectionInadequate')}
-        </span>
-      {/if}
-      {#if run.searchExhausted > 0}
-        <span class="count c-exh" data-testid="summary-count-exhausted">
-          ◌ {run.searchExhausted} {t('design.counts.exhausted')}
-        </span>
-      {/if}
-      {#if run.unsupported > 0}
-        <span class="count c-unsup" data-testid="summary-count-unsupported">
-          — {run.unsupported} {t('design.counts.unsupported')}
-        </span>
-      {/if}
-      {#if run.aborted}
-        <span class="count c-fail" data-testid="summary-aborted">{t('design.cmd.aborted')}</span>
-      {/if}
-      {#if run.notReached > 0}
-        <span class="count c-warn" data-testid="summary-not-reached">
-          {tp('design.cmd.truncated', { notReached: run.notReached })}
-        </span>
-      {/if}
-    {/if}
-  </div>
 
   <!-- ─── Banner stack ─── -->
   {#if !hasCombinations}

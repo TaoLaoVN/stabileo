@@ -99,11 +99,17 @@
 
 <style>
   /*
-    One shell, one set of paddings.
+    One shell, one set of paddings, and — since this pass — ONE scroll in the whole panel.
 
-    `flex: 0 0 auto` and a capped open height keep the column scrollable as a whole: the panel has
-    ONE scroll, and a section that grew its own nested scroller is how content ends up unreachable
-    at 720 px.
+    It used to say `max-height: 70vh; overflow: auto` on the open stage. That is a nested scroller,
+    and it cost two things at once. The wheel became ambiguous: at 720 px a stage capped at 70vh is
+    504 px, so the reader scrolled the stage, hit its end, and only then began scrolling the panel
+    — two gestures to cross one section. And a sticky header inside a nested scroller sticks to the
+    NESTED box, so the section title parked itself in the middle of the panel instead of at the
+    top of it.
+
+    The column above (`.rc-workflow`) already scrolls. Sections size to their content and the panel
+    carries all of it.
   */
   .stage {
     flex: 0 0 auto;
@@ -111,9 +117,23 @@
     border-bottom: 1px solid var(--st-hair);
     background: var(--st-surface);
   }
-  .stage[open] { max-height: 70vh; overflow: auto; }
 
+  /*
+    The title stays while you read the section, and leaves when the section does.
+
+    `position: sticky` inside the `<details>` means each summary sticks only within its own box:
+    scrolling past the end of a section takes its title with it and the next one takes over. That
+    is the defect this fixes — opening "Slabs, walls and foundations" and scrolling down used to
+    leave "1 · Project regulations" pinned at the top of the panel, naming a section the reader had
+    left. Titles do not stack here because none of them outlives its own content.
+
+    `z-index` is above the body and below the enlarged-sheet dialog (950).
+  */
   summary {
+    position: sticky;
+    top: 0;
+    z-index: 3;
+    background: var(--st-surface);
     display: flex;
     align-items: flex-start;
     gap: 0.5rem;
@@ -122,6 +142,17 @@
     list-style: none;
   }
   summary::-webkit-details-marker { display: none; }
+  /*
+    A hairline under the stuck title, so it reads as a header over the content rather than as a row
+    of it. Without this the first table row appears welded to the title the moment it slides under.
+  */
+  summary::after {
+    content: '';
+    position: absolute;
+    left: 0; right: 0; bottom: 0;
+    height: 1px;
+    background: var(--st-hair);
+  }
   summary:hover { background: var(--st-surface-3); }
   summary:focus-visible { outline: 2px solid var(--st-value); outline-offset: -2px; }
 
