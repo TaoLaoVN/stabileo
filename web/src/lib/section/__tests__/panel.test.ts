@@ -114,14 +114,14 @@ describe('the panel refuses rather than approximating', () => {
     if (!r.ok) expect(r.refusal.kind).toBe('digestMismatch');
   });
 
-  it('an unsupported geometry version is refused', () => {
-    const s = resolved(fromCatalogue('HEB 200'));
-    const st = s.canonical!;
-    if (st.kind !== 'geometry-backed') throw new Error('geometry-backed');
-    const r = canonicalPanelResult({ ...s, canonical: { ...st, version: 99 } }, F);
-    expect(r.ok).toBe(false);
-    if (!r.ok) expect(r.refusal.kind).toBe('versionMismatch');
-  });
+  // NOTE: there is deliberately no panel-level versionMismatch test. The
+  // panel's drawing and its bending result both derive from the same
+  // state.geometry, so they always carry the same wire version — a version
+  // mismatch cannot fire through this API. (The old test tampered `version: 99`
+  // and expected a refusal, but it passed only because a dead guard compared
+  // against a constant the drawing always copied; tampering the version also
+  // changes the digest, which is covered by the digestMismatch test above.)
+  // The cross-source case the guard exists for is pinned in drawing.test.ts.
 });
 
 // ─── Canonical vs legacy component separation ──────────────────────

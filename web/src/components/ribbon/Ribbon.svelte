@@ -7,6 +7,7 @@
   import { resultsStore } from '../../lib/store/results.svelte';
   import Icon from './Icon.svelte';
   import { runSolve } from '../../lib/actions/solve';
+  import { TOOL_KEY_MAP } from '../../lib/tool-keys';
   import { saveProject } from '../../lib/store/file';
 
   /**
@@ -395,11 +396,8 @@
 
   const mod = typeof navigator !== 'undefined' && navigator.platform?.includes('Mac') ? '⌘' : 'Ctrl';
 
-  /** Keyboard shortcuts the application already listens for. */
-  const KEYS: Record<string, string> = {
-    node: 'N', element: 'E', support: 'S', load: 'L',
-    select: 'V', pan: 'H', solve: 'Enter',
-  };
+  /** Keyboard shortcuts the application already listens for (lib/tool-keys.ts). */
+  const KEYS: Record<string, string> = { ...TOOL_KEY_MAP, solve: 'Enter' };
 
   function cmdLabel(c: Cmd): string {
     if (c.label) return c.label;

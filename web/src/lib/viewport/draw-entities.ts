@@ -624,7 +624,7 @@ export function drawNodalLoad(
   labels: LabelCollector,
 ): void {
   const arrowLen = 40;
-  const color = caseColor ?? '#e5482a';
+  const color = caseColor ?? canvasTheme().accent;
   const prefix = caseName ? `${caseName}: ` : '';
   const vertical = loadData.fz ?? loadData.fy ?? 0;
   const moment = loadData.my ?? loadData.mz ?? 0;

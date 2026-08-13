@@ -207,7 +207,7 @@ describe('an eccentric load through the real analysis', () => {
   it('the tensors come back when elastic constants are given, and not otherwise', () => {
     const sec = ipe300();
     const without = canonicalStressState(sec, { n: 500, my: 30, mz: 0 }, [0, 0.15], 235);
-    const with_ = canonicalStressState(sec, { n: 500, my: 30, mz: 0 }, [0, 0.15], 235, { e: 200_000, nu: 0.3 });
+    const with_ = canonicalStressState(sec, { n: 500, my: 30, mz: 0 }, [0, 0.15], 235, { elastic: { e: 200_000, nu: 0.3 } });
     if (!without.ok || !with_.ok) throw new Error('expected ok');
     expect(without.state.tensors).toBeUndefined();
     expect(with_.state.tensors).toBeDefined();

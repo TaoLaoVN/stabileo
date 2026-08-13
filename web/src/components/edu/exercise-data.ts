@@ -54,6 +54,13 @@ export function getExerciseSpecs(): EduExerciseSpec[] {
         { diagram: 'V', correct: 'linear' },
         { diagram: 'M', correct: 'quadratic' },
       ],
+      // Naming the shape and drawing it are different skills, and this is the
+      // case where the second one pays: the shear crosses zero at midspan,
+      // which is exactly where the moment is flat.
+      diagramSketchQuestions: [
+        { diagram: 'V' },
+        { diagram: 'M' },
+      ],
     },
 
     // ── Portal frame, horizontal load ──────────────────────────
@@ -114,6 +121,10 @@ export function getExerciseSpecs(): EduExerciseSpec[] {
         { diagram: 'N', correct: 'zero' },
         { diagram: 'V', correct: 'constant' },
         { diagram: 'M', correct: 'linear' },
+      ],
+      diagramSketchQuestions: [
+        { diagram: 'V' },
+        { diagram: 'M' },
       ],
     },
 

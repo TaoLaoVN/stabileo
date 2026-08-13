@@ -1,6 +1,7 @@
 // Drawing mode shapes (modal analysis) and buckling modes on the canvas
 
 import type { PlasticResult } from '../engine/result-types';
+import { canvasTheme } from './theme';
 
 interface DrawContext {
   ctx: CanvasRenderingContext2D;
@@ -109,7 +110,7 @@ export function drawPlasticHinges(
   const autoScale = maxDisp > 0 ? Math.min(50 / zoom / maxDisp, 200) : 1;
 
   // Draw elements
-  ctx.strokeStyle = '#d9a441';
+  ctx.strokeStyle = canvasTheme().amber;
   ctx.lineWidth = 2;
   for (const [, elem] of elements) {
     const ni = nodes.get(elem.nodeI);

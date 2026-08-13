@@ -421,7 +421,7 @@ pub fn rectangular_hollow(b: f64, h: f64, t: f64) -> Result<CanonicalGeometry, S
 //
 //   DIN 1025-1 (IPN):  slope 14 %, r_root = tw,  r_toe = 0.6 * tw,
 //                      tf quoted at b/4 from the axis of symmetry
-//   DIN 1025-5 (UPN):  slope  8 %, r_root = tf,  r_toe = 0.5 * tf,
+//   DIN 1026-1 (UPN):  slope  8 %, r_root = tf,  r_toe = 0.5 * tf,
 //                      tf quoted at b/2 from the web's outer face
 //
 // Because these are rules rather than recalled numbers, they are falsifiable:
@@ -580,7 +580,7 @@ pub fn tapered_channel(
     Ok(CanonicalGeometry::new(vec![solid(v)], source, arc_segments))
 }
 
-/// UPN, per DIN 1025-5. `tf` is the published flange thickness, quoted at b/2
+/// UPN, per DIN 1026-1. `tf` is the published flange thickness, quoted at b/2
 /// from the web's outer face, which sits at the horizontal origin.
 pub fn upn_section(
     h: f64, b: f64, tw: f64, tf: f64, arc_segments: usize, source: GeometrySource,
@@ -983,7 +983,7 @@ mod rolled_profile_validation {
         ("IPN 600", 600.0, 215.0, 21.6, 32.4, 254.0, 139000.0, 4670.0),
     ];
 
-    /// DIN 1025-5. Columns: h, b, tw, tf, A, Iy, Iz.
+    /// DIN 1026-1. Columns: h, b, tw, tf, A, Iy, Iz.
     const UPN: &[(&str, f64, f64, f64, f64, f64, f64, f64)] = &[
         ("UPN 80", 80.0, 45.0, 6.0, 8.0, 11.0, 106.0, 19.4),
         ("UPN 100", 100.0, 50.0, 6.0, 8.5, 13.5, 206.0, 29.3),

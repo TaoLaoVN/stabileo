@@ -14,14 +14,18 @@
  */
 
 const FALLBACK = {
-  grid: 'rgba(143, 163, 179, 0.14)',
-  axis: 'rgba(143, 163, 179, 0.34)',
-  surface: '#0f1e2b',
+  grid: 'rgba(143, 163, 179, 0.13)',
+  axis: 'rgba(143, 163, 179, 0.32)',
+  surface: '#0c1620',
   text: '#f4f7fa',
   textDim: '#8fa3b3',
   accent: '#e5482a',
   tension: '#e5482a',
   compression: '#2c6cb4',
+  /* Axle loads, mode shapes, the influence-line unit load: the amber family
+   * (--st-amber-text), kept out of the vermillion used for selections and
+   * the deformed shape so demand and response never share a hue. */
+  amber: '#d9a441',
   /*
    * Model geometry is deliberately quiet. Before this the frame was bright
    * blue, the nodes pink and the supports orange: three saturated hues
@@ -72,6 +76,7 @@ export function canvasTheme(): CanvasTheme {
     accent: read('--st-accent', FALLBACK.accent),
     tension: read('--st-tension', FALLBACK.tension),
     compression: read('--st-compression', FALLBACK.compression),
+    amber: read('--st-amber-text', FALLBACK.amber),
     member: read('--st-model-member', FALLBACK.member),
     memberTruss: read('--st-model-truss', FALLBACK.memberTruss),
     node: read('--st-model-node', FALLBACK.node),

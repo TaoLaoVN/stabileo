@@ -1,6 +1,8 @@
 // Render loads on Canvas 2D
 import { createLabelCollector, type LabelCollector, type SegmentObstacle } from './label-layout';
 
+import { canvasTheme } from './theme';
+
 interface DrawContext {
   ctx: CanvasRenderingContext2D;
   worldToScreen: (wx: number, wy: number) => { x: number; y: number };
@@ -180,7 +182,7 @@ export function drawDistributedLoads(
     const loadScreenLen = elemScreenLen * (tEnd - tStart);
     const nArrows = Math.max(3, Math.round(loadScreenLen / 30));
 
-    const loadColor = load.caseColor ?? '#e5482a';
+    const loadColor = load.caseColor ?? canvasTheme().accent;
     ctx.strokeStyle = loadColor;
     ctx.fillStyle = loadColor;
     ctx.lineWidth = 1.5;
@@ -483,7 +485,7 @@ export function drawPointLoadsOnElements(
     const loadIsGlobal = load.isGlobal ?? false;
 
     const base = dc.worldToScreen(wx, wy);
-    const ptColor = load.caseColor ?? '#e5482a';
+    const ptColor = load.caseColor ?? canvasTheme().accent;
     const ptCasePrefix = load.caseName ? `${load.caseName}: ` : '';
     const coordLabel = loadIsGlobal ? ' [Y]' : (loadAngle !== 0 ? ` [⊥ ${loadAngle}°]` : '');
 
@@ -751,8 +753,8 @@ export interface MovingLoadAxleInfo {
   sinTheta: number;
 }
 
-const AXLE_COLOR = '#d9a441';      // amber/orange — distinct from regular load red
-const AXLE_LABEL_COLOR = '#d9a441';
+const AXLE_COLOR = () => canvasTheme().amber;  // amber — distinct from regular load red
+const AXLE_LABEL_COLOR = () => canvasTheme().amber;
 
 /**
  * Draw moving load axles as amber arrows perpendicular to their host element.
@@ -803,7 +805,7 @@ export function drawMovingLoadAxles(
     const toY = base.y;
 
     // Arrow shaft
-    ctx.strokeStyle = AXLE_COLOR;
+    ctx.strokeStyle = AXLE_COLOR();
     ctx.lineWidth = 2.5;
     ctx.beginPath();
     ctx.moveTo(fromX, fromY);
@@ -822,7 +824,7 @@ export function drawMovingLoadAxles(
     const txN = tLen > 0 ? tDx / tLen : 1;
     const tyN = tLen > 0 ? tDy / tLen : 0;
 
-    ctx.fillStyle = AXLE_COLOR;
+    ctx.fillStyle = AXLE_COLOR();
     ctx.beginPath();
     ctx.moveTo(toX, toY);
     ctx.lineTo(toX + snX * HEAD_LEN + txN * HEAD_HALF, toY + snY * HEAD_LEN + tyN * HEAD_HALF);
@@ -837,7 +839,7 @@ export function drawMovingLoadAxles(
 
     // Weight label (perpendicular component)
     ctx.font = 'bold 12px sans-serif';
-    ctx.fillStyle = AXLE_LABEL_COLOR;
+    ctx.fillStyle = AXLE_LABEL_COLOR();
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
     ctx.fillText(`${axle.weight.toFixed(0)} kN`, fromX + snX * 10, fromY + snY * 10);

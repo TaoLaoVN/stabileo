@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { onMount } from 'svelte';
   import { t } from '../../lib/i18n';
   import ToolbarResults from '../toolbar/ToolbarResults.svelte';
   import ToolbarAdvanced from '../toolbar/ToolbarAdvanced.svelte';
@@ -56,6 +57,11 @@
 
   let width = $state(stored());
   let dragging = $state(false);
+  let widthPublishFrame = 0;
+
+  function publishWidth() {
+    document.documentElement.style.setProperty('--st-right-panel-w', `${width}px`);
+  }
 
   function startResize(e: PointerEvent) {
     dragging = true;
@@ -64,6 +70,15 @@
     const move = (ev: PointerEvent) => {
       // The handle is on the panel's LEFT edge, so dragging left widens it.
       width = Math.min(MAX, Math.max(MIN, startW - (ev.clientX - startX)));
+      // Publishing the width writes a custom property on the ROOT element,
+      // which re-resolves styles document-wide — that must happen at most
+      // once per frame, not once per pointermove.
+      if (!widthPublishFrame) {
+        widthPublishFrame = requestAnimationFrame(() => {
+          widthPublishFrame = 0;
+          publishWidth();
+        });
+      }
     };
     const up = () => {
       dragging = false;
@@ -87,11 +102,17 @@
    * landed on top of the report they were announcing. A custom property is the
    * least invasive way to tell them: nothing has to be threaded through the
    * component tree, and the value follows the drag handle for free.
+   *
+   * Mount-only: during a drag the value is published by the rAF-throttled
+   * writer in `startResize`; a reactive effect here would re-resolve the whole
+   * document's styles on every pointermove.
    */
-  $effect(() => {
-    const el = document.documentElement;
-    el.style.setProperty('--st-right-panel-w', `${width}px`);
-    return () => el.style.removeProperty('--st-right-panel-w');
+  onMount(() => {
+    publishWidth();
+    return () => {
+      if (widthPublishFrame) cancelAnimationFrame(widthPublishFrame);
+      document.documentElement.style.removeProperty('--st-right-panel-w');
+    };
   });
 
   /*

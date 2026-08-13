@@ -1,5 +1,6 @@
 <script lang="ts">
   import { t } from '../../lib/i18n';
+  import { IL_QUANTITY_GROUPS } from '../../lib/influence-line-quantities';
   import { uiStore } from '../../lib/store/ui.svelte';
   import { modelStore } from '../../lib/store/model.svelte';
   import { resultsStore } from '../../lib/store/results.svelte';
@@ -85,14 +86,13 @@
       {:else if uiStore.currentTool === 'load'}
         <ToolLoadOptions />
       {:else if uiStore.currentTool === 'influenceLine'}
-        <span class="tb-group-label">{t('float.reactions')}</span>
-        <button class="tb-btn" class:on={uiStore.ilQuantity === 'Rz'} onclick={() => (uiStore.ilQuantity = 'Rz')}>{t('float.rzVertical')}</button>
-        <button class="tb-btn" class:on={uiStore.ilQuantity === 'Rx'} onclick={() => (uiStore.ilQuantity = 'Rx')}>{t('float.rxHoriz')}</button>
-        <button class="tb-btn" class:on={uiStore.ilQuantity === 'My'} onclick={() => (uiStore.ilQuantity = 'My')}>{t('float.mySupport')}</button>
-        <span class="tb-sep" aria-hidden="true"></span>
-        <span class="tb-group-label">{t('float.internal')}</span>
-        <button class="tb-btn" class:on={uiStore.ilQuantity === 'M'} onclick={() => (uiStore.ilQuantity = 'M')}>{t('float.mMoment')}</button>
-        <button class="tb-btn" class:on={uiStore.ilQuantity === 'V'} onclick={() => (uiStore.ilQuantity = 'V')}>{t('float.vShear')}</button>
+        {#each IL_QUANTITY_GROUPS as group, gi}
+          {#if gi > 0}<span class="tb-sep" aria-hidden="true"></span>{/if}
+          <span class="tb-group-label">{t(group.labelKey)}</span>
+          {#each group.quantities as q}
+            <button class="tb-btn" class:on={uiStore.ilQuantity === q.id} onclick={() => (uiStore.ilQuantity = q.id)}>{t(q.labelKey)}</button>
+          {/each}
+        {/each}
       {/if}
     {:else}
       <span class="tb-hint">{t('float.' + uiStore.currentTool)}</span>

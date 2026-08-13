@@ -193,7 +193,7 @@ export function resolveCanonicalSection(sec: Section): ResolvedSection {
           tw: mm(profile.tw!),
           tf: mm(profile.tf!),
           profileId: profile.name,
-          standard: profile.family === 'IPN' ? 'DIN 1025-1' : 'DIN 1025-5',
+          standard: profile.family === 'IPN' ? 'DIN 1025-1' : 'DIN 1026-1',
         }),
         profile.name,
       );

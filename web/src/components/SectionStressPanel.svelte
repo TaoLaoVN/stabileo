@@ -437,6 +437,14 @@
       elastic: mat && mat.e > 0 ? { e: mat.e, nu: mat.nu ?? 0.3 } : undefined,
       point: [py, pz] as [number, number],
       forces: { n: f.n, my: f.my, mz: f.mz, vy: f.vy, vz: f.vz, t: f.tx },
+      /*
+       * The bending solve this panel already did for its own plot.
+       *
+       * From main: the state query used to re-run it with the identical
+       * forces, once per slider tick, which is a whole WASM round trip to
+       * recompute what is sitting in a variable.
+       */
+      bending: canonical.bending,
     };
   });
 
@@ -454,7 +462,7 @@
       stateInputs.forces,
       stateInputs.point,
       stateInputs.fy,
-      stateInputs.elastic,
+      { elastic: stateInputs.elastic, bending: stateInputs.bending },
     );
     return r.ok ? r.state : null;
   });
@@ -659,7 +667,13 @@
       eccentric.forces,
       stateInputs.point,
       stateInputs.fy,
-      stateInputs.elastic,
+      /*
+       * No `bending` here, deliberately. These are DIFFERENT forces — the
+       * eccentric case adds the moments the offset produces — so the cached
+       * response belongs to another load and reusing it would report the
+       * concentric answer under the eccentric one.
+       */
+      { elastic: stateInputs.elastic },
     );
     return r.ok ? r.state : null;
   });

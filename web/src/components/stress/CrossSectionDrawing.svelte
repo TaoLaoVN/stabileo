@@ -392,6 +392,14 @@
       tl: rs.tl,
     });
   }
+
+  // The outline string is hundreds of points for a filleted profile; building
+  // it inline in the template would rebuild it on every re-render — and the
+  // fibre/station sliders re-render continuously while dragged, though the
+  // geometry has not changed.
+  const outlinePath = $derived(
+    canonicalGeometry ? canonicalPath(canonicalGeometry) : resolved ? sectionPathFromResolved(resolved) : '',
+  );
 </script>
 
 <!-- Cross section -->
@@ -568,7 +576,7 @@
 
       <!-- Section outline -->
       <path
-        d={canonicalGeometry ? canonicalPath(canonicalGeometry) : sectionPathFromResolved(resolved)}
+        d={outlinePath}
         fill="none"
         stroke="var(--st-value)"
         stroke-width={1.5 * strokeK}

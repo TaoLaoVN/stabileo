@@ -100,13 +100,17 @@ function getElemAngleAtNode(nodeId: number, nodes: Map<number, Node>, elements: 
  *  When the section is rotated by angle α around the bar axis,
  *  the effective inertia for 2D bending is:
  *    I_eff = Iy·cos²α + Iz·sin²α
- *  This is exported so Viewport.svelte can reuse it for deformed-shape rendering. */
-export function effectiveBendingInertia(sec: Section): number {
+ *  This is exported so Viewport.svelte can reuse it for deformed-shape rendering.
+ *  Callers that already resolved the section's properties may pass them in and
+ *  save the second lookup (`props` defaults to a fresh `solverProperties`). */
+export function effectiveBendingInertia(
+  sec: Section,
+  props: ReturnType<typeof solverProperties> = solverProperties(sec),
+): number {
   // A geometry-backed section reports the inertia its canonical polygons
   // actually have; a properties-only section keeps what it declared. This is
   // the single point both the 2D wire and the projected 3D wire read, so
   // making it canonical-aware here keeps them consistent by construction.
-  const props = solverProperties(sec);
   const Iy = props.source === 'canonical' ? props.iy : (sec.iy ?? sec.iz);  // about Y horizontal
   const Iz = props.source === 'canonical' ? props.iz : sec.iz;              // about Z vertical
   const alpha = (sec.rotation ?? 0) * Math.PI / 180;
@@ -613,7 +617,10 @@ function prepareSolve2D(
     nodes: new Map(Array.from(model.nodes.entries()).map(([id, n]) => [id, { id: n.id, x: n.x, z: n.y }])),
     materials: new Map(Array.from(model.materials.entries()).map(([id, m]) => [id, { id: m.id, e: m.e, nu: m.nu }])),
     // 2D solver uses the effective bending inertia (accounts for section rotation via Mohr)
-    sections: new Map(Array.from(model.sections.entries()).map(([id, s]) => [id, { id: s.id, a: solverProperties(s).a, iz: effectiveBendingInertia(s) }])),
+    sections: new Map(Array.from(model.sections.entries()).map(([id, s]) => {
+      const props = solverProperties(s);
+      return [id, { id: s.id, a: props.a, iz: effectiveBendingInertia(s, props) }];
+    })),
     elements: new Map(Array.from(model.elements.entries()).map(([id, e]) => [id, {
       id: e.id, type: e.type, nodeI: e.nodeI, nodeJ: e.nodeJ,
       materialId: e.materialId, sectionId: e.sectionId,
@@ -954,7 +961,10 @@ export function buildSolverInput2D(model: ModelData, includeSelfWeight = false):
     nodes: new Map(Array.from(model.nodes.entries()).map(([id, n]) => [id, { id: n.id, x: n.x, z: n.y }])),
     materials: new Map(Array.from(model.materials.entries()).map(([id, m]) => [id, { id: m.id, e: m.e, nu: m.nu }])),
     // 2D solver uses the effective bending inertia (accounts for section rotation via Mohr)
-    sections: new Map(Array.from(model.sections.entries()).map(([id, s]) => [id, { id: s.id, a: solverProperties(s).a, iz: effectiveBendingInertia(s) }])),
+    sections: new Map(Array.from(model.sections.entries()).map(([id, s]) => {
+      const props = solverProperties(s);
+      return [id, { id: s.id, a: props.a, iz: effectiveBendingInertia(s, props) }];
+    })),
     elements: new Map(Array.from(model.elements.entries()).map(([id, e]) => [id, {
       id: e.id, type: e.type, nodeI: e.nodeI, nodeJ: e.nodeJ,
       materialId: e.materialId, sectionId: e.sectionId,
@@ -1409,8 +1419,9 @@ export function buildSolverInput3D(
     nodes: new Map(Array.from(model.nodes.entries()).map(([id, n]) => [id, mapModelNodeToSolver3D(n, project2DToXZ)])),
     materials: new Map(Array.from(model.materials.entries()).map(([id, m]) => [id, { id: m.id, e: m.e, nu: m.nu }])),
     sections: new Map(Array.from(model.sections.entries()).map(([id, s]) => {
+      const props = solverProperties(s);
       if (project2DToXZ) {
-        const inPlaneIy = effectiveBendingInertia(s);
+        const inPlaneIy = effectiveBendingInertia(s, props);
         // Out-of-plane bending happens about the section's WEAK axis, which is
         // `iz`. This read `s.iy ?? s.iz` — the strong axis — which overstated
         // out-of-plane stiffness and so understated lateral displacement and
@@ -1424,7 +1435,6 @@ export function buildSolverInput3D(
         // case that still reaches this line — a geometry-backed section takes
         // the canonical branch below, which was always correct.
         const outOfPlaneIz = s.iz;
-        const props = solverProperties(s);
         return [id, {
           id: s.id, name: s.name, a: props.a,
           iy: inPlaneIy,
@@ -1438,15 +1448,17 @@ export function buildSolverInput3D(
           // pre-existing fabrication, retained only so 3D models without any
           // J keep solving; it is tagged `unavailable` in the provenance so
           // it is visible rather than silent, and Checkpoint 2C replaces it
-          // with a validated Saint-Venant constant.
-          j: props.j ?? s.j ?? outOfPlaneIz * 0.001,
+          // with a validated Saint-Venant constant. (No `?? s.j` here:
+          // solverProperties already returns a valid declared j, so the term
+          // would only fire for an INVALID one — null, NaN or negative — and
+          // passing that through would be worse than the placeholder.)
+          j: props.j ?? outOfPlaneIz * 0.001,
         }];
       }
       // s.iy = about Y-axis (horizontal), s.iz = about Z-axis (vertical)
       // Solver convention: iy controls bending about Y (w, θy DOFs), iz controls bending about Z (v, θz DOFs)
       // A geometry-backed section reports the inertia its canonical polygons
       // actually have; a properties-only section keeps what it declared.
-      const props = solverProperties(s);
       const aboutY = props.source === 'canonical'
         ? props.iy
         : (s.iy ?? (s.b && s.h ? (s.b * s.h ** 3) / 12 : s.iz));  // Iy: about Y horizontal
@@ -1457,7 +1469,7 @@ export function buildSolverInput3D(
         iz: aboutZ,   // solver iz = Iz (about Z vertical) → controls Y-displacement bending (v, θz)
         // See the note on the projected branch above: J never comes from the
         // polygon engine's Routh approximation.
-        j: props.j ?? s.j ?? aboutY * 0.001,
+        j: props.j ?? aboutY * 0.001,
       }];
     })),
     elements: new Map(Array.from(model.elements.entries()).map(([id, e]) => {

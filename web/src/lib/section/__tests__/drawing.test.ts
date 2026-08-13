@@ -126,7 +126,9 @@ describeCanonical('digest identity is enforced, and the guard can actually fail'
     const s = resolved(fromCatalogue('HEB 200'));
     const st = s.canonical!;
     if (st.kind !== 'geometry-backed') throw new Error('setup');
-    const g = drawingGeometry({ ...st, version: 99 });
+    // The drawing claims a wire schema the numerical result does not echo —
+    // the mismatch this guard exists for.
+    const g = { ...drawingGeometry(st), version: 99 };
     const bending = analyzeSectionBending({ geometry: st.geometry, n: 0, my: 5, mz: 0 });
     expect(assertSameGeometry(g, bending)!.kind).toBe('versionMismatch');
   });

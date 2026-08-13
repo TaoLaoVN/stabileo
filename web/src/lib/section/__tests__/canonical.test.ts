@@ -369,7 +369,7 @@ describeCanonical('IPN, UPN and L are geometry-backed and reproduce their publis
   it('records the standard each outline was built to, not just that it is a catalogue shape', () => {
     const byName = (n: string) => backed(resolveCanonicalSection(fromCatalogue(n)));
     expect(JSON.stringify(byName('IPN 300').geometry.source)).toContain('DIN 1025-1');
-    expect(JSON.stringify(byName('UPN 200').geometry.source)).toContain('DIN 1025-5');
+    expect(JSON.stringify(byName('UPN 200').geometry.source)).toContain('DIN 1026-1');
     expect(JSON.stringify(byName('L 100x100x10').geometry.source)).toContain('EN 10056-1');
   });
 

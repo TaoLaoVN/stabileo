@@ -51,7 +51,6 @@ use serde::{Deserialize, Serialize};
 use super::mesh::SectionMesh;
 use crate::linalg::lu::lu_solve;
 use crate::linalg::sparse::CscMatrix;
-use crate::linalg::sparse_chol::sparse_cholesky_solve_full;
 
 /// Boundary condition applied to a mesh boundary loop.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -212,15 +211,51 @@ fn element_geometry(mesh: &SectionMesh, t: [usize; 3]) -> ([f64; 3], [f64; 3], f
     (b, c, area)
 }
 
-/// Assemble and solve.
+/// The factored reduced system, strategy-dependent.
+enum Factor {
+    Sparse(crate::linalg::sparse_chol::NumericCholesky),
+    /// Reduced matrix, row-major. The dense path is a reference for small
+    /// test systems, so the LU runs per solve on a clone rather than being
+    /// stored pre-factored.
+    Dense(Vec<f64>),
+}
+
+/// A Poisson problem assembled and factored once, solvable for many
+/// right-hand sides.
 ///
-/// Assembly is element-by-element into COO triplets; the reduced system over
-/// the free degrees of freedom is then solved by sparse Cholesky. The stiffness
-/// of a scalar Poisson problem is symmetric positive definite once at least one
-/// value is prescribed, which is exactly the condition Cholesky needs — see
-/// `PoissonProblem::zero_mean` for why the pure-Neumann gauge is a pin rather
-/// than a Lagrange multiplier.
-pub fn solve_poisson(problem: &PoissonProblem) -> Result<PoissonSolution, String> {
+/// Torsion with holes solves `k+1` systems that differ only in their Dirichlet
+/// values, and shear solves two that differ only in the source — but the
+/// constrained node set, and therefore the reduced matrix, is identical across
+/// all of them. Both callers were paying a full assembly and factorization per
+/// right-hand side; this type exists so they factor once. The dominant cost of
+/// a sparse solve is the numeric factorization, so the saving is roughly a
+/// factor of two for shear and of `k+1` for a section with `k` holes.
+pub struct FactoredPoisson<'a> {
+    mesh: &'a SectionMesh,
+    /// Full-system triplets, kept so a solve can rebuild the right-hand side
+    /// for new Dirichlet data and measure the residual against the original
+    /// (unreduced) system.
+    rows: Vec<usize>,
+    cols: Vec<usize>,
+    vals: Vec<f64>,
+    /// Load-vector contribution of the Neumann data, baked at factor time.
+    neumann_f: Vec<f64>,
+    /// Which loops are Dirichlet. The constrained node SET is fixed for the
+    /// life of this factor; only the prescribed values may vary per solve.
+    dirichlet_loop: Vec<bool>,
+    pins: Vec<(usize, f64)>,
+    /// True when the factored problem was pure Neumann and node 0 was pinned
+    /// as the gauge (see `solve_poisson`'s discussion of pin-then-normalise).
+    gauge_pin: bool,
+    zero_mean: bool,
+    free_index: Vec<usize>,
+    free_nodes: Vec<usize>,
+    factor: Factor,
+}
+
+/// Assemble and factor a Poisson problem, keeping everything needed to solve
+/// it again for different data. See [`FactoredPoisson`].
+pub fn factor_poisson<'a>(problem: &PoissonProblem<'a>) -> Result<FactoredPoisson<'a>, String> {
     let mesh = problem.mesh;
     let n = mesh.nodes.len();
     if n == 0 {
@@ -237,11 +272,10 @@ pub fn solve_poisson(problem: &PoissonProblem) -> Result<PoissonSolution, String
         ));
     }
 
-    // ── Assemble stiffness triplets and the consistent source vector ──
+    // ── Assemble stiffness triplets ───────────────────────────────
     let mut rows: Vec<usize> = Vec::with_capacity(mesh.triangles.len() * 9);
     let mut cols: Vec<usize> = Vec::with_capacity(mesh.triangles.len() * 9);
     let mut vals: Vec<f64> = Vec::with_capacity(mesh.triangles.len() * 9);
-    let mut f = vec![0.0f64; n];
 
     for (e, &t) in mesh.triangles.iter().enumerate() {
         let (b, c, area) = element_geometry(mesh, t);
@@ -256,16 +290,13 @@ pub fn solve_poisson(problem: &PoissonProblem) -> Result<PoissonSolution, String
                 vals.push(scale * (b[i] * b[j] + c[i] * c[j]));
             }
         }
-        let fe = problem.source.get(e).copied().unwrap_or(0.0);
-        if fe != 0.0 {
-            for i in 0..3 {
-                f[t[i]] += fe * area / 3.0;
-            }
-        }
     }
 
     // ── Neumann contributions along boundary edges ────────────────
-    let mut flux_integral = 0.0;
+    // Baked into a load vector once; the pure-Neumann compatibility check in
+    // `solve` recovers the flux integral as this vector's sum (each edge adds
+    // g*len/2 to each of its two nodes).
+    let mut neumann_f = vec![0.0f64; n];
     for (idx, edge) in mesh.boundary_edges.iter().enumerate() {
         let bc = &problem.loop_bcs[edge.loop_id.min(problem.loop_bcs.len() - 1)];
         let g = match bc {
@@ -273,74 +304,64 @@ pub fn solve_poisson(problem: &PoissonProblem) -> Result<PoissonSolution, String
             LoopBc::NeumannPerEdge => *problem.edge_flux.get(idx).unwrap_or(&0.0),
             LoopBc::Dirichlet { .. } => continue,
         };
-        let pa = mesh.nodes[edge.a];
-        let pb = mesh.nodes[edge.b];
-        let len = ((pb[0] - pa[0]).powi(2) + (pb[1] - pa[1]).powi(2)).sqrt();
-        flux_integral += g * len;
         if g == 0.0 {
             continue;
         }
-        f[edge.a] += g * len / 2.0;
-        f[edge.b] += g * len / 2.0;
+        let pa = mesh.nodes[edge.a];
+        let pb = mesh.nodes[edge.b];
+        let len = ((pb[0] - pa[0]).powi(2) + (pb[1] - pa[1]).powi(2)).sqrt();
+        neumann_f[edge.a] += g * len / 2.0;
+        neumann_f[edge.b] += g * len / 2.0;
     }
 
-    // ── Prescribed values ─────────────────────────────────────────
-    let mut fixed: Vec<Option<f64>> = vec![None; n];
-    for (loop_id, bc) in problem.loop_bcs.iter().enumerate() {
-        if let LoopBc::Dirichlet { value } = bc {
-            for edge in mesh.boundary_edges.iter().filter(|e| e.loop_id == loop_id) {
-                fixed[edge.a] = Some(*value);
-                fixed[edge.b] = Some(*value);
-            }
-        }
-    }
-    for &(node, value) in &problem.pins {
+    // ── The constrained node set ──────────────────────────────────
+    let dirichlet_loop: Vec<bool> = problem
+        .loop_bcs
+        .iter()
+        .map(|bc| matches!(bc, LoopBc::Dirichlet { .. }))
+        .collect();
+    let mut any_dirichlet = dirichlet_loop.iter().any(|&d| d);
+    for &(node, _) in &problem.pins {
         if node >= n {
             return Err(format!("pin references node {node} outside the mesh"));
         }
-        fixed[node] = Some(value);
+        any_dirichlet = true;
     }
 
-    let any_dirichlet = fixed.iter().any(|x| x.is_some());
-    let pure_neumann = !any_dirichlet;
-
-    if pure_neumann {
-        if !problem.zero_mean {
-            return Err(
-                "Pure-Neumann problem with no constraint: the solution is only defined up to a \
-                 constant. Set `zero_mean` or supply a pin."
-                    .into(),
-            );
-        }
-        // Compatibility: a pure-Neumann problem is solvable only if the data
-        // balances. Integrating -lap(u) = f over the domain and applying the
-        // divergence theorem gives  integral(f) + boundary_integral(g) = 0.
-        // Violating it means no solution exists, and a solver that returns one
-        // anyway is reporting a fiction.
-        let source_integral: f64 = mesh
-            .triangles
-            .iter()
-            .enumerate()
-            .map(|(e, &t)| problem.source.get(e).copied().unwrap_or(0.0) * mesh.triangle_area(t))
-            .sum();
-        let scale = mesh.area().max(1e-300);
-        let imbalance = (source_integral + flux_integral).abs() / scale;
-        if imbalance > 1e-6 {
-            return Err(format!(
-                "Pure-Neumann data is incompatible: integral(f) + boundary integral(g) = {:.3e} \
-                 per unit area, which must vanish for a solution to exist",
-                imbalance
-            ));
-        }
-        // Gauge by pinning the first node; the mean shift is applied afterwards.
-        fixed[0] = Some(0.0);
+    // A pure-Neumann problem is gauged by pinning node 0 and normalising the
+    // mean afterwards — see solve_poisson for why this is a pin and not a
+    // Lagrange multiplier (Cholesky needs SPD). The compatibility check itself
+    // is per-source, so it runs in `solve`, not here.
+    let gauge_pin = !any_dirichlet;
+    if gauge_pin && !problem.zero_mean {
+        return Err(
+            "Pure-Neumann problem with no constraint: the solution is only defined up to a \
+             constant. Set `zero_mean` or supply a pin."
+                .into(),
+        );
     }
 
     // ── Reduced system over the free DOFs ─────────────────────────
+    let mut is_fixed = vec![false; n];
+    for (loop_id, &is_d) in dirichlet_loop.iter().enumerate() {
+        if is_d {
+            for edge in mesh.boundary_edges.iter().filter(|e| e.loop_id == loop_id) {
+                is_fixed[edge.a] = true;
+                is_fixed[edge.b] = true;
+            }
+        }
+    }
+    for &(node, _) in &problem.pins {
+        is_fixed[node] = true;
+    }
+    if gauge_pin {
+        is_fixed[0] = true;
+    }
+
     let mut free_index = vec![usize::MAX; n];
     let mut free_nodes: Vec<usize> = Vec::with_capacity(n);
     for i in 0..n {
-        if fixed[i].is_none() {
+        if !is_fixed[i] {
             free_index[i] = free_nodes.len();
             free_nodes.push(i);
         }
@@ -350,35 +371,29 @@ pub fn solve_poisson(problem: &PoissonProblem) -> Result<PoissonSolution, String
         return Err("Every node is prescribed — nothing to solve".into());
     }
 
-    let mut rhs: Vec<f64> = free_nodes.iter().map(|&i| f[i]).collect();
     let mut r_rows: Vec<usize> = Vec::with_capacity(vals.len());
     let mut r_cols: Vec<usize> = Vec::with_capacity(vals.len());
     let mut r_vals: Vec<f64> = Vec::with_capacity(vals.len());
-
     for k in 0..vals.len() {
-        let (i, j, v) = (rows[k], cols[k], vals[k]);
-        match (fixed[i], fixed[j]) {
-            // free-free: keep
-            (None, None) => {
-                r_rows.push(free_index[i]);
-                r_cols.push(free_index[j]);
-                r_vals.push(v);
-            }
-            // free-fixed: move the known contribution to the right-hand side
-            (None, Some(uj)) => rhs[free_index[i]] -= v * uj,
-            // rows of prescribed equations are dropped entirely
-            (Some(_), _) => {}
+        if !is_fixed[rows[k]] && !is_fixed[cols[k]] {
+            r_rows.push(free_index[rows[k]]);
+            r_cols.push(free_index[cols[k]]);
+            r_vals.push(vals[k]);
         }
     }
 
-    let u_free = match problem.strategy {
+    let factor = match problem.strategy {
         SolveStrategy::Sparse => {
             // CscMatrix stores the LOWER TRIANGLE ONLY for symmetric systems
             // (see linalg::sparse). The reduced stiffness is symmetric, so the
             // upper entries are dropped rather than duplicated — passing the
             // full matrix double-counts every off-diagonal and the
             // factorisation fails as not positive definite.
-            let (mut lr, mut lc, mut lv) = (Vec::with_capacity(r_vals.len()), Vec::with_capacity(r_vals.len()), Vec::with_capacity(r_vals.len()));
+            let (mut lr, mut lc, mut lv) = (
+                Vec::with_capacity(r_vals.len()),
+                Vec::with_capacity(r_vals.len()),
+                Vec::with_capacity(r_vals.len()),
+            );
             for k in 0..r_vals.len() {
                 if r_rows[k] >= r_cols[k] {
                     lr.push(r_rows[k]);
@@ -387,70 +402,209 @@ pub fn solve_poisson(problem: &PoissonProblem) -> Result<PoissonSolution, String
                 }
             }
             let a = CscMatrix::from_triplets(nf, &lr, &lc, &lv);
-            sparse_cholesky_solve_full(&a, &rhs).ok_or(
-                "Sparse Cholesky failed: the reduced system is not positive definite. \
-                 Check that the mesh is connected and that boundary data is well posed.",
-            )?
+            let sym = std::rc::Rc::new(crate::linalg::sparse_chol::symbolic_cholesky(&a));
+            Factor::Sparse(
+                crate::linalg::sparse_chol::numeric_cholesky(&sym, &a).ok_or(
+                    "Sparse Cholesky failed: the reduced system is not positive definite. \
+                     Check that the mesh is connected and that boundary data is well posed.",
+                )?,
+            )
         }
         SolveStrategy::Dense => {
             let mut dense = vec![0.0f64; nf * nf];
             for k in 0..r_vals.len() {
                 dense[r_rows[k] * nf + r_cols[k]] += r_vals[k];
             }
-            let mut b = rhs.clone();
-            lu_solve(&mut dense, &mut b, nf).ok_or("Dense reference system is singular")?
+            Factor::Dense(dense)
         }
     };
 
-    let mut u = vec![0.0f64; n];
-    for i in 0..n {
-        u[i] = match fixed[i] {
-            Some(v) => v,
-            None => u_free[free_index[i]],
-        };
-    }
+    Ok(FactoredPoisson {
+        mesh,
+        rows,
+        cols,
+        vals,
+        neumann_f,
+        dirichlet_loop,
+        pins: problem.pins.clone(),
+        gauge_pin,
+        zero_mean: problem.zero_mean,
+        free_index,
+        free_nodes,
+        factor,
+    })
+}
 
-    // ── Residual over the free equations, from the original system ──
-    let mut ku = vec![0.0f64; n];
-    for k in 0..vals.len() {
-        ku[rows[k]] += vals[k] * u[cols[k]];
-    }
-    let mut residual: f64 = 0.0;
-    for &i in &free_nodes {
-        residual = residual.max((ku[i] - f[i]).abs());
-    }
+impl FactoredPoisson<'_> {
+    /// Solve for one right-hand side: `source` per triangle (same contract as
+    /// [`PoissonProblem::source`], empty means zero) and `dirichlet` carrying
+    /// the value prescribed on each Dirichlet loop, indexed by loop id.
+    ///
+    /// The constrained node SET was fixed at factor time — only the values
+    /// may vary here.
+    pub fn solve(&self, source: &[f64], dirichlet: &[f64]) -> Result<PoissonSolution, String> {
+        let mesh = self.mesh;
+        let n = mesh.nodes.len();
+        if !source.is_empty() && source.len() != mesh.triangles.len() {
+            return Err("source must have one value per triangle (or be empty)".into());
+        }
+        if self.dirichlet_loop.iter().any(|&d| d) && dirichlet.len() < self.dirichlet_loop.len() {
+            // A missing value silently defaulting to zero would prescribe the
+            // wrong boundary without any sign of it — wrong numbers, not an
+            // error, which is the worst outcome a solver can produce.
+            return Err(format!(
+                "dirichlet must carry one value per loop ({}), got {}",
+                self.dirichlet_loop.len(),
+                dirichlet.len()
+            ));
+        }
 
-    let mut solution = PoissonSolution {
-        u,
-        grad: Vec::new(),
-        residual,
-    };
-
-    // ── Apply the zero-mean gauge ────────────────────────────────
-    if problem.zero_mean {
-        let total = mesh.area();
-        if total > 1e-300 {
-            let shift = solution.integrate(mesh) / total;
-            for v in solution.u.iter_mut() {
-                *v -= shift;
+        // ── Right-hand side: source + baked Neumann data ──────────
+        let mut f = self.neumann_f.clone();
+        for (e, &t) in mesh.triangles.iter().enumerate() {
+            let fe = source.get(e).copied().unwrap_or(0.0);
+            if fe != 0.0 {
+                let area = mesh.triangle_area(t);
+                for i in 0..3 {
+                    f[t[i]] += fe * area / 3.0;
+                }
             }
         }
-    }
 
-    solution.grad = mesh
-        .triangles
+        // ── Prescribed values on the factored pattern ─────────────
+        let mut fixed: Vec<Option<f64>> = vec![None; n];
+        for (loop_id, &is_d) in self.dirichlet_loop.iter().enumerate() {
+            if is_d {
+                let value = dirichlet.get(loop_id).copied().unwrap_or(0.0);
+                for edge in mesh.boundary_edges.iter().filter(|e| e.loop_id == loop_id) {
+                    fixed[edge.a] = Some(value);
+                    fixed[edge.b] = Some(value);
+                }
+            }
+        }
+        for &(node, value) in &self.pins {
+            fixed[node] = Some(value);
+        }
+        if self.gauge_pin {
+            // Compatibility: a pure-Neumann problem is solvable only if the
+            // data balances. Integrating -lap(u) = f over the domain and
+            // applying the divergence theorem gives
+            // integral(f) + boundary_integral(g) = 0; the boundary integral
+            // was baked into `neumann_f`, whose sum IS that integral (each
+            // edge contributed g*len/2 to each of its two nodes).
+            let source_integral: f64 = mesh
+                .triangles
+                .iter()
+                .enumerate()
+                .map(|(e, &t)| source.get(e).copied().unwrap_or(0.0) * mesh.triangle_area(t))
+                .sum();
+            let flux_integral: f64 = self.neumann_f.iter().sum();
+            let scale = mesh.area().max(1e-300);
+            let imbalance = (source_integral + flux_integral).abs() / scale;
+            if imbalance > 1e-6 {
+                return Err(format!(
+                    "Pure-Neumann data is incompatible: integral(f) + boundary integral(g) = {:.3e} \
+                     per unit area, which must vanish for a solution to exist",
+                    imbalance
+                ));
+            }
+            fixed[0] = Some(0.0);
+        }
+
+        let mut rhs: Vec<f64> = self.free_nodes.iter().map(|&i| f[i]).collect();
+        for k in 0..self.vals.len() {
+            // Only free-fixed pairs contribute; free-free is in the factor and
+            // rows of prescribed equations are dropped — same reduction as at
+            // factor time.
+            if self.free_index[self.rows[k]] != usize::MAX {
+                if let Some(uj) = fixed[self.cols[k]] {
+                    rhs[self.free_index[self.rows[k]]] -= self.vals[k] * uj;
+                }
+            }
+        }
+
+        let u_free = match &self.factor {
+            Factor::Sparse(fact) => crate::linalg::sparse_chol::sparse_cholesky_solve(fact, &rhs),
+            Factor::Dense(dense) => {
+                let nf = self.free_nodes.len();
+                let mut m = dense.clone();
+                lu_solve(&mut m, &mut rhs, nf).ok_or("Dense reference system is singular")?
+            }
+        };
+
+        let mut u = vec![0.0f64; n];
+        for i in 0..n {
+            u[i] = match fixed[i] {
+                Some(v) => v,
+                None => u_free[self.free_index[i]],
+            };
+        }
+
+        // ── Residual over the free equations, from the original system ──
+        let mut ku = vec![0.0f64; n];
+        for k in 0..self.vals.len() {
+            ku[self.rows[k]] += self.vals[k] * u[self.cols[k]];
+        }
+        let mut residual: f64 = 0.0;
+        for &i in &self.free_nodes {
+            residual = residual.max((ku[i] - f[i]).abs());
+        }
+
+        let mut solution = PoissonSolution {
+            u,
+            grad: Vec::new(),
+            residual,
+        };
+
+        // ── Apply the zero-mean gauge ────────────────────────────
+        if self.zero_mean {
+            let total = mesh.area();
+            if total > 1e-300 {
+                let shift = solution.integrate(mesh) / total;
+                for v in solution.u.iter_mut() {
+                    *v -= shift;
+                }
+            }
+        }
+
+        solution.grad = mesh
+            .triangles
+            .iter()
+            .map(|&t| {
+                let (b, c, area) = element_geometry(mesh, t);
+                let s = 1.0 / (2.0 * area);
+                [
+                    s * (b[0] * solution.u[t[0]] + b[1] * solution.u[t[1]] + b[2] * solution.u[t[2]]),
+                    s * (c[0] * solution.u[t[0]] + c[1] * solution.u[t[1]] + c[2] * solution.u[t[2]]),
+                ]
+            })
+            .collect();
+
+        Ok(solution)
+    }
+}
+
+/// Assemble and solve. Equivalent to [`factor_poisson`] followed by one
+/// [`FactoredPoisson::solve`] with the problem's own data; callers with more
+/// than one right-hand side on the same constrained set should factor once
+/// instead.
+///
+/// Assembly is element-by-element into COO triplets; the reduced system over
+/// the free degrees of freedom is then solved by sparse Cholesky. The stiffness
+/// of a scalar Poisson problem is symmetric positive definite once at least one
+/// value is prescribed, which is exactly the condition Cholesky needs — see
+/// `PoissonProblem::zero_mean` for why the pure-Neumann gauge is a pin rather
+/// than a Lagrange multiplier.
+pub fn solve_poisson(problem: &PoissonProblem) -> Result<PoissonSolution, String> {
+    let dirichlet: Vec<f64> = problem
+        .loop_bcs
         .iter()
-        .map(|&t| {
-            let (b, c, area) = element_geometry(mesh, t);
-            let s = 1.0 / (2.0 * area);
-            [
-                s * (b[0] * solution.u[t[0]] + b[1] * solution.u[t[1]] + b[2] * solution.u[t[2]]),
-                s * (c[0] * solution.u[t[0]] + c[1] * solution.u[t[1]] + c[2] * solution.u[t[2]]),
-            ]
+        .map(|bc| match bc {
+            LoopBc::Dirichlet { value } => *value,
+            _ => 0.0,
         })
         .collect();
-
-    Ok(solution)
+    factor_poisson(problem)?.solve(&problem.source, &dirichlet)
 }
 
 #[cfg(test)]
