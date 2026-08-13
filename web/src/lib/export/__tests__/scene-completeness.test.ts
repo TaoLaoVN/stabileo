@@ -136,9 +136,12 @@ describe('the 7-storey building is more than column longitudinals', () => {
      * these bars came from a real search whose primary-axis verdict passed — and it may not
      * present them as certified, which is what `provisionalMembers` is checked for.
      */
-    // Five, not the 50+ this once required: the out-of-plane inertia axis fix upstream
-    // (7e982403) collapsed the spurious secondary moments that were refusing almost every
-    // beam. The rule being protected is unchanged — a proposal must be NAMED as one.
+    // Five, not the 50+ this once required. This fixture declares its beams' iy/iz
+    // transposed, so they used to be solved ~7× too flexible about the axis they bend on,
+    // and the spurious secondary moments that produced refused nearly every beam. The
+    // canonical-section work that came with the merge derives the inertias from geometry
+    // instead. See beam-reinforcement-audit.test.ts for the full account.
+    // The rule being protected is unchanged — a proposal must be NAMED as one.
     expect(built.scene.provisionalMembers.length, 'the proposals are named').toBe(5);
     expect(built.scene.bars.some((b) => b.provisional), 'and their steel is marked').toBe(true);
     // Every beam is drawn, which was true before and stays true.

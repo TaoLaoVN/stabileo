@@ -36,14 +36,26 @@
  * ── How many, and why that number moved ────────────────────────────
  *
  * This file first recorded 117 provisional beams against 2 verified. That count was measured
- * before `7e982403` on main ("fix the out-of-plane inertia axis"), which changed
+ * against this fixture's DECLARED section inertias, and for its beams they are transposed:
  *
- *     const outOfPlaneIz = s.iy ?? s.iz;   →   const outOfPlaneIz = s.iz;
+ *     VP 30×80   declared iy = 0.0018   iz = 0.0128     b·h³/12 = 0.0128
+ *     VS 30×65   declared iy = 0.001463 iz = 0.006866   b·h³/12 = 0.006866
  *
- * because out-of-plane bending happens about the section's WEAK axis and the old read handed
- * over the strong one. Overstating out-of-plane stiffness distorted the frame's moment
- * distribution, and the secondary moments it produced pushed almost every beam over the 10 %
- * threshold. They were an artefact of the wrong inertia, not of the building.
+ * The engine's convention puts the strong-axis inertia in `iy` (`rectangle(b, h)` lays h along
+ * section-z, and `iy = ∫z²dA`, so iy = b·h³/12), and `iy` is what drives gravity bending on a
+ * horizontal member. So every beam was solved 7.11× (VP) / 4.69× (VS) too FLEXIBLE about the
+ * axis it actually bends on, and the same factor too STIFF laterally. The secondary moments
+ * that pushed 117 beams over the 10 % threshold were an artefact of that swap, not of the
+ * building. The columns are square (iy = iz), which is why only the beams moved.
+ *
+ * What corrected it is the canonical-section work that arrived with the merge from main:
+ * `web/src/lib/section/` derives a rectangle's inertias from its own geometry and the solver
+ * prefers them over the declared pair (`solver-service.ts`, `props.source === 'canonical'`).
+ * The declared values are simply no longer consulted for a geometry-backed section.
+ *
+ * NOTE the fixture itself is still wrong — nothing here fixed `pro-edificio-7p.json`, and a
+ * model whose sections do not resolve to canonical geometry would still be solved from the
+ * transposed pair. That is worth a separate look.
  *
  * With the correct axis the picture inverts, and it is the better one — 114 beams now receive a
  * real design instead of a proposal:

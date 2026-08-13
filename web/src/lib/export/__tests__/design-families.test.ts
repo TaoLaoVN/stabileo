@@ -170,10 +170,12 @@ describe('the run reports what happened, family by family', () => {
     await ready('pro-edificio-7p');
     const report = designRunStore.designFamilies(['column', 'beam', 'slab', 'wall']);
 
-    // 5 of this building's 119 beams are refused by the secondary-axis refusal — it was 117
-    // before the out-of-plane inertia axis fix upstream (7e982403), which removed the
-    // spurious secondary moments that were refusing nearly all of them. A refusal is a design
-    // outcome either way, and the report must say so rather than presenting a silent zero.
+    // 5 of this building's 119 beams are refused by the secondary-axis refusal. It was 117
+    // while the fixture's transposed iy/iz went straight to the solver; the canonical-section
+    // work that arrived with the merge derives them from geometry instead, which removed the
+    // spurious secondary moments. See beam-reinforcement-audit.test.ts for the full account.
+    // A refusal is a design outcome either way, and the report must say so rather than
+    // presenting a silent zero.
     const beams = familyOf(report, 'beam');
     expect(beams.processed).toBeGreaterThan(100);
     expect(beams.refused).toBe(5);
