@@ -214,3 +214,57 @@ fn modal_no_density_fails() {
     let result = modal::solve_modal_2d(&input, &densities, 2);
     assert!(result.is_err(), "should fail with no mass");
 }
+
+// ─── Rayleigh damping anchoring ─────────────────────────────
+
+/// Rayleigh damping must deliver the ratio the user ASKED FOR at the structure's
+/// own fundamental frequency.
+///
+/// ξ(ω) = a₀/2ω + a₁ω/2 is a U-shaped curve, so the pair (a₀, a₁) is only
+/// meaningful relative to the frequencies it was anchored on. Anchoring above the
+/// real spectrum sends the a₀/2ω branch through the roof exactly where the
+/// building responds: `time_integration` estimated ω₁ as √(Σ|K_ii|/Σ|M_ii|), which
+/// on a 10-storey frame returns 1027 rad/s against a true 1.15 — and hands the
+/// fundamental mode ~669× the requested damping. A mode damped 669× too hard does
+/// not respond, and a seismic run that suppresses the dominant mode under-predicts
+/// demand. Hence a test on the delivered ratio rather than on the estimate.
+#[test]
+fn rayleigh_delivers_the_requested_ratio_at_the_real_fundamental() {
+    use dedaliano_engine::solver::{assembly, damping, dof::DofNumbering};
+    use dedaliano_engine::solver::mass_matrix::assemble_mass_matrix_2d;
+
+    let n_elem = 8;
+    let mut input = make_ss_beam_udl(n_elem, L, E, A, IZ, 0.0);
+    input.loads.clear();
+    let densities = make_densities();
+
+    let dof_num = DofNumbering::build_2d(&input);
+    let nf = dof_num.n_free;
+    let asm = assembly::assemble_2d(&input, &dof_num);
+    let m = assemble_mass_matrix_2d(&input, &dof_num, &densities);
+
+    // Extract the free-free blocks.
+    let n = dof_num.n_total;
+    let mut k_ff = vec![0.0; nf * nf];
+    let mut m_ff = vec![0.0; nf * nf];
+    for i in 0..nf {
+        for j in 0..nf {
+            k_ff[i * nf + j] = asm.k[i * n + j];
+            m_ff[i * nf + j] = m[i * n + j];
+        }
+    }
+
+    let xi = 0.05;
+    let (a0, a1) = damping::rayleigh_from_modes(&k_ff, &m_ff, nf, xi);
+
+    let rho_a_solver = DENSITY * A / 1000.0;
+    let omega1 = (std::f64::consts::PI / L).powi(2) * (EI / rho_a_solver).sqrt();
+
+    let xi_eff = a0 / (2.0 * omega1) + a1 * omega1 / 2.0;
+    let ratio = xi_eff / xi;
+    assert!(
+        (0.5..=2.0).contains(&ratio),
+        "asked for xi={xi}, the fundamental (omega={omega1:.1}) actually gets \
+         xi_eff={xi_eff:.4} ({ratio:.1}x). a0={a0:.4e} a1={a1:.4e}"
+    );
+}

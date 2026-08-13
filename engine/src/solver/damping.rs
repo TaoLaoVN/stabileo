@@ -8,6 +8,52 @@ pub fn rayleigh_coefficients(omega1: f64, omega2: f64, xi: f64) -> (f64, f64) {
     (a0, a1)
 }
 
+/// Rayleigh coefficients anchored on the structure's OWN first two natural
+/// frequencies, solved for rather than guessed at.
+///
+/// `ξ(ω) = a₀/2ω + a₁ω/2` is a U-shaped curve, so the pair only means anything
+/// relative to the frequencies it was anchored on, and anchoring above the real
+/// spectrum sends the `a₀/2ω` branch through the roof exactly where a building
+/// responds. `time_integration` used to anchor on `√(Σ|K_ii| / Σ|M_ii|)`, which is
+/// a mass-weighted average of diagonal ratios and not a fundamental frequency at
+/// all: on the repo's 10-storey frame it returns 1027 rad/s against a true 1.15,
+/// and hands the fundamental mode ~669× the requested damping. A mode damped that
+/// hard does not respond, and a seismic run that suppresses the dominant mode
+/// under-predicts demand.
+///
+/// Rigid-body modes are filtered out — they are not what Rayleigh should anchor
+/// on — and the diagonal estimate survives only as the last resort when the
+/// eigensolve finds nothing usable, where being crude beats returning nothing.
+pub fn rayleigh_from_modes(k: &[f64], m: &[f64], n: usize, xi: f64) -> (f64, f64) {
+    if let Some(result) = crate::linalg::lanczos_generalized_eigen(k, m, n, 2, 0.0) {
+        let positive: Vec<f64> = result.values.iter().copied().filter(|&v| v > 1e-10).collect();
+        if positive.len() >= 2 {
+            return rayleigh_coefficients(positive[0].sqrt(), positive[1].sqrt(), xi);
+        } else if positive.len() == 1 {
+            let omega1 = positive[0].sqrt();
+            // One usable mode: bracket it rather than anchoring twice on the same
+            // frequency, which would leave the curve unconstrained on one side.
+            return rayleigh_coefficients(omega1, 3.0 * omega1, xi);
+        }
+    }
+
+    // Last resort: the smallest diagonal ratio, which at least tracks the softest
+    // DOF rather than the average of all of them.
+    let mut omega1_sq = f64::INFINITY;
+    for i in 0..n {
+        let kii = k[i * n + i];
+        let mii = m[i * n + i];
+        if mii > 1e-20 && kii > 1e-20 {
+            omega1_sq = omega1_sq.min(kii / mii);
+        }
+    }
+    if !omega1_sq.is_finite() || omega1_sq < 1e-20 {
+        return (0.0, 0.0);
+    }
+    let omega1 = omega1_sq.sqrt();
+    rayleigh_coefficients(omega1, 3.0 * omega1, xi)
+}
+
 /// Assemble Rayleigh damping matrix C = a0*M + a1*K.
 /// m, k: mass and stiffness matrices (n x n, row-major dense)
 pub fn rayleigh_damping_matrix(m: &[f64], k: &[f64], n: usize, a0: f64, a1: f64) -> Vec<f64> {
