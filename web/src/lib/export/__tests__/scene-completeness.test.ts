@@ -125,9 +125,10 @@ describe('the 7-storey building is more than column longitudinals', () => {
 
   it('reports beams honestly when their design is only a proposal', async () => {
     /**
-     * On this model 117 of 119 beams are refused certification by the verifier's
-     * secondary-axis refusal. They used to carry no steel at all, and this test asserted
-     * exactly that — concrete drawn, absence of steel reported.
+     * On this model 5 of 119 beams are refused certification by the verifier's
+     * secondary-axis refusal (it was 117 before the merge derived section inertias from
+     * geometry). They used to carry no steel at all, and this test asserted exactly that —
+     * concrete drawn, absence of steel reported.
      *
      * They now carry a PROVISIONAL_BIAXIAL proposal: the primary-axis design, produced by the
      * ordinary search, marked on every bar. So the honest shape has changed and the assertion
@@ -476,7 +477,7 @@ describe('every beam’s state is explained, and none loses its steel on the way
     /**
      * `refused` is now zero on this fixture, and that is the improvement rather than a hole.
      *
-     * Every beam reaches the document — the verified two as certified steel, the other 117 as
+     * Every beam reaches the document — the verified 114 as certified steel, the other 5 as
      * a marked proposal — so the "no bars in the document" branch has nothing to count. The
      * branch stays, because a member CAN still legitimately have no bars (a demand-unavailable
      * member, a wall with no geometry), and when that happens it must still state a reason.

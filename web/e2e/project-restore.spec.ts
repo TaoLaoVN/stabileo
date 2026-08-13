@@ -137,7 +137,9 @@ async function stored(page: Page) {
 
 /** Press Restaurar on the banner the app shows for a saved project. */
 async function restoreFromBanner(page: Page) {
-  const banner = page.locator('.autosave-banner');
+  // The prompt is inline beside the tab strip, not the full-width banner it replaced;
+  // keyed off its test id rather than a layout class so a restyle does not break this.
+  const banner = page.getByTestId('autosave-prompt');
   await expect(banner, 'the saved-project banner is offered').toBeVisible({ timeout: 30_000 });
   await expect(banner).toContainText('Se encontró un proyecto guardado');
   await banner.locator('button.restore').click();

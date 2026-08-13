@@ -742,8 +742,18 @@
       restore your last session simply stopped appearing.
     -->
     {#if showAutosaveBanner}
-      <div class="autosave-inline" data-testid="autosave-prompt">
-        <span class="autosave-text">{t('app.autosaveFound')} <strong>{autosaveData?.name}</strong></span>
+      <div class="autosave-inline" class:autosave-older={autosaveStamp.older} data-testid="autosave-prompt">
+        <span class="autosave-text">
+          {t('app.autosaveFound')} <strong>{autosaveData?.name}</strong>
+          {#if autosaveStamp.timestamp}
+            <span class="autosave-stamp">({new Date(autosaveStamp.timestamp).toLocaleString()})</span>
+          {/if}
+        </span>
+        {#if autosaveStamp.older}
+          <!-- Said here, not only in a toast: a user who dismissed the toast must still be
+               able to see that what they are about to restore is not their newest save. -->
+          <span class="autosave-warning">{t('file.autosaveOlderRestored')}</span>
+        {/if}
         <button class="banner-btn restore" onclick={restoreAutosave}>{t('app.restore')}</button>
         <button class="banner-btn discard" onclick={discardAutosave}>{t('app.discard')}</button>
       </div>
@@ -787,24 +797,6 @@
       {/if}
     </div>
   </header>
-
-  {#if showAutosaveBanner}
-    <div class="autosave-banner" class:autosave-banner-older={autosaveStamp.older}>
-      <span>
-        {t('app.autosaveFound')} <strong>{autosaveData?.name}</strong>
-        {#if autosaveStamp.timestamp}
-          <span class="autosave-stamp">({new Date(autosaveStamp.timestamp).toLocaleString()})</span>
-        {/if}
-      </span>
-      {#if autosaveStamp.older}
-        <!-- The banner says it, not only a toast: a user who dismissed the toast must still
-             be able to see that what they are about to restore is not their newest save. -->
-        <span class="autosave-warning">{t('file.autosaveOlderRestored')}</span>
-      {/if}
-      <button class="banner-btn restore" onclick={restoreAutosave}>{t('app.restore')}</button>
-      <button class="banner-btn discard" onclick={discardAutosave}>{t('app.discard')}</button>
-    </div>
-  {/if}
 
   {#if uiStore.appMode === 'basico' && !uiStore.isMobile}
     <Ribbon onOpenPanel={openBasicPanel} activePanel={basicPanel} />
@@ -1630,22 +1622,15 @@
     background: var(--st-surface-2);
   }
 
-  .autosave-banner {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    gap: 1rem;
-    padding: 0.5rem 1rem;
-    background: var(--st-surface-2);
-    border-bottom: 1px solid var(--st-hair);
-    font-size: 0.875rem;
-    color: var(--st-text);
-  }
-
-  /* An older-than-newest save is not the normal case and must not look like it. */
-  .autosave-banner-older {
+  /* An older-than-newest save is not the normal case and must not look like it.
+     Tinted in place rather than as a full-width band: the standalone banner this
+     replaced pushed the whole application down by its own height on load, which is
+     why it was removed upstream. */
+  .autosave-older {
     background: #3e2a1a;
-    border-bottom-color: #6e4a2a;
+    border: 1px solid #6e4a2a;
+    border-radius: 4px;
+    padding: 0.15rem 0.5rem;
   }
 
   .autosave-stamp {

@@ -157,7 +157,8 @@ describe('top assembly reinforcement, across every projection', { timeout: 60_00
     expect(report.hangerTopMembers).toEqual(hangers.filter(
       (id) => report.entries.some((e) => e.elementId === id)));
 
-    // The state stays whatever the design made it. 62 proposals must still read as proposals.
+    // The state stays whatever the design made it: a member the design verified must not be
+    // demoted by a top-steel projection, and one it left provisional must not be promoted.
     for (const id of report.hangerTopMembers) {
       const e = report.entries.find((x) => x.elementId === id)!;
       expect(e.topSteel).toBe('hangerProvisional');

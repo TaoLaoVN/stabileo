@@ -227,6 +227,11 @@ describe('beam reinforcement audit — pro-edificio-7p', { timeout: 30_000 }, ()
     // Every proposal is above the published threshold — none of them is threshold noise, and
     // the spread is stated so a reader can see how far above it they are.
     const ratios = of('provisional-biaxial').map((r) => r.secondaryRatio ?? 0);
+    // Non-empty FIRST, because every assertion below is vacuous without it: on an empty set
+    // `Math.min()` is Infinity and `Math.max()` is −Infinity, so both bounds pass, and
+    // `[].every()` is true. The whole block would go green if the biaxial path stopped
+    // producing anything at all.
+    expect(ratios.length, 'there is something to check').toBeGreaterThan(0);
     expect(Math.min(...ratios)).toBeGreaterThan(BIAXIAL_RATIO_THRESHOLD);
     // …and none of them is a beam bending harder about its secondary axis than its primary
     // one. That did appear before the out-of-plane inertia axis was fixed upstream, and it
