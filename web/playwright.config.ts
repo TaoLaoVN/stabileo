@@ -26,14 +26,32 @@ import { defineConfig, devices } from '@playwright/test';
 
 const HOST = '127.0.0.1';
 /*
- * Overridable, because 4173 is Vite's default preview port and every worktree
- * of this repo would claim it. With `reuseExistingServer` on locally, a run
- * silently attaches to whichever worktree got there first — and then tests a
- * different branch's build, one without VITE_E2E=1, so every PRO fixture times
- * out waiting for `window.__stabileo` that this build was never asked to emit.
- * Set E2E_PORT to give a worktree its own.
+ * A port of this worktree's own, derived from its path.
+ *
+ * 4173 is Vite's default preview port, so every worktree of this repo claims
+ * it, and with `reuseExistingServer` on locally a run silently attaches to
+ * whichever one got there first. It then tests a DIFFERENT BRANCH'S BUILD and
+ * reports the differences as failures in yours — a ribbon missing the commands
+ * your branch added reads as "the feature is broken", not as "wrong bundle".
+ * The failure is entirely convincing, which is what makes it expensive: it has
+ * cost this project an afternoon of chasing defects that were not there.
+ *
+ * A comment saying "set E2E_PORT" was here before and did not prevent it,
+ * because the person who needs the warning is the one who does not know yet
+ * that they are on a shared port. So the default no longer collides: it is
+ * derived from the worktree's own directory, which is different for every
+ * checkout by construction. E2E_PORT still overrides, for CI or for pinning.
  */
-const PORT = Number(process.env.E2E_PORT ?? 4173);
+function worktreePort(): number {
+  let h = 0;
+  for (const ch of process.cwd()) h = (h * 31 + ch.charCodeAt(0)) >>> 0;
+  // 4173 stays the base so the range is recognisable; 200 slots is far more
+  // than the number of worktrees anyone keeps, and stays clear of the
+  // 4000-4010 range this project uses for dev servers by hand.
+  return 4100 + (h % 200);
+}
+
+const PORT = Number(process.env.E2E_PORT ?? worktreePort());
 const BASE_URL = `http://${HOST}:${PORT}`;
 
 export default defineConfig({
