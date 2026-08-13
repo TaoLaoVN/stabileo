@@ -12,7 +12,17 @@
  * moment someone clicks the thing. So this drives the clicks.
  */
 
-import { test, expect, type Page } from '@playwright/test';
+/*
+ * `test` comes from ./fixtures, like every other spec here.
+ *
+ * Importing it straight from @playwright/test gives the runner a SECOND test
+ * instance, and the whole suite then fails to load with "did not expect
+ * test.describe() to be called here" — but only when more than one spec is
+ * collected, so running this file alone passes and CI, which runs `--grep
+ * @smoke` across all of them, does not.
+ */
+import { test, expect } from './fixtures';
+import type { Page } from '@playwright/test';
 
 async function openBasic(page: Page) {
   await page.goto('/app/basic?e2e=1');
