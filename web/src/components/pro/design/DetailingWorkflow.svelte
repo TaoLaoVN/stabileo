@@ -24,6 +24,21 @@
   /** Bound to the sheet dialog, so a conflict can open the drawing it is on. */
   let sheetOpen = $state(false);
 
+  /**
+   * Whether the level list is showing.
+   *
+   * Open by default the first time — a reviewer arriving at a multi-level building needs to see
+   * that there ARE levels. Closing it is what gives the sheet the full panel width, which is the
+   * whole point: the list used to hold a third of the panel permanently while the drawing, the
+   * thing being reviewed, was cropped in the remainder.
+   */
+  let listOpen = $state(true);
+
+  /** Conflicts across every assembly, for the one-line result. */
+  const totalConflicts = $derived(
+    detailingStore.assemblies.reduce(
+      (n, a) => n + (a.conflicts ?? []).filter((c) => c.severity !== 'marginal').length, 0));
+
   const selected = $derived(detailingStore.selected);
 
   /**
@@ -41,8 +56,50 @@
 </script>
 
 
-<div class="detailing" data-testid="detailing-workflow">
-  <aside class="assemblies" aria-label={t('detailing.assemblies')}>
+<!--
+  A summary and a collapsible list, above a preview that gets the width.
+
+  The list of levels was a permanent 9–16rem column in a panel about 34rem wide, so the sheet — the
+  thing a reviewer actually reads — lived in the remaining eighteen and came out cropped. Levels are
+  navigation, and navigation does not need a third of the screen at all times.
+
+  Collapsed, the list becomes one line naming the level you are on; the preview takes the full
+  width. Nothing is removed: the same list, the same `detailingStore.select`, one click away.
+-->
+<div class="detailing" data-testid="detailing-workflow" data-list={listOpen ? 'open' : 'closed'}>
+  <div class="topbar" data-testid="detailing-topbar">
+    <p class="result" data-testid="detailing-result">
+      {#if detailingStore.assemblies.length === 0}
+        {t('detailing.result.none')}
+      {:else}
+        {tp('detailing.result.summary', {
+          n: detailingStore.assemblies.length,
+          conflicts: totalConflicts,
+        })}
+      {/if}
+    </p>
+    <button
+      type="button"
+      class="list-toggle"
+      data-testid="detailing-list-toggle"
+      aria-expanded={listOpen}
+      aria-controls="detailing-assembly-list"
+      onclick={() => (listOpen = !listOpen)}
+    >
+      <span aria-hidden="true">{listOpen ? '◧' : '▤'}</span>
+      {listOpen ? t('detailing.list.hide') : t('detailing.list.show')}
+      {#if !listOpen && selected}
+        <span class="current-level" data-testid="detailing-current-level">{selected.label}</span>
+      {/if}
+    </button>
+  </div>
+
+  <aside
+    class="assemblies"
+    id="detailing-assembly-list"
+    aria-label={t('detailing.assemblies')}
+    hidden={!listOpen}
+  >
     <h4>{t('detailing.assemblies')}</h4>
     {#if detailingStore.assemblies.length === 0}
       <!--
@@ -276,10 +333,42 @@
 
     `minmax(0, …)` lets both tracks shrink, and a container query asks the question that matters.
   */
+  /*
+    One column when the list is hidden, two when it is not.
+
+    `data-list` drives it rather than a media query: the question is what the READER asked for,
+    and the panel's width is answered separately by the container query at the bottom.
+  */
+  .topbar {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 0.5rem;
+    flex-wrap: wrap;
+    padding-bottom: 0.3rem;
+    border-bottom: 1px solid var(--st-hair);
+  }
+  .result { margin: 0; font-size: 0.7rem; color: var(--st-text-2); }
+  .list-toggle {
+    display: inline-flex; align-items: baseline; gap: 0.3rem;
+    padding: 0.1rem 0.4rem;
+    border: 1px solid var(--st-hair-strong);
+    border-radius: 4px;
+    background: none;
+    color: var(--st-text-2);
+    font-size: 0.68rem;
+    cursor: pointer;
+  }
+  .list-toggle:hover { background: var(--st-surface-3); color: var(--st-text); }
+  .list-toggle:focus-visible { outline: 2px solid var(--st-value); outline-offset: 1px; }
+  .current-level { font-weight: 600; color: var(--st-text); }
+
+  .detailing[data-list='closed'] { grid-template-columns: minmax(0, 1fr); }
+  .detailing[data-list='closed'] .topbar,
+  .detailing[data-list='open'] .topbar { grid-column: 1 / -1; }
+
   .detailing {
-    container-type: inline-size;
-    display: grid;
-    grid-template-columns: minmax(9rem, 16rem) minmax(0, 1fr);
+    grid-template-columns: minmax(8rem, 12rem) minmax(0, 1fr);
     gap: 1rem;
     padding: 0.75rem;
     font-size: 0.85rem;
