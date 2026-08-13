@@ -20,19 +20,7 @@ pub fn solve_time_history_2d(
     let referenced_material_ids = super::dynamic_validation::referenced_material_ids_2d(&input.solver);
     super::dynamic_validation::validate_densities(&input.densities, &referenced_material_ids)?;
     super::dynamic_validation::validate_time_params(input.time_step, input.n_steps)?;
-    if !input.beta.is_finite() || !input.gamma.is_finite() {
-        return Err("Newmark beta/gamma parameters must be finite".to_string());
-    }
-    if let Some(alpha) = input.alpha {
-        if !alpha.is_finite() {
-            return Err("HHT alpha parameter must be finite".to_string());
-        }
-    }
-    if let Some(damping_xi) = input.damping_xi {
-        if !damping_xi.is_finite() {
-            return Err("damping_xi must be finite".to_string());
-        }
-    }
+    validate_integration_params(input.beta, input.gamma, input.alpha, input.damping_xi)?;
     if let Some(ga) = &input.ground_accel {
         if ga.iter().any(|v| !v.is_finite()) {
             return Err("Ground acceleration history contains non-finite values".to_string());
@@ -263,6 +251,60 @@ pub fn solve_time_history_2d(
 // ============================================================================
 // Internal helpers
 // ============================================================================
+
+/// Reject integration parameters that make the scheme amplify.
+///
+/// These were checked for finiteness only, so a provably unstable scheme ran to
+/// completion and returned numbers. Nothing downstream re-checks, and a diverging
+/// history is not distinguishable from a resonant one by looking at it.
+///
+/// * `γ < ½` gives Newmark NEGATIVE numerical damping — energy grows every step.
+///   γ = ½ is the neutral value; above it the scheme merely damps.
+/// * HHT-α sets `γ = ½ − α`, so `α > 0` is the same defect wearing another name,
+///   and below −1/3 the method loses second-order accuracy. The range was already
+///   written in the comment beside the formula; this makes it hold.
+/// * A negative `damping_xi` was accepted and then silently dropped by
+///   `compute_damping_matrix`'s `x > 0.0` guard, so the run reported a damped
+///   method in `result.method` while assembling no damping at all.
+///
+/// NOT checked here: `β < γ/2` is conditionally stable rather than unstable —
+/// linear acceleration (β = 1/6, γ = ½) is a legitimate scheme — and its stability
+/// depends on Δt against the model's highest frequency, which this solver does not
+/// compute. Refusing it would remove a valid capability and accepting it silently
+/// is what this function exists to stop, so it needs a warning channel
+/// `TimeHistoryResult` does not have. Left for the E5 write-up.
+fn validate_integration_params(
+    beta: f64, gamma: f64, alpha: Option<f64>, damping_xi: Option<f64>,
+) -> Result<(), String> {
+    if !beta.is_finite() || !gamma.is_finite() {
+        return Err("Newmark beta/gamma parameters must be finite".to_string());
+    }
+    if let Some(alpha) = alpha {
+        if !alpha.is_finite() {
+            return Err("HHT alpha parameter must be finite".to_string());
+        }
+        if !(-1.0 / 3.0..=0.0).contains(&alpha) {
+            return Err(format!(
+                "HHT alpha must be in [-1/3, 0] (got {alpha}). Above 0 it gives \
+                 gamma = 0.5 - alpha < 0.5, which amplifies instead of damping."
+            ));
+        }
+    } else if gamma < 0.5 {
+        return Err(format!(
+            "Newmark gamma must be >= 0.5 (got {gamma}). Below 0.5 the scheme has \
+             negative numerical damping and the response grows without bound."
+        ));
+    }
+    if let Some(xi) = damping_xi {
+        if !xi.is_finite() {
+            return Err("damping_xi must be finite".to_string());
+        }
+        if xi < 0.0 {
+            return Err(format!("damping_xi must be >= 0 (got {xi})"));
+        }
+    }
+    Ok(())
+}
 
 /// Compute the Rayleigh damping matrix for free DOFs.
 /// If damping_xi is None, returns a zero matrix.
@@ -804,19 +846,7 @@ pub fn solve_time_history_3d(
     let referenced_material_ids = super::dynamic_validation::referenced_material_ids_3d(&input.solver);
     super::dynamic_validation::validate_densities(&input.densities, &referenced_material_ids)?;
     super::dynamic_validation::validate_time_params(input.time_step, input.n_steps)?;
-    if !input.beta.is_finite() || !input.gamma.is_finite() {
-        return Err("Newmark beta/gamma parameters must be finite".to_string());
-    }
-    if let Some(alpha) = input.alpha {
-        if !alpha.is_finite() {
-            return Err("HHT alpha parameter must be finite".to_string());
-        }
-    }
-    if let Some(damping_xi) = input.damping_xi {
-        if !damping_xi.is_finite() {
-            return Err("damping_xi must be finite".to_string());
-        }
-    }
+    validate_integration_params(input.beta, input.gamma, input.alpha, input.damping_xi)?;
     for ga in [&input.ground_accel_x, &input.ground_accel_y, &input.ground_accel_z] {
         if let Some(ga) = ga {
             if ga.iter().any(|v| !v.is_finite()) {
