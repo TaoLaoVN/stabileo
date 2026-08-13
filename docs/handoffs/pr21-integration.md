@@ -196,7 +196,14 @@ lo que ya pasa con casi todos los namespaces fuera de `design.*`).
 3. **Rebase de PR21 sobre `main`**, no merge. Hoy la rama tiene 8 commits y ninguno depende
    de los otros dos PRs, así que el rebase es mecánico salvo por §3.4–3.6.
 4. Correr `npm run typecheck`, `npx vitest run --project unit`, `--project build`,
-   `npm run build`, `npm run check:gate` y `npx playwright test e2e/generators-steel.spec.ts`.
+   `npm run build`, `npm run check:gate` y `E2E_PORT=<libre> npx playwright test --grep @smoke`.
+
+   **Poné `E2E_PORT` siempre.** El default es 4173 y `reuseExistingServer` está activo en
+   local, así que si otro worktree ya tiene un preview ahí, Playwright **se engancha
+   silenciosamente al bundle de esa otra rama** — construido sin `VITE_E2E=1`, así que todo
+   fixture de PRO expira esperando un `window.__stabileo` que ese build nunca emitió. Me pasó
+   en esta sesión: el preview de PR20 estaba en 4173 y dos corridas mías dieron fallos que no
+   eran míos. El comentario en `playwright.config.ts` ya lo advierte.
    La huella del hormigón (`rc-baseline-digest.test.ts`) tiene que seguir dando
    `1bd4d9c1d575b085`.
 
