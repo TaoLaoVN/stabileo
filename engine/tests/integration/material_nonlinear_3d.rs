@@ -371,3 +371,34 @@ fn nonlinear_material_3d_l_frame() {
     assert_eq!(result.element_status.len(), 2);
     assert_eq!(result.results.element_forces.len(), 2);
 }
+
+/// Cantilever with a settled fixed support (dz = 0.005) under tip load.
+/// Elastic (huge capacities) — must converge and match the linear solver.
+/// Regression for the prescribed-displacement RHS double-count (K_fr*u_r
+/// was subtracted although f_int already contained the coupling).
+#[test]
+fn nonlinear_material_3d_support_settlement_matches_linear() {
+    let mut input = cantilever_3d_nl(
+        4.0, 0.0, 0.0, -5.0,
+        200.0, 0.3,
+        0.01, 1e-4, 1e-4, 1e-4,
+        1e9, 1e9, 1e9,
+        2,
+    );
+    input.tolerance = 1e-8;
+    for sup in input.solver.supports.values_mut() {
+        sup.dz = Some(0.005);
+    }
+
+    let lin = solve_3d(&input.solver).unwrap();
+    let lin_tip = lin.displacements.iter().find(|d| d.node_id == 2).unwrap();
+
+    let res = solve_nonlinear_material_3d(&input).unwrap();
+    assert!(res.converged, "3D settlement analysis should converge");
+    let nl_tip = res.results.displacements.iter().find(|d| d.node_id == 2).unwrap();
+    assert!(
+        (nl_tip.uz - lin_tip.uz).abs() < 1e-6,
+        "Tip uz: nonlinear={:.6e}, linear={:.6e}",
+        nl_tip.uz, lin_tip.uz
+    );
+}
