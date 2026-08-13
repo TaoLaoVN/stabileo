@@ -437,3 +437,75 @@ fn validation_inclined_support_equilibrium_summary_correct() {
         "Equilibrium imbalance should be near zero, got {:.6e}", eq.max_imbalance
     );
 }
+
+// ================================================================
+// Inclined support with prescribed displacement (settlement)
+// ================================================================
+//
+// Prescribed translations are given in GLOBAL axes (same convention as the
+// 2D inclinedRoller path), but the restrained inclined DOF lives in the
+// rotated frame. prepare_static_3d must project (dx, dy, dz) onto the
+// support normal; before the fix it assigned raw dx to the normal slot.
+
+#[test]
+fn validation_inclined_support_prescribed_global_settlement() {
+    // Beam 1→2 along X. Node 2 fully fixed. Node 1: inclined support with
+    // normal 45° in the XZ plane, rotations restrained, prescribed
+    // dx = dz = δ (global). The normal-direction displacement at node 1
+    // must equal e1·(δ, 0, δ) = δ√2.
+    let sqrt2_inv = std::f64::consts::FRAC_1_SQRT_2;
+    let delta = 0.001;
+
+    let mut nodes_map = HashMap::new();
+    nodes_map.insert("1".to_string(), SolverNode3D { id: 1, x: 0.0, y: 0.0, z: 0.0 });
+    nodes_map.insert("2".to_string(), SolverNode3D { id: 2, x: L, y: 0.0, z: 0.0 });
+
+    let mut materials = HashMap::new();
+    materials.insert("1".to_string(), SolverMaterial { id: 1, e: E, nu: NU });
+
+    let mut sections = HashMap::new();
+    sections.insert("1".to_string(), SolverSection3D {
+        id: 1, name: None, a: A, iy: IY, iz: IZ, j: J,
+        cw: None, as_y: None, as_z: None,
+    });
+
+    let mut elements = HashMap::new();
+    elements.insert("1".to_string(), SolverElement3D {
+        id: 1, elem_type: "frame".to_string(), node_i: 1, node_j: 2,
+        material_id: 1, section_id: 1,
+        release_my_start: false, release_my_end: false,
+        release_mz_start: false, release_mz_end: false,
+        release_t_start: false, release_t_end: false,
+        local_yx: None, local_yy: None, local_yz: None, roll_angle: None,
+    });
+
+    let mut sup1 = make_inclined_support(1, sqrt2_inv, 0.0, sqrt2_inv);
+    sup1.rrx = true; sup1.rry = true; sup1.rrz = true;
+    sup1.dx = Some(delta);
+    sup1.dz = Some(delta);
+
+    let mut supports = HashMap::new();
+    supports.insert("1".to_string(), sup1);
+    supports.insert("2".to_string(), make_fixed_3d(2));
+
+    let input = SolverInput3D {
+        nodes: nodes_map, materials, sections, elements, supports,
+        loads: vec![], constraints: vec![], left_hand: None,
+        plates: HashMap::new(), quads: HashMap::new(), quad9s: HashMap::new(),
+        solid_shells: HashMap::new(), curved_beams: vec![],
+        curved_shells: HashMap::new(), connectors: HashMap::new(),
+    };
+
+    let res = linear::solve_3d(&input).unwrap();
+    let d1 = res.displacements.iter().find(|d| d.node_id == 1).unwrap();
+
+    // The prescribed DOF is the normal-direction displacement.
+    let u_normal = sqrt2_inv * d1.ux + sqrt2_inv * d1.uz;
+    let expected = delta * 2.0 * sqrt2_inv; // e1·(δ, 0, δ)
+    assert!(
+        (u_normal - expected).abs() < 1e-9,
+        "inclined prescribed settlement: normal disp {} expected {} \
+         (raw-dx bug would give {})",
+        u_normal, expected, delta
+    );
+}

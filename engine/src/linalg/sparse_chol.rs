@@ -27,8 +27,6 @@ pub struct SymbolicCholesky {
 pub struct NumericCholesky {
     pub symbolic: Rc<SymbolicCholesky>,
     pub l_values: Vec<f64>,
-    pub pivot_perturbations: usize,   // how many pivots were perturbed
-    pub max_perturbation: f64,        // largest perturbation applied
 }
 
 /// Ordering strategy for symbolic Cholesky factorization.
@@ -137,18 +135,13 @@ pub fn symbolic_cholesky_with(a: &CscMatrix, ordering: CholOrdering) -> Symbolic
 
 /// Compute numeric Cholesky factorization given symbolic structure.
 /// Returns None if matrix is not SPD (strict mode — no perturbation).
+///
+/// There is deliberately no perturbed/regularized variant: a factorization
+/// that silently "succeeds" on an indefinite K_ff turns a genuine mechanism
+/// into a garbage solution. Callers that need drilling-DOF stabilization
+/// apply an explicit diagonal shift to K_ff and verify by iterative
+/// refinement against the original matrix (see `solver::linear`).
 pub fn numeric_cholesky(sym: &Rc<SymbolicCholesky>, a: &CscMatrix) -> Option<NumericCholesky> {
-    numeric_cholesky_inner(sym, a, false)
-}
-
-/// Compute numeric Cholesky factorization with pivot perturbation.
-/// Perturbs small/negative pivots (from shell drilling DOFs) instead of failing.
-/// Always returns Some — caller must verify solution quality via residual check.
-pub fn numeric_cholesky_perturbed(sym: &Rc<SymbolicCholesky>, a: &CscMatrix) -> NumericCholesky {
-    numeric_cholesky_inner(sym, a, true).unwrap()
-}
-
-fn numeric_cholesky_inner(sym: &Rc<SymbolicCholesky>, a: &CscMatrix, perturb: bool) -> Option<NumericCholesky> {
     let n = sym.n;
 
     // Apply permutation to get numeric values
@@ -159,29 +152,11 @@ fn numeric_cholesky_inner(sym: &Rc<SymbolicCholesky>, a: &CscMatrix, perturb: bo
     // Dense column accumulator
     let mut x = vec![0.0f64; n];
 
-    // Compute max diagonal of the ORIGINAL (permuted) matrix for stable thresholds.
-    let mut max_diag = 0.0f64;
-    for j in 0..n {
-        for k in pa.col_ptr[j]..pa.col_ptr[j + 1] {
-            if pa.row_idx[k] == j {
-                if pa.values[k] > max_diag {
-                    max_diag = pa.values[k];
-                }
-                break;
-            }
-        }
-    }
-
-    // Pivot perturbation tracking
-    let mut n_perturbations = 0usize;
-    let mut max_perturbation_val = 0.0f64;
-
-    // Strict mode threshold: use absolute threshold like dense Cholesky.
-    // Previous 1e-12 * max_diag was too aggressive for shell matrices where
-    // drilling DOF pivots are naturally 4+ orders smaller than membrane pivots.
+    // Strict threshold: use absolute threshold like dense Cholesky.
+    // A previous 1e-12 * max_diag relative threshold was too aggressive for
+    // shell matrices where drilling DOF pivots are naturally 4+ orders
+    // smaller than membrane pivots.
     let strict_threshold = 1e-15;
-    // Perturbed mode threshold
-    let soft_threshold = 1e-8 * max_diag;
 
     // Precompute nonzero-column lists: for each row j, which columns k < j have L[j,k] != 0.
     let mut nz_cols_for_row: Vec<Vec<(usize, usize)>> = vec![Vec::new(); n];
@@ -201,13 +176,9 @@ fn numeric_cholesky_inner(sym: &Rc<SymbolicCholesky>, a: &CscMatrix, perturb: bo
             x[sym.l_row_idx[k]] = 0.0;
         }
 
-        // Scatter A[:,j] into accumulator and record original diagonal
-        let mut original_diag = 0.0f64;
+        // Scatter A[:,j] into accumulator
         for k in pa.col_ptr[j]..pa.col_ptr[j + 1] {
             x[pa.row_idx[k]] = pa.values[k];
-            if pa.row_idx[k] == j {
-                original_diag = pa.values[k];
-            }
         }
 
         // Left-looking updates
@@ -225,29 +196,9 @@ fn numeric_cholesky_inner(sym: &Rc<SymbolicCholesky>, a: &CscMatrix, perturb: bo
 
         let diag = x[j];
 
-        if perturb {
-            // Perturbed mode: replace small/negative pivots with a fraction of the
-            // original diagonal. This preserves natural DOF scale and avoids cascading
-            // failures from inflated pivots. Caller must verify via residual check.
-            if diag <= soft_threshold {
-                // Use the full original diagonal: this acts as if the left-looking
-                // updates didn't reduce this pivot, preserving the natural DOF scale.
-                let target = if original_diag > soft_threshold {
-                    original_diag
-                } else {
-                    1e-6 * max_diag
-                };
-                let target = target.max(1e-12 * max_diag);
-                let perturbation = if diag.is_finite() { (target - diag).abs() } else { f64::MAX };
-                x[j] = target;
-                n_perturbations += 1;
-                max_perturbation_val = max_perturbation_val.max(perturbation);
-            }
-        } else {
-            // Strict mode: fail on non-SPD
-            if diag <= strict_threshold {
-                return None;
-            }
+        // Strict mode: fail on non-SPD
+        if diag <= strict_threshold {
+            return None;
         }
 
         let ljj = x[j].sqrt();
@@ -265,8 +216,6 @@ fn numeric_cholesky_inner(sym: &Rc<SymbolicCholesky>, a: &CscMatrix, perturb: bo
     Some(NumericCholesky {
         symbolic: Rc::clone(sym),
         l_values,
-        pivot_perturbations: n_perturbations,
-        max_perturbation: max_perturbation_val,
     })
 }
 

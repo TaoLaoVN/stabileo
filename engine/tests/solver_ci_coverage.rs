@@ -749,19 +749,11 @@ fn plate_10x10_sparse_fill_and_perturbations() {
         "Fill ratio {:.2} exceeds 15x threshold", fill_ratio
     );
 
-    // Numeric Cholesky: verify zero perturbations
+    // Numeric Cholesky: strict factorization must succeed unmodified (there is
+    // no perturbation path — failure returns None instead of a shifted factor)
     let num = numeric_cholesky(&sym, &asm.k_ff)
         .expect("Numeric Cholesky should succeed on 10x10 plate");
-
-    println!(
-        "Cholesky: perturbations={}, max_perturbation={:.2e}",
-        num.pivot_perturbations, num.max_perturbation
-    );
-    assert_eq!(
-        num.pivot_perturbations, 0,
-        "Expected zero Cholesky perturbations, got {}",
-        num.pivot_perturbations
-    );
+    assert!(num.l_values.iter().all(|v| v.is_finite()), "L contains non-finite values");
 
     // Equilibrium should be good
     if let Some(eq) = &result.equilibrium {
