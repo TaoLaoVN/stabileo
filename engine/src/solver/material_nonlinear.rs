@@ -119,6 +119,15 @@ pub fn solve_nonlinear_material_2d(
         // F_ext_free norm for convergence check.
         let f_ext_norm = vec_norm_l2(&f_ext_free);
 
+        // Apply this increment's prescribed displacements to the restrained
+        // DOFs BEFORE the first residual evaluation: f_int then includes the
+        // K_fr * u_r coupling, so the residual is the true out-of-balance and
+        // no separate RHS correction is needed (a pure-settlement increment
+        // with zero external load must still iterate).
+        for i in 0..nr {
+            u_full[nf + i] = load_factor * u_r[i];
+        }
+
         // Newton-Raphson inner loop.
         let mut converged_increment = false;
 
@@ -166,20 +175,15 @@ pub fn solve_nonlinear_material_2d(
             }
 
             // Solve K_T * delta_u = R for free DOFs.
+            // The prescribed-displacement coupling K_fr * u_r is already in
+            // the residual via f_int (u_full carries the restrained values),
+            // so the RHS is the residual itself.
             let k_ff = extract_submatrix(&k_t, n, &free_idx, &free_idx);
 
-            // Modify residual for prescribed displacement coupling: R_f -= K_fr * u_r
-            let k_fr = extract_submatrix(&k_t, n, &free_idx, &rest_idx);
-            let k_fr_ur = mat_vec_rect(&k_fr, &u_r, nf, nr);
-            let mut rhs = r_free.clone();
-            for i in 0..nf {
-                rhs[i] -= k_fr_ur[i];
-            }
-
             let (k_s, rhs_s) = if let Some(ref cs) = cs {
-                (cs.reduce_matrix(&k_ff), cs.reduce_vector(&rhs))
+                (cs.reduce_matrix(&k_ff), cs.reduce_vector(&r_free))
             } else {
-                (k_ff, rhs)
+                (k_ff, r_free)
             };
 
             let delta_u_indep = solve_system(k_s, rhs_s, ns)?;
@@ -189,12 +193,10 @@ pub fn solve_nonlinear_material_2d(
                 delta_u_indep
             };
 
-            // Update displacements.
+            // Update displacements (free DOFs; restrained stay at this
+            // increment's prescribed values set before the loop).
             for i in 0..nf {
                 u_full[i] += delta_u_f[i];
-            }
-            for i in 0..nr {
-                u_full[nf + i] = load_factor * u_r[i];
             }
 
             // Update element yield states from current internal forces.
@@ -903,6 +905,14 @@ pub fn solve_nonlinear_material_3d(
         let f_ext_free = extract_subvec(&f_ext, &free_idx);
         let f_ext_norm = vec_norm_l2(&f_ext_free);
 
+        // Apply this increment's prescribed displacements to the restrained
+        // DOFs BEFORE the first residual evaluation — see the 2D solver for
+        // why (f_int then carries the K_fr * u_r coupling and a
+        // pure-settlement increment still iterates).
+        for i in 0..nr {
+            u_full[nf + i] = load_factor * u_r[i];
+        }
+
         let mut converged_increment = false;
 
         for _nr_iter in 0..max_iter {
@@ -937,21 +947,17 @@ pub fn solve_nonlinear_material_3d(
                 break;
             }
 
+            // The prescribed-displacement coupling K_fr * u_r is already in
+            // the residual via f_int (u_full carries the restrained values),
+            // so the RHS is the residual itself.
             let k_ff = extract_submatrix(&k_t, n, &free_idx, &free_idx);
-            let k_fr = extract_submatrix(&k_t, n, &free_idx, &rest_idx);
-            let k_fr_ur = mat_vec_rect(&k_fr, &u_r, nf, nr);
-            let mut rhs = r_free.clone();
-            for i in 0..nf {
-                rhs[i] -= k_fr_ur[i];
-            }
 
-            let delta_u_f = solve_system(k_ff, rhs, nf)?;
+            let delta_u_f = solve_system(k_ff, r_free, nf)?;
 
+            // Update displacements (free DOFs; restrained stay at this
+            // increment's prescribed values set before the loop).
             for i in 0..nf {
                 u_full[i] += delta_u_f[i];
-            }
-            for i in 0..nr {
-                u_full[nf + i] = load_factor * u_r[i];
             }
 
             // See the 2D solver's identical comment: update_element_states_3d
