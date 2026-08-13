@@ -3,7 +3,7 @@
 **Fecha:** 2026-08-11
 **Rama de trabajo:** `feat/pro-steel-family`
 **Commit base:** `542fc6649f2d9a66c9f58fa79042233a051a97bd` (`origin/main`, merge del PR #133)
-**Worktree:** `/Users/bautistachesta/Claude/stabileo-branches/stabileo-steel`
+**Worktree:** `stabileo-branches/stabileo-steel`
 **Estado:** informe solamente. No se escribió código de producto.
 
 ---

@@ -3,7 +3,7 @@
 **Rama:** `feat/pro-steel-family` · **PR** [#135](https://github.com/lambdaclass/stabileo/pull/135)
 **Base:** `origin/main@542fc664`
 **Estado al 2026-08-12:** alcance cerrado. Motor, superficie metálica, generadores y su UI —
-completos y testados. Lo pendiente está en §6.
+completos y testados. Lo pendiente está en §7.
 
 ---
 
@@ -189,7 +189,20 @@ lo que ya pasa con casi todos los namespaces fuera de `design.*`).
 
 ---
 
-## 4. Orden recomendado
+## 4. `main` ya se movió — lo que eso implica
+
+Al 2026-08-13, `main` está 34 commits adelante de la base de esta rama (`542fc664` →
+`3500b149`), y **ni #125 ni #132 entraron todavía**.
+
+Un detalle que confunde si no se sabe: un `git diff origin/main` desde esta rama muestra
+`web/.pro-audit.mjs` como **agregado, +43 líneas**. No lo agregó nadie acá. El commit
+`f7607ecc` de `main` lo borró como código muerto, y esta rama —basada en el main anterior—
+todavía lo tiene. El rebase se queda con la eliminación de arriba, porque esta rama nunca
+tocó ese archivo. **Después del rebase, confirmar que el archivo sigue borrado.**
+
+---
+
+## 5. Orden recomendado
 
 1. **#132 primero.** Superficie chica, no toca el diseño, y desbloquea §2.1.
 2. **#125 después.** Es el grande.
@@ -235,7 +248,7 @@ lectura correcta es "1 error, preexistente, ajeno".
 
 ---
 
-## 5. Las tres redes de seguridad, y cómo leerlas si se rompen
+## 6. Las tres redes de seguridad, y cómo leerlas si se rompen
 
 `lib/engine/design/__tests__/rc-baseline-digest.test.ts` fija el diseño de hormigón
 **miembro por miembro** sobre el pórtico de 408 barras: outcome, constraints y utilización
@@ -268,7 +281,7 @@ que cubren.
 
 ---
 
-## 6. Lo que esta rama NO hace
+## 7. Lo que esta rama NO hace
 
 Ordenado según tu taxonomía.
 
@@ -311,7 +324,7 @@ Ordenado según tu taxonomía.
 - **Traducción de las 180 claves a los 12 idiomas restantes.** Hoy caen a inglés, que es lo
   que ya pasa con casi todos los namespaces fuera de `design.*`.
 - **Arriostramientos longitudinales** en la nave. Su ausencia es la razón por la que las bases
-  de columna reticulada van empotradas por defecto (§7). Generarlos permitiría volver a
+  de columna reticulada van empotradas por defecto (§8). Generarlos permitiría volver a
   articularlas, que es el modelo más honesto.
 - **Cargas.** Un modelo generado sale sin casos de carga a propósito, y por eso apretar
   Resolver informa "sin resultados". Un generador de cargas de cubierta y viento sobre la
@@ -320,7 +333,7 @@ Ordenado según tu taxonomía.
 
 ---
 
-## 7. Los dos mecanismos, y por qué el test de solvencia se queda
+## 8. Los dos mecanismos, y por qué el test de solvencia se queda
 
 `generators/__tests__/generated-models-solve.test.ts` corre cada geometría generada por el
 solver real con una carga aplicada. Encontró dos mecanismos en los propios generadores, y
@@ -350,7 +363,7 @@ detecta un mecanismo, y un mecanismo es el modo de falla propio de un generador 
 
 ---
 
-## 8. El visor 3D dibujaba un perfil I para todo lo generado
+## 9. El visor 3D dibujaba un perfil I para todo lo generado
 
 Medido, no deducido. Con una cercha de cordón cajón y montante espalda-con-espalda:
 
@@ -380,7 +393,7 @@ Dos arreglos:
 
 ---
 
-## 9. Un defecto encontrado que conviene no repetir
+## 10. Un defecto encontrado que conviene no repetir
 
 `steelStore` usaba un `$derived` a nivel de store. Un `$derived` así **sólo recomputa dentro
 de un contexto reactivo**: leído desde una función común devuelve lo que tenía cuando se
@@ -393,7 +406,7 @@ revisar si el mismo patrón aparece en otros stores.
 
 ---
 
-## 10. Y una que no era un defecto
+## 11. Y una que no era un defecto
 
 `buildSolverInput3D` compone `element.rollAngle + section.rotation`. Escribir los dos campos
 para expresar una sola rotación da el doble del giro pedido — y eso era un error **mío**, en
