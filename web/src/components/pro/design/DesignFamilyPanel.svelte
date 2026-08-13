@@ -18,6 +18,8 @@
    */
   import { t, tp } from '../../../lib/i18n';
   import { designRunStore } from '../../../lib/store/design-run.svelte';
+  import { verificationStore } from '../../../lib/store';
+  import { modelStore } from '../../../lib/store/model.svelte';
   import { detailingStore } from '../../../lib/store/detailing.svelte';
   import { rebarWorkspace } from '../../../lib/store/rebar-workspace.svelte';
   import {
@@ -70,6 +72,84 @@
   }
 
   const totals = $derived(report ? totalsOf(report) : null);
+
+  /**
+   * How many members of each family the MODEL holds, before anything is run.
+   *
+   * Read from the same places the run reads, never re-derived:
+   *
+   * - `column` / `beam` come from `verificationStore.contexts`, which is the exact map
+   *   `designFamilies` splits the frame pass on. Counting them any other way would let this
+   *   panel and the run disagree about what a beam is.
+   * - `footing` is a modelled entity with its own map.
+   * - `slab` / `wall` are `null` — deliberately. A shell becomes a slab or a wall when the floor
+   *   pass classifies it, and that classification is the engine's, not this panel's. The model
+   *   knows it holds N shell panels and nothing more; saying "0 slabs" before the pass would be a
+   *   fabricated zero, and guessing from geometry would be a second authority.
+   */
+  const census = $derived.by((): Record<DesignFamily, number | null> => {
+    let column = 0;
+    let beam = 0;
+    for (const [, ctx] of verificationStore.contexts) {
+      const t = (ctx as { elementType?: string }).elementType;
+      if (t === 'column') column += 1;
+      else if (t === 'beam') beam += 1;
+    }
+    const floors = detailingStore.lastFloorRun;
+    const perFamily = (f: string): number | null => {
+      if (!floors) return null;
+      return (floors.assemblies ?? [])
+        .flatMap((a: { families?: { family: string }[] }) => a.families ?? [])
+        .filter((r: { family: string }) => r.family === f).length;
+    };
+    return {
+      column, beam,
+      slab: perFamily('slab'),
+      wall: perFamily('wall'),
+      footing: modelStore.model.footings.size,
+    };
+  });
+
+  /** Shell panels in the model — the honest number behind an unknown slab/wall split. */
+  const shellCount = $derived(modelStore.model.quads.size);
+
+  /**
+   * Where a family stands, in the seven states a reviewer actually distinguishes.
+   *
+   * The engine reports four (`designed` / `skipped` / `noElements` / `failed`). The three this
+   * adds are not new authority: `notRun` is the absence of a report, `refused` and `provisional`
+   * are counts the same report already carries, promoted to the row because "designed" with
+   * eleven refusals in it is not the same answer as "designed".
+   */
+  function stateOf(f: DesignFamily): { id: string; glyph: string; label: string } {
+    const r = report?.families.find((x) => x.family === f);
+    if (!r) {
+      return selection.includes(f)
+        ? { id: 'notRun', glyph: '·', label: t('design.families.state.notRun') }
+        : { id: 'skipped', glyph: '○', label: t('design.families.state.skipped') };
+    }
+    if (r.state === 'failed') {
+      return { id: 'failed', glyph: '✕', label: t('design.families.state.failed') };
+    }
+    if (r.state === 'noElements') {
+      return { id: 'noElements', glyph: '—', label: t('design.families.state.noElements') };
+    }
+    if (r.state === 'skipped') {
+      return { id: 'skipped', glyph: '○', label: t('design.families.state.skipped') };
+    }
+    if (r.refused > 0) {
+      return {
+        id: 'refused', glyph: '⚠',
+        label: tp('design.families.state.refused', { n: r.refused }),
+      };
+    }
+    if (provisionalCount > 0) {
+      return { id: 'provisional', glyph: '◐', label: t('design.families.state.provisional') };
+    }
+    return { id: 'designed', glyph: '✓', label: t('design.families.state.designed') };
+  }
+
+  const provisionalCount = $derived(designRunStore.provisionalIds.size);
 </script>
 
 <section class="families" data-testid="design-families">
@@ -84,19 +164,53 @@
   -->
   <p class="subtitle" data-testid="design-families-subtitle">{t('design.families.subtitle')}</p>
 
-  <div class="boxes">
+  <!--
+    What each of the three commands covers, side by side.
+
+    Three buttons in this tab start a design, they have different scopes, and nothing said so:
+    `Design all` on the command row, `Design the ticked families` here, and
+    `Size and detail floors` in its own section. A user who has to discover the difference by
+    pressing them is running structural design to find out what a button does.
+  -->
+  <dl class="scopes" data-testid="design-families-scopes">
+    <div><dt>{t('design.families.scope.allTitle')}</dt><dd>{t('design.families.scope.all')}</dd></div>
+    <div><dt>{t('design.families.scope.pickedTitle')}</dt><dd>{t('design.families.scope.picked')}</dd></div>
+    <div><dt>{t('design.families.scope.floorsTitle')}</dt><dd>{t('design.families.scope.floors')}</dd></div>
+  </dl>
+
+  <!--
+    One row per family: the box, what the model holds, and where that family stands.
+
+    The boxes used to be five bare labels. Ticking `footing` on a building with no footings, or
+    leaving `slab` unticked, looked identical — and after a run the section below the text was
+    empty until someone pressed the button, which is what made this section read as unfinished.
+    The census and the state are here BEFORE anything runs.
+  -->
+  <ul class="boxes" data-testid="design-family-rows">
     {#each DESIGN_FAMILIES as f (f)}
-      <label>
-        <input
-          type="checkbox"
-          data-testid={`design-family-${f}`}
-          checked={selection.includes(f)}
-          onchange={() => toggle(f)}
-        />
-        <span>{t(`design.families.${f}`)}</span>
-      </label>
+      {@const c = census[f]}
+      {@const st = stateOf(f)}
+      <li class="frow" data-testid={`design-family-row-${f}`} data-state={st.id}>
+        <label>
+          <input
+            type="checkbox"
+            data-testid={`design-family-${f}`}
+            checked={selection.includes(f)}
+            onchange={() => toggle(f)}
+          />
+          <span class="fname">{t(`design.families.${f}`)}</span>
+        </label>
+        <!-- What the model holds. `null` means the count is not knowable until the pass runs. -->
+        <span class="census" data-testid={`design-family-census-${f}`}>
+          {c === null ? t('design.families.census.unknown') : tp('design.families.census.n', { n: c })}
+        </span>
+        <!-- Glyph AND word: the state never depends on the colour. -->
+        <span class="fstate" data-testid={`design-family-state-${f}`}>
+          <span aria-hidden="true">{st.glyph}</span> {st.label}
+        </span>
+      </li>
     {/each}
-  </div>
+  </ul>
 
   <div class="bulk">
     <button type="button" data-testid="design-family-all"
@@ -112,6 +226,16 @@
   <p class="summary" data-testid="design-family-summary">{summary}</p>
   <!-- Stated where the box is, so leaving foundations out is a visible choice. -->
   <p class="note">{t('design.families.footingNote')}</p>
+  <!-- What this command will NOT touch, whatever is ticked. -->
+  <p class="note" data-testid="design-families-untouched">{t('design.families.untouched')}</p>
+  {#if shellCount === 0 && census.column === 0 && census.beam === 0 && census.footing === 0}
+    <!-- Not a blank area under a paragraph: the reason there is nothing to tick, in words. -->
+    <p class="empty-state" data-testid="design-families-empty">{t('design.families.emptyModel')}</p>
+  {:else if census.slab === null || census.wall === null}
+    <p class="hint" data-testid="design-families-shells">
+      {tp('design.families.shellsPending', { n: shellCount })}
+    </p>
+  {/if}
 
   <button
     class="run"
@@ -181,7 +305,51 @@
   }
   .families { display: flex; flex-direction: column; gap: 0.4rem; }
   h4, h5 { margin: 0; font-size: 0.85rem; }
-  .boxes { display: flex; flex-wrap: wrap; gap: 0.1rem 0.75rem; }
+  /*
+    One row per family, not a wrapping strip of five labels.
+
+    The box, the census and the state are three columns, so the states line up under each other
+    and "which families are actually in this model" is answerable by reading down rather than by
+    parsing a paragraph.
+  */
+  .boxes { list-style: none; margin: 0.3rem 0; padding: 0; display: flex; flex-direction: column; gap: 0.1rem; }
+  .frow {
+    display: grid;
+    grid-template-columns: minmax(6rem, 1fr) auto auto;
+    align-items: baseline;
+    gap: 0.5rem;
+    padding: 0.1rem 0;
+    border-bottom: 1px solid var(--st-hair);
+    font-size: 0.72rem;
+  }
+  .frow label { display: inline-flex; align-items: baseline; gap: 0.35rem; cursor: pointer; min-width: 0; }
+  .frow input:focus-visible { outline: 2px solid var(--st-value); outline-offset: 1px; }
+  .fname { color: var(--st-text); }
+  .census { color: var(--st-text-3); font-size: 0.68rem; white-space: nowrap; }
+  .fstate { font-size: 0.68rem; font-weight: 600; color: var(--st-text-2); white-space: nowrap; }
+  /* Colour supports the glyph and the word; it never carries the state alone. */
+  .frow[data-state='designed'] .fstate { color: var(--st-ok); }
+  .frow[data-state='refused'] .fstate,
+  .frow[data-state='provisional'] .fstate { color: var(--st-warn); }
+  .frow[data-state='failed'] .fstate { color: var(--st-err); }
+  .frow[data-state='noElements'] .fstate,
+  .frow[data-state='skipped'] .fstate { color: var(--st-text-3); }
+
+  /* The three scopes, so the difference is read rather than discovered by pressing. */
+  .scopes { margin: 0.35rem 0; display: flex; flex-direction: column; gap: 0.2rem; }
+  .scopes div { display: grid; grid-template-columns: 1fr; gap: 0.05rem; }
+  .scopes dt { font-size: 0.68rem; font-weight: 600; color: var(--st-text); }
+  .scopes dd { margin: 0; font-size: 0.66rem; line-height: 1.35; color: var(--st-text-2); }
+
+  .empty-state {
+    margin: 0.4rem 0 0;
+    padding: 0.5rem 0.6rem;
+    border: 1px dashed var(--st-hair-strong);
+    border-radius: 4px;
+    font-size: 0.7rem;
+    color: var(--st-text-2);
+  }
+  .hint { margin: 0.3rem 0 0; font-size: 0.66rem; color: var(--st-text-3); line-height: 1.35; }
   label {
     display: flex; align-items: center; gap: 0.3rem;
     font-size: 0.78rem; cursor: pointer;

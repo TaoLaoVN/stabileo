@@ -90,6 +90,31 @@
     it BEFORE detailing, because the detailing coordinates whatever bars exist by then.
   -->
   <p class="stage-note" data-testid="floor-stage-note">{t('detailing.floorRun.whenToRun')}</p>
+
+  <!--
+    What the command does, what it leaves alone, and what to do with the result.
+
+    It was a lone primary button under one sentence. A user could tell that it ran something about
+    floors and nothing else: not that it designs AND details in one pass (so it does not need a
+    second detailing run for these families), not that it leaves columns and beams untouched, and
+    not that the coordinated detailing has to run after it. All three are facts the pipeline
+    depends on, and all three were only in the source.
+  -->
+  <dl class="contract" data-testid="floor-run-contract">
+    <div>
+      <dt>{t('detailing.floorRun.doesTitle')}</dt>
+      <dd data-testid="floor-run-does">{t('detailing.floorRun.does')}</dd>
+    </div>
+    <div>
+      <dt>{t('detailing.floorRun.notTitle')}</dt>
+      <dd data-testid="floor-run-not">{t('detailing.floorRun.not')}</dd>
+    </div>
+    <div>
+      <dt>{t('detailing.floorRun.nextTitle')}</dt>
+      <dd data-testid="floor-run-next">{t('detailing.floorRun.next')}</dd>
+    </div>
+  </dl>
+
   <header class="commands">
     <!--
       One command, because design and detailing for these families are one production pass:
@@ -104,6 +129,18 @@
         ? t('detailing.floorRun.running')
         : t('detailing.floorRun.designAndDetail')}
     </button>
+    <!--
+      The run is synchronous and has no cancel.
+
+      There is no `cancelFloors` on the store and no progress channel to read, so this says the
+      pass is running and that it cannot be interrupted, rather than showing a fake bar or a
+      Cancel button that would do nothing. When the store grows a cancel, this is where it goes.
+    -->
+    {#if detailingStore.generating}
+      <span class="running-note" role="status" data-testid="floor-run-running">
+        {t('detailing.floorRun.runningNote')}
+      </span>
+    {/if}
     <span class="code" data-testid="floor-design-code">
       {#if concreteCode}
         {tp('detailing.floorRun.underCode', { code: concreteCode })}
@@ -387,4 +424,10 @@
   .assumptions li { background: var(--st-surface-3); color: var(--st-text); padding: 0.15rem 0.4rem; border-radius: 3px; }
   .err { color: var(--st-text); }
   summary { cursor: pointer; font-size: 0.78rem; }
+
+  /* The contract: what it does, what it leaves alone, what comes next. */
+  .contract { margin: 0.35rem 0; display: flex; flex-direction: column; gap: 0.25rem; }
+  .contract dt { font-size: 0.68rem; font-weight: 600; color: var(--st-text); }
+  .contract dd { margin: 0; font-size: 0.66rem; line-height: 1.35; color: var(--st-text-2); }
+  .running-note { font-size: 0.68rem; color: var(--st-text-2); }
 </style>
