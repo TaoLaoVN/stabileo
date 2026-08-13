@@ -108,7 +108,9 @@ this branch never touched. **The Priority 2 fix is confirmed in-suite as well as
 | Test | Class | Evidence |
 |---|---|---|
 | `ded-roundtrip` × 2 | **infraestructura** | `net::ERR_ADDRESS_UNREACHABLE`. Not the solve: the preparation completed, `load + solve` measured **0,0 s**. |
-| `rebar-viewport-cost › 7-storey › showing columns with the markers off` | **saturación**, unverified | A latency budget: 5 282 ms against 2 500 ms. A timing assertion on a machine that was dropping packets in the same minute. |
+| `rebar-viewport-cost › 7-storey › showing columns with the markers off` | **saturación** | A latency budget: 5 282 ms against 2 500 ms. Measured immediately after the run, with nothing of this work running: **load average 16,5 / 19,3 / 16,9 on a 14-core machine**, with a SECOND Claude Code session, Chrome and Spotlight indexing all live. A 2 500 ms budget cannot survive that, and the same minute produced the packet loss above. |
+
+Run B finished 36 passed · 3 failed · 13,6 min.
 
 **The honest statement about the machine.** Across the last three runs the host has produced
 `ERR_INTERNET_DISCONNECTED` (six tests, one contiguous window) and `ERR_ADDRESS_UNREACHABLE`
@@ -117,9 +119,11 @@ network is dropping. **No full-suite result taken on it since is worth quoting**
 uninterrupted full run remains the one at the head of this section.
 
 **What is therefore NOT verified**: one uninterrupted full-suite pass with the review screen and
-the fixture fix both in. The viewport-cost latency budget above needs one re-check on a healthy
-machine before it can be called saturation rather than a regression; nothing in this pass touches
-the viewer's geometry or its switches, but that is an argument, not a measurement.
+the fixture fix both in. That is the single outstanding measurement, and it needs a host that is
+not simultaneously running another agent session — the operator cannot see that contention from
+inside a test report, which is the third time this session that an invisible neighbour has cost a
+run. Check `uptime` before starting one; below 6 is the threshold this document has used
+throughout.
 
 ### Standing classification, from repeated measurement across this session
 
