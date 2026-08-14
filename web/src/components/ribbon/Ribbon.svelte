@@ -1,6 +1,7 @@
 <script lang="ts">
   import { t } from '../../lib/i18n';
   import { showDiagram, armTool } from '../../lib/store/view-mode';
+  import { commandShowsQuantity } from '../../lib/store/result-view';
   import { TWO_D_INTERNAL_FORCE_LABELS as F2D } from '../../lib/geometry/coordinate-system';
   import { uiStore } from '../../lib/store/ui.svelte';
   import { historyStore } from '../../lib/store/history.svelte';
@@ -379,13 +380,16 @@
        */
       if (cmd.diagram === 'none') return solved && activePanel === 'results' && shown === 'none';
       /*
-       * Axial stays lit whichever way it is being drawn. `axialColor` is the
-       * same quantity as `axial` presented differently — the choice lives in
-       * the panel — so treating it as a different diagram would leave N dark
-       * while the members are coloured by exactly N.
+       * A command names a QUANTITY, so it stays lit however that quantity is
+       * being drawn — diagram, member colour or colour map. The choice of
+       * representation lives in the panel beside the scale.
+       *
+       * Treating them as different diagrams left the ribbon dark the moment a
+       * user switched to a colour map, as if nothing were on screen, while the
+       * members were painted by exactly the quantity whose command had gone
+       * out.
        */
-      if (cmd.diagram === 'axial') return solved && (shown === 'axial' || shown === 'axialColor');
-      return solved && shown === cmd.diagram;
+      return solved && commandShowsQuantity(cmd.diagram);
     }
     // Solve OPENS Results but is not a state — it is an action you run, and a
     // lit Solve while the panel happens to be open would read as "solving".

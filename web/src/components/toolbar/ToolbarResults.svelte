@@ -1,5 +1,6 @@
 <script lang="ts">
   import { uiStore, resultsStore, modelStore } from '../../lib/store';
+  import { activeQuantity, activeRepresentation, representationsFor, showQuantityAs } from '../../lib/store/result-view';
   import { showDiagram } from '../../lib/store/view-mode';
   import ResultsTable from '../tables/ResultsTable.svelte';
   import { t } from '../../lib/i18n';
@@ -190,13 +191,21 @@
           </div>
         {/if}
       {/if}
-      {#if resultsStore.diagramType === 'colorMap'}
+      <!--
+        The DERIVED measures only.
+        
+        This used to list the internal forces too, which is now where the
+        contradiction would be: the quantity is chosen in the ribbon and its
+        representation right below, so a second control offering "moment" while
+        the ribbon says Vz would be two answers to one question. Resistance and
+        Von Mises are not internal forces — they are computed FROM all of them,
+        carry their own scale, and belong to no single ribbon command, so this
+        is the only place they can be picked.
+      -->
+      {#if resultsStore.diagramType === 'colorMap' && activeQuantity() === null}
         <div class="input-group">
           <label>{t('results.variable')}:</label>
           <select bind:value={resultsStore.colorMapKind}>
-            <option value="moment">{t('results.moment')}</option>
-            <option value="shear">{t('results.shear')}</option>
-            <option value="axial">{t('results.axial')}</option>
             <option value="stressRatio">{t('results.resistance')}</option>
             <option value="vonMises">Von Mises (σ)</option>
             {#if uiStore.analysisMode === '3d'}
@@ -219,22 +228,34 @@
           beside the scale rather than up in the ribbon. Only axial has it, so
           it only appears for axial.
         -->
-        {#if resultsStore.diagramType === 'axial' || resultsStore.diagramType === 'axialColor'}
+        <!--
+          Every quantity, not only axial.
+          
+          This offered Diagram / Member colour for axial alone, because member
+          colour existed for axial alone. A colour map is available for all of
+          them — it is a magnitude painted along the member — so the control is
+          now per-quantity and lists whatever that quantity supports. Member
+          colour stays axial-only on purpose: it is red/blue by SIGN, and a
+          moment's sign is a convention about which fibre is in tension, not
+          something a reader should decode from a colour.
+        -->
+        {@const shownQuantity = activeQuantity()}
+        {#if shownQuantity}
+          {@const how = activeRepresentation()}
           <div class="input-group">
-            <label>{t('results.axialShownAs')}:</label>
-            <div class="seg" role="group" aria-label={t('results.axialShownAs')}>
-              <button
-                class="seg-btn"
-                class:on={resultsStore.diagramType === 'axial'}
-                onclick={() => showDiagram('axial')}
-                data-testid="axial-as-diagram"
-              >{t('results.asDiagram')}</button>
-              <button
-                class="seg-btn"
-                class:on={resultsStore.diagramType === 'axialColor'}
-                onclick={() => showDiagram('axialColor')}
-                data-testid="axial-as-colour"
-              >{t('results.asMemberColour')}</button>
+            <label>{t('results.shownAs')}:</label>
+            <div class="seg" role="group" aria-label={t('results.shownAs')}>
+              {#each representationsFor(shownQuantity) as rep}
+                <button
+                  class="seg-btn"
+                  class:on={how === rep}
+                  onclick={() => showQuantityAs(shownQuantity, rep)}
+                  data-testid={rep === 'diagram' ? 'shown-as-diagram'
+                    : rep === 'memberColour' ? 'shown-as-colour' : 'shown-as-map'}
+                >{rep === 'diagram' ? t('results.asDiagram')
+                  : rep === 'memberColour' ? t('results.asMemberColour')
+                  : t('results.asColourMap')}</button>
+              {/each}
             </div>
           </div>
         {/if}

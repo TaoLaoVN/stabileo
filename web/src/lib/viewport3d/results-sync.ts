@@ -658,22 +658,34 @@ function applyFrameHeatmap(
   const elemSamples = new Map<number, number[]>();
   let globalMax = 0;
 
-  for (const [id] of ctx.elementGroups) {
+  /*
+   * Sampled for every element on screen, not only the ones with a group.
+   *
+   * In wireframe almost none has a group, so this pass collected nothing and
+   * `globalMax` stayed zero: the heat map painted a uniform nothing, which is
+   * the same partial-registry trap the flat colour maps fell into. The comment
+   * below about mirroring onto the batched mesh was true and useless — it
+   * mirrored an empty sample set.
+   */
+  forEachElementVisual(ctx, (id) => {
     const ef = forcesMap.get(id);
-    if (!ef) continue;
+    if (!ef) return;
     const sec = getSectionProps(id);
-    if (!sec) continue;
+    if (!sec) return;
     const values = sampleElementValues(ef, variable, sec);
     elemSamples.set(id, values);
     for (const v of values) {
       if (v > globalMax) globalMax = v;
     }
-  }
+  });
 
   // For stressRatio, fix scale at 1.0 (100% of fy)
   if (variable === 'stressRatio') globalMax = Math.max(globalMax, 1.0);
 
   // Pass 2: create heatmap meshes (or restore visibility for skipped elements)
+  // The textured cylinder is the solid-mode representation, so it is built
+  // only where there is a group to hang it on. Wireframe gets its colour from
+  // the batched mesh below.
   for (const [id, group] of ctx.elementGroups) {
     const values = elemSamples.get(id);
     if (!values) {
@@ -711,17 +723,17 @@ function applyFrameHeatmap(
   // shows the SELECTED variable's gradient (one representative color per element)
   // instead of always axial force. Uses the same heatmapColor/globalMax mapping
   // as the textured cylinders above.
-  for (const [id] of ctx.elementGroups) {
+  forEachElementVisual(ctx, (id) => {
     const values = elemSamples.get(id);
     if (!values || values.length === 0) {
       ctx.elementsBatched.setBaseColor(id, 0x555555);
-      continue;
+      return;
     }
     let peak = 0;
     for (const v of values) if (v > peak) peak = v;
     const norm = globalMax > 0 ? Math.min(peak / globalMax, 1) : 0;
     ctx.elementsBatched.setBaseColor(id, heatmapColor(norm));
-  }
+  });
   ctx.elementsBatched.flush();
 }
 

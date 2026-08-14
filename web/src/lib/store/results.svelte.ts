@@ -75,7 +75,7 @@ function createResultsStore() {
   let deformedScale = $state<number>(1); // Scale factor for deformed shape (applied directly to displacements)
   let diagramScale = $state<number>(1); // Multiplier for M/V/N diagram size (1 = default 60px height)
   let animateDeformed = $state<boolean>(false);
-  let colorMapKind = $state<'moment' | 'shear' | 'axial' | 'stressRatio' | 'vonMises' | 'shellVonMises' | 'shellBending'>('moment');
+  let colorMapKind = $state<'moment' | 'shear' | 'axial' | 'momentY' | 'momentZ' | 'shearY' | 'shearZ' | 'torsion' | 'stressRatio' | 'vonMises' | 'shellVonMises' | 'shellBending'>('moment');
   // Which shell quantity the shell contour paints (selectable in PRO results).
   let shellContourComponent = $state<import('../engine/shell-stress').ShellContourComponent>('vonMises');
   let showDiagramValues = $state<boolean>(true);
@@ -219,7 +219,7 @@ function createResultsStore() {
     get animateDeformed() { return animateDeformed; },
     set animateDeformed(v: boolean) { animateDeformed = v; },
     get colorMapKind() { return colorMapKind; },
-    set colorMapKind(v: 'moment' | 'shear' | 'axial' | 'stressRatio' | 'vonMises' | 'shellVonMises' | 'shellBending') { colorMapKind = v; },
+    set colorMapKind(v: 'moment' | 'shear' | 'axial' | 'momentY' | 'momentZ' | 'shearY' | 'shearZ' | 'torsion' | 'stressRatio' | 'vonMises' | 'shellVonMises' | 'shellBending') { colorMapKind = v; },
     get shellContourComponent() { return shellContourComponent; },
     set shellContourComponent(v: import('../engine/shell-stress').ShellContourComponent) { shellContourComponent = v; },
     get showDiagramValues() { return showDiagramValues; },

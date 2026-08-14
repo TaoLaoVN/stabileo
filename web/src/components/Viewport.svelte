@@ -475,10 +475,21 @@
         if (kind === 'stressRatio') globalMax = 1.0; // fixed scale: 0% → 100%+ of fy
       } else {
         for (const ef of resultsStore.results.elementForces) {
+          /*
+           * A 2D frame has one bending axis and one shear, so the 3D names for
+           * them land on the same two quantities. Accepting both spellings
+           * matters because the quantity is chosen in a control shared with 3D:
+           * without this, switching a 2D moment diagram to a colour map fell
+           * through to the axial branch and painted N.
+           */
           let val: number;
-          if (kind === 'moment') val = Math.max(Math.abs(ef.mStart), Math.abs(ef.mEnd));
-          else if (kind === 'shear') val = Math.max(Math.abs(ef.vStart), Math.abs(ef.vEnd));
-          else val = Math.max(Math.abs(ef.nStart), Math.abs(ef.nEnd));
+          if (kind === 'moment' || kind === 'momentY' || kind === 'momentZ') {
+            val = Math.max(Math.abs(ef.mStart), Math.abs(ef.mEnd));
+          } else if (kind === 'shear' || kind === 'shearY' || kind === 'shearZ') {
+            val = Math.max(Math.abs(ef.vStart), Math.abs(ef.vEnd));
+          } else {
+            val = Math.max(Math.abs(ef.nStart), Math.abs(ef.nEnd));
+          }
           elemMaxes.set(ef.elementId, val);
           if (val > globalMax) globalMax = val;
         }

@@ -395,6 +395,8 @@ const es: Record<string, string> = {
   'results.shear': 'Corte',
   'results.axial': 'Axil',
   'results.axialShownAs': 'Axil mostrado como',
+  'results.asColourMap': 'Mapa de colores',
+  'results.shownAs': 'Mostrado como',
   'results.asDiagram': 'Diagrama',
   'results.asMemberColour': 'Color de barras',
   'results.axialColors': 'Axil colores',

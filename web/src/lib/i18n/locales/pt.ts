@@ -150,6 +150,8 @@ const pt: Translations = {
   'materials.aggregateShort': "d_agg (mm)",
   'project.openDxfCadTooltip': "Importar uma planta DXF de arquitetura e gerar um rascunho de concreto armado (assistente)",
   'regulations.title': "Normas do projeto",
+  'results.asColourMap': 'Mapa de cores',
+  'results.shownAs': 'Mostrado como',
   'results.asDiagram': "Diagrama",
   'results.asMemberColour': "Cor das barras",
   'results.axialShownAs': "Normal mostrada como",

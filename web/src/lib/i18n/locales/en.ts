@@ -402,6 +402,8 @@ const en: Record<string, string> = {
   'results.shear': 'Shear',
   'results.axial': 'Axial',
   'results.axialShownAs': 'Axial shown as',
+  'results.asColourMap': 'Colour map',
+  'results.shownAs': 'Shown as',
   'results.asDiagram': 'Diagram',
   'results.asMemberColour': 'Member colour',
   'results.axialColors': 'Axial colors',
