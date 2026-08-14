@@ -395,14 +395,19 @@ fn assemble_frame_corotational(
 
     // Natural stiffness K_nat (3x3) = P^T * K_local * P
     // where P maps natural to full local: d_local = P * d_natural
-    // P = [[1,0,0],[0,0,0],[0,1,0],[-1,0,0],[0,0,0],[0,0,1]]
+    // Natural deformations are the total elongation d_axial = l_n - l0 and the
+    // corotated end rotations theta_i, theta_j. In the corotated local frame
+    // node i is at the origin and node j carries the full elongation, so
+    // d_local = [0, 0, theta_i, d_axial, 0, theta_j]. (Mapping d_axial as
+    // [+d_axial at i, -d_axial at j] instead would make the local elongation
+    // u_j - u_i = -2*d_axial and quadruple the effective axial stiffness.)
     let k_local = frame_local_stiffness_2d(e, a, iz, l0, elem.hinge_start, elem.hinge_end, 0.0);
 
     let p_mat: [[f64; 3]; 6] = [
-        [1.0, 0.0, 0.0],
+        [0.0, 0.0, 0.0],
         [0.0, 0.0, 0.0],
         [0.0, 1.0, 0.0],
-        [-1.0, 0.0, 0.0],
+        [1.0, 0.0, 0.0],
         [0.0, 0.0, 0.0],
         [0.0, 0.0, 1.0],
     ];
@@ -2016,5 +2021,62 @@ mod tests {
         let corot = solve_corotational_2d(&input, 100, 1e-6, 5, false).unwrap();
         assert!(corot.converged, "Two-element frame should converge");
         assert_eq!(corot.results.element_forces.len(), 2);
+    }
+
+    #[test]
+    fn test_corotational_frame_axial_stiffness() {
+        // A frame element under pure axial load must reproduce the truss
+        // result: N = P and ux = P*L/(E*A). The natural-deformation map
+        // d_local = P * d_natural must place the full elongation at node j
+        // (u_j = d_axial, u_i = 0) — splitting it as [+d_axial, -d_axial]
+        // would quadruple the effective axial stiffness (K_nat = 4EA/L).
+        let mut nodes = HashMap::new();
+        nodes.insert("1".into(), SolverNode { id: 1, x: 0.0, z: 0.0 });
+        nodes.insert("2".into(), SolverNode { id: 2, x: 5.0, z: 0.0 });
+
+        let mut materials = HashMap::new();
+        materials.insert("1".into(), SolverMaterial { id: 1, e: 200.0, nu: 0.3 });
+
+        let mut sections = HashMap::new();
+        sections.insert("1".into(), SolverSection { id: 1, a: 0.01, iz: 1e-4, as_y: None });
+
+        let mut elements = HashMap::new();
+        elements.insert("1".into(), SolverElement {
+            id: 1, elem_type: "frame".into(),
+            node_i: 1, node_j: 2, material_id: 1, section_id: 1,
+            hinge_start: false, hinge_end: false,
+        });
+
+        let mut supports = HashMap::new();
+        supports.insert("1".into(), SolverSupport {
+            id: 1, node_id: 1, support_type: "fixed".into(),
+            kx: None, ky: None, kz: None,
+            dx: None, dz: None, dry: None, angle: None,
+        });
+
+        let loads = vec![
+            SolverLoad::Nodal(SolverNodalLoad {
+                node_id: 2, fx: 100.0, fz: 0.0, my: 0.0,
+            }),
+        ];
+
+        let input = SolverInput { nodes, materials, sections, elements, supports, loads, constraints: vec![] , connectors: HashMap::new() };
+        let corot = solve_corotational_2d(&input, 50, 1e-8, 1, false).unwrap();
+        assert!(corot.converged);
+
+        // E_eff = 200_000 kN/m^2, A = 0.01 m^2, L = 5 m → ux = PL/(EA) = 0.25 m
+        let d2 = corot.results.displacements.iter().find(|d| d.node_id == 2).unwrap();
+        assert!(
+            (d2.ux - 0.25).abs() < 0.005,
+            "Axial displacement should be PL/(EA) = 0.25 m, got {}",
+            d2.ux
+        );
+
+        let ef = &corot.results.element_forces[0];
+        assert!(
+            (ef.n_start - 100.0).abs() < 0.1,
+            "Axial force should be ~100 kN, got {}",
+            ef.n_start
+        );
     }
 }

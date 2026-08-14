@@ -111,9 +111,77 @@ export function designMember(
   // ── 1. Capability gate ──
   const unsupported = adapter.unsupported(ctx);
   if (unsupported.length > 0) {
+    /**
+     * A beam refused ONLY for biaxial bending gets a proposal instead of nothing.
+     *
+     * ── What the refusal was, and why it stays ─────────────────────
+     *
+     * On `Edificio H.A. 7 pisos — PRO` this gate refuses 117 of 119 beams. Every refusal is
+     * correct: `resolveDesignAxes` measures a secondary moment above the 10 % threshold, and
+     * no verifier in this app evaluates a beam's secondary axis. Certifying would pass a
+     * member whose significant secondary bending nobody checked, and that has not changed.
+     *
+     * What HAD to change is the consequence. A refusal designed nothing at all, so those 117
+     * beams had no reinforcement in the model, no bars in the document, no steel in the 3-D
+     * view and no rows on any schedule — bare orange concrete, with the explanation available
+     * only to a reviewer who clicked into a status panel. The engineer could not see what
+     * their building would need, could not size anything from it, and had nothing to design
+     * the secondary axis ON TOP of by hand.
+     *
+     * ── What the proposal is ───────────────────────────────────────
+     *
+     * The ordinary bounded search, run against the PRIMARY axis, with nothing else altered:
+     * the threshold is untouched, the verifier is untouched, every check that does run runs
+     * in full, and no capacity is invented for the axis nobody checks. The context handed to
+     * it is this one with `axes.biaxial` cleared — which is exactly the statement "design
+     * this as the uniaxial beam it is about its primary axis", made once, in one place, so
+     * that it cannot be mistaken for a lowered threshold.
+     *
+     * The result is returned as PROVISIONAL_BIAXIAL: geometry in the `provisional` field,
+     * which the invariants already forbid from carrying a certificate, plus a
+     * `ProvisionalBasis` naming the unchecked axis, its size in kN·m, the combination that
+     * governs it and the method used. It cannot be counted as a pass, and it cannot satisfy
+     * the constructibility gate, which counts certificates.
+     *
+     * ── Why not real biaxial design ────────────────────────────────
+     *
+     * Audited before this was written; the answer is `docs/audits/biaxial-beam-design.md`.
+     * Briefly: a beam's reinforcement model has no side-face bars, in the schema, the
+     * generator, the geometry, the drawings or the schedule — so a weak-axis check that
+     * FAILED would leave the search no knob to turn. Bresler is formulated in 1/Pn and is
+     * unusable at N≈0. Two-way shear on a beam is not implemented. And in this very
+     * population the median torsion (1,33 kN·m) exceeds the median secondary moment
+     * (1,00 kN·m) while torsion is not verified at all, so certifying these members would
+     * move the false pass rather than remove it.
+     */
+    if (unsupported.length === 1 && unsupported[0] === 'biaxial' && ctx.elementType !== 'column') {
+      const proposal = proposeOnPrimaryAxis(adapter, ctx, opts, base, clock, t0);
+      if (proposal) return finish(proposal);
+    }
+    /**
+     * Name the biaxial refusal specifically, because it is actionable and the generic one
+     * is not.
+     *
+     * "Member 19 is not supported by CIRSOC 201-2025" is true and leads nowhere. The
+     * secondary-axis refusal has a cause the engineer can see in their own model — a beam
+     * carrying real bending about both axes — and a remedy that is theirs to choose: brace
+     * it, re-orient it, or design that axis by hand. Telling them the ratio is what makes
+     * the difference between a dead end and a decision.
+     */
+    const biaxial = unsupported.includes('biaxial');
     return finish({
       ...base, outcome: 'UNSUPPORTED', limiting: unsupported,
-      reasons: [{ key: 'design.reason.memberUnsupported', params: { elementId: ctx.elementId, code: adapter.name } }],
+      reasons: [biaxial
+        ? {
+          key: 'design.reason.secondaryAxisUnchecked',
+          params: {
+            elementId: ctx.elementId,
+            percent: Math.round((ctx.axes?.secondaryRatio ?? 0) * 100),
+            secondary: ctx.axes?.secondaryFlexure ?? '',
+            primary: ctx.axes?.flexure ?? '',
+          },
+        }
+        : { key: 'design.reason.memberUnsupported', params: { elementId: ctx.elementId, code: adapter.name } }],
       searchStats: stats(0, 0, false, false),
     });
   }
@@ -255,6 +323,107 @@ export function designMember(
     // guard treats that combination as a contract violation.
     searchStats: stats(tried, verifierCalls, truncated, false),
   });
+}
+
+/**
+ * Design the primary axis of a beam the biaxial gate refused, and return it as a PROPOSAL.
+ *
+ * Returns null when the primary axis cannot be designed either. A member that has nothing to
+ * propose is a refusal, and it is reported as one — inventing a proposal out of a failed
+ * search would be the dishonesty this whole state exists to avoid.
+ *
+ * The recursion terminates: the context handed down has `axes.biaxial === false`, so
+ * `adapter.unsupported` cannot return `['biaxial']` for it and this branch is not re-entered.
+ */
+function proposeOnPrimaryAxis(
+  adapter: DesignCodeAdapter,
+  ctx: MemberContext,
+  opts: { budget?: SearchBudget; clock?: Clock },
+  base: Pick<MemberDesignOutcome, 'elementId' | 'elementType' | 'codeId' | 'codeVersion' | 'axes'>,
+  clock: Clock,
+  t0: number,
+): MemberDesignOutcome | null {
+  const primaryCtx: MemberContext = { ...ctx, axes: { ...ctx.axes, biaxial: false } };
+  const inner = designMember(adapter, primaryCtx, opts);
+  if (inner.outcome !== 'VERIFIED' || !inner.accepted || !inner.certificate) return null;
+
+  const axes = ctx.axes;
+  const secondaryPeak = peakFor(ctx, axes.secondaryFlexure);
+
+  /**
+   * The verdict recorded is the REAL one, re-read from the verifier against the member as it
+   * actually is — biaxial flag and all — not the primary-axis run's certificate wearing a
+   * different type. So `provisional.verdict.checks` holds the biaxial refusal alongside the
+   * primary-axis checks that passed, and a panel rendering it shows both without this
+   * function having to summarise either.
+   */
+  const verdict = adapter.verify(ctx, inner.accepted);
+  return {
+    ...base,
+    outcome: 'PROVISIONAL_BIAXIAL',
+    // The geometry, in the field that by contract cannot be certified.
+    provisional: {
+      candidate: inner.accepted,
+      verdict,
+      worstUtilization: verdict.worstUtilization,
+      failingCheckCount: verdict.checks.filter((c) => c.status === 'fail').length,
+      governing: 'biaxial',
+      cost: { layers: 0, distinctDiameters: 0, nonStandardSteps: 0, steelMassKg: 0,
+        congestion: 0, arrangementCount: 0, spacingPracticality: 0, weighted: 0 },
+    },
+    provisionalBasis: {
+      method: 'primaryAxisDesign',
+      designedAxis: axes.flexure,
+      designedShear: axes.shear,
+      uncheckedAxis: axes.secondaryFlexure,
+      uncheckedShear: axes.secondaryShear,
+      secondaryRatio: axes.secondaryRatio,
+      primaryMoment: +peakFor(ctx, axes.flexure).value.toFixed(2),
+      secondaryMoment: +secondaryPeak.value.toFixed(2),
+      secondaryCombo: secondaryPeak.combo,
+      primaryUtilization: inner.certificate.worstUtilization,
+      checkedAxes: [...inner.certificate.checkedAxes],
+    },
+    limiting: ['biaxial'],
+    reasons: [
+      {
+        key: 'design.reason.provisionalBiaxial',
+        params: {
+          elementId: ctx.elementId,
+          designed: axes.flexure,
+          unchecked: axes.secondaryFlexure,
+          uncheckedShear: axes.secondaryShear,
+          secondary: +secondaryPeak.value.toFixed(2),
+          primary: +peakFor(ctx, axes.flexure).value.toFixed(2),
+          percent: Math.round(axes.secondaryRatio * 100),
+        },
+      },
+      {
+        key: 'design.reason.secondaryAxisUnchecked',
+        params: {
+          elementId: ctx.elementId,
+          percent: Math.round(axes.secondaryRatio * 100),
+          secondary: axes.secondaryFlexure,
+          primary: axes.flexure,
+        },
+      },
+    ],
+    searchStats: {
+      ...inner.searchStats,
+      ms: +(clock() - t0).toFixed(3),
+    },
+  };
+}
+
+/** Peak |M| about one axis, with the combination that governs it. */
+function peakFor(ctx: MemberContext, axis: 'My' | 'Mz'): { value: number; combo: string | null } {
+  const demands = ctx.demands?.demands ?? [];
+  let best: { value: number; combo: string | null } = { value: 0, combo: null };
+  for (const d of demands) {
+    if (d.category !== `${axis}+` && d.category !== `${axis}-`) continue;
+    if (d.absValue > best.value) best = { value: d.absValue, combo: d.comboName };
+  }
+  return best;
 }
 
 export interface RunProgress {

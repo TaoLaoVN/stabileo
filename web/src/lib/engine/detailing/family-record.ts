@@ -48,6 +48,8 @@ import type { BarPath } from '../../codes/cirsoc201/bar-geometry';
 import { stableHash } from '../design/canonical-hash';
 import type { CheckStatus } from './foundation-check';
 import type { FootingMatDesign } from './footing-flexure';
+import type { FootingMatGeometry } from './footing-mat-geometry';
+import type { FootingMatAnchorage } from './footing-mat-anchorage';
 import type { ColumnPosition } from './punching-shear';
 
 export const FAMILY_RECORD_SCHEMA_VERSION = 1;
@@ -312,12 +314,18 @@ export interface FootingDesignRecord extends FamilyRecordCommon {
   /**
    * Factored moment at the column face (§13.2.7.1), and the bottom-mat design it drives.
    *
-   * `status` stays UNSUPPORTED through PR18-A even though `bottomMat` is now a complete
-   * numerical design, and that is not a leftover. A footing whose mat exists only as numbers
-   * has no bars in the model, the schedule or the export, so there is nothing to verify the
-   * demand against and OK would be a capacity claim nobody computed. `bottomMat.geometry`
-   * says REQUIRED_NOT_MODELED, and the two fields together are the honest statement:
-   * designed, not yet modelled, therefore not verified.
+   * ── What `status` means now, and what it meant before ────────
+   *
+   * Through PR18-A it was UNSUPPORTED unconditionally, even beside a complete numerical
+   * design, and that was correct: a mat that existed only as numbers had no bars in the model,
+   * the schedule or the export, so there was nothing to verify the demand against and OK
+   * would have been a capacity claim nobody computed.
+   *
+   * `bottomMatGeometry` is what changed. When it reports MODELED the bars exist, they
+   * reconcile with the schedule, and the flexural demand HAS reinforcement to be verified
+   * against — so OK becomes a statement that can be true. It still says nothing about
+   * anchorage, punching moment transfer or top steel; each of those is its own status, and
+   * they are separate precisely so that this one becoming OK cannot carry the others with it.
    */
   flexure: {
     status: CheckStatus;
@@ -327,6 +335,22 @@ export interface FootingDesignRecord extends FamilyRecordCommon {
     /** Null when the mat could not be designed at all; its own statuses say why. */
     bottomMat: FootingMatDesign | null;
   } | null;
+  /**
+   * The PHYSICAL bottom mat: bars, provenance, schedule and reconciliation findings.
+   *
+   * Null when the footing never got as far as a mat design. Present-but-NOT_MODELED when the
+   * design exists and geometry could not be produced from it, which is a different statement
+   * and has a different remedy.
+   */
+  bottomMatGeometry: FootingMatGeometry | null;
+  /**
+   * Development of the physical mat bars, measured from their generated endpoints.
+   *
+   * Separate from `flexure` because it is a separate requirement: a mat can provide every
+   * square centimetre §7.6.1 and §13.3.3 ask for and still fail to develop it, and reporting
+   * the two as one status would hide whichever of them passed.
+   */
+  bottomMatAnchorage: FootingMatAnchorage | null;
   oneWayShear: { status: CheckStatus; Vu: number; phiVc: number; utilization: number } | null;
   punching: {
     status: CheckStatus;
@@ -612,6 +636,39 @@ export function isWallRecord(r: FloorFamilyDesignRecord): r is WallDesignRecord 
 /** The record id. Stable across regeneration so a document series can follow it. */
 export function familyRecordId(family: FloorFamily, ownerId: string): string {
   return `${family}:${ownerId}`;
+}
+
+/**
+ * Where a footing sits in plan, recovered from the dowels it starts.
+ *
+ * ── Why the record does not simply say ──────────────────────────────
+ *
+ * `FootingGeometrySnapshot` carries B, L, the thickness, the rotation and the founding
+ * elevation, but no plan position: the footing is located by the SUPPORT it sits under, and
+ * the snapshot records the footing's own properties rather than the node's. The dowels are
+ * the one thing in the record that is already expressed in model coordinates, and they rise
+ * from the column the footing carries — so their mean start is the column axis, which is
+ * what both a plan drawing and a 3-D solid need to be centred on.
+ *
+ * `{x: 0, y: 0}` when there are no dowels. That is a real answer for a footing whose design
+ * produced no steel, not a silent failure: with nothing placed there is nothing to centre on
+ * and nothing to draw at the wrong place either.
+ *
+ * Shared rather than duplicated. The drawing renderer had this privately and the 3-D scene
+ * needs the same answer; two copies of "where is this footing" is exactly the drift the
+ * document model exists to prevent.
+ */
+export function footingPlanCentre(
+  rec: FootingDesignRecord, bars: readonly BarPath[],
+): { x: number; y: number } {
+  const dowelIds = new Set(rec.dowels?.barIds ?? []);
+  const dowels = bars.filter((b) => dowelIds.has(b.id));
+  if (dowels.length === 0) return { x: 0, y: 0 };
+  const pts = dowels.map((b) => b.segments[0].start);
+  return {
+    x: pts.reduce((s, p) => s + p.x, 0) / pts.length,
+    y: pts.reduce((s, p) => s + p.y, 0) / pts.length,
+  };
 }
 
 /**

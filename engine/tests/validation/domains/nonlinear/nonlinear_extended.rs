@@ -47,8 +47,15 @@ fn validation_nonlin_ext_1_williams_toggle_snap() {
 
     let l_bar: f64 = (l_half * l_half + rise * rise).sqrt();
     let sin_alpha: f64 = rise / l_bar;
-    // Analytical limit load for truss toggle: P_lim = 2*EA*sin^3(alpha)
-    let p_limit_analytical: f64 = 2.0 * E_EFF * a * sin_alpha.powi(3);
+    // Analytical limit load for the Williams toggle (engineering-strain bars,
+    // matching the solver's N = EA*(L'-L0)/L0): maximizing the exact
+    // equilibrium path P(h') = 2*EA*(1 - L'/L0)*(h'/L') over the deformed
+    // rise h' gives P_lim = 2*EA*sin^3(alpha)/(3*sqrt(3)) in the shallow
+    // limit (the limit point is at h' = rise/sqrt(3)).
+    // (The often-quoted 2*EA*sin^3(alpha) overestimates the limit load by
+    // 3*sqrt(3) ~ 5.2x; using it here would put the "sub-limit" load above
+    // the true limit point.)
+    let p_limit_analytical: f64 = 2.0 * E_EFF * a * sin_alpha.powi(3) / (3.0 * 3.0f64.sqrt());
 
     // Sub-limit load: 20% of the analytical limit
     let p_sub = 0.20 * p_limit_analytical;
@@ -280,7 +287,9 @@ fn validation_nonlin_ext_3_shallow_arch_buckling() {
 // Source: von Mises (1923), Structural stability textbooks
 // Two symmetric bars with initial inclination angle theta,
 // pinned at supports and at the apex.
-// Critical load: P_cr = 2*E*A*sin^2(theta)*cos(theta)
+// Limit load: maximum of the exact engineering-strain equilibrium path
+//   P(h') = 2*EA*(1 - L'/L0)*(h'/L'),  L' = sqrt(s^2 + h'^2)
+// over the deformed rise h' (found by scanning below).
 //
 // We verify that:
 // (a) below P_cr the solver converges,
@@ -294,11 +303,20 @@ fn validation_nonlin_ext_4_two_bar_truss_instability() {
     let iz: f64 = 1e-8; // very small, truss-like
 
     let l_bar: f64 = (half_span * half_span + rise * rise).sqrt();
-    let sin_theta: f64 = rise / l_bar;
-    let cos_theta: f64 = half_span / l_bar;
 
-    // Von Mises critical load
-    let p_cr = 2.0 * E_EFF * a * sin_theta * sin_theta * cos_theta;
+    // Von Mises limit load: maximize P(h') over the deformed rise.
+    // The closed-form P = 2*EA*sin^2(theta)*cos(theta) is NOT the limit load
+    // for this formulation (it overestimates it ~6.6x at this steep angle);
+    // at 30% of that value the structure is already past snap-through.
+    let mut p_cr = 0.0f64;
+    for k in 1..=1000 {
+        let h_def = rise * k as f64 / 1000.0;
+        let l_def = (half_span * half_span + h_def * h_def).sqrt();
+        let p = 2.0 * E_EFF * a * (1.0 - l_def / l_bar) * (h_def / l_def);
+        if p > p_cr {
+            p_cr = p;
+        }
+    }
 
     let nodes = vec![
         (1, 0.0, 0.0),
@@ -346,9 +364,9 @@ fn validation_nonlin_ext_4_two_bar_truss_instability() {
         ratio, apex.uz, apex_lin.uz
     );
 
-    // Verify the analytical P_cr is positive and reasonable
-    assert_close(p_cr, 2.0 * E_EFF * a * sin_theta * sin_theta * cos_theta, 0.01,
-        "Von Mises P_cr formula consistency");
+    // Verify the scanned P_cr is positive and finite
+    assert!(p_cr > 0.0 && p_cr.is_finite(),
+        "Von Mises P_cr should be positive and finite: {:.4e}", p_cr);
 }
 
 // ================================================================

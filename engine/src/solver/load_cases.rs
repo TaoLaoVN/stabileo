@@ -1,5 +1,5 @@
 use crate::types::*;
-use crate::solver::linear::{prepare_static_2d, prepare_static_3d, solve_3d};
+use crate::solver::linear::{prepare_static_2d, prepare_static_3d, solve_2d, solve_3d};
 use crate::postprocess::combinations::*;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
@@ -88,6 +88,37 @@ pub struct MultiCaseResult3D {
     pub envelope: FullEnvelope3D,
 }
 
+/// Fail fast when a combination references a load case that does not exist.
+/// An unknown case name used to be silently dropped from the combination,
+/// producing a combined result (and envelope) missing that case's
+/// contribution, presented as final.
+///
+/// Also fail fast on duplicate load case names: the case lookup map keeps
+/// only the last case with a given name, so a combination factor would
+/// silently drop the earlier case's contribution.
+fn validate_combination_case_names<'a>(
+    load_case_names: impl Iterator<Item = &'a str>,
+    combinations: &[CombinationDef],
+) -> Result<(), String> {
+    let mut names: std::collections::HashSet<&str> = std::collections::HashSet::new();
+    for name in load_case_names {
+        if !names.insert(name) {
+            return Err(format!("Duplicate load case name '{}'", name));
+        }
+    }
+    for combo in combinations {
+        for case_name in combo.factors.keys() {
+            if !names.contains(case_name.as_str()) {
+                return Err(format!(
+                    "Combination '{}' references unknown load case '{}'",
+                    combo.name, case_name
+                ));
+            }
+        }
+    }
+    Ok(())
+}
+
 // ==================== 2D Multi-Case Solver ====================
 
 pub fn solve_multi_case_2d(input: &MultiCaseInput) -> Result<MultiCaseResult, String> {
@@ -97,14 +128,25 @@ pub fn solve_multi_case_2d(input: &MultiCaseInput) -> Result<MultiCaseResult, St
     if input.combinations.is_empty() {
         return Err("No combinations defined".into());
     }
+    validate_combination_case_names(
+        input.load_cases.iter().map(|lc| lc.name.as_str()),
+        &input.combinations,
+    )?;
+
+    // Constraints delegate to the constrained solver per case — keep the
+    // legacy per-case path for that (rare) configuration, mirroring the 3D
+    // multi-case entry point. Clearing them here would silently solve the
+    // unconstrained structure and present the results as final.
+    if !input.solver.constraints.is_empty() {
+        return solve_multi_case_2d_per_case(input);
+    }
 
     // Prepare the structure once (assembly + factorization of K).
-    // Historical behavior: constraints and connectors are ignored in
-    // multi-case 2D, and only the per-case load lists are used.
+    // Connectors are load-independent stiffness: they stay in the prepared
+    // structure exactly as a single `solve_2d` would assemble them. Only the
+    // per-case load lists replace the model's own load list.
     let mut solver = input.solver.clone();
     solver.loads = vec![];
-    solver.constraints = vec![];
-    solver.connectors = HashMap::new();
 
     let prepared = prepare_static_2d(&solver)
         .map_err(|e| format!("Failed to solve case '{}': {}", input.load_cases[0].name, e))?;
@@ -176,6 +218,10 @@ pub fn solve_multi_case_3d(input: &MultiCaseInput3D) -> Result<MultiCaseResult3D
     if input.combinations.is_empty() {
         return Err("No combinations defined".into());
     }
+    validate_combination_case_names(
+        input.load_cases.iter().map(|lc| lc.name.as_str()),
+        &input.combinations,
+    )?;
 
     // Constraints delegate to the constrained solver per case — keep the
     // legacy per-case path for that (rare) configuration.
@@ -184,11 +230,11 @@ pub fn solve_multi_case_3d(input: &MultiCaseInput3D) -> Result<MultiCaseResult3D
     }
 
     // Prepare the structure once (assembly + factorization of K).
-    // Historical behavior: connectors are ignored in multi-case 3D, and only
-    // the per-case load lists are used.
+    // Connectors are load-independent stiffness: they stay in the prepared
+    // structure exactly as a single `solve_3d` would assemble them. Only the
+    // per-case load lists replace the model's own load list.
     let mut solver = input.solver.clone();
     solver.loads = vec![];
-    solver.connectors = HashMap::new();
 
     let prepared = prepare_static_3d(&solver)
         .map_err(|e| format!("Failed to solve case '{}': {}", input.load_cases[0].name, e))?;
@@ -271,7 +317,7 @@ fn solve_multi_case_3d_per_case(input: &MultiCaseInput3D) -> Result<MultiCaseRes
             curved_shells: input.solver.curved_shells.clone(),
             curved_beams: input.solver.curved_beams.clone(),
             constraints: input.solver.constraints.clone(),
-            connectors: HashMap::new(),
+            connectors: input.solver.connectors.clone(),
         };
 
         let results = solve_3d(&case_input)
@@ -319,6 +365,76 @@ fn solve_multi_case_3d_per_case(input: &MultiCaseInput3D) -> Result<MultiCaseRes
         .collect();
 
     Ok(MultiCaseResult3D {
+        case_results,
+        combination_results,
+        envelope,
+    })
+}
+
+/// Legacy per-case 2D multi-case path: one full `solve_2d` per load case
+/// (which auto-delegates to the constrained solver). Retained for models with
+/// constraints, mirroring `solve_multi_case_3d_per_case`.
+fn solve_multi_case_2d_per_case(input: &MultiCaseInput) -> Result<MultiCaseResult, String> {
+    let mut case_results = Vec::new();
+    let mut case_map: HashMap<String, usize> = HashMap::new();
+
+    for (idx, lc) in input.load_cases.iter().enumerate() {
+        let case_input = SolverInput {
+            nodes: input.solver.nodes.clone(),
+            materials: input.solver.materials.clone(),
+            sections: input.solver.sections.clone(),
+            elements: input.solver.elements.clone(),
+            supports: input.solver.supports.clone(),
+            loads: lc.loads.clone(),
+            constraints: input.solver.constraints.clone(),
+            connectors: input.solver.connectors.clone(),
+        };
+
+        let results = solve_2d(&case_input)
+            .map_err(|e| format!("Failed to solve case '{}': {}", lc.name, e))?;
+
+        case_map.insert(lc.name.clone(), idx);
+        case_results.push(CaseResult {
+            name: lc.name.clone(),
+            results,
+        });
+    }
+
+    let case_refs: Vec<(usize, &AnalysisResults)> = case_results
+        .iter()
+        .enumerate()
+        .map(|(idx, cr)| (idx, &cr.results))
+        .collect();
+    let mut combo_names: Vec<String> = Vec::new();
+    let mut all_combined_results: Vec<AnalysisResults> = Vec::new();
+
+    for combo in &input.combinations {
+        let mut combo_factors = Vec::new();
+        for (case_name, &factor) in &combo.factors {
+            if let Some(&idx) = case_map.get(case_name) {
+                combo_factors.push(CombinationFactor {
+                    case_id: idx,
+                    factor,
+                });
+            }
+        }
+
+        if let Some(combined) = combine_results_refs(&combo_factors, &case_refs) {
+            all_combined_results.push(combined);
+            combo_names.push(combo.name.clone());
+        }
+    }
+
+    let envelope = compute_envelope(&all_combined_results)
+        .ok_or_else(|| "Failed to compute envelope".to_string())?;
+
+    let combination_results = combo_names
+        .into_iter()
+        .zip(all_combined_results)
+        .map(|(name, results)| CombinedResult { name, results })
+        .collect();
+
+    Ok(MultiCaseResult {
         case_results,
         combination_results,
         envelope,

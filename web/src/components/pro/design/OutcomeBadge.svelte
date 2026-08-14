@@ -18,7 +18,10 @@
   let { status, outcome, flag, compact = false }: Props = $props();
 
   const STATUS_GLYPH: Record<DisplayStatus, string> = {
-    ok: '✓', warn: '⚠', fail: '✗', unavailable: '○', stale: '⌛',
+    // `◐` for a proposal: half-filled, which is what it is — one axis designed and verified,
+    // the other not evaluated. Distinct from `✗` and from `○` at a glance and by name, because
+    // every state here carries a glyph AND text and may never rely on colour alone.
+    ok: '✓', warn: '⚠', fail: '✗', provisional: '◐', unavailable: '○', stale: '⌛',
   };
   const OUTCOME_GLYPH: Record<DesignOutcomeKind, string> = {
     VERIFIED: '✓', SECTION_INADEQUATE: '▣', DEMAND_UNAVAILABLE: '○',
@@ -71,6 +74,9 @@
   .badge-ok { background: rgba(34, 204, 102, 0.16); color: #7ee2a8; border-color: #2a7a4a; }
   .badge-warn { background: rgba(221, 170, 0, 0.16); color: #f0cc66; border-color: #8a6a10; }
   .badge-fail { background: rgba(238, 34, 34, 0.16); color: #ff8a8a; border-color: #8a2a2a; }
+  /* The same violet the 3-D view paints provisional steel and the detailing panel gives
+     the state row. One colour, one meaning, on every surface that names it. */
+  .badge-provisional { background: rgba(160, 102, 211, 0.16); color: #d8b4ff; border-color: #6b4a8f; }
   .badge-unavailable { background: rgba(136, 136, 136, 0.16); color: #aab; border-color: #445; }
   /* Stale = desaturated + hatch, so it is distinguishable without hue. */
   .badge-stale {

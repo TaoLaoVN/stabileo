@@ -261,3 +261,74 @@ describe('the complete check', () => {
     expect(JSON.stringify(run())).toBe(JSON.stringify(run()));
   });
 });
+
+/**
+ * The structured moment-transfer outcome.
+ *
+ * `PunchingCheck.momentTransfer` is always present, including when nothing is transferred, so
+ * no consumer has to read absence as zero. That is the shape the footing path needed: its old
+ * call site supplied no moment at all and the resulting `hypot(0, 0)` was indistinguishable
+ * from a measured zero.
+ */
+describe('moment transfer outcome', () => {
+  const base = {
+    fc: 25, columnB: 0.4, columnH: 0.4, d: 0.5, position: 'interior' as const,
+  };
+
+  it('reports NONE, and an OK verdict, only for an exactly zero moment', () => {
+    const r = checkPunchingShear({ ...base, demand: { supportReaction: 600 } });
+    expect(r.momentTransfer.status).toBe('NONE');
+    expect(r.momentTransfer.Msc).toBe(0);
+    expect(r.momentTransfer.refs).toEqual([]);
+    expect(r.status).toBe('OK');
+  });
+
+  it('separates a below-threshold moment from no moment at all', () => {
+    // Threshold is 2 % of V_u·d = 0,02 × 600 × 0,50 = 6,0 kN·m, computed here rather than
+    // read off the result.
+    const r = checkPunchingShear({
+      ...base, demand: { supportReaction: 600, unbalancedMomentX: 5 },
+    });
+    expect(r.momentTransfer.threshold).toBeCloseTo(6, 12);
+    expect(r.momentTransfer.status).toBe('NEGLIGIBLE');
+    expect(r.momentTransfer.significant).toBe(false);
+    expect(r.status).toBe('OK');
+    // The tolerance is stated, not silent.
+    expect(r.memo.join(' ')).toMatch(/umbral de significancia/);
+  });
+
+  it('refuses above the threshold and cites 8.4.4.2', () => {
+    const r = checkPunchingShear({
+      ...base, demand: { supportReaction: 600, unbalancedMomentX: 7 },
+    });
+    expect(r.momentTransfer.status).toBe('UNSUPPORTED_MOMENT_TRANSFER_NOT_EVALUATED');
+    expect(r.status).toBe('UNSUPPORTED');
+    expect(r.refs.some((x) => x.clause === '8.4.4.2')).toBe(true);
+  });
+
+  it('refuses an UNFORMED moment ahead of the significance test', () => {
+    // Magnitude below the threshold, and still UNSUPPORTED: a caller that says it could not
+    // form the moment has not supplied a number for the threshold to judge.
+    const r = checkPunchingShear({
+      ...base,
+      demand: {
+        supportReaction: 600, unbalancedMomentX: 1,
+        momentTransferNotFormed: 'el perímetro crítico está truncado.',
+      },
+    });
+    expect(r.momentTransfer.status).toBe('UNSUPPORTED_MOMENT_NOT_FORMED');
+    expect(r.momentTransfer.notFormedReason).toMatch(/truncado/);
+    expect(r.status).toBe('UNSUPPORTED');
+    expect(r.unsupportedReason).toMatch(/No se pudo plantear la transferencia de momento/);
+    // The direct-shear numbers are still reported: what is refused is the verdict.
+    expect(r.vu).toBeGreaterThan(0);
+    expect(r.utilization).toBeGreaterThan(0);
+  });
+
+  it('reports an unavailable demand as an unformed moment, not a zero one', () => {
+    const r = checkPunchingShear({ ...base, demand: {} });
+    expect(r.status).toBe('UNSUPPORTED');
+    expect(r.momentTransfer.status).toBe('UNSUPPORTED_MOMENT_NOT_FORMED');
+    expect(r.momentTransfer.threshold).toBe(0);
+  });
+});

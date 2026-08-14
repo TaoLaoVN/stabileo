@@ -83,7 +83,14 @@ import { clause, type ClauseRef, type RegulationEdition } from '../../codes/regu
 import { msg, type EngineMessage } from '../../codes/message';
 import { minClearSpacingInLayer } from '../../codes/cirsoc201/spacing';
 import { crackControlMaxSpacing } from '../../codes/cirsoc201/crack-control';
+import { barMass } from '../../codes/cirsoc201/bar-geometry';
 import { checkFlexure } from '../codes/argentina/cirsoc201';
+import type {
+  FootingBottomMatLayerOrder, FootingLayerOrderPreference,
+} from '../../model/footing';
+import {
+  MOMENT_ORIENTATIONS, axisPressure, columnOffsetFromCentroid, momentEccentricity,
+} from './footing-actions';
 
 // ─── Clause references ───────────────────────────────────────────
 
@@ -258,18 +265,64 @@ export interface FootingDirectionDesign {
   Mu: number;
   diameterMm: number;
   /**
-   * The effective depth this direction is DESIGNED at, m.
+   * The effective depth this direction is DESIGNED at, m — its REAL one.
    *
-   * Equal to `dIfUpperLayer`: PR18-A does not establish which mat sits lower, so both
-   * directions take the shallower of the two possibilities. See `FootingMatDesign.layerOrder`.
+   * Equal to `dIfLowerLayer` when this direction is the lower layer and to `dIfUpperLayer`
+   * when it is the upper one. PR18-A used `dIfUpperLayer` for BOTH, because it established no
+   * layer order and the shallower depth is the conservative envelope over the two
+   * possibilities. Once the order is resolved that envelope is no longer the honest number for
+   * the lower direction: it describes a bar sitting one diameter above where it is placed.
    */
   d: number;
   /** `h − cover − d_b/2`, m — this direction's depth if it is the LOWER layer. */
   dIfLowerLayer: number;
   /** `h − cover − d_b,other − d_b/2`, m — its depth if it is the UPPER layer. */
   dIfUpperLayer: number;
-  /** Which of the two `d` values the design used, and why it is that one. */
-  layerRole: 'ENVELOPE_UPPER_LAYER';
+  /**
+   * Where this direction physically sits, and therefore which `d` the design used.
+   *
+   * `ENVELOPE_UPPER_LAYER` survives for ONE case: no physical arrangement produced a
+   * code-compliant layout, so no order could be established and the pre-resolution
+   * conservative envelope is the only thing that can honestly be reported. It is a diagnostic,
+   * not a design.
+   */
+  layerRole: 'LOWER_LAYER' | 'UPPER_LAYER' | 'ENVELOPE_UPPER_LAYER';
+  /**
+   * Steel stacked underneath this direction, mm — 0 for the lower layer, the other
+   * direction's diameter for the upper one. The single quantity the two depths differ by.
+   */
+  barsBelowMm: number;
+  /**
+   * Elevation of this direction's bar CENTRELINE above the footing underside, m.
+   *
+   *     cover + barsBelow + d_b/2
+   *
+   * The lower layer rests on the cover, so its centre is at `cover + d_b/2`. The upper layer
+   * rests on the crossing lower bars — `barsBelow` is a full lower-bar diameter, not half of
+   * one, because the two mats are orthogonal and the upper bar bears on the TOP of the lower
+   * one at every crossing.
+   */
+  centreElevation: number;
+  /**
+   * Clear distance from the bottom concrete face to this direction's bar SURFACE, m.
+   *
+   * `cover` for the lower layer, `cover + d_b,other` for the upper one. Cover is measured to
+   * the bar surface and not to its centreline, which is the distinction that makes this
+   * different from `centreElevation` by a half diameter rather than equal to it.
+   */
+  clearCoverToSoffit: number;
+  /**
+   * Whether the two mats may touch where they cross.
+   *
+   * They may. §25.2.1 sets a minimum clear distance between PARALLEL bars in a layer, and
+   * §25.2.2 sets one between PARALLEL bars placed in two or more layers — beam tension steel
+   * in two rows is the case it addresses. An orthogonal mat is neither: the upper bars cross
+   * the lower ones rather than running beside or above them along their length, so no clear
+   * distance is prescribed at the crossings and resting one mat directly on the other is the
+   * ordinary placement. Recorded per direction so the constructibility pass can classify those
+   * contacts as INTENTIONAL instead of reporting a mat against itself.
+   */
+  contactAtCrossingsPermitted: boolean;
   /** Steel required by flexural strength, m². */
   asFlexural: number;
   /** Steel required by §7.6.1 over the full distribution width, m². */
@@ -311,15 +364,79 @@ export type FootingMatGeometryStatus = 'REQUIRED_NOT_MODELED';
 /** No authoritative calculation shows top steel unnecessary, so it is not evaluated. */
 export type FootingTopReinforcementStatus = 'NOT_EVALUATED';
 /**
- * Which mat sits in the lower layer.
+ * Whether a physical layer order was resolved.
  *
- * NOT_ESTABLISHED for the whole of PR18-A. No clause prescribes it — §13.2.8 and §25.4 govern
- * anchorage, §13.3.3 governs distribution, and neither says which perpendicular mat goes down
- * — so it is a bar-placement decision, and PR18-A places no bars. Both directions are therefore
- * designed at the shallower (upper-layer) depth, which is the conservative envelope; PR18-B can
- * fix the order and recover the deeper direction's capacity.
+ * No clause prescribes the order — §13.2.8 and §25.4 govern anchorage, §13.3.3 governs
+ * distribution, and neither says which perpendicular mat goes down — so it is a detailing
+ * decision. PR18-A made none and reported NOT_ESTABLISHED honestly. It is now either the
+ * engineer's stated override or the AUTO rule's deterministic selection, and it is
+ * NOT_ESTABLISHED only when NEITHER physical arrangement can produce a code-compliant layout.
  */
-export type FootingLayerOrderStatus = 'NOT_ESTABLISHED';
+export type FootingLayerOrderStatus = 'ESTABLISHED' | 'NOT_ESTABLISHED';
+
+/** Why AUTO chose the arrangement it chose, or that the engineer chose it. */
+export type FootingLayerOrderRationale =
+  /** The engineer stated the order; AUTO was not consulted. */
+  | 'MANUAL_OVERRIDE'
+  /** Only one arrangement produced a code-compliant layout in both directions. */
+  | 'ONLY_FEASIBLE_ARRANGEMENT'
+  /** Both were feasible and this one needs less steel. */
+  | 'LESS_PROVIDED_STEEL'
+  /** Both feasible, equal steel; this one works its flexural steel less hard. */
+  | 'LOWER_FLEXURAL_UTILIZATION'
+  /** Both feasible, equal on both measures — X_BELOW_Y by rule, so the answer is stable. */
+  | 'DETERMINISTIC_TIE_BREAK'
+  /** Neither arrangement is code-compliant. No order is established. */
+  | 'NO_FEASIBLE_ARRANGEMENT';
+
+/** One arrangement's measures, as AUTO compared them. */
+export interface FootingArrangementEvaluation {
+  order: FootingBottomMatLayerOrder;
+  /** True when BOTH directions reached DESIGNED. */
+  feasible: boolean;
+  /** Total provided bottom-mat steel mass, kg — the primary AUTO criterion. */
+  providedSteelMassKg: number;
+  /** Total provided steel volume, m³ — mass divided by the density, kept for audit. */
+  providedSteelVolumeM3: number;
+  /**
+   * Worst `A_s,flexure / A_s,provided` over the two directions.
+   *
+   * A steel-area ratio, and named as one. It is not literally `M_u/φM_n`: obtaining that would
+   * mean evaluating the rectangular stress block at THIS layout's provided area, and
+   * `checkFlexure` reports φM_n at its own internal bar selection rather than at a caller's.
+   * Writing the block out here would make this module a second flexural engine, which it
+   * refuses to be for the design and must equally refuse to be for a tie-break. For an
+   * under-reinforced section φM_n is very nearly linear in A_s, so the ratio tracks the
+   * flexural utilisation closely — and it only ever decides anything when the masses tie.
+   */
+  worstFlexuralUtilization: number;
+  /** Per-direction effective depths this arrangement produces, m. */
+  dX: number;
+  dY: number;
+  /** Why it was rejected, when it was. */
+  rejection: EngineMessage[];
+}
+
+export interface FootingLayerOrderResolution {
+  status: FootingLayerOrderStatus;
+  /** What the project asked for. */
+  preference: FootingLayerOrderPreference;
+  /** The order actually built at. Null only when none could be established. */
+  resolved: FootingBottomMatLayerOrder | null;
+  rationale: FootingLayerOrderRationale;
+  /** Which direction is the lower layer, in words, for the UI and the certificate. */
+  lowerLayerAxis: FootingMatAxis | null;
+  /**
+   * Both arrangements as AUTO evaluated them, in `X_BELOW_Y`, `Y_BELOW_X` order.
+   *
+   * Present even under a manual override, and that is the point: an engineer who fixes the
+   * order can see what the other one would have cost. Empty only if the mat was never
+   * evaluated at all.
+   */
+  evaluated: FootingArrangementEvaluation[];
+  /** Human-readable reasoning, in the calculation-memo register. */
+  steps: string[];
+}
 /**
  * Anchorage.
  *
@@ -352,7 +469,8 @@ export interface FootingMatDesign {
   status: FootingMatDirectionStatus;
   geometry: FootingMatGeometryStatus;
   topReinforcement: FootingTopReinforcementStatus;
-  layerOrder: FootingLayerOrderStatus;
+  /** The resolved physical layer order, its rationale, and both arrangements as compared. */
+  layerOrder: FootingLayerOrderResolution;
   anchorage: FootingAnchorageStatus;
   assumptions: EngineMessage[];
   failures: EngineMessage[];
@@ -365,6 +483,13 @@ export interface FootingMatPreferencesInput {
   bottomMatDiameterXmm: number;
   bottomMatDiameterYmm: number;
   bottomMatSpacingPolicy: 'AUTO_CODE_COMPLIANT';
+  /**
+   * Which mat goes in the lower layer, or AUTO.
+   *
+   * Optional so that a caller written before the field existed keeps compiling; absent reads as
+   * AUTO, which is the same migration the persisted preference makes.
+   */
+  bottomMatLayerOrder?: FootingLayerOrderPreference;
 }
 
 export interface FootingMatDesignInput {
@@ -455,8 +580,27 @@ type LayoutOutcome =
   | {
     ok: true; barCount: number; spacingCentre: number; spacingClear: number;
     asProvided: number;
+    /** True when a bar was added to keep the region's centre line clear. See `layoutRegion`. */
+    centreCleared: boolean;
+    /** True when the centre line still carries a bar because no count could avoid it. */
+    barOnCentre: boolean;
   }
   | { ok: false; reason: 'noPlaceableWidth' | 'minClear' | 'noMaxSpacing' };
+
+/**
+ * Does a uniform distribution of `n` bars put one ON the region's centre line?
+ *
+ * Both layout models are symmetric about the region centre, and both hit the centre for exactly
+ * the same reason: an odd count has a middle bar and the middle bar is the centre.
+ *
+ *   EDGE_ANCHORED   bars at −span/2 + k·(span/(n−1)), k = 0…n−1 → centre at k = (n−1)/2
+ *   TRIBUTARY_PITCH bars at −w/2 + (k+½)·(w/n),       k = 0…n−1 → centre at k = (n−1)/2
+ *
+ * so in both cases the centre is occupied iff `n` is odd.
+ */
+function barLandsOnRegionCentre(n: number): boolean {
+  return n % 2 === 1;
+}
 
 /**
  * Choose an integer bar count for one region.
@@ -471,6 +615,43 @@ type LayoutOutcome =
  *      above. When the floor from (1) and (2) passes that cap there is no admissible layout
  *      at the selected diameter, and this returns a failure instead of quietly changing the
  *      diameter the engineer chose.
+ *
+ * ── And one coordination requirement: keep the centre line clear ────
+ *
+ * `avoidBarOnCentre` asks for a count that leaves the region's own centre line free of steel.
+ * It is not an aesthetic preference and it is not the code speaking; it is a measured
+ * constructibility constraint between this mat and the column above it.
+ *
+ * A column's certified eight-bar cage carries one longitudinal bar CENTRED on each face, so on
+ * a concentric footing four starter dowels stand exactly on the two centre lines. A mat bar on
+ * the same line sits directly beneath one of them, and it removes the only hook orientation
+ * that dowel has: the leg that turns perpendicular to its own face is carried by the crossed
+ * layer, must drop through the layer above, and finds that line already occupied — measured
+ * interpenetration 16,00 mm, one full mat-bar diameter, axes coincident. What is left are the
+ * along-face orientations, whose legs run 1,76 mm from the corner bars' line at the same
+ * elevation, and those clash too.
+ *
+ * Measured on the production footing, 2,00 × 2,00 × 0,50 m with a 400 mm column carrying 8Ø20:
+ *
+ *   9 Ø16 per direction (odd)  → 0 feasible hook arrangements, exhaustive
+ *   10 Ø16 per direction (even) → 496, every hook seated, 135,24 mm between hooks
+ *   11 (odd) → 0     12 (even) → 496
+ *
+ * Parity is the whole of it. So an odd count gets ONE more bar, which costs steel the demand
+ * did not ask for — 18,10 → 20,11 cm² on that footing — and buys a cage that can be built. The
+ * extra bar is reported in the steps rather than folded into the area narrative, because a
+ * reader comparing provided against required is owed the reason for the difference.
+ *
+ * When the §25.2.1 cap will not admit the extra bar the odd count STANDS. Nothing here silently
+ * changes the diameter or drops below the clear-spacing minimum to satisfy a coordination rule,
+ * and the consequence is not hidden either: the dowel cage measures the same conflict and
+ * refuses to emit an unbuildable cage, naming the dowels involved.
+ *
+ * The rule keys on the REGION's centre, not on the column's axis, and those coincide only on a
+ * concentric footing. On one with plan eccentricity the dowels do not stand on the centre line
+ * and this buys nothing — the cage still measures the real geometry and still refuses when it
+ * has to. A rule stated in terms this function can actually see is worth more than one that
+ * pretends to a generality it does not have.
  */
 function layoutRegion(opts: {
   width: number;
@@ -480,6 +661,8 @@ function layoutRegion(opts: {
   cover: number;
   maxSpacing: number;
   minClear: number;
+  /** Keep the region's centre line free of steel when a count exists that does. */
+  avoidBarOnCentre?: boolean;
 }): LayoutOutcome {
   const db = opts.diameterMm / 1000;
   const area = barArea(opts.diameterMm);
@@ -502,14 +685,21 @@ function layoutRegion(opts: {
   // Smallest count whose spacing is within the maximum.
   const nFromSpacing = Math.max(nFloor,
     (edgeAnchored ? 1 : 0) + Math.ceil(span / opts.maxSpacing));
-  const n = Math.max(nFromArea, nFromSpacing);
+  const required = Math.max(nFromArea, nFromSpacing);
 
   // Largest count the minimum clear distance still admits.
   const pitchFloor = opts.minClear + db;
   const nMax = edgeAnchored
     ? Math.floor(span / pitchFloor) + 1
     : Math.floor(span / pitchFloor);
-  if (n > nMax) return { ok: false, reason: 'minClear' };
+  if (required > nMax) return { ok: false, reason: 'minClear' };
+
+  // The coordination bump, LAST, so it can only ever add to a count the three code bounds have
+  // already settled — and only when §25.2.1 still admits the extra bar.
+  const wantsClearCentre = opts.avoidBarOnCentre === true
+    && barLandsOnRegionCentre(required);
+  const centreCleared = wantsClearCentre && required + 1 <= nMax;
+  const n = centreCleared ? required + 1 : required;
 
   const spacingCentre = spacingFor(n);
   return {
@@ -518,6 +708,8 @@ function layoutRegion(opts: {
     spacingCentre,
     spacingClear: spacingCentre - db,
     asProvided: n * area,
+    centreCleared,
+    barOnCentre: barLandsOnRegionCentre(n),
   };
 }
 
@@ -606,7 +798,7 @@ function governingFace(opts: {
   let worstResultantOffset = 0;
   let anyOrientationLifts = false;
 
-  for (const orientation of [1, -1]) {
+  for (const orientation of MOMENT_ORIENTATIONS) {
     const uR = columnOffset + orientation * momentEccentricity;
     if (Math.abs(uR) > Math.abs(worstResultantOffset)) worstResultantOffset = uR;
     // Beyond the kern the base lifts and this distribution stops being valid. Recorded so the
@@ -617,7 +809,10 @@ function governingFace(opts: {
       anyOrientationLifts = true;
       continue;
     }
-    const q = (u: number) => q0 * (1 + (S > 0 ? 12 * uR * u / (S * S) : 0));
+    // The shared authority's field, not a local restatement of it: `foundation-check.ts`
+    // integrates this same function, so the mat is reinforced for the pressure the footing
+    // was checked against.
+    const q = axisPressure(q0, S, uR);
 
     for (const side of ['low', 'high'] as const) {
       const faceU = side === 'low'
@@ -640,6 +835,7 @@ function governingFace(opts: {
 
 function designDirection(
   input: FootingMatDesignInput, geo: DirectionGeometry, diameterMm: number,
+  layerRole: FootingDirectionDesign['layerRole'],
 ): FootingDirectionDesign {
   const steps: string[] = [];
   const failures: EngineMessage[] = [];
@@ -656,12 +852,11 @@ function designDirection(
   // CENTROID from the supported node, so the column centre is at MINUS that offset in centroid
   // coordinates — the same reading `punchingPosition` already uses to measure each face to its
   // own edge.
-  const columnOffset = -geo.spanEccentricity;
-  const momentEccentricity =
-    Math.abs(geo.factoredMoment) / Math.max(factoredAxial, 1e-12);
+  const columnOffset = columnOffsetFromCentroid(geo.spanEccentricity);
+  const momentEcc = momentEccentricity(geo.factoredMoment, factoredAxial);
   const face = governingFace({
     S, W, columnDimension: geo.columnDimension, columnOffset,
-    q0: qFactored, momentEccentricity,
+    q0: qFactored, momentEccentricity: momentEcc,
   });
 
   const cantilever = face.governing?.cantilever ?? 0;
@@ -671,17 +866,24 @@ function designDirection(
 
   // ── The two physical layers ──────────────────────────────────
   //
-  // Perpendicular bars cannot share an elevation, so this direction is either the lower layer
-  // or the upper one. Which it is, is a bar-placement decision no clause makes and PR18-A does
-  // not model — see `FootingMatDesign.layerOrder`. Both depths are computed and the design uses
-  // the SHALLOWER (upper-layer) one for both directions: that is the conservative envelope, and
-  // it is stated rather than left to be inferred.
+  // Perpendicular bars cannot share an elevation, so this direction is either the lower layer or
+  // the upper one, and the two depths differ by a full bar diameter. Both are computed and
+  // reported; the design uses the one belonging to the role this arrangement gives it.
+  //
+  // `ENVELOPE_UPPER_LAYER` is the pre-resolution diagnostic and takes the shallower depth for
+  // both directions. It is reached only when no arrangement is code-compliant, in which case
+  // there is no order to design at and the conservative envelope is the honest report.
   const otherDiameterMm = geo.axis === 'X'
     ? input.preferences.bottomMatDiameterYmm
     : input.preferences.bottomMatDiameterXmm;
   const dIfLowerLayer = footingFlexuralDepth(thickness, cover, diameterMm, 0);
   const dIfUpperLayer = footingFlexuralDepth(thickness, cover, diameterMm, otherDiameterMm);
-  const d = dIfUpperLayer;
+  const barsBelowMm = layerRole === 'LOWER_LAYER' ? 0 : otherDiameterMm;
+  const d = layerRole === 'LOWER_LAYER' ? dIfLowerLayer : dIfUpperLayer;
+  // Cover is measured to the bar SURFACE, so the centre sits a half diameter above the steel
+  // stacked beneath it and the clear cover to the soffit does not include that half diameter.
+  const centreElevation = cover + barsBelowMm / 1000 + diameterMm / 2000;
+  const clearCoverToSoffit = cover + barsBelowMm / 1000;
 
   steps.push(
     `Dirección ${geo.axis}: barras paralelas a ${geo.barsParallelTo}, repartidas en ` +
@@ -693,13 +895,24 @@ function designDirection(
     '(13.2.7.1).',
     `Presión factorizada ${qFactored.toFixed(1)} kPa; resultante a ` +
     `${(face.governing?.resultantOffset ?? 0).toFixed(3)} m del centroide ` +
-    `(excentricidad de momento ${momentEccentricity.toFixed(3)} m, envolvente de ambos ` +
+    `(excentricidad de momento ${momentEcc.toFixed(3)} m, envolvente de ambos ` +
     `signos): q_cara ${qFace.toFixed(1)}, q_borde ${qEdge.toFixed(1)} kPa.`,
     `Mu = ${W.toFixed(2)} × ${cantilever.toFixed(3)}² × (2×${qFace.toFixed(1)} + ` +
     `${qEdge.toFixed(1)})/6 = ${Mu.toFixed(1)} kN·m (13.2.6.6).`,
     `Altura útil: capa inferior daría ${dIfLowerLayer.toFixed(4)} m, capa superior ` +
-    `${dIfUpperLayer.toFixed(4)} m (Ø${otherDiameterMm} debajo). Se dimensiona con ` +
-    `${d.toFixed(4)} m — la envolvente conservadora.`);
+    `${dIfUpperLayer.toFixed(4)} m (Ø${otherDiameterMm} debajo). ` +
+    (layerRole === 'ENVELOPE_UPPER_LAYER'
+      ? `No se pudo establecer el orden de capas: se dimensiona con ${d.toFixed(4)} m — la ` +
+        'envolvente conservadora.'
+      : `Esta dirección va en la capa ${layerRole === 'LOWER_LAYER' ? 'INFERIOR' : 'SUPERIOR'}` +
+        `, de modo que se dimensiona con su altura real ${d.toFixed(4)} m.`),
+    `Posición física: eje de barra a ${(centreElevation * 1000).toFixed(1)} mm sobre la cara ` +
+    `inferior (recubrimiento ${(cover * 1000).toFixed(0)} mm + ${barsBelowMm} mm de barras ` +
+    `debajo + Ø${diameterMm}/2); recubrimiento libre a la cara inferior ` +
+    `${(clearCoverToSoffit * 1000).toFixed(1)} mm, medido a la SUPERFICIE de la barra. ` +
+    'El contacto directo en los cruces ortogonales está permitido: 25.2.1 y 25.2.2 fijan ' +
+    'distancias libres entre barras PARALELAS —de una capa y entre capas paralelas—, y una ' +
+    'parrilla ortogonal no es ninguno de los dos casos.');
 
   // ── Contact validity ─────────────────────────────────────────
   //
@@ -712,7 +925,8 @@ function designDirection(
     axis: geo.axis, barsParallelTo: geo.barsParallelTo, distributionWidth: W,
     governingSide: face.governing?.side ?? null,
     cantilever, qFace, qEdge, Mu, diameterMm,
-    d, dIfLowerLayer, dIfUpperLayer, layerRole: 'ENVELOPE_UPPER_LAYER',
+    d, dIfLowerLayer, dIfUpperLayer, layerRole, barsBelowMm,
+    centreElevation, clearCoverToSoffit, contactAtCrossingsPermitted: true,
     asFlexural: 0, asMinimum: 0, asGoverning: 0,
     governedBy: 'MINIMUM', governingClause: R_AS_MIN.clause,
     spacing: {
@@ -747,10 +961,12 @@ function designDirection(
   // footing thickness, no stirrup, and the diameter the engineer selected — so its internal
   // `d` is this direction's flexural depth and not the assumed Ø16 one.
   //
-  // `stirrupDia` carries the OTHER direction's mat. `checkFlexure` computes its own depth as
+  // `stirrupDia` carries the steel stacked BENEATH this direction — zero in the lower layer,
+  // the other direction's diameter in the upper one. `checkFlexure` computes its own depth as
   // `h − cover − stirrupDia/1000 − d_b/2000`, and in a footing the steel sitting between the
   // cover and this bar is the perpendicular mat, playing exactly the role a stirrup plays in a
-  // beam. Passing it makes the depth `checkFlexure` DESIGNS at identical to `d` above.
+  // beam. Passing `barsBelowMm` makes the depth `checkFlexure` DESIGNS at identical to `d`
+  // above — which is now the direction's REAL depth rather than the envelope for both.
   //
   // Getting this wrong is not cosmetic and it is not hypothetical: an earlier revision of this
   // module reported the upper-layer `d` while leaving `stirrupDia: 0`, so the reported depth and
@@ -758,7 +974,7 @@ function designDirection(
   // closure in `footing-flexure.test.ts` is what caught it — a test that had recomputed the
   // module's own quadratic would have agreed with the mistake.
   const flex = checkFlexure(
-    { fc: input.fc, fy: input.fy, cover, b: W, h: thickness, stirrupDia: otherDiameterMm },
+    { fc: input.fc, fy: input.fy, cover, b: W, h: thickness, stirrupDia: barsBelowMm },
     Mu, 0, { barDiameterMm: diameterMm },
   );
   // The two must agree by construction. If a future edit to either expression breaks that, this
@@ -873,6 +1089,8 @@ function designDirection(
   const addRegion = (
     kind: FootingRegionKind, model: FootingLayoutModel, width: number, centreOffset: number,
     touchesEdge: boolean, share: number, shareGovernedBy: FootingAsGovernedBy | 'DISTRIBUTION',
+    /** See `layoutRegion`: keep the starter dowels' centre line free of mat steel. */
+    avoidBarOnCentre = false,
   ): void => {
     if (!(width > 1e-9)) return;
     /**
@@ -895,6 +1113,7 @@ function designDirection(
     const laid = layoutRegion({
       width, model, asRequired, diameterMm, cover,
       maxSpacing: governingMax, minClear: clear.minClear,
+      avoidBarOnCentre,
     });
     if (!laid.ok) {
       failures.push(msg('footing.mat.noFeasibleLayout', {
@@ -906,6 +1125,22 @@ function designDirection(
     // Reported against what the layout actually PROVIDES, not against the requirement: the
     // integer bar count routinely clears a floor the share alone would not, and an advisory
     // about steel that is already there would be noise.
+    // The coordination bump, stated where the count is stated. A reader comparing 20,11 cm²
+    // provided against 18,00 required is owed the reason, and "one extra bar so the starter
+    // hooks have somewhere to turn" is the reason.
+    if (laid.centreCleared) {
+      steps.push(
+        `${kind} (${geo.axis}): ${laid.barCount} barras en lugar de ${laid.barCount - 1} para ` +
+        'dejar libre el eje de la región. Una barra sobre el eje queda justo debajo de la ' +
+        'espera centrada en la cara de la columna y le anula la única orientación de gancho ' +
+        'disponible; con el conteo par la jaula de esperas se puede construir.');
+    } else if (laid.barOnCentre && avoidBarOnCentre) {
+      steps.push(
+        `${kind} (${geo.axis}): el eje de la región queda con una barra (${laid.barCount} ` +
+        'barras) porque la separación libre mínima del artículo 25.2.1 no admite una más. No se ' +
+        'reduce el diámetro ni la separación para evitarlo: si eso impide construir la jaula de ' +
+        'esperas, la jaula lo mide y lo informa.');
+    }
     if (laid.asProvided < policyRegionalMinimum) {
       advisories.push(msg('footing.mat.regionBelowPolicyMinimum', {
         axis: geo.axis, region: kind,
@@ -926,7 +1161,7 @@ function designDirection(
   if (!isShortDirection) {
     // §13.3.3.2, and §13.3.3.3(a) for the long direction of a rectangular footing: uniform
     // across the FULL width. One region, edge to edge.
-    addRegion('FULL_WIDTH', 'EDGE_ANCHORED', W, 0, true, asGoverning, governedBy);
+    addRegion('FULL_WIDTH', 'EDGE_ANCHORED', W, 0, true, asGoverning, governedBy, true);
     steps.push(
       `Distribución uniforme en todo el ancho ` +
       `(${input.B === input.L ? '13.3.3.2' : '13.3.3.3 (a)'}).`);
@@ -935,7 +1170,7 @@ function designDirection(
     // on the footing centroid — which are different points on a footing with plan
     // eccentricity, and make the two outside zones unequal.
     const bandWidth = shortSide;
-    const columnOffset = -geo.distributionEccentricity;
+    const columnOffset = columnOffsetFromCentroid(geo.distributionEccentricity);
     const lowerWidth = W / 2 + columnOffset - bandWidth / 2;
     const upperWidth = W / 2 - columnOffset - bandWidth / 2;
     const outsideWidth = lowerWidth + upperWidth;
@@ -950,8 +1185,10 @@ function designDirection(
       }));
     } else {
       const g = gammaS as number;
+      // The band is centred on the COLUMN axis, which is exactly where the face-centred
+      // starters stand, so this is the region the rule was written for.
       addRegion('CENTRAL_BAND', 'TRIBUTARY_PITCH', bandWidth, columnOffset, false,
-        g * asGoverning, 'DISTRIBUTION');
+        g * asGoverning, 'DISTRIBUTION', true);
       // The remainder is uniform over the outside ZONES taken together, so each zone carries
       // it in proportion to its own width. On a centred footing the two are equal; on an
       // eccentric one they are not, and splitting the remainder in half would put the wrong
@@ -999,7 +1236,8 @@ function designDirection(
     axis: geo.axis, barsParallelTo: geo.barsParallelTo, distributionWidth: W,
     governingSide: face.governing.side,
     cantilever, qFace, qEdge, Mu, diameterMm,
-    d, dIfLowerLayer, dIfUpperLayer, layerRole: 'ENVELOPE_UPPER_LAYER',
+    d, dIfLowerLayer, dIfUpperLayer, layerRole, barsBelowMm,
+    centreElevation, clearCoverToSoffit, contactAtCrossingsPermitted: true,
     asFlexural, asMinimum, asGoverning, governedBy, governingClause,
     spacing, distribution, beta, gammaS, regions, asProvided, barCount,
     meetsMinimumDepth,
@@ -1014,16 +1252,48 @@ function designDirection(
 // ─── The mat ─────────────────────────────────────────────────────
 
 /**
- * Design both directions of an isolated footing's bottom mat.
+ * Length of one straight mat bar, m.
  *
- * The two directions are computed INDEPENDENTLY — own cantilever, own distribution width, own
- * pressure trapezoid, own bar diameter and therefore own effective depth. A square footing
- * under a square centred column comes out symmetric because its inputs are symmetric, not
- * because one direction was copied onto the other.
+ * The bar runs the full span less one cover at EACH end, because §20.5.1's cover is measured
+ * from the concrete face to the bar SURFACE and a straight bar end is a surface. Defined here,
+ * once, so the AUTO steel comparison and the physical bar generator cannot disagree about how
+ * long a bar is.
  */
-export function designFootingMat(input: FootingMatDesignInput): FootingMatDesign {
+export function matBarLength(spanDimension: number, cover: number): number {
+  return Math.max(0, spanDimension - 2 * cover);
+}
+
+/** Total provided steel of one direction, as a volume (m³) and a mass (kg). */
+function directionSteel(
+  dir: FootingDirectionDesign, spanDimension: number, cover: number,
+): { volumeM3: number; massKg: number } {
+  const length = matBarLength(spanDimension, cover);
+  // `barMass` is the project's one mass authority (density 7850 kg/m³); the volume is recovered
+  // from it rather than computed from a second area expression.
+  const massKg = dir.barCount * barMass(length, dir.diameterMm);
+  return { volumeM3: massKg / 7850, massKg };
+}
+
+/** The two physical arrangements, in the order AUTO evaluates and reports them. */
+const ARRANGEMENTS: readonly FootingBottomMatLayerOrder[] = ['X_BELOW_Y', 'Y_BELOW_X'];
+
+/** Relative tolerance for calling two steel quantities equal. */
+const STEEL_EQUAL_REL_TOL = 1e-9;
+
+interface Arrangement {
+  order: FootingBottomMatLayerOrder;
+  x: FootingDirectionDesign;
+  y: FootingDirectionDesign;
+  evaluation: FootingArrangementEvaluation;
+}
+
+function buildArrangement(
+  input: FootingMatDesignInput, order: FootingBottomMatLayerOrder,
+): Arrangement {
   const dX = input.preferences.bottomMatDiameterXmm;
   const dY = input.preferences.bottomMatDiameterYmm;
+  const xRole = order === 'X_BELOW_Y' ? 'LOWER_LAYER' : 'UPPER_LAYER';
+  const yRole = order === 'X_BELOW_Y' ? 'UPPER_LAYER' : 'LOWER_LAYER';
 
   const x = designDirection(input, {
     axis: 'X', barsParallelTo: 'B',
@@ -1032,7 +1302,7 @@ export function designFootingMat(input: FootingMatDesignInput): FootingMatDesign
     factoredMoment: input.factoredMomentB,
     spanEccentricity: input.eccentricityB,
     distributionEccentricity: input.eccentricityL,
-  }, dX);
+  }, dX, xRole);
 
   const y = designDirection(input, {
     axis: 'Y', barsParallelTo: 'L',
@@ -1041,7 +1311,247 @@ export function designFootingMat(input: FootingMatDesignInput): FootingMatDesign
     factoredMoment: input.factoredMomentL,
     spanEccentricity: input.eccentricityL,
     distributionEccentricity: input.eccentricityB,
-  }, dY);
+  }, dY, yRole);
+
+  const sx = directionSteel(x, input.B, input.cover);
+  const sy = directionSteel(y, input.L, input.cover);
+  const util = (dir: FootingDirectionDesign) =>
+    dir.asProvided > 0 ? dir.asFlexural / dir.asProvided : Infinity;
+
+  return {
+    order, x, y,
+    evaluation: {
+      order,
+      feasible: x.status === 'DESIGNED' && y.status === 'DESIGNED',
+      providedSteelMassKg: sx.massKg + sy.massKg,
+      providedSteelVolumeM3: sx.volumeM3 + sy.volumeM3,
+      worstFlexuralUtilization: Math.max(util(x), util(y)),
+      dX: x.d, dY: y.d,
+      rejection: [...x.failures, ...y.failures],
+    },
+  };
+}
+
+/**
+ * Select the physical layer order.
+ *
+ * ── Why AUTO evaluates rather than reasons ─────────────────────
+ *
+ * "Put the direction with the larger moment lower" is the rule of thumb, and it is not reliable
+ * here. The deeper layer is worth a full bar diameter of `d`, which matters most where the steel
+ * is FLEXURE-governed; but a mat direction is frequently MINIMUM-governed (§7.6.1's 0,0018 A_g
+ * does not depend on `d` at all), and then the extra depth buys nothing while the other
+ * direction's loss costs real steel. Whether the swap helps also depends on the two diameters,
+ * on which direction §13.3.3.3 bands, and on the integer bar counts — the layout rounds up, so
+ * a small change in required area can move a whole bar. So AUTO designs BOTH arrangements
+ * completely and compares the results, which is the only way the answer is right for the reasons
+ * it claims.
+ *
+ * ── The stated rule, in order ─────────────────────────────────
+ *
+ *   1. reject an arrangement that cannot produce a code-compliant layout in both directions;
+ *   2. prefer the smaller total provided steel mass;
+ *   3. on a tie, prefer the smaller worst flexural steel utilisation — more margin;
+ *   4. still tied, `X_BELOW_Y`, so the answer is stable across runs and machines.
+ *
+ * Step 4 is reached by a square footing with equal diameters and equal moments, where the two
+ * arrangements are genuinely indistinguishable. It exists so that case has ONE answer rather
+ * than one that depends on comparison order.
+ */
+function resolveLayerOrder(
+  preference: FootingLayerOrderPreference, arrangements: readonly Arrangement[],
+): { resolution: FootingLayerOrderResolution; chosen: Arrangement } {
+  const evaluated = arrangements.map((a) => a.evaluation);
+  const byOrder = (o: FootingBottomMatLayerOrder) =>
+    arrangements.find((a) => a.order === o) as Arrangement;
+  const lowerAxis = (o: FootingBottomMatLayerOrder): FootingMatAxis =>
+    o === 'X_BELOW_Y' ? 'X' : 'Y';
+
+  // ── Manual override ────────────────────────────────────────
+  if (preference !== 'AUTO') {
+    const chosen = byOrder(preference);
+    const other = byOrder(preference === 'X_BELOW_Y' ? 'Y_BELOW_X' : 'X_BELOW_Y');
+    return {
+      chosen,
+      resolution: {
+        status: 'ESTABLISHED',
+        preference,
+        resolved: preference,
+        rationale: 'MANUAL_OVERRIDE',
+        lowerLayerAxis: lowerAxis(preference),
+        evaluated,
+        steps: [
+          `Orden de capas fijado a mano: ${preference} — la parrilla ` +
+          `${lowerAxis(preference)} va en la capa inferior. No se aplicó la regla automática.`,
+          `Alturas útiles resultantes: dX = ${chosen.x.d.toFixed(4)} m, ` +
+          `dY = ${chosen.y.d.toFixed(4)} m.`,
+          `Con el otro orden (${other.order}) serían dX = ${other.evaluation.dX.toFixed(4)} m, ` +
+          `dY = ${other.evaluation.dY.toFixed(4)} m y ` +
+          `${other.evaluation.feasible
+            ? `${other.evaluation.providedSteelMassKg.toFixed(1)} kg de acero contra ` +
+              `${chosen.evaluation.providedSteelMassKg.toFixed(1)} kg`
+            : 'no habría disposición admisible'}.`,
+        ],
+      },
+    };
+  }
+
+  // ── Step 1: feasibility ────────────────────────────────────
+  const feasible = arrangements.filter((a) => a.evaluation.feasible);
+  const steps: string[] = [
+    'Orden de capas AUTOMÁTICO: se dimensionan las DOS disposiciones físicas completas, con la ' +
+    'altura útil real de cada dirección en cada una, y se comparan los resultados.',
+    ...arrangements.map((a) =>
+      `${a.order}: dX = ${a.evaluation.dX.toFixed(4)} m, dY = ${a.evaluation.dY.toFixed(4)} m, ` +
+      (a.evaluation.feasible
+        ? `${a.x.barCount} Ø${a.x.diameterMm} + ${a.y.barCount} Ø${a.y.diameterMm} = ` +
+          `${a.evaluation.providedSteelMassKg.toFixed(1)} kg, utilización a flexión ` +
+          `${a.evaluation.worstFlexuralUtilization.toFixed(3)}.`
+        : 'RECHAZADA — no produce una disposición reglamentaria en ambas direcciones.')),
+  ];
+
+  if (feasible.length === 0) {
+    // No order can be established. The reported design falls back to the pre-resolution
+    // envelope, which is built by the caller, and the status says NOT_ESTABLISHED.
+    return {
+      chosen: byOrder('X_BELOW_Y'),
+      resolution: {
+        status: 'NOT_ESTABLISHED',
+        preference, resolved: null,
+        rationale: 'NO_FEASIBLE_ARRANGEMENT',
+        lowerLayerAxis: null,
+        evaluated,
+        steps: [...steps,
+          'Ninguna de las dos disposiciones es reglamentaria, de modo que no se establece un ' +
+          'orden de capas y no se emite una parrilla física.'],
+      },
+    };
+  }
+
+  if (feasible.length === 1) {
+    const chosen = feasible[0];
+    return {
+      chosen,
+      resolution: {
+        status: 'ESTABLISHED',
+        preference, resolved: chosen.order,
+        rationale: 'ONLY_FEASIBLE_ARRANGEMENT',
+        lowerLayerAxis: lowerAxis(chosen.order),
+        evaluated,
+        steps: [...steps,
+          `Se adopta ${chosen.order}: es la única disposición que produce una disposición ` +
+          'reglamentaria en ambas direcciones.'],
+      },
+    };
+  }
+
+  // ── Steps 2–4: both feasible ───────────────────────────────
+  const [a, b] = ARRANGEMENTS.map(byOrder);
+  const mA = a.evaluation.providedSteelMassKg;
+  const mB = b.evaluation.providedSteelMassKg;
+  const scale = Math.max(Math.abs(mA), Math.abs(mB), 1e-12);
+  const massEqual = Math.abs(mA - mB) <= STEEL_EQUAL_REL_TOL * scale;
+
+  if (!massEqual) {
+    const chosen = mA < mB ? a : b;
+    const other = mA < mB ? b : a;
+    return {
+      chosen,
+      resolution: {
+        status: 'ESTABLISHED',
+        preference, resolved: chosen.order,
+        rationale: 'LESS_PROVIDED_STEEL',
+        lowerLayerAxis: lowerAxis(chosen.order),
+        evaluated,
+        steps: [...steps,
+          `Se adopta ${chosen.order}: ambas son admisibles y ésta necesita menos acero ` +
+          `(${chosen.evaluation.providedSteelMassKg.toFixed(1)} kg contra ` +
+          `${other.evaluation.providedSteelMassKg.toFixed(1)} kg).`],
+      },
+    };
+  }
+
+  const uA = a.evaluation.worstFlexuralUtilization;
+  const uB = b.evaluation.worstFlexuralUtilization;
+  const utilScale = Math.max(Math.abs(uA), Math.abs(uB), 1e-12);
+  if (Math.abs(uA - uB) > STEEL_EQUAL_REL_TOL * utilScale) {
+    const chosen = uA < uB ? a : b;
+    const other = uA < uB ? b : a;
+    return {
+      chosen,
+      resolution: {
+        status: 'ESTABLISHED',
+        preference, resolved: chosen.order,
+        rationale: 'LOWER_FLEXURAL_UTILIZATION',
+        lowerLayerAxis: lowerAxis(chosen.order),
+        evaluated,
+        steps: [...steps,
+          `Se adopta ${chosen.order}: ambas necesitan el mismo acero ` +
+          `(${mA.toFixed(1)} kg), y ésta trabaja su armadura de flexión con más margen ` +
+          `(${chosen.evaluation.worstFlexuralUtilization.toFixed(4)} contra ` +
+          `${other.evaluation.worstFlexuralUtilization.toFixed(4)}).`],
+      },
+    };
+  }
+
+  return {
+    chosen: a,
+    resolution: {
+      status: 'ESTABLISHED',
+      preference, resolved: 'X_BELOW_Y',
+      rationale: 'DETERMINISTIC_TIE_BREAK',
+      lowerLayerAxis: 'X',
+      evaluated,
+      steps: [...steps,
+        'Se adopta X_BELOW_Y por desempate determinístico: las dos disposiciones son ' +
+        'equivalentes en acero y en utilización, de modo que la regla fija una para que el ' +
+        'resultado no dependa del orden de comparación.'],
+    },
+  };
+}
+
+/**
+ * Design both directions of an isolated footing's bottom mat.
+ *
+ * The two directions are computed INDEPENDENTLY — own cantilever, own distribution width, own
+ * pressure trapezoid, own bar diameter and, now that the layer order is resolved, own REAL
+ * effective depth. A square footing under a square centred column comes out symmetric because
+ * its inputs are symmetric, not because one direction was copied onto the other.
+ */
+export function designFootingMat(input: FootingMatDesignInput): FootingMatDesign {
+  const dX = input.preferences.bottomMatDiameterXmm;
+  const dY = input.preferences.bottomMatDiameterYmm;
+  const preference = input.preferences.bottomMatLayerOrder ?? 'AUTO';
+
+  // BOTH arrangements are always built, even under a manual override. It costs one extra design
+  // pass and it is what lets the panel and the certificate state what the other order would
+  // have cost — an override with no visible alternative is a decision nobody can review.
+  const arrangements = ARRANGEMENTS.map((o) => buildArrangement(input, o));
+  const { resolution, chosen } = resolveLayerOrder(preference, arrangements);
+
+  // With no order established there is no real depth to design at, so the reported design is
+  // the pre-resolution envelope: both directions at the shallower depth, exactly as PR18-A did.
+  const envelope = resolution.status === 'NOT_ESTABLISHED';
+  const x = envelope
+    ? designDirection(input, {
+      axis: 'X', barsParallelTo: 'B',
+      spanDimension: input.B, columnDimension: input.columnB,
+      distributionWidth: input.L,
+      factoredMoment: input.factoredMomentB,
+      spanEccentricity: input.eccentricityB,
+      distributionEccentricity: input.eccentricityL,
+    }, dX, 'ENVELOPE_UPPER_LAYER')
+    : chosen.x;
+  const y = envelope
+    ? designDirection(input, {
+      axis: 'Y', barsParallelTo: 'L',
+      spanDimension: input.L, columnDimension: input.columnH,
+      distributionWidth: input.B,
+      factoredMoment: input.factoredMomentL,
+      spanEccentricity: input.eccentricityL,
+      distributionEccentricity: input.eccentricityB,
+    }, dY, 'ENVELOPE_UPPER_LAYER')
+    : chosen.y;
 
   // The averaged two-layer depth the punching and one-way-shear checks keep using — the legacy
   // convention, `h − cover − d_b`, unchanged, with `d_b` the mean of the two selected diameters
@@ -1056,15 +1566,25 @@ export function designFootingMat(input: FootingMatDesignInput): FootingMatDesign
       dx: +x.d.toFixed(4), dy: +y.d.toFixed(4), punching: +punchingD.toFixed(4),
       bx: dX, by: dY,
     }),
-    // The layer envelope, stated for every footing rather than only when the diameters differ:
-    // the two mats are stacked whatever their diameters are, and the depth being conservative
-    // is a property of the design, not of an unusual input.
-    msg('footing.assumption.layerEnvelope', {
+  ];
+  if (envelope) {
+    // The pre-resolution envelope, reported ONLY when no order could be established. Under a
+    // resolved order it would be a false statement about the delivered design.
+    assumptions.push(msg('footing.assumption.layerEnvelope', {
       lowx: +x.dIfLowerLayer.toFixed(4), upx: +x.dIfUpperLayer.toFixed(4),
       lowy: +y.dIfLowerLayer.toFixed(4), upy: +y.dIfUpperLayer.toFixed(4),
       cc: +(input.cover * 1000).toFixed(0),
-    }),
-  ];
+    }));
+  } else {
+    assumptions.push(msg('footing.assumption.layerOrderResolved', {
+      order: resolution.resolved as string,
+      lower: resolution.lowerLayerAxis as string,
+      rationale: resolution.rationale,
+      dx: +x.d.toFixed(4), dy: +y.d.toFixed(4),
+      ex: +(x.centreElevation * 1000).toFixed(1),
+      ey: +(y.centreElevation * 1000).toFixed(1),
+    }));
+  }
   // The applied moment's sign is not usable on a footing-local axis, so both orientations are
   // enveloped. Named because it can make a footing carry a diagram the real sign would not
   // produce — conservative, and not free.
@@ -1083,13 +1603,17 @@ export function designFootingMat(input: FootingMatDesignInput): FootingMatDesign
 
   return {
     x, y, punchingD, status,
-    // PR18-A designs the mat and models none of it. Four types with one inhabitant each, so no
-    // edit to this function can quietly promote any of them: the geometry is not modelled, the
-    // top steel is not evaluated, the layer order is not established, and the anchorage is not
+    // This function designs the mat and models none of it. `geometry`, `topReinforcement` and
+    // `anchorage` each have ONE inhabitant, so no edit here can quietly promote them: the
+    // geometry is not modelled, the top steel is not evaluated, and the anchorage is not
     // geometrically verified. DESIGNED above means the flexural schedule, and only that.
+    //
+    // `layerOrder` is the one that changed. It is no longer a bare NOT_ESTABLISHED constant but
+    // a resolution carrying the preference, the order built at, the rationale, and BOTH
+    // arrangements as they were compared.
     geometry: 'REQUIRED_NOT_MODELED',
     topReinforcement: 'NOT_EVALUATED',
-    layerOrder: 'NOT_ESTABLISHED',
+    layerOrder: resolution,
     anchorage: 'NOT_GEOMETRICALLY_VERIFIED',
     assumptions,
     failures: [...x.failures, ...y.failures],

@@ -108,6 +108,9 @@ pub fn solve_nonlinear_material_2d(
     let mut load_displacement: Vec<[f64; 2]> = Vec::with_capacity(n_increments);
     let mut total_nr_iterations: usize = 0;
     let mut converged_global = true;
+    // Last increment that actually converged — reported as load_factor so a
+    // failed run does not claim the full load was applied.
+    let mut last_converged_factor = 0.0f64;
 
     for inc in 1..=n_increments {
         let load_factor = inc as f64 / n_increments as f64;
@@ -118,6 +121,15 @@ pub fn solve_nonlinear_material_2d(
 
         // F_ext_free norm for convergence check.
         let f_ext_norm = vec_norm_l2(&f_ext_free);
+
+        // Apply this increment's prescribed displacements to the restrained
+        // DOFs BEFORE the first residual evaluation: f_int then includes the
+        // K_fr * u_r coupling, so the residual is the true out-of-balance and
+        // no separate RHS correction is needed (a pure-settlement increment
+        // with zero external load must still iterate).
+        for i in 0..nr {
+            u_full[nf + i] = load_factor * u_r[i];
+        }
 
         // Newton-Raphson inner loop.
         let mut converged_increment = false;
@@ -166,20 +178,15 @@ pub fn solve_nonlinear_material_2d(
             }
 
             // Solve K_T * delta_u = R for free DOFs.
+            // The prescribed-displacement coupling K_fr * u_r is already in
+            // the residual via f_int (u_full carries the restrained values),
+            // so the RHS is the residual itself.
             let k_ff = extract_submatrix(&k_t, n, &free_idx, &free_idx);
 
-            // Modify residual for prescribed displacement coupling: R_f -= K_fr * u_r
-            let k_fr = extract_submatrix(&k_t, n, &free_idx, &rest_idx);
-            let k_fr_ur = mat_vec_rect(&k_fr, &u_r, nf, nr);
-            let mut rhs = r_free.clone();
-            for i in 0..nf {
-                rhs[i] -= k_fr_ur[i];
-            }
-
             let (k_s, rhs_s) = if let Some(ref cs) = cs {
-                (cs.reduce_matrix(&k_ff), cs.reduce_vector(&rhs))
+                (cs.reduce_matrix(&k_ff), cs.reduce_vector(&r_free))
             } else {
-                (k_ff, rhs)
+                (k_ff, r_free)
             };
 
             let delta_u_indep = solve_system(k_s, rhs_s, ns)?;
@@ -189,12 +196,10 @@ pub fn solve_nonlinear_material_2d(
                 delta_u_indep
             };
 
-            // Update displacements.
+            // Update displacements (free DOFs; restrained stay at this
+            // increment's prescribed values set before the loop).
             for i in 0..nf {
                 u_full[i] += delta_u_f[i];
-            }
-            for i in 0..nr {
-                u_full[nf + i] = load_factor * u_r[i];
             }
 
             // Update element yield states from current internal forces.
@@ -215,6 +220,8 @@ pub fn solve_nonlinear_material_2d(
 
         if !converged_increment {
             converged_global = false;
+        } else {
+            last_converged_factor = load_factor;
         }
 
         // Record load-displacement point.
@@ -267,7 +274,7 @@ pub fn solve_nonlinear_material_2d(
     // Build element plastic status.
     let element_status = build_element_status(solver, input, &dof_num, &u_geom, &states);
 
-    let final_load_factor = if n_increments > 0 { 1.0 } else { 0.0 };
+    let final_load_factor = last_converged_factor;
 
     // Compute constraint forces if constraints are active
     let constraint_forces = if let Some(ref fcs) = cs {
@@ -459,7 +466,12 @@ fn assemble_tangent_stiffness(
         let mut rot_restrained: std::collections::HashSet<usize> =
             std::collections::HashSet::new();
         for sup in solver.supports.values() {
-            if sup.support_type == "fixed" || sup.support_type == "guidedX" || sup.support_type == "guidedY" {
+            // guidedY/guidedZ restrain ux+ry (dof.rs), so they belong here
+            // like guidedX. (The `idx < n_free` guard below already makes
+            // this set redundant for any rotation-restraining support — a
+            // restrained ry is numbered at index >= n_free — but keep the
+            // enumeration complete for clarity.)
+            if sup.support_type == "fixed" || sup.support_type == "guidedX" || sup.support_type == "guidedY" || sup.support_type == "guidedZ" {
                 rot_restrained.insert(sup.node_id);
             }
             if sup.support_type == "spring" && sup.kz.unwrap_or(0.0) > 0.0 {
@@ -895,6 +907,8 @@ pub fn solve_nonlinear_material_3d(
     let mut load_displacement: Vec<[f64; 2]> = Vec::with_capacity(n_increments);
     let mut total_nr_iterations: usize = 0;
     let mut converged_global = true;
+    // Last increment that actually converged — see the 2D solver.
+    let mut last_converged_factor = 0.0f64;
 
     for inc in 1..=n_increments {
         let load_factor = inc as f64 / n_increments as f64;
@@ -902,6 +916,14 @@ pub fn solve_nonlinear_material_3d(
         let f_ext: Vec<f64> = f_total.iter().map(|&f| load_factor * f).collect();
         let f_ext_free = extract_subvec(&f_ext, &free_idx);
         let f_ext_norm = vec_norm_l2(&f_ext_free);
+
+        // Apply this increment's prescribed displacements to the restrained
+        // DOFs BEFORE the first residual evaluation — see the 2D solver for
+        // why (f_int then carries the K_fr * u_r coupling and a
+        // pure-settlement increment still iterates).
+        for i in 0..nr {
+            u_full[nf + i] = load_factor * u_r[i];
+        }
 
         let mut converged_increment = false;
 
@@ -937,21 +959,17 @@ pub fn solve_nonlinear_material_3d(
                 break;
             }
 
+            // The prescribed-displacement coupling K_fr * u_r is already in
+            // the residual via f_int (u_full carries the restrained values),
+            // so the RHS is the residual itself.
             let k_ff = extract_submatrix(&k_t, n, &free_idx, &free_idx);
-            let k_fr = extract_submatrix(&k_t, n, &free_idx, &rest_idx);
-            let k_fr_ur = mat_vec_rect(&k_fr, &u_r, nf, nr);
-            let mut rhs = r_free.clone();
-            for i in 0..nf {
-                rhs[i] -= k_fr_ur[i];
-            }
 
-            let delta_u_f = solve_system(k_ff, rhs, nf)?;
+            let delta_u_f = solve_system(k_ff, r_free, nf)?;
 
+            // Update displacements (free DOFs; restrained stay at this
+            // increment's prescribed values set before the loop).
             for i in 0..nf {
                 u_full[i] += delta_u_f[i];
-            }
-            for i in 0..nr {
-                u_full[nf + i] = load_factor * u_r[i];
             }
 
             // See the 2D solver's identical comment: update_element_states_3d
@@ -967,6 +985,8 @@ pub fn solve_nonlinear_material_3d(
 
         if !converged_increment {
             converged_global = false;
+        } else {
+            last_converged_factor = load_factor;
         }
 
         let max_disp = compute_max_displacement_3d_nl(&dof_num, &u_full);
@@ -1046,7 +1066,7 @@ pub fn solve_nonlinear_material_3d(
         },
         converged: converged_global,
         iterations: total_nr_iterations,
-        load_factor: if n_increments > 0 { 1.0 } else { 0.0 },
+        load_factor: last_converged_factor,
         element_status,
         load_displacement,
     })

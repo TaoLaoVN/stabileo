@@ -12,13 +12,25 @@
    * design would be a second engine, and the number on screen could then disagree with the
    * number in the certificate for the same footing.
    *
-   * Two statuses are as prominent as the numbers, because PR18-A designs the mat and models
-   * none of it: the geometry is REQUIRED_NOT_MODELED and the top steel is NOT_EVALUATED. A
-   * reader who scrolls past twenty numbers must not have to infer either from their absence.
+   * ── What this component may and may not claim ──────────────────
+   *
+   * It shows the DESIGN: demand, required steel, counts, spacings, distribution. Everything
+   * about the physical mat — the resolved layer order, the real elevations, the bars, the
+   * schedule, the development and the clashes — belongs to `FootingMatPhysicalPanel`, mounted
+   * below. The split matters because the two are separately true: a footing can be perfectly
+   * designed and have no geometry, and it can have geometry that fails to develop.
+   *
+   * Through PR18-A this component also carried four flat sentences saying that the geometry, the
+   * layer order and the anchorage did not exist. Three of them are now false and they have been
+   * removed rather than reworded: the layer order IS resolved, the mat IS modelled, and the
+   * anchorage IS measured — each with its own status next door. The one that survives is the top
+   * reinforcement, because nothing has evaluated it.
    */
   import { t, tp } from '../../../lib/i18n';
+  import { identifyMessages } from '../../../lib/codes/message';
   import { detailingStore } from '../../../lib/store/detailing.svelte';
   import { formatClause } from '../../../lib/codes/regulation';
+  import FootingMatPhysicalPanel from './FootingMatPhysicalPanel.svelte';
   import type {
     FootingDirectionDesign, FootingMatRegion,
   } from '../../../lib/engine/detailing/footing-flexure';
@@ -119,8 +131,8 @@
           {#if col.dir.failures.length > 0}
             <!-- A failed direction is never green and is never summarised into a count. -->
             <ul class="issues" data-testid={`footing-mat-${col.key}-failures`}>
-              {#each col.dir.failures as fl (fl.key)}
-                <li class="blocking">{tp(fl.key, fl.params ?? {})}</li>
+              {#each identifyMessages(col.dir.failures) as fl (fl.id)}
+                <li class="blocking">{tp(fl.message.key, fl.message.params ?? {})}</li>
               {/each}
             </ul>
           {/if}
@@ -134,21 +146,14 @@
     </div>
     <p class="note">{t('footing.ui.matPunchingDepthNote')}</p>
 
-    <p class="pending" data-testid="footing-mat-geometry-pending">
-      {t('footing.ui.matGeometryPending')}
-    </p>
-    <p class="pending" data-testid="footing-mat-top-not-evaluated">
-      {t('footing.ui.matTopNotEvaluated')}
-    </p>
     <!--
-      Two more things "designed" does NOT mean. Each is its own sentence, because a reader who
-      sees one badge saying DESIGNED will otherwise assume all of it was checked.
+      What DESIGNED does not mean, stated once and then answered by the panel below rather than
+      asserted here. The three PR18-A sentences that claimed the layer order, the geometry and
+      the anchorage did not exist are gone: all three now do, each with its own status, and
+      repeating the old claim beside the new status would be the worse of the two errors.
     -->
-    <p class="pending" data-testid="footing-mat-layer-order-pending">
-      {t('footing.ui.matLayerOrderPending')}
-    </p>
-    <p class="pending" data-testid="footing-mat-anchorage-pending">
-      {t('footing.ui.matAnchoragePending')}
+    <p class="note" data-testid="footing-mat-designed-means">
+      {t('footing.ui.matDesignedMeans')}
     </p>
 
     {#if m.advisories.length > 0}
@@ -171,6 +176,9 @@
         {/each}
       </ul>
     </details>
+
+    <!-- The physical mat that came out of the design above. -->
+    <FootingMatPhysicalPanel {outcome} />
   {/if}
 </div>
 

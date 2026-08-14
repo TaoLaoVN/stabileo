@@ -33,12 +33,36 @@ import { utilizationStatus } from '../engine/design/outcome';
 import { rebarHash } from '../engine/design/rebar-hash';
 import { getDesignCode, type DesignCodeId } from '../engine/design/code-adapter';
 import type { OrientationIssue } from '../engine/design/orientation-diagnostic';
+import { failingLimits, isKnownBiaxialLimitation }
+  from '../engine/detailing/element-status';
 
 export type VerificationStatus = 'ok' | 'warn' | 'fail';
 
 /** Honest per-element display state for the table, summary and viewport. */
 export type DisplayStatus =
   | 'ok' | 'warn' | 'fail'
+  /**
+   * The member carries a PROPOSAL: its primary axis was designed and verified, its secondary
+   * axis is evaluated by no check in this app.
+   *
+   * ── Why this is a display state and not a shade of `fail` ──────
+   *
+   * Because it was `fail`, and that was wrong in a way that mattered. A PROVISIONAL_BIAXIAL
+   * member's steel fails the authoritative verifier BY CONSTRUCTION — the verifier pushes the
+   * biaxial refusal for exactly these members — so the summary bar reported "✗ 22 fail" about
+   * 22 members whose primary axis had passed every check that ran. Twenty-two red crosses that
+   * meant "we did not look", presented identically to twenty-two that would mean "we looked and
+   * it does not hold".
+   *
+   * It is emphatically NOT a pass. It sits with `fail` and `unavailable` on the wrong side of
+   * every gate, it is never merged into `ok`, and the reason it exists is to stop a proposal
+   * being READ as either of the other two.
+   *
+   * The engineering is untouched: the outcome, the verdict, the certificate and the geometry
+   * are exactly what they were. Only the word changes, and only where the app was using the
+   * wrong one.
+   */
+  | 'provisional'
   /** No reinforcement, no demand, or nothing checkable — never green. */
   | 'unavailable'
   /** The code-check baseline predates the current analysis. */
@@ -46,6 +70,8 @@ export type DisplayStatus =
 
 export interface ProvidedSummaryCounts {
   ok: number; warn: number; fail: number;
+  /** Members carrying a proposal. Counted apart from both the passes and the failures. */
+  provisional: number;
   unavailable: number; stale: number;
   total: number;
   /** Members with reinforcement assigned. */
@@ -398,6 +424,30 @@ function createVerificationStore() {
       if (pv.overallStatus === 'none') return 'unavailable';
       if (this.isBaselineStale) return 'stale';
       if (this.isContextStale(elementId)) return 'stale';
+      /**
+       * A proposal is a proposal, not a failure.
+       *
+       * Checked after staleness and before the verdict is returned, so the ordering matches
+       * `statusOf`'s: a stale member is stale whatever its outcome, because the numbers behind
+       * the verdict no longer describe the model.
+       *
+       * The predicate is `isKnownBiaxialLimitation` and it is the SAME one the detailing
+       * status uses — imported, not restated. Both surfaces had to make this exception and for
+       * a release only one of them did, which is precisely the drift a shared predicate exists
+       * to prevent. It is narrow: a proposal that also fails on flexure or shear keeps `fail`,
+       * because then something is wrong beyond the limitation the member declares.
+       *
+       * Nothing about the verdict changes. `providedFor` still says `fail`, the certificate is
+       * still absent, `getDisplayRatio` still reports the utilisation. This decides one word.
+       */
+      if (pv.overallStatus === 'fail' && isKnownBiaxialLimitation({
+        outcome: this.outcomeFor(elementId)?.outcome,
+        verificationStatus: pv.overallStatus,
+        verificationLimiting: failingLimits(pv.checks),
+        limiting: [],
+      })) {
+        return 'provisional';
+      }
       return pv.overallStatus;
     },
 
@@ -418,7 +468,8 @@ function createVerificationStore() {
     get providedSummary(): ProvidedSummaryCounts {
       void providedRevision;
       const counts: ProvidedSummaryCounts = {
-        ok: 0, warn: 0, fail: 0, unavailable: 0, stale: 0, total: 0, withReinforcement: 0,
+        ok: 0, warn: 0, fail: 0, provisional: 0,
+        unavailable: 0, stale: 0, total: 0, withReinforcement: 0,
       };
       for (const id of contexts.keys()) {
         counts.total++;
@@ -427,6 +478,7 @@ function createVerificationStore() {
           case 'ok': counts.ok++; break;
           case 'warn': counts.warn++; break;
           case 'fail': counts.fail++; break;
+          case 'provisional': counts.provisional++; break;
           case 'stale': counts.stale++; break;
           default: counts.unavailable++; break;
         }
@@ -448,6 +500,17 @@ function createVerificationStore() {
     getStatus(elementId: number): VerificationStatus | null {
       const d = this.getDisplayStatus(elementId);
       if (d === 'ok' || d === 'warn' || d === 'fail') return d;
+      /**
+       * A proposal reports the verdict underneath it here, and that is deliberate.
+       *
+       * This is the three-valued channel the 2-D/3-D labels read, and it has no room for a
+       * fourth state. Returning null would erase the member from the labelled set entirely —
+       * a member with steel in it showing nothing at all — which is worse than the strict
+       * truth, which is that the verifier does refuse this steel. The surfaces that CAN carry
+       * the distinction (the table, the summary bar, the detailing panel, the 3-D workspace)
+       * all read `getDisplayStatus` and get `provisional` from it.
+       */
+      if (d === 'provisional') return 'fail';
       if (d === 'stale') {
         const pv = providedFor(elementId);
         return pv && pv.overallStatus !== 'none' ? pv.overallStatus : null;

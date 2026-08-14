@@ -83,6 +83,17 @@ export interface CertificateEntry {
   matches: boolean;
   verifierId: string;
   status: 'ok' | 'warn' | 'fail' | 'notRun';
+  /**
+   * True when this member's design is a PROPOSAL rather than a certified design.
+   *
+   * Carried because `matches` cannot be read as certification and used to be the only signal
+   * on the row. It answers "does the verification on record still describe the steel in the
+   * model" — a staleness question — so a member whose steel was verified and REFUSED can
+   * legitimately show `matches: true`. On a table headed "verification certificates" that is
+   * one glance away from being read as certified, and a provisional member is exactly the
+   * case where the glance would be wrong.
+   */
+  provisional?: boolean;
 }
 
 export interface DocumentAssembly {
@@ -193,6 +204,17 @@ export interface OpenConflict {
   clearance: number;
   /** What the rule demanded, m. */
   required: number;
+  /** How far short, m. Always positive for a reported conflict. */
+  shortfall: number;
+  /**
+   * `overlap` — the bars physically interpenetrate; `clearance` — they are short of the
+   * clear distance the rule demands.
+   *
+   * Carried rather than re-derived from the sign of `clearance`: the two are different
+   * claims and the remedy differs, and a reader who has to compute the distinction from a
+   * sign is a reader who will eventually get it wrong.
+   */
+  severity: 'overlap' | 'clearance' | 'marginal';
   /** The classification, e.g. `prohibitedOverlap`. */
   pairClass: string;
   /** The clause behind `required`. Empty for classes with no spacing rule. */
@@ -282,6 +304,8 @@ export function openConflictsOf(
       at: c.at,
       clearance: c.clearance,
       required: c.required,
+      shortfall: c.shortfall,
+      severity: c.severity,
       pairClass: c.pairClass ?? 'unknown',
       refs: [],
       attempted: [...attempted],
@@ -337,6 +361,28 @@ export function buildDocumentModel(input: {
     // the question a document must not get wrong.
     const families = [...(a.families ?? [])];
     const familyCertificates: FamilyCertificateEntry[] = families.map((r) => {
+      /**
+       * The record's own bars, found once.
+       *
+       * ── The 1,9 seconds this removes from the 3-D button ───────────────
+       *
+       * This used to be `a.bars.filter((b) => r.barIds.includes(b.id))`, written TWICE — once
+       * per hash. `Array.includes` is a linear scan, so the pair cost 2·|a.bars|·|r.barIds|
+       * string comparisons per record. For a beam line or a column stack that is nothing:
+       * `families` is empty and the whole block is skipped.
+       *
+       * It stops being nothing the moment the FLOOR design runs. A slab family owns thousands
+       * of bars inside an assembly that holds thousands more, and the product is tens of
+       * millions of comparisons — measured at 1 695 ms across the two calls on the 7-storey
+       * building, inside `buildDocument`, inside the click handler for "3-D". That is the
+       * whole of "the button does not respond": the browser had no frame to give until it
+       * finished, so the click looked lost and the app looked frozen.
+       *
+       * A Set makes the membership test O(1) and the single pass halves what is left. Nothing
+       * about WHAT is hashed changes — same bars, same order, same hashes.
+       */
+      const ownedIds = new Set(r.barIds);
+      const ownedBars = a.bars.filter((b) => ownedIds.has(b.id));
       const freshness = certificateFreshness({
         certificate: r.certificate,
         current: {
@@ -359,10 +405,8 @@ export function buildDocumentModel(input: {
         currentInputHash: r.inputHash,
         // Hashed from the bars in the assembly RIGHT NOW, filtered to the ones this record
         // owns. This is what catches a bar added, removed or moved after certification.
-        currentReinforcementHash: reinforcementHashOf(
-          a.bars.filter((b) => r.barIds.includes(b.id))),
-        currentFinalGeometryHash: finalGeometryHashOf(
-          a.bars.filter((b) => r.barIds.includes(b.id))),
+        currentReinforcementHash: reinforcementHashOf(ownedBars),
+        currentFinalGeometryHash: finalGeometryHashOf(ownedBars),
       });
       return {
         family: r.family,

@@ -39,6 +39,7 @@ import { pickElement3DMetadata, type Element3DMetadata, type MemberOffset } from
 import type { ModelProvenance } from '../model/provenance';
 export type { MemberOffset, MemberOffsetVec } from '../model/element-3d-metadata';
 import { uiStore } from './ui.svelte';
+import { plainDeepCopy } from '../utils/plain-deep-copy';
 
 export interface Node {
   id: number;
@@ -733,8 +734,18 @@ function createModelStore() {
           .filter((d: any) => Number.isInteger(d) && d >= 0 && d <= 5)
       : undefined;
     switch (type) {
-      case 'rigidLink':
-        return { ...raw, type, dofs: mapDofs(raw.dofs) };
+      case 'rigidLink': {
+        // `dofs` is OPTIONAL on a rigid link (absent = all translational DOFs), and Rust
+        // spells that `#[serde(default)] dofs: Vec<usize>`. `#[serde(default)]` covers a
+        // MISSING field, not a field that is present and holds a unit value — so writing
+        // `dofs: undefined` here materialised an own property that made serde reject the
+        // whole payload with `invalid type: unit value, expected a sequence`, aborting the
+        // first load case of every restored project. Emit the key only when there is one.
+        const dofs = mapDofs(raw.dofs);
+        const out = { ...raw, type } as any;
+        if (dofs) out.dofs = dofs; else delete out.dofs;
+        return out;
+      }
       case 'equalDOF':
         return { ...raw, type, dofs: mapDofs(raw.dofs) ?? [] };
       case 'linearMPC': {
@@ -1246,7 +1257,30 @@ function createModelStore() {
       return result;
     },
 
-    restore(s: ModelSnapshot): void {
+    restore(rawSnapshot: ModelSnapshot): void {
+      // ── Why the incoming snapshot is unwrapped before anything reads it ──────────
+      //
+      // Every family below is copied ONE level deep (`{ ...v }`), which is enough to stop the
+      // restored model from aliasing the snapshot's top-level records but NOT enough to stop
+      // it from aliasing their nested arrays and objects — `quad.nodes`, `diaphragm.slaveNodes`,
+      // `element.reinforcement`, a load's `data`.
+      //
+      // That aliasing is normally invisible. It stops being invisible the moment a caller holds
+      // the snapshot in reactive state, which two of them do: the autosave banner keeps the
+      // parsed project in `$state`, and the tab manager keeps every tab's captured state there.
+      // Svelte then hands back a deep PROXY of that snapshot, the shallow copies adopt those
+      // proxies into the live model, and the proxies travel all the way to
+      // `worker.postMessage`, where structured clone refuses an exotic object outright:
+      // `DataCloneError: [object Array] could not be cloned`. Restoring a project and pressing
+      // Calcular died there, and the sequential fallback then died on the same data for an
+      // unrelated reason, so the user saw two errors and no results.
+      //
+      // Copying once, here, is what makes "the model holds plain data it owns" true for every
+      // family at once, rather than for whichever families someone remembered to clone deeply.
+      // `plainDeepCopy` rather than `$state.snapshot`: compiled for the server the rune is the
+      // identity function, so the guarantee would hold in the browser and evaporate under the
+      // test suite — which is where it has to be provable.
+      const s = plainDeepCopy(rawSnapshot);
       modelVersion++;
       _onMutation?.();
       if (s.name) model.name = s.name;

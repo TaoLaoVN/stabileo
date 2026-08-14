@@ -14,20 +14,27 @@
 // so one command is one undo step, results survive, and no structural solve fires.
 
 import { modelStore } from './model.svelte';
+import { requestAutosave } from './autosave-service';
 import { regulationsStore } from './regulations.svelte';
 import type { RegulationEdition } from '../codes/regulation';
 import { detailingStore } from './detailing.svelte';
 import { resultsStore } from './results.svelte';
 import { verificationStore } from './verification.svelte';
 import { computeStationDemands, runCirsocDesign } from '../engine/verification-service';
+import { censusRcCheckability } from '../engine/auto-verify';
 import {
   buildAllMemberContexts, buildCriticalSectionMap, type ContextModelData, type MemberContext,
 } from '../engine/design/member-context';
 import { runOrientationDiagnostic } from '../engine/design/orientation-diagnostic';
 import { runDesign, designMember, DEFAULT_RUN_MS } from '../engine/design/candidate-search';
 import { getDesignCode, type DesignCodeId } from '../engine/design/code-adapter';
-import type { DesignRunSummary, MemberDesignOutcome } from '../engine/design/outcome';
+import { emptyRunSummary, type DesignRunSummary, type MemberDesignOutcome } from '../engine/design/outcome';
 import type { RunProgress } from '../engine/design/candidate-search';
+import {
+  DESIGN_FAMILIES, FLOOR_FAMILIES, FRAME_FAMILIES, emptyFamilyResult, isFrameFamily,
+  needsFloorPass, needsFramePass,
+  type DesignFamily, type DesignFamilySelection, type DesignRunReport, type FamilyRunResult,
+} from '../engine/design/design-families';
 
 export interface CommandResult {
   ok: boolean;
@@ -58,6 +65,16 @@ function createDesignRunStore() {
   let autoDesigned = $state<Set<number>>(new Set());
   /** Members whose provisional (failing) candidate was retained for review. */
   let provisionalIds = $state<Set<number>>(new Set());
+  /**
+   * Members carrying a PROVISIONAL_BIAXIAL proposal — steel in the model, no certificate.
+   *
+   * Separate from `provisionalIds`, which holds "the best candidate we could not make pass",
+   * because these two mean opposite things: one is a member whose design FAILED and whose best
+   * attempt is kept for review, the other is a member whose primary axis was designed and
+   * verified and whose secondary axis nobody checks. Merging them would let a failing member
+   * inherit a proposal's treatment.
+   */
+  let provisionalBiaxialIds = $state<Set<number>>(new Set());
 
   /**
    * The design adapter, from the project's `concrete` role binding and nowhere else.
@@ -149,7 +166,7 @@ function createDesignRunStore() {
         sectionNames,
         resultsStore.governing3D.size > 0 ? resultsStore.governing3D : null,
       );
-      if (normalized.length === 0 || !summary) return fail('design.error.nothingChecked', { code: a.name });
+      if (normalized.length === 0 || !summary) return failNothingChecked(a.name);
       verificationStore.setDesignBaseline(concrete, normalized, summary);
       resultsStore.diagramType = 'verification';
       return { ok: true };
@@ -206,18 +223,42 @@ function createDesignRunStore() {
     recount(merged);
     verificationStore.setDesignOutcomes(merged);
 
-    const verified: MemberDesignOutcome[] = [];
+    /**
+     * Two populations get steel written into the model, and they are not the same claim.
+     *
+     * VERIFIED members carry certified reinforcement. PROVISIONAL_BIAXIAL members carry a
+     * PROPOSAL: the primary axis designed by the ordinary search, with the secondary axis
+     * unchecked. Both are written, because a beam with no bars anywhere in the model is
+     * invisible to the viewer, the drawings, the schedule and the report alike — which is
+     * exactly the state 117 of the 119 beams in the flagship example were in.
+     *
+     * What keeps them apart is not the model, it is the OUTCOME: `provisionalBiaxialIds`
+     * here, `PROVISIONAL_BIAXIAL` on the outcome, no certificate anywhere, and a status of
+     * PROVISIONAL — never MODELLED — on every projection.
+     */
+    const withSteel: Array<{ id: number; rebar: NonNullable<MemberDesignOutcome['accepted']> }> = [];
     const provisional = new Set(provisionalIds);
+    const biaxial = new Set(provisionalBiaxialIds);
     for (const [, o] of summary.outcomes) {
-      if (o.outcome === 'VERIFIED' && o.accepted) verified.push(o);
-      if (o.outcome !== 'VERIFIED' && o.provisional) provisional.add(o.elementId);
-      else provisional.delete(o.elementId);
+      if (o.outcome === 'VERIFIED' && o.accepted) withSteel.push({ id: o.elementId, rebar: o.accepted });
+      if (o.outcome === 'PROVISIONAL_BIAXIAL' && o.provisional) {
+        withSteel.push({ id: o.elementId, rebar: o.provisional.candidate });
+        biaxial.add(o.elementId);
+      } else {
+        biaxial.delete(o.elementId);
+      }
+      if (o.outcome !== 'VERIFIED' && o.outcome !== 'PROVISIONAL_BIAXIAL' && o.provisional) {
+        provisional.add(o.elementId);
+      } else {
+        provisional.delete(o.elementId);
+      }
     }
     provisionalIds = provisional;
+    provisionalBiaxialIds = biaxial;
 
-    if (verified.length > 0) {
+    if (withSteel.length > 0) {
       const written = modelStore.reinforcementTransaction((api) => {
-        for (const o of verified) api.setReinforcement(o.elementId, o.accepted);
+        for (const w of withSteel) api.setReinforcement(w.id, w.rebar);
       });
       const auto = new Set(autoDesigned);
       const manual = new Set(manualOverrides);
@@ -230,16 +271,24 @@ function createDesignRunStore() {
       // so the automatic path is a convenience, never the only way in.
       if (detailingStore.autoGenerate) detailingStore.generate();
     }
+
+    // A design run is the operation that made the old autosave fail — it is both the most
+    // expensive state the app produces and the point at which the project outgrew
+    // localStorage. It asks for a save immediately rather than waiting up to 30 s for the
+    // timer, which is how the run got lost.
+    void requestAutosave('design');
   }
 
   function recount(s: DesignRunSummary) {
     s.total = s.outcomes.size;
     s.verified = 0; s.sectionInadequate = 0; s.demandUnavailable = 0;
     s.searchExhausted = 0; s.unsupported = 0; s.provisionalRetained = 0;
+    s.provisionalBiaxial = 0;
     for (const [, o] of s.outcomes) {
       if (o.provisional && o.outcome !== 'VERIFIED') s.provisionalRetained++;
       switch (o.outcome) {
         case 'VERIFIED': s.verified++; break;
+        case 'PROVISIONAL_BIAXIAL': s.provisionalBiaxial++; break;
         case 'SECTION_INADEQUATE': s.sectionInadequate++; break;
         case 'DEMAND_UNAVAILABLE': s.demandUnavailable++; break;
         case 'SEARCH_EXHAUSTED': s.searchExhausted++; break;
@@ -262,6 +311,118 @@ function createDesignRunStore() {
     return autoDesign(target);
   }
 
+  /**
+   * One command for the whole building, scoped to the families the user chose.
+   *
+   * ── Why this exists ────────────────────────────────────────────
+   *
+   * "Diseñar todo" ran `computeDemands → runCodeCheck → autoDesign` over the frame and
+   * stopped. Slabs, walls and foundations came from `Ejecutar diseño de pisos` in a different
+   * disclosure, so the button named "all" produced a building with no floors and said nothing
+   * about it. The user found out from the 3-D view.
+   *
+   * ── One implementation, not two ────────────────────────────────
+   *
+   * This does not reimplement either pass. It calls `autoDesign` for the frame families and
+   * `detailingStore.generate` / `generateFloors` for the rest — the same functions the
+   * individual buttons call — so the advanced button and the global selector cannot diverge.
+   * What it adds is the SCOPE and the per-family report.
+   *
+   * ── Idempotence ───────────────────────────────────────────────
+   *
+   * Nothing is run for a family that was not selected, and the frame pass is given only the
+   * members of the selected frame families. Running it twice with the same selection reaches
+   * the same state: `autoDesign` writes reinforcement through the existing transaction and
+   * the detailing commands bump their own revisions, which is what the staleness machinery
+   * already keys off.
+   */
+  function designFamilies(
+    selection: DesignFamilySelection,
+    opts: { verifierId?: string } = {},
+  ): DesignRunReport {
+    const families: FamilyRunResult[] = [];
+    const chosen = new Set(selection);
+
+    // ── Frame families ─────────────────────────────────────────
+    const frameWanted = needsFramePass(selection);
+    if (frameWanted) {
+      const d = computeDemands();
+      const c = d.ok ? runCodeCheck() : d;
+      if (!d.ok || !c.ok) {
+        const bad = !d.ok ? d : c;
+        for (const f of FRAME_FAMILIES) {
+          if (!chosen.has(f)) { families.push(emptyFamilyResult(f, 'skipped')); continue; }
+          families.push({
+            ...emptyFamilyResult(f, 'failed'),
+            errorKey: bad.reasonKey, errorParams: bad.params,
+          });
+        }
+      } else {
+        // Split the members by what the context says they are, so "columns only" designs
+        // columns only. The context is the same authority the search reads.
+        const byFamily = new Map<DesignFamily, number[]>();
+        for (const [id, ctx] of verificationStore.contexts) {
+          const t = (ctx as { elementType?: string }).elementType;
+          const f: DesignFamily | null = t === 'column' ? 'column' : t === 'beam' ? 'beam' : null;
+          if (!f) continue;
+          byFamily.set(f, [...(byFamily.get(f) ?? []), id]);
+        }
+        const target = FRAME_FAMILIES
+          .filter((f) => chosen.has(f))
+          .flatMap((f) => byFamily.get(f) ?? []);
+        if (target.length > 0) autoDesign(target);
+
+        for (const f of FRAME_FAMILIES) {
+          if (!chosen.has(f)) { families.push(emptyFamilyResult(f, 'skipped')); continue; }
+          const ids = byFamily.get(f) ?? [];
+          if (ids.length === 0) { families.push(emptyFamilyResult(f, 'noElements')); continue; }
+          let designed = 0;
+          let refused = 0;
+          let notModelled = 0;
+          for (const id of ids) {
+            const o = verificationStore.outcomeFor(id);
+            if (!o) continue;
+            if (o.outcome !== 'VERIFIED') refused += 1;
+            else if (o.accepted) designed += 1;
+            else notModelled += 1;
+          }
+          families.push({
+            family: f, state: 'designed', processed: ids.length, designed, refused, notModelled,
+          });
+        }
+      }
+    } else {
+      for (const f of FRAME_FAMILIES) families.push(emptyFamilyResult(f, 'skipped'));
+    }
+
+    // Frame detailing follows the frame design, and only when a frame family was designed.
+    if (frameWanted && families.some((f) => isFrameFamily(f.family) && f.state === 'designed')) {
+      detailingStore.generate({ verifierId: opts.verifierId });
+    }
+
+    // ── Floor families ─────────────────────────────────────────
+    if (needsFloorPass(selection)) {
+      const floorSel = FLOOR_FAMILIES.filter((f) => chosen.has(f));
+      detailingStore.generateFloors({
+        verifierId: opts.verifierId,
+        families: floorSel as readonly ('slab' | 'wall' | 'footing')[],
+      });
+      const run = detailingStore.lastFloorRun;
+      for (const f of FLOOR_FAMILIES) {
+        if (!chosen.has(f)) { families.push(emptyFamilyResult(f, 'skipped')); continue; }
+        families.push(floorFamilyResult(f, run));
+      }
+    } else {
+      for (const f of FLOOR_FAMILIES) families.push(emptyFamilyResult(f, 'skipped'));
+    }
+
+    // Report in selector order rather than run order, so the panel reads the same as the
+    // checkboxes above it.
+    families.sort((a, b) =>
+      DESIGN_FAMILIES.indexOf(a.family) - DESIGN_FAMILIES.indexOf(b.family));
+    return { selection, families, ok: families.every((f) => f.state !== 'failed') };
+  }
+
   /** Re-run the search for one member (used after a section change is approved). */
   function designOne(elementId: number): MemberDesignOutcome | null {
     const a = adapter();
@@ -273,11 +434,10 @@ function createDesignRunStore() {
     outcomes.set(elementId, o);
     const s: DesignRunSummary = prev
       ? { ...prev, outcomes }
-      : {
-          codeId: a.id, codeVersion: a.version, total: 0, verified: 0, sectionInadequate: 0,
-          demandUnavailable: 0, searchExhausted: 0, unsupported: 0, provisionalRetained: 0,
-          outcomes, wallMs: o.searchStats.ms, aborted: false, notReached: 0,
-        };
+      // `emptyRunSummary` rather than a literal: a counter added to the summary must not be
+      // silently absent on the single-member path, which is how `provisionalBiaxial` would
+      // have read zero after re-designing one member.
+      : { ...emptyRunSummary(a.id, a.version), outcomes, wallMs: o.searchStats.ms };
     recount(s);
     verificationStore.setDesignOutcomes(s);
     // Keep provisionalIds in sync like publishOutcomes does — otherwise a
@@ -287,17 +447,82 @@ function createDesignRunStore() {
     if (o.outcome !== 'VERIFIED' && o.provisional) prov.add(elementId);
     else prov.delete(elementId);
     provisionalIds = prov;
-    if (o.outcome === 'VERIFIED' && o.accepted) {
-      modelStore.reinforcementTransaction((api) => api.setReinforcement(elementId, o.accepted));
+
+    const biax = new Set(provisionalBiaxialIds);
+    if (o.outcome === 'PROVISIONAL_BIAXIAL') biax.add(elementId); else biax.delete(elementId);
+    provisionalBiaxialIds = biax;
+
+    const steel = o.outcome === 'VERIFIED' ? o.accepted
+      : o.outcome === 'PROVISIONAL_BIAXIAL' ? o.provisional?.candidate : undefined;
+    if (steel) {
+      modelStore.reinforcementTransaction((api) => api.setReinforcement(elementId, steel));
       const auto = new Set(autoDesigned); auto.add(elementId); autoDesigned = auto;
       const manual = new Set(manualOverrides); manual.delete(elementId); manualOverrides = manual;
     }
     return o;
   }
 
+  /**
+   * What the floor run produced for one family.
+   *
+   * Read off the run's own records rather than recounted: the run already decided what it
+   * designed, and a second tally here could disagree with the certificates it issued.
+   */
+  function floorFamilyResult(
+    family: DesignFamily,
+    run: { assemblies?: Array<{ families?: Array<{ family: string; barIds?: string[] }> }> } | null,
+  ): FamilyRunResult {
+    const records = (run?.assemblies ?? [])
+      .flatMap((a) => a.families ?? [])
+      .filter((r) => r.family === family);
+    if (records.length === 0) return emptyFamilyResult(family, 'noElements');
+    let designed = 0;
+    let notModelled = 0;
+    for (const r of records) {
+      if ((r.barIds ?? []).length > 0) designed += 1; else notModelled += 1;
+    }
+    return {
+      family, state: 'designed', processed: records.length,
+      designed, refused: 0, notModelled,
+    };
+  }
+
   function fail(key: string, params?: Record<string, string | number>): CommandResult {
     lastError = { key, params };
     return { ok: false, reasonKey: key, params };
+  }
+
+  /**
+   * Say WHY the concrete code checked nothing, not merely that it did.
+   *
+   * ── The report this replaces ───────────────────────────────────
+   *
+   * "CIRSOC 201-2025 verified no member in this model." True of a steel tower, true of a
+   * model with generic sections, and true of a genuine defect — three different situations,
+   * one sentence, no way to tell them apart. The steel case is not even an error: an all-steel
+   * structure has no reinforced concrete to design, and the user is entitled to be told that
+   * rather than left to suspect the app.
+   *
+   * The census comes from `rcCheckability`, the same predicate the verifier skips on, so this
+   * explanation cannot drift from the silence it is explaining.
+   */
+  function failNothingChecked(codeName: string): CommandResult {
+    const c = censusRcCheckability(modelData() as never);
+    if (c.total === 0) return fail('design.error.nothingChecked', { code: codeName });
+    if (c.checkable === 0 && c.notConcrete === c.total) {
+      return fail('design.error.noConcreteMembers', { code: codeName, n: c.total });
+    }
+    if (c.checkable === 0 && c.noRectangle > 0) {
+      return fail('design.error.noRectangularSections', { code: codeName, n: c.noRectangle });
+    }
+    if (c.checkable === 0) {
+      return fail('design.error.noConcreteMembersMixed', {
+        code: codeName, steel: c.notConcrete, other: c.noRectangle + c.noSection + c.noMaterial,
+      });
+    }
+    // Members ARE checkable and the run still produced nothing. That is the case the original
+    // message was written for, and the only one it describes correctly.
+    return fail('design.error.nothingChecked', { code: codeName });
   }
 
   return {
@@ -311,6 +536,7 @@ function createDesignRunStore() {
     get manualOverrides() { return manualOverrides; },
     get autoDesigned() { return autoDesigned; },
     get provisionalIds() { return provisionalIds; },
+    get provisionalBiaxialIds() { return provisionalBiaxialIds; },
     markManual(ids: Iterable<number>) {
       const m = new Set(manualOverrides);
       const a = new Set(autoDesigned);
@@ -325,10 +551,16 @@ function createDesignRunStore() {
       manualOverrides = m;
       autoDesigned = a;
     },
-    resetMarks() { manualOverrides = new Set(); autoDesigned = new Set(); provisionalIds = new Set(); },
+    resetMarks() {
+      manualOverrides = new Set();
+      autoDesigned = new Set();
+      provisionalIds = new Set();
+      provisionalBiaxialIds = new Set();
+    },
 
     computeDemands,
     runCodeCheck,
+    designFamilies,
     autoDesign,
     designAll,
     designOne,

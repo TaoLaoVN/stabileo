@@ -22,15 +22,34 @@
 import { buildTitleBlock, buildSchedule, scheduleToAoa, sheetToDxf, sheetToSvg,
   drawElevation, drawSection, barArcs, type Sheet, type Projection } from './drawings';
 import type { DocumentAssembly, DocumentModel, OpenConflict } from './document-model';
-import type { FloorFamilyDesignRecord } from './family-record';
+import { footingPlanCentre, type FloorFamilyDesignRecord } from './family-record';
+import type { SceneModel } from './scene-model';
+import type { ElementStatus } from './element-status';
+import {
+  drawColumnDetail, drawGeneralPlan, drawHorizontalSection, drawLevelPlan, levelsOf,
+} from './structure-drawings';
+import { blockingCount, buildConflictInventory } from './conflict-inventory';
 import { drawFooting } from './family-drawings';
 import { drawSlab, drawWall } from './slab-wall-drawings';
-import type { BarPath } from '../../codes/cirsoc201/bar-geometry';
 
 /** Everything the renderers need that is not in the model: locale and presentation. */
 export interface RenderOptions {
   locale: string;
   projectName: string;
+  /**
+   * The projected scene, when the caller has one.
+   *
+   * The general plan, the level plans, the horizontal sections and the column details are
+   * built from it — the same projection the 3-D view renders, so a plan and the viewport
+   * cannot show different steel. A caller without one still gets every other sheet, and the
+   * set's `missingSheetKinds` names the four it could not produce rather than letting their
+   * absence pass for "this model has none".
+   */
+  scene?: SceneModel;
+  /** Design status per member, for the notes those sheets carry. */
+  statusOf?: (elementId: number) => ElementStatus | undefined;
+  /** Elevations to cut horizontal sections at, m. */
+  sectionElevations?: readonly number[];
   /** Commercial stock length for the schedule, m. */
   stockLength?: number;
   /** Steel density, kg/m³, for the mass column. */
@@ -108,6 +127,84 @@ export function renderReportHtml(
   rows.push(`<p class="banner ${draft ? 'draft' : 'ok'}">${esc(readinessBanner(doc, opts.locale))}</p>`);
   rows.push(`<p class="summary">${esc(translate(doc.summary.key, doc.summary.params))}</p>`);
 
+  /**
+   * Provisional members, at the TOP of the report and again in their own section.
+   *
+   * Twice on purpose. The banner is what a reader sees before deciding whether to read on,
+   * and the section is what they act from. A report that carried the fact only in a table
+   * halfway down would be a report somebody prints, skims and issues.
+   */
+  const provisionalAll = [...new Set(
+    doc.assemblies.flatMap((a) => a.source.provisionalMembers ?? []))].sort((x, y) => x - y);
+  if (provisionalAll.length > 0) {
+    rows.push(`<p class="banner draft provisional">`
+      + esc(L(
+        `PROPUESTA PROVISIONAL — NO APTO PARA EMISIÓN CONSTRUCTIVA. ${provisionalAll.length} `
+        + 'elemento(s) llevan armadura del diseño de su eje principal; su eje secundario no lo '
+        + 'verifica ninguna comprobación de esta aplicación.',
+        `PROVISIONAL PROPOSAL — NOT VALID FOR CONSTRUCTION. ${provisionalAll.length} member(s) `
+        + 'carry reinforcement from their primary-axis design; their secondary axis is not '
+        + 'evaluated by any check in this application.'))
+      + '</p>');
+  }
+
+  /**
+   * Unevaluated torsion, in the same two places and for the same reason.
+   *
+   * A separate banner rather than a clause inside the provisional one, because they are
+   * different facts about different members: a proposal is steel whose SECONDARY BENDING was
+   * never checked, and this is steel whose TORSION was never checked. A member can be either,
+   * both, or neither, and one sentence covering both would be a sentence that tells a reader
+   * neither which members nor which action.
+   */
+  const torsionAll = [...new Set(
+    doc.assemblies.flatMap((a) => a.source.torsionUnevaluatedMembers ?? []))]
+    .sort((x, y) => x - y);
+  if (torsionAll.length > 0) {
+    rows.push('<p class="banner draft torsion">'
+      + esc(L(
+        `TORSIÓN NO EVALUADA — función en desarrollo. ${torsionAll.length} elemento(s) reciben `
+        + 'torsión según el análisis y ninguna comprobación de esta aplicación la verifica. La '
+        + 'armadura de este documento NO contempla torsión: no usar como verificación final. '
+        + 'Se corregirá en PR21.',
+        `TORSION NOT EVALUATED — feature in development. ${torsionAll.length} member(s) carry `
+        + 'torsion according to the analysis and no check in this application verifies it. The '
+        + 'reinforcement in this document does NOT account for torsion: do not use as a final '
+        + 'verification. To be addressed in PR21.'))
+      + '</p>');
+  }
+
+  /**
+   * Top steel that answers to a stirrup bend rather than to a moment.
+   *
+   * Its own banner for the same reason the two above have theirs: a member can carry hogging
+   * steel, assembly steel, both or neither, and one sentence covering two of them tells a
+   * reader neither which members nor which action. The distinction this one makes is the
+   * narrowest of the three and the easiest to lose — 2Ø10 at the top of a beam looks the same
+   * whether a negative moment sized it or §25.7.1.2 did, and only one of those has a capacity
+   * behind it.
+   */
+  const hangerBars = doc.assemblies.flatMap((a) =>
+    a.bars.filter((b) => b.purpose === 'stirrupHanger'));
+  const hangerAll = [...new Set(hangerBars.flatMap((b) => b.ownerElementIds))]
+    .sort((x, y) => x - y);
+  if (hangerAll.length > 0) {
+    rows.push('<p class="banner draft hanger">'
+      + esc(L(
+        `ARMADURA SUPERIOR DE ARMADO — ${hangerAll.length} elemento(s). Ninguno de sus apoyos `
+        + 'tiene momento negativo de envolvente, de modo que sus barras superiores cumplen '
+        + '25.7.1.2 (cada doblez del estribo debe contener una barra longitudinal) y NO son '
+        + 'armadura resistente: no se les verificó ni se les atribuye capacidad a momento '
+        + 'negativo. El Reglamento no fija su diámetro y el elegido es un criterio de esta '
+        + 'aplicación, indicado como tal.',
+        `TOP ASSEMBLY REINFORCEMENT — ${hangerAll.length} member(s). Neither support carries an `
+        + 'envelope hogging moment, so their top bars satisfy §25.7.1.2 (every stirrup bend must '
+        + 'contain a longitudinal bar) and are NOT load-resisting reinforcement: no hogging '
+        + 'capacity was verified for them and none is attributed. The regulation does not fix '
+        + 'their diameter and the one chosen is this application\'s convention, stated as such.'))
+      + '</p>');
+  }
+
   // ── Revision block ──
   rows.push(`<h2>${L('Revisión', 'Revision')}</h2><table><tbody>`);
   rows.push(`<tr><th>${L('Revisión', 'Revision')}</th><td>${doc.revision.number}</td></tr>`);
@@ -138,11 +235,135 @@ export function renderReportHtml(
     + `<th>${L('Estado', 'Status')}</th><th>${L('Coincide con la geometría', 'Matches geometry')}</th>`
     + `</tr></thead><tbody>`);
   for (const c of doc.certificates) {
-    rows.push(`<tr><td>${c.elementId}</td><td>${esc(c.verifierId)}</td>`
-      + `<td>${esc(c.status)}</td>`
-      + `<td class="${c.matches ? 'ok' : 'bad'}">${c.matches ? L('Sí', 'Yes') : L('No', 'No')}</td></tr>`);
+    // The provisional label goes in the STATUS cell, beside the verdict, not in a column of
+    // its own at the far right where the eye does not go.
+    const status = c.provisional
+      ? `${esc(c.status)} — ${esc(L('PROVISIONAL, sin certificar', 'PROVISIONAL, uncertified'))}`
+      : esc(c.status);
+    rows.push(`<tr class="${c.provisional ? 'provisional' : ''}"><td>${c.elementId}</td>`
+      + `<td>${esc(c.verifierId)}</td>`
+      + `<td>${status}</td>`
+      + `<td class="${c.matches && !c.provisional ? 'ok' : 'bad'}">`
+      + `${c.matches ? L('Sí', 'Yes') : L('No', 'No')}</td></tr>`);
   }
   rows.push('</tbody></table>');
+
+  // ── Provisional proposals, member by member ──
+  if (provisionalAll.length > 0) {
+    rows.push(`<h2>${L('Propuestas provisionales', 'Provisional proposals')}</h2>`);
+    rows.push(`<p>${esc(L(
+      'Estos elementos NO están verificados en su eje secundario y no pueden presentarse como '
+      + 'documentación final. La armadura mostrada proviene del diseño del eje principal, con la '
+      + 'búsqueda y el verificador habituales; no se supuso capacidad para el eje sin verificar '
+      + 'ni se relajó ningún umbral.',
+      'These members are NOT verified about their secondary axis and may not be presented as '
+      + 'final documentation. The reinforcement shown comes from the primary-axis design, using '
+      + 'the ordinary search and verifier; no capacity was assumed for the unchecked axis and no '
+      + 'threshold was relaxed.'))}</p>`);
+    rows.push(`<table><thead><tr>`
+      + `<th>${L('Elemento', 'Member')}</th>`
+      + `<th>${L('Conjunto', 'Assembly')}</th>`
+      + `<th>${L('Barras', 'Bars')}</th>`
+      + `<th>${L('Estado', 'Status')}</th></tr></thead><tbody>`);
+    for (const a of doc.assemblies) {
+      for (const id of a.source.provisionalMembers ?? []) {
+        const bars = a.bars.filter((b) => b.ownerElementIds.includes(id)).length;
+        rows.push(`<tr><td>${id}</td><td>${esc(a.id)}</td><td>${bars}</td>`
+          + `<td class="bad">${esc(L('PROVISIONAL — eje secundario sin verificar',
+            'PROVISIONAL — secondary axis unverified'))}</td></tr>`);
+      }
+    }
+    rows.push('</tbody></table>');
+  }
+
+  // ── Unevaluated torsion, member by member ──
+  if (torsionAll.length > 0) {
+    rows.push(`<h2>${L('Torsión no evaluada', 'Torsion not evaluated')}</h2>`);
+    rows.push(`<p>${esc(L(
+      'El análisis reporta torsión en estos elementos. Ninguna comprobación de esta aplicación '
+      + 'verifica torsión — el adaptador de código en uso lo declara explícitamente — de modo '
+      + 'que la armadura mostrada resuelve flexión y corte y NO contempla torsión. La geometría '
+      + 'y la armadura son las que el diseño produjo; lo que falta es la verificación. '
+      + 'Verificar la torsión por fuera de esta aplicación antes de emitir. Función en '
+      + 'desarrollo: se corregirá en PR21.',
+      'The analysis reports torsion in these members. No check in this application verifies '
+      + 'torsion — the code adapter in use declares so explicitly — so the reinforcement shown '
+      + 'resolves flexure and shear and does NOT account for torsion. The geometry and the '
+      + 'reinforcement are what the design produced; what is missing is the verification. Verify '
+      + 'torsion outside this application before issuing. Feature in development: to be '
+      + 'addressed in PR21.'))}</p>`);
+    rows.push('<table><thead><tr>'
+      + `<th>${L('Elemento', 'Member')}</th>`
+      + `<th>${L('Conjunto', 'Assembly')}</th>`
+      + `<th>${L('Barras', 'Bars')}</th>`
+      + `<th>${L('Estado', 'Status')}</th></tr></thead><tbody>`);
+    for (const a of doc.assemblies) {
+      for (const id of a.source.torsionUnevaluatedMembers ?? []) {
+        const bars = a.bars.filter((b) => b.ownerElementIds.includes(id)).length;
+        rows.push(`<tr><td>${id}</td><td>${esc(a.id)}</td><td>${bars}</td>`
+          + `<td class="bad">${esc(L('TORSIÓN NO EVALUADA — en desarrollo',
+            'TORSION NOT EVALUATED — in development'))}</td></tr>`);
+      }
+    }
+    rows.push('</tbody></table>');
+  }
+
+  // ── Top assembly reinforcement, member by member ──
+  if (hangerAll.length > 0) {
+    rows.push(`<h2>${L('Armadura superior de armado', 'Top assembly reinforcement')}</h2>`);
+    rows.push(`<p>${esc(L(
+      'La cara superior de estos elementos no es una cara traccionada: el análisis no requiere '
+      + 'armadura de tracción en ella, de modo que 9.6.1.2 no la alcanza — 9.6.1.1 la circunscribe '
+      + 'a las secciones donde el análisis SÍ la requiere. Lo que sí rige es 25.7.1.2: entre los '
+      + 'extremos anclados, cada doblez de un estribo cerrado debe contener una barra '
+      + 'longitudinal, y si el estribo fuera en U, su gancho se cierra alrededor de una barra '
+      + 'longitudinal (25.7.1.3(a)). De ahí salen dos barras, y 9.7.7.1(b) llega al mismo piso de '
+      + 'dos barras continuas por integridad estructural. NINGUNA de esas cláusulas fija el '
+      + 'diámetro. El que figura abajo lo eligió esta aplicación como el menor de la serie del '
+      + 'proyecto que entra de a dos y no baja del diámetro del estribo, y no representa un área '
+      + 'requerida por el Reglamento. No es apto para presentarse como armadura resistente a '
+      + 'momento negativo.',
+      'The top face of these members is not a tension face: the analysis requires no tension '
+      + 'reinforcement there, so §9.6.1.2 does not reach it — §9.6.1.1 scopes it to sections '
+      + 'where the analysis DOES require it. What does govern is §25.7.1.2: between the anchored '
+      + 'ends, every bend of a closed stirrup must contain a longitudinal bar, and were the '
+      + 'stirrup U-shaped its hook closes around a longitudinal bar (§25.7.1.3(a)). That gives '
+      + 'two bars, and §9.7.7.1(b) reaches the same floor of two continuous bars for structural '
+      + 'integrity. NONE of those clauses fixes the diameter. The one below was chosen by this '
+      + 'application as the smallest in the project series that fits two per row and is not '
+      + 'thinner than the stirrup, and it does not represent an area the regulation requires. It '
+      + 'may not be presented as reinforcement resisting a hogging moment.'))}</p>`);
+    rows.push('<table><thead><tr>'
+      + `<th>${L('Elemento', 'Member')}</th>`
+      + `<th>${L('Conjunto', 'Assembly')}</th>`
+      + `<th>${L('Marca', 'Mark')}</th>`
+      + `<th>${L('Barras', 'Bars')}</th>`
+      + `<th>${L('Ø (mm)', 'Ø (mm)')}</th>`
+      + `<th>${L('Largo (m)', 'Length (m)')}</th>`
+      + `<th>${L('Estado', 'Status')}</th></tr></thead><tbody>`);
+    for (const a of doc.assemblies) {
+      const markOf = new Map<string, string>();
+      for (const m of a.source.marks) for (const bid of m.barIds) markOf.set(bid, m.mark);
+      const byMember = new Map<number, typeof a.bars>();
+      for (const b of a.bars) {
+        if (b.purpose !== 'stirrupHanger') continue;
+        for (const id of b.ownerElementIds) {
+          byMember.set(id, [...(byMember.get(id) ?? []), b]);
+        }
+      }
+      for (const id of [...byMember.keys()].sort((x, y) => x - y)) {
+        const bars = byMember.get(id)!;
+        rows.push(`<tr><td>${id}</td><td>${esc(a.id)}</td>`
+          + `<td>${esc([...new Set(bars.map((b) => markOf.get(b.id) ?? '—'))].join(', '))}</td>`
+          + `<td>${bars.length}</td>`
+          + `<td>${[...new Set(bars.map((b) => b.diameterMm))].join(', ')}</td>`
+          + `<td>${bars[0].cuttingLength.toFixed(2)}</td>`
+          + `<td class="bad">${esc(L('ARMADO (25.7.1.2) — Ø sin cláusula, no resistente',
+            'ASSEMBLY (§25.7.1.2) — Ø has no clause, not load-resisting'))}</td></tr>`);
+      }
+    }
+    rows.push('</tbody></table>');
+  }
 
   // ── Assemblies: beam lines and column stacks ──
   for (const a of doc.assemblies) {
@@ -188,16 +409,78 @@ export function renderReportHtml(
 
   // ── Unresolved conflicts. On a draft this is the point of the document. ──
   if (doc.openConflicts.length > 0) {
-    rows.push(`<h2 class="bad">${L('Conflictos sin resolver', 'Unresolved conflicts')} `
-      + `(${doc.openConflicts.length})</h2>`);
+    /**
+     * Three statements, in this order, because they answer three different questions.
+     *
+     *   1. what the geometry IS — it was generated, it is real, it is drawn;
+     *   2. what is wrong with it — a constructibility problem, sorted by kind;
+     *   3. what that means — this document may not be issued.
+     *
+     * The per-conflict table below used to be the whole section. On the 7-storey building
+     * that is 40 065 rows, which nobody reads and which says nothing about SHAPE: those
+     * 40 065 turn out to be two causes — 38 486 interpenetrations with a median of 4 mm, and
+     * 1 579 cross-member spacing questions with a median of 9,6 mm. The inventory states that
+     * before the list, so the list is something a reader consults rather than something they
+     * give up on.
+     *
+     * Nothing is filtered. `total` equals the conflict count and the table below still holds
+     * every row.
+     */
+    const inv = buildConflictInventory(doc.openConflicts);
+    const blocking = blockingCount(inv);
+
+    rows.push(`<h2 class="bad">${L('Conflictos de constructibilidad', 'Constructibility conflicts')} `
+      + `(${inv.total})</h2>`);
+    rows.push(`<p>${esc(L(
+      'El armado que sigue FUE GENERADO y está dibujado: la geometría existe. Lo que estos '
+      + 'conflictos reportan es que, tal como está, no es constructible sin revisión — no que '
+      + 'falte armadura. Un conflicto no oculta el elemento ni impide el plano; impide la '
+      + 'emisión.',
+      'The reinforcement below WAS GENERATED and is drawn: the geometry exists. What these '
+      + 'conflicts report is that as it stands it is not constructible without review — not '
+      + 'that steel is missing. A conflict hides no element and blocks no drawing; it blocks '
+      + 'issue.'))}</p>`);
+    rows.push(`<p class="bad"><strong>${esc(L(
+      `${blocking} de ${inv.total} son bloqueantes (interpenetración o separación real). `
+      + 'RESULTADO NO APTO PARA EMISIÓN FINAL.',
+      `${blocking} of ${inv.total} are blocking (interpenetration or a real spacing shortfall). `
+      + 'RESULT NOT VALID FOR FINAL ISSUE.'))}</strong></p>`);
+
+    rows.push(`<h3>${L('Inventario por categoría', 'Inventory by category')}</h3>`);
+    rows.push(`<table><thead><tr>`
+      + `<th>${L('Categoría', 'Category')}</th><th>${L('Cantidad', 'Count')}</th>`
+      + `<th>${L('Barras', 'Bars')}</th><th>${L('Elementos', 'Members')}</th>`
+      + `<th>${L('Déficit mediano (mm)', 'Median shortfall (mm)')}</th>`
+      + `<th>${L('Peor (mm)', 'Worst (mm)')}</th>`
+      + `<th>${L('Bloqueante', 'Blocking')}</th>`
+      + `<th>${L('Clases de par', 'Pair classes')}</th></tr></thead><tbody>`);
+    for (const c of inv.summary) {
+      const isBlocking = inv.blocking.includes(c.category);
+      rows.push(`<tr class="${isBlocking ? 'bad' : ''}"><td>${esc(c.category)}</td>`
+        + `<td>${c.count}</td><td>${c.bars}</td><td>${c.members}</td>`
+        + `<td>${(c.medianShortfall * 1000).toFixed(1)}</td>`
+        + `<td>${(c.worstShortfall * 1000).toFixed(1)}</td>`
+        + `<td>${isBlocking ? L('Sí', 'Yes') : L('No', 'No')}</td>`
+        + `<td>${esc(c.byPairClass.map((k) => `${k.pairClass} ×${k.count}`).join(', '))}</td></tr>`);
+    }
+    rows.push('</tbody></table>');
+
+    rows.push(`<h3>${L('Detalle, conflicto por conflicto', 'Detail, conflict by conflict')}</h3>`);
     rows.push(`<table><thead><tr>`
       + `<th>${L('Conjunto', 'Assembly')}</th><th>${L('Elementos', 'Members')}</th>`
-      + `<th>${L('Barras', 'Bars')}</th><th>${L('Clase', 'Class')}</th>`
+      + `<th>${L('Barra A', 'Bar A')}</th><th>${L('Barra B', 'Bar B')}</th>`
+      + `<th>${L('Clase', 'Class')}</th><th>${L('Severidad', 'Severity')}</th>`
+      + `<th>${L('Categoría', 'Category')}</th>`
       + `<th>${L('Medido (mm)', 'Measured (mm)')}</th><th>${L('Requerido (mm)', 'Required (mm)')}</th>`
       + `<th>${L('Acción sugerida', 'Suggested action')}</th></tr></thead><tbody>`);
-    for (const c of doc.openConflicts) {
+    for (let i = 0; i < doc.openConflicts.length; i++) {
+      const c = doc.openConflicts[i];
+      // Both bars stay named and separately addressable, which is the traceability
+      // requirement: a conflict nobody can follow back to two real bars is a number.
       rows.push(`<tr><td>${esc(c.assemblyId)}</td><td>${c.elementIds.join(', ')}</td>`
-        + `<td>${esc(c.barIds[0])} / ${esc(c.barIds[1])}</td><td>${esc(c.pairClass)}</td>`
+        + `<td>${esc(c.barIds[0])}</td><td>${esc(c.barIds[1])}</td>`
+        + `<td>${esc(c.pairClass)}</td><td>${esc(c.severity)}</td>`
+        + `<td>${esc(inv.rows[i].category)}</td>`
         + `<td>${Math.round(c.clearance * 1000)}</td><td>${Math.round(c.required * 1000)}</td>`
         + `<td>${esc(translate(c.suggestedAction.key, c.suggestedAction.params))}</td></tr>`);
     }
@@ -686,7 +969,64 @@ export interface DrawingSet {
   sheets: Array<{ name: string; sheet: Sheet; dxf: string; svg: string }>;
   /** All sheets concatenated into one DXF. */
   dxf: string;
+  /**
+   * What this set covers, and what it does not.
+   *
+   * ── Why a set has to declare its own gaps ──────────────────────
+   *
+   * A drawing set that omits a family looks exactly like a drawing set that had none: 128
+   * sheets arrive, every mark reconciles, and nothing says that no sheet frames a whole
+   * storey or details a single column. The reviewer's only way to find out is to look for a
+   * sheet that was never going to be there.
+   *
+   * So the set states it. `families` is what reached a sheet; `missingSheetKinds` is what
+   * this renderer does not produce at all, named rather than left as an absence.
+   */
+  coverage: DrawingCoverage;
 }
+
+/** A family's presence in a drawing set. */
+export interface DrawingFamilyCoverage {
+  family: 'beam' | 'column' | 'slab' | 'wall' | 'footing';
+  /** Members or panels of this family in the document. */
+  inDocument: number;
+  /** How many of them a sheet actually draws. */
+  drawn: number;
+  /** Sheets that carry them, by name prefix. */
+  sheets: number;
+}
+
+export interface DrawingCoverage {
+  families: DrawingFamilyCoverage[];
+  /**
+   * Sheet kinds this renderer does not produce.
+   *
+   * Stated so a set is never mistaken for complete. These are absences of a DRAWING TYPE, not
+   * of data: the geometry exists in the document and in the 3-D view, and no sheet frames it.
+   */
+  missingSheetKinds: string[];
+}
+
+/**
+ * Sheet kinds the renderer does not produce, whatever the model contains.
+ *
+ * Measured on the 7-storey building: 128 sheets came out — 15 assembly elevations, 57 sections
+ * and 56 per-panel slab plans — and every mark in them reconciled with the 3-D view and the
+ * schedule. What no sheet shows is a whole storey in one plan, a horizontal cut through the
+ * building, or one column on its own sheet.
+ */
+/**
+ * Sheet kinds the renderer does not produce, whatever the model contains.
+ *
+ * Now empty. The four that used to be here — general plan, level plan, horizontal section and
+ * column detail — are built by `structure-drawings.ts` from the `SceneModel`, the same
+ * projection the 3-D view renders, so a plan and the viewport cannot show different steel.
+ *
+ * The constant stays, and stays exported, because the honest statement it makes is worth more
+ * than the list it currently holds: a set that cannot say what it omits is a set nobody can
+ * check. The next kind that is asked for and not built belongs here.
+ */
+export const MISSING_SHEET_KINDS: readonly string[] = [];
 
 /**
  * Elevations for every beam line, a section per assembly, and the conflict annotations.
@@ -734,7 +1074,7 @@ export function renderDrawings(doc: DocumentModel, opts: RenderOptions): Drawing
         // This record's own steel. Passing the floor's would draw a neighbouring footing's
         // dowels inside this one's outline.
         bars: own,
-        centre: footingCentre(rec, own),
+        centre: footingPlanCentre(rec, own),
         clauses: doc.refs,
         sheetNumber: `R${doc.revision.number}-${n}`,
         title: `${opts.projectName} — ${rec.geometry.name} — ${readinessBanner(doc, opts.locale)}`,
@@ -822,7 +1162,128 @@ export function renderDrawings(doc: DocumentModel, opts: RenderOptions): Drawing
     }
   }
 
-  return { sheets, dxf: sheets.map((s) => s.dxf).join('\n') };
+  /**
+   * The structure-wide sheets, from the scene.
+   *
+   * Appended rather than woven in, because they answer a different question from the rest: the
+   * elevations and sections describe one assembly each, and these describe the building.
+   */
+  const structural = opts.scene
+    ? structureSheets(doc, opts.scene, opts, () => (n += 1))
+    : [];
+  sheets.push(...structural);
+
+  return {
+    sheets,
+    dxf: sheets.map((s) => s.dxf).join('\n'),
+    coverage: {
+      ...coverageOf(doc, sheets),
+      missingSheetKinds: opts.scene
+        ? [...MISSING_SHEET_KINDS]
+        // Named, not silently absent: this set does not contain them and says which.
+        : ['generalPlan', 'levelPlan', 'horizontalSection', 'columnDetail'],
+    },
+  };
+}
+
+/** The four structure-wide sheets, built from the scene the 3-D view renders. */
+function structureSheets(
+  doc: DocumentModel, scene: SceneModel, opts: RenderOptions, nextN: () => number,
+): DrawingSet['sheets'] {
+  const statusOf = opts.statusOf ?? (() => undefined);
+  const out: DrawingSet['sheets'] = [];
+  const emit = (name: string, sheet: Sheet) => {
+    out.push({
+      name, sheet,
+      dxf: sheetToDxf(sheet, [], opts.locale),
+      svg: sheetToSvg(sheet, 1200, opts.locale),
+    });
+  };
+  const titleFor = (label: string) => buildTitleBlock({
+    sheetNumber: `R${doc.revision.number}-${nextN()}`,
+    title: `${opts.projectName} — ${label} — ${readinessBanner(doc, opts.locale)}`,
+    assembly: doc.assemblies[0]?.source as never,
+    clauses: doc.refs,
+  });
+
+  emit('structure-general-plan',
+    drawGeneralPlan({ scene, title: titleFor('Planta general'), statusOf }));
+
+  const levels = levelsOf(scene);
+  for (const level of levels) {
+    emit(`structure-level-${level.z.toFixed(2)}-plan`,
+      drawLevelPlan({ scene, title: titleFor(`Planta +${level.z.toFixed(2)}`), statusOf, level }));
+  }
+
+  /**
+   * One horizontal section per storey by default, cut just below the level.
+   *
+   * Cutting AT the level would land in the slab and show its mat rather than the columns
+   * passing through, which is the thing a horizontal section is usually asked for.
+   */
+  const cuts = opts.sectionElevations ?? levels.map((l) => l.z - 0.5);
+  for (const z of cuts) {
+    emit(`structure-section-z${z.toFixed(2)}`,
+      drawHorizontalSection({ scene, title: titleFor(`Corte z=${z.toFixed(2)}`), statusOf, atZ: z }));
+  }
+
+  for (const s of scene.solids) {
+    if (s.kind !== 'column' || s.elementIds.length === 0) continue;
+    const id = s.elementIds[0];
+    emit(`structure-column-${id}-detail`,
+      drawColumnDetail({ scene, title: titleFor(`Columna ${id}`), statusOf, elementId: id }));
+  }
+
+  return out;
+}
+
+/**
+ * What the sheets actually reached, counted against the document.
+ *
+ * Counted from the DOCUMENT rather than from the sheets alone, because the question a
+ * reviewer has is "did everything get drawn", and only the document knows what everything is.
+ */
+function coverageOf(doc: DocumentModel, sheets: DrawingSet['sheets']): DrawingCoverage {
+  const families: DrawingFamilyCoverage[] = [];
+
+  for (const family of ['slab', 'wall', 'footing'] as const) {
+    const records = doc.assemblies.flatMap((a) => a.families).filter((r) => r.family === family);
+    const owned = sheets.filter((s) => records.some((r) => s.name.includes(r.ownerId)));
+    families.push({
+      family,
+      inDocument: records.length,
+      drawn: new Set(owned.flatMap((s) =>
+        records.filter((r) => s.name.includes(r.ownerId)).map((r) => r.ownerId))).size,
+      sheets: owned.length,
+    });
+  }
+
+  /**
+   * Beams and columns share their assembly's elevation and section.
+   *
+   * There is no per-member sheet for either, so `drawn` counts the members whose assembly
+   * produced a sheet — which is the honest statement: the member IS on a drawing, and it does
+   * not have one of its own. `columnDetail` in `missingSheetKinds` says the second part.
+   */
+  const assemblyDrawn = new Set(
+    doc.assemblies.filter((a) => sheets.some((s) => s.name.startsWith(a.id))).map((a) => a.id));
+  for (const family of ['beam', 'column'] as const) {
+    let inDoc = 0;
+    let drawn = 0;
+    for (const a of doc.assemblies) {
+      // A frame assembly's members are its `elementIds`; family split is not recorded here,
+      // so both rows report the assembly population rather than inventing a split.
+      if (a.families.length > 0) continue;
+      inDoc += a.elementIds.length;
+      if (assemblyDrawn.has(a.id)) drawn += a.elementIds.length;
+    }
+    families.push({
+      family, inDocument: inDoc, drawn,
+      sheets: sheets.filter((s) => assemblyDrawn.has(s.name.split('-')[0])).length,
+    });
+  }
+
+  return { families, missingSheetKinds: [...MISSING_SHEET_KINDS] };
 }
 
 /** The generic elevation and section for an assembly that has steel. */
@@ -933,20 +1394,6 @@ function elevationAndSection(
  * already reports as an unsupported condition, and a plan drawn at the origin is visibly
  * wrong rather than subtly displaced.
  */
-function footingCentre(
-  rec: Extract<FloorFamilyDesignRecord, { family: 'footing' }>,
-  bars: readonly BarPath[],
-): { x: number; y: number } {
-  const dowelIds = new Set(rec.dowels?.barIds ?? []);
-  const dowels = bars.filter((b) => dowelIds.has(b.id));
-  if (dowels.length === 0) return { x: 0, y: 0 };
-  const pts = dowels.map((b) => b.segments[0].start);
-  return {
-    x: pts.reduce((s, p) => s + p.x, 0) / pts.length,
-    y: pts.reduce((s, p) => s + p.y, 0) / pts.length,
-  };
-}
-
 function conflictNote(c: OpenConflict, locale: string): string {
   const es = locale.startsWith('es');
   return es
@@ -994,24 +1441,77 @@ export function renderSchedule(
     const barById = new Map(a.bars.map((b) => [b.id, b]));
     const header = aoa.findIndex((r) =>
       typeof r[0] === 'string' && /^(marca|mark)$/i.test(String(r[0]).trim()));
+    const torsionMembers = new Set(a.source.torsionUnevaluatedMembers ?? []);
     if (header >= 0) {
       aoa[header] = [...aoa[header],
-        L('Masa (kg)', 'Mass (kg)'), L('Elementos', 'Members'), L('Capa', 'Layer')];
+        L('Masa (kg)', 'Mass (kg)'), L('Elementos', 'Members'), L('Capa', 'Layer'),
+        // A column, not a footnote. A schedule is read row by row by somebody ordering
+        // steel, and a warning that lives only in the note block is a warning that is not
+        // beside the bar they are about to order.
+        L('Estado', 'Status')];
       for (let i = 0; i < marks.length; i++) {
         const row = aoa[header + 1 + i];
         if (!row) break;
         const m = marks[i];
-        const first = m.barIds.map((id) => barById.get(id)).find(Boolean);
+        const bars = m.barIds.map((id) => barById.get(id)).filter(Boolean);
+        const first = bars[0];
         const members = [...new Set(m.barIds
           .flatMap((id) => barById.get(id)?.ownerElementIds ?? []))].sort((x, y) => x - y);
         const area = Math.PI * (m.diameterMm / 2000) ** 2;
+        const provisional = bars.some((b) => b?.provisional);
+        /**
+         * A bar is flagged when ANY member it runs through has unevaluated torsion.
+         *
+         * The same rule the provisional flag uses, and for the same reason: a bar continuous
+         * over a support is fabricated once, and a schedule row that says nothing because only
+         * one of its two members is affected is a row that misleads the person ordering it.
+         */
+        const torsion = members.some((id) => torsionMembers.has(id));
+        // Both, when both. Two independent gaps in the verification are not one warning, and a
+        // row that reported only the first would let the second reach site unnoticed.
+        const status = [
+          provisional
+            ? L('PROVISIONAL — no apto para emisión', 'PROVISIONAL — not for issue')
+            : '',
+          torsion
+            ? L('TORSIÓN NO EVALUADA', 'TORSION NOT EVALUATED')
+            : '',
+        ].filter(Boolean).join(' · ');
         aoa[header + 1 + i] = [...row,
           m.massKg > 0
             ? Math.round(m.massKg * 1000) / 1000
             : Math.round(area * m.cuttingLength * m.quantity * density * 1000) / 1000,
           members.join(', '),
-          first?.layerId ?? ''];
+          first?.layerId ?? '',
+          status];
       }
+    }
+
+    /**
+     * The sheet-level statement, above the rows and not only beside them.
+     *
+     * The per-row column answers "is THIS bar a proposal". It does not answer "may I order
+     * from this schedule at all", and that is the question somebody printing it is asking.
+     */
+    const provisionalMembers = a.source.provisionalMembers ?? [];
+    if (provisionalMembers.length > 0) {
+      aoa.splice(1, 0, [L(
+        `PROPUESTA PROVISIONAL — NO APTO PARA EMISIÓN CONSTRUCTIVA. ${provisionalMembers.length} `
+        + `elemento(s): ${provisionalMembers.join(', ')}. Eje secundario sin verificar.`,
+        `PROVISIONAL PROPOSAL — NOT VALID FOR CONSTRUCTION. ${provisionalMembers.length} `
+        + `member(s): ${provisionalMembers.join(', ')}. Secondary axis unverified.`)]);
+    }
+    if (torsionMembers.size > 0) {
+      // After the provisional line when both are present, so the strongest statement — "not
+      // valid for construction" — stays the first thing on the sheet.
+      const ids = [...torsionMembers].sort((x, y) => x - y);
+      aoa.splice(provisionalMembers.length > 0 ? 2 : 1, 0, [L(
+        `TORSIÓN NO EVALUADA — función en desarrollo. ${ids.length} elemento(s): `
+        + `${ids.join(', ')}. Esta armadura no contempla torsión; no usar como verificación `
+        + 'final. Se corregirá en PR21.',
+        `TORSION NOT EVALUATED — feature in development. ${ids.length} member(s): `
+        + `${ids.join(', ')}. This reinforcement does not account for torsion; do not use as a `
+        + 'final verification. To be addressed in PR21.')]);
     }
 
     // Laps get their own block: the fabricator has to know a bar is spliced, not merely

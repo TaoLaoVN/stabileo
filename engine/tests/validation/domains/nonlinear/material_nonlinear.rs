@@ -4,7 +4,7 @@
 ///   1. Fixed-fixed beam — below Pc elastic, at 1.2×Pc shows yielding (Pc=8Mp/L)
 ///   2. Propped cantilever — same approach (Pc=6Mp/L)
 ///   3. Cantilever elastic phase — matches linear solution within 5%
-use dedaliano_engine::solver::material_nonlinear;
+use dedaliano_engine::solver::{linear, material_nonlinear};
 use dedaliano_engine::types::*;
 use crate::common::*;
 use std::collections::HashMap;
@@ -223,4 +223,168 @@ fn validation_material_nonlinear_cantilever_elastic_phase() {
             status.element_id, status.utilization
         );
     }
+}
+
+// ================================================================
+// 4. Support Settlement — Prescribed Displacement Consistency
+// ================================================================
+//
+// A cantilever whose fixed support settles dz = 0.01 m while carrying a
+// tip load. With no section capacities the analysis stays elastic, so the
+// nonlinear solver must (a) converge and (b) reproduce the linear
+// solution exactly (rigid-body settlement + elastic deflection).
+//
+// Regression: the NR loop used to subtract K_fr*u_r from the RHS even
+// though f_int already contained that coupling through u_full, and only
+// applied u_r after the first solve — so settlement-only increments
+// converged instantly to u = 0, and load+settlement increments stagnated
+// at residual ||K_fr*u_r|| and reported non-convergence.
+
+#[test]
+fn validation_material_nonlinear_support_settlement_matches_linear() {
+    let mut nodes = HashMap::new();
+    nodes.insert("1".to_string(), SolverNode { id: 1, x: 0.0, z: 0.0 });
+    nodes.insert("2".to_string(), SolverNode { id: 2, x: 5.0, z: 0.0 });
+
+    let mut materials = HashMap::new();
+    materials.insert("1".to_string(), SolverMaterial { id: 1, e: E, nu: 0.3 });
+
+    let mut sections = HashMap::new();
+    sections.insert("1".to_string(), SolverSection { id: 1, a: A_SEC, iz: IZ_SEC, as_y: None });
+
+    let mut elements = HashMap::new();
+    elements.insert("1".to_string(), SolverElement {
+        id: 1, elem_type: "frame".to_string(),
+        node_i: 1, node_j: 2, material_id: 1, section_id: 1,
+        hinge_start: false, hinge_end: false,
+    });
+
+    let mut supports = HashMap::new();
+    supports.insert("1".to_string(), SolverSupport {
+        id: 1, node_id: 1, support_type: "fixed".to_string(),
+        kx: None, ky: None, kz: None,
+        dx: None, dz: Some(0.01), dry: None, angle: None,
+    });
+
+    let loads = vec![SolverLoad::Nodal(SolverNodalLoad {
+        node_id: 2, fx: 0.0, fz: -10.0, my: 0.0,
+    })];
+
+    let solver = SolverInput {
+        nodes, materials, sections, elements, supports, loads,
+        constraints: vec![], connectors: HashMap::new(),
+    };
+
+    let lin = linear::solve_2d(&solver).unwrap();
+    let lin_tip = lin.displacements.iter().find(|d| d.node_id == 2).unwrap();
+
+    let input = NonlinearMaterialInput {
+        solver,
+        material_models: HashMap::new(),
+        section_capacities: HashMap::new(),
+        max_iter: 50,
+        tolerance: 1e-8,
+        n_increments: 2,
+    };
+    let res = material_nonlinear::solve_nonlinear_material_2d(&input).unwrap();
+
+    assert!(res.converged, "Settlement analysis should converge");
+    let nl_tip = res.results.displacements.iter().find(|d| d.node_id == 2).unwrap();
+    assert!(
+        (nl_tip.uz - lin_tip.uz).abs() < 1e-6,
+        "Tip uz: nonlinear={:.6e}, linear={:.6e}",
+        nl_tip.uz, lin_tip.uz
+    );
+    assert!(
+        (nl_tip.ry - lin_tip.ry).abs() < 1e-8,
+        "Tip ry: nonlinear={:.6e}, linear={:.6e}",
+        nl_tip.ry, lin_tip.ry
+    );
+}
+
+// Pure settlement, no external load: the increment must still iterate and
+// produce the rigid-body motion (previously it "converged" at u = 0).
+#[test]
+fn validation_material_nonlinear_pure_settlement() {
+    let mut nodes = HashMap::new();
+    nodes.insert("1".to_string(), SolverNode { id: 1, x: 0.0, z: 0.0 });
+    nodes.insert("2".to_string(), SolverNode { id: 2, x: 5.0, z: 0.0 });
+
+    let mut materials = HashMap::new();
+    materials.insert("1".to_string(), SolverMaterial { id: 1, e: E, nu: 0.3 });
+
+    let mut sections = HashMap::new();
+    sections.insert("1".to_string(), SolverSection { id: 1, a: A_SEC, iz: IZ_SEC, as_y: None });
+
+    let mut elements = HashMap::new();
+    elements.insert("1".to_string(), SolverElement {
+        id: 1, elem_type: "frame".to_string(),
+        node_i: 1, node_j: 2, material_id: 1, section_id: 1,
+        hinge_start: false, hinge_end: false,
+    });
+
+    let mut supports = HashMap::new();
+    supports.insert("1".to_string(), SolverSupport {
+        id: 1, node_id: 1, support_type: "fixed".to_string(),
+        kx: None, ky: None, kz: None,
+        dx: None, dz: Some(0.01), dry: None, angle: None,
+    });
+
+    let solver = SolverInput {
+        nodes, materials, sections, elements, supports,
+        loads: vec![],
+        constraints: vec![], connectors: HashMap::new(),
+    };
+
+    let input = NonlinearMaterialInput {
+        solver,
+        material_models: HashMap::new(),
+        section_capacities: HashMap::new(),
+        max_iter: 50,
+        tolerance: 1e-8,
+        n_increments: 2,
+    };
+    let res = material_nonlinear::solve_nonlinear_material_2d(&input).unwrap();
+
+    assert!(res.converged, "Pure settlement should converge");
+    let nl_tip = res.results.displacements.iter().find(|d| d.node_id == 2).unwrap();
+    // Rigid-body translation: the free end follows the settled support.
+    assert!(
+        (nl_tip.uz - 0.01).abs() < 1e-9,
+        "Tip uz should follow the 0.01 m settlement, got {:.6e}",
+        nl_tip.uz
+    );
+    assert!(
+        nl_tip.ry.abs() < 1e-12,
+        "Cantilever settlement is rigid-body: ry should be ~0, got {:.6e}",
+        nl_tip.ry
+    );
+}
+
+// ================================================================
+// 5. Reported load_factor must reflect the last CONVERGED increment
+// ================================================================
+//
+// With max_iter = 1 no increment can converge; the run must report
+// converged = false AND load_factor = 0.0 — not 1.0 (full load).
+
+#[test]
+fn validation_material_nonlinear_failed_run_reports_partial_load_factor() {
+    let l = 4.0;
+    let n = 8;
+    let mid_node = n / 2 + 1;
+    let loads = vec![SolverLoad::Nodal(SolverNodalLoad {
+        node_id: mid_node, fx: 0.0, fz: -100.0, my: 0.0,
+    })];
+    let mut input = make_nonlinear_beam(n, l, "fixed", Some("fixed"), loads);
+    input.max_iter = 1;
+    input.n_increments = 4;
+
+    let res = material_nonlinear::solve_nonlinear_material_2d(&input).unwrap();
+    assert!(!res.converged, "max_iter=1 cannot converge");
+    assert!(
+        res.load_factor == 0.0,
+        "No increment converged: load_factor should be 0.0, got {:.3}",
+        res.load_factor
+    );
 }

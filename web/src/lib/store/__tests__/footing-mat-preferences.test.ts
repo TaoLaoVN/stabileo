@@ -9,6 +9,7 @@ import { historyStore } from '../history.svelte';
 import { compressSnapshot, decompressSnapshot } from '../../utils/url-sharing';
 import {
   DEFAULT_BOTTOM_MAT_DIAMETER_MM, SUPPORTED_MAT_DIAMETERS_MM,
+  FOOTING_LAYER_ORDER_PREFERENCES,
   defaultFootingMatPreferences, migrateFootingMatPreferences,
 } from '../../model/footing';
 
@@ -46,6 +47,7 @@ describe('bottom-mat preferences on the model', () => {
       bottomMatDiameterXmm: 16,
       bottomMatDiameterYmm: 16,
       bottomMatSpacingPolicy: 'AUTO_CODE_COMPLIANT',
+      bottomMatLayerOrder: 'AUTO',
     });
     expect(modelStore.footingMatPreferences()).toEqual(defaultFootingMatPreferences());
   });
@@ -76,8 +78,11 @@ describe('bottom-mat preferences on the model', () => {
     });
     expect(m.preferences.bottomMatDiameterXmm).toBe(16);
     expect(m.preferences.bottomMatDiameterYmm).toBe(20);
+    // The stored object also states no layer order, so it migrates to AUTO and says so — that
+    // migration CHANGES the design (PR18-A designed both directions at the envelope depth), and
+    // a silent change to a delivered design is what the notice exists to prevent.
     expect(m.notices.map((n) => n.key))
-      .toEqual(['footing.migration.matDiameterUnsupported']);
+      .toEqual(['footing.migration.matDiameterUnsupported', 'footing.migration.layerOrderToAuto']);
   });
 
   it('offers the project\'s own bar catalogue, not a competing one', () => {
@@ -102,6 +107,7 @@ describe('bottom-mat preferences on the model', () => {
     expect(modelStore.footingMatPreferences()).toEqual({
       bottomMatDiameterXmm: 20, bottomMatDiameterYmm: 25,
       bottomMatSpacingPolicy: 'AUTO_CODE_COMPLIANT',
+      bottomMatLayerOrder: 'AUTO',
     });
   });
 
@@ -226,6 +232,132 @@ describe('bottom-mat preferences on the model', () => {
     expect(modelStore.footingMatPreferences().bottomMatDiameterXmm).toBe(16);
     expect(modelStore.modelVersion).toBe(version);
     expect(resultsStore.results3D).not.toBeNull();
+  });
+
+
+  // ── The physical layer order ───────────────────────────────────
+
+  /**
+   * The one preference whose migration default deliberately CHANGES the design.
+   *
+   * PR18-A established no layer order and designed both mat directions at the shallower
+   * upper-layer depth. AUTO resolves a real order and designs each direction at its own depth,
+   * which generally reduces the lower one's steel. So reopening a PR18-A project under AUTO
+   * gives a different mat, and that is why this migration is announced rather than silent — the
+   * opposite posture from the diameters, whose default reproduces the old numbers exactly.
+   */
+
+  it('a project that never stated a layer order migrates to AUTO, visibly', () => {
+    const m = migrateFootingMatPreferences({
+      bottomMatDiameterXmm: 16, bottomMatDiameterYmm: 16,
+      bottomMatSpacingPolicy: 'AUTO_CODE_COMPLIANT',
+    });
+    expect(m.preferences.bottomMatLayerOrder).toBe('AUTO');
+    expect(m.notices.map((n) => n.key)).toContain('footing.migration.layerOrderToAuto');
+  });
+
+  it('announces the same migration for a project with NO preferences at all', () => {
+    // Pre-PR18-A. It states no order either, so it migrates on the same terms.
+    for (const raw of [undefined, null, 'nonsense', 42]) {
+      const m = migrateFootingMatPreferences(raw);
+      expect(m.preferences.bottomMatLayerOrder).toBe('AUTO');
+      expect(m.notices.map((n) => n.key)).toEqual(['footing.migration.layerOrderToAuto']);
+    }
+  });
+
+  it('reads a stated order back without a notice', () => {
+    for (const order of ['AUTO', 'X_BELOW_Y', 'Y_BELOW_X'] as const) {
+      const m = migrateFootingMatPreferences({
+        bottomMatDiameterXmm: 16, bottomMatDiameterYmm: 16,
+        bottomMatSpacingPolicy: 'AUTO_CODE_COMPLIANT',
+        bottomMatLayerOrder: order,
+      });
+      expect(m.preferences.bottomMatLayerOrder).toBe(order);
+      expect(m.notices).toHaveLength(0);
+    }
+  });
+
+  it('reads an unknown stored order as AUTO, with a notice', () => {
+    // A hand-edited .ded or share URL carrying an order this version cannot place is not a
+    // placement instruction.
+    const m = migrateFootingMatPreferences({
+      bottomMatDiameterXmm: 16, bottomMatDiameterYmm: 16,
+      bottomMatSpacingPolicy: 'AUTO_CODE_COMPLIANT',
+      bottomMatLayerOrder: 'DIAGONAL',
+    });
+    expect(m.preferences.bottomMatLayerOrder).toBe('AUTO');
+    expect(m.notices.map((n) => n.key)).toEqual(['footing.migration.layerOrderUnknown']);
+  });
+
+  it('offers exactly the three values, in the order the UI shows them', () => {
+    expect(FOOTING_LAYER_ORDER_PREFERENCES).toEqual(['AUTO', 'X_BELOW_Y', 'Y_BELOW_X']);
+  });
+
+  it.each(['X_BELOW_Y', 'Y_BELOW_X', 'AUTO'] as const)(
+    'survives snapshot/restore and the .ded JSON round-trip as %s (P)', (order) => {
+      withFooting();
+      modelStore.setFootingMatPreferences({ bottomMatLayerOrder: order });
+      const wire = JSON.parse(JSON.stringify(modelStore.snapshot()));
+      modelStore.clear();
+      expect(modelStore.footingMatPreferences().bottomMatLayerOrder).toBe('AUTO');
+
+      modelStore.restore(wire);
+      expect(modelStore.footingMatPreferences().bottomMatLayerOrder).toBe(order);
+    });
+
+  it.each(['X_BELOW_Y', 'Y_BELOW_X'] as const)(
+    'survives a URL share as %s, with the footings it places (P)', (order) => {
+      const { footingId } = withFooting();
+      modelStore.setFootingMatPreferences({
+        bottomMatLayerOrder: order, bottomMatDiameterYmm: 20,
+      });
+      const packed = compressSnapshot(modelStore.snapshot());
+      modelStore.clear();
+      const decoded = decompressSnapshot(packed);
+      expect(decoded).not.toBeNull();
+      modelStore.restore(decoded!);
+
+      // A shared project that lost the order would reopen with a DIFFERENT mat than the one
+      // shared — the same class of defect as sharing a footing without its soil.
+      expect(modelStore.footingMatPreferences().bottomMatLayerOrder).toBe(order);
+      expect(modelStore.footingMatPreferences().bottomMatDiameterYmm).toBe(20);
+      expect(modelStore.model.footings.get(footingId)!.B).toBe(1.8);
+    });
+
+  it('supersedes dependent detailing when the order changes (Q)', () => {
+    // A different order is a different mat: different depths, different steel, different bar
+    // elevations. Everything drawn from the old one has to be retired.
+    let fired = 0;
+    modelStore._setOnFoundationChange(() => { fired++; });
+    modelStore.setFootingMatPreferences({ bottomMatLayerOrder: 'X_BELOW_Y' });
+    expect(fired).toBe(1);
+    modelStore.setFootingMatPreferences({ bottomMatLayerOrder: 'Y_BELOW_X' });
+    expect(fired).toBe(2);
+    // …and no supersession for a write that changes nothing.
+    modelStore.setFootingMatPreferences({ bottomMatLayerOrder: 'Y_BELOW_X' });
+    expect(fired).toBe(2);
+  });
+
+  it('does not clear the structural analysis when the order changes (Q)', () => {
+    withFooting();
+    resultsStore.setResults3D({
+      displacements: [], reactions: [], elementForces: [],
+    } as never);
+    const before = modelStore.modelVersion;
+    modelStore.setFootingMatPreferences({ bottomMatLayerOrder: 'Y_BELOW_X' });
+    // The layer order changes where the bars sit, not the stiffness that produced the reaction.
+    expect(modelStore.modelVersion).toBe(before);
+    expect(resultsStore.results3D).not.toBeNull();
+  });
+
+  it('is undoable through the foundation channel, and redoable', () => {
+    withFooting();
+    modelStore.setFootingMatPreferences({ bottomMatLayerOrder: 'Y_BELOW_X' });
+    expect(modelStore.footingMatPreferences().bottomMatLayerOrder).toBe('Y_BELOW_X');
+    historyStore.undo();
+    expect(modelStore.footingMatPreferences().bottomMatLayerOrder).toBe('AUTO');
+    historyStore.redo();
+    expect(modelStore.footingMatPreferences().bottomMatLayerOrder).toBe('Y_BELOW_X');
   });
 
   it('a new project starts from the stated default, not the previous project\'s mat', () => {
