@@ -154,7 +154,7 @@ const pt: Translations = {
 
   'landing.badgeToday': 'DISPONÍVEL HOJE',
 
-  'landing.basicNote': 'O Básico é o modo que funciona hoje, tal como é publicado. Educativo e PRO constroem mais fluxos sobre a mesma base de cálculo estrutural.',
+  'landing.basicNote': 'O Básico é o modo mais desenvolvido do Stabileo. Educativo e PRO constroem mais fluxos sobre a mesma base de cálculo estrutural.',
 
   'landing.basicH': 'Básico é o modo que já funciona hoje.',
 
@@ -176,7 +176,7 @@ const pt: Translations = {
 
   'landing.capShotIndustrialBody': 'Trinta e sete modelos vêm no menu de exemplos, de uma viga simples a um galpão industrial inteiro como este. Também não são um catálogo fechado: no Básico você modela e calcula a estrutura que quiser.',
 
-  'landing.capShotIndustrialTitle': 'E muitos outros exemplos, prontos para abrir',
+  'landing.capShotIndustrialTitle': 'E muitas mais possibilidades para modelar',
 
   'landing.capAlt2d': 'O Stabileo em 2D: um pórtico resolvido com seu diagrama de momentos fletores, com cada ordenada rotulada em kN·m.',
 
@@ -236,19 +236,19 @@ const pt: Translations = {
 
   'landing.capP': 'O mesmo motor serve aos três modos. As análises mais profundas fazem parte do modo PRO, e algumas capacidades do solver seguem sendo ampliadas.',
 
-  'landing.capShot2dBody': 'Diagramas de M, V e N, deformada, tensões de Navier e Jourawski, fluxo de cisalhamento e círculo de Mohr para a seção selecionada.',
+  'landing.capShot2dBody': 'Diagramas de normal, momento e cortante, e deformada.',
 
-  'landing.capShot2dTitle': '2D — diagramas e tensões de seção',
+  'landing.capShot2dTitle': '2D — Diagramas característicos',
 
-  'landing.capShot3dBody': 'My, Mz, Vy, Vz, N e T, flexão biaxial, torção e mapa de cor de aproveitamento sobre todo o modelo.',
+  'landing.capShot3dBody': 'Diagramas de N, My, Vz, Mz, Vy e T, com deformada em 3D.',
 
   'landing.capShot3dTitle': '3D — seis graus de liberdade por nó',
 
-  'landing.capShotStress2dBody': 'Você clica em um ponto qualquer da estrutura e vê o que acontece com a seção ali. Não um número solto: o estado de tensões completo, com a teoria que o produziu à vista. Ele malha o polígono real, então uma cantoneira ou um perfil incomum são tratados como um perfil I.',
+  'landing.capShotStress2dBody': 'Você clica em um ponto qualquer da estrutura e vê o estado de tensões completo, com a teoria que o produziu à vista, com desenvolvimentos conceituais para calcular baricentro, centro de cisalhamento, núcleo central e vários mais.',
 
   'landing.capShotStress2dTitle': 'Tensões de seção, barra por barra',
 
-  'landing.capShotStress3dBody': 'N/A + Mz·y/Iz + My·z/Iy com componentes de cortante separadas, e a torção pelas três teorias — Cauchy, Bredt, Saint-Venant — cada uma com sua fórmula e seu valor, incluídas as que não se aplicam e por quê. Também o empenamento, o termo que mais se omite.',
+  'landing.capShotStress3dBody': 'N/A + Mz·y/Iz + My·z/Iy com componentes de cortante separadas, linha neutra oblíqua e a torção por três teorias.',
 
   'landing.capShotStress3dTitle': 'Tensões biaxiais em 3D',
 

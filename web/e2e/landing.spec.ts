@@ -519,7 +519,7 @@ test.describe('@landing landing page', () => {
        * Education") said the same thing by subtraction, which made the working
        * mode read as a reduced preview of the ones that do not ship yet.
        */
-      expect(text).toMatch(/the mode that works today/i);
+      expect(text).toMatch(/most developed mode/i);
       expect(text).toMatch(/same structural-analysis foundation/i);
       expect(text).not.toMatch(/\bnot PRO\b/i);
     });
