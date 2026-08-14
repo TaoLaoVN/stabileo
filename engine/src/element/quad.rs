@@ -54,6 +54,16 @@ fn norm3(v: &[f64; 3]) -> f64 {
     (v[0] * v[0] + v[1] * v[1] + v[2] * v[2]).sqrt()
 }
 
+/// Unit vector, falling back to [0,0,1] on a degenerate input.
+///
+/// Deliberately identical to `curved_shell::normalize3`, including the fallback: the
+/// three shell elements are supposed to agree on the edge-load convention, and the
+/// last time one of them spelled it differently the divergence went unnoticed.
+fn normalize3(v: &[f64; 3]) -> [f64; 3] {
+    let l = norm3(v);
+    if l > 1e-15 { [v[0] / l, v[1] / l, v[2] / l] } else { [0.0, 0.0, 1.0] }
+}
+
 fn sub3(a: &[f64; 3], b: &[f64; 3]) -> [f64; 3] {
     [a[0] - b[0], a[1] - b[1], a[2] - b[2]]
 }
@@ -1159,7 +1169,13 @@ pub fn quad_edge_load(
     // For CCW node ordering (viewed from +ez), et × ez points OUTWARD from the
     // element, matching the documented "positive qn = outward" convention of
     // SolverQuadEdgeLoad and curved_shell_edge_load (which uses t̂ × d̂).
-    let en = cross3(&et, &ez);
+    //
+    // NORMALIZED, because et ⊥ ez holds only on a FLAT quad. `ez` comes from the
+    // diagonals, so on a warped element the chord tangent is not perpendicular to it
+    // and |et × ez| = sin θ < 1 — the direction stays right while qn is applied at
+    // that fraction of its stated magnitude, which is invisible to any test built on
+    // a flat square. curved_shell_edge_load normalizes for exactly this reason.
+    let en = normalize3(&cross3(&et, &ez));
 
     // Distributed load in global = qn * en + qt * et (force per length)
     let qx = qn * en[0] + qt * et[0];
@@ -1519,5 +1535,43 @@ mod tests {
             fx_total
         );
         assert!((fx_total - 2.0).abs() < 1e-10, "total force = qn·L: {}", fx_total);
+    }
+
+    /// The magnitude half of the convention, which a flat quad cannot test.
+    ///
+    /// `ez` is derived from the diagonals, so it is perpendicular to every edge only
+    /// when the element is planar. Warp it and the edge chord tilts out of that plane:
+    /// |et × ez| = sin θ < 1, and an unnormalized normal applies qn at that fraction —
+    /// right direction, silently short. `test_edge_load_normal_points_outward` above
+    /// uses a unit square, where sin θ = 1 exactly, so it passes either way.
+    #[test]
+    fn test_edge_load_normal_is_unit_on_warped_quad() {
+        // Corners alternating off-plane. The diagonals still give ez = +z, but edge
+        // 0's chord rises with them, so et·ez ≠ 0.
+        let coords = [
+            [0.0, 0.0, 0.0],
+            [1.0, 0.0, 1.0],
+            [1.0, 1.0, 0.0],
+            [0.0, 1.0, 1.0],
+        ];
+        let qn = 2.0;
+        let f = quad_edge_load(&coords, 0, qn, 0.0);
+
+        // Total force delivered to the loaded edge's two nodes.
+        let mut total = [0.0f64; 3];
+        for n in [0usize, 1] {
+            for k in 0..3 {
+                total[k] += f[n * 6 + k];
+            }
+        }
+        let applied = norm3(&total);
+        let expected = qn * norm3(&sub3(&coords[1], &coords[0]));
+
+        assert!(
+            (applied - expected).abs() < 1e-9 * expected,
+            "warped quad applied |F| = {} but qn·L = {} — the edge normal is not a \
+             unit vector (raw |et × ez| = sin θ ≈ 0.707 here)",
+            applied, expected
+        );
     }
 }

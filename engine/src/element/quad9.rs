@@ -39,6 +39,13 @@ fn norm3(v: &[f64; 3]) -> f64 {
     (v[0] * v[0] + v[1] * v[1] + v[2] * v[2]).sqrt()
 }
 
+/// Unit vector, falling back to [0,0,1] on a degenerate input.
+/// Deliberately identical to `curved_shell::normalize3` — see the note in `quad.rs`.
+fn normalize3(v: &[f64; 3]) -> [f64; 3] {
+    let l = norm3(v);
+    if l > 1e-15 { [v[0] / l, v[1] / l, v[2] / l] } else { [0.0, 0.0, 1.0] }
+}
+
 fn sub3(a: &[f64; 3], b: &[f64; 3]) -> [f64; 3] {
     [a[0] - b[0], a[1] - b[1], a[2] - b[2]]
 }
@@ -1056,7 +1063,11 @@ pub fn quad9_edge_load(
     let et = [edge_vec[0] / l_edge, edge_vec[1] / l_edge, edge_vec[2] / l_edge];
     // For CCW node ordering (viewed from +ez), et × ez points OUTWARD from the
     // element, matching the documented "positive qn = outward" convention.
-    let en = cross3(&et, &ez);
+    // NORMALIZED: et ⊥ ez holds only on a flat quad9. `ez` is diagonal-derived, so a
+    // warped element gives |et × ez| = sin θ < 1 and applies qn at that fraction of
+    // its stated magnitude — correct direction, silently wrong size, and invisible to
+    // a test built on a flat square. Matches curved_shell_edge_load.
+    let en = normalize3(&cross3(&et, &ez));
 
     let qx = qn * en[0] + qt * et[0];
     let qy = qn * en[1] + qt * et[1];
