@@ -49,6 +49,10 @@ async function openWorkspace(page: Page) {
     .toBeGreaterThan(0);
 
   const before = await page.evaluate(() => window.__stabileo.rebarSceneBuilds());
+  // `doc-3d` moved into the Documents stage, which is collapsed by default. The control that
+  // opens the workspace is still the one focus must return to, which is what this file asserts.
+  const docs = page.getByTestId('documents-disclosure');
+  if (await docs.getAttribute('open') === null) await docs.locator('> summary').click();
   await page.getByTestId('doc-3d').click();
   await expect(page.getByTestId('rebar-workspace')).toBeVisible();
   await expect

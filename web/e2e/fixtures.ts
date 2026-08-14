@@ -341,3 +341,25 @@ export async function computeDemands(page: Page): Promise<void> {
 }
 
 export { expect };
+
+/**
+ * Make sure the Documents stage is open before reaching a control inside it.
+ *
+ * ── Why this exists, and why it is a helper and not a UI change ────
+ *
+ * PR20 moved the report, the drawings, the schedule, the 3-D view and the professional review out
+ * of the coordinated-detailing panel and into a stage of their own, collapsed by default like
+ * every other stage. Fourteen specs reach `doc-3d`, `doc-report`, `doc-dxf`, `doc-xlsx` or the
+ * review controls, and a collapsed `<details>` keeps its children in the DOM — so a locator
+ * RESOLVES, reports the right element, and then waits forever for it to become visible. That is
+ * the failure signature every one of them showed.
+ *
+ * The assertions are unchanged. What changed is which container holds the controls, and this is
+ * the one line that says so. Opening the stage by default would have hidden the problem instead
+ * of describing it, and would undo the point of making Documents a stage.
+ */
+export async function openDocumentsStage(page: Page): Promise<void> {
+  const d = page.getByTestId('documents-disclosure');
+  if (await d.count() === 0) return;
+  if (await d.getAttribute('open') === null) await d.locator('> summary').click();
+}

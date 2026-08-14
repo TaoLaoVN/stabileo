@@ -51,7 +51,7 @@
  */
 
 import { test, expect, openPreparedWorkspace } from './prepared-building';
-import { designAll, loadModel } from './fixtures';
+import { designAll, loadModel, openDocumentsStage } from './fixtures';
 
 type Page = import('@playwright/test').Page;
 
@@ -74,6 +74,7 @@ async function openWorkspace(page: Page, example: string, withFloors: boolean) {
     await expect(page.getByTestId('floor-families')).toBeVisible();
   }
 
+  await openDocumentsStage(page);
   await page.getByTestId('doc-3d').click();
   await expect(page.getByTestId('rebar-workspace')).toBeVisible();
 }
@@ -569,6 +570,7 @@ for (const [label, register] of [
       for (let i = 0; i < 5; i++) {
         await page.getByTestId('rebar-workspace-close').click();
         await expect(page.getByTestId('rebar-workspace')).toHaveCount(0);
+        await openDocumentsStage(page);
         await page.getByTestId('doc-3d').click();
         await expect(page.getByTestId('rebar-workspace')).toBeVisible();
         await expect(page.getByTestId('rebar-canvas')).toBeVisible();

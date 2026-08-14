@@ -25,7 +25,7 @@
  */
 
 import { readFileSync } from 'node:fs';
-import { test, expect, designAll, loadModel, PRO_URL } from './fixtures';
+import { test, expect, designAll, loadModel, PRO_URL, openDocumentsStage } from './fixtures';
 import en from '../src/lib/i18n/locales/en';
 import es from '../src/lib/i18n/locales/es';
 import pt from '../src/lib/i18n/locales/pt';
@@ -290,6 +290,7 @@ for (const locale of OFFERED) {
         .toHaveText(D['detailing.floorRun.designAndDetail']);
 
       // ── D. The exports, named in this language ─────────────────
+      await openDocumentsStage(page);
       await expect(page.getByTestId('doc-report')).toHaveText(D['detailing.doc.report']);
       await expect(page.getByTestId('doc-dxf')).toHaveText(D['detailing.doc.dxf']);
       await expect(page.getByTestId('doc-xlsx')).toHaveText(D['detailing.doc.xlsx']);

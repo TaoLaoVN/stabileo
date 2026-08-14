@@ -30,7 +30,7 @@
  * rather than through the test process, and why a page of one's own is not a shared page.
  */
 
-import { designAll, loadModel } from './fixtures';
+import { designAll, loadModel, openDocumentsStage } from './fixtures';
 import {
   test, expect, openPreparedWorkspace, readTally, readPieces,
 } from './prepared-building';
@@ -73,6 +73,7 @@ async function openWorkspace(
   }
 
   const buildsBefore = await page.evaluate(() => window.__stabileo.rebarSceneBuilds());
+  await openDocumentsStage(page);
   await page.getByTestId('doc-3d').click();
   await expect(page.getByTestId('rebar-workspace')).toBeVisible();
   /**
