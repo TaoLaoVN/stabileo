@@ -66,6 +66,19 @@ export function reviewRank(s: ReviewState): number {
   return REVIEW_STATES.indexOf(s);
 }
 
+/**
+ * The revision a regeneration produces, from the one it supersedes.
+ *
+ * One line, and it is a shared function because it now has TWO callers. `buildFloorAssembly`
+ * stamps the assembly with it, and the footing pass stamps each physical mat bar's provenance
+ * with it before the assembly exists — so a bar can say which revision it belongs to. Two
+ * copies of `previous + 1` in two modules is exactly how a bar comes to claim a revision one
+ * off from the assembly holding it.
+ */
+export function nextDetailingRevision(previous?: number): number {
+  return (previous ?? 0) + 1;
+}
+
 /** A human decision, recorded. Never produced by the app on its own. */
 export interface ReviewRecord {
   /** Free text: the person who reviewed it. The app does not authenticate this. */
@@ -113,6 +126,15 @@ export interface BarMark {
    * own owners is a second reader of the same fact and the two drift.
    */
   role: BarPath['role'];
+  /**
+   * What the marked item is FOR — see `BarPath.purpose`. Absent means resistant reinforcement.
+   *
+   * Part of the grouping key, not a summary of it: a Ø10 hanger and a Ø10 hogging bar of the
+   * same cut length ARE the same fabricated item, but they are not the same line on a schedule
+   * an engineer signs. One is steel that resists a moment and one is steel that holds a stirrup,
+   * and a bender reading a merged row cannot tell which of the two the drawing meant.
+   */
+  purpose?: BarPath['purpose'];
   ownerElementIds: number[];
   zoneIds: string[];
 }
@@ -194,6 +216,32 @@ export interface DetailingAssembly {
   joints: JointRecord[];
   conflicts: BarConflict[];
   unsupported: UnsupportedCondition[];
+  /**
+   * Members in this assembly whose OWN design is a proposal, not a certified design.
+   *
+   * Distinct from "owns a provisional bar", which is a different and wider set: a bar
+   * continuous over a support belongs to the beam it was designed for AND to the column it
+   * passes through, so a fully verified column adjacent to a provisional beam owns a
+   * provisional bar without itself being provisional. The bar is unbuildable either way — it
+   * runs through a proposal — but the COLUMN's design is certified, and reporting otherwise
+   * would understate what the app actually achieved.
+   *
+   * Recorded on the assembly so the document, and every projection of it, can state the
+   * member-level fact without re-deriving it from bar ownership.
+   */
+  provisionalMembers?: number[];
+  /**
+   * Members in this assembly carrying torsion that no check in this application evaluates.
+   *
+   * A WARNING, not a state. These members keep their geometry, their reinforcement and their
+   * proposal if they have one; what changes is that every projection of this assembly says the
+   * torsion was not verified. See `torsion-notice.ts` for why that is the only honest option
+   * and for why it is not a refusal.
+   *
+   * Recorded next to `provisionalMembers` and read the same way, so the report, the sheets, the
+   * schedule and the 3-D view cannot form four opinions about which members they are.
+   */
+  torsionUnevaluatedMembers?: number[];
   /**
    * Bumped whenever this assembly is regenerated. Per-assembly, so editing one line does
    * not mark an untouched line stale.
@@ -283,17 +331,22 @@ export function shapeCode(bar: BarPath): string {
 export function assignMarks(bars: readonly BarPath[], prefix = 'B'): BarMark[] {
   const groups = new Map<string, BarPath[]>();
   for (const bar of bars) {
-    const key = `${bar.diameterMm}|${roundCut(bar.cuttingLength).toFixed(2)}|${shapeCode(bar)}`;
+    // `purpose` joins the key so a hanger never shares a schedule row with hogging steel. It is
+    // empty on every bar that carries no purpose, which is all of them until a beam has no
+    // hogging demand, so no existing mark moves because this term exists.
+    const key = `${bar.diameterMm}|${roundCut(bar.cuttingLength).toFixed(2)}`
+      + `|${shapeCode(bar)}|${bar.purpose ?? ''}`;
     const g = groups.get(key);
     if (g) g.push(bar); else groups.set(key, [bar]);
   }
 
   const sorted = [...groups.entries()].sort(([a], [b]) => {
-    const [da, la, sa] = a.split('|');
-    const [db, lb, sb] = b.split('|');
+    const [da, la, sa, pa] = a.split('|');
+    const [db, lb, sb, pb] = b.split('|');
     return Number(da) - Number(db)
       || Number(la) - Number(lb)
-      || sa.localeCompare(sb);
+      || sa.localeCompare(sb)
+      || pa.localeCompare(pb);
   });
 
   return sorted.map(([key, list], i) => {
@@ -310,6 +363,7 @@ export function assignMarks(bars: readonly BarPath[], prefix = 'B'): BarMark[] {
       massKg: area * cuttingLength * 7850 * list.length,
       barIds: list.map((b) => b.id).sort(),
       role: list[0].role,
+      ...(list[0].purpose ? { purpose: list[0].purpose } : {}),
       ownerElementIds: [...new Set(list.flatMap((b) => b.ownerElementIds))]
         .sort((x, y) => x - y),
       zoneIds: [...new Set(list.map((b) => b.zoneId).filter((z): z is string => !!z))].sort(),

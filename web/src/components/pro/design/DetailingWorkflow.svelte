@@ -21,9 +21,13 @@
     renderReportHtml, renderDrawings, renderSchedule,
   } from '../../../lib/engine/detailing/document-render';
   import { exportToExcel } from '../../../lib/export/excel';
+  import RebarScenePanel from './RebarScenePanel.svelte';
+  import { rebarWorkspace } from '../../../lib/store/rebar-workspace.svelte';
+  import { markOpenPhase } from '../../../lib/utils/open-timeline';
 
   let engineer = $state('');
   let docError = $state<string | null>(null);
+  let show3d = $state(false);
 
   /**
    * Build the document, or say why not.
@@ -73,6 +77,26 @@
       locale: i18n.locale, projectName: t('detailing.doc.project'),
     });
     downloadBlob(`detailing-rev${doc.revision.number}.dxf`, 'application/dxf', set.dxf);
+  }
+
+  /**
+   * Open the 3-D view on a FRESHLY built document.
+   *
+   * Not on `detailingStore.document`, which may be a revision built before the last edit.
+   * Going through `currentDoc()` is what makes the picture and the three exports above
+   * projections of the same instance rather than of two documents that happen to agree.
+   */
+  function open3d() {
+    // The phases of an open are recorded where they happen — see `open-timeline.ts` for why
+    // attributing this from the outside got it wrong twice.
+    markOpenPhase('click');
+    if (!currentDoc()) return;
+    markOpenPhase('document');
+    show3d = true;
+    // Straight into the workspace. The sidebar panel keeps the summary and the export; the
+    // inspection surface is the overlay, and making the user find a second button to reach it
+    // is the friction this pass exists to remove.
+    rebarWorkspace.openWorkspace();
   }
 
   function exportXlsx() {
@@ -310,6 +334,7 @@
               <th scope="col">{t('detailing.mark')}</th>
               <th scope="col">Ø</th>
               <th scope="col">{t('detailing.shape')}</th>
+              <th scope="col">{t('detailing.schedule.purpose')}</th>
               <th scope="col">{t('detailing.qty')}</th>
               <th scope="col">{t('detailing.cutLength')}</th>
               <th scope="col">{t('detailing.mass')}</th>
@@ -319,6 +344,8 @@
             {#each s.rows as r (r.mark)}
               <tr>
                 <td>{r.mark}</td><td>{r.diameterMm}</td><td>{r.shape}</td>
+                <td data-testid="schedule-purpose">{r.role === 'longitudinal'
+                  ? t(`detailing.schedule.purpose.${r.purpose ?? 'resistant'}`) : '—'}</td>
                 <td>{r.quantity}</td><td>{r.cuttingLengthM.toFixed(2)}</td>
                 <td>{r.massKg.toFixed(1)}</td>
               </tr>
@@ -326,7 +353,7 @@
           </tbody>
           <tfoot>
             <tr>
-              <th scope="row" colspan="3">{t('detailing.total')}</th>
+              <th scope="row" colspan="4">{t('detailing.total')}</th>
               <td>{s.totals.quantity}</td>
               <td>{s.totals.totalLengthM.toFixed(1)}</td>
               <td data-testid="schedule-mass">{s.totals.massKg.toFixed(1)}</td>
@@ -361,10 +388,18 @@
           <button data-testid="doc-report" onclick={exportReport}>{t('detailing.doc.report')}</button>
           <button data-testid="doc-dxf" onclick={exportDxf}>{t('detailing.doc.dxf')}</button>
           <button data-testid="doc-xlsx" onclick={exportXlsx}>{t('detailing.doc.xlsx')}</button>
+          <button data-testid="doc-3d" onclick={open3d}>{t('detailing.scene.open')}</button>
         </div>
 
         {#if docError}
           <p class="err" role="alert" data-testid="doc-error">{docError}</p>
+        {/if}
+
+        <!-- ── The fourth projection ────────────────────────────────
+             Same document instance as the three exports above, so what is orbited, what is
+             dimensioned and what is ordered cannot come apart. -->
+        {#if show3d}
+          <RebarScenePanel doc={detailingStore.document} ondownload={downloadBlob} />
         {/if}
 
         {#if detailingStore.supersededDocuments.length > 0}

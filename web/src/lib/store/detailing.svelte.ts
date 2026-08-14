@@ -11,6 +11,7 @@
  */
 
 import { modelStore } from './model.svelte';
+import { requestAutosave } from './autosave-service';
 import {
   applyReview, emptyDetailingStore, invalidateAffected, isDemandStale, isReviewStale,
   type DetailingAssembly, type DetailingStore, type ReviewRecord,
@@ -39,7 +40,7 @@ import {
 import { regulationsStore } from './regulations.svelte';
 import { resultsStore } from './results.svelte';
 import {
-  floorDesignReadiness, runFloorDesign,
+  classifyShell, floorDesignReadiness, runFloorDesign,
   type FloorDesignReadiness, type FloorShell, type FloorShellStress,
   type RunFloorDesignResult,
 } from '../engine/detailing/run-floor-design';
@@ -85,19 +86,69 @@ function currentConcreteEdition(): RegulationEdition {
 }
 
 /**
- * Maximum aggregate size, from the materials.
+ * THE authoritative verifier identity, derived from the verification that actually ran.
+ *
+ * Both production detailing commands used to default this to `''` and only the test chain
+ * passed one, so every real user's certificate named no verifier at all. The fix belongs
+ * here rather than in each caller: a certificate's provenance is a property of the run, not
+ * an argument a panel happens to remember to supply, and two UI call sites able to disagree
+ * is the same three-sources-for-one-decision shape `adapter()` was already repaired for.
+ *
+ * It is READ from the issued certificates, never composed from the binding alone. That
+ * distinction is the whole point — the binding says which code is selected, the certificates
+ * say which verifier was executed, and only the second is true of the work:
+ *
+ *   * no completed design run → no identity, and the export refuses;
+ *   * a run that issued no certificate → no identity (nothing was actually verified);
+ *   * a certificate naming a verifier other than the one bound NOW → no identity, because
+ *     rebinding the regulation after the run makes the earlier identity a stale claim.
+ *
+ * Returning `''` is therefore never a silent default. It is the honest "no verifier ran",
+ * and `buildFootingCadHandoff` turns it into a stated refusal rather than an empty field.
+ */
+function resolveVerifierId(): string {
+  const summary = verificationStore.runSummary;
+  if (!summary) return '';
+
+  const boundId = regulationsStore.concreteDesignCode();
+  const expected = boundId ? getDesignCode(boundId)?.provenance().verifierId : undefined;
+  if (!expected) return '';
+
+  let issued = 0;
+  for (const outcome of summary.outcomes.values()) {
+    const id = outcome.certificate?.verifierId;
+    if (!id) continue;
+    // One disagreeing certificate is enough to withhold the identity: the assembly would
+    // otherwise carry a verifier that part of the design was not checked against.
+    if (id !== expected) return '';
+    issued++;
+  }
+  return issued > 0 ? expected : '';
+}
+
+/**
+ * Maximum aggregate size as the MATERIALS state it, or null when none of them does.
  *
  * PR16 moved this off the regulation panel and onto the material, where a mix property
  * belongs. The largest value across the concretes in use governs the bar spacing, which is
  * the conservative reading when a model mixes mixes.
+ *
+ * Split from `resolveAggregate` so "stated" and "assumed" stay distinguishable. Both callers
+ * need the same number, but an export must additionally say WHICH it is: the assumed 20 mm is
+ * not a regulatory default, and a document that presented it as one would be claiming a
+ * provenance it does not have.
  */
-function resolveAggregate(): number {
+function statedAggregate(): number | null {
   let max = 0;
   for (const m of modelStore.model.materials.values()) {
     const d = (m as { maxAggregateSizeMm?: number | null }).maxAggregateSizeMm;
     if (typeof d === 'number' && d > max) max = d;
   }
-  return max > 0 ? max : DAGG_ASSUMED_MM;
+  return max > 0 ? max : null;
+}
+
+function resolveAggregate(): number {
+  return statedAggregate() ?? DAGG_ASSUMED_MM;
 }
 
 /**
@@ -155,6 +206,32 @@ function collectShells(): FloorShell[] {
   }
   // Sorted so the run is deterministic regardless of Map insertion order.
   return out.sort((a, b) => a.id - b.id);
+}
+
+/**
+ * The shells a run should design, filtered through the engine's own classifier.
+ *
+ * A shell the classifier cannot place — neither clearly horizontal nor clearly vertical — is
+ * KEPT whenever either family is wanted, so a sloping roof panel is not silently dropped by a
+ * filter that was only meant to exclude walls.
+ */
+function scopedShells(wants: (f: 'slab' | 'wall' | 'footing') => boolean): FloorShell[] {
+  const all = collectShells();
+  if (wants('slab') && wants('wall')) return all;
+  if (!wants('slab') && !wants('wall')) return [];
+  return all.filter((sh) => {
+    const pts = sh.nodes
+      .map((n) => modelStore.model.nodes.get(n))
+      .filter(Boolean)
+      .map((n) => ({ x: n!.x, y: n!.y, z: n!.z ?? 0 }));
+    if (pts.length < 3) return true;
+    const { family } = classifyShell(sh.id, pts as never);
+    if (family === 'slab') return wants('slab');
+    if (family === 'wall') return wants('wall');
+    // `inclined` and `degenerate` belong to neither and are reported by the run itself, so
+    // they survive any filter rather than disappearing without a word.
+    return true;
+  });
 }
 
 /** Shell stresses from the active result set, quads and plates in one list. */
@@ -711,6 +788,37 @@ function lockedMemberIds(): ReadonlySet<number> {
  * "what revision is this project on", and it is the persisted model — which is also what a
  * reopened project carries.
  */
+/**
+ * What a footing run was made FROM, as one comparable string.
+ *
+ * ── The failure this exists to prevent ─────────────────────────
+ *
+ * `supersedeDocuments()` retires the DOCUMENT when a foundation input changes, and it leaves
+ * `lastFootingRun` alone. That was harmless while the run held numbers: a superseded schedule
+ * on screen next to a retired document is a visible inconsistency the user can read.
+ *
+ * It stops being harmless now that the run holds BARS. Change the layer-order preference and
+ * the panel would go on drawing the previous mat — real bar positions, real elevations, real
+ * marks — with nothing saying they belong to a design the project no longer specifies. Stale
+ * geometry presented as current is the one failure the whole revision graph exists to prevent.
+ *
+ * So the run records its inputs and the panel compares. It does NOT re-run: regeneration stays
+ * an explicit command, because a panel that silently redesigned a footing on every keystroke
+ * would be making the engineer's decision for them.
+ *
+ * The mat preferences and every footing's own revision, and nothing else — those are exactly
+ * the inputs `runFootingDesign` reads that a user can change without re-solving. A change to
+ * the ANALYSIS moves the demand revision instead, and the certificate's own freshness catches
+ * that on a different axis.
+ */
+function footingRunFingerprint(): string {
+  const prefs = modelStore.footingMatPreferences();
+  const footings = [...modelStore.model.footings.values()]
+    .sort((a, b) => a.id - b.id)
+    .map((f) => `${f.id}:${f.revision}`);
+  return JSON.stringify({ prefs, footings });
+}
+
 function maxPersistedRevision(): number {
   let r = 0;
   for (const a of modelStore.model.detailing?.assemblies ?? []) {
@@ -752,6 +860,8 @@ function createDetailingStore() {
   let lastRun = $state<RunDetailingResult | null>(null);
   let lastFloorRun = $state<RunFloorDesignResult | null>(null);
   let lastFootingRun = $state<RunFootingDesignResult | null>(null);
+  /** The inputs `lastFootingRun` was produced from. See `footingRunFingerprint`. */
+  let lastFootingRunFingerprint = $state<string | null>(null);
   let currentDocument = $state<DocumentModel | null>(null);
   let supersededDocs = $state<DocumentModel[]>([]);
   /** Monotonic per project. Bumped on supersession, never reused. */
@@ -926,7 +1036,9 @@ function createDetailingStore() {
           nodes: modelStore.nodes as never,
           elements: modelStore.elements as never,
           edition: currentConcreteEdition(),
-          verifierId: opts.verifierId ?? '',
+          // Explicit argument wins so the golden chain can pin an identity; otherwise the
+          // verification that actually ran supplies it. Never a bare '' default.
+          verifierId: opts.verifierId ?? resolveVerifierId(),
           demandRevision: verificationStore.demandRevision,
           previousRevision: maxPersistedRevision(),
           maxAggregateSizeMm: resolveAggregate(),
@@ -947,6 +1059,15 @@ function createDetailingStore() {
             elementId, loss, outcomes.get(elementId)?.accepted),
           lockedBars: store.assemblies.flatMap((a) => a.bars.filter((b) => b.locked)),
           bentUp: bentUpPolicy(),
+          /**
+           * Whether the adapter that ran actually verifies torsion on beams.
+           *
+           * Read off the adapter rather than assumed, so the warning disappears by itself the
+           * day a code adapter gains the check — and so nothing in the detailing layer has to
+           * know which codes do. With no adapter there is no claim to read, and the safe
+           * reading of silence about a verification is that it did not happen.
+           */
+          checksTorsion: adapter?.capabilities.beams.torsion === true,
         });
 
         // Detailing used to take its EDITION from Project Regulations and its ADAPTER from
@@ -991,6 +1112,9 @@ function createDetailingStore() {
         // preserves the loads, the analysis and the design, and invalidates only the
         // detailing and the document — no solve is required.
         regulationsStore.noteChange('reinforcementEdit');
+        // Detailing geometry is expensive computed state produced by one click, so it asks
+        // to be saved now rather than at the next 30 s tick.
+        void requestAutosave('detailing');
         return result;
       } catch (e) {
         lastError = String(e instanceof Error ? e.message : e);
@@ -1022,7 +1146,25 @@ function createDetailingStore() {
      * of that type — selection, conflict navigation, the review gate, the document, the
      * DXF and the XLSX — receives them without a parallel pipeline.
      */
-    generateFloors(opts: { verifierId?: string } = {}): RunFloorDesignResult | null {
+    /**
+     * The floor pass, scoped to the families the caller asked for.
+     *
+     * ── Why the filter is here and the classifier is not ───────────
+     *
+     * `classifyShell` already decides whether a shell is a slab or a wall, and it lives in the
+     * engine with the rest of the floor design. Re-deriving that here to filter would be a
+     * second opinion about the same shell — the kind that agrees for a year and then does not.
+     * So the shells are filtered THROUGH it.
+     *
+     * Footings are simpler: they are their own collection, so an unselected footing family
+     * passes an empty list and the run reports no footings rather than pretending it checked.
+     *
+     * `families` absent means every family, which is what the existing advanced button and
+     * every previous caller mean.
+     */
+    generateFloors(
+      opts: { verifierId?: string; families?: readonly ('slab' | 'wall' | 'footing')[] } = {},
+    ): RunFloorDesignResult | null {
       generating = true;
       lastError = null;
       try {
@@ -1030,8 +1172,10 @@ function createDetailingStore() {
         // Footings are checked FIRST, so their entries can join the level assemblies the
         // shell pass builds. Their demand is a support reaction and their level is their
         // founding elevation, so neither comes from the shell loop.
+        const wants = (f: 'slab' | 'wall' | 'footing') =>
+          opts.families === undefined || opts.families.includes(f);
         const footingRun = runFootingDesign({
-          footings: [...modelStore.model.footings.values()],
+          footings: wants('footing') ? [...modelStore.model.footings.values()] : [],
           geotechnical: modelStore.model.geotechnical,
           nodes: modelStore.model.nodes as never,
           columns: collectFootingColumns(),
@@ -1063,11 +1207,19 @@ function createDetailingStore() {
           // The same single-element stack the DocumentModel states, so a record and the
           // document built from it cannot disagree about which regulation was applied.
           regulationIds: [CONCRETE_REGULATION_ID],
+          // The revision the physical mat bars belong to. The SAME number `runFloorDesign`
+          // passes to `buildFloorAssembly` as `previousRevision`, so a bar and the assembly
+          // holding it cannot end up one revision apart — both add 1 through
+          // `nextDetailingRevision`.
+          previousDetailingRevision: maxPersistedRevision(),
         });
         lastFootingRun = footingRun;
+        // What this run was made FROM, so the panel can tell a current result from a
+        // superseded one. See `footingRunStale`.
+        lastFootingRunFingerprint = footingRunFingerprint();
         const result = runFloorDesign({
           nodes: modelStore.model.nodes as never,
-          shells: collectShells(),
+          shells: scopedShells(wants),
           stresses: collectStresses(),
           factoredAreaLoad: factoredAreaLoads(),
           fc: props.fc,
@@ -1076,7 +1228,9 @@ function createDetailingStore() {
           maxAggregateSizeMm: resolveAggregate(),
           wallBarDiameterMm: DEFAULT_WALL_BAR_DIA_MM,
           edition: currentConcreteEdition(),
-          verifierId: opts.verifierId ?? '',
+          // Explicit argument wins so the golden chain can pin an identity; otherwise the
+          // verification that actually ran supplies it. Never a bare '' default.
+          verifierId: opts.verifierId ?? resolveVerifierId(),
           demandRevision: verificationStore.demandRevision,
           previousRevision: maxPersistedRevision(),
           seismicRequired: regulationsStore.binding('seismic').adapterId !== null,
@@ -1126,6 +1280,8 @@ function createDetailingStore() {
         // Downstream of reinforcement, like beam detailing: loads, analysis and design are
         // preserved, detailing and the document are invalidated, no solve is required.
         regulationsStore.noteChange('reinforcementEdit');
+        // Same reason as the beam pass: a floor design is minutes of work behind one button.
+        void requestAutosave('floorDesign');
         return result;
       } catch (e) {
         lastError = String(e instanceof Error ? e.message : e);
@@ -1146,6 +1302,31 @@ function createDetailingStore() {
      * about its soil, its reaction and its column.
      */
     get lastFootingRun(): RunFootingDesignResult | null { return lastFootingRun; },
+
+    /**
+     * The coarse-aggregate size the spacing rules were resolved against.
+     *
+     * Exposed because an export has to state the same number the rules used AND whether it was
+     * stated by a material or assumed. Recomputing it at the export site would be a second copy
+     * of the resolution rule, free to drift from this one.
+     */
+    get aggregate(): { maxAggregateSizeMm: number; assumed: boolean } {
+      const stated = statedAggregate();
+      return { maxAggregateSizeMm: stated ?? DAGG_ASSUMED_MM, assumed: stated === null };
+    },
+
+    /**
+     * True when `lastFootingRun` describes a footing design the project no longer specifies.
+     *
+     * The Foundations panel must not present a superseded mat as current — see
+     * `footingRunFingerprint`. `false` with no run at all, because "there is nothing" and
+     * "there is something out of date" are different statements and the panel says each
+     * differently.
+     */
+    get footingRunStale(): boolean {
+      if (lastFootingRun === null || lastFootingRunFingerprint === null) return false;
+      return lastFootingRunFingerprint !== footingRunFingerprint();
+    },
 
     /** Footings that could not be checked, with the reason — the gate, as data for the UI. */
     get footingsNotVerified(): Array<{ name: string; reasons: EngineMessage[] }> {
@@ -1295,6 +1476,7 @@ function createDetailingStore() {
             status: result?.overallStatus === 'ok' ? 'ok'
               : result?.overallStatus === 'warn' ? 'warn'
                 : result?.overallStatus === 'fail' ? 'fail' : 'notRun',
+            provisional: verificationStore.outcomeFor(id)?.outcome === 'PROVISIONAL_BIAXIAL',
           });
         }
       }
@@ -1353,6 +1535,10 @@ function createDetailingStore() {
       selectedId = null;
       conflictIndex = 0;
       lastError = null;
+      // The footing run and its fingerprint go together. Clearing one and keeping the other
+      // would leave a run that compares as fresh against a project it was never made from.
+      lastFootingRun = null;
+      lastFootingRunFingerprint = null;
     },
   };
 }
