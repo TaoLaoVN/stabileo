@@ -593,7 +593,9 @@ test.describe('@landing landing page', () => {
       expect(text).toMatch(/already runs complex calculations/i);
       expect(text).toMatch(/at the level you would expect from a professional package/i);
       expect(text).toMatch(/design to the regulations/i);
-      expect(text).toMatch(/next step/i);
+      // `next step` used to be asserted here and came from a closing paragraph
+      // that has been removed from the page; the lead's own "stop short of"
+      // still carries the gap, and it is asserted above.
       // "production-ready" may appear ONLY as a future item, never as a claim.
       expect(next).toMatch(/production[- ]ready/i);
       expect(await cols.nth(0).innerText()).not.toMatch(/production[- ]ready/i);
@@ -641,14 +643,16 @@ test.describe('@landing landing page', () => {
       expect(now).not.toMatch(/structure[- ]wide/i);
       expect(now).not.toMatch(/whole (floor|building)/i);
 
-      // The gap is still named, as the next step rather than as a shortfall.
-      const text = await sectionText(page, 'pro');
-      expect(text).toMatch(/building-wide documentation is the next step/i);
-
-      // The source note records WHY these statuses read the way they do.
-      expect(text).toMatch(/maturity model/i);
-      expect(text).toMatch(/independent external benchmark/i);
-      expect(text).toMatch(/labelled provisional/i);
+      /*
+       * Two closing paragraphs used to be asserted here — one restating what
+       * comes out of Stabileo today and naming building-wide documentation as
+       * the next step, one explaining that a calculation counts as validated
+       * only against an independent external benchmark. Both were removed from
+       * the page, so both assertions go with them rather than being weakened
+       * into something that still passes. What they guarded is not lost: the
+       * `now` column above still carries `provisional` and the `next` column
+       * still holds the structure-wide end state, and those are asserted.
+       */
     });
 
     test('CIRSOC 201 states the provisional families and still excludes diaphragms', async ({ page }) => {

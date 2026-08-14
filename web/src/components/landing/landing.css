@@ -1066,6 +1066,12 @@
   font-size: 0.94rem;
 }
 
+/*
+   The section's closing line. `margin: 0` left it sitting directly under the
+   last bullet of the AI-future list, where a 2.2rem accent sentence reads as
+   another list item rather than as the section's conclusion. It needs the
+   room its weight implies.
+*/
 .landing .thesis-close {
   font-family: var(--lp-display);
   font-weight: 700;
@@ -1074,7 +1080,7 @@
   line-height: 1.15;
   color: var(--accent-text);
   max-width: 24ch;
-  margin: 0;
+  margin: clamp(2.5rem, 5vw, 4rem) 0 0;
 }
 
 /* ─── STATUS ─────────────────────────────────────────────────────────────── */

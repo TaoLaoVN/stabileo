@@ -556,8 +556,6 @@ const pt: Translations = {
 
   'landing.proH': 'PRO está em desenvolvimento, e já serve para cálculos complexos.',
 
-  'landing.proHonest': 'Na prática: hoje saem do Stabileo um conjunto de desenhos e uma planilha de dobramento reais para vigas, pilares, sapatas, lajes e paredes estruturais, e vale a pena revisá-los. A documentação completa de um edifício inteiro é o passo seguinte, e cada resultado carrega até onde chegou a sua validação.',
-
   'landing.proNext1': 'Detalhamento de armaduras da estrutura completa.',
 
   'landing.proNext2': 'Plantas completas: locação e armadura de um pavimento inteiro.',
@@ -597,8 +595,6 @@ const pt: Translations = {
   'landing.proNowTitle': 'O que o PRO faz hoje',
 
   'landing.proP': 'A análise com elementos finitos e os modelos complexos já funcionam aqui, no nível que você esperaria de um programa profissional. O que está sendo lapidado é o projeto segundo a norma: o passo em que muitos programas de elementos finitos param, entregam os resultados e deixam a verificação regulamentar para você.',
-
-  'landing.proSourceNote': 'Os estados desta página seguem o modelo de maturidade da própria aplicação: um cálculo conta como validado quando tem registrado um banco de prova externo e independente, e até então é marcado como provisório, no produto e aqui.',
 
   'landing.probBoxBody': 'Resultados sem rastreabilidade nem forma de auditar o método. O engenheiro precisa assinar algo que não pode inspecionar.',
 

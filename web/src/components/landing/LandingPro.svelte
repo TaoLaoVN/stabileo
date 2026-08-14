@@ -101,7 +101,5 @@
 
     <p class="mode-note">{t('landing.proShotsNote')}</p>
 
-    <p class="mode-note">{t('landing.proHonest')}</p>
-    <p class="mode-commit">{t('landing.proSourceNote')}</p>
   </div>
 </section>
