@@ -37,6 +37,7 @@ const es: Record<string, string> = {
   'landing.heroP': 'Una plataforma gratuita y abierta de cálculo estructural con tres modos: Básico, que ya funciona, y Educativo y PRO, todavía en desarrollo. El solver corre en tu navegador, en tu propio equipo.',
   'landing.heroCtaPrimary': 'Abrir el editor',
   'landing.heroCtaSecondary': 'Hacer el recorrido guiado',
+  'landing.heroBlogLink': 'Leer nuestro blog',
   'landing.heroMetaA': 'Sin instalar. Sin licencias. Sin cuenta.',
   'landing.heroMetaB': 'Código abierto · AGPL-3.0',
   'landing.heroMetaC': 'Hecho en Argentina · FIUBA · Lambda Class',

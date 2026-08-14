@@ -426,6 +426,8 @@ const pt: Translations = {
 
   'landing.heroCtaSecondary': 'Fazer o tour guiado',
 
+  'landing.heroBlogLink': 'Ler o nosso blog',
+
   'landing.heroH': 'Análise estrutural, em uma aba do navegador.',
 
   'landing.heroMetaA': 'Sem instalar. Sem licenças. Sem conta.',

@@ -142,6 +142,22 @@ test.describe('@landing blog', () => {
     }
   });
 
+  test('the hero carries a quiet way in, on the first screen', async ({ page }) => {
+    await boot(page, '/');
+
+    const link = page.locator('.landing .hero-blog');
+    await expect(link).toBeVisible();
+    await expect(link).toHaveText(/read our blog/i);
+    // A link, not a third button: the hero's job is still to get someone into
+    // the editor, and two buttons plus a link is one decision with a footnote.
+    await expect(page.locator('.landing .hero-ctas .btn')).toHaveCount(2);
+    await expect(page.locator('.landing .hero-ctas .hero-blog')).toHaveCount(0);
+
+    await link.click();
+    await expect(page).toHaveURL(/\/blog$/);
+    await expect(page.locator('.post-card')).not.toHaveCount(0);
+  });
+
   test('the landing offers a way in, at the foot of the deck', async ({ page }) => {
     await boot(page, '/');
 

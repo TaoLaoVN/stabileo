@@ -366,6 +366,26 @@
   border-bottom-color: var(--lp-accent);
 }
 
+/*
+   `.link-arrow` was written for anchors. The hero's blog link and every link
+   inside the blog are buttons instead, because a real <a href="/blog/…"> on a
+   static site is a 404 round-trip — and a button carries the user agent's own
+   chrome (border, background, centred system font), which reads as a form
+   control in the middle of prose.
+*/
+.landing button.link-arrow {
+  background: none;
+  border: 0;
+  border-bottom: 1px solid var(--lp-accent-dim);
+  padding: 0 0 2px;
+  font: inherit;
+  font-family: var(--lp-mono);
+  font-size: 0.74rem;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+  cursor: pointer;
+}
+
 /* ─── NAV ────────────────────────────────────────────────────────────────── */
 
 .landing .nav {
@@ -525,6 +545,12 @@
   display: flex;
   flex-wrap: wrap;
   gap: 0.75rem;
+  margin-bottom: 1.25rem;
+}
+
+/* Its own line, under the buttons and clear of the modes below. */
+.landing .hero-blog {
+  display: inline-block;
   margin-bottom: 2.5rem;
 }
 

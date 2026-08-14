@@ -16,25 +16,6 @@
   scroll-behavior: auto; /* a new post jumps to its top; it does not scroll there */
 }
 
-/*
-   `.link-arrow` was written for anchors. The blog navigates with buttons,
-   because a real <a href="/blog/…"> on a static site is a 404 round-trip, and
-   a button carries the user agent's own chrome — border, background, centred
-   system font — which read as a form control in the middle of an article.
-*/
-.landing button.link-arrow {
-  background: none;
-  border: 0;
-  border-bottom: 1px solid var(--lp-accent-dim);
-  padding: 0 0 2px;
-  font: inherit;
-  font-family: var(--lp-mono);
-  font-size: 0.74rem;
-  letter-spacing: 0.09em;
-  text-transform: uppercase;
-  cursor: pointer;
-}
-
 .landing.blog .blog-head {
   padding-top: clamp(6rem, 12vw, 9rem);
   padding-bottom: clamp(2.5rem, 5vw, 4rem);

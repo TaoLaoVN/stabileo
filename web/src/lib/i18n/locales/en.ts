@@ -37,6 +37,7 @@ const en: Record<string, string> = {
   'landing.heroP': 'A free and open structural-analysis platform with three modes: Basic, which works today, plus Education and PRO, both still in development. The solver runs in your browser, on your own machine.',
   'landing.heroCtaPrimary': 'Launch editor',
   'landing.heroCtaSecondary': 'Take the guided tour',
+  'landing.heroBlogLink': 'Read our blog',
   'landing.heroMetaA': 'No install. No licence key. No account.',
   'landing.heroMetaB': 'Open source · AGPL-3.0',
   'landing.heroMetaC': 'Built in Argentina · FIUBA · Lambda Class',

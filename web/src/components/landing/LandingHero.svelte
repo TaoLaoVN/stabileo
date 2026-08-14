@@ -1,6 +1,6 @@
 <script lang="ts">
   import { tPublic as t } from '../../lib/i18n/store.svelte';
-  import { enterApp } from './landing-utils';
+  import { enterApp, goPublic } from './landing-utils';
   import Eyebrow from './Eyebrow.svelte';
   import TrussFigure from './TrussFigure.svelte';
 
@@ -26,6 +26,15 @@
         -->
         <a class="btn btn-ghost btn-lg" href="/demo">{t('landing.heroCtaSecondary')}</a>
       </div>
+
+      <!--
+        The blog, on the first screen but deliberately at a third level: a mono
+        link on its own line, not a third button. The hero's job is to get
+        someone into the editor, and two buttons plus a link reads as one
+        decision with a footnote, where three buttons would read as three
+        equal choices.
+      -->
+      <button class="link-arrow hero-blog" onclick={() => goPublic('/blog')}>{t('landing.heroBlogLink')}</button>
 
       <!--
         The three modes, named in the first screen.
