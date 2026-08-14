@@ -481,7 +481,7 @@ test.describe('@landing landing page', () => {
       expect(body).not.toMatch(/\b(soon|next month|next quarter|by \d{4}|coming in \d{4})\b/i);
     });
 
-    test('Basic mode has its own section, with the four screenshots and their descriptions', async ({ page }) => {
+    test('Basic mode has its own section, with its screenshots and their descriptions', async ({ page }) => {
       await bootLanding(page);
 
       const basic = page.locator('.landing [data-section="basic"]');
@@ -489,20 +489,25 @@ test.describe('@landing landing page', () => {
 
       await expect(basic.locator('.badge-today')).toHaveCount(1);
 
-      // The four images moved here from the solver-capabilities section, where
-      // they were read as evidence for capabilities Basic cannot reach.
+      // These moved here from the solver-capabilities section, where they were
+      // read as evidence for capabilities Basic cannot reach. Paired 2D then
+      // 3D — diagram, then the section under it — and closed by the shed,
+      // which is the one that says the examples menu is not the limit.
       const cards = basic.locator('.card-media');
-      await expect(cards).toHaveCount(4);
-      for (const stem of ['2d-moments', '3d-industrial', '2d-section-analysis', '3d-section-analysis']) {
+      await expect(cards).toHaveCount(5);
+      for (const stem of ['2d-moments', '2d-section-analysis', '3d-frame', '3d-section-analysis', '3d-industrial']) {
         await expect(basic.locator(`img[src*="${stem}"]`)).toHaveCount(1);
       }
       // Each image keeps a real description, not a bare caption.
-      for (let i = 0; i < 4; i++) {
+      for (let i = 0; i < 5; i++) {
         const card = cards.nth(i);
         await expect(card.locator('h3')).not.toBeEmpty();
         expect((await card.locator('.card-body p').innerText()).length).toBeGreaterThan(40);
         await expect(card.locator('img')).toHaveAttribute('alt', /.{20,}/);
       }
+      // The closing card takes the full row and says what it is there to say.
+      await expect(cards.nth(4)).toHaveClass(/card-wide/);
+      await expect(cards.nth(4).locator('.card-body p')).toContainText(/examples menu/i);
       // And they are gone from where they used to be.
       await expect(page.locator('.landing [data-section="capabilities"] .card-media')).toHaveCount(0);
 

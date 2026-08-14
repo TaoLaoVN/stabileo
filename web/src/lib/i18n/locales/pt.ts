@@ -172,13 +172,19 @@ const pt: Translations = {
 
   'landing.basicPt6': 'Recálculo ao vivo, como opção: ao ativá-lo o solver roda a cada edição e os diagramas seguem o modelo enquanto você o altera.',
 
-  'landing.capAlt2d': 'Stabileo em 2D: um pórtico resolvido com seu diagrama de momentos fletores.',
+  'landing.capAltIndustrial': 'O Stabileo em 3D: um galpão industrial treliçado completo, com todas as suas barras coloridas por esforço normal, do azul ao vermelho.',
 
-  'landing.capAlt3d': 'Stabileo em 3D: um galpão industrial colorido por aproveitamento.',
+  'landing.capShotIndustrialBody': 'Trinta e sete modelos vêm no menu de exemplos, de uma viga simples a um galpão industrial inteiro como este. Também não são um catálogo fechado: no Básico você modela e calcula a estrutura que quiser.',
 
-  'landing.capAltStress2d': 'Stabileo em 2D: o painel de tensões de seção com o círculo de Mohr da barra selecionada.',
+  'landing.capShotIndustrialTitle': 'E muitos outros exemplos, prontos para abrir',
 
-  'landing.capAltStress3d': 'Stabileo em 3D: tensões biaxiais de seção em uma barra selecionada.',
+  'landing.capAlt2d': 'O Stabileo em 2D: um pórtico resolvido com seu diagrama de momentos fletores, com cada ordenada rotulada em kN·m.',
+
+  'landing.capAlt3d': 'O Stabileo em 3D: um pórtico espacial com o diagrama de My desenhado como superfície sobre cada barra.',
+
+  'landing.capAltStress2d': 'O Stabileo em 2D: o estado de tensões da seção escolhida desenhado sobre o pórtico — a distribuição de Navier, a linha neutra, o núcleo central e o ponto de aplicação da carga.',
+
+  'landing.capAltStress3d': 'O Stabileo em 3D: tensões biaxiais de seção em uma barra escolhida, com o painel de análise de seção aberto ao lado.',
 
   'landing.capColElements': 'ELEMENTOS',
 
@@ -234,15 +240,15 @@ const pt: Translations = {
 
   'landing.capShot2dTitle': '2D — diagramas e tensões de seção',
 
-  'landing.capShot3dBody': 'My, Mz, Vy, Vz, N e T, flexão biaxial, torção e mapa de cores de aproveitamento sobre todo o modelo.',
+  'landing.capShot3dBody': 'My, Mz, Vy, Vz, N e T, flexão biaxial, torção e mapa de cor de aproveitamento sobre todo o modelo.',
 
   'landing.capShot3dTitle': '3D — seis graus de liberdade por nó',
 
-  'landing.capShotStress2dBody': 'Você escolhe um ponto de uma barra e lê σ e τ em toda a seção, o fluxo de cisalhamento e a verificação de falha.',
+  'landing.capShotStress2dBody': 'Você clica em um ponto qualquer da estrutura e vê o que acontece com a seção ali. Não um número solto: o estado de tensões completo, com a teoria que o produziu à vista. Ele malha o polígono real, então uma cantoneira ou um perfil incomum são tratados como um perfil I.',
 
   'landing.capShotStress2dTitle': 'Tensões de seção, barra por barra',
 
-  'landing.capShotStress3dBody': 'N/A + Mz·y/Iz + My·z/Iy com componentes de cisalhamento separadas e torção de Saint-Venant ou Bredt.',
+  'landing.capShotStress3dBody': 'N/A + Mz·y/Iz + My·z/Iy com componentes de cortante separadas, e a torção pelas três teorias — Cauchy, Bredt, Saint-Venant — cada uma com sua fórmula e seu valor, incluídas as que não se aplicam e por quê. Também o empenamento, o termo que mais se omite.',
 
   'landing.capShotStress3dTitle': 'Tensões biaxiais em 3D',
 
