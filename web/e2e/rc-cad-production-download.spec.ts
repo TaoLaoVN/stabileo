@@ -47,6 +47,10 @@ const EXPECTED_VERIFIER = `${CIRSOC_VERIFIER_ID}.2025`;
 /** Open the committed project through the production file input. */
 async function openProject(page: Page) {
   await page.locator('[data-tour="mode-toggle"] button').first().click();
+  // Desktop Básico is the ribbon, and the project controls live in a panel it opens —
+  // `BasicPanel` renders `ToolbarProject`, so the input is not attached on load. Third
+  // copy of this helper; `rc-cad-handoff.spec.ts` carries the same opening click.
+  await page.getByTestId('hdr-project').click();
   const input = page.getByTestId('project-open-file');
   await expect(input).toBeAttached();
   await input.setInputFiles(FIXTURE);

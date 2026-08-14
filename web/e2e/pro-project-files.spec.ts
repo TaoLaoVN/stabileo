@@ -155,6 +155,11 @@ test.describe('@slow PRO project files', () => {
   test('D the Básico project controls are untouched', async ({ pro: page }) => {
     // The correction adds a PRO surface; it must not have moved or removed the Básico one.
     await page.locator('[data-tour="mode-toggle"] button').first().click();
+    // Básico is the ribbon on desktop and its project controls live in a panel, so the
+    // claim "untouched" has to be checked where they actually are. Opening the panel is
+    // part of the assertion, not setup for it: if the ribbon had lost the button, this
+    // click would fail and that is exactly the regression the test is named for.
+    await page.getByTestId('hdr-project').click();
     await expect(page.locator('[data-tour="project-section"]')).toBeAttached();
     await expect(page.getByTestId('project-open-file')).toBeAttached();
     // And PRO's own controls are correctly absent from Básico.
