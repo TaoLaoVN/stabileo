@@ -393,19 +393,41 @@
   }
   .floor-families { display: flex; flex-direction: column; gap: 0.6rem; padding: 0.75rem 1rem; font-size: 0.82rem; }
   .commands { display: flex; align-items: center; gap: 0.6rem; flex-wrap: wrap; }
-  button { font: inherit; cursor: pointer; }
-  button:disabled { cursor: not-allowed; opacity: 0.6; }
-  .primary { font-weight: 600; padding: 0.3rem 0.7rem; }
+  /*
+    Controls on the design system, not on the browser's defaults.
+
+    `button { font: inherit; cursor: pointer }` was the whole button style in this file: no
+    background, no border, no focus ring — so Chrome painted them white on a dark panel, and a
+    keyboard user got whatever the UA happened to draw. Same rule, same tokens, same focus ring as
+    Project regulations and the Documents stage, so the four sections read as one product.
+  */
+  button {
+    font: inherit;
+    cursor: pointer;
+    padding: 0.2rem 0.6rem;
+    border: 1px solid var(--st-hair-strong);
+    border-radius: 4px;
+    background: var(--st-surface-3);
+    color: var(--st-text);
+    font-size: 0.7rem;
+  }
+  button:hover:not(:disabled) { background: var(--st-hair-strong); }
+  button:active:not(:disabled) { background: var(--st-hair); }
+  button:focus-visible { outline: 2px solid var(--st-value); outline-offset: 1px; }
+  /* Disabled is dimmer and still readable: it has to be legible to be an explanation. */
+  button:disabled { opacity: 0.6; cursor: not-allowed; border-color: var(--st-hair); }
+  /* The one that starts the work reads as the one that starts the work. */
+  .primary:not(:disabled) { border-color: var(--st-interactive); font-weight: 600; }
   .code { font-size: 0.75rem; opacity: 0.9; }
   /* An unresolved code is never green. */
   .warn { padding: 0.1rem 0.35rem; border-radius: 3px; background: var(--st-surface-3); color: var(--st-text); }
-  .families { display: flex; gap: 0.3rem; border-bottom: 1px solid rgba(143, 163, 179,0.3); }
+  .families { display: flex; gap: 0.3rem; border-bottom: 1px solid var(--st-hair); }
   .families button {
     background: none; border:  1px solid var(--st-hair); border-bottom: 2px solid transparent; color: inherit;
     padding: 0.3rem 0.6rem; display: flex; align-items: center; gap: 0.35rem;
   }
   .families button.active { border-bottom-color: currentColor; font-weight: 600; }
-  .n { font-size: 0.7rem; font-weight: 600; padding: 0.05rem 0.3rem; border-radius: 3px; background: rgba(143, 163, 179,0.3); }
+  .n { font-size: 0.7rem; font-weight: 600; padding: 0.05rem 0.3rem; border-radius: 3px; background: var(--st-hair); }
   .empty { opacity: 0.75; font-style: italic; }
   table { border-collapse: collapse; width: 100%; font-size: 0.78rem; }
   th, td { text-align: left; padding: 0.2rem 0.4rem; border-bottom: 1px solid rgba(143, 163, 179,0.2); }

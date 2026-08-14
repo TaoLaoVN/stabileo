@@ -355,31 +355,52 @@
     font-size: 0.78rem; cursor: pointer;
   }
   .bulk { display: flex; gap: 0.4rem; }
+  /*
+    Off the ad-hoc palette and onto the tokens.
+
+    This file used a hardcoded blue for its primary buttons and two variables outside the `--st-*`
+    system elsewhere, each with a hex fallback that would silently win if the variable were ever
+    undefined. The blue appeared nowhere else in PRO. Same tokens as every other section now, and
+    a focus ring, which none of these controls had.
+  */
   .bulk button {
-    font-size: 0.72rem; padding: 0.12rem 0.4rem; cursor: pointer;
-    background: transparent; border: 1px solid var(--border, #2a2f3a); border-radius: 3px;
-    color: inherit;
+    font-size: 0.7rem; padding: 0.12rem 0.45rem; cursor: pointer;
+    background: none; border: 1px solid var(--st-hair-strong); border-radius: 3px;
+    color: var(--st-text-2);
   }
+  .bulk button:hover { background: var(--st-surface-3); color: var(--st-text); }
   .summary { margin: 0; font-size: 0.78rem; }
-  .note, .cols { margin: 0; font-size: 0.7rem; color: var(--text-muted, #8b93a3); }
+  .note, .cols { margin: 0; font-size: 0.7rem; color: var(--st-text-3); }
   .run {
-    align-self: flex-start; font-size: 0.82rem; padding: 0.3rem 0.8rem; cursor: pointer;
-    background: #2b6cb0; color: #fff; border: none; border-radius: 4px;
+    align-self: flex-start; font-size: 0.74rem; font-weight: 600;
+    padding: 0.25rem 0.7rem; cursor: pointer;
+    background: var(--st-surface-3); color: var(--st-text);
+    border: 1px solid var(--st-interactive); border-radius: 4px;
   }
-  .run:disabled { opacity: 0.5; cursor: default; }
-  .result { border-top: 1px solid var(--border, #2a2f3a); padding-top: 0.35rem; }
+  .run:hover:not(:disabled) { background: var(--st-hair-strong); }
+  /* Dimmer and still readable — a disabled command has to be legible to explain itself. */
+  .run:disabled { opacity: 0.6; cursor: not-allowed; border-color: var(--st-hair-strong); }
+  .result { border-top: 1px solid var(--st-hair); padding-top: 0.35rem; }
   table { width: 100%; border-collapse: collapse; font-size: 0.74rem; }
   th { text-align: left; font-weight: 400; }
   td { text-align: right; font-variant-numeric: tabular-nums; }
-  td.state { text-align: left; color: var(--text-muted, #8b93a3); }
+  td.state { text-align: left; color: var(--st-text-3); }
   tr.skipped, tr.noElements { opacity: 0.6; }
   tr.failed td.state { color: #e0444a; }
   .err td { text-align: left; color: #e0444a; font-size: 0.72rem; }
   .totals { margin: 0.2rem 0 0; font-size: 0.76rem; font-variant-numeric: tabular-nums; }
   .actions { margin-top: 0.4rem; }
   .actions .primary {
-    font-size: 0.8rem; padding: 0.25rem 0.7rem; cursor: pointer;
-    background: #2b6cb0; color: #fff; border: none; border-radius: 4px;
+    font-size: 0.74rem; font-weight: 600; padding: 0.25rem 0.7rem; cursor: pointer;
+    background: var(--st-surface-3); color: var(--st-text);
+    border: 1px solid var(--st-interactive); border-radius: 4px;
   }
-  .actions .primary:disabled { opacity: 0.5; cursor: default; }
+  .actions .primary:hover:not(:disabled) { background: var(--st-hair-strong); }
+  .actions .primary:disabled { opacity: 0.6; cursor: not-allowed; border-color: var(--st-hair-strong); }
+
+  /* One focus ring for every control in this section. There was none. */
+  .bulk button:focus-visible, .run:focus-visible, .actions .primary:focus-visible {
+    outline: 2px solid var(--st-value);
+    outline-offset: 1px;
+  }
 </style>
