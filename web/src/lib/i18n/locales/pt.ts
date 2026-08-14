@@ -534,6 +534,26 @@ const pt: Translations = {
 
   'landing.navStatus': 'Estado',
 
+  'landing.proAltAxial': 'O mesmo edifício depois da análise, com o diagrama de esforço normal desenhado sobre cada pilar e seu valor rotulado em cada extremidade.',
+
+  'landing.proAltModel': 'O Stabileo em 3D mostrando um edifício de concreto armado de sete pavimentos: pilares, vigas, lajes e as cargas distribuídas de cada piso, antes de rodar a análise.',
+
+  'landing.proAltRebar': 'Detalhe em 3D de um nó viga-pilar com suas armaduras visíveis: barras longitudinais em vermelho e azul e estribos em laranja, dentro do concreto translúcido.',
+
+  'landing.proShotAxialBody': 'O esforço normal em cada pilar, lido sobre o modelo. Resolver por elementos finitos uma estrutura deste tamanho já funciona bem.',
+
+  'landing.proShotAxialTitle': 'O mesmo edifício, resolvido',
+
+  'landing.proShotModelBody': 'Pórticos, lajes e suas cargas, modelados no navegador. Barras e placas juntas, que é o que um edifício realmente é.',
+
+  'landing.proShotModelTitle': 'Um edifício inteiro, antes de calcular',
+
+  'landing.proShotRebarBody': 'Barras longitudinais e estribos dispostos segundo a CIRSOC 201, sobre o modelo e não em um desenho à parte. Em desenvolvimento.',
+
+  'landing.proShotRebarTitle': 'Todas as armaduras, em 3D',
+
+  'landing.proShotsNote': 'Capturas reais da aplicação, não renders. A vista de armaduras está em desenvolvimento; todo o resto desta seção declara sua maturidade acima.',
+
   'landing.proH': 'PRO está em desenvolvimento, e já serve para cálculos complexos.',
 
   'landing.proHonest': 'Na prática: hoje saem do Stabileo um conjunto de desenhos e uma planilha de dobramento reais para vigas, pilares, sapatas, lajes e paredes estruturais, e vale a pena revisá-los. A documentação completa de um edifício inteiro é o passo seguinte, e cada resultado carrega até onde chegou a sua validação.',

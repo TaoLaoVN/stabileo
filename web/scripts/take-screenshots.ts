@@ -15,6 +15,14 @@
  * CONSUMED_ASSETS below), and every capture here has a consumer. Do not
  * rename an output without renaming its consumer.
  *
+ * The reverse does NOT hold: the landing serves three PRO captures —
+ * `pro-building-model`, `pro-building-axial`, `pro-rebar-3d` — that this
+ * script does not produce. They are hand-captured from a real session on
+ * purpose. This script drives fixtures small enough to build in code, and what
+ * makes those three worth showing is a seven-storey building nobody would
+ * model in a fixture. If they ever need retaking, retake them by hand and run
+ * them through the same conversion below.
+ *
  * These PNGs are the capture SOURCE, not what ships. The landing serves AVIF
  * with a WebP fallback at two widths (`<base>-800.avif`, `<base>-1600.webp`,
  * …) via Shot.svelte, and only those derivatives are committed. After running
@@ -22,12 +30,16 @@
  *
  *   for f in 2d-moments 2d-section-analysis 3d-industrial 3d-section-analysis; do
  *     for w in 800 1600; do
- *       npx --yes sharp-cli -i public/screenshots/$f.png -o public/screenshots \
- *         resize $w -- avif --quality 52
- *       npx --yes sharp-cli -i public/screenshots/$f.png -o public/screenshots \
- *         resize $w -- webp --quality 78
+ *       npx --yes sharp-cli -i public/screenshots/$f.png -o /tmp/shots -f avif -q 52 resize $w
+ *       mv /tmp/shots/$f.avif public/screenshots/$f-$w.avif
+ *       npx --yes sharp-cli -i public/screenshots/$f.png -o /tmp/shots -f webp -q 78 resize $w
+ *       mv /tmp/shots/$f.webp public/screenshots/$f-$w.webp
  *     done
  *   done
+ *
+ * (The `-- avif --quality` form above was sharp-cli's older syntax and no
+ * longer parses; the current release takes `-f`/`-q` and writes `<stem>.<ext>`
+ * into the output directory, hence the rename.)
  *
  * `npx --yes` is used deliberately: an image encoder is a one-off authoring
  * tool and must not become a dependency in web/package.json.

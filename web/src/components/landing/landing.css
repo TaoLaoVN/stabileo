@@ -1654,3 +1654,8 @@
   padding-left: 0.9rem;
   border-left: 2px solid var(--lp-accent);
 }
+
+/* A capture wide enough to want the whole row, inside a two-column card grid. */
+.landing .card-row .card-wide {
+  grid-column: 1 / -1;
+}

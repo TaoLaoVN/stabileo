@@ -1203,6 +1203,27 @@ test.describe('@landing landing page', () => {
     });
   });
 
+  test('PRO shows the work: model, solved, reinforced', async ({ page }) => {
+    // The section is a two-column argument about a mode still in development.
+    // These three captures are the evidence for it, and the last one has to
+    // keep saying so in its own words — a picture that detailed reads as a
+    // finished feature unless the caption disagrees.
+    await bootLanding(page);
+
+    const shots = page.locator('.landing [data-section="pro"] .pro-shots .card');
+    await expect(shots).toHaveCount(3);
+
+    for (let i = 0; i < 3; i++) {
+      const card = shots.nth(i);
+      await expect(card.locator('h3')).not.toBeEmpty();
+      // A reader who cannot see the image still learns what PRO does.
+      await expect(card.locator('img')).toHaveAttribute('alt', /.{60,}/);
+    }
+
+    await expect(shots.nth(2)).toHaveClass(/card-wide/);
+    await expect(shots.nth(2).locator('.card-body p')).toContainText(/in development/i);
+  });
+
   test('every landing image resolves', async ({ page }) => {
     await bootLanding(page);
     await page.locator('.landing [data-section="cta"]').scrollIntoViewIfNeeded();
