@@ -334,33 +334,38 @@ fn mass_assembly_3d_sparse_matches_dense_shell() {
 
 /// ω² eigenvalues from the pre-refactor (dense-mass) sparse Lanczos on the
 /// 10×4 frame with one released beam (nf=300, k=6).
+/// NOT captured from this code. Every figure was cross-checked against
+/// `solve_generalized_eigen` — the dense Jacobi path, a different algorithm — and
+/// agrees to between 1e-11 and 1e-14 relative. The previous values came from the
+/// Lanczos path itself, which is how they survived that path running the wrong
+/// recurrence: the golden and the code under test were the same witness.
 const GOLDEN_MODAL_FRAME_LAMBDA: [f64; 6] = [
-    1.325751722604326e0,
-    1.121821791770904e1,
-    4.877528458424633e1,
-    1.002777317104620e2,
-    1.409613359649071e2,
-    2.240048464337852e2,
+    1.323697967944161e0,
+    1.121015225667410e1,
+    5.155242169670144e1,
+    1.029308659072602e2,
+    1.413554081559152e2,
+    2.221326609874946e2,
 ];
 
 /// ω values from pre-refactor `solve_modal_3d` on the same model.
 const GOLDEN_MODAL_FRAME_OMEGA: [f64; 6] = [
-    1.151412924456003e0,
-    3.349360822262815e0,
-    6.983930453852353e0,
-    1.001387695702629e1,
-    1.187271392584303e1,
-    1.496679145420905e1,
+    1.150520737728860e0,
+    3.348156546022617e0,
+    7.180001510912198e0,
+    1.014548500108596e1,
+    1.188929805143749e1,
+    1.490411557213291e1,
 ];
 
 /// ω² eigenvalues from the pre-refactor sparse Lanczos on the 8×8 plate
 /// (first near-zero noise mode excluded by the λ > 1 filter).
 const GOLDEN_MODAL_SHELL_LAMBDA: [f64; 5] = [
-    9.400951695707770e2,
-    6.490503387654004e3,
-    6.578035468712640e3,
-    1.644839161977838e4,
-    3.104636892300242e4,
+    9.395776230070056e2,
+    6.439919296650598e3,
+    6.439919400675166e3,
+    1.666449230853947e4,
+    3.138785766668246e4,
 ];
 
 #[test]
@@ -441,19 +446,22 @@ fn modal_3d_solve_frequencies_parity() {
 /// Load factors from pre-refactor `solve_buckling_2d` on the pinned–rollerX
 /// column (n_elem=80 → nf=240 > 200 → sparse op path).
 const GOLDEN_BUCKLING_2D: [f64; 4] = [
-    7.888987780325381e1,
-    3.163866483634928e2,
-    7.061725745531301e2,
-    1.253561406311530e3,
+    7.895683546204496e1,
+    3.158273575195962e2,
+    7.106117068590928e2,
+    1.263310430171691e3,
 ];
 
 /// Load factors from pre-refactor `solve_buckling_3d` on the 3D cantilever
 /// column with Iy=2e-4, Iz=1e-4 (n_elem=60 → nf=354 → sparse op path).
 const GOLDEN_BUCKLING_3D: [f64; 4] = [
-    4.383805480010719e0,
-    9.774115886329612e0,
-    4.200290006507944e1,
-    9.513806022923396e1,
+    // π²/2 and π² exactly — the analytical Euler cantilever, in the 2:1 ratio the
+    // two bending axes require. The previous values were not a clean multiple of
+    // anything, which is what a wrong recurrence looks like from the outside.
+    4.934802200097371e0,
+    9.869604402913636e0,
+    4.441322215031543e1,
+    8.882644430568224e1,
 ];
 
 #[test]
@@ -482,4 +490,65 @@ fn buckling_3d_sparse_op_parity() {
     let result = buckling::solve_buckling_3d(&input, 4).unwrap();
     let actual: Vec<f64> = result.modes.iter().map(|m| m.load_factor).collect();
     assert_matches_golden(&actual, &GOLDEN_BUCKLING_3D, 0.0, 1e-10, "buckling 3D golden");
+}
+
+/// The generalized eigenpath must return actual EIGENVECTORS.
+///
+/// Every other gate on this path compares one Lanczos implementation against
+/// another, or against golden values captured from the same code, so all of them
+/// agree on a wrong answer. This one is reference-free: for a true eigenpair,
+/// `‖Kφ − λMφ‖ / ‖Kφ‖` is zero to round-off, and no second solver is needed to
+/// say so. The dense path is checked alongside as the control — if the sparse
+/// number is bad and the dense one is not, the measurement is not the suspect.
+#[test]
+fn generalized_eigenpairs_satisfy_their_own_equation() {
+    use dedaliano_engine::linalg::solve_generalized_eigen;
+
+    let input = make_frame_with_released_beam(10, 4);   // nf = 300 > 80 → sparse Lanczos
+    let densities = make_densities();
+    let dof_num = DofNumbering::build_3d(&input);
+    let nf = dof_num.n_free;
+    let n = dof_num.n_total;
+    let sasm = assemble_sparse_3d(&input, &dof_num, false);
+    let m_csc = assemble_mass_matrix_3d_sparse(&input, &dof_num, &densities);
+
+    /// ‖Kφ − λMφ‖ / ‖Kφ‖ for one pair.
+    let residual = |lam: f64, phi: &[f64]| -> f64 {
+        let kp = sasm.k_ff.sym_mat_vec(phi);
+        let mp = m_csc.sym_mat_vec(phi);
+        let mut num = 0.0f64;
+        let mut den = 0.0f64;
+        for r in 0..nf {
+            let d = kp[r] - lam * mp[r];
+            num += d * d;
+            den += kp[r] * kp[r];
+        }
+        num.sqrt() / den.sqrt().max(1e-300)
+    };
+
+    let sparse = lanczos_generalized_eigen_sparse(&sasm.k_ff, &m_csc, 6, 0.0)
+        .expect("sparse generalized Lanczos");
+    let nk = sparse.values.len();
+    for i in 0..6 {
+        let phi: Vec<f64> = (0..nf).map(|r| sparse.vectors[r * nk + i]).collect();
+        let res = residual(sparse.values[i], &phi);
+        assert!(
+            res < 1e-6,
+            "sparse mode {i}: lambda={:.10e} has residual {res:.3e} — not an eigenvector",
+            sparse.values[i]
+        );
+    }
+
+    // Control: the same formula on the dense solver, which must pass comfortably.
+    let k_dense = sasm.k_ff.to_dense_symmetric();
+    let m_full = assemble_mass_matrix_3d(&input, &dof_num, &densities);
+    let free_idx: Vec<usize> = (0..nf).collect();
+    let m_dense = extract_submatrix(&m_full, n, &free_idx, &free_idx);
+    let dense = solve_generalized_eigen(&k_dense, &m_dense, nf, 200).expect("dense generalized");
+    let dk = dense.values.len();
+    for i in 0..6 {
+        let phi: Vec<f64> = (0..nf).map(|r| dense.vectors[r * dk + i]).collect();
+        let res = residual(dense.values[i], &phi);
+        assert!(res < 1e-6, "dense control mode {i}: residual {res:.3e}");
+    }
 }

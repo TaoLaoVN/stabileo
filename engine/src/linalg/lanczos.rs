@@ -25,6 +25,22 @@ impl Default for LanczosParams {
 pub trait MatVecOp {
     fn mul_vec(&self, x: &[f64], y: &mut [f64]);
     fn dim(&self) -> usize;
+
+    /// `y = B·x`, where B defines the inner product this operator is self-adjoint in.
+    ///
+    /// The symmetric three-term Lanczos recurrence is only valid for an operator that
+    /// is self-adjoint in the inner product it is run with. A shift-invert operator
+    /// `C = (A − σB)⁻¹B` is NOT self-adjoint in the Euclidean product — running it with
+    /// `dot` produces a tridiagonal matrix that does not represent C, and the vectors
+    /// that come back are not eigenvectors. It IS self-adjoint in the B-inner product
+    /// `⟨x,y⟩_B = xᵀBy`, so the recurrence uses this instead.
+    ///
+    /// The default is the identity, which makes `⟨·,·⟩_B` the Euclidean product and is
+    /// exactly right for the ordinary symmetric operators (`DenseSymMatVec`,
+    /// `InverseOp`). Only the generalized operators override it.
+    fn b_mul(&self, x: &[f64], y: &mut [f64]) {
+        y[..x.len()].copy_from_slice(x);
+    }
 }
 
 /// Dense symmetric matrix-vector: y = A*x (row-major flat storage).
@@ -104,6 +120,14 @@ impl MatVecOp for ShiftInvertOp {
         y[..n].copy_from_slice(&result);
     }
     fn dim(&self) -> usize { self.n }
+    fn b_mul(&self, x: &[f64], y: &mut [f64]) {
+        let n = self.n;
+        for i in 0..n {
+            let mut s = 0.0;
+            for j in 0..n { s += self.b[i * n + j] * x[j]; }
+            y[i] = s;
+        }
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -118,29 +142,39 @@ fn lanczos_tridiag(
     op: &dyn MatVecOp,
     q_start: &[f64],
     m: usize,
-) -> (Vec<f64>, Vec<f64>, Vec<f64>, usize) {
+) -> (Vec<f64>, Vec<f64>, Vec<f64>, usize, f64) {
     let n = op.dim();
     let mut alpha = vec![0.0; m];
     let mut beta = vec![0.0; m];
     // Q stored as m vectors of length n, row-major: q_j at offset j*n
     let mut q = vec![0.0; m * n];
+    // B·q_j alongside q_j. Every inner product below is ⟨x,y⟩_B = xᵀBy; caching Bq
+    // turns each of them back into a plain `dot` and costs one B-multiply per step
+    // rather than one per inner product. For the default identity B this is a copy,
+    // so the ordinary symmetric paths keep their previous arithmetic exactly.
+    let mut bq = vec![0.0; m * n];
+    let mut scratch = vec![0.0; n];
 
-    // q_0 = q_start / ||q_start||
-    let nrm = dot(q_start, q_start).sqrt();
+    // q_0 = q_start / ‖q_start‖_B
+    op.b_mul(q_start, &mut scratch);
+    let nrm = dot(q_start, &scratch).sqrt();
     for i in 0..n {
         q[i] = q_start[i] / nrm;
     }
+    op.b_mul(&q[0..n], &mut scratch);
+    bq[0..n].copy_from_slice(&scratch);
 
     let mut w = vec![0.0; n];
     let mut steps = 0;
+    let mut trailing_beta = 0.0f64;
 
     for j in 0..m {
         steps = j + 1;
         // w = A * q_j
         op.mul_vec(&q[j * n..(j + 1) * n], &mut w);
 
-        // alpha_j = q_j^T * w
-        alpha[j] = dot(&q[j * n..(j + 1) * n], &w);
+        // alpha_j = ⟨q_j, w⟩_B = (B q_j)ᵀ w
+        alpha[j] = dot(&bq[j * n..(j + 1) * n], &w);
 
         // w = w - alpha_j * q_j - beta_j * q_{j-1}
         for i in 0..n {
@@ -152,17 +186,23 @@ fn lanczos_tridiag(
             }
         }
 
-        // Full reorthogonalization (double CGS)
+        // Full reorthogonalization (double CGS), B-orthogonally
         for _pass in 0..2 {
             for k in 0..=j {
-                let d = dot(&q[k * n..(k + 1) * n], &w);
+                let d = dot(&bq[k * n..(k + 1) * n], &w);
                 for i in 0..n {
                     w[i] -= d * q[k * n + i];
                 }
             }
         }
 
-        let beta_next = dot(&w, &w).sqrt();
+        op.b_mul(&w, &mut scratch);
+        let beta_next = dot(&w, &scratch).max(0.0).sqrt();
+        // Kept even on the LAST step, where there is no q_{j+1} to store it against.
+        // This is the number the Ritz residual estimate β·|s_m| is built from; dropping
+        // it (as the `j + 1 < m` guard below necessarily does) is what left the caller
+        // with nothing to judge convergence by.
+        trailing_beta = beta_next;
 
         if j + 1 < m {
             beta[j + 1] = beta_next;
@@ -173,10 +213,12 @@ fn lanczos_tridiag(
             for i in 0..n {
                 q[(j + 1) * n + i] = w[i] / beta_next;
             }
+            op.b_mul(&q[(j + 1) * n..(j + 2) * n], &mut scratch);
+            bq[(j + 1) * n..(j + 2) * n].copy_from_slice(&scratch);
         }
     }
 
-    (alpha, beta, q, steps)
+    (alpha, beta, q, steps, trailing_beta)
 }
 
 // ---------------------------------------------------------------------------
@@ -364,7 +406,7 @@ fn lanczos_irlm(
 
     let m = params.subspace_dim
         .unwrap_or_else(|| (4 * k).max(40).min(n));
-    let m = m.min(n);
+    let mut m = m.min(n);
     if m <= k { return None; }
 
     let mut q0 = vec![0.0; n];
@@ -380,7 +422,7 @@ fn lanczos_irlm(
     let mut best_vectors: Option<Vec<f64>> = None;
 
     for _restart in 0..params.max_iter {
-        let (alpha, beta, q_mat, steps) = lanczos_tridiag(op, &q0, m);
+        let (alpha, beta, q_mat, steps, trailing_beta) = lanczos_tridiag(op, &q0, m);
         let actual_m = steps.min(m);
 
         if actual_m < k { return None; }
@@ -405,8 +447,11 @@ fn lanczos_irlm(
 
         let selected_vals: Vec<f64> = t_vals[start..start + nk].to_vec();
 
-        // Check convergence
-        let beta_m = if actual_m < m { beta[actual_m.min(beta.len() - 1)] } else { 0.0 };
+        // Check convergence. The trailing beta is the one the residual estimate needs:
+        // it was previously hardcoded to 0.0 for a full m-step run — the normal case —
+        // which made every residual identically zero and every run "converged"
+        // regardless of `tol`.
+        let beta_m = if actual_m < m { beta[actual_m.min(beta.len() - 1)] } else { trailing_beta };
         let mut all_converged = true;
         for (out_col, t_col) in (start..start + nk).enumerate() {
             let residual = (beta_m * t_vecs[(actual_m - 1) * actual_m + t_col]).abs();
@@ -424,17 +469,14 @@ fn lanczos_irlm(
             break;
         }
 
-        // Restart with best Ritz vector
-        let mut new_q0 = vec![0.0; n];
-        if let Some(ref vecs) = best_vectors {
-            for i in 0..n {
-                new_q0[i] = vecs[i * nk];
-            }
-        }
-        let nrm = dot(&new_q0, &new_q0).sqrt();
-        if nrm < 1e-14 { break; }
-        for v in new_q0.iter_mut() { *v /= nrm; }
-        q0 = new_q0;
+        // Not converged: GROW the subspace rather than reseeding from the best Ritz
+        // vector. Reseeding from a single vector stalls on a repeated eigenvalue — it
+        // keeps re-entering the same one-dimensional slice of the eigenspace — and was
+        // measured running thousands of restarts on a clustered spectrum without ever
+        // converging. Growing m converges the same cases in one or two passes: the
+        // Krylov space simply has to be large enough to separate the cluster.
+        if m >= n { break; }
+        m = (m * 2).min(n);
     }
 
     let values = best_values?;
@@ -633,6 +675,10 @@ impl<'a> MatVecOp for SparseShiftInvertOp<'a> {
         y[..self.b_csc.n].copy_from_slice(&result);
     }
     fn dim(&self) -> usize { self.b_csc.n }
+    fn b_mul(&self, x: &[f64], y: &mut [f64]) {
+        let r = self.b_csc.sym_mat_vec(x);
+        y[..self.b_csc.n].copy_from_slice(&r);
+    }
 }
 
 /// Compute k smallest eigenvalues of generalized problem A*x = λ*B*x
@@ -820,6 +866,18 @@ mod tests {
             y[..n].copy_from_slice(&result);
         }
         fn dim(&self) -> usize { self.n }
+        /// Must mirror `SparseShiftInvertOp::b_mul` or this stops being a parity
+        /// test: the recurrence would run in a different inner product on each
+        /// side and the two would disagree for that reason rather than for the
+        /// B·x representation the test is actually comparing.
+        fn b_mul(&self, x: &[f64], y: &mut [f64]) {
+            let n = self.n;
+            for i in 0..n {
+                let mut s = 0.0;
+                for j in 0..n { s += self.b_dense[i * n + j] * x[j]; }
+                y[i] = s;
+            }
+        }
     }
 
     #[test]
