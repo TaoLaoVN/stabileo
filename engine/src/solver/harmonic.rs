@@ -504,52 +504,15 @@ pub fn solve_complex_system(
     Ok((u_real, u_imag))
 }
 
-/// Estimate first two natural frequencies from K and M for Rayleigh damping.
-/// Uses the Lanczos eigenvalue solver for accurate natural frequencies.
+/// Estimate the first two natural frequencies from K and M for Rayleigh damping.
+///
+/// Delegates: this logic used to live here in full while `time_integration` carried
+/// its own, much cruder, copy. Two modules doing the same job with different
+/// accuracy is how the seismic path ended up anchoring its damping 892× high.
 fn compute_rayleigh_from_stiffness_mass(
     k: &[f64], m: &[f64], n: usize, xi: f64,
 ) -> (f64, f64) {
-    // Use Lanczos to find the first two eigenvalues (omega^2)
-    if let Some(result) = lanczos_generalized_eigen(k, m, n, 2, 0.0) {
-        // Filter out near-zero eigenvalues (rigid-body modes)
-        let positive: Vec<f64> = result.values.iter()
-            .copied()
-            .filter(|&v| v > 1e-10)
-            .collect();
-
-        if positive.len() >= 2 {
-            let omega1 = positive[0].sqrt();
-            let omega2 = positive[1].sqrt();
-            return rayleigh_coefficients(omega1, omega2, xi);
-        } else if positive.len() == 1 {
-            let omega1 = positive[0].sqrt();
-            let omega2 = 3.0 * omega1; // fallback ratio for second mode
-            return rayleigh_coefficients(omega1, omega2, xi);
-        }
-    }
-
-    // Fallback: diagonal ratio estimate
-    let mut omega1_sq: f64 = 0.0;
-    let mut count: usize = 0;
-    for i in 0..n {
-        let kii = k[i * n + i];
-        let mii = m[i * n + i];
-        if mii > 1e-20 && kii > 1e-20 {
-            let ratio = kii / mii;
-            if count == 0 || ratio < omega1_sq {
-                omega1_sq = ratio;
-            }
-            count += 1;
-        }
-    }
-
-    if omega1_sq < 1e-20 {
-        return (0.0, 0.0);
-    }
-
-    let omega1 = omega1_sq.sqrt();
-    let omega2 = 3.0 * omega1;
-    rayleigh_coefficients(omega1, omega2, xi)
+    rayleigh_from_modes(k, m, n, xi)
 }
 
 fn get_target_dof_2d(dof_num: &DofNumbering, node_id: usize, dof: &str) -> Result<usize, String> {
