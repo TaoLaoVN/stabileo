@@ -168,7 +168,18 @@
             </span>
             <span class="preset-props">
               E={p.e >= 1000 ? `${(p.e/1000).toFixed(0)}GPa` : `${p.e}MPa`}
-              {#if p.fy} fy={p.fy}MPa{/if}
+              <!-- The quoted fy is the THIN-PLATE value. Hot-rolled yield falls
+                   with thickness — S355 is 355 MPa to 40 mm and 335 beyond it —
+                   so a picker that shows one number lets someone size a thick
+                   plate 6 % unconservative without ever being told. The band is
+                   named where the number is, not in a tooltip nobody opens. -->
+              {#if p.fy}
+                fy={p.fy}MPa{#if p.thicknessBands?.length}<span
+                  class="preset-band"
+                  title={p.thicknessBands.map((b) =>
+                    `${b.overMm}–${b.upToMm} mm: fy ${b.fy} MPa`).join(' · ')}
+                >≤{p.thicknessBands[0].upToMm}mm</span>{/if}
+              {/if}
               {#if p.fu} fu={p.fu}MPa{/if}
               ρ={p.rho}kN/m³
             </span>
@@ -387,6 +398,13 @@
     font-weight: 400;
     font-size: 0.72rem;
     color: var(--st-text-3);
+  }
+  /* Attached to the fy it qualifies, with no gap, so it reads as part of the
+     value rather than as a separate property. */
+  .preset-band {
+    font-size: 0.68rem;
+    color: var(--st-text-3);
+    vertical-align: super;
   }
   .preset-unver {
     margin-left: 5px;

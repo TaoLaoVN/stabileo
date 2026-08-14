@@ -5,7 +5,7 @@ import { t } from '../i18n';
 import {
   HOT_ROLLED, COLD_FORMED, ALUMINIUM, STAINLESS,
   BASIC_REGIONS, MATERIAL_DESIGN_CODES, gradesForCode,
-  type StructuralGrade, type GradeFamily, type GradeRegion,
+  type StructuralGrade, type GradeFamily, type GradeRegion, type ThicknessBand,
 } from './structural-grades';
 import { CONCRETE, TIMBER } from './non-metal-grades';
 
@@ -36,6 +36,20 @@ export interface MaterialPreset {
    * choosing a grade for a calculation deserves to know which they are getting.
    */
   verification?: 'standard' | 'typical';
+  /**
+   * The grade's thickness bands, where the product standard tabulates them.
+   *
+   * `fy` above is the THIN-PLATE value, which is what `structural-grades.ts`
+   * warns about in its own header: hot-rolled yield falls with thickness, and a
+   * caller that quotes the headline number for a 60 mm plate is unconservative
+   * by about 6 %. Carrying the bands lets the picker say so instead of
+   * presenting one number as if the standard gave only one.
+   *
+   * This is disclosure, not selection: nothing here picks a band, because the
+   * member's governing thickness is not known at this point. Choosing by
+   * thickness is a larger change with its own decisions.
+   */
+  thicknessBands?: ThicknessBand[];
 }
 
 /**
@@ -57,6 +71,7 @@ function fromGrade(g: StructuralGrade, category: MaterialPreset['category']): Ma
     gradeId: g.id,
     region: g.region,
     verification: g.verification,
+    thicknessBands: g.byThickness,
   };
 }
 
