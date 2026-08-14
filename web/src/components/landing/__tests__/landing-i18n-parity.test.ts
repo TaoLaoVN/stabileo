@@ -91,6 +91,68 @@ describe('public landing i18n', () => {
     });
   }
 
+  /*
+   * Guards against a translation that is present, non-empty, not a copy of the
+   * English — and stale anyway.
+   *
+   * That combination is what the checks above cannot see, and it shipped: the
+   * Portuguese landing carried three sentences from a previous version of the
+   * Education section ("Wizard DSM passo a passo…" where English said "Seven
+   * predefined exercises…"), a truss description missing its last two
+   * sentences, and a steel-checker line that named a criterion the other two
+   * languages do not mention. All four passed every assertion above, because
+   * they were real Portuguese of a plausible length.
+   *
+   * Three signals survive translation and catch exactly that.
+   *
+   * Scope here is EVERY `landing.*` and `blog.*` key in the English
+   * dictionary, not the ones `usedKeys()` finds. That is deliberate and it is
+   * the reason the first version of this gate missed two of the four defects
+   * it was written for: the source scan cannot see keys composed at runtime
+   * (`t('landing.' + key)`), and `eduNow1`, `eduNow2`, `eduNow3` — three of
+   * the four — are exactly those. Checking a superset costs nothing; checking
+   * only what a regex can find was worth nothing here.
+   */
+  describe('the offered locales say the same thing, not merely something', () => {
+    const publicKeys = Object.keys(en).filter((k) => k.startsWith('landing.') || k.startsWith('blog.'));
+    /** Standards, formats and tools. A locale must not name a different one. */
+    const TECH = /\b(?:CIRSOC|AISC|ACI|AISI|NDS|TMS|NAFEMS|ANSYS|SAP2000|STAAD|OpenSees|Code_Aster|AGPL|IFC|DXF|SVG|XLSX|PDF|WebAssembly|Rust|LRFD|DSM|BIM|KL\/r|P-Δ|Bredt|Cauchy|Saint-Venant|Navier|Jourawski|Mohr|Hermite)\b/g;
+
+    const numbers = (v: string) => (v.match(/\d+(?:[.,]\d+)?/g) ?? []).sort();
+    const tech = (v: string) => [...new Set(v.match(TECH) ?? [])].sort();
+
+    it('has a plausible number of public keys to check', () => {
+      // A scope that silently shrank to nothing would make all six vacuous.
+      expect(publicKeys.length).toBeGreaterThan(300);
+    });
+
+    for (const locale of PUBLIC_LOCALES.filter((l) => l !== 'en')) {
+      it(`${locale} quotes the same figures as English`, () => {
+        const d = dictFor(locale) as Record<string, string>;
+        const wrong = publicKeys.filter((k) => k in d && String(numbers(d[k])) !== String(numbers(enDict[k])));
+        expect(wrong.map((k) => `${k}: en ${numbers(enDict[k])} vs ${locale} ${numbers(d[k])}`)).toEqual([]);
+      });
+
+      it(`${locale} names the same standards and formats as English`, () => {
+        const d = dictFor(locale) as Record<string, string>;
+        const wrong = publicKeys.filter((k) => k in d && String(tech(d[k])) !== String(tech(enDict[k])));
+        expect(wrong.map((k) => `${k}: en [${tech(enDict[k])}] vs ${locale} [${tech(d[k])}]`)).toEqual([]);
+      });
+
+      it(`${locale} is not a truncation of English`, () => {
+        // Observed range across both locales today is 0.75–1.30 of the English
+        // length; the band is deliberately wider than that. It is here to
+        // catch a translation that stopped halfway, not to police style.
+        const d = dictFor(locale) as Record<string, string>;
+        const wrong = publicKeys
+          .filter((k) => k in d && enDict[k].length > 60)
+          .map((k) => [k, d[k].length / enDict[k].length] as const)
+          .filter(([, r]) => r < 0.6 || r > 1.7);
+        expect(wrong.map(([k, r]) => `${k}: ${r.toFixed(2)}× the English length`)).toEqual([]);
+      });
+    }
+  });
+
   it('no landing key used by a component is an empty string in an offered locale', () => {
     const blank: string[] = [];
     for (const locale of PUBLIC_LOCALES) {

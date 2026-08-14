@@ -95,7 +95,7 @@ const es: Record<string, string> = {
   'landing.capTd3': 'Construcción por etapas',
   'landing.capTd4': 'Estados de carga acumulados',
   'landing.capShot2dTitle': '2D — Diagramas característicos',
-  'landing.capShot2dBody': 'Diagramas de normal, momento y corte, y deformada.',
+  'landing.capShot2dBody': 'Diagramas de normal, momento y corte, y la deformada.',
   'landing.capShot3dTitle': '3D — seis grados de libertad por nodo',
   'landing.capShot3dBody': 'Diagramas de N, My, Vz, Mz, Vy y T, con deformada en 3D.',
   'landing.capAltIndustrial': 'Stabileo en 3D: una nave industrial reticulada completa, con todas sus barras coloreadas por esfuerzo normal, del azul al rojo.',

@@ -176,7 +176,7 @@ const pt: Translations = {
 
   'landing.capShotIndustrialBody': 'Trinta e sete modelos vêm no menu de exemplos, de uma viga simples a um galpão industrial inteiro como este. Também não são um catálogo fechado: no Básico você modela e calcula a estrutura que quiser.',
 
-  'landing.capShotIndustrialTitle': 'E muitas mais possibilidades para modelar',
+  'landing.capShotIndustrialTitle': 'E muitas outras possibilidades para modelar',
 
   'landing.capAlt2d': 'O Stabileo em 2D: um pórtico resolvido com seu diagrama de momentos fletores, com cada ordenada rotulada em kN·m.',
 
@@ -236,7 +236,7 @@ const pt: Translations = {
 
   'landing.capP': 'O mesmo motor serve aos três modos. As análises mais profundas fazem parte do modo PRO, e algumas capacidades do solver seguem sendo ampliadas.',
 
-  'landing.capShot2dBody': 'Diagramas de normal, momento e cortante, e deformada.',
+  'landing.capShot2dBody': 'Diagramas de normal, momento e cortante, e a deformada.',
 
   'landing.capShot2dTitle': '2D — Diagramas característicos',
 
@@ -284,7 +284,7 @@ const pt: Translations = {
 
   'landing.cir201Scope': 'Projeto de concreto armado, e geração de armaduras',
 
-  'landing.cir301Body': 'Um verificador de barras de aço sobre a base AISC 360 LRFD: tração, compressão com flambagem segundo KL/r, flexão com flambagem lateral com torção, cisalhamento e solicitações combinadas.',
+  'landing.cir301Body': 'Um verificador de barras de aço sobre a base AISC 360 LRFD: tração, compressão, flexão com flambagem lateral com torção, cisalhamento e solicitações combinadas.',
 
   'landing.cir301Limit': 'Projeto segundo a norma em desenvolvimento.',
 
@@ -406,7 +406,7 @@ const pt: Translations = {
 
   'landing.figDeformedNorm': 'DEFORMADA · NORMALIZADA',
 
-  'landing.figDesc': 'Treliça Pratt de seis painéis simplesmente apoiada: apoio fixo no nó esquerdo do banzo e móvel no direito. Uma única carga unitária descendente percorre o banzo; entre nós ela se distribui linearmente entre os dois adjacentes, de modo que a carga total sempre vale um.',
+  'landing.figDesc': 'Treliça Pratt de seis painéis simplesmente apoiada: apoio fixo no nó esquerdo do banzo e móvel no direito. Uma única carga unitária descendente percorre o banzo; entre nós ela se distribui linearmente entre os dois adjacentes, de modo que a carga total sempre vale um. As barras são coloridas segundo o esforço axial resolvido (vermelho em tração, azul em compressão, cinza quando o esforço é quase nulo), com uma única escala compartilhada por todas as posições. O contorno cinza é a treliça sem deformar; a deformada está normalizada para que se leia.',
 
   'landing.figTension': 'TRAÇÃO  +',
 
@@ -552,7 +552,7 @@ const pt: Translations = {
 
   'landing.proShotModelBody': 'Pórticos, lajes e suas cargas, modelados no navegador. Barras e placas juntas, que é o que um edifício realmente é.',
 
-  'landing.proShotModelTitle': 'Um edifício inteiro, antes de calcular',
+  'landing.proShotModelTitle': 'Um edifício inteiro, antes de calculá-lo',
 
   'landing.proShotRebarBody': 'Barras longitudinais e estribos dispostos segundo a CIRSOC 201, sobre o modelo e não em um desenho à parte. Em desenvolvimento.',
 
@@ -905,9 +905,9 @@ const pt: Translations = {
   'landing.tagEdu': 'Educacional',
   'landing.eduNowTitle': 'Disponível agora',
   'landing.eduNowDesc': 'O modo educacional já possui ferramentas para aprender análise estrutural de forma interativa.',
-  'landing.eduNow1': 'Wizard DSM passo a passo: montagem, condições de contorno, resolução e resultados',
-  'landing.eduNow2': 'Exercícios guiados com dicas e verificação automática',
-  'landing.eduNow3': 'Visualização de cada operação matricial do solver',
+  'landing.eduNow1': 'Sete exercícios predefinidos, agrupados em estática, resistência e avançados.',
+  'landing.eduNow2': 'O modelo é carregado e resolvido sozinho. As respostas corretas saem do solver, não de um gabarito guardado.',
+  'landing.eduNow3': 'Perguntas sobre reações, sobre valores e formas dos diagramas, sobre cinemática (isostática ou hiperestática, e o grau) e sobre dados da seção.',
   'landing.eduSoonTitle': 'Em breve',
   'landing.eduSoon1': 'Banco de exercícios por tema (vigas, pórticos, treliças)',
   'landing.eduSoon2': 'Provas com correção automática',

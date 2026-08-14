@@ -29,7 +29,7 @@ const en: Record<string, string> = {
   'landing.blogBody': 'Longer pieces on how the solver works, what the code checks actually verify, and the architecture behind the AI layer. The first one is about why an agent must never produce the number itself.',
   'landing.blogEyebrow': 'BLOG',
   'landing.blogLink': 'Go to the blog',
-  'landing.blogTitle': 'Read our blog',
+  'landing.blogTitle': 'Access our blog',
   'landing.footBlog': 'Blog',
   'landing.navLanguage': 'Language',
   'landing.ebHero': 'FREE AND OPEN · STRUCTURAL ANALYSIS',
