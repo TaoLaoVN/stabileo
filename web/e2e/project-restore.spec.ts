@@ -79,6 +79,58 @@ interface Watch {
   forbidden: string[];
 }
 
+/**
+ * Toasts have to be RECORDED as they are raised, never sampled off the DOM later.
+ *
+ * A toast removes itself after 4 s (`ui.svelte.ts` `toast()`), and the moment a spec can next
+ * look is not under the spec's control: `__stabileoActions.solve()` resolves when the solve
+ * resolves, but the evaluate cannot RETURN until the main thread is free, and publishing a
+ * restored-and-designed model — 203 reinforced members across 7 combinations — blocks it for
+ * about six seconds after the toast goes up. The assertion window then opens on an empty
+ * container and stays empty, which reads exactly like a solve that reported nothing.
+ *
+ * That is what made this file red on main: not a missing toast, a missed one. The first pass
+ * survived only because an un-designed model publishes fast enough to still be inside the 4 s.
+ *
+ * So a MutationObserver installed before any app code runs appends every toast to a page-side
+ * log that nothing clears on a timer. `assertClean` gains the same soundness for free — its
+ * forbidden-string check used to sample the container too, so a dismissed error toast would
+ * have passed it silently, which is the failure direction that actually matters.
+ */
+function recordToasts(page: Page) {
+  return page.addInitScript(() => {
+    const w = window as unknown as { __toastLog?: string[] };
+    // `boot` runs once per page load but init scripts accumulate across them; the first
+    // script on a fresh document wins and the rest find the log already installed.
+    if (w.__toastLog) return;
+    const log: string[] = [];
+    w.__toastLog = log;
+    const seen = new WeakSet<Element>();
+    const note = (el: Element) => {
+      if (seen.has(el)) return;
+      seen.add(el);
+      const text = (el.textContent ?? '').trim();
+      if (text) log.push(text);
+    };
+    new MutationObserver((muts) => {
+      for (const m of muts) {
+        for (const n of Array.from(m.addedNodes)) {
+          if (!(n instanceof HTMLElement)) continue;
+          if (n.classList.contains('toast')) note(n);
+          n.querySelectorAll('.toast').forEach(note);
+        }
+      }
+    // `document`, not `documentElement`: an init script runs against the initial empty
+    // document, where `documentElement` is still null and `observe` throws.
+    }).observe(document, { childList: true, subtree: true });
+  });
+}
+
+/** Every toast raised since the page loaded, in order, dismissed or not. */
+async function toastsSeen(page: Page): Promise<string[]> {
+  return page.evaluate(() => (window as unknown as { __toastLog?: string[] }).__toastLog ?? []);
+}
+
 function watchPage(page: Page): Watch {
   const w: Watch = { errors: [], fallbacks: [], forbidden: [] };
   const inspect = (text: string, fromError: boolean) => {
@@ -95,7 +147,7 @@ function watchPage(page: Page): Watch {
 
 /** Assert the run is still clean, naming the step that dirtied it. */
 async function assertClean(page: Page, w: Watch, step: string) {
-  const toasts = (await page.locator('[class*=toast]').allTextContents()).join(' | ');
+  const toasts = (await toastsSeen(page)).join(' | ');
   for (const rx of FORBIDDEN) {
     expect(toasts, `${step}: a toast matched ${rx}`).not.toMatch(rx);
   }
@@ -116,6 +168,7 @@ async function assertClean(page: Page, w: Watch, step: string) {
  * has to go because a restored tab session bypasses the autosave banner entirely.
  */
 async function boot(page: Page) {
+  await recordToasts(page);
   await page.addInitScript(() => {
     try {
       localStorage.clear();
@@ -151,13 +204,16 @@ async function restoreFromBanner(page: Page) {
 /** Calculate, and wait for the result rather than for a duration. */
 async function calculate(page: Page) {
   const before = await page.evaluate(() => window.__stabileo.solveCount());
+  // Only the toasts THIS solve raises may satisfy it. The log is cumulative and outlives the
+  // reload it was recorded on, so matching the whole thing would let the second calculate pass
+  // on the first one's success — which is precisely the silence this step exists to catch.
+  const mark = (await toastsSeen(page)).length;
   await page.evaluate(async () => { await window.__stabileoActions.solve(); });
   await expect
     .poll(() => page.evaluate(() => window.__stabileo.solveCount()), { timeout: 120_000 })
     .toBeGreaterThan(before);
   await expect
-    .poll(async () => (await page.locator('[class*=toast]').allTextContents()).join(' | '),
-      { timeout: 120_000 })
+    .poll(async () => (await toastsSeen(page)).slice(mark).join(' | '), { timeout: 120_000 })
     .toContain('Análisis 3D exitoso');
 }
 
@@ -360,7 +416,7 @@ test('@slow restore, design, view in 3-D — then reload and do it again', async
 
   // The over-quota warning belonged to the localStorage autosave. Its appearance now would
   // mean the app had silently fallen back to it.
-  const toastsNow = (await page.locator('[class*=toast]').allTextContents()).join(' | ');
+  const toastsNow = (await toastsSeen(page)).join(' | ');
   expect(toastsNow, 'no over-quota warning, because there is no quota to exceed')
     .not.toMatch(/demasiado grande para el guardado autom/i);
 
