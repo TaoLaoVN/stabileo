@@ -108,6 +108,28 @@ export interface ClassificationContext {
   maxAggregateSizeMm: number;
   /** Member kind per element id, so a beam bar is judged by the beam rule. */
   memberKindOf: (elementId: number) => 'beam' | 'column' | 'wall' | 'slab' | undefined;
+  /**
+   * Member kind of a BAR, when the element id cannot decide it.
+   *
+   * ── Why an element id is not always enough ─────────────────────
+   *
+   * A footing's steel is owned by the supported column's element id — the dowels are column
+   * bars and §25.2.3 is what governs them, which is why `buildFloorAssembly` declares a
+   * footing's elements as columns. The bottom MAT shares that element id and answers to a
+   * different clause: §13.3.3.1 makes Chapter 7 applicable to an isolated footing, §7.7.2.1
+   * routes minimum spacing to §25.2, and §25.2.1 is the in-layer rule — `max(25 mm, d_b,
+   * 4/3 d_agg)` — not §25.2.3's `max(40 mm, 1,5 d_b, 4/3 d_agg)`.
+   *
+   * So the element id maps a footing to `column` and both statements are correct for the bars
+   * they are about. Without this hook the mat would be held to the column rule, which is the
+   * generator/verifier disagreement this codebase is built to avoid: `footing-flexure.ts` lays
+   * a mat out to §25.2.1 through `minClearSpacingInLayer`, and a congested mat that satisfies
+   * it would then be reported as a conflict against a clause that does not govern it.
+   *
+   * Consulted per bar and preferred over the element map when it answers. Absent, or
+   * returning undefined, leaves the previous behaviour exactly as it was.
+   */
+  barKindOf?: (bar: BarPath) => 'beam' | 'column' | 'wall' | 'slab' | 'footing' | undefined;
   /** Layer index per bar id, when the generator recorded one. */
   layerOf?: (barId: string) => number | undefined;
   /**
@@ -175,12 +197,32 @@ export function sharesMember(a: BarPath, b: BarPath): boolean {
  */
 function governingKind(
   a: BarPath, b: BarPath, ctx: ClassificationContext,
-): 'beam' | 'column' | 'wall' | 'slab' {
-  const kinds = [...a.ownerElementIds, ...b.ownerElementIds]
+): 'beam' | 'column' | 'wall' | 'slab' | 'footing' {
+  // A bar that declares its own kind is taken at its word for ITSELF only; the other bar still
+  // answers for itself. That is what lets a footing mat bar meeting a dowel be judged by the
+  // stricter of the two rules rather than by whichever bar was asked first.
+  const declared = [a, b]
+    .map((bar) => ctx.barKindOf?.(bar))
+    .filter((k): k is NonNullable<typeof k> => k !== undefined);
+  const fromElements = [...a.ownerElementIds, ...b.ownerElementIds]
     .map(ctx.memberKindOf)
     .filter((k): k is NonNullable<typeof k> => k !== undefined);
+  /**
+   * When BOTH bars declare, the declarations REPLACE the element map: two footing mat bars are
+   * not column bars, and keeping the element-derived `column` would let the column rule govern
+   * through the very mapping this hook exists to override.
+   *
+   * When only ONE declares, both sets are considered and the stricter wins below. That is the
+   * mixed case — a mat bar running alongside a dowel hook — and the conservative reading is the
+   * right one there: the pair really does contain a column bar, and the congested case sets the
+   * rule. It is deliberately not the same treatment, because the two situations are not the
+   * same situation.
+   */
+  const kinds = declared.length === 2
+    ? declared
+    : [...declared, ...fromElements];
   if (kinds.length === 0) return 'beam';
-  // Column spacing is the strictest of the four, so its presence governs.
+  // Column spacing is the strictest, so its presence governs.
   return kinds.includes('column') ? 'column' : kinds[0];
 }
 

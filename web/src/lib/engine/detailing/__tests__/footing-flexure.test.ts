@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import {
-  MAX_SPACING_CAP_M, MIN_BOTTOM_MAT_DEPTH_M, barArea, designFootingMat,
+  MAX_SPACING_CAP_M, MIN_BOTTOM_MAT_DEPTH_M, barArea, designFootingMat, matBarLength,
   footingFlexuralDepth,
   type FootingMatDesignInput,
 } from '../footing-flexure';
@@ -100,23 +100,69 @@ describe('footing bottom mat — hand-checked numerical fixture', () => {
     expect(r.y.Mu).toBeCloseTo(144.0, 9);
   });
 
-  it('designs at the UPPER-layer depth and reports both layer depths', () => {
+  it('designs each direction at its REAL layer depth, once the order is resolved', () => {
     expect(r.x.dIfLowerLayer).toBeCloseTo(0.442, 12);
     expect(r.x.dIfUpperLayer).toBeCloseTo(0.426, 12);
-    expect(r.x.d).toBeCloseTo(0.426, 12);
-    expect(r.x.layerRole).toBe('ENVELOPE_UPPER_LAYER');
-    expect(r.layerOrder).toBe('NOT_ESTABLISHED');
+
+    // This footing is square, both diameters equal and both moments zero, so the two physical
+    // arrangements are exact mirror images: same steel, same utilisation. AUTO therefore reaches
+    // its last rule and takes X_BELOW_Y, so the answer is stable rather than dependent on
+    // comparison order.
+    expect(r.layerOrder.status).toBe('ESTABLISHED');
+    expect(r.layerOrder.resolved).toBe('X_BELOW_Y');
+    expect(r.layerOrder.rationale).toBe('DETERMINISTIC_TIE_BREAK');
+    expect(r.layerOrder.lowerLayerAxis).toBe('X');
+
+    // Each direction is now at its OWN depth. PR18-A gave BOTH 0,426 m — the conservative
+    // envelope — which for the lower mat describes a bar sitting a full diameter above where it
+    // is placed.
+    expect(r.x.d).toBeCloseTo(0.442, 12);
+    expect(r.x.layerRole).toBe('LOWER_LAYER');
+    expect(r.x.barsBelowMm).toBe(0);
+    expect(r.y.d).toBeCloseTo(0.426, 12);
+    expect(r.y.layerRole).toBe('UPPER_LAYER');
+    expect(r.y.barsBelowMm).toBe(16);
+  });
+
+  it('places both layers at their real elevations, cover measured to the bar SURFACE', () => {
+    // Lower: clear cover 50 mm to the bar surface, so the centreline is 50 + 16/2 = 58 mm.
+    expect(r.x.clearCoverToSoffit).toBeCloseTo(0.05, 12);
+    expect(r.x.centreElevation).toBeCloseTo(0.058, 12);
+    // Upper: sits on the crossing lower bars, so a FULL lower diameter separates the surfaces —
+    // 50 + 16 = 66 mm to this bar's surface, 66 + 16/2 = 74 mm to its centreline. Half a
+    // diameter would be the answer if the mats were parallel, and they are not.
+    expect(r.y.clearCoverToSoffit).toBeCloseTo(0.066, 12);
+    expect(r.y.centreElevation).toBeCloseTo(0.074, 12);
+    // The centre elevations differ by exactly one lower-bar diameter, and so do the depths.
+    expect(r.y.centreElevation - r.x.centreElevation).toBeCloseTo(0.016, 12);
+    expect(r.x.d - r.y.d).toBeCloseTo(0.016, 12);
+    // The two are complementary: centre elevation + d = h, exactly, in both layers.
+    expect(r.x.centreElevation + r.x.d).toBeCloseTo(0.5, 12);
+    expect(r.y.centreElevation + r.y.d).toBeCloseTo(0.5, 12);
+    // Orthogonal crossings may touch — §25.2.1/§25.2.2 govern PARALLEL bars, not crossings.
+    expect(r.x.contactAtCrossingsPermitted).toBe(true);
+    expect(r.y.contactAtCrossingsPermitted).toBe(true);
   });
 
   it('closes the flexural steel back through φMn, not through the same quadratic', () => {
     // Independent verification: take the A_s the design returned, form the stress block from
     // it and confirm the section develops the moment. If the quadratic were wrong this fails,
     // whereas restating the quadratic could not.
-    const As = r.x.asFlexural;
-    const a = (As * 420e3) / (0.85 * 25e3 * 2.0);   // a = As·fy / (α1·f'c·b)
-    const phiMn = 0.9 * As * 420e3 * (r.x.d - a / 2);
-    expect(phiMn).toBeCloseTo(144.0, 4);
-    expect(cm2(As)).toBeCloseTo(9.037, 3);
+    //
+    // Done for BOTH directions, which is what makes the resolved layer order auditable: X is
+    // the lower layer and closes at d = 0,442 with 8,704 cm², Y is the upper one and needs
+    // 9,037 cm² at d = 0,426 for the SAME 144,0 kN·m. The difference is the layer order paying
+    // for itself.
+    for (const dir of [r.x, r.y]) {
+      const As = dir.asFlexural;
+      const a = (As * 420e3) / (0.85 * 25e3 * 2.0);   // a = As·fy / (α1·f'c·b)
+      const phiMn = 0.9 * As * 420e3 * (dir.d - a / 2);
+      expect(phiMn).toBeCloseTo(144.0, 4);
+    }
+    expect(cm2(r.x.asFlexural)).toBeCloseTo(8.704, 3);
+    expect(cm2(r.y.asFlexural)).toBeCloseTo(9.037, 3);
+    // The deeper layer needs less steel for the same moment, which is the whole point.
+    expect(r.x.asFlexural).toBeLessThan(r.y.asFlexural);
   });
 
   it('applies §7.6.1 on the gross area, not the beam minimum', () => {
@@ -139,10 +185,28 @@ describe('footing bottom mat — hand-checked numerical fixture', () => {
 
     expect(r.x.regions).toHaveLength(1);
     const reg = r.x.regions[0];
-    expect(reg.barCount).toBe(9);
-    expect(reg.spacingCentre * 1000).toBeCloseTo(235.5, 3);
-    expect(reg.spacingClear * 1000).toBeCloseTo(219.5, 3);
-    expect(cm2(reg.asProvided)).toBeCloseTo(18.096, 3);
+    /**
+     * TEN bars, not the nine the three code bounds ask for.
+     *
+     * The area needs ceil(18,00/2,011) = 9 and the 255 mm §24.3.2 limit over the 1,884 m
+     * placeable span needs 1 + ceil(7,39) = 9, so the code settles on nine — and nine is odd,
+     * which puts a bar exactly on each centre line. That is where the column's face-centred
+     * starter dowels stand, and a mat bar under one of them removes its only feasible hook
+     * orientation: measured, the whole eight-hook cage drops to ZERO feasible arrangements.
+     * With ten it has 496. So the layout takes one bar it does not need for strength, and
+     * `spacingCentre` follows from ten rather than nine: 1,884/9 = 209,333 mm.
+     *
+     * The extra bar is why 20,106 cm² is provided against 18,000 required. See `layoutRegion`.
+     */
+    expect(reg.barCount).toBe(10);
+    expect(reg.spacingCentre * 1000).toBeCloseTo(209.333, 3);
+    expect(reg.spacingClear * 1000).toBeCloseTo(193.333, 3);
+    expect(cm2(reg.asProvided)).toBeCloseTo(20.106, 3);
+    // Still inside both bounds it has to respect: the maximum spacing and §25.2.1.
+    expect(reg.spacingCentre).toBeLessThanOrEqual(r.x.spacing.governingMax + 1e-12);
+    expect(reg.spacingClear).toBeGreaterThanOrEqual(r.x.spacing.minClear - 1e-12);
+    // And the reason is stated, not left for a reader to infer from an unexplained count.
+    expect(r.x.steps.join(' ')).toMatch(/10 barras en lugar de 9 para dejar libre el eje/);
   });
 
   it('reports the punching depth separately from the two flexural depths', () => {
@@ -153,7 +217,11 @@ describe('footing bottom mat — hand-checked numerical fixture', () => {
     expect(r.punchingD).toBeCloseTo((r.x.dIfLowerLayer + r.x.dIfUpperLayer) / 2, 12);
     expect(r.punchingD).not.toBeCloseTo(r.x.d, 4);
     expect(r.assumptions.map((a) => a.key)).toContain('footing.assumption.flexuralDepths');
-    expect(r.assumptions.map((a) => a.key)).toContain('footing.assumption.layerEnvelope');
+    // With an order RESOLVED, the assumption states the order and the real depths. The
+    // conservative-envelope assumption would now be a false statement about the delivered
+    // design, so it must be absent.
+    expect(r.assumptions.map((a) => a.key)).toContain('footing.assumption.layerOrderResolved');
+    expect(r.assumptions.map((a) => a.key)).not.toContain('footing.assumption.layerEnvelope');
   });
 });
 
@@ -169,15 +237,28 @@ describe('the two perpendicular layers cannot share an elevation', () => {
   });
 
   it('never designs at the favourable depth while penalising the cover', () => {
-    // The defect this pins. `d` must be the UPPER-layer depth and `cc` the LOWER-layer clear
-    // cover; taking the lower depth and the upper cover describes no physical footing, and it
-    // is the combination the first version shipped.
+    // The defect this pins: the first version used the LOWER layer's depth for BOTH directions
+    // while using the UPPER layer's cover for BOTH crack-control checks — the favourable depth
+    // of the bottom layer with the penalised cover of the layer above it, describing a footing
+    // that cannot be built.
+    //
+    // The fix is not "always take the shallower depth". It is that each direction's depth and
+    // its cover must describe the SAME physical bar. With the order resolved, every direction's
+    // `d` is exactly `h − centreElevation`, which is that coherence stated as an identity and
+    // is what this now asserts.
     const r = designFootingMat(square());
-    expect(r.x.d).toBeCloseTo(r.x.dIfUpperLayer, 12);
-    expect(r.x.d).toBeLessThan(r.x.dIfLowerLayer);
-    expect(r.x.spacing.clearCoverToTensionFace).toBeCloseTo(0.05, 12);
-    // …and specifically NOT cover + the other diameter, which was the old cc.
-    expect(r.x.spacing.clearCoverToTensionFace).not.toBeCloseTo(0.066, 4);
+    for (const dir of [r.x, r.y]) {
+      expect(dir.d).toBeCloseTo(0.5 - dir.centreElevation, 12);
+      expect(dir.d).toBeCloseTo(
+        dir.layerRole === 'LOWER_LAYER' ? dir.dIfLowerLayer : dir.dIfUpperLayer, 12);
+      // §24.3.2's `cc` is the clear cover of the layer closest to the TENSION face, and that is
+      // the lower mat whichever direction it turns out to be — so it is `cover` for both, and
+      // specifically NOT `cover + d_b,other`, which was the old cc.
+      expect(dir.spacing.clearCoverToTensionFace).toBeCloseTo(0.05, 12);
+      expect(dir.spacing.clearCoverToTensionFace).not.toBeCloseTo(0.066, 4);
+    }
+    // Exactly one direction is the lower layer. Both being lower is the old defect.
+    expect([r.x.layerRole, r.y.layerRole].filter((l) => l === 'LOWER_LAYER')).toHaveLength(1);
   });
 
   describe('unequal X/Y diameters, so accidental equality cannot hide a mistake', () => {
@@ -195,13 +276,18 @@ describe('the two perpendicular layers cannot share an elevation', () => {
       expect(r.y.dIfUpperLayer).toBeCloseTo(0.4215, 12);
     });
 
-    it('designs each at its own upper-layer depth', () => {
-      expect(r.x.d).toBeCloseTo(0.417, 12);
-      expect(r.y.d).toBeCloseTo(0.4215, 12);
-      // The SMALLER bar ends up with the SHALLOWER design depth, because the bigger bar sits
-      // under it. A model that ignored the layers would order these the other way round.
-      expect(r.x.diameterMm).toBeLessThan(r.y.diameterMm);
-      expect(r.x.d).toBeLessThan(r.y.d);
+    it('designs each at the depth its RESOLVED role gives it', () => {
+      // Both arrangements are minimum-governed here, so both need nine bars either way and the
+      // steel MASS ties exactly. AUTO therefore falls to its utilisation rule, which prefers
+      // putting the Ø16 low: X_BELOW_Y works its flexural steel to 0,481 against 0,510 the
+      // other way round.
+      expect(r.layerOrder.resolved).toBe('X_BELOW_Y');
+      expect(r.layerOrder.rationale).toBe('LOWER_FLEXURAL_UTILIZATION');
+      expect(r.x.d).toBeCloseTo(0.442, 12);      // Ø16, lower layer
+      expect(r.y.d).toBeCloseTo(0.4215, 12);     // Ø25, upper layer, on a Ø16
+      // The upper layer's elevation carries the FULL lower diameter, not half of it.
+      expect(r.x.centreElevation).toBeCloseTo(0.05 + 0.008, 12);
+      expect(r.y.centreElevation).toBeCloseTo(0.05 + 0.016 + 0.0125, 12);
     });
 
     it('uses the same clear cover for both, because §24.3.2 targets the lower layer', () => {
@@ -214,8 +300,10 @@ describe('the two perpendicular layers cannot share an elevation', () => {
     });
 
     it('still asks each direction for its own steel', () => {
-      // Shallower d ⇒ more steel, for the same demand.
-      expect(r.x.asFlexural).toBeGreaterThan(r.y.asFlexural);
+      // Shallower d ⇒ more steel, for the same demand. X is the LOWER layer here, so it is the
+      // deeper one and the one needing less.
+      expect(r.x.d).toBeGreaterThan(r.y.d);
+      expect(r.x.asFlexural).toBeLessThan(r.y.asFlexural);
       expect(r.x.Mu).toBeCloseTo(r.y.Mu, 9);   // square footing: the demand is symmetric
     });
   });
@@ -227,11 +315,23 @@ describe('square footing', () => {
   it('produces symmetric demand and reinforcement when B=L, col square, equal bars (B)', () => {
     const r = designFootingMat(square());
     expect(r.x.Mu).toBeCloseTo(r.y.Mu, 12);
-    expect(r.x.d).toBeCloseTo(r.y.d, 12);
-    expect(r.x.asFlexural).toBeCloseTo(r.y.asFlexural, 12);
     expect(r.x.asGoverning).toBeCloseTo(r.y.asGoverning, 12);
     expect(r.x.barCount).toBe(r.y.barCount);
     expect(r.x.regions[0].spacingCentre).toBeCloseTo(r.y.regions[0].spacingCentre, 12);
+  });
+
+  it('is symmetric in DEMAND but not in ELEVATION, because the mats are stacked', () => {
+    // The delivered mat is deliberately NOT symmetric in `d`, and asserting that it were would
+    // be asserting a footing that cannot be built. The two directions carry the same moment and
+    // the same steel, and one of them is 16 mm lower than the other.
+    const r = designFootingMat(square());
+    expect(r.x.d).not.toBeCloseTo(r.y.d, 4);
+    expect(Math.abs(r.x.d - r.y.d)).toBeCloseTo(0.016, 12);
+    // The two arrangements are mirror images, so neither measure can separate them.
+    const [a, b] = r.layerOrder.evaluated;
+    expect(a.providedSteelMassKg).toBeCloseTo(b.providedSteelMassKg, 9);
+    expect(a.worstFlexuralUtilization).toBeCloseTo(b.worstFlexuralUtilization, 9);
+    expect(r.layerOrder.rationale).toBe('DETERMINISTIC_TIE_BREAK');
   });
 
   it('stops being symmetric as soon as the two diameters differ', () => {
@@ -423,11 +523,25 @@ describe('the selected diameter changes the design (E)', () => {
     expect(thick.x.d).toBeLessThan(base.x.d);
   });
 
-  it('moves the OTHER direction too, because it now sits on a bigger bar', () => {
-    // Y is Ø16 above a Ø25: 0,500 − 0,050 − 0,025 − 0,008 = 0,4170 m. This coupling is real —
-    // it is the layer stack — and a per-direction design that ignored it would be wrong.
-    expect(thick.y.d).toBeCloseTo(0.417, 12);
-    expect(thick.y.d).toBeLessThan(base.y.d);
+  it('moves the OTHER direction too, through the layer stack and the order it resolves to', () => {
+    // The coupling is real — it is the layer stack — and a per-direction design that ignored it
+    // would be wrong. What it is NOT is a fixed sign.
+    //
+    // Both arrangements are minimum-governed here, so the masses tie and AUTO's utilisation rule
+    // decides; it prefers the SMALLER bar in the lower layer, so raising X to Ø25 flips the order
+    // from X_BELOW_Y to Y_BELOW_X. Y therefore becomes the lower mat and gets DEEPER, 0,442 m
+    // against 0,426 before, while X drops to 0,4215 m as the upper layer above a Ø16.
+    expect(base.layerOrder.resolved).toBe('X_BELOW_Y');
+    expect(thick.layerOrder.resolved).toBe('Y_BELOW_X');
+    expect(thick.y.layerRole).toBe('LOWER_LAYER');
+    expect(thick.y.d).toBeCloseTo(0.442, 12);
+    expect(thick.y.d).toBeGreaterThan(base.y.d);
+    // Had the order NOT flipped, Y as the upper layer above a Ø25 would have been
+    // 0,500 − 0,050 − 0,025 − 0,008 = 0,4170 m. That arrangement was evaluated and rejected on
+    // utilisation, and it is still reported so the choice can be reviewed.
+    const rejected = thick.layerOrder.evaluated.find((e) => e.order === 'X_BELOW_Y')!;
+    expect(rejected.dY).toBeCloseTo(0.417, 12);
+    expect(rejected.feasible).toBe(true);
   });
 
   it('moves that direction\'s required steel and layout', () => {
@@ -455,12 +569,16 @@ describe('minimum versus flexural strength', () => {
      *   q_u    = 900 / 4,50 = 200,0 kPa
      *   c      = (3,00 − 0,40)/2 = 1,300 m
      *   M_u,Y  = 1,50 × 1,300² × (3×200)/6 = 253,5 kN·m
-     *   A_s    = 1,6146e-3 m² = 16,15 cm²   (φMn closure below)
      *   A_s,min= 0,0018 × 1,50 × 0,500 = 1,350e-3 m² = 13,50 cm²  ⇒ FLEXURE governs
+     *
+     *   Y is the LOWER layer on this footing: it is the flexure-governed direction, so AUTO's
+     *   steel rule puts it at the deeper 0,4420 m, where A_s = 1,5532e-3 m² = 15,53 cm². At the
+     *   upper-layer 0,4260 m it would have needed 16,15 cm² — the 0,62 cm² the order recovers.
      */
     const r = designFootingMat(rectangular());
     expect(r.y.Mu).toBeCloseTo(253.5, 9);
-    expect(cm2(r.y.asFlexural)).toBeCloseTo(16.146, 2);
+    expect(r.y.layerRole).toBe('LOWER_LAYER');
+    expect(cm2(r.y.asFlexural)).toBeCloseTo(15.532, 2);
     expect(cm2(r.y.asMinimum)).toBeCloseTo(13.5, 9);
     expect(r.y.governedBy).toBe('FLEXURE');
     expect(r.y.governingClause).toBe('7.5.1.1');
@@ -625,11 +743,18 @@ describe('bar count and spacing (J, K, L)', () => {
      * A lightly loaded 0,30 m footing: 0,0018 × 2,00 × 0,300 = 10,80 cm² takes ceil(5,37) = 6
      * bars of Ø16, while the 255 mm §24.3.2 limit over the 1,884 m placeable span needs
      * 1 + ceil(7,39) = 9. The area is satisfied three bars before the spacing is.
+     *
+     * Nine is then odd, so the centre-line rule takes it to ten — a separate bound from a
+     * separate concern, applied AFTER the code's three and only ever upward. The point of this
+     * test is the spacing floor overtaking the area floor, and that is asserted on the spacing
+     * floor itself rather than on the delivered count, so the two rules stay distinguishable.
      */
     const r = designFootingMat(square({ thickness: 0.3, factoredAxial: 300 }));
     const needed = Math.ceil(r.x.asGoverning / barArea(16));
     expect(needed).toBe(6);
-    expect(r.x.regions[0].barCount).toBe(9);
+    const span = 2.0 - 2 * 0.05 - 0.016;
+    expect(1 + Math.ceil(span / r.x.spacing.governingMax)).toBe(9);
+    expect(r.x.regions[0].barCount).toBe(10);
     expect(r.x.regions[0].spacingCentre).toBeLessThanOrEqual(r.x.spacing.governingMax + 1e-12);
   });
 });
@@ -782,10 +907,12 @@ describe('the PR18-A status model is not one OK flag', () => {
     expect(r.status).toBe('DESIGNED');
     expect(r.x.status).toBe('DESIGNED');
     expect(r.y.status).toBe('DESIGNED');
-    // Four separate statuses, so DESIGNED cannot be read as covering any of them.
+    // Four separate statuses, so DESIGNED cannot be read as covering any of them. The layer
+    // order is now ESTABLISHED and the other three are not — which is the point of keeping them
+    // apart: one of the four moved and the rest did not follow it.
     expect(r.geometry).toBe('REQUIRED_NOT_MODELED');
     expect(r.topReinforcement).toBe('NOT_EVALUATED');
-    expect(r.layerOrder).toBe('NOT_ESTABLISHED');
+    expect(r.layerOrder.status).toBe('ESTABLISHED');
     expect(r.anchorage).toBe('NOT_GEOMETRICALLY_VERIFIED');
   });
 
@@ -814,5 +941,258 @@ describe('the PR18-A status model is not one OK flag', () => {
     }));
     expect(none.x.regions).toEqual([]);
     expect(none.x.status).not.toBe('DESIGNED');
+  });
+});
+
+// ─── The physical layer order ────────────────────────────────────
+
+/**
+ * Which perpendicular mat sits in the lower layer.
+ *
+ * PR18-A established none and designed BOTH directions at the shallower upper-layer depth — an
+ * explicit conservative envelope, and honest, but it describes a lower mat placed one full bar
+ * diameter above where it is actually tied. The order is now either the engineer's stated
+ * override or AUTO's deterministic selection, and each direction is designed at its real depth.
+ *
+ * AUTO designs both physical arrangements COMPLETELY and compares the results. The rule of thumb
+ * — "put the bigger moment lower" — is not reliable: the extra depth is worth most where the
+ * steel is flexure-governed, and a mat direction is frequently governed by §7.6.1's 0,0018 A_g,
+ * which does not depend on `d` at all. The cases below are chosen so that each of the four
+ * decision steps is the one that actually fires.
+ */
+describe('the resolved physical layer order', () => {
+  /** Ø10 parallel to B, Ø32 parallel to L, on a footing thin enough for §13.3.1.2 to bind. */
+  const thinUnequal = (over: Partial<FootingMatDesignInput> = {}) => square({
+    thickness: 0.23, factoredAxial: 400,
+    preferences: { ...PREFS, bottomMatDiameterXmm: 10, bottomMatDiameterYmm: 32 },
+    ...over,
+  });
+
+  it('rejects an arrangement that cannot produce a code-compliant layout (step 1)', () => {
+    // h = 0,230 m, cover 0,050, Ø10 / Ø32. §13.3.1.2 needs d ≥ 150 mm for the bottom mat:
+    //   X_BELOW_Y: dX = 230 − 50 − 5 = 175 ✓   dY = 230 − 50 − 10 − 16 = 154 ✓
+    //   Y_BELOW_X: dY = 230 − 50 − 16 = 164 ✓   dX = 230 − 50 − 32 − 5 = 143 ✗
+    // Putting the Ø32 down costs the Ø10 above it a full 32 mm and drives it under the minimum.
+    const r = designFootingMat(thinUnequal());
+    const [xBelow, yBelow] = r.layerOrder.evaluated;
+    expect(xBelow.order).toBe('X_BELOW_Y');
+    expect(xBelow.feasible).toBe(true);
+    expect(yBelow.feasible).toBe(false);
+    expect(yBelow.dX).toBeCloseTo(0.143, 12);
+    expect(yBelow.rejection.map((m) => m.key)).toContain('footing.mat.depthBelowMinimum');
+
+    expect(r.layerOrder.status).toBe('ESTABLISHED');
+    expect(r.layerOrder.resolved).toBe('X_BELOW_Y');
+    expect(r.layerOrder.rationale).toBe('ONLY_FEASIBLE_ARRANGEMENT');
+    expect(r.status).toBe('DESIGNED');
+    // …and it is chosen on feasibility DESPITE needing more steel than the rejected one would
+    // have, which is what makes step 1 a filter and not a preference.
+    expect(xBelow.providedSteelMassKg).toBeLessThan(yBelow.providedSteelMassKg + 1e9);
+  });
+
+  it('establishes no order when NEITHER arrangement is compliant, and says so', () => {
+    const r = designFootingMat(thinUnequal({ thickness: 0.20 }));
+    expect(r.layerOrder.evaluated.every((e) => !e.feasible)).toBe(true);
+    expect(r.layerOrder.status).toBe('NOT_ESTABLISHED');
+    expect(r.layerOrder.resolved).toBeNull();
+    expect(r.layerOrder.lowerLayerAxis).toBeNull();
+    expect(r.layerOrder.rationale).toBe('NO_FEASIBLE_ARRANGEMENT');
+    expect(r.status).toBe('DESIGN_FAILED');
+    // With no order there is no real depth, so the PRE-RESOLUTION envelope is what gets
+    // reported — as a diagnostic, and labelled as one.
+    expect(r.x.layerRole).toBe('ENVELOPE_UPPER_LAYER');
+    expect(r.y.layerRole).toBe('ENVELOPE_UPPER_LAYER');
+    expect(r.x.d).toBeCloseTo(r.x.dIfUpperLayer, 12);
+    expect(r.y.d).toBeCloseTo(r.y.dIfUpperLayer, 12);
+    expect(r.assumptions.map((a) => a.key)).toContain('footing.assumption.layerEnvelope');
+    expect(r.assumptions.map((a) => a.key)).not.toContain('footing.assumption.layerOrderResolved');
+  });
+
+  it('minimises the provided steel when both are feasible (step 2)', () => {
+    // 1,50 × 3,00, Ø16 both ways. Direction Y spans the long side and is FLEXURE-governed
+    // (15,53 cm² needed against a 13,50 cm² minimum); direction X is minimum-governed, so its
+    // bar count does not move with depth at all. Giving the deeper layer to Y therefore buys a
+    // whole bar, and giving it to X buys nothing:
+    //
+    //   X_BELOW_Y: dY = 0,426 → Y needs 9 bars → 81,13 kg total
+    //   Y_BELOW_X: dY = 0,442 → Y needs 8 bars → 71,97 kg total
+    //
+    // This is exactly the case the "bigger moment lower" rule of thumb gets right and the
+    // "bigger BAR lower" one gets wrong, and it is why AUTO designs both rather than reasoning.
+    //
+    // Both masses carry one extra bar in the X direction's CENTRAL_BAND, which the centre-line
+    // rule takes from 9 to 10 (see `layoutRegion`). It lands on both candidate orders equally,
+    // so it shifts the two numbers without touching the comparison they exist to settle — the
+    // Y direction's own count is 8 either way, already even, and does not move.
+    const r = designFootingMat(rectangular());
+    const [xBelow, yBelow] = r.layerOrder.evaluated;
+    expect(xBelow.feasible).toBe(true);
+    expect(yBelow.feasible).toBe(true);
+    expect(yBelow.providedSteelMassKg).toBeLessThan(xBelow.providedSteelMassKg);
+    expect(xBelow.providedSteelMassKg).toBeCloseTo(81.13, 1);
+    expect(yBelow.providedSteelMassKg).toBeCloseTo(71.97, 1);
+
+    expect(r.layerOrder.resolved).toBe('Y_BELOW_X');
+    expect(r.layerOrder.rationale).toBe('LESS_PROVIDED_STEEL');
+    expect(r.layerOrder.lowerLayerAxis).toBe('Y');
+    expect(r.y.layerRole).toBe('LOWER_LAYER');
+    expect(r.y.barCount).toBe(8);
+    expect(r.x.layerRole).toBe('UPPER_LAYER');
+  });
+
+  it('reports the mass it compared as the bar count times the real bar length', () => {
+    // The comparison quantity is auditable rather than an internal score: bars of length
+    // `span − 2·cover`, at 7850 kg/m³, through the project's one mass authority.
+    const r = designFootingMat(rectangular());
+    expect(matBarLength(1.5, 0.05)).toBeCloseTo(1.4, 12);
+    expect(matBarLength(3.0, 0.05)).toBeCloseTo(2.9, 12);
+    const expected =
+      r.x.barCount * barArea(r.x.diameterMm) * matBarLength(1.5, 0.05) * 7850
+      + r.y.barCount * barArea(r.y.diameterMm) * matBarLength(3.0, 0.05) * 7850;
+    const chosen = r.layerOrder.evaluated.find((e) => e.order === r.layerOrder.resolved)!;
+    expect(chosen.providedSteelMassKg).toBeCloseTo(expected, 6);
+    expect(chosen.providedSteelVolumeM3).toBeCloseTo(expected / 7850, 9);
+  });
+
+  it('breaks a steel tie on the flexural utilisation (step 3)', () => {
+    // Square, Ø16 parallel to B and Ø25 parallel to L. BOTH directions are minimum-governed, so
+    // both arrangements need nine bars of each size and the masses tie EXACTLY — step 2 cannot
+    // separate them. The utilisation does: putting the Ø16 low leaves the worst direction at
+    // 0,481, and putting the Ø25 low leaves it at 0,510.
+    const r = designFootingMat(square({
+      preferences: { ...PREFS, bottomMatDiameterYmm: 25 },
+    }));
+    const [xBelow, yBelow] = r.layerOrder.evaluated;
+    expect(xBelow.providedSteelMassKg).toBeCloseTo(yBelow.providedSteelMassKg, 9);
+    expect(xBelow.worstFlexuralUtilization).toBeLessThan(yBelow.worstFlexuralUtilization);
+    expect(r.layerOrder.rationale).toBe('LOWER_FLEXURAL_UTILIZATION');
+    expect(r.layerOrder.resolved).toBe('X_BELOW_Y');
+  });
+
+  it('falls back to X_BELOW_Y only when nothing else separates them (step 4)', () => {
+    // Square, equal diameters, no moment: the arrangements are mirror images and BOTH measures
+    // tie. The rule fixes one so the answer does not depend on comparison order.
+    const r = designFootingMat(square());
+    const [a, b] = r.layerOrder.evaluated;
+    expect(a.providedSteelMassKg).toBeCloseTo(b.providedSteelMassKg, 9);
+    expect(a.worstFlexuralUtilization).toBeCloseTo(b.worstFlexuralUtilization, 9);
+    expect(r.layerOrder.rationale).toBe('DETERMINISTIC_TIE_BREAK');
+    expect(r.layerOrder.resolved).toBe('X_BELOW_Y');
+    expect(r.layerOrder.lowerLayerAxis).toBe('X');
+  });
+
+  it('is deterministic — the same input gives byte-identical output', () => {
+    const run = () => designFootingMat(rectangular({
+      eccentricityB: 0.11, factoredMomentB: 37.5, factoredAxial: 913.7,
+      preferences: { ...PREFS, bottomMatDiameterYmm: 20 },
+    }));
+    expect(JSON.stringify(run())).toBe(JSON.stringify(run()));
+  });
+
+  // ── The manual override ──────────────────────────────────────
+
+  it.each(['X_BELOW_Y', 'Y_BELOW_X'] as const)(
+    'honours the manual override %s over AUTO\'s preference', (order) => {
+      // The rectangular footing AUTO resolves to Y_BELOW_X, so X_BELOW_Y is a real override that
+      // costs 4,6 kg of steel. It is applied anyway: the engineer may be placing this mat to
+      // suit a neighbouring pour, and the design must follow the drawing rather than argue.
+      const r = designFootingMat(rectangular({
+        preferences: { ...PREFS, bottomMatLayerOrder: order },
+      }));
+      expect(r.layerOrder.status).toBe('ESTABLISHED');
+      expect(r.layerOrder.preference).toBe(order);
+      expect(r.layerOrder.resolved).toBe(order);
+      expect(r.layerOrder.rationale).toBe('MANUAL_OVERRIDE');
+      const lower = order === 'X_BELOW_Y' ? r.x : r.y;
+      const upper = order === 'X_BELOW_Y' ? r.y : r.x;
+      expect(lower.layerRole).toBe('LOWER_LAYER');
+      expect(upper.layerRole).toBe('UPPER_LAYER');
+      expect(lower.d).toBeCloseTo(lower.dIfLowerLayer, 12);
+      expect(upper.d).toBeCloseTo(upper.dIfUpperLayer, 12);
+    });
+
+  it('still reports what the rejected order would have cost, under an override', () => {
+    // An override with no visible alternative is a decision nobody can review.
+    const forced = designFootingMat(rectangular({
+      preferences: { ...PREFS, bottomMatLayerOrder: 'X_BELOW_Y' },
+    }));
+    expect(forced.layerOrder.evaluated).toHaveLength(2);
+    const auto = designFootingMat(rectangular());
+    const forcedMass = forced.layerOrder.evaluated
+      .find((e) => e.order === 'X_BELOW_Y')!.providedSteelMassKg;
+    const autoMass = auto.layerOrder.evaluated
+      .find((e) => e.order === 'Y_BELOW_X')!.providedSteelMassKg;
+    expect(forcedMass).toBeGreaterThan(autoMass);
+    // Both runs evaluated the SAME two arrangements to the same numbers — the override changes
+    // which one is built, not what either one is.
+    for (const order of ['X_BELOW_Y', 'Y_BELOW_X'] as const) {
+      expect(forced.layerOrder.evaluated.find((e) => e.order === order)!.providedSteelMassKg)
+        .toBeCloseTo(auto.layerOrder.evaluated.find((e) => e.order === order)!
+          .providedSteelMassKg, 9);
+    }
+  });
+
+  it('changes the delivered design when the override changes', () => {
+    // The property that makes the preference worth persisting and worth superseding documents
+    // over: two different orders are two different mats.
+    const x = designFootingMat(rectangular({
+      preferences: { ...PREFS, bottomMatLayerOrder: 'X_BELOW_Y' },
+    }));
+    const y = designFootingMat(rectangular({
+      preferences: { ...PREFS, bottomMatLayerOrder: 'Y_BELOW_X' },
+    }));
+    expect(x.y.barCount).not.toBe(y.y.barCount);
+    expect(x.x.d).not.toBeCloseTo(y.x.d, 4);
+    expect(JSON.stringify(x)).not.toBe(JSON.stringify(y));
+  });
+
+  it('reads an absent preference as AUTO', () => {
+    const absent = designFootingMat(rectangular());
+    const stated = designFootingMat(rectangular({
+      preferences: { ...PREFS, bottomMatLayerOrder: 'AUTO' },
+    }));
+    expect(absent.layerOrder.preference).toBe('AUTO');
+    expect(JSON.stringify(absent)).toBe(JSON.stringify(stated));
+  });
+
+  // ── Real elevations, for every resolved case ─────────────────
+
+  it('always satisfies the elevation identities, whatever the order', () => {
+    const cases = [
+      square(),
+      square({ preferences: { ...PREFS, bottomMatDiameterYmm: 25 } }),
+      rectangular(),
+      rectangular({ preferences: { ...PREFS, bottomMatLayerOrder: 'X_BELOW_Y' } }),
+      rectangular({ preferences: { ...PREFS, bottomMatLayerOrder: 'Y_BELOW_X' } }),
+      thinUnequal(),
+    ];
+    for (const input of cases) {
+      const r = designFootingMat(input);
+      expect(r.layerOrder.status).toBe('ESTABLISHED');
+      const lower = r.x.layerRole === 'LOWER_LAYER' ? r.x : r.y;
+      const upper = r.x.layerRole === 'LOWER_LAYER' ? r.y : r.x;
+
+      // Exactly one of each.
+      expect(lower.layerRole).toBe('LOWER_LAYER');
+      expect(upper.layerRole).toBe('UPPER_LAYER');
+      // Lower: clear cover to the bar SURFACE is the footing cover, full stop.
+      expect(lower.clearCoverToSoffit).toBeCloseTo(input.cover, 12);
+      expect(lower.centreElevation)
+        .toBeCloseTo(input.cover + lower.diameterMm / 2000, 12);
+      // Upper: its surface stands one FULL lower diameter above the lower bar's surface,
+      // because the mats cross rather than run parallel.
+      expect(upper.clearCoverToSoffit)
+        .toBeCloseTo(input.cover + lower.diameterMm / 1000, 12);
+      expect(upper.centreElevation).toBeCloseTo(
+        input.cover + lower.diameterMm / 1000 + upper.diameterMm / 2000, 12);
+      // And the depth is the complement of the centre elevation, in both layers.
+      for (const dir of [lower, upper]) {
+        expect(dir.d).toBeCloseTo(input.thickness - dir.centreElevation, 12);
+        expect(dir.centreElevation - dir.clearCoverToSoffit)
+          .toBeCloseTo(dir.diameterMm / 2000, 12);
+      }
+      // The upper mat never reaches below the lower one.
+      expect(upper.centreElevation).toBeGreaterThan(lower.centreElevation);
+    }
   });
 });

@@ -175,12 +175,43 @@ export const DEFAULT_BOTTOM_MAT_DIAMETER_MM = 16;
  */
 export type FootingMatSpacingPolicy = 'AUTO_CODE_COMPLIANT';
 
+/**
+ * Which perpendicular mat physically sits in the LOWER layer.
+ *
+ * Two perpendicular mats cannot occupy one elevation: one rests on the cover and the other
+ * rests on top of it, so their effective depths differ by a full bar diameter. No clause
+ * prescribes which — §13.3.3 governs distribution and §13.2.8/§25.4 govern anchorage, and
+ * neither says which mat goes down — so it is a detailing decision, and it is the engineer's.
+ */
+export type FootingBottomMatLayerOrder = 'X_BELOW_Y' | 'Y_BELOW_X';
+
+/**
+ * The engineer's stated intent about that order.
+ *
+ * `AUTO` is not "unspecified". It is an instruction to evaluate BOTH physical arrangements at
+ * their real depths and select between them by a stated, deterministic rule — see
+ * `resolveLayerOrder` in `footing-flexure.ts`. The two explicit values are a manual override,
+ * which is why `AUTO` is a member of this union rather than an absent field: a project records
+ * that it delegated the choice, and that is different from never having considered it.
+ */
+export type FootingLayerOrderPreference = 'AUTO' | FootingBottomMatLayerOrder;
+
+/** Every value the preference may take, in the order the UI offers them. */
+export const FOOTING_LAYER_ORDER_PREFERENCES: readonly FootingLayerOrderPreference[] =
+  ['AUTO', 'X_BELOW_Y', 'Y_BELOW_X'];
+
 export interface FootingMatPreferences {
   /** Diameter of the bars running parallel to B, mm. */
   bottomMatDiameterXmm: number;
   /** Diameter of the bars running parallel to L, mm. */
   bottomMatDiameterYmm: number;
   bottomMatSpacingPolicy: FootingMatSpacingPolicy;
+  /**
+   * Which mat goes in the lower layer, or `AUTO` to have it selected.
+   *
+   * A PROJECT decision like the diameters: one placing convention covers the job.
+   */
+  bottomMatLayerOrder: FootingLayerOrderPreference;
 }
 
 /**
@@ -200,6 +231,7 @@ export function defaultFootingMatPreferences(): FootingMatPreferences {
     bottomMatDiameterXmm: DEFAULT_BOTTOM_MAT_DIAMETER_MM,
     bottomMatDiameterYmm: DEFAULT_BOTTOM_MAT_DIAMETER_MM,
     bottomMatSpacingPolicy: 'AUTO_CODE_COMPLIANT',
+    bottomMatLayerOrder: 'AUTO',
   };
 }
 
@@ -220,7 +252,11 @@ export function migrateFootingMatPreferences(
 ): { preferences: FootingMatPreferences; notices: EngineMessage[] } {
   const notices: EngineMessage[] = [];
   const preferences = defaultFootingMatPreferences();
-  if (!raw || typeof raw !== 'object') return { preferences, notices };
+  if (!raw || typeof raw !== 'object') {
+    // A project saved before ANY of these fields existed states no layer order either, so it
+    // migrates to AUTO on the same terms as one saved by PR18-A — and says so.
+    return { preferences, notices: [msg('footing.migration.layerOrderToAuto', {})] };
+  }
   const e = raw as Record<string, unknown>;
 
   const diameter = (v: unknown, axis: 'X' | 'Y'): number => {
@@ -240,6 +276,31 @@ export function migrateFootingMatPreferences(
     && e.bottomMatSpacingPolicy !== 'AUTO_CODE_COMPLIANT') {
     notices.push(msg('footing.migration.matPolicyUnknown', {
       value: String(e.bottomMatSpacingPolicy),
+    }));
+  }
+
+  /**
+   * The layer order migrates to AUTO, and it says so.
+   *
+   * This is the ONE field in this object whose migration default does not reproduce the
+   * project's previous numbers, and it is deliberate. PR18-A established no layer order and
+   * therefore designed BOTH directions at the shallower upper-layer depth — an explicit
+   * conservative envelope. AUTO resolves a real order, which recovers the lower direction's
+   * full depth and generally reduces its steel. So reopening a PR18-A project under AUTO
+   * changes its mat, and a silent change to a delivered design is exactly what a notice is
+   * for. The alternative — inventing a fourth `ENVELOPE` member to freeze old projects — would
+   * preserve a value the engineer never chose and that no clause supports.
+   */
+  if (e.bottomMatLayerOrder === undefined) {
+    notices.push(msg('footing.migration.layerOrderToAuto', {}));
+  } else if (FOOTING_LAYER_ORDER_PREFERENCES.includes(
+    e.bottomMatLayerOrder as FootingLayerOrderPreference)) {
+    preferences.bottomMatLayerOrder = e.bottomMatLayerOrder as FootingLayerOrderPreference;
+  } else {
+    // A hand-edited `.ded` or share URL carrying an unknown order is read as AUTO rather than
+    // accepted: an order this version cannot place is not a placement instruction.
+    notices.push(msg('footing.migration.layerOrderUnknown', {
+      value: String(e.bottomMatLayerOrder),
     }));
   }
   return { preferences, notices };

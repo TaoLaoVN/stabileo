@@ -284,9 +284,17 @@ describe('column stack generation', () => {
     // to hardcode (`cover + d_tie + d_b/2`) put every corner bar inside the arc.
     const seat = seatedLongitudinalHalfExtents(0.40, 0.40, 0.025, 8, 20);
     const xs = g.bars.map((b) => b.segments[0].start.x);
-    // The outermost bars are the CORNERS, seated in the bend.
-    expect(Math.max(...xs)).toBeCloseTo(seat.corner.halfAcross, 9);
-    expect(Math.min(...xs)).toBeCloseTo(-seat.corner.halfAcross, 9);
+    // The outermost bars in x are the intermediate bars on the ±x FACES, which is what the
+    // comment above always said and what the assertion did not: it demanded the corners be
+    // outermost, and they were, only because the superseded distribution put all four
+    // intermediate bars on the two ±y faces and left the ±x faces empty. The certified layout
+    // puts one on each face, so the ±x face bars stand 1,76 mm further out than the corners —
+    // against a straight leg rather than seated in the bend.
+    expect(Math.max(...xs)).toBeCloseTo(seat.face.halfAcross, 9);
+    expect(Math.min(...xs)).toBeCloseTo(-seat.face.halfAcross, 9);
+    // The corners are there too, and they are the outermost of the four DIAGONAL bars.
+    const corners = xs.filter((x) => Math.abs(Math.abs(x) - seat.corner.halfAcross) < 1e-9);
+    expect(corners).toHaveLength(4);
     // Which is strictly inboard of where a bar against a straight leg would sit: the bend
     // cuts the corner off, and the expression this test used to hardcode
     // (`cover + d_tie + d_b/2`) put every corner bar inside the arc.

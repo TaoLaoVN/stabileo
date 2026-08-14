@@ -72,7 +72,16 @@ export const PLAN: Projection = {
 
 // ─── Sheet model ─────────────────────────────────────────────────
 
-export type SheetKind = 'beamElevation' | 'columnElevation' | 'section' | 'jointDetail' | 'floorPlan';
+export type SheetKind =
+  | 'beamElevation' | 'columnElevation' | 'section' | 'jointDetail' | 'floorPlan'
+  /** The whole structure in plan, one sheet. */
+  | 'generalPlan'
+  /** One storey in plan, carrying only that storey's members. */
+  | 'levelPlan'
+  /** A horizontal cut at a stated elevation. */
+  | 'horizontalSection'
+  /** One column lift: section, longitudinals and every transverse piece. */
+  | 'columnDetail';
 
 export interface TitleBlock {
   sheetNumber: string;
@@ -187,22 +196,122 @@ export function buildTitleBlock(opts: {
   };
 }
 
+/**
+ * Members on this assembly whose top steel is the §25.7.1.2 pair, ascending.
+ *
+ * Derived from the bars the generator marked rather than carried on the assembly beside
+ * `provisionalMembers`: the marking is already on every bar, for exactly the reason that a
+ * member-level list has to be re-joined at each drawing site and one of those joins is
+ * eventually forgotten.
+ */
+function hangerTopMembersOf(a: DetailingAssembly): number[] {
+  return [...new Set(a.bars
+    .filter((b) => b.purpose === 'stirrupHanger')
+    .flatMap((b) => b.ownerElementIds))].sort((x, y) => x - y);
+}
+
 function noteLines(
   conflicts: readonly BarConflict[], unsupported: readonly UnsupportedCondition[],
+  provisionalMembers: readonly number[] = [],
+  torsionUnevaluatedMembers: readonly number[] = [],
+  hangerTopMembers: readonly number[] = [],
 ): string[] {
   const out: string[] = [];
+  /**
+   * The provisional note goes FIRST, above the conflicts and the unsupported conditions.
+   *
+   * Note order is read order. A conflict is a defect in one detail of an otherwise real
+   * design; a provisional member means the sheet is not documentation at all, and a reader who
+   * stops after two lines must have read that one.
+   */
+  if (provisionalMembers.length > 0) {
+    out.push(
+      `PROPUESTA PROVISIONAL — NO APTO PARA EMISIÓN CONSTRUCTIVA. `
+      + `${provisionalMembers.length} elemento(s) de esta lámina (${provisionalMembers.join(', ')}) `
+      + 'llevan armadura del diseño del eje principal; su eje secundario no lo verifica ninguna '
+      + 'comprobación de esta aplicación. Diseñar ese eje antes de emitir.');
+  }
+  /**
+   * The torsion warning, immediately after it, and for the same reason.
+   *
+   * It is a WARNING and not a refusal: the geometry on this sheet is real, the reinforcement is
+   * the reinforcement the design produced, and nothing about either was changed by the fact
+   * that the torsion was never checked. What the reader must not be able to do is take the
+   * sheet as a complete verification. See `torsion-notice.ts`.
+   */
+  if (torsionUnevaluatedMembers.length > 0) {
+    out.push(
+      'TORSIÓN NO EVALUADA — función en desarrollo. '
+      + `${torsionUnevaluatedMembers.length} elemento(s) de esta lámina `
+      + `(${torsionUnevaluatedMembers.join(', ')}) reciben torsión según el análisis, y ninguna `
+      + 'comprobación de esta aplicación la verifica. La armadura indicada NO contempla torsión. '
+      + 'No usar como verificación final; verificar la torsión aparte antes de emitir. '
+      + 'Se corregirá en PR21.');
+  }
+  /**
+   * The assembly bars, third, and a note rather than a refusal.
+   *
+   * The steel IS there and it IS legal — §25.7.1.2 asks for a bar in the bend and there is one.
+   * What a reader must not be able to do is read `2Ø10` at the top of a beam and take it for
+   * hogging reinforcement, because the sheet gives them no other way to tell: a hanger and a
+   * designed top bar are drawn with the same line at the same elevation.
+   */
+  if (hangerTopMembers.length > 0) {
+    out.push(
+      'ARMADURA SUPERIOR DE ARMADO — '
+      + `${hangerTopMembers.length} elemento(s) de esta lámina (${hangerTopMembers.join(', ')}) `
+      + 'no tienen momento negativo de envolvente en ningún apoyo. Sus barras superiores cumplen '
+      + '25.7.1.2 (cada doblez del estribo contiene una barra longitudinal) y NO son armadura '
+      + 'resistente: no se les verificó capacidad a momento negativo. El Reglamento no fija su '
+      + 'diámetro; el indicado es un criterio de esta aplicación.');
+  }
   for (const u of unsupported) {
     out.push(`NO VERIFICADO — ${u.key}: ${u.message}`);
   }
-  for (const c of conflicts) {
-    if (c.severity === 'marginal') continue;
+  /**
+   * Conflicts: a legend, then a bounded list.
+   *
+   * This used to emit one line per conflict, unbounded. On `Edificio H.A. 7 pisos — PRO` that
+   * is 40 065 lines, which is not a note block — it is a sheet with no drawing on it, and the
+   * one line that mattered is on page 300.
+   *
+   * Bounding it is not hiding it. The count is stated first, the breakdown by severity is
+   * stated, the warning that the cage is not constructible is stated, and then the worst
+   * `MAX_CONFLICT_NOTES` are listed in full with both bar ids, the measured clearance and the
+   * requirement. The remainder is named as a remainder — `… y N más` — never silently
+   * dropped, and the complete list is what the detailing panel and the conflict inventory are
+   * for. Worst first, by shortfall, so the bounded list is the useful end of it.
+   */
+  const reportable = conflicts.filter((c) => c.severity !== 'marginal');
+  if (reportable.length > 0) {
+    const overlaps = reportable.filter((c) => c.severity === 'overlap').length;
     out.push(
-      `CONFLICTO ${c.severity === 'overlap' ? 'SOLAPE' : 'SEPARACIÓN'} — barras ${c.barA}/${c.barB}: ` +
-      `${(c.clearance * 1000).toFixed(0)} mm libres contra ${(c.required * 1000).toFixed(0)} mm ` +
-      'requeridos.');
+      `CONFLICTOS: ${reportable.length} sin resolver (${overlaps} interpenetración, `
+      + `${reportable.length - overlaps} separación). NO CONSTRUIBLE SIN REVISIÓN — esta lámina `
+      + 'documenta el armado y sus conflictos, no autoriza su ejecución.');
+    const worst = [...reportable].sort((a, b) => b.shortfall - a.shortfall);
+    for (const c of worst.slice(0, MAX_CONFLICT_NOTES)) {
+      out.push(
+        `CONFLICTO ${c.severity === 'overlap' ? 'SOLAPE' : 'SEPARACIÓN'} — barras ${c.barA}/${c.barB}`
+        + `${c.elementIds.length > 0 ? ` (elem. ${c.elementIds.join(', ')})` : ''}: `
+        + `${(c.clearance * 1000).toFixed(0)} mm libres contra ${(c.required * 1000).toFixed(0)} mm `
+        + `requeridos${c.pairClass ? ` — ${c.pairClass}` : ''}.`);
+    }
+    if (worst.length > MAX_CONFLICT_NOTES) {
+      out.push(`… y ${worst.length - MAX_CONFLICT_NOTES} conflicto(s) más, en la planilla de conflictos.`);
+    }
   }
   return out;
 }
+
+/**
+ * How many conflicts are listed line by line on a sheet before the rest become a count.
+ *
+ * Twelve because a note block is read, not searched: past a dozen lines a reader is scanning
+ * for the end of it rather than taking any of them in. The number that is NOT bounded is the
+ * total, which is always stated.
+ */
+export const MAX_CONFLICT_NOTES = 12;
 
 // ─── Elevations ──────────────────────────────────────────────────
 
@@ -274,7 +383,10 @@ export function drawElevation(input: ElevationInput): Sheet {
       assembly: input.assembly, clauses: input.clauses, scale: input.scale,
     }),
     polylines, circles, texts, dimensions,
-    notes: noteLines(input.assembly.conflicts, input.assembly.unsupported),
+    notes: noteLines(input.assembly.conflicts, input.assembly.unsupported,
+      input.assembly.provisionalMembers ?? [],
+      input.assembly.torsionUnevaluatedMembers ?? [],
+      hangerTopMembersOf(input.assembly)),
     extents: extentsOf(polylines, circles),
   };
 }
@@ -365,7 +477,10 @@ export function drawSection(input: SectionInput): Sheet {
       assembly: input.assembly, clauses: input.clauses, scale: input.scale ?? 20,
     }),
     polylines, circles, texts, dimensions: [],
-    notes: noteLines(input.assembly.conflicts, input.assembly.unsupported),
+    notes: noteLines(input.assembly.conflicts, input.assembly.unsupported,
+      input.assembly.provisionalMembers ?? [],
+      input.assembly.torsionUnevaluatedMembers ?? [],
+      hangerTopMembersOf(input.assembly)),
     extents: extentsOf(polylines, circles),
   };
 }
@@ -506,6 +621,14 @@ export interface ScheduleRow {
    * throwing: a missing column is a thinner workbook, a thrown exporter is no workbook.
    */
   role?: BarPath['role'];
+  /**
+   * What the item is FOR — see `BarPath.purpose`. Absent means resistant reinforcement.
+   *
+   * Its own column rather than a suffix on `role`, because a bender reads `role` to know what
+   * to fabricate and an engineer reads this to know what the bar answers for. Merging them
+   * would make the fabrication column carry an engineering claim.
+   */
+  purpose?: BarPath['purpose'];
   ownerElementIds?: number[];
   zoneIds?: string[];
   diameterMm: number;
@@ -551,7 +674,8 @@ export function buildSchedule(
     }
     rows.push({
       mark: m.mark, diameterMm: m.diameterMm, shape: m.shape, quantity: m.quantity,
-      role: m.role, ownerElementIds: m.ownerElementIds, zoneIds: m.zoneIds,
+      role: m.role, purpose: m.purpose,
+      ownerElementIds: m.ownerElementIds, zoneIds: m.zoneIds,
       cuttingLengthM: m.cuttingLength,
       totalLengthM: m.cuttingLength * m.quantity,
       massKg: m.massKg,
@@ -598,18 +722,22 @@ export function scheduleToAoa(s: ScheduleTable, title: TitleBlock, locale = 'es'
   // parameter sitting unused two lines above them, so an English export produced a Spanish
   // workbook — and the i18n purity gate cannot see a literal inside an exporter.
   const h = (k: string) => tAt(`detailing.schedule.${k}`, locale);
-  out.push([h('mark'), h('role'), h('owner'), h('zone'), h('diameter'), h('shape'),
-    h('quantity'), h('cuttingLength'), h('totalLength'), h('mass'), h('stockBars'),
-    h('offcut')]);
+  out.push([h('mark'), h('role'), h('purpose'), h('owner'), h('zone'), h('diameter'),
+    h('shape'), h('quantity'), h('cuttingLength'), h('totalLength'), h('mass'),
+    h('stockBars'), h('offcut')]);
   for (const r of s.rows) {
     out.push([r.mark, r.role ? tAt(`detailing.schedule.role.${r.role}`, locale) : '',
+      // Absent is not blank: every bar has a purpose and the ordinary one is "resistant".
+      // A blank cell here would read as "unknown", which is the one thing it never is.
+      r.role === 'longitudinal'
+        ? tAt(`detailing.schedule.purpose.${r.purpose ?? 'resistant'}`, locale) : '',
       (r.ownerElementIds ?? []).join(', '), (r.zoneIds ?? []).join(', '),
       r.diameterMm, r.shape, r.quantity,
       +r.cuttingLengthM.toFixed(3), +r.totalLengthM.toFixed(2),
       +r.massKg.toFixed(1), r.stockBars, +r.offcutM.toFixed(2)]);
   }
   out.push([]);
-  out.push([h('total'), '', '', '', '', '', s.totals.quantity, '',
+  out.push([h('total'), '', '', '', '', '', '', s.totals.quantity, '',
     +s.totals.totalLengthM.toFixed(2), +s.totals.massKg.toFixed(1),
     s.totals.stockBars, +s.totals.wasteM.toFixed(2)]);
   out.push([]);

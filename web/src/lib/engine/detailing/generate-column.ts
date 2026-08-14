@@ -37,6 +37,7 @@ import {
 import { minClearSpacingColumn } from '../../codes/cirsoc201/spacing';
 import { seatedLongitudinalHalfExtents } from '../../codes/cirsoc201/transverse-cage';
 import { clause, type ClauseRef, type RegulationEdition } from '../../codes/regulation';
+import { computeColumnLayout } from '../station-design-forces';
 import { MAX_NONCONTACT_PITCH_MM } from './splice';
 
 // ─── Column stacks ───────────────────────────────────────────────
@@ -394,6 +395,39 @@ export function tieSpacing(
 }
 
 /**
+ * Plan positions of a column's longitudinal bars, relative to the section centre.
+ *
+ * ── One arrangement, and it is the certified one ────────────────────
+ *
+ * `computeColumnLayout` is what the verifier places bars with and certifies the section from.
+ * Every other subsystem reads it: `column-candidates.ts` builds its 'even' candidate from it,
+ * and now the physical bars, the footing dowels and the drawings do too.
+ *
+ * What this replaces was a fourth distribution, and it was not a cosmetic difference. For the
+ * eight-bar cage it spread the four intermediate bars along ONE axis and then alternated them
+ * between the two y faces, at t = 1/5, 2/5, 3/5, 4/5 of the face width — so the −y face carried
+ * bars at −79,2 and +26,4 mm and the +y face at −26,4 and +79,2 mm, four bars on each of two
+ * faces, none on the other two, and not one of them centred. The certificate said something
+ * else: 4 + 1 per face, three bars visible on every face. Measured consequence on the reference
+ * footing: the starter cage built from those positions has ZERO feasible hook arrangements —
+ * the exhaustive search visits 224 nodes and every one of the eight dowels ends up in conflict.
+ * The certified layout has 100.
+ *
+ * The count, the diameter and the total As are inputs here, never outputs. This function moves
+ * bars; it does not choose how many or how big.
+ */
+export function columnBarPositions(
+  b: number, h: number, cover: number, tieDiaMm: number,
+  diameterMm: number, count: number,
+): Array<{ x: number; y: number }> {
+  // No spacing rule is passed: the rule governs the `issues` the layout REPORTS, not where it
+  // puts the bars, and every caller here runs its own §25.2.3 check against its own edition and
+  // aggregate size. Passing a half-populated rule would invite the two to disagree.
+  const layout = computeColumnLayout(count, diameterMm, b, h, cover, tieDiaMm);
+  return layout.bars.map((bar) => ({ x: bar.x - b / 2, y: bar.y - h / 2 }));
+}
+
+/**
  * Plan positions of one lift's longitudinal bars, relative to the lift centre.
  *
  * Extracted so the dowel emission below and the bar emission cannot diverge. This codebase
@@ -433,22 +467,12 @@ export function liftBarPositions(
     return { positions: chosen.map((p) => ({ x: p.x, y: p.y })), halfB, halfH, repeated: false };
   }
 
-  // Corners seat in the bend; the intermediate face bars lie against a straight leg and sit
-  // marginally further out. Two rectangles, from the one derivation, because a bar cannot be
-  // pushed into a corner as far as it can be pushed against a flat.
-  const faceB = seat.face.halfAcross;
-  const faceH = seat.face.halfUp;
-  const positions: Array<{ x: number; y: number }> = [
-    { x: -halfB, y: -halfH }, { x: halfB, y: -halfH },
-    { x: halfB, y: halfH }, { x: -halfB, y: halfH },
-  ];
-  const extra = Math.max(0, lift.bars.count - 4);
-  for (let k = 0; k < extra; k++) {
-    const t = (k + 1) / (extra + 1);
-    positions.push(k % 2 === 0
-      ? { x: -faceB + 2 * faceB * t, y: -faceH }
-      : { x: -faceB + 2 * faceB * t, y: faceH });
-  }
+  // The certified arrangement — corners plus the face bars apportioned PER FACE — from the one
+  // authority. Corners seat in the bend and the intermediate face bars lie against a straight
+  // leg, so the two sit on slightly different rectangles; that is the cage, not a rounding, and
+  // `computeColumnLayout` carries both.
+  const positions = columnBarPositions(
+    lift.b, lift.h, lift.cover, lift.tieDia, lift.bars.diameterMm, lift.bars.count);
   return {
     positions, halfB, halfH,
     repeated: chosen !== null && chosen.length === lift.bars.count && !distinct,

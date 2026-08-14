@@ -27,10 +27,9 @@
 import {
   buildStraightBarWithHooks, type BarPath, type Point3,
 } from '../../codes/cirsoc201/bar-geometry';
-import { seatedLongitudinalHalfExtents } from '../../codes/cirsoc201/transverse-cage';
 import { clause, type ClauseRef, type RegulationEdition } from '../../codes/regulation';
 import { worstMaturity, type Maturity } from '../../codes/maturity';
-import { dedupeMessages, type EngineMessage } from '../../codes/message';
+import { dedupeMessages, msg, type EngineMessage } from '../../codes/message';
 import { assessConstructibility } from './constructibility';
 import {
   certificateFreshness, completeFamilyRecord, emptyRequirement, familyDesignsPass,
@@ -38,9 +37,17 @@ import {
   type CertificateFreshness, type FamilyCertificate, type FamilyRecordDraft,
   type FamilyRequirement, type FloorFamily, type FloorFamilyDesignRecord,
 } from './family-record';
-import { assignMarks, evaluateState, type DetailingAssembly, type UnsupportedCondition } from './assembly';
+import {
+  assignMarks, evaluateState, nextDetailingRevision,
+  type DetailingAssembly, type UnsupportedCondition,
+} from './assembly';
 import { detectCollisions, type BarConflict, type CollisionTolerances } from './collision';
 import { classifyPair } from './classify';
+import { columnBarPositions } from './generate-column';
+import {
+  placeFootingDowelCage,
+  type DowelCageResult, type DowelFootingPlan, type DowelMatSupport,
+} from './footing-dowel-cage';
 import type { SlabBarLayer, SlabDesignResult } from './slab-design';
 import type { WallDesignResult } from './wall-design';
 import type { FootingCheck } from './foundation-check';
@@ -72,12 +79,37 @@ export interface SlabPanelGeometry {
  * are placed above bottom bars in the same direction, and the two directions are stacked
  * so an x bar and a y bar on the same face never occupy the same depth.
  */
+/**
+ * How far a slab bar runs past its panel at each end, m.
+ *
+ * ── What this is, and what it is NOT ───────────────────────────────
+ *
+ * It is an anchorage ALLOWANCE: a slab bar has to continue into the support it lands on, so
+ * running it exactly to the panel boundary would model a bar that stops in mid-air at the
+ * face of every beam. The bars protruding from the concrete in the 3-D view are this, working
+ * as designed — not a clipping, transformation or unit error.
+ *
+ * It is NOT a development length. §25.4 decides `ld` from the bar diameter, the concrete
+ * strength, the cover and the bar's position, and `anchorageFunctions` computes exactly that
+ * for beams, columns and footing dowels. This constant consults none of it. 150 mm is short
+ * of `ld` for most slab bars, so the allowance shown is a placeholder for a number this
+ * module does not yet compute.
+ *
+ * That is why it is DECLARED as an assumption on every floor run rather than left as a
+ * literal. A bar that visibly leaves its panel and explains itself is a detail an engineer
+ * can accept or reject; the same bar with no explanation is the app appearing to be wrong.
+ *
+ * Exported so the containment test can state the bound it is checking against, rather than
+ * repeating the number and drifting from it.
+ */
+export const SLAB_BAR_ANCHOR_ALLOWANCE = 0.15;
+
 export function generateSlabBars(
   panel: SlabPanelGeometry, layers: readonly SlabBarLayer[], edition: RegulationEdition,
 ): BarPath[] {
   const bars: BarPath[] = [];
   const halfT = panel.thickness / 2;
-  const ANCHOR = 0.15;
+  const ANCHOR = SLAB_BAR_ANCHOR_ALLOWANCE;
 
   for (const layer of layers) {
     const isTop = layer.face === 'top';
@@ -144,6 +176,18 @@ export interface DowelInput {
   lapAbove: number;
   elementIds: number[];
   edition: RegulationEdition;
+  /**
+   * The physical bottom mat the hooks seat on.
+   *
+   * Optional, and its absence is REPORTED rather than assumed away: a hook with no mat under
+   * it is seated on the cover plane and `footing-dowel-cage.ts` says so. Before this existed
+   * the generator claimed the hook rested on the mat while placing it one bend radius below
+   * the tangent point — 10 mm UNDER the lower layer, with 20 mm of cover against a declared
+   * 50 mm — because there was no mat in the input to measure against.
+   */
+  bottomMat?: DowelMatSupport;
+  /** Footing plan geometry, for containment and side cover. Absent = not checked, and said. */
+  footingPlan?: DowelFootingPlan;
 }
 
 /**
@@ -153,6 +197,19 @@ export interface DowelInput {
  * turns into a 90° hook where the straight development length would run past the
  * footing's bottom mat — which it usually does, because a footing is rarely deep enough
  * for a straight `l_d`.
+ *
+ * ── What this function does and does not decide ─────────────────
+ *
+ * It decides the §16.3.4.1 interface area. The PLAN layout it READS, from
+ * `columnBarPositions` — the same authority the column's own bars come from, so the dowel stems
+ * and the bars they lap with cannot end up at two different coordinates. Where each hook
+ * actually sits, which mat layer carries it and which way it turns is
+ * `footing-dowel-cage.ts`, because that is a
+ * property of the whole cage and of the mat: on the reference footing the four bars along one
+ * column face cannot all turn the same way, and which two must turn onto the other axis
+ * depends on where the mat leaves a gap. This function used to answer it with
+ * `hookNormal: -sign(x)` and produced twelve interpenetrating hooks, four of them with
+ * coincident axes.
  */
 export function generateDowels(input: DowelInput): {
   bars: BarPath[]; refs: ClauseRef[]; notes: string[];
@@ -163,8 +220,9 @@ export function generateDowels(input: DowelInput): {
   positions: Array<{ x: number; y: number }>;
   /** Named limitations that must travel to the certificate (e.g. §16.3.4.1 shortfall). */
   unsupported: string[];
+  /** The seating and orientation evidence, for the record and the UI. */
+  cage: DowelCageResult;
 } {
-  const bars: BarPath[] = [];
   const notes: string[] = [];
   const unsupported: string[] = [];
   const refs = [
@@ -186,83 +244,48 @@ export function generateDowels(input: DowelInput): {
       'la transferencia columna-zapata no satisface el mínimo de interfaz.');
   }
 
-  const available = input.footingThickness - input.footingCover - 0.05;
-  const needsHook = input.ldFooting > available;
-  if (needsHook) {
-    // §25.4.3.1: the 90° hook is credited ONLY when the hooked development length
-    // fits the embedment too. A hook that does not develop is not an anchor —
-    // it is a named shortfall, not an assumption.
-    const ldh = input.ldhFooting;
-    if (ldh === undefined) {
-      unsupported.push(
-        '§25.4.3.1: la longitud de anclaje recta no entra en la zapata y no se pudo ' +
-        'verificar la longitud de anclaje con gancho (ldh no calculada): el remate ' +
-        'a 90° no se acredita.');
-    } else if (ldh > available) {
-      unsupported.push(
-        `§25.4.3.1: la longitud de anclaje con gancho requerida (${(ldh * 1000).toFixed(0)} mm) ` +
-        `excede la altura útil de la zapata (${(available * 1000).toFixed(0)} mm): ` +
-        'ni la barra recta ni el gancho a 90° desarrollan la espera — aumentar el espesor ' +
-        'o reducir el diámetro.');
-    } else {
-      notes.push(
-        `La longitud de anclaje recta requerida (${(input.ldFooting * 1000).toFixed(0)} mm) ` +
-        `excede la altura útil de la zapata (${(available * 1000).toFixed(0)} mm): las barras ` +
-        `de espera rematan con gancho a 90° apoyado sobre la parrilla inferior ` +
-        `(ldh = ${(ldh * 1000).toFixed(0)} mm, verificado contra §25.4.3.1).`);
-    }
-  }
-
-  // Seating comes from the ONE authoritative derivation, not a fourth local copy of it.
+  // A dowel stands where the column bar it splices with stands. Not "at the same kind of
+  // position" — at the SAME position, from the same call, because the two are one lap splice
+  // and a dowel at a coordinate no column bar occupies is a non-contact lap nobody detailed.
   //
-  // This function used to compute `cover + d_s + d_b/2` for all four corners. That is the
-  // contact distance from a STRAIGHT leg, and a corner bar cannot reach it because the
-  // bend is in the way — it seats in the bend, further in. `generate-column` had the same
-  // bug and its corner bars interpenetrated the joint ties by 3,3 mm apiece; here it was
-  // 2,7 mm against the starter ties, and it only became visible once those ties existed.
-  const seated = seatedLongitudinalHalfExtents(
-    input.columnB, input.columnH, input.cover, input.tieDia, input.bars.diameterMm);
-  const positions = [
-    { x: -seated.corner.halfAcross, y: -seated.corner.halfUp },
-    { x: seated.corner.halfAcross, y: -seated.corner.halfUp },
-    { x: seated.corner.halfAcross, y: seated.corner.halfUp },
-    { x: -seated.corner.halfAcross, y: seated.corner.halfUp },
-  ];
-  // Intermediate bars lie against a straight leg, so they use the FACE inset and are not
-  // collinear with the corners. That is what a real cage does.
-  const extra = Math.max(0, input.bars.count - 4);
-  const halfB = seated.face.halfAcross;
-  for (let k = 0; k < extra; k++) {
-    const t = (k + 1) / (extra + 1);
-    positions.push(k % 2 === 0
-      ? { x: -halfB + 2 * halfB * t, y: -seated.face.halfUp }
-      : { x: -halfB + 2 * halfB * t, y: seated.face.halfUp });
-  }
+  // This was a local distribution: four corners, then the intermediates alternated between the
+  // two y faces. It agreed with `liftBarPositions` (which had the same scheme) and with nothing
+  // else — not with `computeColumnLayout`, which is what the verifier certified the section
+  // from. Both now read `columnBarPositions`.
+  const positions = columnBarPositions(
+    input.columnB, input.columnH, input.cover, input.tieDia,
+    input.bars.diameterMm, input.bars.count);
 
-  const embedded = Math.min(input.ldFooting, available);
   const placed = positions.slice(0, Math.min(positions.length, input.bars.count));
-  for (let k = 0; k < placed.length; k++) {
-    const p = placed[k];
-    bars.push(buildStraightBarWithHooks({
-      id: `${input.id}-dowel-${k}`,
-      diameterMm: input.bars.diameterMm, role: 'longitudinal',
-      start: {
-        x: input.centre.x + p.x, y: input.centre.y + p.y,
-        z: input.footingTopZ - embedded,
-      },
-      end: {
-        x: input.centre.x + p.x, y: input.centre.y + p.y,
-        z: input.footingTopZ + input.lapAbove,
-      },
-      axis: { x: 0, y: 0, z: 1 },
-      // The hook turns toward the column centre so it sits over the bottom mat.
-      hookNormal: { x: -Math.sign(p.x) || 1, y: 0, z: 0 },
-      startHook: needsHook ? 90 : undefined,
-      ownerElementIds: input.elementIds, edition: input.edition,
-    }));
-  }
 
-  return { bars, refs, notes, positions: placed, unsupported };
+  /**
+   * The seat and the orientation, from the cage module.
+   *
+   * `soffitZ` is derived rather than passed because `DowelInput` already carries both the top
+   * elevation and the thickness, and a third field stating the same elevation is a field that
+   * can disagree with the other two.
+   */
+  const cage = placeFootingDowelCage({
+    id: input.id,
+    centre: input.centre,
+    soffitZ: input.footingTopZ - input.footingThickness,
+    footingTopZ: input.footingTopZ,
+    cover: input.footingCover,
+    diameterMm: input.bars.diameterMm,
+    positions: placed,
+    lapAbove: input.lapAbove,
+    ldFooting: input.ldFooting,
+    ldhFooting: input.ldhFooting ?? null,
+    elementIds: input.elementIds,
+    edition: input.edition,
+    mat: input.bottomMat ?? null,
+    footingPlan: input.footingPlan ?? null,
+  });
+  notes.push(...cage.notes);
+  unsupported.push(...cage.failures);
+  refs.push(...cage.refs);
+
+  return { bars: cage.bars, refs, notes, positions: placed, unsupported, cage };
 }
 
 // ─── Floor assembly ──────────────────────────────────────────────
@@ -293,6 +316,19 @@ export interface FloorAssemblyInput {
   }>;
   footings: Array<{
     id: string; check: FootingCheck; elementIds: number[]; dowels?: DowelInput;
+    /**
+     * The physical bottom-mat bars, already generated from the design authority.
+     *
+     * Passed in rather than built here, unlike the dowels. A dowel is a function of the column
+     * and the footing, which this function has; a mat is a function of the DESIGN — its
+     * regions, counts, spacings and resolved layer elevations — which lives in the footing
+     * pass. See `FootingAssemblyEntry.matBars`.
+     *
+     * Optional so the unit tests that exercise dowel generation in isolation keep compiling;
+     * absent means the footing contributed no mat, which is the truth about a footing whose
+     * geometry could not be modelled.
+     */
+    matBars?: BarPath[];
     /**
      * The footing's design evidence, complete except for its steel.
      *
@@ -393,6 +429,20 @@ export function buildFloorAssembly(input: FloorAssemblyInput): FloorAssemblyResu
       }));
       pending.push({ draft: s.record, bars: panelBars });
     }
+    /**
+     * The anchorage allowance, said out loud once per panel that has bars.
+     *
+     * It is why slab bars visibly leave their panel, and it was a silent constant: the view
+     * showed steel outside the concrete and offered no reason, which reads as a defect. It is
+     * not one — but the length is an assumption, not a computed `ld`, and an assumption that
+     * reaches the drawings unstated is the kind that gets built.
+     */
+    if (panelBars.length > 0) {
+      assumptions.push(msg('detailing.slab.anchorAllowance', {
+        mm: Math.round(SLAB_BAR_ANCHOR_ALLOWANCE * 1000),
+        panel: s.geometry.panelId,
+      }));
+    }
     maturities.push(s.design.maturity.maturity);
     assumptions.push(...s.design.maturity.assumptions);
     trace.push(
@@ -463,8 +513,64 @@ export function buildFloorAssembly(input: FloorAssemblyInput): FloorAssemblyResu
         key: 'foundation', scope: { elementIds: f.elementIds }, message: u, refs: f.check.refs,
       });
     }
+    /**
+     * The RECORD's unsupported conditions, which were never reaching this list.
+     *
+     * `run-footing-design` states the intent where it raises them: "una condición no soportada
+     * limita el estado de revisión del conjunto, así que una zapata cuya armadura superior no
+     * se consideró no puede emitirse". `evaluateState` implements exactly that — a non-empty
+     * `unsupported` withholds CONSTRUCTIBLE even when every bar fits. The wiring between the two
+     * was missing, and while the starter hooks were interpenetrating nobody could tell: the
+     * twelve physical conflicts were capping the state on their own. With the cage repaired the
+     * assembly went straight to CONSTRUCTIBLE on a footing whose top reinforcement has still
+     * never been evaluated, which is the claim this condition exists to prevent.
+     *
+     * ONE condition per footing, naming the keys and pointing at the record. The translated
+     * sentences live on the record and reach the report through `translate(m.key, m.params)`;
+     * restating them here would put the same text in two places and let them drift.
+     */
+    if (f.record?.family === 'footing' && f.record.unsupported.length > 0) {
+      unsupported.push({
+        key: 'foundation', scope: { elementIds: f.elementIds },
+        message:
+          `La fundación ${f.id} tiene ${f.record.unsupported.length} condición(es) no ` +
+          `verificada(s) en su registro: ${f.record.unsupported.map((m) => m.key).join(', ')}. ` +
+          'El detalle está en el certificado de familia de la fundación.',
+        refs: f.check.refs,
+      });
+    }
     requirements.push(footingTransverseRequirement(
       f.id, f.elementIds, f.check, input.edition));
+
+    // ── The physical bottom mat ─────────────────────────────────
+    //
+    // FIRST, before the dowels, so the whole-floor collision pass sees the mat the dowel feet
+    // and hooks land on. Order does not change the result — `detectCollisions` is symmetric —
+    // but it does decide which bars are already in the list when the trace is written, and a
+    // trace that names the dowels before the steel they bear on reads backwards.
+    if (f.matBars && f.matBars.length > 0) {
+      bars.push(...f.matBars);
+      ownBars.push(...f.matBars);
+      trace.push(`Fundación ${f.id}: ${f.matBars.length} barra(s) de parrilla inferior.`);
+    } else if (f.record?.family === 'footing'
+      && f.record.flexure?.bottomMat?.status === 'DESIGNED') {
+      // Said out loud, exactly as a wall with no geometry is. A footing whose mat was DESIGNED
+      // and not modelled is the state a reader is most likely to mistake for done, and the
+      // record's own status already says so — but the ASSEMBLY must say it too, or a floor
+      // drawing with no footing steel in it has nothing attached explaining the absence.
+      //
+      // The test is on the DESIGN, not on the record's existence. A footing that never reached
+      // a mat design has nothing missing here: its flexure row already carries the reason, and
+      // a second condition would cap the assembly's state for a fact already stated.
+      unsupported.push({
+        key: 'foundation', scope: { elementIds: f.elementIds },
+        message:
+          `La fundación ${f.id} no aportó armadura física de parrilla inferior: su ` +
+          'dimensionamiento existe y su geometría no. Ver el estado del registro de la ' +
+          'fundación para el motivo exacto.',
+        refs: f.check.refs,
+      });
+    }
 
     if (f.dowels) {
       const d = generateDowels(f.dowels);
@@ -530,6 +636,19 @@ export function buildFloorAssembly(input: FloorAssemblyInput): FloorAssemblyResu
     pending.push({ draft, bars: [] });
   }
 
+  /**
+   * The footing mat bars, by id.
+   *
+   * A footing's elements are declared as COLUMNS above, because its dowels are column bars and
+   * §25.2.3 governs them. The bottom mat shares that element id and answers to §25.2.1 through
+   * §13.3.3.1 → §7.7.2.1, so the element map cannot decide between them and the bar itself has
+   * to. Collected from the entries' own `matBars` rather than inferred from an id pattern: the
+   * generator knows which bars it produced, and pattern-matching a string is how that knowledge
+   * gets re-derived and eventually wrong.
+   */
+  const matBarIds = new Set(
+    input.footings.flatMap((f) => (f.matBars ?? []).map((b) => b.id)));
+
   // ── Whole-floor collision check, through the AUTHORITATIVE classifier ────────
   //
   // This pass used to express its own physics with a pair of callbacks: `requiredClearFor`
@@ -557,6 +676,7 @@ export function buildFloorAssembly(input: FloorAssemblyInput): FloorAssemblyResu
     edition: input.edition,
     maxAggregateSizeMm: input.maxAggregateSizeMm,
     memberKindOf: (id) => memberKinds.get(id),
+    barKindOf: (bar) => (matBarIds.has(bar.id) ? 'footing' : undefined),
   }, surface, ta, tb);
 
   const collision = detectCollisions(bars, {
@@ -568,6 +688,31 @@ export function buildFloorAssembly(input: FloorAssemblyInput): FloorAssemblyResu
     `${conflicts.length} conflicto(s), ${collision.barPairsTested} par(es) evaluado(s).`);
 
   const marks = assignMarks(bars, 'F');
+
+  /**
+   * The bottom mat's schedule rows and per-bar provenance gain their marks.
+   *
+   * Here and not in the footing pass, because a mark groups identical FABRICATED items and
+   * only this function sees every family's steel: a footing mat bar and a slab bar of the same
+   * diameter, length and shape are one mark to a bender, and a mark minted per footing would
+   * collide with the assembly's own numbering. The provenance carries `mark: null` until this
+   * point, which is the honest intermediate state rather than a placeholder string.
+   *
+   * Read OFF `marks` rather than re-derived, so a schedule row and the mark a bar carries
+   * cannot disagree — the same rule the dowel bar ids follow.
+   */
+  const markOfBar = new Map<string, string>();
+  for (const m of marks) for (const id of m.barIds) markOfBar.set(id, m.mark);
+  for (const f of input.footings) {
+    const geom = f.record?.family === 'footing' ? f.record.bottomMatGeometry : null;
+    if (!geom) continue;
+    for (const p of geom.provenance) p.mark = markOfBar.get(p.id) ?? null;
+    for (const row of geom.schedule) {
+      row.marks = [...new Set(
+        row.barIds.map((id) => markOfBar.get(id)).filter((x): x is string => !!x),
+      )].sort();
+    }
+  }
 
   // ── Certify each family record against the cage it actually produced ──────────
   //
@@ -747,7 +892,7 @@ export function buildFloorAssembly(input: FloorAssemblyInput): FloorAssemblyResu
       // when nothing was recorded, so "no families in this assembly" stays distinguishable
       // from "families designed, none recorded".
       ...(families.length > 0 ? { families, familyCertificates } : {}),
-      detailingRevision: (input.previousRevision ?? 0) + 1,
+      detailingRevision: nextDetailingRevision(input.previousRevision),
       demandRevision: input.demandRevision,
       state: evaluation.state,
       maturity: worstMaturity(maturities),

@@ -37,8 +37,16 @@ export interface DesignRow {
   provided: ProvidedRebarResult | null;
 }
 
+/**
+ * Sort order: how much the row needs looking at, worst first.
+ *
+ * A proposal sits between a failure and a near-miss. It is not a failure — the primary axis
+ * passed every check that ran — and it is not a warning about a margin, because there is no
+ * margin to report on the axis nobody checked. Above `warn` because "unverified" outranks
+ * "verified and tight".
+ */
 const STATUS_ORDER: Record<DisplayStatus, number> = {
-  fail: 0, warn: 1, stale: 2, unavailable: 3, ok: 4,
+  fail: 0, provisional: 1, warn: 2, stale: 3, unavailable: 4, ok: 5,
 };
 
 export function matchesFilter(row: DesignRow, filter: RowFilter, selected: ReadonlySet<number>): boolean {
@@ -52,7 +60,15 @@ export function matchesFilter(row: DesignRow, filter: RowFilter, selected: Reado
     case 'ok': return row.status === 'ok';
     case 'edited': return row.edited;
     case 'stale': return row.status === 'stale';
-    case 'provisional': return row.provisional;
+    /**
+     * Either signal: the design run called it a proposal, or the display status did.
+     *
+     * They are the same members today. They can differ — the flag comes from the run's
+     * outcome, the status from the steel currently written — and a filter named
+     * "provisional" that missed a row showing a provisional badge would be the kind of gap a
+     * user discovers by counting.
+     */
+    case 'provisional': return row.provisional || row.status === 'provisional';
     default: return true;
   }
 }

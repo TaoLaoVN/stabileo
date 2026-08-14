@@ -40,7 +40,12 @@ import {
   centrelineRadius, minMandrelDiameter, type BarPath, type Point3,
 } from '../../codes/cirsoc201/bar-geometry';
 import type { MemberContext } from '../design/member-context';
-import type { MemberDesignOutcome } from '../design/outcome';
+import { STANDARD_LONG_DIAS } from '../design/objective';
+import {
+  reconcileAcrossTheMember, resolveTopSteel,
+  type TopSteelProvision, type TopSteelPurpose,
+} from './beam-top-steel';
+import { detailableReinforcement, isProvisionalOutcome, type MemberDesignOutcome } from '../design/outcome';
 import {
   generateBeamBars, type BentUpPolicy, type MomentStation, type SupportKind,
 } from './generate-beam';
@@ -57,6 +62,9 @@ import {
 import { DEFAULT_TOLERANCES } from './collision';
 import { planSplice, transitionExists } from './splice';
 import { classifyPair } from './classify';
+import {
+  torsionUnevaluatedMembers, type TorsionNotice,
+} from './torsion-notice';
 import { detectCollisions } from './collision';
 import { assessConstructibility } from './constructibility';
 import { noFloorFamilies } from './family-record';
@@ -139,6 +147,19 @@ export interface RunDetailingInput {
   bentUp?: BentUpPolicy;
   /** Members whose bars belong to the lateral-force-resisting system. */
   lateralSystem?: ReadonlySet<number>;
+  /**
+   * Whether the code adapter that ran actually verifies torsion on beams.
+   *
+   * Supplied by the caller, which reads it off the adapter, so this module stays free of the
+   * design layer — the same arrangement `reverify` uses and for the same reason.
+   *
+   * Absent means FALSE, deliberately. A run whose caller did not state a torsion capability is
+   * a run in which nothing here can show that torsion was checked, and the safe reading of
+   * silence about a verification is that it did not happen. The cost of the conservative
+   * default is a warning on a member that was in fact checked; the cost of the other default is
+   * a member with unverified torsion presented as complete.
+   */
+  checksTorsion?: boolean;
 }
 
 // ─── Prerequisites ───────────────────────────────────────────────
@@ -188,8 +209,26 @@ export function detailingReadiness(input: {
   for (const [id, ctx] of input.contexts) {
     if (ctx.elementType === 'wall') continue;   // PR18 owns walls.
     const outcome = input.outcomes.get(id);
-    if (!outcome || outcome.outcome !== 'VERIFIED') { unverified.push(id); continue; }
-    if (!outcome.accepted) { noReinforcement.push(id); continue; }
+    /**
+     * A PROVISIONAL_BIAXIAL member is detailed, and is not thereby verified.
+     *
+     * The gate used to be `outcome === 'VERIFIED'`, which is why 117 of the 119 beams in the
+     * flagship example had no bars in the document, no steel in the 3-D view and no rows on
+     * any schedule: their design was refused at the biaxial capability gate, so nothing
+     * downstream ever saw them. Bare orange concrete is not an honest report of "we designed
+     * the axis we can and cannot check the other one" — it is indistinguishable from steel
+     * that went missing.
+     *
+     * Detailing them changes nothing about what may be CLAIMED. They carry no certificate, so
+     * `allMembersReverified` and `certificatesMatchGeometry` still fail and CONSTRUCTIBLE
+     * remains unreachable; their bars are stamped `provisional` below; and every projection
+     * gives them the PROVISIONAL state rather than MODELLED.
+     */
+    const offered = detailableReinforcement(outcome);
+    if (!outcome || (outcome.outcome !== 'VERIFIED' && outcome.outcome !== 'PROVISIONAL_BIAXIAL')) {
+      unverified.push(id); continue;
+    }
+    if (!offered) { noReinforcement.push(id); continue; }
     if (ctx.elementType === 'beam' && !ctx.stations) { noStations.push(id); continue; }
     if (ctx.orientationSuspect) { suspect.push(id); continue; }
     detailable.push(id);
@@ -289,19 +328,101 @@ function supportKindAt(
   return others >= 2 ? 'continuous' : 'simple';
 }
 
-function beamGroups(accepted: NonNullable<MemberDesignOutcome['accepted']>): {
+/**
+ * Peak hogging moment at each end of a member, kN·m, from its own envelope.
+ *
+ * The FIRST and LAST station rather than a region sweep, matching what `generateBeamBars`
+ * already calls `peakNegI` / `peakNegJ`. Two readings of "does this support hog" that disagree
+ * would put a hanger pair on a face the generator then curtails hogging steel into.
+ */
+function hoggingAtSupports(ctx: MemberContext): { start: number; end: number } {
+  const st = envelopeStations(ctx);
+  if (st.length === 0) return { start: 0, end: 0 };
+  return {
+    start: Math.max(st[0].mNeg, 0),
+    end: Math.max(st[st.length - 1].mNeg, 0),
+  };
+}
+
+interface BeamGroupOptions {
+  ctx: MemberContext;
+  edition: RegulationEdition;
+  maxAggregateSizeMm: number;
+  hogging: { start: number; end: number };
+}
+
+/** The top-steel provision at each support. One derivation, two readers. */
+function resolveTopSteelFor(
+  accepted: NonNullable<MemberDesignOutcome['accepted']>,
+  opts: BeamGroupOptions,
+): { start: TopSteelProvision; end: TopSteelProvision } {
+  const g = (x?: { count: number; diameter: number }) =>
+    x && x.count > 0 ? { count: x.count, diameterMm: x.diameter } : undefined;
+  const r = accepted.regions;
+  const common = {
+    b: opts.ctx.section.b,
+    cover: opts.ctx.material.cover,
+    stirrupDiaMm: opts.ctx.material.stirrupDia,
+    maxAggregateSizeMm: opts.maxAggregateSizeMm,
+    availableDiametersMm: STANDARD_LONG_DIAS,
+    edition: opts.edition,
+  };
+  const start = resolveTopSteel({
+    ...common,
+    designed: g(r?.topStart) ?? g(accepted.top),
+    hoggingMoment: opts.hogging.start,
+  });
+  const end = resolveTopSteel({
+    ...common,
+    designed: g(r?.topEnd) ?? g(accepted.top),
+    hoggingMoment: opts.hogging.end,
+  });
+  return reconcileAcrossTheMember(start, end);
+}
+
+
+/**
+ * The three longitudinal groups a beam is detailed from, and what each top group IS.
+ *
+ * ── The line this replaces, and why it was wrong ───────────────────
+ *
+ *     if (!bottom || !topStart || !topEnd) return null;
+ *
+ * All three or nothing. A beam whose envelope never hogs is designed with bottom steel and no
+ * top groups — `bottomSpan=2Ø20`, `topStart=—`, `topEnd=—` in the design's own candidate — and
+ * that gate discarded the bottom bars the design DID produce, along with the entire stirrup
+ * cage, which is generated in the same call. Sixty-three of the 7-storey building's 119 beams
+ * reached the viewport with no steel of their own at all; the transverse bars they appeared to
+ * have were the JOINT ties of the columns they frame into, which claim the beam ids too.
+ *
+ * The missing group is now RESOLVED rather than demanded — see `./beam-top-steel.ts`
+ * for the clauses and, more importantly, for the one number none of them fixes. The bottom group
+ * is still demanded: a beam with no bottom steel has nothing this function can build a beam from.
+ */
+function beamGroups(
+  accepted: NonNullable<MemberDesignOutcome['accepted']>,
+  opts: BeamGroupOptions,
+): {
   bottom: { count: number; diameterMm: number };
   topStart: { count: number; diameterMm: number };
   topEnd: { count: number; diameterMm: number };
+  topPurpose: { start: TopSteelPurpose; end: TopSteelPurpose };
+  /** The full provisions, for the trace, the refs and the blocked reasons. */
+  provisions: { start: TopSteelProvision; end: TopSteelProvision };
 } | null {
   const g = (x?: { count: number; diameter: number }) =>
     x && x.count > 0 ? { count: x.count, diameterMm: x.diameter } : null;
   const r = accepted.regions;
   const bottom = g(r?.bottomSpan) ?? g(accepted.bottom);
-  const topStart = g(r?.topStart) ?? g(accepted.top);
-  const topEnd = g(r?.topEnd) ?? g(accepted.top);
-  if (!bottom || !topStart || !topEnd) return null;
-  return { bottom, topStart, topEnd };
+  if (!bottom) return null;
+
+  const { start, end } = resolveTopSteelFor(accepted, opts);
+  if (!start.group || !end.group) return null;
+  return {
+    bottom, topStart: start.group, topEnd: end.group,
+    topPurpose: { start: start.purpose, end: end.purpose },
+    provisions: { start, end },
+  };
 }
 
 function columnBars(accepted: NonNullable<MemberDesignOutcome['accepted']>):
@@ -326,6 +447,22 @@ export interface RunDetailingResult {
   coordination: FloorCoordinationResult[];
   /** Members skipped, with the reason, so nothing disappears silently. */
   skipped: Array<{ elementId: number; key: string }>;
+  /**
+   * Members whose bars are a PROPOSAL rather than certified reinforcement, ascending.
+   *
+   * Reported on the run — not only stamped on the bars — so a panel can say "8 of 119 beams
+   * carry a provisional proposal" without walking every bar of every assembly, and so a
+   * caller that never looks at a bar still cannot miss the fact.
+   */
+  provisionalMembers: number[];
+  /**
+   * Members carrying torsion this application does not evaluate, with the numbers.
+   *
+   * Reported on the run for the same reason `provisionalMembers` is: a caller that never looks
+   * at a bar must not be able to miss it. It changes no outcome and no state — see
+   * `torsion-notice.ts`.
+   */
+  torsionUnevaluated: TorsionNotice[];
   /**
    * The global layout search: outcome, statistics and infeasible joints.
    *
@@ -414,7 +551,8 @@ export function runDetailing(input: RunDetailingInput): RunDetailingResult {
   const skipped: Array<{ elementId: number; key: string }> = [];
   if (!readiness.ready) {
     return {
-      assemblies: [], readiness, coordination: [], skipped,
+      assemblies: [], readiness, coordination: [], skipped, provisionalMembers: [],
+      torsionUnevaluated: [],
       lapping: { laps: [], fused: 0, unmaterialised: [] },
       reverification: [],
       layoutSearch: {
@@ -448,7 +586,7 @@ export function runDetailing(input: RunDetailingInput): RunDetailingResult {
   for (const id of columns) {
     const ctx = input.contexts.get(id)!;
     const el = input.elements.get(id);
-    const accepted = input.outcomes.get(id)?.accepted;
+    const accepted = detailableReinforcement(input.outcomes.get(id))?.rebar;
     const bars = accepted ? columnBars(accepted) : null;
     if (!el || !bars) { skipped.push({ elementId: id, key: 'detailing.skip.noColumnBars' }); continue; }
     const nI = input.nodes.get(el.nodeI);
@@ -572,6 +710,36 @@ export function runDetailing(input: RunDetailingInput): RunDetailingResult {
   }, surface, ta, tb);
   /** Layer index per bar, reported by the generators, for the §25.2.2 classification. */
   const barLayers = new Map<string, number>();
+
+  /**
+   * One reading of each beam's support hogging, shared by every site that resolves its groups.
+   *
+   * Memoised rather than recomputed at the four call sites: `beamGroups` is asked the same
+   * question by the cage scorer, the layout coordinator, the generator and the joint builder,
+   * and four independent envelope walks are four chances to disagree about whether a support
+   * hogs — which is exactly the question that decides whether its top bars are hangers.
+   */
+  const hoggingCache = new Map<number, { start: number; end: number }>();
+  const hoggingOf = (id: number): { start: number; end: number } => {
+    let h = hoggingCache.get(id);
+    if (!h) {
+      const ctx = input.contexts.get(id);
+      h = ctx ? hoggingAtSupports(ctx) : { start: 0, end: 0 };
+      hoggingCache.set(id, h);
+    }
+    return h;
+  };
+  /** `beamGroups` options for a member, or undefined when it has no context. */
+  const groupOptsFor = (id: number) => {
+    const ctx = input.contexts.get(id);
+    return ctx
+      ? {
+        ctx, edition: input.edition,
+        maxAggregateSizeMm: input.maxAggregateSizeMm,
+        hogging: hoggingOf(id),
+      }
+      : undefined;
+  };
 
   /**
    * Column bars whose line passes through a node's plan position and elevation.
@@ -700,8 +868,9 @@ export function runDetailing(input: RunDetailingInput): RunDetailingResult {
       for (const bid of incident) {
         const bctx = input.contexts.get(bid);
         const bel = input.elements.get(bid);
-        const accepted = input.outcomes.get(bid)?.accepted;
-        const groups = accepted ? beamGroups(accepted) : null;
+        const accepted = detailableReinforcement(input.outcomes.get(bid))?.rebar;
+        const bOpts = groupOptsFor(bid);
+        const groups = accepted && bOpts ? beamGroups(accepted, bOpts) : null;
         if (!bctx || !bel || !groups) continue;
         const nI = input.nodes.get(bel.nodeI);
         const nJ = input.nodes.get(bel.nodeJ);
@@ -855,12 +1024,108 @@ export function runDetailing(input: RunDetailingInput): RunDetailingResult {
 
     for (const lift of lifts) {
       const bars = byOwner.get(lift.elementId) ?? [];
+      const liftUnsupported: string[] = [];
+
+      /**
+       * ── The column's own ties, which were described and never built ──
+       *
+       * `generateColumnStack` returns `ties` as a ZONE SCHEDULE — lift, extent, spacing,
+       * diameter — decided by `tieSpacing` under §10.7.6.2 and §25.7.2. It returns no
+       * geometry. The beam path a few hundred lines below appends `gen.transverse`, which
+       * IS geometry; the column path appended `gen.bars` alone, because there was nothing
+       * else to append.
+       *
+       * The consequence, measured on the 7-storey building: 1 060 column longitudinals and
+       * 39 transverse pieces, every one of the 39 a JOINT tie from a different producer.
+       * Eighty-four columns with no ties, in the model, in the drawings, in the schedule and
+       * in the collision check. The same defect the beam comment below describes, unfixed on
+       * the other member type.
+       *
+       * Nothing is invented here. The spacing, the extent and the diameter are the design's;
+       * the bar positions are the ones already generated for this lift; and the piece
+       * geometry comes from `buildColumnTieSet`, the same builder that already serves the
+       * joint cages above and the footing starter cages in `floor-transverse`.
+       */
+      const liftIndex = lifts.indexOf(lift);
+      for (const zone of gen.ties.filter((t) => t.liftIndex === liftIndex)) {
+        /**
+         * The ties stop below the beams, because the joint pass fills that band.
+         *
+         * A column's ties run its CLEAR height; the depth occupied by the beams framing in
+         * at the top is the joint, and the joint has its own cage at its own spacing —
+         * §15.3.1.4 caps it at 200 mm where §10.7.6.2 would allow more. Running the lift
+         * ties to `topZ` would put two independently generated cages in the same band, and
+         * the collision checker would be right to report every one of those pairs.
+         */
+        const clearTop = zone.to - (beamDepthAtTop.get(liftIndex) ?? 0);
+        const height = clearTop - zone.from;
+        if (!(height > 0)) continue;
+
+        const ctx = input.contexts.get(lift.elementId);
+        if (!ctx) continue;
+
+        /**
+         * The bars this tie can grip, in the tie's own frame.
+         *
+         * Read from the bars ACTUALLY generated for this lift rather than re-derived from a
+         * layout: the cage that was placed is the cage the tie has to hold, and a second
+         * derivation is a second opinion about where the steel is. `up` is global x and
+         * `across` global y — the same arbitrary-but-stated choice the joint cage makes, for
+         * the same reason.
+         */
+        const cageAt = (z: number) => bars
+          .filter((b) => b.role === 'longitudinal')
+          .filter((b) => {
+            const zs = b.segments.flatMap((sg) => [sg.start.z, sg.end.z]);
+            return Math.min(...zs) <= z + 0.002 && Math.max(...zs) >= z - 0.002;
+          })
+          .map((b) => ({
+            id: b.id,
+            across: b.segments[0].start.y - lift.centre.y,
+            up: b.segments[0].start.x - lift.centre.x,
+            diameterMm: b.diameterMm,
+          }));
+
+        const stations = stirrupStations({
+          from: 0, to: height, spacing: zone.spacing, nextZoneStartsAtEnd: false,
+        });
+        for (let si = 0; si < stations.length; si++) {
+          const set = buildColumnTieSet({
+            elementId: lift.elementId,
+            cageId: `col-${lift.elementId}:cage`,
+            zoneId: `col-${lift.elementId}:ties`,
+            station: stations[si],
+            b: lift.b, h: lift.h,
+            cover: lift.cover, stirrupDiaMm: zone.diameterMm,
+            // As at the joint: `legs` does not decide a column cage. The builder reads the
+            // bars that are there and braces every interior line that carries one.
+            legs: 2,
+            longitudinalBars: cageAt(zone.from + stations[si]),
+            origin: { x: lift.centre.x, y: lift.centre.y, z: zone.from },
+            axis: { x: 0, y: 0, z: 1 },
+            up: { x: 1, y: 0, z: 0 },
+            across: { x: 0, y: 1, z: 0 },
+            hookOrientation: si % 2 === 0 ? 'a' : 'b',
+            maxAggregateSizeMm: input.maxAggregateSizeMm,
+          });
+          if (set.unsupported.length > 0) {
+            // Said once per lift, not once per station: a cage that cannot be built fails
+            // identically at every station, and 40 copies of one sentence is not a report.
+            if (si === 0) liftUnsupported.push(...set.unsupported.map((r) => formatClause(r)));
+            continue;
+          }
+          bars.push(...set.pieces.map((p) => p.path));
+        }
+      }
+
       memberBarsById.set(lift.elementId, {
         elementId: lift.elementId,
         bars,
         // Stack-level conditions are reported once, on the lowest lift, so a single
         // unsupported condition does not multiply by the number of storeys.
-        unsupported: lift.elementId === lifts[0].elementId ? gen.unsupported : [],
+        unsupported: lift.elementId === lifts[0].elementId
+          ? [...gen.unsupported, ...liftUnsupported]
+          : liftUnsupported,
         maturity: stackMaturity,
         refs: stackRefs,
         trace: lift.elementId === lifts[0].elementId ? gen.trace : [],
@@ -902,8 +1167,9 @@ export function runDetailing(input: RunDetailingInput): RunDetailingResult {
     for (const id of beams) {
       const ctx = input.contexts.get(id);
       const el = input.elements.get(id);
-      const accepted = input.outcomes.get(id)?.accepted;
-      const groups = accepted ? beamGroups(accepted) : null;
+      const accepted = detailableReinforcement(input.outcomes.get(id))?.rebar;
+      const bOpts = groupOptsFor(id);
+      const groups = accepted && bOpts ? beamGroups(accepted, bOpts) : null;
       if (!ctx || !el || !groups) continue;
       const nI = input.nodes.get(el.nodeI);
       const nJ = input.nodes.get(el.nodeJ);
@@ -1354,9 +1620,53 @@ export function runDetailing(input: RunDetailingInput): RunDetailingResult {
   for (const id of beams) {
     const ctx = input.contexts.get(id)!;
     const el = input.elements.get(id);
-    const accepted = input.outcomes.get(id)?.accepted;
-    const groups = accepted ? beamGroups(accepted) : null;
-    if (!el || !groups) { skipped.push({ elementId: id, key: 'detailing.skip.noBeamBars' }); continue; }
+    const accepted = detailableReinforcement(input.outcomes.get(id))?.rebar;
+    const opts = groupOptsFor(id);
+    const groups = accepted && opts ? beamGroups(accepted, opts) : null;
+    if (!el || !groups) {
+      /**
+       * A refusal that SAYS SO, rather than one that leaves an empty beam.
+       *
+       * `skipped` is read by nothing, so before this a beam that lost its steel arrived at the
+       * viewer with a cage of somebody else's joint ties and no explanation. When the top-steel
+       * resolver is what refused — a support that hogs with no designed steel, or a web too
+       * narrow to host two bars of any standard diameter — it has a sentence about why, and a
+       * zero-bar member record carries it into the assembly's unsupported conditions, which the
+       * sheets, the panels and the constructibility gate all read.
+       *
+       * Only for THAT refusal. The pre-existing ones (no rebar at all, no element) keep their
+       * behaviour, so no assembly gains a member because this branch exists.
+       */
+      const rebar = accepted?.regions;
+      const hasBottom = !!(rebar?.bottomSpan?.count || accepted?.bottom?.count);
+      const p = el && opts && hasBottom ? resolveTopSteelFor(accepted!, opts) : null;
+      const reasons = p
+        ? [...new Set([p.start, p.end].filter((x) => x.blocked).map((x) => x.note))] : [];
+      // The old key said "no top or bottom steel was accepted for this beam" and the bottom
+      // face WAS accepted. A reason that misdescribes the case is not better than none.
+      skipped.push({
+        elementId: id,
+        key: reasons.length > 0
+          ? 'detailing.skip.noBeamBarsBottomOnly' : 'detailing.skip.noBeamBars',
+      });
+      if (p && reasons.length > 0) {
+        const blocked = p.start.blocked ?? p.end.blocked!;
+        memberBarsById.set(id, {
+          elementId: id,
+          bars: [],
+          requiredTransversePieces: 0,
+          unsupported: reasons,
+          maturity: 'UNSUPPORTED',
+          refs: [...p.start.refs, ...p.end.refs],
+          trace: [
+            `Elemento ${id}: no se generó armadura longitudinal ni jaula de estribos.`,
+            ...reasons,
+          ],
+        });
+        unsupportedRun.push({ key: blocked.key, params: { element: id, ...blocked.params } });
+      }
+      continue;
+    }
     const nI = input.nodes.get(el.nodeI);
     const nJ = input.nodes.get(el.nodeJ);
     if (!nI || !nJ) { skipped.push({ elementId: id, key: 'detailing.skip.missingNode' }); continue; }
@@ -1390,6 +1700,7 @@ export function runDetailing(input: RunDetailingInput): RunDetailingResult {
       supportJ: supportKindAt(el.nodeJ, id, input.elements),
       vn: Math.max(...stations.map((s) => s.v), 1),
       bottom: groups.bottom, topStart: groups.topStart, topEnd: groups.topEnd,
+      topPurpose: groups.topPurpose,
       lateralSystem: input.lateralSystem?.has(id) ?? false,
       ld: anchor.ld,
       origin: nodePoint(nI),
@@ -1443,8 +1754,22 @@ export function runDetailing(input: RunDetailingInput): RunDetailingResult {
       maturity: deriveMaturity({
         implemented: true, refs: [...gen.refs, ...anchor.refs], benchmarks: [],
       }).maturity,
-      refs: [...gen.refs, ...anchor.refs],
-      trace: gen.trace,
+      refs: [...gen.refs, ...anchor.refs, ...groups.provisions.start.refs,
+        ...groups.provisions.end.refs],
+      /**
+       * The top-steel decision joins the trace whichever way it went.
+       *
+       * A reader asking "why is there 2Ø10 up there" must find the answer on the member, not
+       * only in a module's header — and the answer differs at the two supports, so both are
+       * stated rather than one summarised.
+       */
+      trace: [
+        ...gen.trace,
+        ...(groups.topPurpose.start === 'stirrupHanger'
+          ? [`Apoyo i: ${groups.provisions.start.note}`] : []),
+        ...(groups.topPurpose.end === 'stirrupHanger'
+          ? [`Apoyo j: ${groups.provisions.end.note}`] : []),
+      ],
     });
   }
 
@@ -1622,7 +1947,7 @@ export function runDetailing(input: RunDetailingInput): RunDetailingResult {
     }
     if (depth <= 0) continue;   // a column with no beam at its top has no joint.
 
-    const cAccepted = input.outcomes.get(cid)?.accepted;
+    const cAccepted = detailableReinforcement(input.outcomes.get(cid))?.rebar;
     const longDia = (cAccepted ? columnBars(cAccepted)?.diameterMm : undefined)
       ?? cCtx.material.stirrupDia;
     const ts = tieSpacing(longDia, cCtx.material.stirrupDia,
@@ -2037,8 +2362,73 @@ export function runDetailing(input: RunDetailingInput): RunDetailingResult {
     coordination.push(result);
   }
 
+  /**
+   * Stamp the proposal's bars, in ONE place, after every generator has run.
+   *
+   * Deliberately a post-pass rather than a flag threaded through the eight sites that build
+   * bars. A bar is provisional because of the MEMBER it belongs to — a fact known here and
+   * nowhere else more reliably — and stamping it centrally makes the property total: no
+   * generator can be added later that forgets to set it, because no generator sets it.
+   *
+   * A bar continuous over two members is provisional if EITHER owner is. It cannot be built
+   * from a certified drawing while one of the members it runs through is a proposal.
+   */
+  const provisionalMembers = new Set<number>();
+  for (const [id, o] of input.outcomes) if (isProvisionalOutcome(o)) provisionalMembers.add(id);
+  for (const a of assemblies) {
+    for (const bar of a.bars) {
+      if (bar.ownerElementIds.some((id) => provisionalMembers.has(id))) {
+        bar.provisional = 'biaxial';
+      }
+    }
+    /**
+     * The member-level fact, recorded separately from the bar-level one.
+     *
+     * Intersected against the bars' OWNERS rather than against `a.elementIds`. The two are
+     * not the same list: `elementIds` names the members the assembly was built around, and on
+     * the 7-storey building it reached only 55 of the 117 provisional beams, because a beam
+     * can contribute bars to a line assembly it is not itself listed on. Taking the owners
+     * makes the claim exactly "this assembly carries steel for these provisional members",
+     * which is what a projection of it needs and all it can honestly say.
+     */
+    const ownProvisional = new Set<number>();
+    for (const bar of a.bars) {
+      for (const id of bar.ownerElementIds) if (provisionalMembers.has(id)) ownProvisional.add(id);
+    }
+    a.provisionalMembers = [...ownProvisional].sort((x, y) => x - y);
+  }
+
+  /**
+   * The torsion warning, stamped the same way and in the same place.
+   *
+   * A post-pass over the CONTEXTS, which is where the demands are, rather than over the
+   * outcomes: a member's torsion is a property of the analysis and not of whether its design
+   * succeeded, and reading it off the outcome would silently drop every member that did not
+   * reach one. Nothing about a member's state, certificate or geometry is touched here — see
+   * `torsion-notice.ts` for why this is a warning and not a refusal.
+   */
+  const torsionUnevaluated = torsionUnevaluatedMembers(
+    [...input.contexts.values()].map((c) => ({
+      elementId: c.elementId, elementType: c.elementType, demands: c.demands,
+    })),
+    { beams: input.checksTorsion === true },
+  );
+  const torsionIds = new Set(torsionUnevaluated.map((n) => n.elementId));
+  for (const a of assemblies) {
+    // Intersected against the bars' OWNERS, exactly as the provisional pass is, and for the
+    // same reason: `elementIds` names the members the assembly was built around and misses
+    // members that only contribute bars to it.
+    const own = new Set<number>();
+    for (const bar of a.bars) {
+      for (const id of bar.ownerElementIds) if (torsionIds.has(id)) own.add(id);
+    }
+    a.torsionUnevaluatedMembers = [...own].sort((x, y) => x - y);
+  }
+
   return {
     assemblies, readiness, coordination, skipped,
+    provisionalMembers: [...provisionalMembers].sort((a, b) => a - b),
+    torsionUnevaluated,
     reverification: reverificationRecords,
     layoutSearch: layoutChoice.result,
     layering: layerDiagnostics ? {
@@ -2084,8 +2474,14 @@ function buildJoints(
       const far = bEl.nodeI === top.id ? bJ : bI;
       const dx = far.x - at.x, dy = far.y - at.y;
       const L = Math.hypot(dx, dy) || 1;
-      const accepted = input.outcomes.get(bid)?.accepted;
-      const g = accepted ? beamGroups(accepted) : null;
+      const accepted = detailableReinforcement(input.outcomes.get(bid))?.rebar;
+      const g = accepted
+        ? beamGroups(accepted, {
+          ctx: bCtx, edition: input.edition,
+          maxAggregateSizeMm: input.maxAggregateSizeMm,
+          hogging: hoggingAtSupports(bCtx),
+        })
+        : null;
       incident.push({
         elementId: bid,
         direction: { x: dx / L, y: dy / L },

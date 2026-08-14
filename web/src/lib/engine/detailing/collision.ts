@@ -330,6 +330,61 @@ function segmentDistance(
   };
 }
 
+/** The closest approach between two bars, measured surface to surface. */
+export interface SurfaceApproach {
+  /** Surface-to-surface distance, m. Negative means the surfaces interpenetrate. */
+  clearance: number;
+  /** Midpoint between the two closest surface points, in model coordinates. */
+  at: Point3;
+  /** Unit tangents of the two bars AT that point, so a caller can tell a crossing from a run. */
+  tangentA: Point3 | undefined;
+  tangentB: Point3 | undefined;
+}
+
+/**
+ * Measure the closest approach between two bars.
+ *
+ * ── Why this is exported rather than re-derived by callers ──────────
+ *
+ * `detectCollisions` only ever REPORTS pairs a classifier called reportable, and the two
+ * relationships this codebase most needs to state positively — an orthogonal crossing and a
+ * hook seated on the bar that carries it — are precisely the ones it drops. A caller that
+ * wants to assert "these two surfaces touch, and do not interpenetrate" therefore has no
+ * number to assert it with, and the obvious fix is to write a second sampler and a second
+ * segment routine. Two rulers in one project eventually disagree, and they disagree about
+ * contact, which is the measurement with the least margin in it.
+ *
+ * So the measurement is one function, used by the sweep above and by any caller that needs
+ * the distance itself: same `samplePath`, same `COLLISION_CHORD_TOLERANCE`, same exact
+ * segment-to-segment routine. A contact this reports at 0,0 mm is a contact the collision
+ * pass measures at 0,0 mm.
+ *
+ * No tolerance of any kind is applied. This is the geometry; deciding what it MEANS —
+ * `CONTACT_ALLOWANCE`, a placement allowance, a clause minimum — belongs to the caller.
+ */
+export function minSurfaceClearance(a: BarPath, b: BarPath): SurfaceApproach {
+  const pa = samplePath(a, COLLISION_CHORD_TOLERANCE);
+  const pb = samplePath(b, COLLISION_CHORD_TOLERANCE);
+  const radii = a.diameterMm / 2000 + b.diameterMm / 2000;
+  let worst: { clearance: number; at: Point3; m: number; n: number } | null = null;
+  for (let m = 0; m + 1 < pa.length; m++) {
+    for (let n = 0; n + 1 < pb.length; n++) {
+      const { distance, at } = segmentDistance(pa[m], pa[m + 1], pb[n], pb[n + 1]);
+      const clearance = distance - radii;
+      if (worst === null || clearance < worst.clearance) worst = { clearance, at, m, n };
+    }
+  }
+  if (worst === null) {
+    return { clearance: Infinity, at: ZERO, tangentA: undefined, tangentB: undefined };
+  }
+  return {
+    clearance: worst.clearance,
+    at: worst.at,
+    tangentA: tangent(pa, worst.m),
+    tangentB: tangent(pb, worst.n),
+  };
+}
+
 export interface CollisionResult {
   conflicts: BarConflict[];
   /** Bars checked. */

@@ -384,12 +384,12 @@ describe('bar bending schedule', () => {
     // Headings come from the dictionary now, and the row carries what the item IS and where
     // it belongs before it carries numbers. They were Spanish literals with an unused
     // `locale` parameter two lines above them, so an English export produced a Spanish book.
-    expect(flat).toContain('Marca|Tipo|Elementos|Zona|Ø (mm)|Forma|Cant.');
+    expect(flat).toContain('Marca|Tipo|Función|Elementos|Zona|Ø (mm)|Forma|Cant.');
     expect(flat).toContain('TOTAL');
     expect(flat).toContain('Resumen por diámetro');
     const en = scheduleToAoa(buildSchedule(marks), title, 'en')
       .map((r) => r.join('|')).join('\n');
-    expect(en).toContain('Mark|Type|Members|Zone');
+    expect(en).toContain('Mark|Type|Function|Members|Zone');
     expect(en).toContain('Summary by diameter');
   });
 

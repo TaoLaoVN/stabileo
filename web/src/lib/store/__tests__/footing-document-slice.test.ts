@@ -39,6 +39,7 @@ import {
 } from '../../engine/detailing/document-render';
 import type { MemberDesignOutcome } from '../../engine/design/outcome';
 import type { DocumentModel } from '../../engine/detailing/document-model';
+import { deserializeProject, serializeProject } from '../file';
 import en from '../../i18n/locales/en';
 import es from '../../i18n/locales/es';
 
@@ -214,12 +215,21 @@ describe('the footing slice reaches its documents', () => {
     const entry = a.familyCertificates.find((c) => c.family === 'footing')!;
     expect(entry.ownerId).toBe('F1');
     // Freshness is DECIDED at document time against the model as it stands — not copied off
-    // the record, which would make a stale certificate undetectable. This footing's
-    // certificate records a check that could NOT be performed: flexure demand is computed
-    // but no bottom-mat steel exists in the model to verify it against, so the honest
-    // freshness is designUnsupported — never a fresh pass on an unchecked mechanism.
-    expect(entry.freshness).toBe('designUnsupported');
-    expect(entry.applies).toBe(false);
+    // the record, which would make a stale certificate undetectable.
+    //
+    // It is now `fresh`, and the reason it changed is the point of PR18-B: the bottom mat is
+    // physically modelled, its bars reconcile with the schedule, and the flexural demand
+    // therefore has reinforcement to be verified against. Through PR18-A this was
+    // `designUnsupported` because the mat existed only as numbers.
+    expect(entry.freshness).toBe('fresh');
+    expect(entry.applies).toBe(true);
+    // What is NOT verified is stated separately and still blocks the assembly: the top
+    // reinforcement was never evaluated, and the record says so by name rather than by an
+    // absent field.
+    const rec = a.families.find((r) => r.family === 'footing')!;
+    expect(rec.unsupported.map((m) => m.key))
+      .toContain('footing.record.topReinforcementNotEvaluated');
+    expect(a.state).not.toBe('CONSTRUCTIBLE');
   });
 
   it('rolls the record maturity into the document, so a footing cannot outrank itself', () => {
@@ -246,8 +256,10 @@ describe('the footing slice reaches its documents', () => {
     // The governing reaction and the service sum.
     expect(html).toContain('900.0 kN');
     expect(html).toContain('600.0 kN');
-    // Each check by name.
-    for (const k of ['bearing', 'flexure', 'oneWayShear', 'punching']) {
+    // Each check by name. `anchorage` joins them in PR18-B: the mat's development is measured
+    // from the generated endpoints and is a separate requirement from the steel area, so it is
+    // a row of its own rather than folded into flexure.
+    for (const k of ['bearing', 'flexure', 'anchorage', 'oneWayShear', 'punching']) {
       expect(html, k).toContain(k);
     }
     // Contact pressure, eccentricity, partial contact and the equilibrium residual.
@@ -258,12 +270,39 @@ describe('the footing slice reaches its documents', () => {
     // Dowels and starter ties as real quantities.
     expect(html).toMatch(/8 Ø20 mm/);
     expect(html).toMatch(/Estribos de arranque/);
-    // The certificate and its agreement with the model — honestly UNSUPPORTED: flexure
-    // demand is shown, but with no bottom-mat steel in the model the certificate cannot
-    // verify it, and the document must print that rather than a fresh pass.
+    // The certificate and its agreement with the model. Flexure now VERIFIES, because the mat
+    // is modelled and reconciles — and the document must print the limitations that remain
+    // rather than letting one green row read as a verified footing.
     expect(html).toMatch(/Certificados de familia/);
-    expect(html).toContain('designUnsupported');
-    expect(html).toMatch(/<td>flexure<\/td><td class="bad">UNSUPPORTED<\/td>/);
+    expect(html).toMatch(/<td>flexure<\/td><td class="ok">OK<\/td>/);
+    expect(html).toMatch(/<td>anchorage<\/td><td class="ok">OK<\/td>/);
+    // Top reinforcement, named under "No verificado". It is what keeps the floor from being
+    // issued now that the steel itself fits — and it is the ONLY thing keeping it, which is a
+    // stronger statement than the one this test used to make.
+    expect(html).toMatch(/No verificado/);
+    expect(html).toMatch(/armadura superior/i);
+    /**
+     * The twelve prohibited overlaps are gone, and their absence is asserted rather than
+     * merely no longer asserted.
+     *
+     * They were eight starter hooks turned toward the column centre in one horizontal plane.
+     * The hooks are now seated on the mat layer each leg crosses and their orientations are
+     * searched, so the count is zero.
+     *
+     * The COUNT is asserted, not the phrase's absence: `noProhibitedConflicts` is one of the
+     * thirteen constructibility conditions and its row is printed whether it passes or fails.
+     * Asserting the phrase had gone would have passed just as well against a report that
+     * stopped printing a condition it was still failing.
+     */
+    expect(html).toMatch(/0 superposiciones físicas prohibidas/);
+    const floor = (modelStore.model.detailing?.assemblies ?? [])
+      .find((x) => x.id.startsWith('FLOOR-'))!;
+    expect(floor.conflicts.filter((c) => c.pairClass === 'prohibitedOverlap')).toEqual([]);
+    // And the dowels are drawn: a footing deliverable with no starter bars in it would be the
+    // other way to make the overlap count zero.
+    expect(floor.bars.filter((b) => b.id.includes('dowel'))).toHaveLength(8);
+    // The resolved layer order and the real bar elevations travel onto the report.
+    expect(html).toMatch(/X_BELOW_Y/);
   });
 
   it('renders the same footing content in English', () => {
@@ -559,6 +598,113 @@ describe('the footing slice reaches its drawings', () => {
       expect(s.sheet.notes.some((nn) => nn.startsWith('certificate:')), s.name).toBe(true);
       expect(s.sheet.notes.some((nn) => nn === 'ground.allowable:notStated'), s.name).toBe(true);
       expect(s.sheet.notes.some((nn) => nn.startsWith('footing.run.')), s.name).toBe(true);
+    }
+  });
+});
+
+/**
+ * Stale physical geometry, which is a new hazard.
+ *
+ * While the footing run held only NUMBERS, a superseded schedule beside a retired document was
+ * a visible inconsistency a reader could reason about. It stops being harmless once the run
+ * holds BARS: change a mat diameter or the layer order and the panel would keep drawing real
+ * positions, real elevations and real marks belonging to a design the project no longer
+ * specifies. `supersedeDocuments()` retires the document and deliberately leaves the run alone,
+ * so something else has to mark it — see `footingRunFingerprint`.
+ */
+describe('the footing run cannot present superseded geometry as current', () => {
+  beforeEach(() => {
+    modelStore.clear();
+    detailingStore.clear();
+    verificationStore.clear();
+  });
+
+  it('is fresh straight after a run, and physically modelled', () => {
+    buildFootingModel();
+    detailingStore.generateFloors();
+    expect(detailingStore.footingRunStale).toBe(false);
+    const o = detailingStore.lastFootingRun!.outcomes[0];
+    expect(o.matGeometry!.status).toBe('MODELED');
+    expect(o.matGeometry!.bars.length).toBeGreaterThan(0);
+  });
+
+  it('goes stale when the layer-order preference changes, without regenerating', () => {
+    buildFootingModel();
+    detailingStore.generateFloors();
+    const before = detailingStore.lastFootingRun!.outcomes[0].matGeometry!;
+    expect(before.layerOrder).toBe('X_BELOW_Y');
+
+    modelStore.setFootingMatPreferences({ bottomMatLayerOrder: 'Y_BELOW_X' });
+
+    // Stale, so the panel refuses to present it as current…
+    expect(detailingStore.footingRunStale).toBe(true);
+    // …and NOT silently regenerated: the run still holds the previous geometry, because
+    // regeneration is an explicit command and a panel that redesigned a footing on every
+    // keystroke would be making the engineer's decision for them.
+    expect(detailingStore.lastFootingRun!.outcomes[0].matGeometry!.layerOrder)
+      .toBe('X_BELOW_Y');
+
+    // Re-running is what clears it, and it produces the newly requested arrangement.
+    detailingStore.generateFloors();
+    expect(detailingStore.footingRunStale).toBe(false);
+    const after = detailingStore.lastFootingRun!.outcomes[0].matGeometry!;
+    expect(after.layerOrder).toBe('Y_BELOW_X');
+    expect(after.lowerLayerAxis).toBe('Y');
+    // The bars really moved: the lower layer is now the Y mat, one cover above the soffit.
+    const lowerY = after.provenance.find((p) => p.axis === 'Y')!;
+    expect(lowerY.layer).toBe('LOWER');
+    const cover = modelStore.model.footings.get([...modelStore.model.footings.keys()][0])!.cover;
+    expect(lowerY.clearCoverToSoffit).toBeCloseTo(cover, 12);
+  });
+
+  it('goes stale when a mat diameter changes, and when a footing is edited', () => {
+    buildFootingModel();
+    detailingStore.generateFloors();
+    modelStore.setFootingMatPreferences({ bottomMatDiameterXmm: 20 });
+    expect(detailingStore.footingRunStale).toBe(true);
+
+    detailingStore.generateFloors();
+    expect(detailingStore.footingRunStale).toBe(false);
+    // A footing edit bumps that footing's own revision, which is in the fingerprint.
+    const id = [...modelStore.model.footings.keys()][0];
+    modelStore.updateFooting(id, { B: 2.4 });
+    expect(detailingStore.footingRunStale).toBe(true);
+  });
+
+  it('reopens with the preference preserved and NO revived geometry', () => {
+    buildFootingModel();
+    modelStore.setFootingMatPreferences({
+      bottomMatLayerOrder: 'Y_BELOW_X', bottomMatDiameterYmm: 20,
+    });
+    detailingStore.generateFloors();
+    expect(detailingStore.lastFootingRun!.outcomes[0].matGeometry!.status).toBe('MODELED');
+
+    // Round-trip through the project's OWN save/open path, not a hand-rolled copy: a test
+    // that serialised the model itself would prove nothing about what a user's file carries.
+    const saved = serializeProject();
+    modelStore.clear();
+    detailingStore.clear();
+    expect(deserializeProject(saved)).toBe(true);
+
+    // The PREFERENCE survives — a project that lost it would reopen with a different mat than
+    // the one that was saved.
+    expect(modelStore.footingMatPreferences().bottomMatLayerOrder).toBe('Y_BELOW_X');
+    expect(modelStore.footingMatPreferences().bottomMatDiameterYmm).toBe(20);
+    // The transient RUN does not come back, and it is not faked from the persisted assembly:
+    // `lastFootingRun` is null, so the panel says "not generated" rather than presenting bars
+    // whose provenance nothing in this session established.
+    expect(detailingStore.lastFootingRun).toBeNull();
+    // And with no run there is nothing to be stale — "absent" and "out of date" are different
+    // statements and the panel says each differently.
+    expect(detailingStore.footingRunStale).toBe(false);
+
+    // The persisted assembly's bars are still there, and they are still bound to the design
+    // record that justifies them — which is what makes reopening safe rather than lossy.
+    const floor = (modelStore.model.detailing?.assemblies ?? [])
+      .find((a) => a.id.startsWith('FLOOR-'));
+    if (floor) {
+      const rec = floor.families?.find((r) => r.family === 'footing');
+      expect(rec?.bottomMatGeometry?.status).toBe('MODELED');
     }
   });
 });

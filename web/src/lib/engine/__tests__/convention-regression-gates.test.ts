@@ -243,13 +243,17 @@ describe('SEAM 3: My/Mz axis identity preservation', () => {
 // ─── SEAM 4: File persistence and share link contracts ────────────
 
 describe('SEAM 4: File persistence and share link contracts', () => {
-  it('serializeProject writes analysisMode and axisConvention3D', () => {
+  it('the project payload writes analysisMode and axisConvention3D', () => {
     const fileTs = readSource('../../store/file.ts');
-    // The serializeProject function must include these fields
-    const serializeBlock = fileTs.match(/function serializeProject[\s\S]*?return JSON\.stringify/);
-    expect(serializeBlock, 'serializeProject must exist').toBeTruthy();
-    expect(serializeBlock![0]).toContain('analysisMode');
-    expect(serializeBlock![0]).toContain('axisConvention3D');
+    // `buildProjectFile` is the single constructor of the payload — the .ded file, the
+    // autosave and the tab capture all go through it, so one gate covers all three. It used
+    // to be inlined in `serializeProject`, which is now a `JSON.stringify` around it.
+    const block = fileTs.match(/function buildProjectFile[\s\S]*?\n}/);
+    expect(block, 'buildProjectFile must exist').toBeTruthy();
+    expect(block![0]).toContain('analysisMode');
+    expect(block![0]).toContain('axisConvention3D');
+    expect(fileTs, 'and serialization still goes through it')
+      .toMatch(/function serializeProject[\s\S]{0,200}buildProjectFile\(\)/);
   });
 
   it('loadProject reads analysisMode and axisConvention3D', () => {

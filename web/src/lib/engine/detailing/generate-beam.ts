@@ -50,6 +50,7 @@ import {
   stirrupCentrelineHalfExtents, stirrupStations,
   type LongitudinalBarRef, type TransversePiece,
 } from '../../codes/cirsoc201/transverse-cage';
+import type { TopSteelPurpose } from './beam-top-steel';
 import { DEFAULT_TOLERANCES } from './collision';
 import { clause, formatClause, type ClauseRef, type RegulationEdition } from '../../codes/regulation';
 
@@ -106,6 +107,20 @@ export interface BeamGenerationInput {
   /** Chosen top reinforcement at each support. */
   topStart: { count: number; diameterMm: number };
   topEnd: { count: number; diameterMm: number };
+  /**
+   * What each support's top group IS — resistant hogging steel, or the constructive pair
+   * §25.7.1.2 asks for on a face the analysis requires no tension steel on.
+   *
+   * The generator cannot work this out for itself: `topStart = 2Ø10` looks identical whether a
+   * moment sized it or a stirrup bend did, and the two produce different bars. A hanger pair runs
+   * support to support and stops there — there is no hogging envelope to curtail against, so
+   * generating a curtailed support group for it would emit a cut-off computed from a zero moment
+   * and a trace line about a decision nobody made.
+   *
+   * Absent means `flexural` on both faces, which is the state of every caller that predates the
+   * field and of every beam the design produced hogging steel for.
+   */
+  topPurpose?: { start: TopSteelPurpose; end: TopSteelPurpose };
   /** True when the beam belongs to the lateral-force-resisting system (§9.7.3.8.2). */
   lateralSystem: boolean;
   /** Development length for a straight bar of diameter d (mm), in m. */
@@ -880,7 +895,18 @@ export function generateBeamBars(input: BeamGenerationInput): GeneratedBeam {
   // conservative and constructible answer"); §25.7.1.2 makes it obligatory rather than a
   // fallback. No diameter is invented — the pair takes the larger of the two supports' bar
   // sizes, so neither support loses area to it — and no count is invented: two bends, two bars.
+  //
+  // ── And when the analysis asks for no top steel at all ──
+  //
+  // The same two bars, for the same clause, arrived at from the other end: `beam-top-steel.ts`
+  // synthesises `topStart`/`topEnd` as a 2-bar `stirrupHanger` group and the pair below IS that
+  // group. The only difference here is what the bars are called downstream — `purpose` is set,
+  // so no schedule row, no drawing note and no report line can present them as steel that
+  // resists a moment nobody evaluated.
   const CONTINUOUS_TOP = 2;
+  const topPurpose = input.topPurpose ?? { start: 'flexural' as const, end: 'flexural' as const };
+  /** True when NEITHER support's top steel came from a hogging moment. */
+  const hangerOnly = topPurpose.start === 'stirrupHanger' && topPurpose.end === 'stirrupHanger';
   const hangerOffsets: Array<{ layer: number; x: number; y: number; z: number }> = [];
   const hangerDia = Math.max(input.topStart.diameterMm, input.topEnd.diameterMm);
   const hangerCount = Math.min(
@@ -918,16 +944,38 @@ export function generateBeamBars(input: BeamGenerationInput): GeneratedBeam {
         end: shift(add(add(input.origin, input.axis, input.L + EMBED), input.up, zHanger), o),
         axis: input.axis, hookNormal: { x: -input.up.x, y: -input.up.y, z: -input.up.z },
         ownerElementIds: [input.elementId], edition: input.edition,
+        // Marked only when NEITHER end resists a hogging moment. On a beam that hogs, this pair
+        // is part of that support's hogging steel — the comment above says so and the area
+        // accounting depends on it — and calling it a hanger there would understate the design.
+        purpose: hangerOnly ? 'stirrupHanger' : undefined,
       }));
     }
     refs.push(c('25.7.1.2', 'cada doblez del estribo debe contener una barra longitudinal'));
     trace.push(
       `${hangerCount}Ø${hangerDia} superiores corridas de apoyo a apoyo: cada doblez superior ` +
       'del estribo cerrado debe contener una barra longitudinal (25.7.1.2).');
+    if (hangerOnly) {
+      refs.push(c('9.6.1.1',
+        'la armadura mínima a flexión rige donde el análisis requiere armadura a tracción'));
+      trace.push(
+        'Ninguno de los dos apoyos tiene momento negativo de envolvente, de modo que esas ' +
+        'barras son de ARMADO: cumplen 25.7.1.2 y no se les atribuye capacidad a momento ' +
+        'negativo. 9.6.1.2 no rige en esta cara porque 9.6.1.1 la circunscribe a las secciones ' +
+        'donde el análisis requiere armadura a tracción, y acá no la requiere.');
+    }
   }
 
   for (const t of tops) {
     if (t.group.count <= 0) continue;
+    /**
+     * A hanger face has no hogging envelope, so it has nothing to curtail against.
+     *
+     * Running the loop anyway is not harmless: `theoreticalCutoff` against a zero peak returns
+     * the support itself, `evaluateCutoff` then records a §9.7.3.5 legality for a termination
+     * that does not exist, and the trace gains a line about a curtailment decision no engineer
+     * made. The two continuous bars above already ARE this face's entire top steel.
+     */
+    if (topPurpose[t.side === 'I' ? 'start' : 'end'] === 'stirrupHanger') continue;
     const atStart = t.side === 'I';
     // §9.7.3.4: continuing tension steel embeds at least d beyond the cut-off point.
     const ldTop = input.ld(t.group.diameterMm);
