@@ -339,3 +339,49 @@ fn linear_3d_rejects_dangling_shell_node() {
     let input = tiny_3d_input_with_dangling_quad();
     expect_clean_err("linear 3D dangling shell node", || linear::solve_3d(&input));
 }
+
+// ─── Newmark / HHT stability parameters ─────────────────────
+//
+// These were validated for finiteness only, so a scheme that provably amplifies
+// was accepted and ran to completion, returning numbers. Newmark carries negative
+// numerical damping for γ < ½ — energy grows every step — and HHT-α reduces to
+// exactly that through γ = ½ − α whenever α > 0. Nothing downstream re-checks, and
+// a diverging run is not distinguishable from a resonant one by looking at it.
+
+#[test]
+fn newmark_gamma_below_one_half_is_refused() {
+    let mut input = th_input(tiny_beam_2d());
+    input.gamma = 0.4; // negative numerical damping
+    expect_clean_err("gamma < 1/2", || time_integration::solve_time_history_2d(&input));
+}
+
+#[test]
+fn hht_alpha_outside_its_documented_range_is_refused() {
+    for bad in [0.1_f64, -0.5] {
+        let mut input = th_input(tiny_beam_2d());
+        input.alpha = Some(bad);
+        expect_clean_err("alpha outside [-1/3, 0]", || time_integration::solve_time_history_2d(&input));
+    }
+}
+
+#[test]
+fn negative_damping_is_refused_rather_than_ignored() {
+    // Silently dropping it is worse than refusing: the run reports a damped
+    // method in `result.method` while having assembled no damping at all.
+    let mut input = th_input(tiny_beam_2d());
+    input.damping_xi = Some(-0.05);
+    expect_clean_err("negative damping_xi", || time_integration::solve_time_history_2d(&input));
+}
+
+#[test]
+fn the_stable_defaults_still_run() {
+    // The guard must not cost the schemes that are correct: average acceleration
+    // (β=¼, γ=½) and the HHT endpoints.
+    let input = th_input(tiny_beam_2d());
+    assert!(time_integration::solve_time_history_2d(&input).is_ok(), "beta=1/4 gamma=1/2");
+    for good in [0.0_f64, -1.0 / 3.0, -0.05] {
+        let mut i2 = th_input(tiny_beam_2d());
+        i2.alpha = Some(good);
+        assert!(time_integration::solve_time_history_2d(&i2).is_ok(), "alpha={good}");
+    }
+}
