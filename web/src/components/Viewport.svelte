@@ -40,6 +40,7 @@
     snapWithMidpoint as _snapWithMidpoint,
     segmentIntersectsRect,
   } from '../lib/viewport/spatial-queries';
+  import { boxSelect as boxSelectTargets, normaliseDrag, type BoxSelectMode } from '../lib/viewport/box-select';
   import { canvasTheme } from '../lib/canvas/theme';
 
   let canvas: HTMLCanvasElement;
@@ -1865,12 +1866,13 @@
           }
         }
       } else if (sm === 'supports') {
-        // ── Supports mode: click to select a support ──
+        // ── Supports mode: click to select a support, drag to box select ──
         const nearSup = findNearestSupport(world.x, world.y, 0.5);
         if (nearSup) {
           uiStore.selectSupport(nearSup.id, e.shiftKey);
         } else {
           if (!e.shiftKey) uiStore.clearSelectedSupports();
+          boxSelect = { startX: mx, startY: my, endX: mx, endY: my };
         }
       } else if (sm === 'loads') {
         // ── Loads mode: click to select a load with cycling for overlapping loads ──
@@ -1888,14 +1890,16 @@
           }
         } else {
           if (!e.shiftKey) uiStore.clearSelectedLoads();
+          boxSelect = { startX: mx, startY: my, endX: mx, endY: my };
         }
       } else if (sm === 'nodes') {
-        // ── Nodes mode: select nodes for hinge management ──
+        // ── Nodes mode: select nodes, drag to box select ──
         const nearNode = findNearestNode(snapped.x, snapped.y, 0.3);
         if (nearNode) {
           uiStore.selectNode(nearNode.id, e.shiftKey);
         } else {
           if (!e.shiftKey) uiStore.clearSelection();
+          boxSelect = { startX: mx, startY: my, endX: mx, endY: my };
         }
       } else {
         // ── Elements mode (default): select nodes/bars, drag, box select ──
@@ -2138,50 +2142,56 @@
 
     // Finalize box selection (AutoCAD-style: Window vs Crossing)
     if (boxSelect) {
-      const x1 = Math.min(boxSelect.startX, boxSelect.endX);
-      const y1 = Math.min(boxSelect.startY, boxSelect.endY);
-      const x2 = Math.max(boxSelect.startX, boxSelect.endX);
-      const y2 = Math.max(boxSelect.startY, boxSelect.endY);
-      const isWindow = boxSelect.endX >= boxSelect.startX;
+      const { rect, isWindow } = normaliseDrag(
+        boxSelect.startX, boxSelect.startY, boxSelect.endX, boxSelect.endY,
+      );
 
       // Only count as box select if dragged at least a few pixels
-      if (x2 - x1 > 3 || y2 - y1 > 3) {
-        const newNodes = new Set(uiStore.selectedNodes);
-        const newElems = new Set(uiStore.selectedElements);
+      if (rect.x2 - rect.x1 > 3 || rect.y2 - rect.y1 > 3) {
+        /*
+         * What the rectangle takes is decided in `box-select.ts`, per entity
+         * and per gesture, and filtered by the active mode.
+         *
+         * Supports, Loads and Nodes never reached this point at all: only the
+         * Elements branch started the drag, so in the other three modes a
+         * marquee did not even appear. The gathering is filtered by mode for
+         * the same reason 3D filters it — what is highlighted has to be what
+         * a Delete would remove.
+         */
+        const picked = boxSelectTargets({
+          rect,
+          isWindow,
+          mode: (uiStore.selectMode === 'stress' ? 'elements' : uiStore.selectMode) as BoxSelectMode,
+          toScreen: (wx, wy) => uiStore.worldToScreen(wx, wy),
+          model: {
+            nodes: [...modelStore.nodes.values()].map((n) => {
+              const p = project2DNode(n);
+              return { id: n.id, x: p.x, y: p.y };
+            }),
+            elements: modelStore.elements.values(),
+            supports: modelStore.supports.values(),
+            loads: modelStore.model.loads as never,
+            getNode: (id) => {
+              const n = modelStore.getNode(id);
+              return n ? project2DNode(n) : undefined;
+            },
+            getElement: (id) => modelStore.elements.get(id),
+          },
+        });
 
-        // Nodes: always selected by containment (both modes)
-        for (const node of modelStore.nodes.values()) {
-          const pn = project2DNode(node);
-          const s = uiStore.worldToScreen(pn.x, pn.y);
-          if (s.x >= x1 && s.x <= x2 && s.y >= y1 && s.y <= y2) {
-            newNodes.add(node.id);
-          }
+        if (picked.nodes.size > 0 || picked.elements.size > 0) {
+          uiStore.setSelection(
+            new Set([...uiStore.selectedNodes, ...picked.nodes]),
+            new Set([...uiStore.selectedElements, ...picked.elements]),
+            true,
+          );
         }
-        for (const elem of modelStore.elements.values()) {
-          const ni = modelStore.getNode(elem.nodeI);
-          const nj = modelStore.getNode(elem.nodeJ);
-          if (!ni || !nj) continue;
-          const si = uiStore.worldToScreen(ni.x, ni.y);
-          const sj = uiStore.worldToScreen(nj.x, nj.y);
-          const iInside = si.x >= x1 && si.x <= x2 && si.y >= y1 && si.y <= y2;
-          const jInside = sj.x >= x1 && sj.x <= x2 && sj.y >= y1 && sj.y <= y2;
-
-          if (isWindow) {
-            // Window (left→right): element selected only if BOTH endpoints inside
-            if (iInside && jInside) {
-              newElems.add(elem.id);
-            }
-          } else {
-            // Crossing (right→left): contained OR intersecting the rectangle
-            if ((iInside || jInside) ||
-                segmentIntersectsRect(si.x, si.y, sj.x, sj.y, x1, y1, x2, y2)) {
-              newElems.add(elem.id);
-            }
-          }
+        if (picked.supports.size > 0) {
+          uiStore.selectedSupports = new Set([...uiStore.selectedSupports, ...picked.supports]);
         }
-
-        // Reassign sets to trigger Svelte reactivity (manual box-select)
-        uiStore.setSelection(newNodes, newElems, true);
+        if (picked.loads.size > 0) {
+          uiStore.selectedLoads = new Set([...uiStore.selectedLoads, ...picked.loads]);
+        }
       }
       boxSelect = null;
     }

@@ -518,6 +518,14 @@ function createUIStore() {
     },
 
     get selectedSupports() { return selectedSupports; },
+    /**
+     * Settable, like `selectedLoads` beside it.
+     *
+     * Box select needs to hand back a whole set at once; without a setter the
+     * only way in was one-at-a-time through `selectSupport`, which clears the
+     * others unless shift is held and would make a marquee select exactly one.
+     */
+    set selectedSupports(v: Set<number>) { selectedSupports = v; },
     clearSelectedSupports() { selectedSupports = new Set(); },
     get selectedShells() { return selectedShells; },
 
