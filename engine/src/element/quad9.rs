@@ -750,10 +750,9 @@ pub fn quad9_nodal_von_mises(
         gp_vm[gp] = (sxx * sxx - sxx * syy + syy * syy + 3.0 * txy * txy).sqrt();
     }
 
-    // For 9-node element, 3×3 Gauss points are at the same parametric locations
-    // as a 9-node Lagrange grid, so we can directly interpolate using shape functions.
-    // The 3×3 Gauss point locations match the 9-node pattern, so project to nodes
-    // using shape function evaluation at node locations.
+    // Gauss points sit at ±√(3/5) (and 0), nodes at ±1 (and 0), so project
+    // GP values to nodes by tensor-product Lagrange extrapolation on the
+    // GP grid (see below).
     let node_coords_nat: [(f64, f64); 9] = [
         (-1.0, -1.0), (1.0, -1.0), (1.0, 1.0), (-1.0, 1.0),
         (0.0, -1.0), (1.0, 0.0), (0.0, 1.0), (-1.0, 0.0),
@@ -920,8 +919,7 @@ pub fn quad9_stress_at_nodes(
 
 /// Consistent pressure load for quad9 element (54-DOF).
 pub fn quad9_pressure_load(coords: &[[f64; 3]; 9], pressure: f64) -> Vec<f64> {
-    let (_ex, _ey, ez) = quad9_local_axes(coords);
-    let (ex, ey, _) = quad9_local_axes(coords);
+    let (ex, ey, ez) = quad9_local_axes(coords);
     let pts = project_to_2d_9(coords, &ex, &ey);
 
     let mut f = vec![0.0; 54];
