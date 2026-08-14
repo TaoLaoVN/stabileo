@@ -1155,8 +1155,11 @@ pub fn quad_edge_load(
 
     // Edge tangent (along edge)
     let et = [edge_vec[0] / l_edge, edge_vec[1] / l_edge, edge_vec[2] / l_edge];
-    // Edge in-plane normal (perpendicular to edge, in shell plane)
-    let en = cross3(&ez, &et);
+    // Edge in-plane normal (perpendicular to edge, in shell plane).
+    // For CCW node ordering (viewed from +ez), et × ez points OUTWARD from the
+    // element, matching the documented "positive qn = outward" convention of
+    // SolverQuadEdgeLoad and curved_shell_edge_load (which uses t̂ × d̂).
+    let en = cross3(&et, &ez);
 
     // Distributed load in global = qn * en + qt * et (force per length)
     let qx = qn * en[0] + qt * et[0];
@@ -1488,5 +1491,33 @@ mod tests {
                 "Distorted quad negative diagonal at {}: {}", i, k_dist[i * 24 + i]
             );
         }
+    }
+
+    #[test]
+    fn test_edge_load_normal_points_outward() {
+        // Unit square, CCW ordering (viewed from +z): interior at y>0 for the
+        // bottom edge, at x<1 for the right edge.
+        // Documented convention (SolverQuadEdgeLoad): positive qn = outward.
+        let coords = make_unit_square();
+
+        // Edge 0 = nodes 0→1 (bottom edge): outward is −y.
+        let f = quad_edge_load(&coords, 0, 2.0, 0.0);
+        let fy_total: f64 = (0..4).map(|i| f[i * 6 + 1]).sum();
+        assert!(
+            fy_total < 0.0,
+            "qn > 0 on bottom edge must push outward (−y), got total fy = {}",
+            fy_total
+        );
+        assert!((fy_total + 2.0).abs() < 1e-10, "total force = qn·L: {}", fy_total);
+
+        // Edge 1 = nodes 1→2 (right edge): outward is +x.
+        let f = quad_edge_load(&coords, 1, 2.0, 0.0);
+        let fx_total: f64 = (0..4).map(|i| f[i * 6]).sum();
+        assert!(
+            fx_total > 0.0,
+            "qn > 0 on right edge must push outward (+x), got total fx = {}",
+            fx_total
+        );
+        assert!((fx_total - 2.0).abs() < 1e-10, "total force = qn·L: {}", fx_total);
     }
 }

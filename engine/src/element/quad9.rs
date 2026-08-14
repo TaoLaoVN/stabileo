@@ -1056,7 +1056,9 @@ pub fn quad9_edge_load(
     if l_edge < 1e-15 { return f; }
 
     let et = [edge_vec[0] / l_edge, edge_vec[1] / l_edge, edge_vec[2] / l_edge];
-    let en = cross3(&ez, &et);
+    // For CCW node ordering (viewed from +ez), et × ez points OUTWARD from the
+    // element, matching the documented "positive qn = outward" convention.
+    let en = cross3(&et, &ez);
 
     let qx = qn * en[0] + qt * et[0];
     let qy = qn * en[1] + qt * et[1];
@@ -1393,6 +1395,33 @@ mod tests {
             (total_fz - 10.0).abs() < 0.01,
             "Total pressure force: got {}, expected 10.0", total_fz
         );
+    }
+
+    #[test]
+    fn test_edge_load_normal_points_outward() {
+        // Unit square, CCW ordering (viewed from +z).
+        // Documented convention (SolverQuadEdgeLoad): positive qn = outward.
+        let coords = make_unit_square_9();
+
+        // Edge 0 = nodes 0→4→1 (bottom edge): outward is −y.
+        let f = quad9_edge_load(&coords, 0, 2.0, 0.0);
+        let fy_total: f64 = (0..9).map(|i| f[i * 6 + 1]).sum();
+        assert!(
+            fy_total < 0.0,
+            "qn > 0 on bottom edge must push outward (−y), got total fy = {}",
+            fy_total
+        );
+        assert!((fy_total + 2.0).abs() < 1e-10, "total force = qn·L: {}", fy_total);
+
+        // Edge 1 = nodes 1→5→2 (right edge): outward is +x.
+        let f = quad9_edge_load(&coords, 1, 2.0, 0.0);
+        let fx_total: f64 = (0..9).map(|i| f[i * 6]).sum();
+        assert!(
+            fx_total > 0.0,
+            "qn > 0 on right edge must push outward (+x), got total fx = {}",
+            fx_total
+        );
+        assert!((fx_total - 2.0).abs() < 1e-10, "total force = qn·L: {}", fx_total);
     }
 
     /// Helper: n×n matrix-vector multiply
