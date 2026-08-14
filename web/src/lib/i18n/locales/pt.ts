@@ -2100,6 +2100,13 @@ const pt: Translations = {
   // ─── File operations (file.ts) ───
   'file.invalidJson': 'O arquivo não é um JSON válido',
   'file.invalidFormat': 'Formato de arquivo inválido. Certifique-se de que é um arquivo .ded do Stabileo.',
+  'file.autosaveTooLarge': 'Este projeto ficou grande demais para o salvamento automático do navegador. O trabalho feito desde que o cálculo rodou NÃO está na cópia salva — use Salvar projeto para guardá-lo como arquivo .ded.',
+  'file.autosaveFailed': 'O salvamento automático falhou e seu trabalho recente NÃO foi armazenado. Use Salvar projeto para guardá-lo como arquivo .ded.',
+  'file.autosaveDegraded': 'O IndexedDB não está disponível, então o salvamento automático recorreu ao armazenamento do navegador, que tem um limite de poucos megabytes. Um projeto calculado pode não caber — use Salvar projeto para ter um .ded.',
+  'file.autosaveUnavailable': 'Este navegador não oferece nenhum armazenamento que o app possa usar, então NÃO há salvamento automático. Use Salvar projeto com frequência para guardar um arquivo .ded.',
+  'file.autosaveUnfinished': 'O último salvamento automático começou e nunca terminou — a aba provavelmente fechou no meio da escrita. A restauração oferecida abaixo é de um salvamento anterior.',
+  'file.autosaveOlderRestored': 'O salvamento automático mais recente não pôde ser lido, então um anterior é oferecido em seu lugar. Verifique a data do projeto antes de continuar.',
+  'file.autosaveCorrupt': 'Um salvamento automático foi encontrado, mas não pôde ser lido, então nada foi restaurado dele. Abra seu arquivo .ded.',
   'file.supportFixed': 'Engaste',
   'file.supportPinned': 'Articulação',
   'file.supportRollerX': 'Rolete X',
