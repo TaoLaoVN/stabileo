@@ -11,6 +11,7 @@
  */
 
 import { modelStore, resultsStore, uiStore } from '../store';
+import { requestAutosave } from '../store/autosave-service';
 import { t } from '../i18n';
 import { initSolver, isWasmReady } from './wasm-solver';
 import { computeGoverning2D, computeGoverning3D } from './governing-case';
@@ -167,6 +168,9 @@ export async function runGlobalSolve(): Promise<void> {
   } else {
     await globalSolve2D(isStale);
   }
+  // A solve is minutes of computed state produced by one click. Waiting for the 30 s timer
+  // to notice is how a run gets lost to a closed tab.
+  void requestAutosave('solve');
 }
 
 async function ensureWasmReady(context: string): Promise<void> {

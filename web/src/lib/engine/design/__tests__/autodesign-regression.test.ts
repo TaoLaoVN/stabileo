@@ -44,8 +44,8 @@ describe('flagship 408-member RC frame designs completely', () => {
     expect(solved.orientationIssues).toEqual([]);
   });
 
-  it('produces VERIFIED for every member whose axes are fully checked, and honestly ' +
-     'refuses the 22 BEAM-Y members with unchecked biaxial (Mz/Vy) demand', () => {
+  it('produces VERIFIED for every member whose axes are fully checked, and a marked ' +
+     'PROPOSAL for the 22 BEAM-Y members with unchecked biaxial (Mz/Vy) demand', () => {
     const s = runDesign(cirsoc201Adapter, solved.contexts.values(), { maxRunMs: 120_000 });
     expect(s.total).toBe(408);
     // 22 BEAM-Y members carry Mz/Vy secondary demand above the 10% biaxial
@@ -54,8 +54,25 @@ describe('flagship 408-member RC frame designs completely', () => {
     expect(s.verified).toBe(386);
     expect(s.sectionInadequate).toBe(0);
     expect(s.demandUnavailable).toBe(0);
-    expect(s.searchExhausted).toBe(22);
+    /**
+     * PROVISIONAL_BIAXIAL, not UNSUPPORTED and not SEARCH_EXHAUSTED.
+     *
+     * `SEARCH_EXHAUSTED` would claim the envelope was explored and invite a section change
+     * that cannot help. `UNSUPPORTED` was accurate about the CHECK and produced no geometry
+     * at all, which is indistinguishable on screen from steel that went missing. These 22
+     * now carry their primary-axis design as an explicit proposal — same threshold, same
+     * verifier, nothing assumed for the axis nobody checks.
+     */
+    expect(s.searchExhausted).toBe(0);
     expect(s.unsupported).toBe(0);
+    expect(s.provisionalBiaxial).toBe(22);
+    /**
+     * `provisionalRetained` counts a different thing and must not move.
+     *
+     * It counts the BEST FAILING CANDIDATE of a member whose design was evaluated and fell
+     * short. A biaxial proposal is a member whose primary axis PASSED. Merging the two
+     * counters would let a failing member inherit a proposal's treatment.
+     */
     expect(s.provisionalRetained).toBe(22);
     expect(s.aborted).toBe(false);
     expect(s.notReached).toBe(0);
@@ -67,10 +84,17 @@ describe('flagship 408-member RC frame designs completely', () => {
         // The refused members must be exactly the honest-refusal case: never a
         // certificate, always a reason, and the biaxial constraint recorded.
         expect(o.elementType, `element ${id}`).toBe('beam');
-        expect(o.outcome, `element ${id}`).toBe('SEARCH_EXHAUSTED');
+        expect(o.outcome, `element ${id}`).toBe('PROVISIONAL_BIAXIAL');
+        // The proposal cost a real search — of the PRIMARY axis. A zero here would mean the
+        // geometry came from somewhere other than the ordinary candidate search.
+        expect(o.searchStats.candidatesTried, `element ${id} candidates`).toBeGreaterThan(0);
         expect(o.limiting, `element ${id}`).toContain('biaxial');
+        // The two things a proposal may never acquire.
         expect(o.certificate, `element ${id} certificate`).toBeUndefined();
         expect(o.accepted, `element ${id} accepted rebar`).toBeUndefined();
+        // …and the two it must carry.
+        expect(o.provisional, `element ${id} proposal`).toBeDefined();
+        expect(o.provisionalBasis?.method, `element ${id} basis`).toBe('primaryAxisDesign');
         refused++;
         continue;
       }

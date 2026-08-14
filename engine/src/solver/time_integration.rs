@@ -20,19 +20,7 @@ pub fn solve_time_history_2d(
     let referenced_material_ids = super::dynamic_validation::referenced_material_ids_2d(&input.solver);
     super::dynamic_validation::validate_densities(&input.densities, &referenced_material_ids)?;
     super::dynamic_validation::validate_time_params(input.time_step, input.n_steps)?;
-    if !input.beta.is_finite() || !input.gamma.is_finite() {
-        return Err("Newmark beta/gamma parameters must be finite".to_string());
-    }
-    if let Some(alpha) = input.alpha {
-        if !alpha.is_finite() {
-            return Err("HHT alpha parameter must be finite".to_string());
-        }
-    }
-    if let Some(damping_xi) = input.damping_xi {
-        if !damping_xi.is_finite() {
-            return Err("damping_xi must be finite".to_string());
-        }
-    }
+    validate_integration_params(input.beta, input.gamma, input.alpha, input.damping_xi)?;
     if let Some(ga) = &input.ground_accel {
         if ga.iter().any(|v| !v.is_finite()) {
             return Err("Ground acceleration history contains non-finite values".to_string());
@@ -264,6 +252,60 @@ pub fn solve_time_history_2d(
 // Internal helpers
 // ============================================================================
 
+/// Reject integration parameters that make the scheme amplify.
+///
+/// These were checked for finiteness only, so a provably unstable scheme ran to
+/// completion and returned numbers. Nothing downstream re-checks, and a diverging
+/// history is not distinguishable from a resonant one by looking at it.
+///
+/// * `γ < ½` gives Newmark NEGATIVE numerical damping — energy grows every step.
+///   γ = ½ is the neutral value; above it the scheme merely damps.
+/// * HHT-α sets `γ = ½ − α`, so `α > 0` is the same defect wearing another name,
+///   and below −1/3 the method loses second-order accuracy. The range was already
+///   written in the comment beside the formula; this makes it hold.
+/// * A negative `damping_xi` was accepted and then silently dropped by
+///   `compute_damping_matrix`'s `x > 0.0` guard, so the run reported a damped
+///   method in `result.method` while assembling no damping at all.
+///
+/// NOT checked here: `β < γ/2` is conditionally stable rather than unstable —
+/// linear acceleration (β = 1/6, γ = ½) is a legitimate scheme — and its stability
+/// depends on Δt against the model's highest frequency, which this solver does not
+/// compute. Refusing it would remove a valid capability and accepting it silently
+/// is what this function exists to stop, so it needs a warning channel
+/// `TimeHistoryResult` does not have. Left for the E5 write-up.
+fn validate_integration_params(
+    beta: f64, gamma: f64, alpha: Option<f64>, damping_xi: Option<f64>,
+) -> Result<(), String> {
+    if !beta.is_finite() || !gamma.is_finite() {
+        return Err("Newmark beta/gamma parameters must be finite".to_string());
+    }
+    if let Some(alpha) = alpha {
+        if !alpha.is_finite() {
+            return Err("HHT alpha parameter must be finite".to_string());
+        }
+        if !(-1.0 / 3.0..=0.0).contains(&alpha) {
+            return Err(format!(
+                "HHT alpha must be in [-1/3, 0] (got {alpha}). Above 0 it gives \
+                 gamma = 0.5 - alpha < 0.5, which amplifies instead of damping."
+            ));
+        }
+    } else if gamma < 0.5 {
+        return Err(format!(
+            "Newmark gamma must be >= 0.5 (got {gamma}). Below 0.5 the scheme has \
+             negative numerical damping and the response grows without bound."
+        ));
+    }
+    if let Some(xi) = damping_xi {
+        if !xi.is_finite() {
+            return Err("damping_xi must be finite".to_string());
+        }
+        if xi < 0.0 {
+            return Err(format!("damping_xi must be >= 0 (got {xi})"));
+        }
+    }
+    Ok(())
+}
+
 /// Compute the Rayleigh damping matrix for free DOFs.
 /// If damping_xi is None, returns a zero matrix.
 fn compute_damping_matrix(
@@ -274,37 +316,12 @@ fn compute_damping_matrix(
         _ => return vec![0.0; nf * nf],
     };
 
-    // Estimate omega1 via Rayleigh quotient: omega1^2 ~ (phi^T K phi) / (phi^T M phi)
-    // Use a unit vector as initial guess, then one step of inverse iteration
-    let omega1 = estimate_fundamental_frequency(k_ff, m_ff, nf);
-    let omega2 = 3.0 * omega1; // Bracket a range of frequencies
-
-    let (a0, a1) = damping::rayleigh_coefficients(omega1, omega2, xi);
+    // Anchored on the structure's real first two modes. This used to call
+    // `estimate_fundamental_frequency` — √(Σ|K_ii|/Σ|M_ii|), a mass-weighted average
+    // of diagonal ratios, not a fundamental frequency — which on a 10-storey frame
+    // read 1027 rad/s against a true 1.15 and over-damped the dominant mode ~669×.
+    let (a0, a1) = damping::rayleigh_from_modes(k_ff, m_ff, nf, xi);
     damping::rayleigh_damping_matrix(m_ff, k_ff, nf, a0, a1)
-}
-
-/// Estimate the fundamental circular frequency from K and M using the Rayleigh quotient.
-fn estimate_fundamental_frequency(k: &[f64], m: &[f64], n: usize) -> f64 {
-    // Use the diagonal Rayleigh quotient as a quick estimate:
-    // omega^2 ~ sum(K_ii) / sum(M_ii) for translational DOFs
-    let mut k_sum = 0.0;
-    let mut m_sum = 0.0;
-    for i in 0..n {
-        k_sum += k[i * n + i].abs();
-        m_sum += m[i * n + i].abs();
-    }
-
-    if m_sum < 1e-30 {
-        // Fallback: assume 1 Hz
-        return 2.0 * std::f64::consts::PI;
-    }
-
-    let omega2 = k_sum / m_sum;
-    if omega2 <= 0.0 {
-        return 2.0 * std::f64::consts::PI;
-    }
-
-    omega2.sqrt()
 }
 
 /// Compute initial acceleration: M * a0 = F0 - C*v0 - K*u0.
@@ -829,19 +846,7 @@ pub fn solve_time_history_3d(
     let referenced_material_ids = super::dynamic_validation::referenced_material_ids_3d(&input.solver);
     super::dynamic_validation::validate_densities(&input.densities, &referenced_material_ids)?;
     super::dynamic_validation::validate_time_params(input.time_step, input.n_steps)?;
-    if !input.beta.is_finite() || !input.gamma.is_finite() {
-        return Err("Newmark beta/gamma parameters must be finite".to_string());
-    }
-    if let Some(alpha) = input.alpha {
-        if !alpha.is_finite() {
-            return Err("HHT alpha parameter must be finite".to_string());
-        }
-    }
-    if let Some(damping_xi) = input.damping_xi {
-        if !damping_xi.is_finite() {
-            return Err("damping_xi must be finite".to_string());
-        }
-    }
+    validate_integration_params(input.beta, input.gamma, input.alpha, input.damping_xi)?;
     for ga in [&input.ground_accel_x, &input.ground_accel_y, &input.ground_accel_z] {
         if let Some(ga) = ga {
             if ga.iter().any(|v| !v.is_finite()) {

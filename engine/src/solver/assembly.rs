@@ -1904,7 +1904,17 @@ pub fn assemble_sparse_2d(input: &SolverInput, dof_num: &DofNumbering) -> Sparse
                 }
             }
         } else {
-            let k_local = frame_local_stiffness_2d(e, sec.a, sec.iz, l, elem.hinge_start, elem.hinge_end, 0.0);
+            // Timoshenko shear parameter, matching the dense path (and the
+            // FEF builder below, which already computes phi from as_y —
+            // passing 0.0 here paired Euler-Bernoulli stiffness with
+            // Timoshenko fixed-end forces).
+            let phi = if let Some(as_y) = sec.as_y {
+                let g = e / (2.0 * (1.0 + mat.nu));
+                12.0 * e * sec.iz / (g * as_y * l * l)
+            } else {
+                0.0
+            };
+            let k_local = frame_local_stiffness_2d(e, sec.a, sec.iz, l, elem.hinge_start, elem.hinge_end, phi);
             let t = frame_transform_2d(cos, sin);
             let k_glob = transform_stiffness(&k_local, &t, 6);
             let elem_dofs = dof_num.element_dofs(elem.node_i, elem.node_j);
@@ -2952,4 +2962,81 @@ fn curved_shell_coords(node_map: &std::collections::HashMap<usize, &SolverNode3D
         coords[i] = [n.x, n.y, n.z];
     }
     coords
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::collections::HashMap;
+
+    /// Cantilever with a Timoshenko (as_y) section: phi ≈ 0.156, large enough
+    /// that an Euler-Bernoulli K is visibly different.
+    fn make_timoshenko_cantilever() -> SolverInput {
+        let mut nodes = HashMap::new();
+        nodes.insert("1".into(), SolverNode { id: 1, x: 0.0, z: 0.0 });
+        nodes.insert("2".into(), SolverNode { id: 2, x: 2.0, z: 0.0 });
+
+        let mut materials = HashMap::new();
+        materials.insert("1".into(), SolverMaterial { id: 1, e: 200_000.0, nu: 0.3 });
+
+        let mut sections = HashMap::new();
+        sections.insert("1".into(), SolverSection { id: 1, a: 0.01, iz: 1e-4, as_y: Some(0.005) });
+
+        let mut elements = HashMap::new();
+        elements.insert("1".into(), SolverElement {
+            id: 1, elem_type: "frame".into(),
+            node_i: 1, node_j: 2, material_id: 1, section_id: 1,
+            hinge_start: false, hinge_end: false,
+        });
+
+        let mut supports = HashMap::new();
+        supports.insert("1".into(), SolverSupport {
+            id: 1, node_id: 1, support_type: "fixed".into(),
+            kx: None, ky: None, kz: None,
+            dx: None, dz: None, dry: None, angle: None,
+        });
+
+        SolverInput {
+            nodes, materials, sections, elements, supports,
+            loads: vec![], constraints: vec![], connectors: HashMap::new(),
+        }
+    }
+
+    /// The legacy triplet sparse 2D assembler (used by 2D buckling) must
+    /// produce the same K_ff as the dense assembler for Timoshenko sections.
+    /// It used to hardcode phi = 0, pairing Euler-Bernoulli stiffness with
+    /// Timoshenko fixed-end forces.
+    #[test]
+    fn legacy_sparse_2d_matches_dense_with_timoshenko_section() {
+        let input = make_timoshenko_cantilever();
+        let dof_num = DofNumbering::build_2d(&input);
+        let n = dof_num.n_total;
+        let nf = dof_num.n_free;
+
+        let dense = assemble_stiffness_2d(&input, &dof_num);
+        let sparse = assemble_sparse_2d(&input, &dof_num);
+        let k_sparse = sparse.k_ff.to_dense_symmetric();
+
+        // Shear-deformation-sensitive entry: the bending diagonal at the tip.
+        // phi ≈ 0.156 shifts this term by ~13% vs Euler-Bernoulli.
+        let k_tip_bend_dense = dense.k[1 * n + 1];
+        let k_tip_bend_sparse = k_sparse[1 * nf + 1];
+        let scale = k_tip_bend_dense.abs();
+        assert!(
+            (k_tip_bend_sparse - k_tip_bend_dense).abs() <= 1e-9 * scale,
+            "K_ff mismatch (Timoshenko): sparse {} vs dense {}",
+            k_tip_bend_sparse, k_tip_bend_dense
+        );
+
+        for i in 0..nf {
+            for j in 0..nf {
+                let kd = dense.k[i * n + j];
+                let ks = k_sparse[i * nf + j];
+                assert!(
+                    (ks - kd).abs() <= 1e-9 * scale.max(1.0),
+                    "K_ff[{i}][{j}] mismatch: sparse {ks} vs dense {kd}"
+                );
+            }
+        }
+    }
 }

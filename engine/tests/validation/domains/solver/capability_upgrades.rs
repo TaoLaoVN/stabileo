@@ -127,7 +127,10 @@ fn capability_vm14a_mattiasson_elastica() {
     let l = 1.0;
     let e_mpa = 12.0;
     let e_eff = e_mpa * 1000.0; // 12000 kN/m^2
-    let a_sec = 1.0;
+    // A = 100 gives EA*L^2/EI = 1200 (nearly inextensible), so the
+    // inextensible-elastica Mattiasson reference applies; with A = 1
+    // (EA*L^2/EI = 12) axial extensibility shifts the tip by several percent.
+    let a_sec = 100.0;
     let iz = 1.0 / 12.0;
     let ei = e_eff * iz; // = 1000
 

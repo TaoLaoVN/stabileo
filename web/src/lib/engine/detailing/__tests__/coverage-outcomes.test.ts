@@ -11,7 +11,7 @@
  * This file used to assert 408/408 VERIFIED and an empty non-VERIFIED population, which was
  * true when it was written. The biaxial column-axis mapping and biaxial-beam refusal that
  * arrived with the merged PR15 changed the honest answer to 386 VERIFIED and 22
- * SEARCH_EXHAUSTED — the fixture's BEAM-Y members, whose secondary Mz/Vy demand crosses the
+ * refusals — the fixture's BEAM-Y members, whose secondary Mz/Vy demand crosses the
  * 10% biaxial threshold on an axis this verifier never checks for beams. Before the fix they
  * were certified having never been checked; the 22 refusals are the correction, not a
  * regression, and `autodesign-regression.test.ts` is the gate that owns those numbers.
@@ -42,7 +42,29 @@ describe('the 408/373 discrepancy', () => {
     // an outcome, and the 22 that are outcomes all name the same honest cause.
     const notVerified = [...summary.outcomes.values()].filter((o) => o.outcome !== 'VERIFIED');
     expect(notVerified).toHaveLength(22);
-    expect([...new Set(notVerified.map((o) => o.outcome))]).toEqual(['SEARCH_EXHAUSTED']);
+    /**
+     * PROVISIONAL_BIAXIAL, not UNSUPPORTED and not SEARCH_EXHAUSTED.
+     *
+     * `SEARCH_EXHAUSTED` would mean a bounded search explored the envelope and found nothing,
+     * which invites the engineer to try a larger section or a longer run; neither can help,
+     * because no arrangement is checked on the secondary axis.
+     *
+     * `UNSUPPORTED` was accurate about the CHECK and produced nothing at all — no steel in
+     * the model, no bars in the document, no rows on any schedule — which is
+     * indistinguishable from reinforcement that went missing. These members now carry the
+     * primary-axis design as an explicit PROPOSAL, with the same threshold, the same verifier
+     * and no capacity assumed for the axis nobody checks. The refusal is still stated; what
+     * changed is that it now comes with the geometry it refused to certify.
+     */
+    expect([...new Set(notVerified.map((o) => o.outcome))]).toEqual(['PROVISIONAL_BIAXIAL']);
+    // And the cause is named, not left to the outcome kind alone.
+    expect([...new Set(notVerified.flatMap((o) => o.limiting))]).toEqual(['biaxial']);
+    // A proposal is never a pass, whatever else it carries.
+    for (const o of notVerified) {
+      expect(o.certificate, `member ${o.elementId} carries no certificate`).toBeUndefined();
+      expect(o.accepted, `member ${o.elementId} assigns no certified steel`).toBeUndefined();
+      expect(o.provisional, `member ${o.elementId} carries its proposal`).toBeTruthy();
+    }
   }, 300_000);
 
   it('detailing keys off the OUTCOME, so compliant warning members are not lost', () => {
@@ -52,14 +74,26 @@ describe('the 408/373 discrepancy', () => {
       outcomes: summary.outcomes as ReadonlyMap<number, MemberDesignOutcome>,
     });
     // Walls are PR18's; this fixture carries none, so the detailable population is exactly the
-    // VERIFIED one. Asserted against `summary.verified` rather than a literal so the tie
-    // between the two is what is being checked, not a number that happens to match.
+    // VERIFIED members PLUS the provisional proposals. Asserted against the summary's own
+    // counters rather than literals so the tie between them is what is being checked.
     expect(membersOfKind('wall')).toHaveLength(0);
-    expect(readiness.detailable.length).toBe(summary.verified);
-    // Nothing compliant is dropped: every VERIFIED member is detailable.
-    const verifiedIds = [...summary.outcomes.values()]
-      .filter((o) => o.outcome === 'VERIFIED').map((o) => o.elementId).sort((a, b) => a - b);
+    expect(readiness.detailable.length).toBe(summary.verified + summary.provisionalBiaxial);
+    /**
+     * Detailing a proposal is not certifying it.
+     *
+     * The gate used to be `outcome === 'VERIFIED'`, and that is exactly why a refused member
+     * had no geometry anywhere. Widening it changes what can be SEEN, not what can be
+     * claimed: a proposal carries no certificate, so `allMembersReverified` and
+     * `certificatesMatchGeometry` still fail and CONSTRUCTIBLE stays unreachable.
+     */
+    const detailableIds = [...summary.outcomes.values()]
+      .filter((o) => o.outcome === 'VERIFIED' || o.outcome === 'PROVISIONAL_BIAXIAL')
+      .map((o) => o.elementId).sort((a, b) => a - b);
     // `detailable` is a sorted id list, so this is an id-for-id comparison.
-    expect([...readiness.detailable].sort((a, b) => a - b)).toEqual(verifiedIds);
+    expect([...readiness.detailable].sort((a, b) => a - b)).toEqual(detailableIds);
+    // Nothing compliant is dropped: every VERIFIED member is still detailable.
+    const verifiedIds = [...summary.outcomes.values()]
+      .filter((o) => o.outcome === 'VERIFIED').map((o) => o.elementId);
+    for (const id of verifiedIds) expect(readiness.detailable).toContain(id);
   }, 300_000);
 });

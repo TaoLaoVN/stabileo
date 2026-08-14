@@ -564,3 +564,33 @@ fn test_guyan_reactions_match_linear() {
         );
     }
 }
+
+
+// ---------------------------------------------------------------------------
+// Test 9: Guyan with prescribed support displacements must error, not silently
+// ignore them (u_r is hardcoded to zero in the reduction recovery path)
+// ---------------------------------------------------------------------------
+#[test]
+fn test_guyan_prescribed_displacement_is_rejected() {
+    let mut solver = five_node_cantilever();
+    // Prescribe a support rotation at the fixed end. The linear solver couples
+    // this into the solve via F_f -= K_fr * u_r; Guyan has no such coupling and
+    // used to silently produce results as if the support had not moved.
+    for sup in solver.supports.values_mut() {
+        sup.dry = Some(0.01);
+    }
+
+    // Sanity: the linear solver DOES account for the prescribed rotation.
+    let linear_result = linear::solve_2d(&solver).unwrap();
+    let tip = linear_result.displacements.iter()
+        .find(|d| d.node_id == 5).unwrap();
+    assert!(tip.uz.abs() > 1e-6, "prescribed rotation should move the tip");
+
+    let guyan_input = GuyanInput {
+        solver,
+        boundary_nodes: vec![3],
+    };
+    let err = guyan_reduce_2d(&guyan_input)
+        .expect_err("Guyan with prescribed displacements must be rejected");
+    assert!(err.contains("prescribed"), "error should mention prescribed displacements, got: {}", err);
+}

@@ -365,41 +365,158 @@ test.describe('@slow RC design at scale', () => {
       .toBe(408);
     expect(await page.evaluate(() => window.__stabileo.designRunId())).not.toBe(runIdBefore);
 
-    // 22 of the flagship's 408 members are BEAM-Y elements whose Mz/Vy secondary
-    // demand under the wind combos is 10.4%-17.1% of the governing My/Vz — above
-    // resolveDesignAxes' 10% biaxial threshold. This verifier only ever checks the
-    // PRIMARY axis for beams, so (PR78 review fix, commit 3c54d81) it honestly
-    // refuses those 22 rather than certify an axis it never checked. Pre-fix they
-    // were silently certified VERIFIED with Mz/Vy never inspected — a false pass
-    // baked into an earlier "408/408" figure. See the sibling vitest regression
-    // test ("refuses the 22 BEAM-Y members with unchecked biaxial (Mz/Vy) demand"
-    // in autodesign-regression.test.ts) for the same rationale and the per-member
-    // classification this test mirrors.
+    /**
+     * 22 of the flagship's 408 members are BEAM-Y elements whose Mz/Vy secondary demand under
+     * the wind combos is 10,4 %–17,1 % of the governing My/Vz — above `resolveDesignAxes`'
+     * 10 % biaxial threshold. This verifier only ever checks the PRIMARY axis for beams.
+     *
+     * ── What these 22 have been, in order ──────────────────────────
+     *
+     * VERIFIED, wrongly: certified with Mz/Vy never inspected — a false pass baked into an
+     * earlier "408/408" figure.
+     *
+     * UNSUPPORTED, honestly but unhelpfully: the refusal was accurate about the CHECK and
+     * produced no geometry at all, which on screen is indistinguishable from steel that went
+     * missing.
+     *
+     * PROVISIONAL_BIAXIAL, now: they carry their primary-axis design as an explicit proposal.
+     * Same threshold, same verifier, same bounded search — nothing assumed for the axis nobody
+     * checks, and nothing hidden either.
+     *
+     * This test asserted the middle one and went on passing until the browser hook started
+     * reporting the bucket that replaced it. What follows is the CURRENT contract, asserted
+     * harder than the old one was: not merely "22 somewhere else", but 22 proposals each
+     * carrying the four numbers a reader needs to triage it, none of them certified.
+     *
+     * The sibling vitest test in `autodesign-regression.test.ts` makes the same claims against
+     * the engine; this one makes them through the browser, against what the UI reports.
+     */
     const counts = (await page.evaluate(() => window.__stabileo.runCounts()))!;
     expect(counts.verified).toBe(386);
-    expect(counts.searchExhausted).toBe(22);
+    expect(counts.searchExhausted, 'nothing was exhausted').toBe(0);
+    expect(counts.unsupported, 'and nothing is refused outright any more').toBe(0);
+    expect(counts.provisionalBiaxial, 'the 22 are proposals').toBe(22);
     expect(counts.aborted).toBe(0);
     expect(counts.notReached).toBe(0);
+    // Every member is accounted for by exactly one bucket. A member that fell out of the
+    // classification would otherwise hide inside the 408.
+    expect(counts.verified + counts.provisionalBiaxial, 'nothing unclassified').toBe(408);
 
-    // The summary bar counts DISPLAY status, which is PROVIDED-reinforcement-first
-    // (verification.svelte.ts getDisplayStatus): it reads what's actually written
-    // to the member, not the design run's internal outcome. The 386 genuinely
-    // VERIFIED members split into ok (u <= 0.95) and warn (0.95 < u <= 1.00); the
-    // 22 refused members never had reinforcement ACCEPTED (only a provisional
-    // candidate retained internally for the detail view), so
-    // reinforcementProvider() sees nothing for them and they display as
-    // `unavailable`, not `fail` — measured empirically, not assumed.
+    /**
+     * The proposals, member by member.
+     *
+     * A count is not the contract. What makes a proposal honest is that a reader can act on
+     * it, and that requires naming the axis nobody checked, its moment in kN·m, what fraction
+     * of the primary that is, and which combination governs it — plus the sentence that says
+     * the whole thing is a proposal. Asserting only "22" would let every one of those fields
+     * go empty without a test noticing.
+     */
+    const outcomes = await page.evaluate(() => {
+      const h = window.__stabileo;
+      return h.elementIds().map((id) => ({
+        id,
+        outcome: h.outcome(id),
+        certificate: h.hasCertificate(id),
+        basis: h.provisionalBasis(id),
+      }));
+    });
+    const proposals = outcomes.filter((o) => o.outcome === 'PROVISIONAL_BIAXIAL');
+    expect(proposals.length, 'proposals per member match the run count').toBe(22);
+
+    for (const p of proposals) {
+      const where = `member ${p.id}`;
+      // The two things a proposal may never be.
+      expect(p.outcome, `${where} is not verified`).not.toBe('VERIFIED');
+      expect(p.certificate, `${where} holds no certificate`).toBe(false);
+      // …and the five it must carry.
+      const b = p.basis!;
+      expect(b, `${where} states its basis`).not.toBeNull();
+      expect(b.method, `${where} came from the ordinary search`).toBe('primaryAxisDesign');
+      expect(b.uncheckedAxis, `${where} names the unchecked axis`).toMatch(/^M[yz]$/);
+      expect(b.uncheckedAxis, `${where}'s unchecked axis is not the one it designed`)
+        .not.toBe(b.designedAxis);
+      expect(b.secondaryMoment, `${where} states the secondary moment`).toBeGreaterThan(0);
+      expect(b.primaryMoment, `${where} states the primary it is measured against`)
+        .toBeGreaterThan(0);
+      // Above the threshold that made it a proposal, and below unity by construction.
+      expect(b.secondaryRatio, `${where} ratio is above the biaxial threshold`)
+        .toBeGreaterThan(0.10);
+      expect(b.secondaryRatio, `${where} ratio is a real fraction`).toBeLessThan(1);
+      expect(b.secondaryCombo, `${where} names the governing combination`).toBeTruthy();
+      // The warning itself — the sentence the panels, the report and the sheets all render.
+      expect(b.reasonKeys, `${where} carries the proposal warning`)
+        .toContain('design.reason.provisionalBiaxial');
+      expect(b.reasonKeys, `${where} says which axis went unchecked`)
+        .toContain('design.reason.secondaryAxisUnchecked');
+    }
+
+    // And the converse: nothing that IS verified may carry a proposal's basis, and every
+    // verified member must hold the certificate the proposals do not.
+    for (const o of outcomes.filter((x) => x.outcome === 'VERIFIED')) {
+      expect(o.basis, `verified member ${o.id} carries no proposal`).toBeNull();
+      expect(o.certificate, `verified member ${o.id} holds a certificate`).toBe(true);
+    }
+
+    /**
+     * The summary bar counts DISPLAY status, which is a different question from the run
+     * outcome and now gives a different answer for these 22.
+     *
+     * `getDisplayStatus` is PROVIDED-reinforcement-first: it verifies the steel actually
+     * written to the member rather than reporting what the design run decided. Under
+     * UNSUPPORTED these members had no steel written at all, so they read `unavailable`. A
+     * proposal DOES write its bars — that is what makes it inspectable in 3-D — and the
+     * authoritative verifier then refuses them on the biaxial check, by construction, every
+     * time. So they read `fail`.
+     *
+     * That was a true statement about the STEEL and a poor label for the MEMBER: it put 22 red
+     * crosses meaning "we did not look" beside crosses meaning "we looked and it does not
+     * hold". `DisplayStatus` now has a `provisional` value of its own, applied under the same
+     * narrow predicate the detailing status uses — only when EVERY failing check is the
+     * biaxial one — so a proposal that also failed on flexure would still read `fail`.
+     *
+     * Nothing about the engineering moved with it: the outcome, the verdict, the certificate
+     * and the utilisation are what they were, and the assertions above still hold unchanged.
+     *
+     * Measured, not assumed: 386 checked, 22 provisional, 0 fail, 0 unavailable.
+     */
     const display = await page.evaluate(() => window.__stabileo.counts());
-    expect(display.ok + display.warn).toBe(386);
-    expect(display.fail).toBe(0);
-    expect(display.unavailable).toBe(22);
+    expect(display.ok + display.warn, 'the fully checked members').toBe(386);
+    expect(display.provisional, 'the proposals, named as proposals').toBe(22);
+    expect(display.fail, 'and nothing is called a failure that is not one').toBe(0);
+    expect(display.unavailable, 'nothing is left without a status at all').toBe(0);
+    // A proposal is never folded into the passes. This is the assertion that would catch the
+    // exception being widened into a way of making red things green.
+    expect(display.ok + display.warn, 'proposals are not counted as verified').toBe(386);
+    // Every member lands in exactly one display bucket. A member missing from all of them
+    // would be a row the summary bar does not describe.
+    expect(display.ok + display.warn + display.fail + display.provisional
+      + display.unavailable + display.stale,
+    'every member is described by the summary bar').toBe(408);
+    // The per-member view agrees with the aggregate: each proposal reports `provisional`.
+    const perMember = await page.evaluate(() => {
+      const h = window.__stabileo;
+      return h.elementIds().map((id) => ({ id, display: h.displayStatus(id) }));
+    });
+    for (const p of proposals) {
+      expect(perMember.find((x) => x.id === p.id)!.display, `member ${p.id} display status`)
+        .toBe('provisional');
+    }
     await expect(page.getByTestId('summary-count-verified')).toContainText(String(display.ok));
     await expect(page.getByTestId('summary-count-warn')).toContainText(String(display.warn));
     await expect(page.getByTestId('summary-count-fail')).toContainText(String(display.fail));
     await expect(page.getByTestId('summary-count-unavailable')).toContainText(String(display.unavailable));
-    // The 22 SEARCH_EXHAUSTED members are also surfaced in the run-outcome cluster
-    // of the counts bar, distinct from the provided-reinforcement display counts.
-    await expect(page.getByTestId('summary-count-exhausted')).toContainText(String(counts.searchExhausted));
+    /**
+     * And the bar itself says so.
+     *
+     * The run-outcome chips hide at zero, so `exhausted` and `unsupported` are gone because
+     * nothing landed in them. The provisional chip lives with the DISPLAY counts, which are
+     * always rendered — it reports what the members ARE rather than what the last run decided,
+     * and those two can diverge the moment a user edits a member's steel.
+     */
+    await expect(page.getByTestId('summary-count-exhausted')).toHaveCount(0);
+    await expect(page.getByTestId('summary-count-unsupported')).toHaveCount(0);
+    await expect(page.getByTestId('summary-count-provisional'))
+      .toContainText(String(display.provisional));
 
     // Auto-design selected is the default scope; all-un-designed is explicit.
     await expect(page.getByTestId('cmd-autodesign')).toBeVisible();
@@ -442,5 +559,65 @@ test.describe('@smoke E2E hook runtime gate', () => {
     // The query surface is frozen and read-only.
     expect(await page.evaluate(() => Object.isFrozen((window as unknown as Record<string, unknown>).__stabileo))).toBe(true);
     expect(await page.evaluate(() => Object.isFrozen((window as unknown as Record<string, unknown>).__stabileoActions))).toBe(true);
+  });
+});
+
+test.describe('@smoke the design table survives a short window', () => {
+  /**
+   * The table must be REACHABLE, not merely present.
+   *
+   * ── What this caught ───────────────────────────────────────────────
+   *
+   * Every scenario above failed for one reason, and it was not a flaky click: at 1280×720 —
+   * Chromium's own `Desktop Chrome` size, which is what this suite runs at — the tab's fixed
+   * controls wanted 550 px of the 504 it had. All of them carry `flex-shrink: 0`, so the only
+   * child that could give was the table, and it gave everything: height 0, rows laid out at
+   * y≈778 in a 720 px window, underneath the action row. Playwright reported that as
+   * "`.action-row` intercepts pointer events", which reads like a stacking bug and was a
+   * sizing one.
+   *
+   * So this asserts the property the eleven failures were really about, rather than clicking
+   * something and hoping: the table has a workable height, its first row is inside the window
+   * once scrolled to, and the point a user would click resolves to the control they aimed at.
+   * Nothing here is allowed to use `force` — a forced click proves the handler runs and says
+   * nothing about whether a person could ever reach it.
+   */
+  test('B18 — the table keeps a usable height and its rows are clickable', async ({ pro: page }) => {
+    const ids = await setupDesigned(page);
+    const id = ids[0];
+
+    const geometry = await page.evaluate(() => {
+      const scroll = document.querySelector('.table-scroll') as HTMLElement | null;
+      const tab = document.querySelector('.design-tab') as HTMLElement | null;
+      return {
+        tableHeight: scroll ? Math.round(scroll.getBoundingClientRect().height) : 0,
+        tabScrolls: tab ? tab.scrollHeight > tab.clientHeight : false,
+        windowHeight: window.innerHeight,
+      };
+    });
+    expect(geometry.tableHeight,
+      `the table collapsed to ${geometry.tableHeight} px in a ${geometry.windowHeight} px window`)
+      .toBeGreaterThan(100);
+
+    // Reachable: scrolled into view, the button is inside the window and is what is under the
+    // cursor at its own centre.
+    const expand = page.getByTestId(`row-expand-${id}`);
+    await expand.scrollIntoViewIfNeeded();
+    const hit = await page.evaluate((elementId) => {
+      const btn = document.querySelector(`[data-testid=row-expand-${elementId}]`) as HTMLElement;
+      const r = btn.getBoundingClientRect();
+      const at = document.elementFromPoint(r.x + r.width / 2, r.y + r.height / 2);
+      return {
+        insideWindow: r.top >= 0 && r.bottom <= window.innerHeight,
+        isTheButton: at === btn || btn.contains(at),
+        blockedBy: at ? `${at.tagName}.${(at.className || '').toString().split(' ')[0]}` : 'nothing',
+      };
+    }, id);
+    expect(hit.insideWindow, 'the row is inside the window once scrolled to').toBe(true);
+    expect(hit.isTheButton, `the click point resolves to ${hit.blockedBy}`).toBe(true);
+
+    // And the real gesture works, without force.
+    await expand.click();
+    await expect(expand).toHaveAttribute('aria-expanded', 'true');
   });
 });

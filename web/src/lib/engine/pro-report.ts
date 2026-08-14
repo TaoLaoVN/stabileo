@@ -1236,7 +1236,22 @@ export function generateReportHtml(data: ReportData): string {
       const v = group.representative;
       const secStr = `${(v.b * 100).toFixed(0)}×${(v.h * 100).toFixed(0)}`;
       const longBars = v.column ? v.column.bars : v.flexure.bars;
-      const topBars = v.column ? tr('report.symmetric') : `2 Ø10 ${tr('report.minRebar')}`;
+      /**
+       * The top steel this table does NOT have, said rather than filled in.
+       *
+       * It read `2 Ø10 (mín.)` for every beam in the model — a diameter, a count and the word
+       * "minimum", none of which came from anywhere. `ElementVerification` carries no top-region
+       * reinforcement at all, so the row was stating a design decision the verification never
+       * made, on the strength of nothing. CIRSOC fixes neither that count nor that diameter for a
+       * face the analysis requires no tension steel on (§9.6.1.1 scopes §9.6.1.2 away from it),
+       * so there was not even a clause to have been quoting.
+       *
+       * The beam's real top steel — with its diameter, its count, its mark and whether it
+       * resists a moment or holds a stirrup — is in the detailing schedule and the document
+       * report, which read the bars that exist. This cell points there instead of competing
+       * with it.
+       */
+      const topBars = v.column ? tr('report.symmetric') : tr('report.topFromDetailing');
       const elemList = group.elementIds.join(', ');
 
       if (group.stirrupVariants.size === 1) {

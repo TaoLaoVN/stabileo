@@ -218,7 +218,8 @@ describe('the row-2 fixture exercises real three-leg reinforcement', () => {
     const byZone = new Map<string, BarPath[]>();
     for (const b of r.assemblies.flatMap((a) => a.bars)) {
       if (b.role !== 'transverse' || !b.id.includes('crosstie')) continue;
-      if ((b.zoneId ?? '').includes(':ties')) continue;
+      // Joint cages alternate on their own schedule; this assertion is about member zones.
+      if ((b.zoneId ?? '').startsWith('joint-')) continue;
       byZone.set(b.zoneId!, [...(byZone.get(b.zoneId!) ?? []), b]);
     }
     let alternations = 0;
@@ -243,7 +244,13 @@ describe('§15.3.1.4 — joint tie spacing cap', () => {
     // depth of the deepest beam framing into the joint.
     const r = detail(rcFrame);
     const jointTies = r.assemblies.flatMap((a) => a.bars).filter((b) =>
-      b.role === 'transverse' && (b.zoneId ?? '').includes(':ties') && !b.id.includes('crosstie'));
+      /**
+       * §15.3.1.4 caps the JOINT's spacing at 200 mm. It does not cap a column's own ties,
+       * which §10.7.6.2 governs and which legitimately reach 306 mm on this frame. Selecting
+       * on `:ties` swept the column cage in and failed it against a clause about joints.
+       */
+      b.role === 'transverse' && (b.zoneId ?? '').startsWith('joint-')
+      && !b.id.includes('crosstie'));
     expect(jointTies.length).toBeGreaterThan(0);
     const byZone = new Map<string, number[]>();
     for (const b of jointTies) {

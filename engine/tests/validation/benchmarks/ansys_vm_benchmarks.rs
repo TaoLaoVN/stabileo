@@ -892,9 +892,13 @@ fn validation_ansys_vm40_large_deflection_cantilever() {
     let l = 1.0;
     // Choose E and section so EI_eff = 1000:
     // E_mpa = 12 -> E_eff = 12000, I = 1/12 -> EI = 1000
+    // A = 100 gives EA*L^2/EI = 1200, i.e. a nearly inextensible beam, so the
+    // (inextensible) Mattiasson elastica reference applies. With A = 1
+    // (EA*L^2/EI = 12) axial extensibility shifts u_tip/v_tip by tens of
+    // percent and the reference is not applicable.
     let e_mpa = 12.0;
     let e_eff = e_mpa * 1000.0;
-    let a_sec = 1.0;
+    let a_sec = 100.0;
     let iz = 1.0 / 12.0;
     let ei = e_eff * iz; // = 1000
 

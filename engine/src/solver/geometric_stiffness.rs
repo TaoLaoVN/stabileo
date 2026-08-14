@@ -326,10 +326,10 @@ pub fn build_kg_from_forces_3d(
             }
         }
     }
-    // Add quad shell geometric stiffness (from membrane stress resultants)
-    // Requires displacement vector to compute stresses
-    // Note: quad_stresses are computed from linear solution displacements
-    // For buckling, we recompute stresses here from the linear solution
+    // Note: shell geometric stiffness (quads, plates, quad9s, solid shells,
+    // curved shells) is NOT built here — it needs the displacement vector to
+    // compute membrane stresses. Callers add it separately via
+    // add_*_geometric_stiffness_3d (see buckling.rs).
     k_g
 }
 

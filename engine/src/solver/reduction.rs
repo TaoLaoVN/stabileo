@@ -143,6 +143,18 @@ fn chol_solve(l: &[f64], rhs: &[f64], n: usize) -> Vec<f64> {
 ///
 /// Recovery: u_I = K_II^{-1} * (F_I - K_IB * u_B)
 pub fn guyan_reduce_2d(input: &GuyanInput) -> Result<GuyanResult, String> {
+    // The reduction hardcodes u_r = 0 in the recovery/reaction path, so
+    // prescribed support displacements would be silently ignored.
+    for sup in input.solver.supports.values() {
+        let prescribed = [sup.dx, sup.dz, sup.dry];
+        if prescribed.iter().flatten().any(|v| v.abs() > 1e-15) {
+            return Err(format!(
+                "Guyan reduction does not support prescribed support displacements (node {})",
+                sup.node_id
+            ));
+        }
+    }
+
     let dof_num = DofNumbering::build_2d(&input.solver);
     let nf = dof_num.n_free;
     let n = dof_num.n_total;
@@ -593,6 +605,19 @@ pub fn craig_bampton_2d(input: &CraigBamptonInput) -> Result<CraigBamptonResult,
 
 /// Perform Guyan (static) condensation on a 3D model.
 pub fn guyan_reduce_3d(input: &GuyanInput3D) -> Result<GuyanResult3D, String> {
+    // Same limitation as the 2D path: u_r = 0 is hardcoded in the
+    // recovery/reaction path, so prescribed support displacements would be
+    // silently ignored.
+    for sup in input.solver.supports.values() {
+        let prescribed = [sup.dx, sup.dy, sup.dz, sup.drx, sup.dry, sup.drz];
+        if prescribed.iter().flatten().any(|v| v.abs() > 1e-15) {
+            return Err(format!(
+                "Guyan reduction does not support prescribed support displacements (node {})",
+                sup.node_id
+            ));
+        }
+    }
+
     let dof_num = DofNumbering::build_3d(&input.solver);
     let nf = dof_num.n_free;
     let n = dof_num.n_total;
