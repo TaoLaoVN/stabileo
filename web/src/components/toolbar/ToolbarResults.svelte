@@ -258,8 +258,35 @@
               {/each}
             </div>
           </div>
+          <!--
+            What the chosen representation actually shows.
+            
+            OUTSIDE the input-group, which lays its children out in a row: put
+            inside, the sentence competed with the buttons for the panel's
+            width and squeezed two of the three out of sight.
+            
+            The pair that needs explaining is axial. Member colour and a colour
+            map look alike and answer different questions — one is SIGN, the
+            other MAGNITUDE — so the same member can be red in one and blue in
+            the other with both being right. A line of text costs less than a
+            reader reaching that conclusion the hard way.
+          -->
+          <p class="rep-help">
+            {how === 'diagram' ? t('results.repDiagramHelp')
+              : how === 'memberColour' ? t('results.repMemberColourHelp')
+              : t('results.repColourMapHelp')}
+          </p>
         {/if}
-      {#if resultsStore.hasCombinations && (resultsStore.diagramType === 'moment' || resultsStore.diagramType === 'shear' || resultsStore.diagramType === 'axial' || resultsStore.diagramType === 'momentY' || resultsStore.diagramType === 'momentZ' || resultsStore.diagramType === 'shearY' || resultsStore.diagramType === 'shearZ' || resultsStore.diagramType === 'torsion' || resultsStore.diagramType === 'deformed' || resultsStore.diagramType === 'axialColor')}
+      <!--
+        Shown whenever a RESULT is on screen, whatever way it is drawn.
+        
+        This was a list of ten diagram names, and a list is a thing you forget
+        to add to: `colorMap` was missing, so choosing a colour map emptied the
+        panel — the load-case selector and the results table vanished together,
+        as if the model had stopped being solved. Asking whether a quantity is
+        being shown cannot go out of date when a representation is added.
+      -->
+      {#if resultsStore.hasCombinations && (activeQuantity() !== null || resultsStore.diagramType === 'deformed')}
         {@const is3D = uiStore.analysisMode === '3d'}
         {@const caseKeys = is3D ? [...resultsStore.perCase3D.keys()] : [...resultsStore.perCase.keys()]}
         {@const comboKeys = is3D ? [...resultsStore.perCombo3D.keys()] : [...resultsStore.perCombo.keys()]}
@@ -320,7 +347,12 @@
                   <option value="envelope">{t('results.envelope')}</option>
                 </select>
               </div>
-              {#if uiStore.showSecondarySelector && resultsStore.diagramType !== 'deformed' && resultsStore.diagramType !== 'axialColor'}
+              <!--
+                Comparison overlays a second DIAGRAM on the first. There is
+                nothing to overlay when the result is painted onto the members
+                themselves: two colours on one bar is one colour.
+              -->
+              {#if uiStore.showSecondarySelector && resultsStore.diagramType !== 'deformed' && activeRepresentation() === 'diagram'}
                 <div class="input-group">
                   <label>{t('results.compare')}:</label>
                   <select onchange={(e) => {
@@ -421,6 +453,14 @@
 </div>
 
 <style>
+  .rep-help {
+    margin: 3px 0 0;
+    font-size: 0.66rem;
+    line-height: 1.4;
+    color: var(--st-text-3);
+    max-width: 300px;
+  }
+
   .results-table-block { margin-top: 6px; }
   /* The table brings its own scroll: the toolbar is a strip and a hundred rows
      of member forces must not stretch it. */
