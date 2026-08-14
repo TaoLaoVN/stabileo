@@ -22,8 +22,8 @@
   /*
    * Live re-solving joined this list when the section it used to own was
    * removed. It is a real differentiator, but it is one feature among several
-   * and it is opt-in, so it reads better as a Basic capability than as its own
-   * chapter between the demo and the solver matrix.
+   * and it is opt-in, so it reads better as a Basic capability than as a
+   * chapter of its own ahead of the solver matrix.
    */
   const points = ['basicPt1', 'basicPt2', 'basicPt6', 'basicPt3', 'basicPt4', 'basicPt5'];
 </script>
@@ -56,6 +56,6 @@
       {/each}
     </div>
 
-    <p class="mode-note">{t('landing.basicDemoNote')}</p>
+    <p class="mode-note">{t('landing.basicNote')}</p>
   </div>
 </section>

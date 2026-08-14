@@ -154,7 +154,7 @@ const pt: Translations = {
 
   'landing.badgeToday': 'DISPONÍVEL HOJE',
 
-  'landing.basicDemoNote': 'A demo ao vivo logo abaixo roda o modo Básico tal como é publicado. Educativo e PRO constroem mais fluxos sobre a mesma base de cálculo estrutural.',
+  'landing.basicNote': 'O Básico é o modo que funciona hoje, tal como é publicado. Educativo e PRO constroem mais fluxos sobre a mesma base de cálculo estrutural.',
 
   'landing.basicH': 'Básico é o modo que já funciona hoje.',
 
@@ -316,62 +316,6 @@ const pt: Translations = {
 
   'landing.ctaSource': 'Ver o código',
 
-  'landing.demoBasicPill': '100% modo Básico',
-
-  'landing.demoEx1': 'Balanço',
-
-  'landing.demoEx2': 'Pórtico',
-
-  'landing.demoEx3': 'Treliça',
-
-  'landing.demoEx4': 'Pórtico 3D',
-
-  'landing.demoExamplesLbl': 'Exemplos',
-
-  'landing.demoExit': 'Sair',
-
-  'landing.demoFallback': 'A demo embutida não pôde ser carregada neste navegador.',
-
-  'landing.demoFallbackCta': 'Abrir o editor em uma aba nova',
-
-  'landing.demoH': 'Este é o modo Básico, rodando aqui.',
-
-  'landing.demoInteractive': 'Interativo',
-
-  'landing.demoLoadingNew': 'Carregando o editor…',
-
-  'landing.demoLockedCta': 'Toque para interagir',
-
-  'landing.demoLockedHint': 'Até então, a roda do mouse segue rolando a página',
-
-  'landing.demoOpenFull': 'Abrir este exemplo no editor',
-
-  'landing.demoP': 'Não é um vídeo nem uma captura. É o mesmo editor que serve stabileo.com, embutido nesta página e resolvendo inteiramente no seu navegador. Escolha um exemplo e edite.',
-
-  'landing.demoPosterAlt': 'Prévia do editor do Stabileo com um pórtico resolvido e seu diagrama de momentos.',
-
-  'landing.demoReset': 'Reiniciar',
-
-  'landing.demoResetTitle': 'Recarregar este exemplo no seu estado original',
-
-  'landing.demoRetry': 'Tentar de novo',
-
-  'landing.demoScopeNote': 'Tudo o que você vê nesta janela é o modo Básico que obtém em stabileo.com, rodando no seu navegador. Educativo e PRO estendem a mesma base com seus próprios fluxos.',
-
-  'landing.demoStart': 'Iniciar a demo interativa',
-
-  'landing.demoStartHint': 'Carrega o editor dentro desta página',
-
-  'landing.demoStatusFailed': 'O editor não carregou',
-
-  'landing.demoStatusLoading': 'Carregando o editor',
-
-  'landing.demoStatusReady': 'Interativo — a demo recebe a roda do mouse. Esc a devolve.',
-
-  'landing.demoTourCopy': 'Faça um tour guiado pelo modo Básico.',
-
-  'landing.demoTourCta': 'Aprenda o básico',
-
   'landing.docs': 'Docs',
 
   'landing.docsC1B': 'Modelar, resolver e ler resultados nos primeiros dez minutos.',
@@ -397,8 +341,6 @@ const pt: Translations = {
   'landing.ebCapabilities': 'CAPACIDADES DO SOLVER',
 
   'landing.ebCodes': 'NORMAS E INTEROPERABILIDADE',
-
-  'landing.ebDemo': 'DEMO AO VIVO',
 
   'landing.ebDocs': 'DOCUMENTAÇÃO',
 
@@ -482,7 +424,7 @@ const pt: Translations = {
 
   'landing.heroCtaPrimary': 'Abrir o editor',
 
-  'landing.heroCtaSecondary': 'Ver a demo ao vivo',
+  'landing.heroCtaSecondary': 'Fazer o tour guiado',
 
   'landing.heroH': 'Análise estrutural, em uma aba do navegador.',
 
@@ -529,8 +471,6 @@ const pt: Translations = {
   'landing.navBasic': 'Básico',
 
   'landing.navCodes': 'Normas',
-
-  'landing.navDemo': 'Demo',
 
   'landing.navEducation': 'Educativo',
 
@@ -800,12 +740,10 @@ const pt: Translations = {
 
   'landing.whatT3': 'Motor nativo no navegador',
   'landing.features': 'Recursos',
-  'landing.demo': 'Demo',
   'landing.pricing': 'Preços',
   'landing.heroTitle1': 'Análise Estrutural,',
   'landing.heroTitle2': 'Instantânea.',
   'landing.heroSub': 'Análise estrutural 2D e 3D de nível profissional no seu navegador. Sem instalar, sem compromissos.',
-  'landing.tryDemo': 'Experimentar a demo',
   'landing.tryApp': 'Experimentar o app',
   'landing.tryTour': 'Experimentar o tour guiado',
   'landing.metricLanguages': 'Idiomas',
@@ -911,8 +849,6 @@ const pt: Translations = {
   'landing.openSourceDesc': 'O Stabileo é código aberto. Inspecione o código, contribua ou hospede por conta própria.',
   'landing.viewOnGithub': 'Ver no GitHub',
   'landing.tryItNow': 'Experimente agora',
-  'landing.interactiveDemo': 'Demo interativa',
-  'landing.interactiveDemoDesc': 'Explore um modelo estrutural real. Clique, amplie e interaja — sem necessidade de cadastro.',
   'landing.changelog': 'Novidades',
   'landing.changelogDesc': 'O Stabileo está em desenvolvimento ativo. Veja as últimas atualizações.',
   'landing.stickyCtaMobile': 'Comece Grátis',

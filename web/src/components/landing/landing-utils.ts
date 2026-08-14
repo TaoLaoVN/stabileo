@@ -4,30 +4,6 @@ export const QUICK_START_URL = `${REPO_URL}/blob/main/docs/QUICKSTART.md`;
 export const AI_WORKFLOW_URL = `${REPO_URL}/blob/main/docs/AI_MODELING_WORKFLOW.md`;
 export const SOLVER_REF_URL = `${REPO_URL}/blob/main/docs/SOLVER_REFERENCE.md`;
 
-/** Example ids the demo offers. `?example=<id>` is App.svelte's existing contract. */
-export type DemoExample = { id: string; key: string };
-
-export const DEMO_EXAMPLES: DemoExample[] = [
-  { id: 'cantilever', key: 'landing.demoEx1' },
-  { id: 'portal-frame', key: 'landing.demoEx2' },
-  { id: 'truss', key: 'landing.demoEx3' },
-  { id: '3d-portal-frame', key: 'landing.demoEx4' },
-];
-
-/** URL for the embedded demo iframe. Unchanged embed/example contract. */
-export function demoEmbedUrl(id: string) {
-  return `/app/basic?embed&example=${id}`;
-}
-
-/**
- * URL that opens the full editor with the same example preloaded.
- * `?example=` is read by App.svelte independently of `embed`, so this needs no
- * change to the application.
- */
-export function editorExampleUrl(id: string) {
-  return `/app/basic?example=${id}`;
-}
-
 export function enterApp() {
   window.dispatchEvent(new CustomEvent('stabileo-enter-app'));
 }

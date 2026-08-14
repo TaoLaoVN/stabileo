@@ -1,6 +1,6 @@
 <script lang="ts">
   import { tPublic as t } from '../../lib/i18n/store.svelte';
-  import { enterApp, scrollToId } from './landing-utils';
+  import { enterApp } from './landing-utils';
   import Eyebrow from './Eyebrow.svelte';
   import TrussFigure from './TrussFigure.svelte';
 
@@ -17,7 +17,14 @@
 
       <div class="hero-ctas">
         <button class="btn btn-primary btn-lg" onclick={() => enterApp()}>{t('landing.heroCtaPrimary')}</button>
-        <button class="btn btn-ghost btn-lg" onclick={() => scrollToId('demo')}>{t('landing.heroCtaSecondary')}</button>
+        <!--
+          This used to scroll to the live-demo section. That section is gone,
+          so the button points at the guided tour instead — the closest thing
+          left to "show me it running". A real navigation, not a pushState:
+          /demo starts the tour from the application's onMount, which has
+          already run by the time anyone reads this page.
+        -->
+        <a class="btn btn-ghost btn-lg" href="/demo">{t('landing.heroCtaSecondary')}</a>
       </div>
 
       <!--

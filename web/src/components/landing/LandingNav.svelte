@@ -9,7 +9,6 @@
 
   const links = [
     { id: 'basic', key: 'landing.navBasic' },
-    { id: 'demo', key: 'landing.navDemo' },
     { id: 'codes', key: 'landing.navCodes' },
     { id: 'education', key: 'landing.navEducation' },
     { id: 'pro', key: 'landing.navPro' },

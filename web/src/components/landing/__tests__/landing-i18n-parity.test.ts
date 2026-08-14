@@ -15,6 +15,13 @@
  * untranslated copy therefore fails here, without anyone remembering to update
  * this file.
  *
+ * Scope note: an earlier revision also asserted the editor's ribbon keys here,
+ * because the landing embedded a live instance of the editor and rendered them
+ * inside the page. That section is gone, so the assertion went with it. The
+ * ribbon's Portuguese stays — it is a correct translation of real application
+ * strings, and the editor is one click away — it is simply no longer the
+ * landing's business to gate it.
+ *
  * The repo-wide locale-parity test (src/lib/i18n/__tests__) is deliberately
  * untouched: it covers all fourteen dictionaries and a different namespace.
  */
@@ -37,17 +44,6 @@ function usedKeys(): string[] {
 
 /** Keys built at runtime as `'landing.' + key`, which the regex cannot see. */
 const COMPUTED_PREFIXED = ['capLin', 'capNl', 'capEl', 'capTd', 'stT', 'stPa', 'stR'];
-
-/**
- * The landing's live-demo section mounts the real editor, not a screenshot, so
- * its chrome is rendered from the application dictionary rather than from
- * `landing.*`. Portuguese was missing all of it while every landing key was
- * present: a fully Portuguese page with an English ribbon sitting in the middle
- * of it. The rest of the application is still far from translated in
- * Portuguese, and deliberately out of scope here — what the landing shows is
- * what the landing has to speak.
- */
-const DEMO_CHROME = /^(ribbon\.|config\.localAxes|editor\.slide)/;
 
 describe('public landing i18n', () => {
   const keys = usedKeys();
@@ -79,14 +75,6 @@ describe('public landing i18n', () => {
         const missing = group.filter((k) => !(k in d));
         expect(missing, `missing from ${locale}.ts:\n${missing.join('\n')}`).toEqual([]);
       }
-    });
-
-    it(`${locale} has the editor chrome the embedded demo renders`, () => {
-      const d = dict();
-      const chrome = Object.keys(en).filter((k) => DEMO_CHROME.test(k));
-      expect(chrome.length, 'the demo-chrome scan matched nothing').toBeGreaterThan(40);
-      const missing = chrome.filter((k) => !(k in d));
-      expect(missing, `missing from ${locale}.ts — English chrome inside a ${locale} page:\n${missing.join('\n')}`).toEqual([]);
     });
 
     it(`${locale} is translated, not English copied across`, () => {
