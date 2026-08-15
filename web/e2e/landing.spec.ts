@@ -1233,6 +1233,31 @@ test.describe('@landing landing page', () => {
     await expect(shots.nth(2).locator('.card-body p')).toContainText(/in development/i);
   });
 
+  test('the contact button opens a chat with the configured number', async ({ page }) => {
+    await bootLanding(page);
+
+    const fab = page.locator('.landing .wa-fab');
+    await expect(fab).toBeVisible();
+    // Digits only. wa.me accepts a `+` or a space without complaining and then
+    // opens WhatsApp on an invalid contact, so the failure is silent.
+    await expect(fab).toHaveAttribute('href', /^https:\/\/wa\.me\/\d{8,15}\?text=/);
+    await expect(fab).toHaveAttribute('target', '_blank');
+    await expect(fab).toHaveAttribute('rel', 'noreferrer');
+    // Icon-only, so the accessible name has to carry it.
+    await expect(fab).toHaveAttribute('aria-label', /whatsapp/i);
+  });
+
+  test('the contact button never covers the mobile action bar', async ({ page }) => {
+    // Below 760px the footer raises a sticky "open the editor" bar. That bar is
+    // the page's primary action; this button is not, and must sit above it.
+    await page.setViewportSize({ width: 390, height: 780 });
+    await bootLanding(page);
+
+    const fab = (await page.locator('.landing .wa-fab').boundingBox())!;
+    const bar = (await page.locator('.landing .mobile-sticky').boundingBox())!;
+    expect(fab.y + fab.height).toBeLessThanOrEqual(bar.y);
+  });
+
   test('every landing image resolves', async ({ page }) => {
     await bootLanding(page);
     await page.locator('.landing [data-section="cta"]').scrollIntoViewIfNeeded();
