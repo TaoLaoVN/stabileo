@@ -78,9 +78,15 @@ describe('RC design baseline — the flagship frame, member by member', () => {
     assertRealSolver();
     // Restated here rather than only in the aggregate suite: if these move, the digest
     // below has moved too, and the reader should see the coarse reason first.
+    /**
+     * 408 and 386 are the numbers this file recorded at its ORIGINAL base, and they are
+     * unchanged. That is the load-bearing fact in the re-recording below: main moved the
+     * refused members from one label to another without designing a single member differently.
+     */
     expect(summary.total).toBe(408);
     expect(summary.verified).toBe(386);
-    expect(summary.searchExhausted).toBe(22);
+    expect(summary.searchExhausted).toBe(0);
+    expect(summary.provisionalBiaxial).toBe(22);
     expect(summary.sectionInadequate).toBe(0);
     expect(summary.demandUnavailable).toBe(0);
     expect(summary.unsupported).toBe(0);
@@ -107,19 +113,22 @@ describe('RC design baseline — the flagship frame, member by member', () => {
    */
   it('reproduces the recorded per-member fingerprint exactly', () => {
     const actual = fingerprint(lines);
-    // Recorded 2026-08-12 on feat/pro-steel-family @ 542fc664 (origin/main), before any
-    // change to the design path. See the header: do NOT re-record to make this pass.
+    // Re-recorded 2026-08-15 against origin/main@d6b32ff0. See RECORDED_FINGERPRINT for how,
+    // and why it was not this branch's to keep. The rule above still stands for PR21's own
+    // commits: do NOT re-record to make a change of yours pass.
     expect(actual).toBe(RECORDED_FINGERPRINT);
   });
 
   it('keeps the members that refuse, refusing for the same reason', () => {
-    // The 22 exhausted members are the fixture's BEAM-Y set, refused on unchecked biaxial
-    // demand. Pinned separately from the fingerprint because this is the assertion whose
-    // meaning a reader can check without recomputing a hash.
+    // The same 22 members are the fixture's BEAM-Y set, refused on unchecked biaxial demand.
+    // Pinned separately from the fingerprint because this is the assertion whose meaning a
+    // reader can check without recomputing a hash — and it is where main's drift is visible in
+    // words: the SET did not change, the SIZE did not change, the REASON did not change. Only
+    // the name the engine gives that refusal did.
     const refused = [...summary.outcomes.values()].filter((o) => o.outcome !== 'VERIFIED');
     expect(refused).toHaveLength(22);
     for (const o of refused) {
-      expect(o.outcome).toBe('SEARCH_EXHAUSTED');
+      expect(o.outcome).toBe('PROVISIONAL_BIAXIAL');
       expect(o.limiting).toContain('biaxial');
       expect(o.certificate).toBeUndefined();
       expect(o.accepted).toBeUndefined();
@@ -128,9 +137,45 @@ describe('RC design baseline — the flagship frame, member by member', () => {
 });
 
 /**
- * Filled from the first run on this branch — see the sibling script note in the commit.
+ * Re-recorded against `origin/main@d6b32ff0` on 2026-08-15. The drift is MAIN's, not PR21's.
  *
- * Kept as a named constant at the bottom rather than inline so that the one line anybody
- * would be tempted to edit is the one line that says, immediately above it, not to.
+ * Kept as a named constant at the bottom rather than inline so that the one line anybody would
+ * be tempted to edit is the one line that says, immediately above it, not to. It was edited
+ * once, under authorisation, and this is the evidence that made that the right call.
+ *
+ * ── How it was established, and how to repeat it ───────────────────
+ *
+ * Not reasoned about — measured, on a checkout with NO code from this branch in it:
+ *
+ *     git worktree add /tmp/probe origin/main --detach
+ *     cp <this file> /tmp/probe/web/src/lib/engine/design/__tests__/
+ *     cp -R web/src/lib/wasm/. /tmp/probe/web/src/lib/wasm/    # gitignored build output
+ *     cd /tmp/probe/web && npx vitest run --project unit rc-baseline-digest
+ *
+ * Pure `origin/main` reproduces this branch's failure exactly: same digest, same reclassified
+ * outcome. So the concrete design changed in main, in the 113 commits between `542fc664` — the
+ * base this fingerprint was first taken at — and `d6b32ff0`.
+ *
+ * ── What actually moved, and what did not ──────────────────────────
+ *
+ *                        first recording      current main
+ *     total                          408               408   ← unchanged
+ *     verified                       386               386   ← unchanged
+ *     refused                         22                22   ← the SAME members
+ *     their `limiting`         ['biaxial']       ['biaxial']  ← the same reason
+ *     their outcome       SEARCH_EXHAUSTED  PROVISIONAL_BIAXIAL  ← only this
+ *     certificate / accepted    undefined         undefined   ← still nothing certified
+ *
+ * Main's biaxial-proposal work gave a NAME to a refusal that already existed. Not one member
+ * is designed differently, and nothing is certified that was not certified before. The digest
+ * changed because the outcome string is part of every line of it.
+ *
+ * ── Why PR21 could not have caused it ──────────────────────────────
+ *
+ * `PROVISIONAL_BIAXIAL` is produced by `candidate-search.ts` and declared in `outcome.ts`.
+ * This branch touches neither — `git diff origin/main..HEAD` lists no file under
+ * `engine/design/` except its own two test files, `member-context.ts` (which EXCLUDES metallic
+ * members from this pipeline) and `cirsoc301-capabilities.ts` (every faculty `false`).
+ * A member of the flagship frame is concrete, so the exclusion cannot reach it.
  */
-const RECORDED_FINGERPRINT = '1bd4d9c1d575b085';
+const RECORDED_FINGERPRINT = 'c6a055ef135d0a71';
