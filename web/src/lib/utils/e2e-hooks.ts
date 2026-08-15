@@ -74,6 +74,15 @@ export interface StabileoTestHooks {
   counts(): Record<string, number>;
   runCounts(): Record<string, number> | null;
   selection(): number[];
+  /**
+   * Everything selected, by kind.
+   *
+   * `selection()` reports members alone, which is enough while a selection can
+   * only BE members. It cannot answer whether a drag in Supports mode picked
+   * up the supports it drew a rectangle around — the question that mattered
+   * when three of the four filters silently selected nothing.
+   */
+  selectionByKind(): { nodes: number[]; elements: number[]; supports: number[]; loads: number[] };
   reinforcement(elementId: number): unknown;
   rebarSummary(elementId: number): string;
   elementIds(): number[];
@@ -183,6 +192,15 @@ export function installE2EHooks(): void {
       };
     },
     selection: () => [...uiStore.selectedElements].sort((a, b) => a - b),
+    selectionByKind: () => {
+      const sorted = (s: Iterable<number>) => [...s].sort((a, b) => a - b);
+      return {
+        nodes: sorted(uiStore.selectedNodes),
+        elements: sorted(uiStore.selectedElements),
+        supports: sorted(uiStore.selectedSupports),
+        loads: sorted(uiStore.selectedLoads),
+      };
+    },
     reinforcement: (id) => modelStore.elements.get(id)?.reinforcement ?? null,
     rebarSummary,
     elementIds: () => [...modelStore.elements.keys()].sort((a, b) => a - b),
