@@ -1,71 +1,151 @@
 # PR20 — readiness
 
-**Status: the automated gates are green. Manual QA has NOT been done, and PR20 stays in draft
-until it is.** Nothing below is a product defect; what is missing is a person's judgement and the
-423 engine strings that were correctly refused.
+**Scope is closed.** Bauti has accepted the current scope with the debts listed in §3. No further
+redesign or product work belongs in this PR.
 
-Branch `feat/pro-visual-system`, PR #125, at `aebe750c`.
+**Technical state: ready for review — with one blocker that is not about the code.** PR #125's base
+branch has moved 37 commits ahead and the branch no longer merges cleanly. See §5.
+
+**Manual QA: NOT done.** `pr20-qa-manual.md` is the checklist; nobody has walked it. Nothing in
+this document should be read as saying otherwise.
+
+Branch `feat/pro-visual-system`, PR #125 (base `pr/19-rc-cad-constructibility`), at `4630818f`.
 
 ---
 
-## 1. The final gate run
+## 1. What is finished
 
-Started at load average 2,47 on fourteen cores, port 4293 (a dedicated port — 4173 is shared with
-other worktrees and has cost this session two invalidated runs).
+| Area | State |
+|---|---|
+| PRO design workflow | ✅ six stages, stated order, navigable strip |
+| Global and per-family design | ✅ census and seven states per family, before any run |
+| Floor design | ✅ its own contract: what it does, leaves alone, and what comes next |
+| Coordinated detailing | ✅ ranked review screen, conflict → member and → sheet routing |
+| Documents | ✅ a stage of its own, with the issue requirement in text |
+| 3-D viewer | ✅ three entry points, one `openRebar3D` operation |
+| Autosave and restore | ✅ including the provisional/torsion member lists |
+| `.ded` round trip | ✅ 48 MB for the 7-storey building, reopened on a fresh context |
+| English / Español / Português | ✅ **the interface**. Not the engine memos — see §3 |
+
+## 2. Automated gates — the run these numbers come from
+
+Full suite on a dedicated port (4293), started at load average 2,47 on fourteen cores.
+**These are the most recent gates and they are the ones reported.**
 
 | Gate | Result |
 |---|---|
-| typecheck | ✅ 479 errors against a baseline of 490 — no new type errors |
+| typecheck | ✅ 479 vs baseline 490 — no new type errors |
 | unit suite | ✅ 5989 passed · 12 skipped · 1 todo · 321 files |
 | build tests | ✅ 14 passed |
 | production build | ✅ 13,17 s |
 | locale parity | ✅ 60 passed · 1 todo |
-| smoke | 189 passed / 12 failed → all 12 retargeted, then **37/37** |
+| smoke | ✅ 37/37 after retargeting 12 `test obsoleto` failures |
 | **full Playwright suite** | ✅ **402 passed · 1 failed · 4 skipped · 1 did not run · 30,5 min** |
 
-### The one failure
+`ded-roundtrip`, `project-restore`, `tab-reactivation`, `rebar-3d`, `viewport-cost`, families,
+floors, detailing, documents, Ver en 3D, preview and sticky headers all pass **inside that run** —
+they were not run separately and then quoted as if they were independent evidence.
 
-| Test | Class | Evidence |
-|---|---|---|
-| `rc-design-visual › @slow visual baselines` | **screenshot** | 696→697 px, 645 px differing, ratio 0,03 — byte-identical to the signature recorded across every run of this session, including one with all changes stashed. Its describe block is titled "(non-blocking)"; its sibling is `mode: 'serial'`, which is the "1 did not run". |
+**The one failure**: `rc-design-visual › @slow visual baselines`, 696→697 px, 645 pixels differing,
+ratio 0,03 — the same signature in every run of this session including one with all changes
+stashed. Classified **screenshot**. **NOT updated**, and it must not be until Bauti confirms the
+overlay legend by eye. Its `mode: 'serial'` sibling is the "1 did not run".
 
-Nothing classified as **producto**, **fixture** or **problema real de PR20**.
+## 3. Debts accepted for later PRs
 
-### The 12 smoke failures, and why they were `test obsoleto`
+Accepted explicitly by Bauti. **None of these is to be fixed inside PR20.**
 
-All twelve, plus more in the heavy specs, showed one signature: a locator RESOLVES, reports the
-right element, then waits forever for it to become visible. That is a collapsed `<details>`.
+| Debt | Why it is not here |
+|---|---|
+| Some right-panel visual refinements | Diminishing returns; the panel is coherent, not perfect |
+| **423 Spanish literals** in the detailing engine, rendered in every language | Extracting them means editing the modules that compute punching shear, splice lengths, bent-up-bar admissibility and footing flexure. That is an engine refactor and deserves the engine's own tests as its gate |
+| Tab-return lag on large models | Reproduced: 7-storey + viewer open, first click 1–4 s. **Present on PR19 too**, whose worst cases are worse (3088 vs 1504 ms on the toggle). Not a PR20 regression. Scene rebuilds, WebGL context loss and canvas creation are all ruled out — every delta zero across ten cycles on two branches. Cause not located |
+| The 1 px snapshot | Needs a human eye, then a commit of its own |
+| Conflict inspector has no complete keyboard route | Real accessibility gap, out of this pass's scope |
+| Viewer rail not grouped by family | Documented, not started |
+| Toasts and visual density | Toast can cover the command row at 1280×720; the stage strip wraps leaving a dangling chevron. Both documented, both design decisions |
+| Further preview and workflow improvements | — |
 
-Point 6 moved the report, the drawings, the schedule, the 3-D view and the professional review out
-of the coordinated-detailing panel into a stage of their own — and a closed `<details>` keeps its
-children in the DOM. Fourteen specs reach those controls; only two were updated when the change
-landed. `openDocumentsStage()` now lives in `fixtures.ts`. No assertion changed.
+## 4. Automated QA vs manual QA — what the 402 do and do not mean
 
-Opening the stage by default would have made this disappear and would have undone the point of
-making Documents a stage. Not done.
+The suite proves **facts**: the control exists, the count is right, the order in the DOM is the
+order claimed, the focus returns, `scrollWidth ≤ clientWidth`, the three languages render, the
+scene census matches across three entry points, the 48 MB file round-trips.
 
-### An earlier attempt at this run, invalidated
+It cannot decide **judgements**: whether a 1:50 elevation is legible at the size it is shown,
+whether a sentence explains what it claims to, whether three ways to reach the 3-D view is helpful
+or confusing, whether a run that cannot be cancelled is acceptable at that length, and whether the
+whole thing reads as one product.
 
-A first attempt reached 39 passed / 4 failed and was stopped by hand. Load average climbed
-2,5 → 23 → 37, driven by **nine concurrent Claude Code sessions** on the same host. The per-stage
-instrumentation is what makes the diagnosis provable rather than asserted — both preparations of
-the same 7-storey project, in the same run:
+Two specific things only a person can catch here:
+
+- a **corrupted 48 MB `.ded`** is a lost day of work, and the round trip deserves one human open;
+- the engine memos being Spanish-only is a **decision**, and it is Bauti's, not a test's.
+
+`pr20-qa-manual.md` marks with ⚠ the places where this pass changed a judgement rather than a fact
+— those are where a second opinion is worth the most.
+
+## 5. The blocker that is not about the code
+
+`gh pr view 125` reports **`mergeable: CONFLICTING`**.
+
+The base branch `pr/19-rc-cad-constructibility` has advanced **37 commits** since this branch left
+it — it merged main via PR #139. PR20 is 43 commits ahead of it. Bringing them together touches
+**366 files** and conflicts in **9**:
 
 ```
-first  (load ≈ 3)   boot 0,4 · solve 0,8 · design 9,1 · detail 4,2 · floors 3,6 · scene 8,5
-                    → 26,6 s, passed
-second (load ≈ 23)  boot 3,8 · solve 2,1 · … no further stage printed, fixture hit its 900 s ceiling
+web/e2e/project-restore.spec.ts
+web/e2e/rebar-toggles.spec.ts
+web/playwright.config.ts
+web/src/App.svelte
+web/src/lib/engine/detailing/__tests__/beam-reinforcement-audit.test.ts
+web/src/lib/engine/detailing/__tests__/top-steel-projections.test.ts
+web/src/lib/export/__tests__/design-families.test.ts
+web/src/lib/export/__tests__/scene-completeness.test.ts
+web/src/lib/three/__tests__/support-gizmo-sharing.test.ts
 ```
 
-Boot 9,5× slower, solve 2,6× slower. All four of its failures were the 7-storey fixture, and all
-four pass in the run reported above. That is the isolated-pass evidence the classification needed;
-the numbers from the invalidated run are not quoted anywhere as a result.
+**This was not done**, and deliberately. Merging 366 files of someone else's work into PR20
+invalidates every number in §2 — the gates would have to be re-run from scratch, and a conflict
+resolved wrongly in `App.svelte` or `playwright.config.ts` is exactly the kind of thing that turns
+a green branch red for reasons that have nothing to do with what PR20 changed.
 
-**The standing hazard**: three runs in this session were spoilt by contention the operator cannot
-see from inside a test report — a zombie vitest pool, a network that dropped packets, and a
-neighbouring agent. Check `uptime` before starting one; below 6 is the threshold used throughout.
+It is also a decision about ORDER, and that decision is Bauti's:
+
+1. **QA first, then integrate.** Walk the checklist against the branch as it stands and as it was
+   tested, then merge the base and re-run the gates. Costs one extra gate run; QA is done against
+   exactly what was measured.
+2. **Integrate first, then QA.** Merge the base now, re-run everything, then walk the checklist
+   against the integrated result. QA is done once, against what will actually merge — but if the
+   integration breaks something, the QA window slips.
+
+The second is usually right when the base has moved this much. Either way the gates in §2 have to
+be re-run after the integration, and this document must be updated with the new numbers.
+
+## 6. Merge
+
+The repository allows **squash, merge commit and rebase**. Squash is recommended, for two reasons:
+
+- the 46 `Co-Authored-By` trailers vanish on their own — a squash writes one new message and that
+  is the whole record, so no history rewrite and no force-push is needed
+  (`pr20-authorship-cleanup.md` exists for the case where squash is not used);
+- 43 commits of iteration on one feature is not history anyone will read.
+
+**The squash commit's author.** GitHub attributes a squash commit to the person who clicks Merge,
+so it will be Bauti's if Bauti merges it. What it does NOT do automatically is drop the trailers:
+GitHub's default squash message concatenates the individual commit messages, trailers included. The
+message must be **replaced by hand** in the merge dialog. That is the single step that decides
+whether this cleanup is needed at all.
+
+## 7. Where this stands
+
+- **Technically ready for review.** Gates green, one known screenshot, scope closed.
+- **NOT mergeable as it stands** — the base moved; §5.
+- **Manual QA pending.** Not started. PR20 stays in draft until it is walked.
 
 ---
+
+## Appendix — earlier runs and how each failure was classified
 
 ## 2. The clean run, and how each failure is classified
 
