@@ -1,31 +1,69 @@
 # PR20 — readiness
 
-**Status: NOT ready to leave draft.** Not because a gate is red, but because two things this
-document names have not been done: manual QA of the redesigned workflow, and the localisation of
-423 Spanish strings the engine renders to every user in every language.
+**Status: the automated gates are green. Manual QA has NOT been done, and PR20 stays in draft
+until it is.** Nothing below is a product defect; what is missing is a person's judgement and the
+423 engine strings that were correctly refused.
 
-Branch `feat/pro-visual-system`, PR #125, at `64c28f81`.
+Branch `feat/pro-visual-system`, PR #125, at `aebe750c`.
 
 ---
 
-## 1. Gates
+## 1. The final gate run
 
-Run in sequence on one machine, no two suites in parallel.
+Started at load average 2,47 on fourteen cores, port 4293 (a dedicated port — 4173 is shared with
+other worktrees and has cost this session two invalidated runs).
 
 | Gate | Result |
 |---|---|
-| typecheck | ✅ 479 errors against a baseline of 490 — **no new type errors** |
-| unit suite | ✅ no failures |
-| build tests | ✅ 14 |
-| production build | ✅ 14,58 s |
-| smoke | ✅ 152 / 152 (measured `5cb9088d`) |
-| ded-roundtrip · project-restore · tab-reactivation · rebar-3d · viewport-cost | see the suite below — all five are in it |
-| full Playwright suite, once | **328 passed · 3 failed · 4 skipped · 1 did not run · 34,6 min** |
+| typecheck | ✅ 479 errors against a baseline of 490 — no new type errors |
+| unit suite | ✅ 5989 passed · 12 skipped · 1 todo · 321 files |
+| build tests | ✅ 14 passed |
+| production build | ✅ 13,17 s |
+| locale parity | ✅ 60 passed · 1 todo |
+| smoke | 189 passed / 12 failed → all 12 retargeted, then **37/37** |
+| **full Playwright suite** | ✅ **402 passed · 1 failed · 4 skipped · 1 did not run · 30,5 min** |
 
-**Typecheck baseline debt.** 479 reported against a baseline of 490. The eleven that no longer
-report are inherited, not fixed by this branch, and the baseline is deliberately NOT re-recorded
-here: lowering it is a change whose diff deserves its own review, and doing it inside a test pass
-would hide which errors went away and why.
+### The one failure
+
+| Test | Class | Evidence |
+|---|---|---|
+| `rc-design-visual › @slow visual baselines` | **screenshot** | 696→697 px, 645 px differing, ratio 0,03 — byte-identical to the signature recorded across every run of this session, including one with all changes stashed. Its describe block is titled "(non-blocking)"; its sibling is `mode: 'serial'`, which is the "1 did not run". |
+
+Nothing classified as **producto**, **fixture** or **problema real de PR20**.
+
+### The 12 smoke failures, and why they were `test obsoleto`
+
+All twelve, plus more in the heavy specs, showed one signature: a locator RESOLVES, reports the
+right element, then waits forever for it to become visible. That is a collapsed `<details>`.
+
+Point 6 moved the report, the drawings, the schedule, the 3-D view and the professional review out
+of the coordinated-detailing panel into a stage of their own — and a closed `<details>` keeps its
+children in the DOM. Fourteen specs reach those controls; only two were updated when the change
+landed. `openDocumentsStage()` now lives in `fixtures.ts`. No assertion changed.
+
+Opening the stage by default would have made this disappear and would have undone the point of
+making Documents a stage. Not done.
+
+### An earlier attempt at this run, invalidated
+
+A first attempt reached 39 passed / 4 failed and was stopped by hand. Load average climbed
+2,5 → 23 → 37, driven by **nine concurrent Claude Code sessions** on the same host. The per-stage
+instrumentation is what makes the diagnosis provable rather than asserted — both preparations of
+the same 7-storey project, in the same run:
+
+```
+first  (load ≈ 3)   boot 0,4 · solve 0,8 · design 9,1 · detail 4,2 · floors 3,6 · scene 8,5
+                    → 26,6 s, passed
+second (load ≈ 23)  boot 3,8 · solve 2,1 · … no further stage printed, fixture hit its 900 s ceiling
+```
+
+Boot 9,5× slower, solve 2,6× slower. All four of its failures were the 7-storey fixture, and all
+four pass in the run reported above. That is the isolated-pass evidence the classification needed;
+the numbers from the invalidated run are not quoted anywhere as a result.
+
+**The standing hazard**: three runs in this session were spoilt by contention the operator cannot
+see from inside a test report — a zombie vitest pool, a network that dropped packets, and a
+neighbouring agent. Check `uptime` before starting one; below 6 is the threshold used throughout.
 
 ---
 
