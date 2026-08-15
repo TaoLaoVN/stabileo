@@ -1,5 +1,7 @@
 <script lang="ts">
   import { onMount } from 'svelte';
+  import PointerModeButton from './PointerModeButton.svelte';
+  import Icon from './ribbon/Icon.svelte';
   import { t } from '../lib/i18n';
   import { modelStore, uiStore, resultsStore, historyStore, dsmStepsStore } from '../lib/store';
   import { TWO_D_VERTICAL_AXIS_LABEL, TWO_D_DISPLACEMENT_LABELS, get2DDisplayDisplacementVertical, get2DDisplayedVertical } from '../lib/geometry/coordinate-system';
@@ -2505,10 +2507,15 @@
   ></canvas>
 
   <div class="viewport-controls" style="top: {uiStore.floatingToolsTopOffset}px">
+    <!-- Pointer mode first: it is the control used most, and it took this slot
+         from zoom-to-fit, which moved down one. -->
+    <PointerModeButton />
     <button onclick={() => {
       if (modelStore.nodes.size === 0) return;
       uiStore.zoomToFit(modelStore.nodes.values(), canvas.width, canvas.height);
-    }} title={t('viewport.zoomToFit')}>⊞</button>
+    }} title={t('viewport.zoomToFit')} aria-label={t('viewport.zoomToFit')}>
+      <Icon name="fit" size={17} />
+    </button>
   </div>
 </div>
 

@@ -5,6 +5,8 @@
   import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
   import { modelStore, uiStore, resultsStore, historyStore, dsmStepsStore, verificationStore } from '../lib/store';
   import { boxSelect as boxSelectTargets } from '../lib/viewport/box-select';
+  import PointerModeButton from './PointerModeButton.svelte';
+  import Icon from './ribbon/Icon.svelte';
   import { COLORS, setGroupColor, findUserData, disposeObject, createTextSprite } from '../lib/three/selection-helpers';
   import { paintShell, paintShellEdge, restoreShellColor } from '../lib/three/create-shell-mesh';
   import ShellContourLegend from './viewport/ShellContourLegend.svelte';
@@ -2475,7 +2477,11 @@
   {/if}
   <!-- Camera preset buttons -->
   <div class="camera-controls" style="top: {uiStore.floatingToolsTopOffset}px">
-    <button onclick={zoomToFit} title={t('viewport3d.zoomToFit')}>⊞</button>
+    <!-- Same stack, same order as 2D: the pointer mode on top, then the view. -->
+    <PointerModeButton />
+    <button onclick={zoomToFit} title={t('viewport3d.zoomToFit')} aria-label={t('viewport3d.zoomToFit')}>
+      <Icon name="fit" size={17} />
+    </button>
     <button onclick={() => setView('top')} title={t('viewport3d.topView')}>⊤</button>
     <button onclick={() => setView('front')} title={t('viewport3d.frontView')}>⊡</button>
     <button onclick={() => setView('side')} title={t('viewport3d.sideView')}>⊟</button>

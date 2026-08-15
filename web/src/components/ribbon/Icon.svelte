@@ -168,6 +168,18 @@
     <path d="M5.5 9.5a7.5 4 0 1 0 13 0" />
     <path d="M4.4 6.6l1.2 3.2 3.2-.9" />
 
+  {:else if name === 'fit'}
+    <!--
+      Zoom to fit: a frame closing IN on the drawing. Four corner brackets and
+      arrows pointing inward — the shape every viewer uses for it, and legible
+      at 18 px where the ⊞ glyph it replaces read as a generic grid.
+    -->
+    <path d="M3 8V4.6a1.6 1.6 0 0 1 1.6-1.6H8" />
+    <path d="M16 3h3.4A1.6 1.6 0 0 1 21 4.6V8" />
+    <path d="M21 16v3.4a1.6 1.6 0 0 1-1.6 1.6H16" />
+    <path d="M8 21H4.6A1.6 1.6 0 0 1 3 19.4V16" />
+    <rect x="8.5" y="8.5" width="7" height="7" rx="0.6" opacity="0.5" />
+
   {:else if name === 'stress'}
     <!--
       A member with the stress varying along it: the bar, and four bands of

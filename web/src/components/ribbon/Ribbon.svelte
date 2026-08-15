@@ -173,8 +173,20 @@
       id: 'view',
       labelKey: 'ribbon.groupView',
       cmds: [
-        { id: 'select', icon: 'select', labelKey: 'float.select', tool: 'select' },
-        { id: 'pan', icon: 'pan', labelKey: 'float.pan', tool: 'pan' },
+        /*
+         * Selection CONFIGURATION, not the pointer mode.
+         *
+         * Select and Pan used to be two commands here, and they were the
+         * exception that broke the ribbon's one rule: every other command
+         * opens a panel, so the highlight means "this is what the panel is
+         * showing" — but a pointer mode shows nothing, so after a solve a lit
+         * diagram and a lit Select both claimed to be the current activity.
+         *
+         * The pointer mode moved onto the model, where the pointer is. What
+         * stays here is what selecting needs a PANEL for: which kinds of thing
+         * a drag picks up.
+         */
+        { id: 'select', icon: 'select', labelKey: 'ribbon.selection', panel: 'selection' },
         /*
          * One button, not two. A pair where one is always lit reads as a
          * permanent alarm — the accent is for what you are doing now, and
@@ -285,13 +297,9 @@
    * ribbon claiming you were placing nodes on a moment diagram. Picking a
    * diagram now disarms an editing tool, and arming one clears the diagram.
    *
-   * View is deliberately exempt in one direction: Select and Pan stay armed
-   * while a diagram is shown, because reading a result means moving around it
-   * and clicking things in it. They are how you LOOK, not how you edit.
+   * The pointer modes are not here at all any more: Select and Pan live on
+   * the model, so there is no "view tool" for this rule to exempt.
    */
-  /** Tools that only change how you LOOK at the model, never what it is. */
-  const VIEW_TOOLS: string[] = ['select', 'pan'];
-
   const EDIT_TOOLS = ['node', 'element', 'support', 'load'];
 
   function run(cmd: Cmd) {
@@ -311,19 +319,7 @@
        * is showing your work. `toggle: false`: arming a tool means "show me
        * this", and a second press should re-show rather than hide.
        */
-      if (cmd.dataTab) {
-        onOpenPanel('data', { dataTab: cmd.dataTab, toggle: false });
-      } else if (!VIEW_TOOLS.includes(cmd.tool)) {
-        onOpenPanel(null);
-      }
-      /*
-       * Select and Pan leave the panel exactly as it was.
-       *
-       * They are not a task — they are how you look at whatever task you are
-       * in. Reaching for Pan to move the canvas and having the panel you were
-       * reading close underneath is a loss you did not ask for, and getting it
-       * back costs two clicks and the scroll position.
-       */
+      if (cmd.dataTab) onOpenPanel('data', { dataTab: cmd.dataTab, toggle: false });
       return;
     }
     if (cmd.stressMap) {
@@ -368,8 +364,23 @@
     });
   }
 
+  /**
+   * Lit means: THIS is what the right-hand panel is showing.
+   *
+   * One rule, and it is the one a reader can verify at a glance — look at the
+   * panel, look at the ribbon, they say the same thing. It replaces a set of
+   * per-command conditions that each answered a slightly different question
+   * ("is this tool armed", "is this diagram drawn") and could therefore be true
+   * at the same time: after a solve, a lit diagram plus a lit Advanced plus a
+   * lit drawing tool, three commands claiming to be the current activity while
+   * the panel showed one of them.
+   *
+   * A diagram left on the canvas while the panel moved elsewhere is not
+   * highlighted, and that is deliberate: the highlight tracks the panel, not
+   * the canvas, and the canvas has its own legends to say what it is drawing.
+   */
   function isActive(cmd: Cmd): boolean {
-    if (cmd.tool) return uiStore.currentTool === cmd.tool;
+    if (cmd.tool) return activePanel === 'data' && uiStore.currentTool === cmd.tool;
     /*
      * A command that names a data tab lights when THAT tab is showing.
      *
@@ -409,11 +420,11 @@
        * members were painted by exactly the quantity whose command had gone
        * out.
        */
-      return solved && commandShowsQuantity(cmd.diagram);
+      return solved && activePanel === 'results' && commandShowsQuantity(cmd.diagram);
     }
     // Solve OPENS Results but is not a state — it is an action you run, and a
     // lit Solve while the panel happens to be open would read as "solving".
-    if (cmd.stressMap) return solved && activeStressMeasure() !== null;
+    if (cmd.stressMap) return solved && activePanel === 'results' && activeStressMeasure() !== null;
     if (cmd.id === 'solve') return false;
     if (cmd.panel) return activePanel === cmd.panel;
     return false;  // `dim` is a switch, not a state: it never lights up.
