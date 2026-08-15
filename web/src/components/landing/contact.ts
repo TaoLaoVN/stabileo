@@ -9,7 +9,10 @@
  * opens a chat with the wrong number is worse than no contact button, so the
  * failure mode here is "absent", never "wrong".
  */
-export const WHATSAPP_NUMBER = '5491138563881';
+// Typed as `string`, not left to infer its literal type: this is
+// configuration, and code that checks whether it is set must be allowed to
+// compare it against ''.
+export const WHATSAPP_NUMBER: string = '5491138563881';
 
 /** True when the landing has a number to offer. */
 export const hasWhatsapp = () => /^\d{8,15}$/.test(WHATSAPP_NUMBER);
