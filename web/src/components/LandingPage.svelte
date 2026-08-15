@@ -18,6 +18,7 @@
   import LandingCTA from './landing/LandingCTA.svelte';
   import LandingBlog from './landing/LandingBlog.svelte';
   import LandingFooter from './landing/LandingFooter.svelte';
+  import WhatsappButton from './landing/WhatsappButton.svelte';
   import { enterApp } from './landing/landing-utils';
   import './landing/landing.css';
 
@@ -174,4 +175,5 @@
   <LandingCTA />
   <LandingBlog />
   <LandingFooter />
+  <WhatsappButton />
 </div>

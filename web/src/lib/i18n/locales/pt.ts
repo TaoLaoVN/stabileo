@@ -530,6 +530,10 @@ const pt: Translations = {
 
   'landing.footBlog': 'Blog',
 
+  'landing.waGreeting': 'Olá! Escrevo pelo stabileo.com.',
+
+  'landing.waLabel': 'Fale conosco pelo WhatsApp',
+
   'landing.navLanguage': 'Idioma',
 
   'landing.navMenuOpen': 'Menu',

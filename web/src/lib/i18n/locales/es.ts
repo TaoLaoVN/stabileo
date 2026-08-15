@@ -31,6 +31,8 @@ const es: Record<string, string> = {
   'landing.blogLink': 'Ir al blog',
   'landing.blogTitle': 'Accedé a nuestro blog',
   'landing.footBlog': 'Blog',
+  'landing.waGreeting': '¡Hola! Te escribo desde stabileo.com.',
+  'landing.waLabel': 'Escribinos por WhatsApp',
   'landing.navLanguage': 'Idioma',
   'landing.ebHero': 'LIBRE Y ABIERTO · CÁLCULO ESTRUCTURAL',
   'landing.heroH': 'Análisis estructural, en una pestaña del navegador.',
