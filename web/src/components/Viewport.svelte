@@ -18,6 +18,7 @@
   import { drawInfluenceLine } from '../lib/canvas/draw-influence';
   import { drawModeShape, drawPlasticHinges } from '../lib/canvas/draw-modes';
   import { computeElementStress } from '../lib/store/results.svelte';
+  import { colourScaleSource } from '../lib/store/result-view';
   import {
     drawGrid as _drawGrid,
     drawAxes as _drawAxes,
@@ -512,7 +513,7 @@
        * number derived twice is two numbers waiting to disagree.
        */
       resultsStore.setColourScale(globalMax > 1e-10
-        ? { max: globalMax, unit: colourScaleUnit(kind) }
+        ? { max: globalMax, unit: colourScaleUnit(kind), source: colourScaleSource() }
         : null);
 
       if (globalMax > 1e-10) {
@@ -1890,6 +1891,40 @@
             diagramQuery = null;
           }
         }
+      } else if (uiStore.multiKindSelect && sm !== 'stress' && sm !== 'shells') {
+        /*
+         * Multi-kind: try each active kind and take the first that hits.
+         *
+         * Ordered by how precisely a click identifies the thing — a node is a
+         * point, a member is a line, a support and a load are glyphs with a
+         * wider tolerance — so the most specific answer wins when several sit
+         * on the same spot, which at a joint they always do. A drag is where
+         * multi-kind earns its keep; this ordering just keeps a single click
+         * predictable rather than arbitrary.
+         */
+        if (!e.shiftKey) {
+          uiStore.clearSelection();
+          uiStore.clearSelectedSupports();
+          uiStore.clearSelectedLoads();
+        }
+        let hit = false;
+        if (uiStore.selectsKind('nodes')) {
+          const n = findNearestNode(snapped.x, snapped.y, 0.3);
+          if (n) { uiStore.selectNode(n.id, true); hit = true; }
+        }
+        if (!hit && uiStore.selectsKind('elements')) {
+          const el = findNearestElement(world.x, world.y, 0.3);
+          if (el) { uiStore.selectElement(el.id, true); hit = true; }
+        }
+        if (!hit && uiStore.selectsKind('supports')) {
+          const sup = findNearestSupport(world.x, world.y, 0.5);
+          if (sup) { uiStore.selectSupport(sup.id, true); hit = true; }
+        }
+        if (!hit && uiStore.selectsKind('loads')) {
+          const ld = findAllLoadsNear(world.x, world.y, 0.5);
+          if (ld.length > 0) { uiStore.selectLoad(ld[0], true); hit = true; }
+        }
+        if (!hit) boxSelect = { startX: mx, startY: my, endX: mx, endY: my };
       } else if (sm === 'supports') {
         // ── Supports mode: click to select a support, drag to box select ──
         const nearSup = findNearestSupport(world.x, world.y, 0.5);
@@ -2186,7 +2221,14 @@
         const picked = boxSelectTargets({
           rect,
           isWindow,
-          mode: (uiStore.selectMode === 'stress' ? 'elements' : uiStore.selectMode) as BoxSelectMode,
+          /*
+           * Every kind the user asked for. `stress` is not a kind of thing to
+           * select — it is a query about one point — so a marquee armed in
+           * that mode falls back to elements rather than selecting nothing.
+           */
+          kinds: (uiStore.selectMode === 'stress'
+            ? ['elements']
+            : [...uiStore.selectKinds]) as BoxSelectMode[],
           toScreen: (p) => uiStore.worldToScreen(p.x, p.y),
           model: {
             nodes: [...modelStore.nodes.values()].map((n) => {
@@ -2545,7 +2587,9 @@
     gap: 4px;
     z-index: 10;
     transition: top 0.15s ease;
-  }
+    /* Right-aligned so every button in the stack shares an edge. */
+    align-items: flex-end;
+}
 
   .viewport-controls button {
     width: 32px;

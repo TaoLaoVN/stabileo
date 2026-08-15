@@ -81,7 +81,16 @@ export interface BoxSelectInput {
   rect: ScreenRect;
   /** True when the drag went left → right. See the header. */
   isWindow: boolean;
-  mode: BoxSelectMode;
+  /**
+   * Every kind the drag picks up.
+   *
+   * A set rather than one value because a user can turn on multi-kind
+   * selection and ask for nodes AND supports in a single sweep. With that off
+   * it is a set of one, which is the same code path — the alternative, a
+   * single-kind branch beside a multi-kind branch, is two behaviours to keep
+   * in step and one of them would drift.
+   */
+  kinds: ReadonlySet<BoxSelectMode> | BoxSelectMode[];
   model: BoxSelectModel;
   /**
    * World → screen, the same transform the viewport draws with.
@@ -187,19 +196,20 @@ function loadExtent(
  * back empty rather than absent, so a caller can merge unconditionally.
  */
 export function boxSelect(input: BoxSelectInput): BoxSelectResult {
-  const { rect, isWindow, mode, model, toScreen } = input;
+  const { rect, isWindow, model, toScreen } = input;
+  const kinds = new Set<BoxSelectMode>(input.kinds as Iterable<BoxSelectMode>);
   const out: BoxSelectResult = {
     nodes: new Set(), elements: new Set(), supports: new Set(), loads: new Set(),
   };
 
-  if (mode === 'nodes' || mode === 'elements') {
+  if (kinds.has('nodes') || kinds.has('elements')) {
     for (const n of model.nodes) {
       const s = toScreen(n);
       if (inside(s.x, s.y, rect)) out.nodes.add(n.id);
     }
   }
 
-  if (mode === 'elements') {
+  if (kinds.has('elements')) {
     for (const el of model.elements) {
       const ends = memberEnds(el, model, toScreen);
       if (!ends) continue;
@@ -209,7 +219,7 @@ export function boxSelect(input: BoxSelectInput): BoxSelectResult {
     }
   }
 
-  if (mode === 'supports') {
+  if (kinds.has('supports')) {
     // A support sits at its node, so it is a point like the node is. The
     // symbol drawn under it is decoration; selecting by where the symbol
     // happens to be rendered would depend on the zoom.
@@ -221,7 +231,7 @@ export function boxSelect(input: BoxSelectInput): BoxSelectResult {
     }
   }
 
-  if (mode === 'loads') {
+  if (kinds.has('loads')) {
     for (const load of model.loads) {
       const ext = loadExtent(load, model, toScreen);
       if (!ext) continue;

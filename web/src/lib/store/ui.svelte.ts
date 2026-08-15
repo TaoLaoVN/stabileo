@@ -110,6 +110,26 @@ function createUIStore() {
 
   let selectMode = $state<SelectMode>('elements');
 
+  /**
+   * Selecting more than one KIND of thing at a time.
+   *
+   * Off by default, and that default is the point: with one kind active a click
+   * on a node that carries a support and a load has exactly one meaning, and
+   * the status bar can say what was selected without qualifying it. Turning
+   * this on trades that certainty for reach — useful when you want the nodes
+   * AND the supports of a storey in one drag, and confusing as a permanent
+   * setting.
+   *
+   * `selectMode` stays the primary kind, because two dozen callers read it and
+   * because the special modes — section stress, shells — are single by nature:
+   * a stress query is a question about one point, and shells share an id space
+   * with frame elements so mixing them would mis-resolve a Delete.
+   */
+  let multiKindSelect = $state<boolean>(false);
+
+  /** Kinds a click or a drag picks up. Never empty: one is always active. */
+  let selectKinds = $state<Set<SelectMode>>(new Set(['elements']));
+
   /** Tools that build the model, as opposed to selecting, panning or querying. */
   const EDIT_TOOLS: string[] = ['node', 'element', 'support', 'load'];
 
@@ -419,6 +439,10 @@ function createUIStore() {
       selectedElements = new Set();
     }
     selectMode = v;
+    // The set follows the primary kind whenever multi is off, so the two can
+    // never disagree about what a single-kind selection means.
+    if (!multiKindSelect) selectKinds = new Set([v]);
+    else selectKinds = new Set([...selectKinds, v]);
   }
 
   return {
@@ -515,6 +539,45 @@ function createUIStore() {
 
     get selectMode() { return selectMode; },
     set selectMode(v: SelectMode) { applySelectMode(v); },
+
+    get multiKindSelect() { return multiKindSelect; },
+    /**
+     * Turning it OFF collapses to the primary kind rather than to whatever
+     * happens to be first in the set: the user picked that one, and a setting
+     * that resets to something else on being switched off is a setting that
+     * loses work.
+     */
+    set multiKindSelect(v: boolean) {
+      multiKindSelect = v;
+      if (!v) selectKinds = new Set([selectMode]);
+    },
+
+    get selectKinds() { return selectKinds; },
+
+    /** Whether a click or a drag currently picks up this kind of thing. */
+    selectsKind(k: SelectMode): boolean {
+      return multiKindSelect ? selectKinds.has(k) : selectMode === k;
+    },
+
+    /**
+     * Add or remove a kind, only meaningful while multi is on.
+     *
+     * Refuses to remove the last one: a selection tool that selects nothing is
+     * not a mode, it is a broken tool, and the user would have to guess that
+     * ticking something is what brings it back.
+     */
+    toggleSelectKind(k: SelectMode): void {
+      if (!multiKindSelect) { applySelectMode(k); return; }
+      const next = new Set(selectKinds);
+      if (next.has(k)) {
+        if (next.size === 1) return;
+        next.delete(k);
+        if (selectMode === k) selectMode = [...next][0];
+      } else {
+        next.add(k);
+      }
+      selectKinds = next;
+    },
 
     get selectedNodes() { return selectedNodes; },
     get selectedElements() { return selectedElements; },

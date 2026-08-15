@@ -1640,8 +1640,8 @@
          * its node, identically in both modes.
          */
         const sm = uiStore.selectMode;
-        const allowNodes = sm === 'elements' || sm === 'nodes';
-        const allowElems = sm === 'elements';
+        const allowNodes = uiStore.selectsKind('elements') || uiStore.selectsKind('nodes');
+        const allowElems = uiStore.selectsKind('elements');
         const allowShells = sm === 'shells';
 
         // Collect new selection items
@@ -1706,11 +1706,13 @@
          * 3D goes through the camera — so the transform is passed in rather
          * than assumed, which is the whole reason that module takes one.
          */
-        if (sm === 'supports' || sm === 'loads') {
+        if (uiStore.selectsKind('supports') || uiStore.selectsKind('loads')) {
           const picked = boxSelectTargets({
             rect: { x1, y1, x2, y2 },
             isWindow,
-            mode: sm,
+            kinds: [...uiStore.selectKinds].filter(
+              (k) => k === 'supports' || k === 'loads',
+            ) as never,
             /*
              * The camera projection, with the node's own z. Flattening to
              * z = 0 — which a two-number signature forces — would have judged
@@ -2736,7 +2738,9 @@
     gap: 4px;
     z-index: 10;
     transition: top 0.15s ease;
-  }
+    /* Right-aligned so every button in the stack shares an edge. */
+    align-items: flex-end;
+}
 
   .camera-controls button {
     width: 32px;

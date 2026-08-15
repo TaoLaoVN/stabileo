@@ -74,8 +74,8 @@ const rectOf = (x0: number, y0: number, x1: number, y1: number): ScreenRect => {
   };
 };
 
-const run = (rect: ScreenRect, isWindow: boolean, mode: Parameters<typeof boxSelect>[0]['mode']) =>
-  boxSelect({ rect, isWindow, mode, model, toScreen });
+const run = (rect: ScreenRect, isWindow: boolean, mode: 'elements' | 'nodes' | 'supports' | 'loads') =>
+  boxSelect({ rect, isWindow, kinds: [mode], model, toScreen });
 
 describe('the gesture is decided by horizontal direction alone', () => {
   it('left to right is a window', () => {
@@ -257,7 +257,7 @@ describe('degenerate input', () => {
       getElement: () => ({ nodeI: 1, nodeJ: 404 }),
     };
     const r = boxSelect({
-      rect: rectOf(-2, -2, 14, 5), isWindow: false, mode: 'elements', model: broken, toScreen,
+      rect: rectOf(-2, -2, 14, 5), isWindow: false, kinds: ['elements'], model: broken, toScreen,
     });
     expect(r.elements.has(99)).toBe(false);
   });
@@ -270,7 +270,7 @@ describe('degenerate input', () => {
       getElement: () => ({ nodeI: 1, nodeJ: 1 }),
     };
     const r = boxSelect({
-      rect: rectOf(-2, -2, 14, 5), isWindow: false, mode: 'loads', model: degenerate, toScreen,
+      rect: rectOf(-2, -2, 14, 5), isWindow: false, kinds: ['loads'], model: degenerate, toScreen,
     });
     expect(r.loads.size).toBe(0);
   });
@@ -303,8 +303,8 @@ describe('a model with depth', () => {
     getElement: (id) => ELEMENTS_3D.find((e) => e.id === id),
   };
 
-  const run3d = (rect: ScreenRect, isWindow: boolean, mode: Parameters<typeof boxSelect>[0]['mode']) =>
-    boxSelect({ rect, isWindow, mode, model: model3d, toScreen: project });
+  const run3d = (rect: ScreenRect, isWindow: boolean, mode: 'elements' | 'nodes' | 'supports' | 'loads') =>
+    boxSelect({ rect, isWindow, kinds: [mode], model: model3d, toScreen: project });
 
   it('separates two nodes that differ only in z', () => {
     // Around the TOP node: screen y = 0 for z = 10, y = 100 for z = 0.
@@ -331,5 +331,48 @@ describe('a model with depth', () => {
     const lower = { x1: -20, y1: 80, x2: 20, y2: 120 };
     expect(run3d(lower, true, 'loads').loads.has(200)).toBe(false);
     expect(run3d(lower, false, 'loads').loads.has(200)).toBe(true);
+  });
+});
+
+describe('more than one kind at a time', () => {
+  /*
+   * With multi-kind selection on, one drag answers "the nodes AND the supports
+   * of this storey" — which is the whole reason for the setting. The single
+   * case is the same code path with a set of one, so this also pins that the
+   * two cannot drift apart.
+   */
+  const many = (rect: ScreenRect, isWindow: boolean, kinds: string[]) =>
+    boxSelect({ rect, isWindow, kinds: kinds as never, model, toScreen });
+
+  it('takes nodes and supports in one sweep', () => {
+    const r = many(rectOf(-1, -1, 13, 1), true, ['nodes', 'supports']);
+    expect([...r.nodes].sort()).toEqual([1, 2, 3, 4]);
+    expect([...r.supports].sort()).toEqual([10, 11]);
+    expect(r.elements.size).toBe(0);
+    expect(r.loads.size).toBe(0);
+  });
+
+  it('takes every kind when every kind is asked for', () => {
+    const r = many(rectOf(-2, -2, 14, 5), true, ['nodes', 'elements', 'supports', 'loads']);
+    expect(r.nodes.size).toBe(NODES.length);
+    expect(r.elements.size).toBe(ELEMENTS.length);
+    expect(r.supports.size).toBe(SUPPORTS.length);
+    expect(r.loads.size).toBe(LOADS.length);
+  });
+
+  it('each kind keeps its own gesture rule in the mix', () => {
+    // A crossing over the middle of member 2: the member is taken because the
+    // rectangle touches it, and no node is, because none is inside.
+    const r = many(rectOf(5, -0.5, 7, 0.5), false, ['nodes', 'elements']);
+    expect(r.elements.has(2)).toBe(true);
+    expect(r.nodes.size).toBe(0);
+  });
+
+  it('a set of one behaves exactly like the single-kind case', () => {
+    const rect = rectOf(-1, -1, 5, 1);
+    const single = run(rect, true, 'nodes');
+    const asSet = many(rect, true, ['nodes']);
+    expect([...asSet.nodes].sort()).toEqual([...single.nodes].sort());
+    expect(asSet.elements.size).toBe(single.elements.size);
   });
 });

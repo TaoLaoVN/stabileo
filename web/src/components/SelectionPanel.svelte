@@ -30,18 +30,46 @@
 </script>
 
 <div class="sel-panel">
-  <p class="sel-intro">{t('selection.intro')}</p>
-  <div class="sel-list" role="radiogroup" aria-label={t('ribbon.selection')}>
+  <!--
+    Off by default, and the default is the point: with one kind active a click
+    on a node that carries a support and a load has exactly one meaning. Multi
+    trades that certainty for reach, which is worth it for a drag and confusing
+    as a permanent setting.
+  -->
+  <label class="sel-multi">
+    <input
+      type="checkbox"
+      bind:checked={uiStore.multiKindSelect}
+      data-testid="multi-kind"
+    />
+    <span>{t('selection.multi')}</span>
+  </label>
+  <p class="sel-intro">{uiStore.multiKindSelect ? t('selection.multiHelp') : t('selection.intro')}</p>
+
+  <!--
+    Radios become checkboxes with the switch above, because the question
+    changes: "which one" and "which ones" are different questions and a control
+    that looks the same for both teaches the wrong thing about what it does.
+  -->
+  <div
+    class="sel-list"
+    role={uiStore.multiKindSelect ? 'group' : 'radiogroup'}
+    aria-label={t('ribbon.selection')}
+  >
     {#each MODES as m}
+      {@const on = uiStore.selectsKind(m.id)}
       <button
         class="sel-item"
-        class:on={uiStore.selectMode === m.id}
-        role="radio"
-        aria-checked={uiStore.selectMode === m.id}
-        onclick={() => (uiStore.selectMode = m.id)}
+        class:on
+        role={uiStore.multiKindSelect ? 'checkbox' : 'radio'}
+        aria-checked={on}
+        onclick={() => uiStore.toggleSelectKind(m.id)}
         data-testid={`select-mode-${m.id}`}
       >
-        <span class="sel-name">{t(m.key)}</span>
+        <span class="sel-name">
+          {#if uiStore.multiKindSelect}<span class="sel-tick" aria-hidden="true">{on ? '☑' : '☐'}</span>{/if}
+          {t(m.key)}
+        </span>
         <span class="sel-hint">{t(m.hint)}</span>
       </button>
     {/each}
@@ -51,6 +79,18 @@
 
 <style>
   .sel-panel { padding: 4px 2px; }
+
+  .sel-multi {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    margin-bottom: 8px;
+    font-size: 0.74rem;
+    color: var(--st-text);
+    cursor: pointer;
+  }
+
+  .sel-tick { color: var(--st-accent); margin-right: 2px; }
 
   .sel-intro,
   .sel-note {
