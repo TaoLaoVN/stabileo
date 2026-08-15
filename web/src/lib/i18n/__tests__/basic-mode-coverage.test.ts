@@ -152,7 +152,16 @@ describe('Basic mode is fully translated', () => {
  * English to a Spanish reader.
  */
 describe('namespaces filled from data, which the scan cannot see', () => {
-  const NAMESPACES = ['ribbon.', 'cat.', 'grade.src.', 'stress.tt.', 'pairing.'];
+  /*
+   * `float.` and `selection.` earn their place the same way `ribbon.` did:
+   * the list of what a drag can pick up is an array of records, and its
+   * labels reach `t()` as `t(m.key)`. `float.selectShells` was missing from
+   * Portuguese with every other check green.
+   */
+  const NAMESPACES = [
+    'ribbon.', 'cat.', 'grade.src.', 'stress.tt.', 'pairing.',
+    'float.', 'selection.',
+  ];
 
   for (const ns of NAMESPACES) {
     it(`${ns}* is complete in es and pt`, () => {

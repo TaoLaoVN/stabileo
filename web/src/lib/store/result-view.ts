@@ -165,3 +165,30 @@ export function showStressMap(measure: StressMeasure = 'stressRatio'): void {
   resultsStore.colorMapKind = measure;
   showDiagram('colorMap' as never);
 }
+
+/**
+ * A name for exactly what is painted right now.
+ *
+ * Used to pair the colour-scale legend with its picture. The legend's numbers
+ * are published by the drawing code, which only runs while it is drawing —
+ * change to a bending diagram and the last map's maximum is still sitting in
+ * the store with nothing on screen to explain it. Comparing this signature at
+ * render time makes that stale value unusable rather than merely discouraged:
+ * there is no path, present or future, that can leave a legend behind.
+ */
+export function colourScaleSource(): string {
+  const dt = resultsStore.diagramType;
+  return dt === 'colorMap' ? `colorMap:${resultsStore.colorMapKind}` : String(dt);
+}
+
+/**
+ * Whether a colour scale is genuinely on screen right now.
+ *
+ * Both the legend and the switch that shows it ask this, and they have to
+ * agree: a checkbox offering to show a legend that cannot appear is a control
+ * that does nothing, which reads as a bug in the checkbox.
+ */
+export function hasLiveColourScale(): boolean {
+  const s = resultsStore.colourScale;
+  return !!s && s.source === colourScaleSource();
+}

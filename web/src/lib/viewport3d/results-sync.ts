@@ -8,6 +8,7 @@
 
 import * as THREE from 'three';
 import { modelStore, uiStore, resultsStore } from '../store';
+import { colourScaleSource } from '../store/result-view';
 import { createDeformedLines, type ElementEI } from '../three/deformed-shape-3d';
 import { createDiagramGroup3D, createEnvelopeDiagramGroup3D } from '../three/diagram-render-3d';
 import { createDespiece3DGroup } from '../three/despiece-3d';
@@ -697,7 +698,7 @@ function applyFrameHeatmap(
 
   // What the legend shows, published from where the maximum is decided.
   resultsStore.setColourScale(globalMax > 1e-10
-    ? { max: globalMax, unit: heatmapUnit(variable) }
+    ? { max: globalMax, unit: heatmapUnit(variable), source: colourScaleSource() }
     : null);
 
   // Pass 2: create heatmap meshes (or restore visibility for skipped elements)

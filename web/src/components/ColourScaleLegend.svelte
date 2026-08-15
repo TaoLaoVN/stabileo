@@ -17,6 +17,7 @@
    * the corner is shared, and the gizmo was there first.
    */
   import { resultsStore, uiStore } from '../lib/store';
+  import { colourScaleSource } from '../lib/store/result-view';
   import { t } from '../lib/i18n';
 
   /** Stops of the ramp the maps paint: blue → green → yellow → red. */
@@ -30,7 +31,19 @@
 
   const gradient = `linear-gradient(to top, ${STOPS.map((s) => `${s.css} ${s.at * 100}%`).join(', ')})`;
 
-  const scale = $derived(resultsStore.colourScale);
+  /**
+   * The published scale, but only while it still describes what is on screen.
+   *
+   * The numbers come from the drawing code, which stops running the moment the
+   * user picks a bending diagram instead — leaving the last map's maximum in
+   * the store with no picture to belong to, and a legend floating over an
+   * unrelated result. Matching the source is what makes that impossible rather
+   * than merely unlikely: a stale value simply does not match.
+   */
+  const scale = $derived.by(() => {
+    const s = resultsStore.colourScale;
+    return s && s.source === colourScaleSource() ? s : null;
+  });
 
   /**
    * Four labels rather than a continuous axis: a bar 90 px tall cannot carry

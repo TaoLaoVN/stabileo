@@ -85,8 +85,16 @@ function createResultsStore() {
    * that in a legend would mean maintaining the same arithmetic twice.
    *
    * Null when nothing is painted.
+   *
+   * `source` names WHICH picture the number came from — `colorMap:vonMises`,
+   * not just "a colour map". The legend refuses to draw when it does not match
+   * what is on screen right now, which is what stops a stale bar from outliving
+   * its picture: switching from a map to a bending diagram leaves this value
+   * behind, because the code that publishes it is the code that paints, and
+   * that code no longer runs. Making every OTHER path remember to clear it is
+   * the version of this that breaks again the next time a path is added.
    */
-  let colourScale = $state<{ max: number; unit: string } | null>(null);
+  let colourScale = $state<{ max: number; unit: string; source: string } | null>(null);
   let colorMapKind = $state<'moment' | 'shear' | 'axial' | 'momentY' | 'momentZ' | 'shearY' | 'shearZ' | 'torsion' | 'stressRatio' | 'vonMises' | 'sigmaMax' | 'tauMax' | 'shellVonMises' | 'shellBending'>('moment');
   // Which shell quantity the shell contour paints (selectable in PRO results).
   let shellContourComponent = $state<import('../engine/shell-stress').ShellContourComponent>('vonMises');
@@ -232,9 +240,10 @@ function createResultsStore() {
     set animateDeformed(v: boolean) { animateDeformed = v; },
     get colourScale() { return colourScale; },
     /** Only writes on a real change: this is called from a draw loop. */
-    setColourScale(v: { max: number; unit: string } | null) {
+    setColourScale(v: { max: number; unit: string; source: string } | null) {
       if (v === null) { if (colourScale !== null) colourScale = null; return; }
-      if (!colourScale || colourScale.max !== v.max || colourScale.unit !== v.unit) colourScale = v;
+      if (!colourScale || colourScale.max !== v.max || colourScale.unit !== v.unit
+        || colourScale.source !== v.source) colourScale = v;
     },
 
     get colorMapKind() { return colorMapKind; },

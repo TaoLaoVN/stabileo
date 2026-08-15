@@ -1,6 +1,6 @@
 <script lang="ts">
   import { uiStore, resultsStore, modelStore } from '../../lib/store';
-  import { activeQuantity, activeRepresentation, representationsFor, showQuantityAs, activeStressMeasure, showStressMap } from '../../lib/store/result-view';
+  import { activeQuantity, activeRepresentation, representationsFor, showQuantityAs, activeStressMeasure, showStressMap, hasLiveColourScale } from '../../lib/store/result-view';
   import { showDiagram } from '../../lib/store/view-mode';
   import ResultsTable from '../tables/ResultsTable.svelte';
   import { t } from '../../lib/i18n';
@@ -324,7 +324,7 @@
         control appears with it rather than sitting greyed out the rest of the
         time.
       -->
-      {#if resultsStore.colourScale}
+      {#if hasLiveColourScale()}
         <label class="checkbox-item">
           <input type="checkbox" bind:checked={uiStore.showColourScale} />
           {t('results.showScale')}

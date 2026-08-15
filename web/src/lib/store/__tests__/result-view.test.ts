@@ -17,6 +17,7 @@ import { resultsStore } from '../results.svelte';
 import {
   activeQuantity, activeRepresentation, representationsFor,
   showQuantityAs, commandShowsQuantity,
+  colourScaleSource, hasLiveColourScale, showStressMap,
 } from '../result-view';
 
 beforeEach(() => {
@@ -170,5 +171,60 @@ describe('the ribbon lights the quantity, not the representation', () => {
     for (const c of ['axial', 'momentY', 'shearZ']) {
       expect(commandShowsQuantity(c), c).toBe(false);
     }
+  });
+});
+
+/**
+ * The legend outliving its picture.
+ *
+ * Reported from the app: turn the scale on over a stress map, switch to a
+ * bending diagram, and the bar stayed — labelled with the map's maximum, over
+ * a picture that has nothing to do with it. The publisher is the drawing code,
+ * so nothing runs to retract the value; the fix is that the value carries the
+ * name of what drew it and is unusable once that changes.
+ */
+describe('colour scale liveness', () => {
+  beforeEach(() => {
+    resultsStore.setColourScale(null);
+    resultsStore.diagramType = 'none' as never;
+  });
+
+  it('distinguishes two maps of different quantities', () => {
+    showStressMap('vonMises');
+    const a = colourScaleSource();
+    showStressMap('tauMax');
+    expect(colourScaleSource()).not.toBe(a);
+  });
+
+  it('goes dead when the result changes under it', () => {
+    showStressMap('vonMises');
+    resultsStore.setColourScale({ max: 235, unit: 'MPa', source: colourScaleSource() });
+    expect(hasLiveColourScale()).toBe(true);
+
+    showQuantityAs('momentZ', 'diagram');
+    expect(hasLiveColourScale()).toBe(false);
+  });
+
+  it('goes dead between two maps until the new one publishes', () => {
+    showStressMap('vonMises');
+    resultsStore.setColourScale({ max: 235, unit: 'MPa', source: colourScaleSource() });
+
+    // The switch alone must not leave the old maximum readable, even though
+    // both pictures are colour maps and both want a legend.
+    showStressMap('stressRatio');
+    expect(hasLiveColourScale()).toBe(false);
+
+    resultsStore.setColourScale({ max: 1, unit: '', source: colourScaleSource() });
+    expect(hasLiveColourScale()).toBe(true);
+  });
+
+  it('comes back for the same picture without republishing', () => {
+    showStressMap('vonMises');
+    const scale = { max: 235, unit: 'MPa', source: colourScaleSource() };
+    resultsStore.setColourScale(scale);
+    showQuantityAs('momentZ', 'diagram');
+    expect(hasLiveColourScale()).toBe(false);
+    showStressMap('vonMises');
+    expect(hasLiveColourScale()).toBe(true);
   });
 });
