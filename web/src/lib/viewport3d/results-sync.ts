@@ -8,6 +8,8 @@
 
 import * as THREE from 'three';
 import { modelStore, uiStore, resultsStore } from '../store';
+import { forEachElementVisual } from './scene-sync';
+export { forEachElementVisual };
 import { colourScaleSource } from '../store/result-view';
 import { createDeformedLines, type ElementEI } from '../three/deformed-shape-3d';
 import { createDiagramGroup3D, createEnvelopeDiagramGroup3D } from '../three/diagram-render-3d';
@@ -377,38 +379,6 @@ export function syncDiagrams3D(ctx: ResultsSyncContext): void {
 
 // ─── Color map (axialColor / colorMap) ──────────────────────
 
-
-/**
- * Every element that is on screen, with its group when it has one.
- *
- * `ctx.elementGroups` is a PARTIAL registry, and that is by design: in
- * wireframe render mode a plain member is a segment of the batched
- * `LineSegments2` and gets no group of its own. Only members that need extra
- * geometry — a section extrusion, a hinge glyph — are given one.
- *
- * Every flat colour map below iterated that map, so in wireframe they reached
- * almost nothing: the axial colour map left an industrial shed entirely white,
- * because 633 wireframe members have no group between them. The batched mesh
- * is where their colour actually lives.
- *
- * So iteration is driven off the batched mesh, which knows every element, and
- * the group is applied only where one exists.
- */
-export function forEachElementVisual(
-  ctx: ResultsSyncContext,
-  fn: (id: number, group: THREE.Group | undefined) => void,
-): void {
-  const seen = new Set<number>();
-  for (const id of ctx.elementsBatched.ids()) {
-    seen.add(id);
-    fn(id, ctx.elementGroups.get(id));
-  }
-  // A group with no batched segment should not exist, but if one does it is
-  // still on screen and still has to be coloured.
-  for (const [id, group] of ctx.elementGroups) {
-    if (!seen.has(id)) fn(id, group);
-  }
-}
 
 export function syncColorMap3D(ctx: ResultsSyncContext): void {
   if (!ctx.initialized) return;

@@ -2241,31 +2241,32 @@
       const selected = uiStore.selectedNodes.has(data.id);
       nodesInstanced.setBaseColor(data.id, selected ? COLORS.nodeSelected : COLORS.node);
     } else if (data.type === 'element') {
+      // Same as applyHoverColor: the group is optional, the batched colour is
+      // not. Gated on the group, this restored nothing in wireframe — which
+      // did not show, only because the hover it was undoing never painted.
       const group = elementGroups.get(data.id);
-      if (group) {
-        const dt = resultsStore.diagramType;
-        if (resultsStore.results3D && (dt === 'axialColor' || dt === 'colorMap' || dt === 'verification')) {
-          // No-op: applyHoverColor skips painting while a color mode is
-          // active, so there is nothing to restore — and a full
-          // syncColorMap3D() here recolored EVERY element (plus a batched
-          // position+color re-upload) per hover-out, a multi-ms stall per
-          // element crossed on large models. Mode changes mid-hover are
-          // covered by the colorMap $effect, which repaints everything.
-        } else {
-          // In shells mode selectedElements holds plate/quad ids — a frame
-          // element with an overlapping id is not selected.
-          const selected = uiStore.selectMode !== 'shells' && uiStore.selectedElements.has(data.id);
-          const elem = modelStore.elements.get(data.id);
-          const wireframe = uiStore.renderMode3D === 'wireframe';
-          const isTruss = elem?.type === 'truss';
-          const base = wireframe
-            ? (isTruss ? COLORS.truss : COLORS.frameWire)
-            : (isTruss ? COLORS.truss : COLORS.frame);
-          const color = selected ? COLORS.elementSelected : base;
-          setGroupColor(group, color);
-          elementsBatched.setBaseColor(data.id, color);
-          elementsBatched.flush();
-        }
+      const dt = resultsStore.diagramType;
+      if (resultsStore.results3D && (dt === 'axialColor' || dt === 'colorMap' || dt === 'verification')) {
+        // No-op: applyHoverColor skips painting while a color mode is
+        // active, so there is nothing to restore — and a full
+        // syncColorMap3D() here recolored EVERY element (plus a batched
+        // position+color re-upload) per hover-out, a multi-ms stall per
+        // element crossed on large models. Mode changes mid-hover are
+        // covered by the colorMap $effect, which repaints everything.
+      } else {
+        // In shells mode selectedElements holds plate/quad ids — a frame
+        // element with an overlapping id is not selected.
+        const selected = uiStore.selectMode !== 'shells' && uiStore.selectedElements.has(data.id);
+        const elem = modelStore.elements.get(data.id);
+        const wireframe = uiStore.renderMode3D === 'wireframe';
+        const isTruss = elem?.type === 'truss';
+        const base = wireframe
+          ? (isTruss ? COLORS.truss : COLORS.frameWire)
+          : (isTruss ? COLORS.truss : COLORS.frame);
+        const color = selected ? COLORS.elementSelected : base;
+        if (group) setGroupColor(group, color);
+        elementsBatched.setBaseColor(data.id, color);
+        elementsBatched.flush();
       }
     } else if (data.type === 'support') {
       const gizmo = supportGizmos.get(data.id);
@@ -2303,15 +2304,20 @@
     if (data.type === 'node') {
       nodesInstanced.setColor(data.id, COLORS.nodeHovered);
     } else if (data.type === 'element') {
+      /*
+       * NOT gated on having a group. In wireframe — Basic 3D's default — a
+       * plain member is a segment of the batched mesh and has no group at
+       * all, so `if (group)` skipped the hover highlight on every member in
+       * the model. The group is decoration where it exists; the batched
+       * colour is the visual.
+       */
       const group = elementGroups.get(data.id);
-      if (group) {
-        // Don't override color map colors with hover
-        const dt = resultsStore.diagramType;
-        if (dt !== 'axialColor' && dt !== 'colorMap' && dt !== 'verification') {
-          setGroupColor(group, COLORS.elementHovered);
-          elementsBatched.setColor(data.id, COLORS.elementHovered);
-          elementsBatched.flush();
-        }
+      // Don't override color map colors with hover
+      const dt = resultsStore.diagramType;
+      if (dt !== 'axialColor' && dt !== 'colorMap' && dt !== 'verification') {
+        if (group) setGroupColor(group, COLORS.elementHovered);
+        elementsBatched.setColor(data.id, COLORS.elementHovered);
+        elementsBatched.flush();
       }
     } else if (data.type === 'support') {
       const gizmo = supportGizmos.get(data.id);
