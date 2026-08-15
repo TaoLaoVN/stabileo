@@ -156,3 +156,48 @@ test.describe('the colour scale legend', () => {
     await expect(legend(page)).toBeHidden();
   });
 });
+
+/**
+ * The tip on the pointer button.
+ *
+ * Three separate claims, and each one was a correction to how it behaved:
+ * it describes the mode you are IN rather than the one a click would give
+ * you; the note about where the kinds are chosen belongs to Select alone; and
+ * it is a hover tip, not a panel — it used to stick open after a click,
+ * because the button keeps focus and the rule was `:focus-within`.
+ */
+test.describe('the pointer button tip', () => {
+  test.beforeEach(async ({ page }) => {
+    await openBasic(page);
+  });
+
+  test('describes the current mode, and what a click would do', async ({ page }) => {
+    const btn = page.getByTestId('pointer-mode');
+    const tip = page.locator('.pm-tip');
+
+    await btn.hover();
+    await expect(tip).toBeVisible();
+    await expect(tip.locator('.pm-tip-mode')).toHaveText(/Pan/);
+    await expect(tip.locator('.pm-tip-action')).toHaveText(/Select/);
+    // The kind of thing selected is not a setting that applies while panning.
+    await expect(tip.locator('.pm-tip-note')).toHaveCount(0);
+
+    await btn.click();
+    await expect(tip.locator('.pm-tip-mode')).toHaveText(/Select/);
+    await expect(tip.locator('.pm-tip-action')).toHaveText(/Pan/);
+    await expect(tip.locator('.pm-tip-note')).toHaveCount(1);
+  });
+
+  test('closes when the pointer leaves, even after a click', async ({ page }) => {
+    const btn = page.getByTestId('pointer-mode');
+    const tip = page.locator('.pm-tip');
+
+    await btn.hover();
+    await expect(tip).toBeVisible();
+    await btn.click();
+    await expect(tip, 'still under the pointer').toBeVisible();
+
+    await page.mouse.move(400, 400);
+    await expect(tip, 'the button keeps focus after a click — the tip must not').toBeHidden();
+  });
+});

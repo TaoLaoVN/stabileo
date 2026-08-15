@@ -27,7 +27,13 @@
   import Icon from './ribbon/Icon.svelte';
 
   const isPan = $derived(uiStore.currentTool === 'pan');
-  const action = $derived(isPan ? t('viewport.switchToSelect') : t('viewport.switchToPan'));
+
+  /** What the mode IS — present tense, because that is what the reader is in. */
+  const mode = $derived(isPan ? t('viewport.modePan') : t('viewport.modeSelect'));
+  /** What the click WOULD do. Kept apart from the above: they are not the
+      same tense and reading them as one sentence is how the old wording made
+      people think the button described a state they were not in. */
+  const action = $derived(isPan ? t('viewport.clickToSelect') : t('viewport.clickToPan'));
 
   function toggle() {
     /*
@@ -42,18 +48,19 @@
 
 <!--
   The tip is a sibling inside the wrapper rather than the native `title`,
-  because it has to say two different KINDS of thing: what the click does, and
-  where the other half of the setting lives. A title attribute renders those as
-  one run-on line with no way to separate them, and the second sentence is the
-  one that answers the question people actually arrive with — "it selects
-  members and I want nodes".
+  because it has to say three different KINDS of thing: what mode you are in,
+  where the rest of that mode's setting lives, and what a click would do. A
+  title attribute renders those as one run-on line with no way to rank them,
+  and the note is deliberately the quietest of the three — it answers the
+  question people arrive with ("it selects members and I want nodes") without
+  competing with the two sentences that describe the button itself.
 -->
 <div class="pm-wrap">
   <button
     class="pointer-mode"
     class:panning={isPan}
     onclick={toggle}
-    aria-label={action}
+    aria-label={isPan ? t('viewport.switchToSelect') : t('viewport.switchToPan')}
     aria-pressed={isPan}
     data-testid="pointer-mode"
   >
@@ -61,7 +68,7 @@
   </button>
 
   <div class="pm-tip" role="tooltip">
-    <p class="pm-tip-action">{action}</p>
+    <p class="pm-tip-mode">{mode}</p>
     <!--
       Only while selecting: pointed at the panel that decides WHAT a drag
       picks up. In pan mode there is no such setting in play and the sentence
@@ -70,6 +77,7 @@
     {#if !isPan}
       <p class="pm-tip-note">{t('viewport.selectKindHint')}</p>
     {/if}
+    <p class="pm-tip-action">{action}</p>
   </div>
 </div>
 
@@ -130,36 +138,60 @@
     border-radius: var(--st-radius);
     background: var(--st-surface);
     box-shadow: 0 2px 8px rgb(0 0 0 / 0.18);
-    opacity: 0;
-    visibility: hidden;
-    transition: opacity 0.12s;
-    pointer-events: none;
+    /*
+     * No fade and no delay. A tip that eases in is a tip you have already
+     * started reading by the time it is legible, and this one is consulted
+     * mid-gesture — the moment it is late is the moment it is useless.
+     */
+    display: none;
     z-index: 20;
   }
 
+  /*
+   * Hover only, plus keyboard focus.
+   *
+   * `:focus-within` was here and made the tip STICK after a click: the button
+   * keeps focus, so the panel stayed open over the model with the pointer
+   * somewhere else entirely. `:focus-visible` is the distinction that fixes
+   * it — it is set when focus arrives by keyboard and not when it arrives by
+   * mouse, which is exactly the difference between a reader who needs the tip
+   * and one who has already acted on it.
+   */
   .pm-wrap:hover .pm-tip,
-  .pm-wrap:focus-within .pm-tip {
-    opacity: 1;
-    visibility: visible;
+  .pm-wrap:has(:focus-visible) .pm-tip {
+    display: block;
   }
 
   .pm-tip p { margin: 0; }
 
-  .pm-tip-action {
+  /* The mode you are in, stated plainly and first. */
+  .pm-tip-mode {
     font-size: 0.72rem;
-    line-height: 1.3;
+    line-height: 1.35;
     color: var(--st-text);
   }
 
-  /* Separated by a rule, not just space: it is a different kind of statement —
-     the first line says what the click does, this one says where a related
-     setting lives. */
+  /*
+   * A footnote to the mode above, not a third statement: smaller, dimmer and
+   * tucked directly under it, so the eye takes it as a detail of "Select"
+   * rather than as another thing the button does.
+   */
   .pm-tip-note {
-    margin-top: 6px !important;
-    padding-top: 6px;
-    border-top: 1px solid var(--st-hair);
-    font-size: 0.66rem;
-    line-height: 1.4;
+    margin-top: 3px !important;
+    font-size: 0.62rem;
+    line-height: 1.35;
     color: var(--st-text-3);
+  }
+
+  /* What a click would do — separated by a rule because it is the only line
+     about the FUTURE, and running it together with the description of the
+     current mode is how a reader ends up believing they are in the other one. */
+  .pm-tip-action {
+    margin-top: 7px !important;
+    padding-top: 7px;
+    border-top: 1px solid var(--st-hair);
+    font-size: 0.68rem;
+    line-height: 1.35;
+    color: var(--st-text-2);
   }
 </style>
