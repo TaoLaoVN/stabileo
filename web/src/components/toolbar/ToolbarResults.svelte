@@ -105,6 +105,11 @@
    * painted" has two causes and only one of them is worth telling the user
    * about.
    */
+  /** Whether the model contains anything a shell measure could describe. */
+  function hasShells(): boolean {
+    return modelStore.model.plates.size > 0 || modelStore.model.quads.size > 0;
+  }
+
   function anyMemberHasYield(): boolean {
     for (const el of modelStore.elements.values()) {
       const m = modelStore.materials.get(el.materialId);
@@ -235,7 +240,14 @@
             <option value="vonMises">{t('results.measureVonMises')}</option>
             <option value="sigmaMax">{t('results.measureSigmaMax')}</option>
             <option value="tauMax">{t('results.measureTauMax')}</option>
-            {#if uiStore.analysisMode === '3d'}
+            <!--
+              Offered by the MODEL, not by the mode. It was gated on 3D alone,
+              so Basic — which has no way to create a plate or a quad — listed
+              a shell measure in every 3D model and painted nothing when it was
+              chosen. A measure for elements the model does not contain is not
+              a disabled option, it is a wrong one.
+            -->
+            {#if hasShells()}
               <option value="shellVonMises">{t('results.shellVonMises')}</option>
             {/if}
           </select>
@@ -339,7 +351,30 @@
         as if the model had stopped being solved. Asking whether a quantity is
         being shown cannot go out of date when a representation is added.
       -->
-      {#if resultsStore.hasCombinations && (activeQuantity() !== null || resultsStore.diagramType === 'deformed')}
+      <!--
+        The heading only appears with something under it.
+        ──────────────────────────────────────────────────────────
+        Both selectors can be switched off in Settings, and when they were the
+        section still drew "Change results view" over an empty box — a heading
+        for nothing, which reads as a panel that failed to load rather than as
+        a setting the reader chose. What the section shows is now part of
+        whether it is shown at all.
+
+        The secondary carries its own conditions because it overlays a second
+        DIAGRAM: there is nothing to overlay on a deformed shape or on members
+        painted by value, so it is absent there whatever the setting says. It
+        also depends on the primary, which is how the markup nests it and how
+        Settings presents it — the checkbox is disabled while the primary is
+        off, but the stored value survives, so the dependency has to be stated
+        here too rather than assumed from the UI.
+      -->
+      {@const showsPrimary = uiStore.showPrimarySelector}
+      {@const showsSecondary = showsPrimary
+        && uiStore.showSecondarySelector
+        && resultsStore.diagramType !== 'deformed'
+        && activeRepresentation() === 'diagram'}
+      {#if resultsStore.hasCombinations && (showsPrimary || showsSecondary)
+        && (activeQuantity() !== null || resultsStore.diagramType === 'deformed')}
         {@const is3D = uiStore.analysisMode === '3d'}
         {@const caseKeys = is3D ? [...resultsStore.perCase3D.keys()] : [...resultsStore.perCase.keys()]}
         {@const comboKeys = is3D ? [...resultsStore.perCombo3D.keys()] : [...resultsStore.perCombo.keys()]}
@@ -354,7 +389,7 @@
         {/if}
         {#if showResultsViewSub || flat}
           <div class="sub-content">
-            {#if uiStore.showPrimarySelector}
+            {#if showsPrimary}
               <div class="input-group">
                 <!--
                   No visible label: every option names itself ("Simple loads",
@@ -405,7 +440,7 @@
                 nothing to overlay when the result is painted onto the members
                 themselves: two colours on one bar is one colour.
               -->
-              {#if uiStore.showSecondarySelector && resultsStore.diagramType !== 'deformed' && activeRepresentation() === 'diagram'}
+              {#if showsSecondary}
                 <div class="input-group">
                   <label>{t('results.compare')}:</label>
                   <select onchange={(e) => {
