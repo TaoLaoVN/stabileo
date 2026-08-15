@@ -333,9 +333,33 @@ function createUIStore() {
   // 'yz' = Y horizontal, Z vertical
   let drawPlane2D = $state<'xy' | 'xz' | 'yz'>('xy');
 
-  // Simplified 2D model mode — when a 3D model is projected to 2D, editing is disabled
+  /**
+   * Whether the "what do we carry into 2D" dialog is open.
+   *
+   * State rather than a component-local flag because the thing that OPENS it
+   * — the ribbon's dimension button — and the dialog itself live in different
+   * subtrees, and passing a callback down through the ribbon's command table
+   * would put a piece of this workflow inside a data structure that describes
+   * buttons.
+   */
+  let switchTo2DPrompt = $state(false);
+
+  // Simplified 2D model mode — when a 3D model is projected or sliced to 2D,
+  // editing is disabled: the model on screen is a derivative, and an edit to it
+  // would have nowhere to go back to in the 3D original.
   let simplified2DMode = $state(false);
-  let simplified2DStats = $state<{ mergedNodes: number; removedElements: number; duplicateElements: number } | null>(null);
+  /**
+   * What the conversion did, for the banner.
+   *
+   * The dropped counts and the plane are optional because a projection has no
+   * cut to report and the older callers do not set them — an absent count is
+   * "not applicable here", which is what the banner needs to distinguish.
+   */
+  let simplified2DStats = $state<{
+    mergedNodes: number; removedElements: number; duplicateElements: number;
+    droppedCrossing?: number; droppedElsewhere?: number;
+    plane?: 'xy' | 'xz' | 'yz'; offset?: number;
+  } | null>(null);
   // Explicit 3D viewport presentation mode.
   // `upright2dIn3d` is only for flat 2D models intentionally shown standing up on XZ.
   let viewportPresentation3D = $state<ViewportPresentation3D>('native3d');
@@ -848,6 +872,8 @@ function createUIStore() {
     _setModelFlatnessProvider(fn: () => boolean) { _isModelFlat2D = fn; },
     get drawPlane2D() { return drawPlane2D; },
     set drawPlane2D(v: 'xy' | 'xz' | 'yz') { drawPlane2D = v; },
+    get switchTo2DPrompt() { return switchTo2DPrompt; },
+    set switchTo2DPrompt(v: boolean) { switchTo2DPrompt = v; },
     get simplified2DMode() { return simplified2DMode; },
     set simplified2DMode(v: boolean) { simplified2DMode = v; },
     get simplified2DStats() { return simplified2DStats; },

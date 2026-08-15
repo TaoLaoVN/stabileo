@@ -160,7 +160,7 @@ describe('namespaces filled from data, which the scan cannot see', () => {
    */
   const NAMESPACES = [
     'ribbon.', 'cat.', 'grade.src.', 'stress.tt.', 'pairing.',
-    'float.', 'selection.',
+    'float.', 'selection.', 'config.tip.', 'switch2d.',
   ];
 
   for (const ns of NAMESPACES) {
