@@ -102,6 +102,7 @@
   import SectionStressPanel from './components/SectionStressPanel.svelte';
   import KinematicPanel from './components/KinematicPanel.svelte';
   import StressPickHint from './components/stress/StressPickHint.svelte';
+  import ColourScaleLegend from './components/ColourScaleLegend.svelte';
   import TabBar from './components/TabBar.svelte';
   import MobileResultsPanel from './components/MobileResultsPanel.svelte';
   import KeyboardShortcuts from './components/KeyboardShortcuts.svelte';
@@ -956,6 +957,9 @@
         <!-- Instruction for the armed-but-unanswered stress mode. Inside the
              viewport container because it points at the canvas it belongs to. -->
         <StressPickHint />
+        <!-- The colour map's scale. One component for both viewports: the ramp
+             is defined once, so the legend that explains it should be too. -->
+        <ColourScaleLegend />
         {#if uiStore.simplified2DMode}
           <div class="simplified-banner">
             <span>{t('app.simplified2d.banner')}</span>

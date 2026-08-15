@@ -4,6 +4,7 @@
   import * as THREE from 'three';
   import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
   import { modelStore, uiStore, resultsStore, historyStore, dsmStepsStore, verificationStore } from '../lib/store';
+  import { boxSelect as boxSelectTargets } from '../lib/viewport/box-select';
   import { COLORS, setGroupColor, findUserData, disposeObject, createTextSprite } from '../lib/three/selection-helpers';
   import { paintShell, paintShellEdge, restoreShellColor } from '../lib/three/create-shell-mesh';
   import ShellContourLegend from './viewport/ShellContourLegend.svelte';
@@ -1624,11 +1625,18 @@
 
       // Only count as box select if dragged at least a few pixels
       if (x2 - x1 > 3 || y2 - y1 > 3) {
-        // Respect the active select subtype: box select only gathers nodes and
-        // frame elements, so restrict it to the modes where those are the
-        // selection targets. In shells/supports/loads modes a marquee must not
-        // fill selectedElements with frame ids (plates/quads share the same
-        // numeric id space and would be mis-resolved on Delete).
+        /*
+         * Respect the active select subtype: what is highlighted has to be
+         * what a Delete would remove, and plates and quads share the frame
+         * elements' numeric id space, so a marquee filling `selectedElements`
+         * from shells mode would resolve to the wrong things entirely.
+         *
+         * Supports and Loads used to fall through every branch: the rectangle
+         * was drawn, the drag ended, and nothing was selected. Those two now
+         * go through the same `box-select` module the 2D viewport uses, so a
+         * distributed load is judged on the stretch it covers and a support on
+         * its node, identically in both modes.
+         */
         const sm = uiStore.selectMode;
         const allowNodes = sm === 'elements' || sm === 'nodes';
         const allowElems = sm === 'elements';
@@ -1689,6 +1697,47 @@
           };
           for (const p of modelStore.model.plates.values()) collectShell('p' + p.id, p.nodes);
           for (const q of modelStore.model.quads.values()) collectShell('q' + q.id, q.nodes);
+        }
+
+        /*
+         * Supports and loads, through the shared module. Projection differs —
+         * 3D goes through the camera — so the transform is passed in rather
+         * than assumed, which is the whole reason that module takes one.
+         */
+        if (sm === 'supports' || sm === 'loads') {
+          const picked = boxSelectTargets({
+            rect: { x1, y1, x2, y2 },
+            isWindow,
+            mode: sm,
+            /*
+             * The camera projection, with the node's own z. Flattening to
+             * z = 0 — which a two-number signature forces — would have judged
+             * every member as if the model were flat, so a marquee on a tower
+             * would select from the wrong storey.
+             */
+            toScreen: (pt) => {
+              const pos = projectNodeToScene({ x: pt.x, y: pt.y, z: pt.z ?? 0 } as never, project2D);
+              return projectToScreen(pos.x, pos.y, pos.z);
+            },
+            model: {
+              nodes: [],
+              elements: modelStore.elements.values(),
+              supports: modelStore.supports.values(),
+              loads: modelStore.model.loads as never,
+              getNode: (id) => modelStore.getNode(id) as never,
+              getElement: (id) => modelStore.elements.get(id),
+            },
+          });
+          if (picked.supports.size > 0) {
+            uiStore.selectedSupports = additive
+              ? new Set([...uiStore.selectedSupports, ...picked.supports])
+              : picked.supports;
+          }
+          if (picked.loads.size > 0) {
+            uiStore.selectedLoads = additive
+              ? new Set([...uiStore.selectedLoads, ...picked.loads])
+              : picked.loads;
+          }
         }
 
         // Reassign sets to trigger Svelte reactivity (manual box-select)

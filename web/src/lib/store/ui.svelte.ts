@@ -157,6 +157,16 @@ function createUIStore() {
 
   // Visualization toggles
   let showNodeLabels = $state<boolean>(true);
+  /**
+   * The colour-map scale, bottom-left of the viewport.
+   *
+   * On by default: a gradient with no scale says where the peaks are and not
+   * how big they are, which is half the information and the half people
+   * assume. It is a preference rather than a fixed part of the drawing because
+   * a reader comparing two models side by side already knows the scale and
+   * wants the pixels back.
+   */
+  let showColourScale = $state<boolean>(true);
   let showElementLabels = $state<boolean>(false);
   let showLengths = $state<boolean>(false);
   let elementColorMode = $state<ElementColorMode>('uniform');
@@ -571,6 +581,9 @@ function createUIStore() {
 
     get showNodeLabels() { return showNodeLabels; },
     set showNodeLabels(v: boolean) { showNodeLabels = v; },
+
+    get showColourScale() { return showColourScale; },
+    set showColourScale(v: boolean) { showColourScale = v; },
     get showElementLabels() { return showElementLabels; },
     set showElementLabels(v: boolean) { showElementLabels = v; },
     get showLengths() { return showLengths; },

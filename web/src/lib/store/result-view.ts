@@ -123,3 +123,45 @@ export function commandShowsQuantity(diagram: string): boolean {
   if (diagram === 'axial') return active === 'axial';
   return diagram === active;
 }
+
+// ─────────────────────────────────────────────────────────────────────
+// Stress measures
+// ─────────────────────────────────────────────────────────────────────
+
+/**
+ * The measures computed FROM the internal forces rather than being one.
+ *
+ * They belong to no ribbon command that names a force, because each of them
+ * combines several: Von Mises folds normal and shear together, and the
+ * utilisation divides that by the yield strength. So they get a command of
+ * their own, and the panel chooses between them.
+ *
+ * Offered because the section-stress evaluation already produces all four —
+ * naming them costs nothing, and normal and shear SEPARATELY are what answer
+ * "is this member governed by bending or by shear", a question Von Mises
+ * deliberately blurs by design.
+ */
+export type StressMeasure = 'stressRatio' | 'vonMises' | 'sigmaMax' | 'tauMax';
+
+export const STRESS_MEASURES: StressMeasure[] = ['stressRatio', 'vonMises', 'sigmaMax', 'tauMax'];
+
+/** The measure being painted, or null when the map is showing an internal force. */
+export function activeStressMeasure(): StressMeasure | null {
+  if (resultsStore.diagramType !== 'colorMap') return null;
+  const k = resultsStore.colorMapKind;
+  return (STRESS_MEASURES as string[]).includes(k) ? k as StressMeasure : null;
+}
+
+/**
+ * Paint a stress measure over the members.
+ *
+ * Defaults to utilisation — sigma over fy — because it is the one measure that
+ * answers a question on its own: a number near 1 means the member is at its
+ * limit, whatever its steel and whatever its section. The others are absolute
+ * stresses, and an absolute stress means nothing until you know what it is
+ * being compared against.
+ */
+export function showStressMap(measure: StressMeasure = 'stressRatio'): void {
+  resultsStore.colorMapKind = measure;
+  showDiagram('colorMap' as never);
+}

@@ -1,7 +1,7 @@
 <script lang="ts">
   import { t } from '../../lib/i18n';
   import { showDiagram, armTool } from '../../lib/store/view-mode';
-  import { commandShowsQuantity } from '../../lib/store/result-view';
+  import { commandShowsQuantity, showStressMap, activeStressMeasure } from '../../lib/store/result-view';
   import { TWO_D_INTERNAL_FORCE_LABELS as F2D } from '../../lib/geometry/coordinate-system';
   import { uiStore } from '../../lib/store/ui.svelte';
   import { historyStore } from '../../lib/store/history.svelte';
@@ -72,6 +72,8 @@
     tool?: string;
     panel?: string;
     diagram?: string;
+    /** Paints a stress measure rather than an internal force. */
+    stressMap?: boolean;
     action?: () => void;
     /** Greyed when false. Never hidden. */
     enabled?: () => boolean;
@@ -141,6 +143,18 @@
         { id: 'torsion', icon: 'torsion', label: 'T', nameKey: 'ribbon.nameTorsion', panel: 'results', diagram: 'torsion', enabled: only3d, needs3d: true },
       );
     }
+    /*
+     * Stress goes last, after the forces, because it is DERIVED from all of
+     * them: utilisation, Von Mises, and the normal and shear peaks. It names no
+     * single force, which is why it could not live among them and why it had
+     * no command at all — the maps existed and were reachable only by pressing
+     * 9, with the control that chooses between them appearing once you were
+     * already there.
+     */
+    cmds.push({
+      id: 'stress', icon: 'stress', labelKey: 'ribbon.stress',
+      panel: 'results', stressMap: true, enabled: any,
+    });
     return cmds;
   });
 
@@ -312,6 +326,12 @@
        */
       return;
     }
+    if (cmd.stressMap) {
+      // Defaults to utilisation; the panel switches between the four measures.
+      showStressMap();
+      onOpenPanel(cmd.panel ?? null, { toggle: false });
+      return;
+    }
     if (cmd.diagram) {
       /*
        * Picking a diagram OPENS the panel; it never toggles it shut. Routing it
@@ -393,6 +413,7 @@
     }
     // Solve OPENS Results but is not a state — it is an action you run, and a
     // lit Solve while the panel happens to be open would read as "solving".
+    if (cmd.stressMap) return solved && activeStressMeasure() !== null;
     if (cmd.id === 'solve') return false;
     if (cmd.panel) return activePanel === cmd.panel;
     return false;  // `dim` is a switch, not a state: it never lights up.

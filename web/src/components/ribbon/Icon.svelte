@@ -168,6 +168,20 @@
     <path d="M5.5 9.5a7.5 4 0 1 0 13 0" />
     <path d="M4.4 6.6l1.2 3.2 3.2-.9" />
 
+  {:else if name === 'stress'}
+    <!--
+      A member with the stress varying along it: the bar, and four bands of
+      increasing weight reading left to right. Not a colour ramp — these icons
+      are one stroke in `currentColor` so they tint with the button state — so
+      the gradient is carried by SPACING, which reads at 22 px where a colour
+      would not survive being greyed out.
+    -->
+    <rect x="3" y="9" width="18" height="6" rx="0.6" />
+    <path d="M7 9v6" opacity="0.35" />
+    <path d="M11 9v6" opacity="0.6" />
+    <path d="M14.5 9v6" opacity="0.8" />
+    <path d="M17.5 9v6" />
+
   {:else if name === 'examples'}
     <path d="M4 6.5h16M4 12h16M4 17.5h10" />
   {:else if name === 'project'}

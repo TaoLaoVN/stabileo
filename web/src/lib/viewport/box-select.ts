@@ -56,13 +56,24 @@ export interface BoxSelectResult {
   loads: Set<number>;
 }
 
+/**
+ * A point in the model's world, which may or may not have a third dimension.
+ *
+ * `z` is optional rather than a separate 2D and 3D type: the geometry here —
+ * is this point inside the rectangle, does this segment cross it — is identical
+ * either way once the point has been projected, and the only thing that differs
+ * is the projection. Two copies of that geometry is how the two viewports would
+ * start disagreeing about what a marquee selects.
+ */
+export interface WorldPoint { x: number; y: number; z?: number }
+
 /** The minimum this needs to know about the model, in world coordinates. */
 export interface BoxSelectModel {
-  nodes: Iterable<{ id: number; x: number; y: number }>;
+  nodes: Iterable<{ id: number } & WorldPoint>;
   elements: Iterable<{ id: number; nodeI: number; nodeJ: number }>;
   supports: Iterable<{ id: number; nodeId: number }>;
   loads: Iterable<{ type: string; data: Record<string, number | undefined> & { id: number } }>;
-  getNode(id: number): { x: number; y: number } | undefined;
+  getNode(id: number): WorldPoint | undefined;
   getElement(id: number): { nodeI: number; nodeJ: number } | undefined;
 }
 
@@ -72,8 +83,13 @@ export interface BoxSelectInput {
   isWindow: boolean;
   mode: BoxSelectMode;
   model: BoxSelectModel;
-  /** World → screen, the same transform the canvas draws with. */
-  toScreen(wx: number, wy: number): { x: number; y: number };
+  /**
+   * World → screen, the same transform the viewport draws with.
+   *
+   * Takes the point rather than a pair of numbers so a 3D caller can pass the
+   * camera projection without the third coordinate being quietly dropped.
+   */
+  toScreen(p: WorldPoint): { x: number; y: number };
 }
 
 const inside = (x: number, y: number, r: ScreenRect): boolean =>
@@ -104,7 +120,7 @@ function memberEnds(
   const ni = model.getNode(m.nodeI);
   const nj = model.getNode(m.nodeJ);
   if (!ni || !nj) return null;
-  return { a: toScreen(ni.x, ni.y), b: toScreen(nj.x, nj.y) };
+  return { a: toScreen(ni), b: toScreen(nj) };
 }
 
 /**
@@ -126,7 +142,7 @@ function loadExtent(
   if (load.type === 'nodal') {
     const n = model.getNode(d.nodeId as number);
     if (!n) return null;
-    const s = toScreen(n.x, n.y);
+    const s = toScreen(n);
     return { kind: 'point', x: s.x, y: s.y };
   }
 
@@ -138,12 +154,20 @@ function loadExtent(
 
   const dx = nj.x - ni.x;
   const dy = nj.y - ni.y;
-  const L = Math.hypot(dx, dy);
+  const dz = (nj.z ?? 0) - (ni.z ?? 0);
+  // The member's true length, so a position along it means the same thing in
+  // both viewports — using the projected length would put a 3D load at the
+  // wrong station whenever the member ran towards the camera.
+  const L = Math.hypot(dx, dy, dz);
   if (L < 1e-10) return null;
+
+  const along = (t: number): WorldPoint => ({
+    x: ni.x + t * dx, y: ni.y + t * dy, z: (ni.z ?? 0) + t * dz,
+  });
 
   if (load.type === 'pointOnElement') {
     const t = Math.max(0, Math.min(1, (d.a ?? 0) / L));
-    const s = toScreen(ni.x + t * dx, ni.y + t * dy);
+    const s = toScreen(along(t));
     return { kind: 'point', x: s.x, y: s.y };
   }
 
@@ -151,8 +175,8 @@ function loadExtent(
   // not the whole member.
   const t0 = Math.max(0, Math.min(1, (d.a ?? 0) / L));
   const t1 = Math.max(0, Math.min(1, (d.b ?? L) / L));
-  const a = toScreen(ni.x + t0 * dx, ni.y + t0 * dy);
-  const b = toScreen(ni.x + t1 * dx, ni.y + t1 * dy);
+  const a = toScreen(along(t0));
+  const b = toScreen(along(t1));
   return { kind: 'segment', ax: a.x, ay: a.y, bx: b.x, by: b.y };
 }
 
@@ -170,7 +194,7 @@ export function boxSelect(input: BoxSelectInput): BoxSelectResult {
 
   if (mode === 'nodes' || mode === 'elements') {
     for (const n of model.nodes) {
-      const s = toScreen(n.x, n.y);
+      const s = toScreen(n);
       if (inside(s.x, s.y, rect)) out.nodes.add(n.id);
     }
   }
@@ -192,7 +216,7 @@ export function boxSelect(input: BoxSelectInput): BoxSelectResult {
     for (const sup of model.supports) {
       const n = model.getNode(sup.nodeId);
       if (!n) continue;
-      const s = toScreen(n.x, n.y);
+      const s = toScreen(n);
       if (inside(s.x, s.y, rect)) out.supports.add(sup.id);
     }
   }

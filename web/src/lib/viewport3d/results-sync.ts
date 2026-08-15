@@ -438,6 +438,7 @@ export function syncColorMap3D(ctx: ResultsSyncContext): void {
       resetShellColors(ctx);
       ctx.colorMapApplied = false;
     }
+    resultsStore.setColourScale(null);
     return;
   }
 
@@ -462,6 +463,10 @@ export function syncColorMap3D(ctx: ResultsSyncContext): void {
     });
     eb.flush();
     resetShellColors(ctx);
+    // Member colour is a two-colour key, not a scale: the tension/compression
+    // legend says everything there is to say and a gradient bar would be a
+    // second, wrong story about the same picture.
+    resultsStore.setColourScale(null);
     ctx.colorMapApplied = true;
   } else if (dt === 'colorMap') {
     const cmKind = resultsStore.colorMapKind;
@@ -644,6 +649,14 @@ function getSectionProps(elemId: number) {
  * Apply continuous per-vertex heatmap on frame elements.
  * Creates overlay cylinder meshes with color gradients along length.
  */
+/** The unit of a heat-map variable; utilisation is a ratio and has none. */
+function heatmapUnit(v: HeatmapVariable): string {
+  if (v === 'stressRatio') return '';
+  if (v === 'vonMises' || v === 'sigmaMax' || v === 'tauMax') return 'MPa';
+  if (v === 'moment' || v === 'momentY' || v === 'momentZ' || v === 'torsion') return 'kN·m';
+  return 'kN';
+}
+
 function applyFrameHeatmap(
   ctx: ResultsSyncContext,
   forcesMap: Map<number, import('../engine/types-3d').ElementForces3D>,
@@ -681,6 +694,11 @@ function applyFrameHeatmap(
 
   // For stressRatio, fix scale at 1.0 (100% of fy)
   if (variable === 'stressRatio') globalMax = Math.max(globalMax, 1.0);
+
+  // What the legend shows, published from where the maximum is decided.
+  resultsStore.setColourScale(globalMax > 1e-10
+    ? { max: globalMax, unit: heatmapUnit(variable) }
+    : null);
 
   // Pass 2: create heatmap meshes (or restore visibility for skipped elements)
   // The textured cylinder is the solid-mode representation, so it is built

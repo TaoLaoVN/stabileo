@@ -75,7 +75,19 @@ function createResultsStore() {
   let deformedScale = $state<number>(1); // Scale factor for deformed shape (applied directly to displacements)
   let diagramScale = $state<number>(1); // Multiplier for M/V/N diagram size (1 = default 60px height)
   let animateDeformed = $state<boolean>(false);
-  let colorMapKind = $state<'moment' | 'shear' | 'axial' | 'momentY' | 'momentZ' | 'shearY' | 'shearZ' | 'torsion' | 'stressRatio' | 'vonMises' | 'shellVonMises' | 'shellBending'>('moment');
+  /**
+   * The top of the colour scale currently painted, and its unit.
+   *
+   * Published by whoever paints the map rather than recomputed for the legend.
+   * The alternative — a second function deriving the same maximum — is two
+   * answers to one question, and they drift: the 3D heat map samples eight
+   * points per member through the section-stress evaluation, and reproducing
+   * that in a legend would mean maintaining the same arithmetic twice.
+   *
+   * Null when nothing is painted.
+   */
+  let colourScale = $state<{ max: number; unit: string } | null>(null);
+  let colorMapKind = $state<'moment' | 'shear' | 'axial' | 'momentY' | 'momentZ' | 'shearY' | 'shearZ' | 'torsion' | 'stressRatio' | 'vonMises' | 'sigmaMax' | 'tauMax' | 'shellVonMises' | 'shellBending'>('moment');
   // Which shell quantity the shell contour paints (selectable in PRO results).
   let shellContourComponent = $state<import('../engine/shell-stress').ShellContourComponent>('vonMises');
   let showDiagramValues = $state<boolean>(true);
@@ -218,8 +230,15 @@ function createResultsStore() {
     set diagramScale(v: number) { diagramScale = Math.max(0.1, Math.min(10, v)); },
     get animateDeformed() { return animateDeformed; },
     set animateDeformed(v: boolean) { animateDeformed = v; },
+    get colourScale() { return colourScale; },
+    /** Only writes on a real change: this is called from a draw loop. */
+    setColourScale(v: { max: number; unit: string } | null) {
+      if (v === null) { if (colourScale !== null) colourScale = null; return; }
+      if (!colourScale || colourScale.max !== v.max || colourScale.unit !== v.unit) colourScale = v;
+    },
+
     get colorMapKind() { return colorMapKind; },
-    set colorMapKind(v: 'moment' | 'shear' | 'axial' | 'momentY' | 'momentZ' | 'shearY' | 'shearZ' | 'torsion' | 'stressRatio' | 'vonMises' | 'shellVonMises' | 'shellBending') { colorMapKind = v; },
+    set colorMapKind(v: 'moment' | 'shear' | 'axial' | 'momentY' | 'momentZ' | 'shearY' | 'shearZ' | 'torsion' | 'stressRatio' | 'vonMises' | 'sigmaMax' | 'tauMax' | 'shellVonMises' | 'shellBending') { colorMapKind = v; },
     get shellContourComponent() { return shellContourComponent; },
     set shellContourComponent(v: import('../engine/shell-stress').ShellContourComponent) { shellContourComponent = v; },
     get showDiagramValues() { return showDiagramValues; },

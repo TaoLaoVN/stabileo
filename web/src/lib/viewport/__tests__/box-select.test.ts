@@ -53,7 +53,7 @@ const LOADS = [
   { type: 'thermal', data: { id: 104, elementId: 4 } },                // the left column
 ];
 
-const toScreen = (wx: number, wy: number) => ({ x: wx * 10, y: 100 - wy * 10 });
+const toScreen = (p: { x: number; y: number }) => ({ x: p.x * 10, y: 100 - p.y * 10 });
 
 const model: BoxSelectModel = {
   nodes: NODES,
@@ -66,8 +66,8 @@ const model: BoxSelectModel = {
 
 /** A rectangle from world coordinates, so the tests read in metres. */
 const rectOf = (x0: number, y0: number, x1: number, y1: number): ScreenRect => {
-  const a = toScreen(x0, y0);
-  const b = toScreen(x1, y1);
+  const a = toScreen({ x: x0, y: y0 });
+  const b = toScreen({ x: x1, y: y1 });
   return {
     x1: Math.min(a.x, b.x), y1: Math.min(a.y, b.y),
     x2: Math.max(a.x, b.x), y2: Math.max(a.y, b.y),
@@ -273,5 +273,63 @@ describe('degenerate input', () => {
       rect: rectOf(-2, -2, 14, 5), isWindow: false, mode: 'loads', model: degenerate, toScreen,
     });
     expect(r.loads.size).toBe(0);
+  });
+});
+
+describe('a model with depth', () => {
+  /*
+   * The 3D viewport passes the camera projection, so the third coordinate has
+   * to survive the trip. It did not in the first draft: the signature took two
+   * numbers, the caller flattened every node to z = 0, and a marquee on a tower
+   * would have selected from whichever storey happened to project onto it.
+   */
+  const NODES_3D = [
+    { id: 1, x: 0, y: 0, z: 0 },
+    { id: 2, x: 0, y: 0, z: 10 },     // directly above node 1
+    { id: 3, x: 6, y: 0, z: 0 },
+  ];
+  const ELEMENTS_3D = [{ id: 1, nodeI: 1, nodeJ: 2 }, { id: 2, nodeI: 1, nodeJ: 3 }];
+
+  /** A projection that actually uses z, as a camera does. */
+  const project = (p: { x: number; y: number; z?: number }) =>
+    ({ x: p.x * 10, y: 100 - (p.z ?? 0) * 10 });
+
+  const model3d: BoxSelectModel = {
+    nodes: NODES_3D,
+    elements: ELEMENTS_3D,
+    supports: [{ id: 20, nodeId: 2 }],
+    loads: [{ type: 'distributed', data: { id: 200, elementId: 1 } }],
+    getNode: (id) => NODES_3D.find((n) => n.id === id),
+    getElement: (id) => ELEMENTS_3D.find((e) => e.id === id),
+  };
+
+  const run3d = (rect: ScreenRect, isWindow: boolean, mode: Parameters<typeof boxSelect>[0]['mode']) =>
+    boxSelect({ rect, isWindow, mode, model: model3d, toScreen: project });
+
+  it('separates two nodes that differ only in z', () => {
+    // Around the TOP node: screen y = 0 for z = 10, y = 100 for z = 0.
+    const top = { x1: -20, y1: -10, x2: 20, y2: 20 };
+    expect([...run3d(top, true, 'nodes').nodes]).toEqual([2]);
+
+    const bottom = { x1: -20, y1: 80, x2: 20, y2: 120 };
+    expect([...run3d(bottom, true, 'nodes').nodes].sort()).toEqual([1]);
+  });
+
+  it('takes the support on the upper node and not the lower one', () => {
+    const top = { x1: -20, y1: -10, x2: 20, y2: 20 };
+    expect([...run3d(top, true, 'supports').supports]).toEqual([20]);
+    const bottom = { x1: -20, y1: 80, x2: 20, y2: 120 };
+    expect(run3d(bottom, true, 'supports').supports.size).toBe(0);
+  });
+
+  it('measures a load along the member in three dimensions', () => {
+    // The column runs 10 m in z. A window over its whole projected height
+    // takes the load; one over the bottom third does not.
+    const whole = { x1: -20, y1: -10, x2: 20, y2: 120 };
+    expect(run3d(whole, true, 'loads').loads.has(200)).toBe(true);
+
+    const lower = { x1: -20, y1: 80, x2: 20, y2: 120 };
+    expect(run3d(lower, true, 'loads').loads.has(200)).toBe(false);
+    expect(run3d(lower, false, 'loads').loads.has(200)).toBe(true);
   });
 });

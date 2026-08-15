@@ -38,7 +38,6 @@
     findNearestMidpoint as _findNearestMidpoint,
     findAllLoadsNear as _findAllLoadsNear,
     snapWithMidpoint as _snapWithMidpoint,
-    segmentIntersectsRect,
   } from '../lib/viewport/spatial-queries';
   import { boxSelect as boxSelectTargets, normaliseDrag, type BoxSelectMode } from '../lib/viewport/box-select';
   import { canvasTheme } from '../lib/canvas/theme';
@@ -459,18 +458,28 @@
       let globalMax = 0;
       const elemMaxes = new Map<number, number>();
 
-      if (kind === 'stressRatio' || kind === 'vonMises') {
-        // Stress ratio: σ_vm / fy — or absolute Von Mises
+      if (kind === 'stressRatio' || kind === 'vonMises' || kind === 'sigmaMax' || kind === 'tauMax') {
         for (const ef of resultsStore.results.elementForces) {
           const elem = modelStore.elements.get(ef.elementId);
           if (!elem) continue;
           const sec = modelStore.sections.get(elem.sectionId);
           const mat = modelStore.materials.get(elem.materialId);
-          if (!sec || !mat || !mat.fy) continue;
+          /*
+           * `fy` is required by the RATIO alone — it is the denominator. Von
+           * Mises, the normal stress and the shear stress are absolute
+           * quantities that do not know the material's strength exists, and
+           * demanding it for them left every concrete member unpainted while
+           * the number was perfectly computable.
+           */
+          if (!sec || !mat) continue;
+          if (kind === 'stressRatio' && !mat.fy) continue;
           const stress = computeElementStress(ef, sec, mat);
-          const val = kind === 'stressRatio' ? (stress.ratio ?? 0) : Math.max(stress.vonMisesStart ?? 0, stress.vonMisesEnd ?? 0);
+          const val = kind === 'stressRatio' ? (stress.ratio ?? 0)
+            : kind === 'vonMises' ? Math.max(stress.vonMisesStart ?? 0, stress.vonMisesEnd ?? 0)
+            : kind === 'sigmaMax' ? Math.max(Math.abs(stress.sigmaStart ?? 0), Math.abs(stress.sigmaEnd ?? 0))
+            : Math.max(Math.abs(stress.tauStart ?? 0), Math.abs(stress.tauEnd ?? 0));
           elemMaxes.set(ef.elementId, val);
-          if (kind === 'vonMises' && val > globalMax) globalMax = val;
+          if (kind !== 'stressRatio' && val > globalMax) globalMax = val;
         }
         if (kind === 'stressRatio') globalMax = 1.0; // fixed scale: 0% → 100%+ of fy
       } else {
@@ -494,6 +503,15 @@
           if (val > globalMax) globalMax = val;
         }
       }
+
+      /*
+       * Publish what the legend has to show. Done here, where the maximum is
+       * actually decided, rather than recomputed beside the legend: the same
+       * number derived twice is two numbers waiting to disagree.
+       */
+      resultsStore.setColourScale(globalMax > 1e-10
+        ? { max: globalMax, unit: colourScaleUnit(kind) }
+        : null);
 
       if (globalMax > 1e-10) {
         for (const [eid, val] of elemMaxes) {
@@ -1088,40 +1106,20 @@
         }
       }
 
-      // Color legend for stressRatio and axialColor
-      if (resultsStore.diagramType === 'colorMap' && resultsStore.colorMapKind === 'stressRatio') {
-        // Stacked above the axis indicator rather than at a fixed offset, so
-        // the two cannot drift into each other.
-        const lh = 90;
-        const lx = 12, ly = height - AXES_GIZMO_HEIGHT - lh - 8, lw = 16;
-        // Gradient bar
-        for (let i = 0; i < lh; i++) {
-          const norm = 1.0 - i / lh; // top=1 (red), bottom=0 (green/blue)
-          const r = norm < 0.5 ? Math.round(norm * 2 * 255) : 255;
-          const g = norm < 0.5 ? 255 : Math.round((1 - (norm - 0.5) * 2) * 255);
-          const b = norm < 0.25 ? Math.round((1 - norm * 4) * 200) : 0;
-          ctx.fillStyle = `rgb(${r},${g},${b})`;
-          ctx.fillRect(lx, ly + i, lw, 1);
-        }
-        // Magenta cap for >100%
-        ctx.fillStyle = 'rgb(255,0,255)';
-        ctx.fillRect(lx, ly - 10, lw, 10);
-        // Border
-        ctx.strokeStyle = 'rgba(255,255,255,0.3)';
-        ctx.lineWidth = 1;
-        ctx.strokeRect(lx, ly - 10, lw, lh + 10);
-        // Labels
-        ctx.fillStyle = '#ccc';
-        ctx.font = '10px sans-serif';
-        ctx.textAlign = 'left';
-        ctx.fillText('>100%', lx + lw + 4, ly - 3);
-        ctx.fillText('100%', lx + lw + 4, ly + 4);
-        ctx.fillText('50%', lx + lw + 4, ly + lh / 2 + 3);
-        ctx.fillText('0%', lx + lw + 4, ly + lh + 3);
-        ctx.font = 'bold 10px sans-serif';
-        ctx.fillStyle = '#aaa';
-        ctx.fillText(t('viewport.resistance'), lx, ly - 16);
-      } else if (resultsStore.diagramType === 'axialColor') {
+      /*
+       * The gradient key is drawn by `ColourScaleLegend`, an HTML overlay
+       * shared with the 3D viewport, and not here.
+       *
+       * It used to be painted onto the canvas for the utilisation map alone,
+       * with hardcoded 0/50/100% labels — correct for a fixed 0–1 scale and
+       * wrong for the other three measures, whose maximum is whatever the
+       * model happens to reach. Two legends also appeared at once the moment
+       * the shared one arrived, drawn over each other in the same corner.
+       *
+       * The two-colour axial key below stays: it is a key, not a scale, and
+       * has no gradient to explain.
+       */
+      if (resultsStore.diagramType === 'axialColor') {
         // Same rule as the gradient key above: clear the axis indicator by
         // construction. The block is 32 px tall plus its title.
         const lx = 12, ly = height - AXES_GIZMO_HEIGHT - 40;
@@ -1320,6 +1318,20 @@
     // Everything queued above is laid out now, against the structure itself.
     currentFrameLabels.flush(ctx, memberScreenSegments());
     currentFrameLabels = undefined;
+  }
+
+
+  /**
+   * The unit of whatever the colour map is painting.
+   *
+   * Utilisation is a ratio and has none — labelling it "1.00 MPa" would be
+   * worse than labelling it nothing at all.
+   */
+  function colourScaleUnit(kind: string): string {
+    if (kind === 'stressRatio') return '';
+    if (kind === 'vonMises' || kind === 'sigmaMax' || kind === 'tauMax') return 'MPa';
+    if (kind === 'moment' || kind === 'momentY' || kind === 'momentZ' || kind === 'torsion') return 'kN·m';
+    return 'kN';
   }
 
   function drawGrid() {
@@ -2173,7 +2185,7 @@
           rect,
           isWindow,
           mode: (uiStore.selectMode === 'stress' ? 'elements' : uiStore.selectMode) as BoxSelectMode,
-          toScreen: (wx, wy) => uiStore.worldToScreen(wx, wy),
+          toScreen: (p) => uiStore.worldToScreen(p.x, p.y),
           model: {
             nodes: [...modelStore.nodes.values()].map((n) => {
               const p = project2DNode(n);

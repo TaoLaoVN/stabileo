@@ -1,6 +1,6 @@
 <script lang="ts">
   import { uiStore, resultsStore, modelStore } from '../../lib/store';
-  import { activeQuantity, activeRepresentation, representationsFor, showQuantityAs } from '../../lib/store/result-view';
+  import { activeQuantity, activeRepresentation, representationsFor, showQuantityAs, activeStressMeasure, showStressMap } from '../../lib/store/result-view';
   import { showDiagram } from '../../lib/store/view-mode';
   import ResultsTable from '../tables/ResultsTable.svelte';
   import { t } from '../../lib/i18n';
@@ -97,6 +97,21 @@
    * no room for: the scale, the animation and the view options.
    */
   let { hideDiagrams = false, flat = false }: { hideDiagrams?: boolean; flat?: boolean } = $props();
+
+  /**
+   * Whether any member's material carries a yield strength.
+   *
+   * Asked of the model rather than inferred from an empty picture: "nothing is
+   * painted" has two causes and only one of them is worth telling the user
+   * about.
+   */
+  function anyMemberHasYield(): boolean {
+    for (const el of modelStore.elements.values()) {
+      const m = modelStore.materials.get(el.materialId);
+      if (m?.fy) return true;
+    }
+    return false;
+  }
 </script>
 
 <!--
@@ -202,17 +217,44 @@
         carry their own scale, and belong to no single ribbon command, so this
         is the only place they can be picked.
       -->
-      {#if resultsStore.diagramType === 'colorMap' && activeQuantity() === null}
+      <!--
+        Which stress the map is painting.
+        
+        Four measures out of one section-stress evaluation. Utilisation is the
+        default because it is the only one that means something on its own —
+        1.00 is the limit, whatever the steel and whatever the section. The
+        other three are absolute stresses, and an absolute stress says nothing
+        until you know what it is being compared against.
+      -->
+      {#if activeStressMeasure()}
+        {@const measure = activeStressMeasure()!}
         <div class="input-group">
-          <label>{t('results.variable')}:</label>
-          <select bind:value={resultsStore.colorMapKind}>
-            <option value="stressRatio">{t('results.resistance')}</option>
-            <option value="vonMises">Von Mises (σ)</option>
+          <label>{t('results.stressMeasure')}:</label>
+          <select value={measure} onchange={(e) => showStressMap(e.currentTarget.value as never)}>
+            <option value="stressRatio">{t('results.measureUtilisation')}</option>
+            <option value="vonMises">{t('results.measureVonMises')}</option>
+            <option value="sigmaMax">{t('results.measureSigmaMax')}</option>
+            <option value="tauMax">{t('results.measureTauMax')}</option>
             {#if uiStore.analysisMode === '3d'}
               <option value="shellVonMises">{t('results.shellVonMises')}</option>
             {/if}
           </select>
         </div>
+        <!--
+          Utilisation divides by fy, so a model whose members are concrete —
+          or any material with no yield strength entered — cannot produce it.
+          Left alone the map simply painted nothing, which reads as "no stress
+          anywhere" rather than "this cannot be computed".
+        -->
+        {#if measure === 'stressRatio' && !anyMemberHasYield()}
+          <p class="rep-help rep-warn">{t('results.noYield')}</p>
+        {/if}
+        <p class="rep-help">
+          {measure === 'stressRatio' ? t('results.measureUtilisationHelp')
+            : measure === 'vonMises' ? t('results.measureVonMisesHelp')
+            : measure === 'sigmaMax' ? t('results.measureSigmaMaxHelp')
+            : t('results.measureTauMaxHelp')}
+        </p>
       {/if}
         <!--
           How the axial result is DRAWN, next to the result itself.
@@ -277,6 +319,17 @@
               : t('results.repColourMapHelp')}
           </p>
         {/if}
+      <!--
+        The scale is only worth a switch when there is one on screen, so the
+        control appears with it rather than sitting greyed out the rest of the
+        time.
+      -->
+      {#if resultsStore.colourScale}
+        <label class="checkbox-item">
+          <input type="checkbox" bind:checked={uiStore.showColourScale} />
+          {t('results.showScale')}
+        </label>
+      {/if}
       <!--
         Shown whenever a RESULT is on screen, whatever way it is drawn.
         
@@ -453,6 +506,8 @@
 </div>
 
 <style>
+  .rep-warn { color: var(--st-warn); }
+
   .rep-help {
     margin: 3px 0 0;
     font-size: 0.66rem;
