@@ -53,14 +53,14 @@
   .banner {
     margin: 6px 0;
     padding: 8px 10px;
-    border: 1px solid #8a6a10;
+    border: 1px solid var(--st-warn);
     border-radius: 4px;
     background: repeating-linear-gradient(45deg,
       rgba(221, 170, 0, 0.14) 0 6px, rgba(120, 92, 0, 0.14) 6px 12px);
-    color: #f0dca6;
+    color: var(--st-warn);
   }
   .lead { margin: 0; display: flex; gap: 6px; align-items: baseline; font-size: 0.76rem; }
   .body { margin: 4px 0 0; font-size: 0.7rem; line-height: 1.45; }
   ul { margin: 6px 0 0; padding-left: 18px; font-size: 0.68rem; line-height: 1.45; }
-  .promotion { margin: 6px 0 0; font-size: 0.68rem; font-style: italic; color: #d9c48c; }
+  .promotion { margin: 6px 0 0; font-size: 0.68rem; font-style: italic; color: var(--st-warn); }
 </style>

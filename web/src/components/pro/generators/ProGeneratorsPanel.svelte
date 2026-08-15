@@ -344,42 +344,58 @@
 <style>
   .gen { display: flex; flex-direction: column; gap: 8px; padding: 10px 12px; height: 100%; overflow-y: auto; }
   h3 { margin: 0; font-size: 0.86rem; font-weight: 600; }
-  h4 { margin: 6px 0 2px; font-size: 0.74rem; font-weight: 600; color: #bcd; }
-  .sub { margin: 2px 0 0; font-size: 0.7rem; color: #8fa0b4; }
+  h4 { margin: 6px 0 2px; font-size: 0.74rem; font-weight: 600; color: var(--st-text-2); }
+  .sub { margin: 2px 0 0; font-size: 0.7rem; color: var(--st-text-2); }
   .kinds { display: flex; gap: 4px; }
   .kinds button {
     flex: 1; padding: 4px 8px; font-size: 0.72rem; font-weight: 600; cursor: pointer;
-    background: #14304f; border: 1px solid #2a5a8a; border-radius: 3px; color: #dde;
+    background: var(--st-surface-3); border: 1px solid var(--st-hair-strong); border-radius: 3px; color: var(--st-text);
   }
-  .kinds button.active { background: #1e5a8a; border-color: #4ecdc4; }
-  .kinds button:focus-visible { outline: 2px solid #4ecdc4; outline-offset: 1px; }
+  .kinds button.active { background: var(--st-hair-strong); border-color: var(--st-interactive); }
+  .kinds button:focus-visible { outline: 2px solid var(--st-interactive); outline-offset: 1px; }
   .fields { display: flex; flex-direction: column; gap: 3px; }
-  .fields label { display: flex; align-items: center; gap: 6px; font-size: 0.7rem; color: #bcd; }
+  .fields label { display: flex; align-items: center; gap: 6px; font-size: 0.7rem; color: var(--st-text-2); }
   .fields label > span:first-child { min-width: 9rem; }
   .fields input[type='number'], .fields select {
-    background: #0b1a2c; color: #dde; border: 1px solid #24486e;
+    background: var(--st-bg); color: var(--st-text); border: 1px solid var(--st-surface-3);
     border-radius: 3px; padding: 2px 4px; font-size: 0.7rem; width: 6rem; text-align: right;
   }
   .fields select { text-align: left; width: auto; min-width: 8rem; }
   .fields label.check > span { min-width: 0; }
-  .fields input:focus-visible, .fields select:focus-visible { outline: 2px solid #4ecdc4; outline-offset: 1px; }
-  .problems { margin: 0; padding-left: 16px; font-size: 0.68rem; color: #ff9a9a; }
+  .fields input:focus-visible, .fields select:focus-visible { outline: 2px solid var(--st-interactive); outline-offset: 1px; }
+  .problems { margin: 0; padding-left: 16px; font-size: 0.68rem; color: var(--st-err); }
   .previews { display: flex; flex-direction: column; gap: 6px; }
-  .preview { border: 1px solid #17324f; border-radius: 4px; padding: 6px 8px; }
-  .totals { margin: 0; font-size: 0.72rem; color: #cde; font-variant-numeric: tabular-nums; }
+  .preview { border: 1px solid var(--st-surface-3); border-radius: 4px; padding: 6px 8px; }
+  .totals { margin: 0; font-size: 0.72rem; color: var(--st-text); font-variant-numeric: tabular-nums; }
   /* The per-role legend moved into the preview, beside the colours it names. */
   .assume { margin-top: 5px; }
-  .assume summary { cursor: pointer; font-size: 0.68rem; color: #8fa0b4; }
-  .assume summary:focus-visible { outline: 2px solid #4ecdc4; outline-offset: 2px; }
-  .assume ul { margin: 4px 0 0; padding-left: 16px; font-size: 0.66rem; color: #9ab; line-height: 1.4; }
+  .assume summary { cursor: pointer; font-size: 0.68rem; color: var(--st-text-2); }
+  .assume summary:focus-visible { outline: 2px solid var(--st-interactive); outline-offset: 2px; }
+  .assume ul { margin: 4px 0 0; padding-left: 16px; font-size: 0.66rem; color: var(--st-text-2); line-height: 1.4; }
   .count { padding: 0 4px; border-radius: 3px; background: rgba(128,128,128,0.3); }
-  .warn { margin: 0; font-size: 0.68rem; color: #f0cc66; }
+  .warn { margin: 0; font-size: 0.68rem; color: var(--st-warn); }
   .go {
     padding: 6px 10px; font-size: 0.76rem; font-weight: 600; cursor: pointer;
-    background: #1e5a8a; border: 1px solid #4ecdc4; border-radius: 3px; color: #eef;
+    background: var(--st-hair-strong); border: 1px solid var(--st-interactive); border-radius: 3px; color: var(--st-text);
   }
-  .go:disabled { opacity: 0.45; cursor: not-allowed; border-color: #2a5a8a; }
-  .go:focus-visible { outline: 2px solid #4ecdc4; outline-offset: 2px; }
-  .result { margin: 0; font-size: 0.7rem; color: #7ee2a8; }
-  .model-note { margin: 0; font-size: 0.66rem; color: #778; }
+  .go:disabled { opacity: 0.45; cursor: not-allowed; border-color: var(--st-hair-strong); }
+  .go:focus-visible { outline: 2px solid var(--st-interactive); outline-offset: 2px; }
+  .result { margin: 0; font-size: 0.7rem; color: var(--st-ok); }
+  .model-note { margin: 0; font-size: 0.66rem; color: var(--st-text-3); }
+
+  /*
+    One focus ring for every control in this panel.
+
+    The metallic surface was written before the `--st-*` system reached it: it carried its own
+    palette of seventeen hardcoded hex values and, between the two panels, four `:focus-visible`
+    rules for several dozen controls. A keyboard user got whatever the UA happened to draw.
+  */
+  button:focus-visible,
+  input:focus-visible,
+  select:focus-visible,
+  summary:focus-visible,
+  [tabindex]:focus-visible {
+    outline: 2px solid var(--st-value);
+    outline-offset: 1px;
+  }
 </style>

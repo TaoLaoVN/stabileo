@@ -170,46 +170,62 @@
   .banner {
     display: flex; gap: 8px; align-items: flex-start;
     padding: 8px 10px; border-radius: 4px;
-    border: 1px solid #8a6a10;
+    border: 1px solid var(--st-warn);
     background: repeating-linear-gradient(45deg,
       rgba(221, 170, 0, 0.14) 0 6px, rgba(120, 92, 0, 0.14) 6px 12px);
-    color: #f0dca6;
+    color: var(--st-warn);
   }
   .banner p { margin: 0; font-size: 0.72rem; line-height: 1.45; }
   .banner-tag { font-size: 0.95rem; line-height: 1.2; }
   .head h3 { margin: 0; font-size: 0.86rem; font-weight: 600; }
-  .sub { margin: 2px 0 0; font-size: 0.7rem; color: #8fa0b4; }
+  .sub { margin: 2px 0 0; font-size: 0.7rem; color: var(--st-text-2); }
   .code-line { display: flex; gap: 6px; align-items: center; font-size: 0.72rem; }
   .tag {
     font-size: 0.64rem; font-weight: 600; padding: 1px 5px; border-radius: 3px;
-    background: #7a5b00; color: #fff6dd;
+    background: var(--st-surface-3); color: var(--st-text);
   }
-  .muted { color: #778; }
-  .notices { margin: 0; padding-left: 16px; font-size: 0.7rem; color: #cbd; }
+  .muted { color: var(--st-text-3); }
+  .notices { margin: 0; padding-left: 16px; font-size: 0.7rem; color: var(--st-text-2); }
   .notices li { margin-bottom: 3px; line-height: 1.4; }
-  .empty { padding: 12px; border: 1px dashed #345; border-radius: 4px; }
-  .empty p { margin: 0 0 6px; font-size: 0.74rem; color: #bcd; }
+  .empty { padding: 12px; border: 1px dashed var(--st-hair); border-radius: 4px; }
+  .empty p { margin: 0 0 6px; font-size: 0.74rem; color: var(--st-text-2); }
   .census-title { font-weight: 600; }
   .census { list-style: none; margin: 0; padding: 0; font-size: 0.72rem; }
-  .census li { display: flex; justify-content: space-between; padding: 1px 0; color: #9ab; }
-  .summary { margin: 0; font-size: 0.74rem; color: #cde; }
-  .inferred { margin: 0; font-size: 0.68rem; color: #f0cc66; }
+  .census li { display: flex; justify-content: space-between; padding: 1px 0; color: var(--st-text-2); }
+  .summary { margin: 0; font-size: 0.74rem; color: var(--st-text); }
+  .inferred { margin: 0; font-size: 0.68rem; color: var(--st-warn); }
   .table-wrap { overflow-x: auto; }
   table { width: 100%; border-collapse: collapse; font-size: 0.7rem; }
-  th, td { text-align: left; padding: 3px 6px; border-bottom: 1px solid #17324f; }
-  th { color: #8fa0b4; font-weight: 600; }
+  th, td { text-align: left; padding: 3px 6px; border-bottom: 1px solid var(--st-surface-3); }
+  th { color: var(--st-text-2); font-weight: 600; }
   .num { text-align: right; font-variant-numeric: tabular-nums; }
-  .gaps { border-top: 1px solid #17324f; padding-top: 6px; }
+  .gaps { border-top: 1px solid var(--st-surface-3); padding-top: 6px; }
   .gaps summary { cursor: pointer; font-size: 0.74rem; font-weight: 600; }
-  .gaps summary:focus-visible { outline: 2px solid #4ecdc4; outline-offset: 2px; }
+  .gaps summary:focus-visible { outline: 2px solid var(--st-interactive); outline-offset: 2px; }
   .count {
     font-size: 0.66rem; font-weight: 600; padding: 0 5px; border-radius: 3px;
     background: rgba(128, 128, 128, 0.3);
   }
-  .gaps-intro { margin: 6px 0; font-size: 0.68rem; color: #8fa0b4; }
+  .gaps-intro { margin: 6px 0; font-size: 0.68rem; color: var(--st-text-2); }
   .gaps ul { margin: 0; padding-left: 16px; font-size: 0.68rem; }
   .gaps li { margin-bottom: 5px; line-height: 1.4; }
-  .gaps strong { display: block; color: #cde; font-weight: 600; }
-  .limitation { color: #9ab; }
-  .refs { display: block; color: #778; font-family: monospace; font-size: 0.64rem; }
+  .gaps strong { display: block; color: var(--st-text); font-weight: 600; }
+  .limitation { color: var(--st-text-2); }
+  .refs { display: block; color: var(--st-text-3); font-family: monospace; font-size: 0.64rem; }
+
+  /*
+    One focus ring for every control in this panel.
+
+    The metallic surface was written before the `--st-*` system reached it: it carried its own
+    palette of seventeen hardcoded hex values and, between the two panels, four `:focus-visible`
+    rules for several dozen controls. A keyboard user got whatever the UA happened to draw.
+  */
+  button:focus-visible,
+  input:focus-visible,
+  select:focus-visible,
+  summary:focus-visible,
+  [tabindex]:focus-visible {
+    outline: 2px solid var(--st-value);
+    outline-offset: 1px;
+  }
 </style>

@@ -51,12 +51,12 @@
    * survives a monochrome screenshot in a report.
    */
   .tone-warn {
-    color: #f0cc66; border-color: #8a6a10;
+    color: var(--st-warn); border-color: var(--st-warn);
     background: repeating-linear-gradient(45deg,
       rgba(221, 170, 0, 0.22) 0 4px, rgba(120, 92, 0, 0.22) 4px 8px);
   }
-  .tone-info { background: rgba(70, 120, 180, 0.16); color: #9fd8ff; border-color: #2a5a7a; }
-  .tone-neutral { background: rgba(136, 136, 136, 0.16); color: #aab; border-color: #445; }
+  .tone-info { background: rgba(70, 120, 180, 0.16); color: var(--st-text-2); border-color: var(--st-hair-strong); }
+  .tone-neutral { background: rgba(136, 136, 136, 0.16); color: var(--st-text-3); border-color: var(--st-hair); }
   .sr-only {
     position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px;
     overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0;

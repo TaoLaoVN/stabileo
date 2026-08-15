@@ -120,15 +120,31 @@
 
 <style>
   .row { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; margin-bottom: 4px; }
-  .lbl { min-width: 6.5rem; font-size: 0.7rem; color: #bcd; }
+  .lbl { min-width: 6.5rem; font-size: 0.7rem; color: var(--st-text-2); }
   select, input {
-    background: #0b1a2c; color: #dde; border: 1px solid #24486e;
+    background: var(--st-bg); color: var(--st-text); border: 1px solid var(--st-surface-3);
     border-radius: 3px; padding: 2px 4px; font-size: 0.7rem;
   }
-  select:focus-visible, input:focus-visible { outline: 2px solid #4ecdc4; outline-offset: 1px; }
+  select:focus-visible, input:focus-visible { outline: 2px solid var(--st-interactive); outline-offset: 1px; }
   input { width: 4.5rem; text-align: right; }
-  .gap { display: inline-flex; align-items: center; gap: 4px; font-size: 0.68rem; color: #9ab; }
-  .unit { color: #778; }
+  .gap { display: inline-flex; align-items: center; gap: 4px; font-size: 0.68rem; color: var(--st-text-2); }
+  .unit { color: var(--st-text-3); }
   /* Indented past the figure and the label, so a note lines up under the controls. */
-  .note { margin: 0 0 6px calc(6.5rem + 40px); font-size: 0.65rem; color: #f0cc66; line-height: 1.35; }
+  .note { margin: 0 0 6px calc(6.5rem + 40px); font-size: 0.65rem; color: var(--st-warn); line-height: 1.35; }
+
+  /*
+    One focus ring for every control in this panel.
+
+    The metallic surface was written before the `--st-*` system reached it: it carried its own
+    palette of seventeen hardcoded hex values and, between the two panels, four `:focus-visible`
+    rules for several dozen controls. A keyboard user got whatever the UA happened to draw.
+  */
+  button:focus-visible,
+  input:focus-visible,
+  select:focus-visible,
+  summary:focus-visible,
+  [tabindex]:focus-visible {
+    outline: 2px solid var(--st-value);
+    outline-offset: 1px;
+  }
 </style>
