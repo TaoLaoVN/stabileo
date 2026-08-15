@@ -47,9 +47,16 @@ async function armSelect(page: Page) {
   await expect(btn).toHaveAttribute('aria-pressed', 'false');
 }
 
-/** A crossing drag over most of the canvas: right to left, so it takes what it touches. */
+/**
+ * A crossing drag over most of the canvas: right to left, so it takes what it
+ * touches.
+ *
+ * Aimed at the model's canvas explicitly. `canvas` alone also matches the 3D
+ * axis gizmo, which comes first in the document and is 80 px square — a drag
+ * inside it selects nothing and looks like a broken viewport.
+ */
 async function sweepAll(page: Page) {
-  const box = await page.locator('canvas').first().boundingBox();
+  const box = await page.locator('canvas:not(.axis-gizmo)').first().boundingBox();
   if (!box) throw new Error('no canvas');
   const x1 = box.x + box.width * 0.9, x2 = box.x + box.width * 0.1;
   const y1 = box.y + box.height * 0.9, y2 = box.y + box.height * 0.1;

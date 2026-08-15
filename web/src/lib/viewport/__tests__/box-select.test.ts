@@ -376,3 +376,177 @@ describe('more than one kind at a time', () => {
     expect(asSet.elements.size).toBe(single.elements.size);
   });
 });
+
+/**
+ * Every permutation, audited rather than sampled.
+ *
+ * Four kinds means fifteen non-empty combinations, and each behaves
+ * differently under the two gestures — sixty behaviours per viewport, which is
+ * past the point where writing them out one at a time proves anything. Listing
+ * fifteen expected answers by hand mostly tests whether the author copied the
+ * implementation into the expectations.
+ *
+ * So the audit is by PROPERTY, and the properties are chosen so that the
+ * per-kind tests above — which do check concrete values — carry the whole
+ * combined space:
+ *
+ *   * **Composition.** A set of kinds returns exactly the union of the same
+ *     kinds run alone. This is the load-bearing one: if it holds, no
+ *     permutation can do anything the four single cases do not already do,
+ *     and those four are pinned to real numbers above.
+ *   * **Isolation.** Nothing outside the asked-for kinds comes back. This is
+ *     what keeps the highlight and the delete key in step — a marquee that
+ *     quietly filled `selectedElements` would delete members nobody targeted.
+ *   * **Window ⊆ crossing.** The same rectangle read as a net must take at
+ *     least what it takes as a frame. A sign slip in the straddling test
+ *     shows up here and nowhere else.
+ *
+ * Run against both projections, because the 2D viewport and the 3D camera are
+ * the same geometry reached two ways, and "it works in 2D" was true of the
+ * version that flattened every node to z = 0.
+ */
+describe('every permutation of kinds, in both viewports', () => {
+  const KINDS = ['elements', 'nodes', 'supports', 'loads'] as const;
+  type Kind = typeof KINDS[number];
+
+  /** The fifteen non-empty subsets, built rather than typed out. */
+  const PERMUTATIONS: Kind[][] = [];
+  for (let mask = 1; mask < 16; mask++) {
+    PERMUTATIONS.push(KINDS.filter((_, i) => mask & (1 << i)));
+  }
+
+  /*
+   * `elements` deliberately brings the nodes with it: selecting a member and
+   * not its ends leaves a highlight that looks broken, and the property
+   * checks below would report that as a leak. Stated here as the contract it
+   * is, so a future change to it fails loudly instead of being absorbed.
+   */
+  const impliedBy = (kinds: Kind[]): Set<Kind> => {
+    const s = new Set<Kind>(kinds);
+    if (s.has('elements')) s.add('nodes');
+    return s;
+  };
+
+  /** A spread of rectangles: empty, full, partial, straddling, degenerate. */
+  const RECTS: ScreenRect[] = [
+    rectOf(-2, -2, 14, 5),        // everything
+    rectOf(-1, -1, 5, 1),         // the left bay's feet
+    rectOf(5, -0.5, 7, 0.5),      // a sliver across member 2, containing nothing
+    rectOf(-1, 2, 13, 4),         // the top chord only
+    rectOf(7, -1, 13, 4),         // the right half
+    rectOf(20, 20, 30, 30),       // nowhere near the model
+    rectOf(3.5, -0.5, 4.5, 0.5),  // tight around node 2
+    rectOf(-1, -1, 13, 0.2),      // a thin band along the base
+    { x1: 50, y1: 50, x2: 50, y2: 50 },       // degenerate: a point
+    { x1: 0, y1: 0, x2: 1000, y2: 1000 },     // far larger than the model
+  ];
+
+  /** The same audit, over whichever projection is handed in. */
+  const audit = (label: string, m: BoxSelectModel, project: typeof toScreen) => {
+    const call = (rect: ScreenRect, isWindow: boolean, kinds: Kind[]) =>
+      boxSelect({ rect, isWindow, kinds, model: m, toScreen: project });
+    const ids = (s: Set<number>) => [...s].sort((a, b) => a - b);
+
+    it(`${label}: a combination is the union of its parts`, () => {
+      for (const rect of RECTS) {
+        for (const isWindow of [true, false]) {
+          for (const kinds of PERMUTATIONS) {
+            const combined = call(rect, isWindow, kinds);
+            const union = { nodes: new Set<number>(), elements: new Set<number>(),
+              supports: new Set<number>(), loads: new Set<number>() };
+            for (const k of kinds) {
+              const one = call(rect, isWindow, [k]);
+              for (const key of ['nodes', 'elements', 'supports', 'loads'] as const) {
+                for (const id of one[key]) union[key].add(id);
+              }
+            }
+            const where = `${kinds.join('+')} ${isWindow ? 'window' : 'crossing'} ${JSON.stringify(rect)}`;
+            for (const key of ['nodes', 'elements', 'supports', 'loads'] as const) {
+              expect(ids(combined[key]), `${key} — ${where}`).toEqual(ids(union[key]));
+            }
+          }
+        }
+      }
+    });
+
+    it(`${label}: nothing outside the asked-for kinds comes back`, () => {
+      for (const rect of RECTS) {
+        for (const isWindow of [true, false]) {
+          for (const kinds of PERMUTATIONS) {
+            const got = call(rect, isWindow, kinds);
+            const allowed = impliedBy(kinds);
+            for (const key of KINDS) {
+              if (allowed.has(key)) continue;
+              const where = `${kinds.join('+')} ${isWindow ? 'window' : 'crossing'}`;
+              expect(got[key].size, `${key} leaked into ${where}`).toBe(0);
+            }
+          }
+        }
+      }
+    });
+
+    it(`${label}: a crossing takes everything its window takes`, () => {
+      for (const rect of RECTS) {
+        for (const kinds of PERMUTATIONS) {
+          const win = call(rect, true, kinds);
+          const cross = call(rect, false, kinds);
+          for (const key of KINDS) {
+            for (const id of win[key]) {
+              expect(cross[key].has(id),
+                `${key} ${id} taken by the window but not the crossing — ${kinds.join('+')}`).toBe(true);
+            }
+          }
+        }
+      }
+    });
+
+    it(`${label}: the same drag twice gives the same answer`, () => {
+      for (const kinds of PERMUTATIONS) {
+        const rect = RECTS[0];
+        expect(ids(call(rect, true, kinds).elements)).toEqual(ids(call(rect, true, kinds).elements));
+        expect(ids(call(rect, false, kinds).loads)).toEqual(ids(call(rect, false, kinds).loads));
+      }
+    });
+
+    it(`${label}: order of the kinds does not change the answer`, () => {
+      for (const rect of RECTS) {
+        for (const kinds of PERMUTATIONS) {
+          const a = call(rect, false, kinds);
+          const b = call(rect, false, [...kinds].reverse());
+          for (const key of KINDS) expect(ids(b[key]), key).toEqual(ids(a[key]));
+        }
+      }
+    });
+  };
+
+  audit('2D', model, toScreen);
+
+  /*
+   * The same frame stood up into three dimensions and viewed at an angle, so
+   * the projection mixes all three coordinates — a camera that ignored one of
+   * them would still pass a test built on a plan or an elevation.
+   */
+  const NODES_ISO = NODES.map((n) => ({ ...n, z: n.id % 2 === 0 ? 2 : 0 }));
+  const iso = (p: { x: number; y: number; z?: number }) => ({
+    x: (p.x - (p.z ?? 0)) * 8 + 40,
+    y: 100 - (p.y * 10 + (p.z ?? 0) * 4),
+  });
+  const modelIso: BoxSelectModel = {
+    nodes: NODES_ISO,
+    elements: ELEMENTS,
+    supports: SUPPORTS,
+    loads: LOADS,
+    getNode: (id) => NODES_ISO.find((n) => n.id === id),
+    getElement: (id) => ELEMENTS.find((e) => e.id === id),
+  };
+
+  audit('3D', modelIso, iso);
+
+  it('covers all fifteen non-empty combinations', () => {
+    // Guards the audit itself: a bad mask loop would make everything above
+    // pass over a handful of cases and report full coverage.
+    expect(PERMUTATIONS.length).toBe(15);
+    expect(PERMUTATIONS.filter((p) => p.length === 1)).toHaveLength(4);
+    expect(PERMUTATIONS.filter((p) => p.length === 4)).toHaveLength(1);
+  });
+});

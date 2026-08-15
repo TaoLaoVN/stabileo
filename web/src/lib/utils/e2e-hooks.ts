@@ -83,6 +83,8 @@ export interface StabileoTestHooks {
    * when three of the four filters silently selected nothing.
    */
   selectionByKind(): { nodes: number[]; elements: number[]; supports: number[]; loads: number[] };
+  /** Which kinds a drag is currently armed to pick up. */
+  armedKinds(): string[];
   reinforcement(elementId: number): unknown;
   rebarSummary(elementId: number): string;
   elementIds(): number[];
@@ -106,6 +108,8 @@ export interface StabileoTestHooks {
  */
 export interface StabileoTestActions {
   loadExample(name: string): Promise<void>;
+  /** Reset the selection between gestures — the position, not the subject. */
+  clearSelection(): void;
   /** Runs the same global solve the toolbar button triggers. */
   solve(): Promise<void>;
   /** Activate the RC Design tab (the table only exists while it is selected). */
@@ -192,6 +196,7 @@ export function installE2EHooks(): void {
       };
     },
     selection: () => [...uiStore.selectedElements].sort((a, b) => a - b),
+    armedKinds: () => [...uiStore.selectKinds].sort(),
     selectionByKind: () => {
       const sorted = (s: Iterable<number>) => [...s].sort((a, b) => a - b);
       return {
@@ -226,6 +231,8 @@ export function installE2EHooks(): void {
       detailingStore.review(record as never),
     toggleBarLock: (barId: string) => { detailingStore.toggleLock(barId); },
     loadExample: async (name: string) => { await modelStore.loadExample(name); },
+    /** Reset the selection between gestures — the position, not the subject. */
+    clearSelection: () => { uiStore.clearSelection(); },
     solve: async () => { await runGlobalSolve(); },
     openDesignTab: () => { uiStore.proActiveTab = 'design'; },
     computeDemands: () => designRunStore.computeDemands(),
