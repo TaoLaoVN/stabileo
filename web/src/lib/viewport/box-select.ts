@@ -202,7 +202,21 @@ export function boxSelect(input: BoxSelectInput): BoxSelectResult {
     nodes: new Set(), elements: new Set(), supports: new Set(), loads: new Set(),
   };
 
-  if (kinds.has('nodes') || kinds.has('elements')) {
+  /*
+   * Members do NOT drag their end nodes in with them.
+   *
+   * They used to, on the reasoning that a highlighted member with unlit ends
+   * looks unfinished. But a selection is not only a highlight — it is what
+   * Delete removes, and the two have to be the same set. Sweeping the members
+   * of a frame and pressing Delete took the nodes with them, and with the
+   * nodes went the supports and the nodal loads sitting on them: a gesture
+   * that reads as "remove these bars" wiped the model.
+   *
+   * Wanting both is a real case, and it has a control of its own — the
+   * multi-kind switch, with Nodes and Members both armed. That is the
+   * difference between asking for them and being given them.
+   */
+  if (kinds.has('nodes')) {
     for (const n of model.nodes) {
       const s = toScreen(n);
       if (inside(s.x, s.y, rect)) out.nodes.add(n.id);

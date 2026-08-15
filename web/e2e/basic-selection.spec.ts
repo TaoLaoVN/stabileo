@@ -76,11 +76,58 @@ test.describe('box select in Basic 2D', () => {
     await armSelect(page);
   });
 
-  test('a drag takes members and their nodes', async ({ page }) => {
+  test('a drag takes members, and only members', async ({ page }) => {
     await sweepAll(page);
     const got = await picked(page);
     expect(got.elements.length, 'members').toBeGreaterThan(0);
-    expect(got.nodes.length, 'nodes').toBeGreaterThan(0);
+    // Not their end nodes: see the delete test below for why that matters.
+    expect(got.nodes, 'nodes must not come along').toHaveLength(0);
+  });
+
+  /**
+   * The reported behaviour: sweeping the members of a frame and pressing
+   * Delete removed the whole model — nodes, supports and the loads standing
+   * on those nodes. What is highlighted has to be what Delete removes, and
+   * the highlight said "these bars".
+   */
+  test('deleting a member selection leaves the nodes and supports standing', async ({ page }) => {
+    const before = await page.evaluate(() => ({
+      elements: window.__stabileo.elementIds().length,
+      nodes: window.__stabileo.nodeCount(),
+      supports: window.__stabileo.supportCount(),
+    }));
+    expect(before.supports).toBeGreaterThan(0);
+
+    await sweepAll(page);
+    expect((await picked(page)).elements.length).toBeGreaterThan(0);
+    await page.keyboard.press('Delete');
+
+    await expect.poll(() => page.evaluate(() => window.__stabileo.elementIds().length))
+      .toBeLessThan(before.elements);
+    const after = await page.evaluate(() => ({
+      nodes: window.__stabileo.nodeCount(),
+      supports: window.__stabileo.supportCount(),
+    }));
+    expect(after.nodes, 'the nodes stay').toBe(before.nodes);
+    expect(after.supports, 'and so do the supports on them').toBe(before.supports);
+  });
+
+  /** Wanting both is what the multi-kind switch is for. */
+  test('with nodes armed too, Delete takes both', async ({ page }) => {
+    const before = await page.evaluate(() => window.__stabileo.nodeCount());
+    await page.getByTestId('rb-cmd-select').click();
+    await page.getByTestId('multi-kind').check();
+    const nodesItem = page.getByTestId('select-mode-nodes');
+    if ((await nodesItem.getAttribute('aria-checked')) !== 'true') await nodesItem.click();
+
+    await sweepAll(page);
+    const got = await picked(page);
+    expect(got.elements.length).toBeGreaterThan(0);
+    expect(got.nodes.length).toBeGreaterThan(0);
+
+    await page.keyboard.press('Delete');
+    await expect.poll(() => page.evaluate(() => window.__stabileo.nodeCount()))
+      .toBeLessThan(before);
   });
 
   /**

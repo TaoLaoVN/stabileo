@@ -40,12 +40,16 @@ for (let mask = 1; mask < 16; mask++) {
   PERMUTATIONS.push(KINDS.filter((_, i) => mask & (1 << i)));
 }
 
-/** Selecting a member selects its ends too — stated, so it is not read as a leak. */
-const allowedFor = (kinds: Kind[]): Set<Kind> => {
-  const s = new Set<Kind>(kinds);
-  if (s.has('elements')) s.add('nodes');
-  return s;
-};
+/**
+ * Each kind brings exactly itself.
+ *
+ * Members used to bring their end nodes along, so a highlighted bar would not
+ * have unlit ends. But the selection is also what Delete removes: sweeping a
+ * frame's members and pressing Delete took the nodes, and with them the
+ * supports and nodal loads standing on them — a gesture that reads as "remove
+ * these bars" wiped the model.
+ */
+const allowedFor = (kinds: Kind[]): Set<Kind> => new Set<Kind>(kinds);
 
 /**
  * The canvas the model is drawn on.

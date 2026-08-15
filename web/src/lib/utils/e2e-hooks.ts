@@ -85,6 +85,9 @@ export interface StabileoTestHooks {
   selectionByKind(): { nodes: number[]; elements: number[]; supports: number[]; loads: number[] };
   /** Which kinds a drag is currently armed to pick up. */
   armedKinds(): string[];
+  /** How many nodes and supports the model holds — what a delete must not touch. */
+  nodeCount(): number;
+  supportCount(): number;
   reinforcement(elementId: number): unknown;
   rebarSummary(elementId: number): string;
   elementIds(): number[];
@@ -197,6 +200,8 @@ export function installE2EHooks(): void {
     },
     selection: () => [...uiStore.selectedElements].sort((a, b) => a - b),
     armedKinds: () => [...uiStore.selectKinds].sort(),
+    nodeCount: () => modelStore.nodes.size,
+    supportCount: () => modelStore.supports.size,
     selectionByKind: () => {
       const sorted = (s: Iterable<number>) => [...s].sort((a, b) => a - b);
       return {

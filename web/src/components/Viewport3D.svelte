@@ -1640,7 +1640,15 @@
          * its node, identically in both modes.
          */
         const sm = uiStore.selectMode;
-        const allowNodes = uiStore.selectsKind('elements') || uiStore.selectsKind('nodes');
+        /*
+         * Nodes only when nodes were asked for. Members used to bring their
+         * ends along so the highlight would not look half-finished, and that
+         * made Delete on a swept frame take the nodes too — and with them the
+         * supports and the loads standing on them. The selection is what
+         * Delete removes, so it holds what was asked for and nothing else;
+         * wanting both is the multi-kind switch's job.
+         */
+        const allowNodes = uiStore.selectsKind('nodes');
         const allowElems = uiStore.selectsKind('elements');
         const allowShells = sm === 'shells';
 

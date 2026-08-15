@@ -121,14 +121,28 @@ describe('elements mode', () => {
     // Around members 1 and 2 and their three nodes, but only reaching x = 8.
     const r = run(rectOf(-1, -1, 8.5, 1), true, 'elements');
     expect([...r.elements].sort()).toEqual([1, 2]);
-    expect([...r.nodes].sort()).toEqual([1, 2, 3]);
+  });
+
+  /**
+   * Members alone, not their end nodes.
+   *
+   * They came with the member once, so the highlight would not look
+   * half-finished. But the selection is also what Delete removes: sweeping a
+   * frame's members and pressing Delete took the nodes too, and with them the
+   * supports and nodal loads standing on those nodes — a gesture that reads as
+   * "remove these bars" wiped the model. Wanting both is the multi-kind
+   * switch's job, where it is asked for rather than assumed.
+   */
+  it('does not drag the end nodes in with them', () => {
+    const r = run(rectOf(-1, -1, 8.5, 1), true, 'elements');
+    expect(r.nodes.size).toBe(0);
   });
 
   it('window rejects a member with one end outside', () => {
     // Covers node 3 but stops short of node 4, so member 3 straddles.
     const r = run(rectOf(7, -1, 10, 1), true, 'elements');
     expect(r.elements.has(3)).toBe(false);
-    expect([...r.nodes]).toEqual([3]);
+    expect(r.nodes.size).toBe(0);
   });
 
   it('crossing takes a member it merely touches', () => {
@@ -241,11 +255,10 @@ describe('the mode filter is what keeps highlight and deletion in step', () => {
     expect(r.nodes.size + r.elements.size + r.supports.size).toBe(0);
   });
 
-  it('elements mode fills nodes and elements, as it always did', () => {
+  it('elements mode fills elements alone', () => {
     const r = run(everything, true, 'elements');
-    expect(r.nodes.size).toBe(NODES.length);
     expect(r.elements.size).toBe(ELEMENTS.length);
-    expect(r.supports.size + r.loads.size).toBe(0);
+    expect(r.nodes.size + r.supports.size + r.loads.size).toBe(0);
   });
 });
 
@@ -416,16 +429,13 @@ describe('every permutation of kinds, in both viewports', () => {
   }
 
   /*
-   * `elements` deliberately brings the nodes with it: selecting a member and
-   * not its ends leaves a highlight that looks broken, and the property
-   * checks below would report that as a leak. Stated here as the contract it
-   * is, so a future change to it fails loudly instead of being absorbed.
+   * Each kind brings exactly itself. `elements` used to add `nodes` — a
+   * member's ends came with it so the highlight would not look unfinished —
+   * and that made Delete on a swept frame remove the nodes, the supports
+   * under them and the loads on them. The selection is what Delete removes,
+   * so it holds what was asked for and nothing else.
    */
-  const impliedBy = (kinds: Kind[]): Set<Kind> => {
-    const s = new Set<Kind>(kinds);
-    if (s.has('elements')) s.add('nodes');
-    return s;
-  };
+  const impliedBy = (kinds: Kind[]): Set<Kind> => new Set<Kind>(kinds);
 
   /** A spread of rectangles: empty, full, partial, straddling, degenerate. */
   const RECTS: ScreenRect[] = [
