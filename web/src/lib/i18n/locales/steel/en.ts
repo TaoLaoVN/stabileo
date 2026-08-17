@@ -214,5 +214,21 @@ const steelEn: Record<string, string> = {
   'generator.arrangement.doubleX': 'Double crossed',
   'generator.arrangement.quadBack': 'Quadruple backs',
   'generator.arrangement.quadBox': 'Quadruple box',
+
+  // What each parameter controls, and in what unit. Shown under the field.
+  'generator.hint.span': 'The distance between the two supports, in metres.',
+  'generator.hint.rise': 'Height of the ridge above the supports, in metres. Zero gives a parallel-chord truss.',
+  'generator.hint.endDepth': 'Depth of the truss at the support, in metres.',
+  'generator.hint.depth': 'Constant depth between chords, in metres.',
+  'generator.hint.plateau': 'Length of the flat top, in metres.',
+  'generator.hint.panels': 'Web panels per half. More panels means shorter web members and more joints.',
+  'generator.hint.height': 'Total height of the column, in metres.',
+  'generator.hint.width': 'Distance between the two chords, in metres.',
+  'generator.hint.divisions': 'Lacing panels along the height.',
+  'generator.hint.clearHeight': 'Clear height under the truss, in metres.',
+  'generator.hint.frames': 'Number of transverse frames. Each is a copy of the frame previewed above.',
+  'generator.hint.bayVP': 'Distance between consecutive frames, in metres.',
+  'generator.hint.purlins': 'Purlin lines per roof slope.',
+  'generator.hint.slope': 'Roof slope, as a ratio of rise to half-span.',
 };
 export default steelEn;

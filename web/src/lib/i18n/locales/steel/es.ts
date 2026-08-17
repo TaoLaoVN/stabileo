@@ -220,5 +220,21 @@ const steelEs: Record<string, string> = {
   'generator.arrangement.doubleX': 'Doble en X',
   'generator.arrangement.quadBack': 'Cuádruple espaldas',
   'generator.arrangement.quadBox': 'Cuádruple cajón',
+
+  // What each parameter controls, and in what unit. Shown under the field.
+  'generator.hint.span': 'La luz entre los dos apoyos, en metros.',
+  'generator.hint.rise': 'Altura de la cumbrera sobre los apoyos, en metros. Cero da una cercha de cordones paralelos.',
+  'generator.hint.endDepth': 'Canto de la cercha en el apoyo, en metros.',
+  'generator.hint.depth': 'Canto constante entre cordones, en metros.',
+  'generator.hint.plateau': 'Largo del tramo horizontal superior, en metros.',
+  'generator.hint.panels': 'Paños de alma por mitad. Más paños significa montantes más cortos y más nudos.',
+  'generator.hint.height': 'Altura total de la columna, en metros.',
+  'generator.hint.width': 'Separación entre los dos cordones, en metros.',
+  'generator.hint.divisions': 'Paños de celosía a lo largo de la altura.',
+  'generator.hint.clearHeight': 'Altura libre bajo la cercha, en metros.',
+  'generator.hint.frames': 'Cantidad de pórticos transversales. Cada uno es una copia del pórtico previsualizado arriba.',
+  'generator.hint.bayVP': 'Separación entre pórticos consecutivos, en metros.',
+  'generator.hint.purlins': 'Líneas de correas por faldón.',
+  'generator.hint.slope': 'Pendiente del techo, como relación entre flecha y media luz.',
 };
 export default steelEs;

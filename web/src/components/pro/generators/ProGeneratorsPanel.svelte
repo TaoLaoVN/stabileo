@@ -150,6 +150,23 @@
   }
 </script>
 
+<!--
+  The head of a parameter field: its name, and one line saying what the number CONTROLS.
+
+  The fields were bare labels — `Span`, `Rise`, `Panels` — and a number box. Which of them is a
+  length and which is a count, what unit it is in, and what changes when you move it were things
+  a user had to already know. The hint carries the unit, so a value can be entered without
+  guessing whether the box wants metres or millimetres.
+
+  `id` is derived from the key so the input beside it can point at the hint with
+  `aria-describedby`: a screen reader then reads the explanation with the field, rather than the
+  reader having to go looking for it.
+-->
+{#snippet fieldHead(key: string)}
+  <span class="fname">{t(`generator.ui.${key}`)}</span>
+  <span class="fhint" id={`gen-hint-${key}`}>{t(`generator.hint.${key}`)}</span>
+{/snippet}
+
 <div class="gen" data-testid="pro-generators-panel">
   <header>
     <h3>{t('generator.ui.title')}</h3>
@@ -175,16 +192,16 @@
         <select bind:value={truss.kind}>
           {#each TRUSS_KINDS as k (k)}<option value={k}>{t(`generator.truss.${k}`)}</option>{/each}
         </select></label>
-      <label><span>{t('generator.ui.span')}</span><input type="number" min="0.5" step="0.5" bind:value={truss.spanM} /></label>
-      <label><span>{t('generator.ui.rise')}</span><input type="number" min="0" step="0.1" bind:value={truss.riseM} /></label>
+      <label>{@render fieldHead('span')}<input type="number" min="0.5" step="0.5" bind:value={truss.spanM} aria-describedby="gen-hint-span" /></label>
+      <label>{@render fieldHead('rise')}<input type="number" min="0" step="0.1" bind:value={truss.riseM} aria-describedby="gen-hint-rise" /></label>
       {#if truss.kind === 'trapezoidal' || truss.kind === 'arch'}
-        <label><span>{t('generator.ui.endDepth')}</span><input type="number" min="0" step="0.1" bind:value={truss.endDepthM} /></label>
+        <label>{@render fieldHead('endDepth')}<input type="number" min="0" step="0.1" bind:value={truss.endDepthM} aria-describedby="gen-hint-endDepth" /></label>
       {/if}
       {#if truss.kind === 'parallelChord' || truss.kind === 'pratt'}
-        <label><span>{t('generator.ui.depth')}</span><input type="number" min="0.1" step="0.1" bind:value={truss.depthM} /></label>
+        <label>{@render fieldHead('depth')}<input type="number" min="0.1" step="0.1" bind:value={truss.depthM} aria-describedby="gen-hint-depth" /></label>
       {/if}
       {#if truss.kind === 'trapezoidal'}
-        <label><span>{t('generator.ui.plateau')}</span><input type="number" min="0" step="0.1" bind:value={truss.plateauM} /></label>
+        <label>{@render fieldHead('plateau')}<input type="number" min="0" step="0.1" bind:value={truss.plateauM} aria-describedby="gen-hint-plateau" /></label>
       {/if}
       {#if truss.kind === 'arch'}
         <label><span>{t('generator.ui.archCurve')}</span>
@@ -193,7 +210,7 @@
           </select></label>
       {/if}
       {#if truss.kind !== 'rolledPortal'}
-        <label><span>{t('generator.ui.panels')}</span><input type="number" min="1" step="1" bind:value={truss.panelsPerHalf} /></label>
+        <label>{@render fieldHead('panels')}<input type="number" min="1" step="1" bind:value={truss.panelsPerHalf} aria-describedby="gen-hint-panels" /></label>
         <label><span>{t('generator.ui.webPattern')}</span>
           <select bind:value={truss.webPattern}>
             {#each WEB_PATTERNS as w (w)}<option value={w}>{t(`generator.webPattern.${w}`)}</option>{/each}
@@ -202,9 +219,9 @@
       <label class="check"><input type="checkbox" bind:checked={truss.halfTruss} /><span>{t('generator.ui.halfTruss')}</span></label>
 
     {:else if kind === 'column'}
-      <label><span>{t('generator.ui.height')}</span><input type="number" min="0.5" step="0.5" bind:value={column.heightM} /></label>
-      <label><span>{t('generator.ui.width')}</span><input type="number" min="0.1" step="0.05" bind:value={column.widthM} /></label>
-      <label><span>{t('generator.ui.divisions')}</span><input type="number" min="1" step="1" bind:value={column.divisions} /></label>
+      <label>{@render fieldHead('height')}<input type="number" min="0.5" step="0.5" bind:value={column.heightM} aria-describedby="gen-hint-height" /></label>
+      <label>{@render fieldHead('width')}<input type="number" min="0.1" step="0.05" bind:value={column.widthM} aria-describedby="gen-hint-width" /></label>
+      <label>{@render fieldHead('divisions')}<input type="number" min="1" step="1" bind:value={column.divisions} aria-describedby="gen-hint-divisions" /></label>
       <label><span>{t('generator.ui.lacing')}</span>
         <select bind:value={column.lacing}>
           {#each LACING_PATTERNS as l (l)}<option value={l}>{t(`generator.lacing.${l}`)}</option>{/each}
@@ -213,17 +230,17 @@
 
     {:else}
       <label><span>{t('generator.ui.spanVT')}</span><input type="number" min="1" step="0.5" bind:value={shed.spanM} /></label>
-      <label><span>{t('generator.ui.bayVP')}</span><input type="number" min="1" step="0.5" bind:value={shed.bayM} /></label>
-      <label><span>{t('generator.ui.frames')}</span><input type="number" min="2" step="1" bind:value={shed.frames} /></label>
-      <label><span>{t('generator.ui.clearHeight')}</span><input type="number" min="1" step="0.5" bind:value={shed.clearHeightM} /></label>
+      <label>{@render fieldHead('bayVP')}<input type="number" min="1" step="0.5" bind:value={shed.bayM} aria-describedby="gen-hint-bayVP" /></label>
+      <label>{@render fieldHead('frames')}<input type="number" min="2" step="1" bind:value={shed.frames} aria-describedby="gen-hint-frames" /></label>
+      <label>{@render fieldHead('clearHeight')}<input type="number" min="1" step="0.5" bind:value={shed.clearHeightM} aria-describedby="gen-hint-clearHeight" /></label>
       <label><span>{t('generator.ui.columnKind')}</span>
         <select bind:value={shed.columnKind}>
           <option value="lattice">{t('generator.ui.columnLattice')}</option>
           <option value="solid">{t('generator.ui.columnSolid')}</option>
         </select></label>
       {#if shed.columnKind === 'lattice'}
-        <label><span>{t('generator.ui.width')}</span><input type="number" min="0.1" step="0.05" bind:value={shed.column.widthM} /></label>
-        <label><span>{t('generator.ui.divisions')}</span><input type="number" min="1" step="1" bind:value={shed.column.divisions} /></label>
+        <label>{@render fieldHead('width')}<input type="number" min="0.1" step="0.05" bind:value={shed.column.widthM} aria-describedby="gen-hint-width" /></label>
+        <label>{@render fieldHead('divisions')}<input type="number" min="1" step="1" bind:value={shed.column.divisions} aria-describedby="gen-hint-divisions" /></label>
       {/if}
       <label class="check"><input type="checkbox" bind:checked={shed.longitudinalBeams} /><span>{t('generator.ui.beams')}</span></label>
       <label class="check"><input type="checkbox" bind:checked={shed.roof} /><span>{t('generator.ui.roof')}</span></label>
@@ -232,8 +249,8 @@
           <select bind:value={shed.truss.kind}>
             {#each TRUSS_KINDS as k (k)}<option value={k}>{t(`generator.truss.${k}`)}</option>{/each}
           </select></label>
-        <label><span>{t('generator.ui.rise')}</span><input type="number" min="0" step="0.1" bind:value={shed.truss.riseM} /></label>
-        <label><span>{t('generator.ui.panels')}</span><input type="number" min="1" step="1" bind:value={shed.truss.panelsPerHalf} /></label>
+        <label>{@render fieldHead('rise')}<input type="number" min="0" step="0.1" bind:value={shed.truss.riseM} aria-describedby="gen-hint-rise" /></label>
+        <label>{@render fieldHead('panels')}<input type="number" min="1" step="1" bind:value={shed.truss.panelsPerHalf} aria-describedby="gen-hint-panels" /></label>
         <label class="check"><input type="checkbox" bind:checked={shed.truss.halfTruss} /><span>{t('generator.ui.halfTruss')}</span></label>
         <label class="check"><input type="checkbox" bind:checked={shed.purlins} /><span>{t('generator.ui.purlins')}</span></label>
       {/if}
@@ -242,7 +259,7 @@
   </div>
 
   {#if paramProblems.length > 0}
-    <ul class="problems" data-testid="gen-param-problems">
+    <ul class="problems" id="gen-param-problems" role="alert" data-testid="gen-param-problems">
       {#each paramProblems as p, i (i)}<li>{t(p.key)}</li>{/each}
     </ul>
   {/if}
@@ -260,7 +277,7 @@
   {/if}
 
   {#if profileProblems.length > 0}
-    <ul class="problems" data-testid="gen-profile-problems">
+    <ul class="problems" id="gen-profile-problems" role="alert" data-testid="gen-profile-problems">
       {#each profileProblems as p, i (i)}
         <li>{t(p.key).replace('{role}', p.role ? t(`generator.role.${p.role}`) : '').replace('{name}', String(p.params?.name ?? ''))}</li>
       {/each}
@@ -326,7 +343,21 @@
 
   <p class="warn">{t('generator.ui.replacesModel')}</p>
 
-  <button class="go" type="button" data-testid="gen-generate" disabled={!canGenerate} onclick={generate}>
+  <!--
+    A disabled Generate says WHY, and says it to a screen reader too.
+
+    `aria-describedby` points at whichever problem list is on screen, so the refusal is read with
+    the button instead of being a grey rectangle whose reason lives somewhere above it.
+  -->
+  <button
+    class="go"
+    type="button"
+    data-testid="gen-generate"
+    disabled={!canGenerate}
+    aria-describedby={paramProblems.length > 0 ? 'gen-param-problems'
+      : profileProblems.length > 0 ? 'gen-profile-problems' : undefined}
+    onclick={generate}
+  >
     {t('generator.ui.generate')}
   </button>
 
@@ -397,5 +428,15 @@
   [tabindex]:focus-visible {
     outline: 2px solid var(--st-value);
     outline-offset: 1px;
+  }
+
+  /* Field head: the name, and the line that says what the number controls. */
+  .fname { font-size: 0.7rem; color: var(--st-text); }
+  .fhint {
+    display: block;
+    font-size: 0.64rem;
+    line-height: 1.35;
+    color: var(--st-text-3);
+    margin: 0.05rem 0 0.15rem;
   }
 </style>
