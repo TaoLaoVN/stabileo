@@ -225,19 +225,26 @@ test.describe('the generators panel explains itself in Spanish', () => {
 });
 
 /**
- * Portuguese is asserted as a FALLBACK, because that is what it currently is.
+ * The reminder fired, and this is the answer to it.
  *
- * The steel namespace has `en` and `es` dictionaries only — 180 keys each — and `pt` renders
- * English through the normal fallback. Pinning that here means the day a `steel/pt.ts` lands this
- * test fails, and whoever added it is told to come and assert the real string rather than leaving
- * a stale expectation that quietly passes. It is a reminder with teeth, not a claim of coverage.
+ * This block used to assert that `pt` rendered ENGLISH, because the steel namespace shipped
+ * `en` and `es` only. It said in as many words that the day a `steel/pt.ts` landed it would
+ * fail, and whoever added it was to come here and assert the real string. `steel/pt.ts` landed
+ * when #125 and #132 were integrated — #125 narrowed the picker to es/en/pt and requires every
+ * PRO key in all three — so the expectation is replaced rather than relaxed.
+ *
+ * The word asserted is `vão`, not `metros`. Both Portuguese and Spanish say "metros", so
+ * `metros` would pass against the Spanish dictionary and prove only that it is not English.
+ * Spanish says «luz» where Portuguese says "vão", so this is the assertion that can tell the
+ * two apart — which is the whole point of testing a third language.
  */
-test.describe('the generators panel in Portuguese — not yet translated', () => {
+test.describe('the generators panel explains itself in Portuguese', () => {
   test.use({ appLocale: 'pt' });
-  test('U8 pt — falls back to English, and this is the reminder that it does', async (
+  test('U8 pt — the parameter hints are localised, not falling back', async (
     { pro: page },
   ) => {
     await openGenerators(page);
-    await expect(page.locator('#gen-hint-span')).toContainText('metres');
+    await expect(page.locator('#gen-hint-span')).toContainText('vão');
+    await expect(page.locator('#gen-hint-span')).not.toContainText('metres');
   });
 });
