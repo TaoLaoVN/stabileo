@@ -4,8 +4,8 @@
 redesign or product work belongs in this PR.
 
 **Technical state: ready for Diego's review. NOT mergeable, and no post-integration gate has been
-run.** The base moved 37 commits ahead; the integration was prepared and is blocked by a defect in
-the base's own build artefacts, not by anything in PR20. See §5 and §5b.
+run.** The base moved 37 commits ahead and the integration is prepared but unverified. See §5 and
+§5b — which also withdraws a diagnosis of mine that was wrong.
 
 **Manual QA: NOT done.** `pr20-qa-manual.md` is the checklist; nobody has walked it. Nothing in
 this document should be read as saying otherwise.
@@ -123,82 +123,53 @@ It is also a decision about ORDER, and that decision is Bauti's:
 The second is usually right when the base has moved this much. Either way the gates in §2 have to
 be re-run after the integration, and this document must be updated with the new numbers.
 
-## 5b. Integration blocked — by the base, not by PR20
+## 5b. The base integration, and a diagnosis of mine that was wrong
 
-`gh pr view 125` reports `mergeable: CONFLICTING`. The integration was **done**: the base was
-merged into a side branch, all 9 conflicts were resolved by hand, and each resolution was verified
-by running the tests it touched. It is parked, not abandoned.
+An earlier version of this section said the base shipped TypeScript against WASM bindings it had
+never regenerated, and a handoff asked Diego to fix it. **That was wrong, and both are withdrawn.**
 
-| | |
+### What is actually true
+
+`web/src/lib/wasm/` is in `.gitignore` and **not one file under it is tracked**:
+
+```
+$ git check-ignore -v web/src/lib/wasm/dedaliano_engine.d.ts
+.gitignore:30:web/src/lib/wasm    web/src/lib/wasm/dedaliano_engine.d.ts
+$ git ls-files web/src/lib/wasm/
+(empty)
+```
+
+The bindings are a **local build artefact, per worktree**, produced by `npm run wasm`. There is
+nothing published to be out of date, so there was never a base defect and nothing for anyone else
+to fix.
+
+### What actually happened
+
+Two worktrees of this repo, the same commit range, different local builds:
+
+| Worktree | `analyze_section_torsion_field` in the local bindings |
 |---|---|
-| PR20 HEAD | `d585b7ed` — untouched, gates in §2 still describe it |
-| Integrated branch | `pr20-base-integration-wip` @ `dd0dcf22` |
-| Base HEAD | `origin/pr/19-rc-cad-constructibility` @ `2e4cd2f3` |
-| Backups | branch `pr20-before-base-integration`, tag `pr20-pre-integration-HEAD` |
+| `stabileo-steel` | **5** — freshly built |
+| `stabileo-landing` | **0** — stale |
 
-### What stops it
+The integration's two "new" type errors were this worktree's stale artefacts. That is also why
+`feat/pro-steel-family` typechecks clean against the same `main`: its worktree had built the WASM
+more recently. The evidence was available the whole time and I did not go looking for it until
+another task made me compare the two directories.
 
-`npm run typecheck` on the integrated branch: **481 errors against a baseline of 490, and 2 NEW**.
+**If typecheck fails on `analyze_section_*_field`, run `npm run wasm` in that worktree.** It is not
+a base defect, not a solver problem, and not a reason to escalate.
 
-```
-web/src/lib/engine/wasm-solver.ts(220,43)
-  Property 'analyze_section_torsion_field' does not exist on type
-  'typeof import(".../lib/wasm/dedaliano_engine")'. Did you mean 'analyze_section_torsion'?
-web/src/lib/engine/wasm-solver.ts(221,41)
-  Property 'analyze_section_shear_field' does not exist. Did you mean 'analyze_section_shear'?
-```
+### So what is the state of the integration?
 
-`wasm-solver.ts` was **not one of the 9 conflicts**. It arrived whole from the base.
+`pr20-base-integration-wip` @ `dd0dcf22` holds the merge with all 9 conflicts resolved by hand,
+each documented in its commit message. It was parked on the strength of the wrong diagnosis. With
+fresh local bindings it should typecheck; that has not been re-measured, and no post-integration
+gate has been run, so nothing here is claimed as green.
 
-### The diagnosis, and what it is NOT
-
-The Rust is fine. `engine/src/lib.rs` on the base declares both, each behind `#[wasm_bindgen]`:
-
-```rust
-#[wasm_bindgen]
-pub fn analyze_section_torsion_field(json: &str) -> Result<String, JsValue>
-
-#[wasm_bindgen]
-pub fn analyze_section_shear_field(json: &str) -> Result<String, JsValue>
-```
-
-What is missing is the **generated glue**. The committed bindings expose only
-`analyze_section_torsion` and `analyze_section_shear`:
-
-| File | Has the two exports? |
-|---|---|
-| `web/src/lib/wasm/dedaliano_engine.d.ts` | ❌ 0 of 2 |
-| `web/src/lib/wasm/dedaliano_engine.js` | ❌ 0 of 2 |
-| `web/src/lib/wasm/dedaliano_engine_bg.wasm.d.ts` | ❌ 0 of 2 |
-| `web/src/lib/wasm/dedaliano_engine_bg.wasm` | binary — assumed stale with the rest |
-
-So this is a **synchronisation defect between the base's TypeScript and its own generated
-bindings**: `743e11ef` (diegokingston, 2026-08-10, *"fix(web): PR124 review follow-ups"*) added the
-two call sites without regenerating `npm run wasm`. `lib/wasm/` was untouched by the integration,
-and neither error is in the typecheck baseline.
-
-**There is no evidence of a solver mathematics problem, and none of a regression introduced by
-PR20.** PR20 touches no Rust, no Cargo, no WASM and no bindings — that constraint has held for
-the whole branch. It is a build-artifact staleness, and it fails at the type level before any
-number is computed.
-
-### Why no post-integration gates were run
-
-Running 45 minutes of suite against a tree that does not typecheck would spend the time to report
-a red that is already understood. **No post-integration gate result exists, and none is claimed.**
-
-### What has to happen, and by whom
-
-The base regenerates and commits its own bindings — `npm run wasm`, then commit
-`dedaliano_engine.d.ts`, `dedaliano_engine.js`, `dedaliano_engine_bg.wasm` and
-`dedaliano_engine_bg.wasm.d.ts`. See `pr20-handoff-diego-wasm-bindings.md`.
-
-This was deliberately **not** done inside PR20: fixing another branch's build artefacts from here
-would put a WASM rebuild in a PR whose whole premise is that it touches no engine, and would hide
-a defect the base needs to carry its own fix for.
-
-Once it lands: integrate only that change, read the diff, run typecheck, then run **every**
-post-integration gate. Mergeability is confirmed after that and not before.
+The genuine facts about merging remain: the base moved 37 commits, the integration touches 366
+files, and every gate in §2 describes `feat/pro-visual-system` against the base PR20 was developed
+on — not the integrated tree.
 
 ---
 
