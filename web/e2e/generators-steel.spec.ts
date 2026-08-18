@@ -19,10 +19,20 @@
 import { test, expect, PRO_URL } from './fixtures';
 import type { Page } from '@playwright/test';
 
-/** Reach a tab through the Analysis dropdown, as a user does. */
-async function openTab(page: Page, tab: string): Promise<void> {
-  await page.getByTestId('pb-group-analysis').click();
-  await page.getByTestId(`pb-tab-${tab}`).click();
+/**
+ * Reach a tab through the ribbon, as a user does.
+ *
+ * These two panels were written against the Analysis dropdown of the old PRO bar. The
+ * ribbon replaced that bar, and the two panels are no longer neighbours in it: the
+ * generators DRAW geometry and sit in Model beside nodes and elements, while the steel
+ * panel DESIGNS and sits in Design beside the concrete one. So the stage is a parameter —
+ * naming it here is what keeps the click path the one a user actually has.
+ */
+const STAGE_OF = { generators: 'model', steel: 'design' } as const;
+
+async function openTab(page: Page, tab: 'generators' | 'steel'): Promise<void> {
+  await page.getByTestId(`pr-stage-${STAGE_OF[tab]}`).click();
+  await page.getByTestId(`pr-cmd-${tab}`).click();
 }
 
 async function modelCounts(page: Page): Promise<{ nodes: number; elements: number }> {

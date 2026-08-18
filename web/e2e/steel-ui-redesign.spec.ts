@@ -21,14 +21,18 @@ import { test, expect } from './fixtures';
 import type { Page } from '@playwright/test';
 
 /**
- * Both metallic tabs live behind the Analysis dropdown, not on the bar.
+ * The two metallic tabs live in the ribbon, and not in the same stage.
  *
  * The same two clicks `generators-steel.spec.ts` uses. Reaching them any other way would test a
- * path a user does not have.
+ * path a user does not have. They shared the Analysis dropdown of the old PRO bar; under the
+ * ribbon the generators belong to Model (they draw geometry) and the steel panel to Design
+ * (it designs), so each names its own stage.
  */
+const STAGE_OF = { generators: 'model', steel: 'design' } as const;
+
 async function openTab(page: Page, tab: 'generators' | 'steel') {
-  await page.getByTestId('pb-group-analysis').click();
-  await page.getByTestId(`pb-tab-${tab}`).click();
+  await page.getByTestId(`pr-stage-${STAGE_OF[tab]}`).click();
+  await page.getByTestId(`pr-cmd-${tab}`).click();
 }
 
 async function openGenerators(page: Page) {
