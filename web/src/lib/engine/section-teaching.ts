@@ -276,11 +276,18 @@ export function shearCentreWorking(rs: ResolvedSection): ShearCentreWorking {
       // line, and the depth between flange centre lines.
       const bm = b - tw / 2;
       const hm = h - tf;
+      // e is the distance of the shear centre from the web's CENTRE LINE —
+      // the formula is derived in mid-line dimensions, so that is the point
+      // its lever arm refers to — on the side opposite the flanges.
       const e = iy > 1e-15 ? (bm * bm * hm * hm * tf) / (4 * iy) : 0;
       const parts = centroidWorking(rs);
-      // The centroid sits at zBar from the web's outer face; the shear centre
-      // lies `e` on the OPPOSITE side of the web from the flanges.
-      const ez = -(e + parts.zBar);
+      // The decomposition's origin is the web's OUTER FACE, half a web
+      // thickness inboard of the centre line: the shear centre sits at
+      // tw/2 − e from that face, the centroid at zBar. (UPN 200: e = 26.8 mm
+      // from the centre line, i.e. 22.5 mm clear of the outer face — the
+      // published value is ≈ 22.4 mm. Omitting the tw/2 shifts the point one
+      // half web thickness too far out.)
+      const ez = tw / 2 - e - parts.zBar;
       return {
         rule: 'channelFormula', ez, ey: 0,
         outsideSection: true,

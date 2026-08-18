@@ -45,7 +45,7 @@ export interface StressRamp {
   x1: number; y1: number; x2: number; y2: number;
   /** Stress at each endpoint, MPa. */
   sigmaAt1: number; sigmaAt2: number;
-  /** Extremes over the bounding box, for scaling the colour ramp. */
+  /** Extremes over the section, for scaling the colour ramp. */
   sLo: number; sHi: number; sMax: number;
   /**
    * True when the field is constant — pure axial. There is no direction to span
@@ -54,7 +54,13 @@ export interface StressRamp {
   uniform: boolean;
   /** Distance from the section centre to the neutral axis, along the gradient. */
   neutralOffset: number;
-  /** Whether the neutral axis actually crosses the section. */
+  /**
+   * Whether the neutral axis actually crosses the section — tested against the
+   * section's own polygon points when they are supplied, against the bounding
+   * box only as a fallback. The distinction matters for a shape that does not
+   * fill its bbox: an L's missing corner can carry the only sign change, and
+   * the box would draw a neutral line through material that never changes sign.
+   */
   neutralInside: boolean;
 }
 
@@ -67,16 +73,34 @@ export function sigmaAt(f: StressField, y: number, z: number): number {
  * Everything the stress map needs, in SVG user units.
  *
  * `sc` is the same scale the outline is drawn at (SVG units per metre).
+ *
+ * `points` is the section's real outline (centroid-relative `[y, z]` metres,
+ * solids and holes alike) — the same polygon the map rasterizes. When given,
+ * the stress extremes and the neutral-axis test are taken over THOSE points
+ * rather than over the bounding-box corners: a linear field over a polygonal
+ * region attains its extremes at vertices, so this is exact, not a sampling.
+ * Without it the bbox corners stand in, which is correct only for shapes that
+ * fill their box.
  */
-export function stressMapRamp(f: StressField, bbox: SectionBBox, sc: number): StressRamp {
+export function stressMapRamp(
+  f: StressField,
+  bbox: SectionBBox,
+  sc: number,
+  points?: ReadonlyArray<readonly [number, number]>,
+): StressRamp {
   const [yMin, zMin, yMax, zMax] = bbox;
 
-  const corners = [
-    sigmaAt(f, yMin, zMin), sigmaAt(f, yMin, zMax),
-    sigmaAt(f, yMax, zMin), sigmaAt(f, yMax, zMax),
-  ];
-  const sLo = Math.min(...corners);
-  const sHi = Math.max(...corners);
+  const probes: ReadonlyArray<readonly [number, number]> =
+    points && points.length > 0
+      ? points
+      : [[yMin, zMin], [yMin, zMax], [yMax, zMin], [yMax, zMax]];
+  let sLo = Infinity;
+  let sHi = -Infinity;
+  for (const [py, pz] of probes) {
+    const s = sigmaAt(f, py, pz);
+    if (s < sLo) sLo = s;
+    if (s > sHi) sHi = s;
+  }
   const sMax = Math.max(Math.abs(sLo), Math.abs(sHi), 1e-9);
 
   // See the header: both components are negative.

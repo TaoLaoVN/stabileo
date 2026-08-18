@@ -6,7 +6,8 @@
  * and the picker is filtered by design code. Two failures are possible and both
  * are silent: a code listing a family with no profiles behind it, which empties
  * the picker with no explanation, and a family shipped without belonging to any
- * code, which makes 267 profiles unreachable for anyone who has chosen a code.
+ * code, which strands the profiles behind it — 721 across the 15 families at
+ * this writing — for anyone who has chosen a code.
  *
  * Neither shows up in a type check or a rendering test, because both are
  * questions about the DATA agreeing with itself.

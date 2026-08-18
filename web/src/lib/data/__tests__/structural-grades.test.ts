@@ -555,6 +555,30 @@ describe('what a profile family is actually rolled in', () => {
     expect(offenders, `flagged its own practice:\n${offenders.join('\n')}`).toEqual([]);
   });
 
+  it('does not judge a region by another region’s record', () => {
+    /*
+     * The false positive region scoping fixed: once America recorded its tube
+     * grades, a European tube in S235 — whose own product standards
+     * (EN 10210/10219) are not in this file — was flagged as a departure, and
+     * so were an American tee in A36 and a Brazilian M in MR-250. In each case
+     * the grade's OWN region records nothing for the family, and unknown is
+     * not unusual.
+     */
+    expect(isUnusualPairing('CHS', 'en-s235')).toBeNull();
+    expect(isUnusualPairing('RHS', 'en-s355')).toBeNull();
+    expect(isUnusualPairing('SHS', 'en-s235')).toBeNull();
+    expect(isUnusualPairing('T', 'astm-a36')).toBeNull();
+    expect(isUnusualPairing('M', 'nbr-mr250')).toBeNull();
+  });
+
+  it('still flags a mismatch inside a region that HAS a record', () => {
+    // Argentina rolls the wide-flange series in F-36, so an Argentine W in
+    // F-24 is a special run there whatever other regions do. IPE records F-24
+    // only, so F-26 on one is likewise a departure.
+    expect(isUnusualPairing('W', 'iram-f24')).toBe(true);
+    expect(isUnusualPairing('IPE', 'iram-f26')).toBe(true);
+  });
+
   it('every source note it cites is translated in all three languages', () => {
     /*
      * These keys are asked for through a VARIABLE — `t(pairing.sourceKey)` —

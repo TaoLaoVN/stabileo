@@ -110,8 +110,11 @@ export function warpingProperties(rs: ResolvedSection): WarpingProperties {
 
   switch (rs.shape) {
     case 'I': case 'H': {
-      // Distance between flange centre lines.
+      // Distance between flange centre lines. tf ≥ h is a plate, not an I —
+      // without the guard the squared term would still report a bogus
+      // positive Cw for it (the channel branch below already refuses).
       const h0 = h - tf;
+      if (h0 <= 0) break;
       return {
         klass: 'openSignificant',
         cw: (iz * h0 * h0) / 4,
@@ -236,8 +239,14 @@ export function warpingResponse(
   // Saint-Venant part at the restrained end is 1 - 1/cosh(L/lambda), rising to
   // 1 for a long member and falling to 0 for a short one — which is the
   // statement that a short restrained member resists almost entirely by
-  // warping.
-  const saintVenantShare = Math.max(0, Math.min(1, 1 - 1 / Math.cosh(ratio)));
+  // warping. The simple case is that same solution mirrored about mid-span:
+  // each half-span is a cantilever of length L/2 (warping is restrained at
+  // mid-span by symmetry, where the bimoment peaks), so its parameter is the
+  // half-span L/(2·lambda) — the same argument the bimoment line above uses.
+  const share = restraint === 'cantilever'
+    ? 1 - 1 / Math.cosh(ratio)
+    : 1 - 1 / Math.cosh(ratio / 2);
+  const saintVenantShare = Math.max(0, Math.min(1, share));
 
   return {
     saintVenantShare,

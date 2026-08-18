@@ -1,5 +1,6 @@
 <script lang="ts">
-  import { uiStore, modelStore, resultsStore } from '../lib/store';
+  import { uiStore, modelStore } from '../lib/store';
+  import { EDIT_TOOLS } from '../lib/store/ui.svelte';
   import { t } from '../lib/i18n';
   import NodesTable from './tables/NodesTable.svelte';
   import ElementsTable from './tables/ElementsTable.svelte';
@@ -38,24 +39,20 @@
   function pickTab(tab: string) {
     activeTab = tab;
     const tool = TAB_TOOL[tab];
-    // Only arm an EDIT tool when one exists. Landing on Materials must not
-    // leave the pointer holding whatever tool was armed before, so that case
-    // falls back to selection.
-    if (tool) uiStore.currentTool = tool as never;
-    else if (EDIT_TOOL_IDS.includes(uiStore.currentTool)) uiStore.currentTool = 'select';
+    /*
+     * Arming the tab's tool is the BASIC-mode ribbon sync — the ribbon lights
+     * editing commands by TOOL, so the tab and the ribbon only agree if the
+     * tab moves the tool. Outside Basic there is no ribbon to sync with and
+     * the table is reference browsing; arming a tool there is a side effect
+     * nobody asked for.
+     *
+     * Landing on Materials must not leave the pointer holding whatever tool
+     * was armed before, so that case falls back to selection.
+     */
+    if (tool) {
+      if (uiStore.appMode === 'basico') uiStore.currentTool = tool as never;
+    } else if (EDIT_TOOLS.includes(uiStore.currentTool)) uiStore.currentTool = 'select';
   }
-
-  /** Tools that draw, so leaving them for a table means going back to select. */
-  const EDIT_TOOL_IDS = ['node', 'element', 'support', 'load'];
-
-
-  /*
-   * A solve going away must not leave the panel on a tab with nothing in it.
-   * The tab used to vanish, which moved the user off it as a side effect;
-   * greying it means the move has to be explicit.
-   */
-  $effect(() => {
-  });
 
   function handleKeydown(e: KeyboardEvent) {
     e.stopPropagation();

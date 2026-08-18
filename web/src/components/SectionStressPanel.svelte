@@ -316,28 +316,6 @@
     return analyzeSectionStressFromForces(N_2d, Vy, Vz, 0, My, Mz, sec, mat.fy, yFiber, zFiber);
   });
 
-  // Unified accessors (panel uses these)
-  // When isRotated2D, analysis3D is populated (from decomposed forces), analysis2D is null
-  const uses3DPath = $derived(is3D || isRotated2D || eccentricActive);
-  const hasAnalysis = $derived(uses3DPath ? analysis3D !== null : analysis2D !== null);
-  const resolved = $derived(uses3DPath ? analysis3D?.resolved : analysis2D?.resolved);
-
-  // Shear flow (2D only)
-  const shearFlow = $derived<ShearFlowSegment[]>(
-    analysis2D ? computeShearFlowPaths(analysis2D.V, analysis2D.resolved) : []
-  );
-
-  const isMassive = $derived(resolved ? isMassiveSection(resolved.shape) : false);
-
-  // Bending detection — enables EN button
-  const hasBending3D = $derived(
-    uses3DPath && analysis3D !== null &&
-    (Math.abs(analysis3D.My) > 0.01 || Math.abs(analysis3D.Mz) > 0.01)
-  );
-  const hasBending2D = $derived(
-    !uses3DPath && analysis2D !== null && Math.abs(analysis2D.M) > 0.01
-  );
-
   // Neutral axis for ⊥ distribution: moments-only or full (with N) depending on showTotalSigma
   // When showTotalSigma is off: NA passes through centroid (N=0), classic moment-only view
   // When showTotalSigma is on: NA shifts by axial eccentricity, shows combined effect
@@ -471,7 +449,9 @@
    * Whether the application point keeps the whole section in one sign.
    *
    * Tested against the SAME polygon the drawing paints, not against
-   * `kernLimits`. The two agree analytically, but they are different code, and
+   * `kernLimits`. The two agree analytically where the comparison is valid at
+   * all — principal axes, i.e. `iyz = 0`; elsewhere `kernLimits` declines and
+   * there is nothing to agree with — but they are different code, and
    * a marker that turns green while sitting outside the orange region reads as
    * a bug whichever of the two is right. One source, one answer.
    */
@@ -574,16 +554,6 @@
   });
 
   /**
-   * Whether the eccentric case is actually driving the panel.
-   *
-   * Every diagram below keys off this. Without it the eccentricity reached
-   * Mohr's circle, the tensors and the stress map but NOT the stress diagrams,
-   * which kept plotting the model's own forces — so the panel showed two
-   * different load cases at once and only the small print said which.
-   */
-  const eccentricActive = $derived(showEccentric && eccentric !== null && eccentricHasEffect);
-
-  /**
    * Whether the eccentricity changes anything at all.
    *
    * Switching to the biaxial path is not free: it is a different solver entry
@@ -612,6 +582,38 @@
   });
 
   /**
+   * Whether the eccentric case is actually driving the panel.
+   *
+   * Every diagram below keys off this. Without it the eccentricity reached
+   * Mohr's circle, the tensors and the stress map but NOT the stress diagrams,
+   * which kept plotting the model's own forces — so the panel showed two
+   * different load cases at once and only the small print said which.
+   */
+  const eccentricActive = $derived(showEccentric && eccentric !== null && eccentricHasEffect);
+
+  // Unified accessors (panel uses these)
+  // When isRotated2D, analysis3D is populated (from decomposed forces), analysis2D is null
+  const uses3DPath = $derived(is3D || isRotated2D || eccentricActive);
+  const hasAnalysis = $derived(uses3DPath ? analysis3D !== null : analysis2D !== null);
+  const resolved = $derived(uses3DPath ? analysis3D?.resolved : analysis2D?.resolved);
+
+  // Shear flow (2D only)
+  const shearFlow = $derived<ShearFlowSegment[]>(
+    analysis2D ? computeShearFlowPaths(analysis2D.V, analysis2D.resolved) : []
+  );
+
+  const isMassive = $derived(resolved ? isMassiveSection(resolved.shape) : false);
+
+  // Bending detection — enables EN button
+  const hasBending3D = $derived(
+    uses3DPath && analysis3D !== null &&
+    (Math.abs(analysis3D.My) > 0.01 || Math.abs(analysis3D.Mz) > 0.01)
+  );
+  const hasBending2D = $derived(
+    !uses3DPath && analysis2D !== null && Math.abs(analysis2D.M) > 0.01
+  );
+
+  /**
    * The load components on display, whichever source is active.
    *
    * Read by the editor so the model's own forces are visible (and not
@@ -637,6 +639,13 @@
     Math.abs(eccentricComponents.vy) > 1e-12 || Math.abs(eccentricComponents.vz) > 1e-12,
   );
 
+  const eccentricNothingToMove = $derived(
+    eccSource === 'model' &&
+    Math.abs(eccentricComponents.n) < 1e-9 &&
+    Math.abs(eccentricComponents.vy) < 1e-9 &&
+    Math.abs(eccentricComponents.vz) < 1e-9,
+  );
+
   /**
    * A load normal to the section is what makes moving the point change the
    * NORMAL stress. Without it, dragging can only produce torsion, and the
@@ -646,13 +655,6 @@
    */
   const eccentricNoAxial = $derived(
     Math.abs(eccentricComponents.n) < 1e-12 && !eccentricNothingToMove,
-  );
-
-  const eccentricNothingToMove = $derived(
-    eccSource === 'model' &&
-    Math.abs(eccentricComponents.n) < 1e-9 &&
-    Math.abs(eccentricComponents.vy) < 1e-9 &&
-    Math.abs(eccentricComponents.vz) < 1e-9,
   );
 
   /**
@@ -701,14 +703,17 @@
    *
    * A second, independent route to the same region the drawing paints as a
    * polygon — so the numbers shown are a cross-check on the picture rather
-   * than a restatement of it.
+   * than a restatement of it. Only while the geometric axes are principal:
+   * with a nonzero product of inertia the closed form does not apply and
+   * `kernLimits` returns null, which leaves the polygon as the sole answer
+   * instead of showing a wrong one next to it.
    */
   const kern = $derived.by(() => {
     if (!canonical?.ok || !stateInputs) return null;
     const st = stateInputs.sec.canonical;
     if (!st || st.kind !== 'geometry-backed') return null;
     const [yMin, zMin, yMax, zMax] = canonical.geometry.bbox;
-    return kernLimits(st.a, st.iy, st.iz, { zMax, zMin, yMax, yMin });
+    return kernLimits(st.a, st.iy, st.iz, st.iyz, { zMax, zMin, yMax, yMin });
   });
 
   /**
@@ -733,8 +738,17 @@
     return crossCheckShearPeak(st.geometry, peak, f.vy ?? 0, f.vz ?? 0);
   });
 
-  /** Torque at the queried station, kN·m — used by the drawing and the panel. */
-  const activeTorque = $derived(eccentric?.forces.t ?? stateInputs?.forces.t ?? 0);
+  /**
+   * Torque at the queried station, kN·m — used by the drawing and the panel.
+   *
+   * Gated on `eccentricActive`, not merely on the overlay being on: when the
+   * eccentricity changes nothing, the bending diagrams keep showing the model's
+   * own forces, and a torsion readout sourced from the eccentric case would
+   * disagree with them.
+   */
+  const activeTorque = $derived(
+    eccentricActive ? (eccentric?.forces.t ?? 0) : (stateInputs?.forces.t ?? 0),
+  );
   const torsionFlow = $derived(resolved ? computeTorsionFlow(activeTorque, resolved) : null);
 
   /** The state every downstream display reads. */
@@ -888,7 +902,7 @@
     style="{uiStore.isMobile && tourStore.isActive ? `bottom:auto; top:${uiStore.floatingToolsTopOffset}px; max-height:calc(100vh - ${uiStore.floatingToolsTopOffset}px - 45vh - 16px)` : ''}"
   >
     <div class="ssp-header">
-      <span class="ssp-title">{t('stress.panelTitle')} {is3D ? '3D ' : ''}{isRotated2D ? `(rot ${querySec?.rotation}°) ` : ''}</span>
+      <span class="ssp-title">{t('stress.panelTitle')} {is3D ? '3D ' : ''}{isRotated2D ? `${t('stress.rotSuffix').replace('{angle}', String(querySec?.rotation))} ` : ''}</span>
       <button class="ssp-close" onclick={close} title={t('stress.close')}>&#x2715;</button>
     </div>
 
@@ -931,7 +945,7 @@
       {/if}
       <!-- Element info + position slider (issue #12) -->
       <div class="ssp-info">
-        <span class="ssp-elem">Elem #{query.elementId}</span>
+        <span class="ssp-elem">{t('results.elemLabel').replace('{id}', String(query.elementId))}</span>
         <span class="ssp-pos">x/L = {(query.t * 100).toFixed(1)}%</span>
       </div>
       <div class="ssp-slider-row">
@@ -1231,7 +1245,7 @@
         torque={activeTorque}
         {resolved}
         length={queryElementLength}
-        e={stateInputs?.elastic?.e ?? 210000}
+        e={stateInputs?.elastic?.e}
         nu={stateInputs?.elastic?.nu ?? 0.3}
       />
 
@@ -1304,7 +1318,9 @@
     <div class="ssp-amorph-msg">
       <span class="ssp-amorph-icon">⚠</span>
       {#if unavailableReason?.kind === 'noGeometryData'}
-        <p>{@html t('stress.noGeomMsg1').replace('{name}', unavailableReason.name)}</p>
+        <!-- The name is free text, so it is rendered AS text: interpolating it
+             into an {@html} string would hand a section name the markup. -->
+        <p>{t('stress.noGeomMsg1a')}<strong>{unavailableReason.name}</strong>{t('stress.noGeomMsg1b')}</p>
         <p>{t('stress.noGeomMsg2')}</p>
         <p>{t('stress.noGeomMsg3')}</p>
       {:else}

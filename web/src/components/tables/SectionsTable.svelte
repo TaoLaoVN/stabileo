@@ -99,6 +99,7 @@
         a: full.a,
         iz: full.iz,
         iy: full.iy,
+        j: full.j,
         b: full.b,
         h: full.h,
         shape: full.shape,
@@ -177,6 +178,9 @@
       tw: undefined,
       tf: undefined,
       t: undefined,
+      // No longer a catalogue profile either: leaving the family behind would
+      // keep the pairing note warning about a section this one is not.
+      profileFamily: undefined,
     });
     resultsStore.clear();
     showSectionChanger = false;

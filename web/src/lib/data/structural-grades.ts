@@ -113,13 +113,11 @@ export interface StructuralGrade {
    * Marking them beats deleting them — they are ordinary alloys and the values
    * are the usual ones — and beats leaving them looking as settled as the rest.
    *
-   * DELIBERATELY NOT SHOWN IN THE INTERFACE, and this is a decision rather than
-   * an omission. The field was filled in conservatively, so it currently marks
-   * 45 of 68 grades — including A572, A500 and the stainless family, whose
-   * values are perfectly tabulated. A caveat attached to two thirds of a
-   * catalogue is not a caveat, it is noise, and it would teach a reader to
-   * ignore the one place it means something. It stays as an internal record so
-   * the distinction is not lost; surfacing it needs the field audited first.
+   * Shown in the preset picker as a small `~` badge on the grades marked
+   * 'typical', with a tooltip saying what the mark means. The picker is the
+   * one place the distinction is acted on: someone choosing a grade for a
+   * calculation deserves to know which kind of number they are getting. The
+   * field was filled in conservatively, so it currently marks 45 of 68 grades.
    */
   verification?: 'standard' | 'typical';
 }
@@ -458,10 +456,10 @@ export function gradesForCode(code: DesignCode, family: GradeFamily): Structural
 /**
  * Restrict to what a mode offers.
  *
- * Basic ships European and American grades — plus Argentine, which is the
- * default and cannot sensibly be hidden. PRO adds the rest, which are already
- * loaded here rather than fetched later: the data is small, and gating it at
- * the query keeps one database instead of two that can disagree.
+ * Basic ships European, American and Brazilian grades — plus Argentine, which
+ * is the default and cannot sensibly be hidden. PRO adds the rest, which are
+ * already loaded here rather than fetched later: the data is small, and gating
+ * it at the query keeps one database instead of two that can disagree.
  */
 export function gradesForMode<T extends { region: GradeRegion }>(items: T[], pro: boolean): T[] {
   return pro ? items : items.filter((g) => BASIC_REGIONS.includes(g.region));
@@ -734,9 +732,9 @@ export function commercialGradesForRegion(family: string, region: GradeRegion): 
  * Every region for which a family has a recorded pairing.
  *
  * A caller with no particular region — the common case, since the model does
- * not carry one — uses this to ask whether a chosen grade matches ANY known
- * practice before warning about it. Warning on a combination that is standard
- * somewhere would be noise.
+ * not carry one — uses this for the default a new section takes and for the
+ * list of ordinary grades the pairing note names. Judging whether a chosen
+ * grade is unusual wants `isUnusualPairing`, which is region-scoped.
  */
 export function commercialGradesFor(family: string): CommercialPairing[] {
   const byRegion = COMMERCIAL[family];
@@ -757,14 +755,36 @@ export function commercialGradesFor(family: string): CommercialPairing[] {
 }
 
 /**
- * Whether a section/grade pairing departs from every recorded practice.
+ * Whether a section/grade pairing departs from the recorded practice of the
+ * GRADE'S OWN region.
  *
- * Returns null when nothing is recorded for the family, which is NOT the same
- * as "unusual" — most families have no entry, and treating silence as a warning
- * would make the warning meaningless.
+ * Region-scoped deliberately: recording that America rolls a family in A500
+ * says nothing about Europe's tubes, whose product standards (EN 10210/10219)
+ * are not in this file. Judging a European tube by an American list flagged
+ * every ordinary pairing the file simply had not recorded — unknown is not
+ * unusual.
+ *
+ * So a pairing is flagged only when the grade's region HAS a recorded practice
+ * for the family and this grade is not in it. Returns null — unknown — when
+ * nothing is recorded for the family, when the grade's own region records
+ * nothing for it, or when the grade itself is not in the catalogue. Silence
+ * is not a claim that something is unusual.
  */
 export function isUnusualPairing(family: string, gradeId: string | undefined): boolean | null {
-  const known = commercialGradesFor(family);
-  if (known.length === 0 || !gradeId) return null;
-  return !known.some((k) => k.gradeId === gradeId);
+  if (!gradeId) return null;
+  const byRegion = COMMERCIAL[family];
+  if (!byRegion) return null;
+  // A grade recorded as ordinary ANYWHERE for the family is not unusual:
+  // mills sell across borders, and a region's record can name a foreign grade
+  // rolled locally — Gerdau quotes perfis W in ASTM A572, an American grade
+  // under Brazilian practice.
+  for (const list of Object.values(byRegion)) {
+    if (list?.some((p) => p.gradeId === gradeId)) return false;
+  }
+  // Beyond the record, only the grade's own region can contradict it: its
+  // practice is the one this grade would actually be ordered under.
+  const grade = gradeById(gradeId);
+  const local = grade ? byRegion[grade.region] : undefined;
+  if (!local || local.length === 0) return null;
+  return true;
 }

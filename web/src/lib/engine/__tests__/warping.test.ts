@@ -82,6 +82,13 @@ describe('sections that do not warp', () => {
     }
   });
 
+  it('an I with flanges thicker than its depth is degenerate, not a warping section', () => {
+    // tf ≥ h means h0 ≤ 0: no couple arm exists, and the squared term would
+    // still report a positive Cw if nobody checked the sign.
+    const p = warpingProperties(rs({ shape: 'I', h: 0.1, b: 0.1, tw: 0.01, tf: 0.12, iz: 1e-6, j: 1e-8 }));
+    expect(p.cw).toBe(0);
+  });
+
   it('has no characteristic length, rather than a length of zero', () => {
     // Zero would read as "extremely short", which is the opposite of the truth.
     const tube = withLambda(warpingProperties(rs({ shape: 'RHS', h: 0.2, b: 0.1, t: 0.006, j: 3e-6 })), 200000);
@@ -124,17 +131,38 @@ describe('the characteristic length decides which mechanism carries the torque',
       expect(shares[i]).toBeGreaterThan(shares[i - 1]);
     }
   });
+
+  it('the simple case is the cantilever solution on the half-span', () => {
+    // Warping-free ends with mid-span torque: by symmetry each half-span is a
+    // cantilever of length L/2, restrained at mid-span. The share must use the
+    // same L/(2λ) parameter the bimoment line uses — not L/λ.
+    const s = IPE300();
+    const p = withLambda(warpingProperties(s), 210000);
+    for (const L of [0.5, 2, 8]) {
+      const simple = warpingResponse(s, p, 10, L, 210000, 'simple')!.saintVenantShare;
+      const cantileverHalf = warpingResponse(s, p, 10, L / 2, 210000, 'cantilever')!.saintVenantShare;
+      expect(simple).toBeCloseTo(cantileverHalf, 9);
+    }
+  });
 });
 
 describe('warping stress — the part that is not conservative to omit', () => {
   it('produces a real normal stress that adds to bending', () => {
     const s = IPE300();
     const p = withLambda(warpingProperties(s), 210000);
-    const r = warpingResponse(s, p, 10, 2, 210000, 'cantilever');
-    expect(r!.sigmaW).toBeGreaterThan(0);
-    // On a short restrained member under a serious torque it is not a rounding
-    // — it is tens of MPa, comparable to the bending it sits on top of.
-    expect(r!.sigmaW).toBeGreaterThan(10);
+    const r = warpingResponse(s, p, 10, 2, 210000, 'cantilever')!;
+    expect(r.sigmaW).toBeGreaterThan(0);
+    // Hand check, IPE 300 with T = 10 kN·m, L = 2 m, restrained end:
+    //   Cw = Iz·h0²/4 = 6.04e-6 · 0.2893²/4 = 1.2638e-7 m⁶
+    //   λ  = √(E·Cw/G·J) = √(2.6 · 1.2638e-7/2.01e-7) = 1.2786 m
+    //   B  = T·λ·tanh(L/λ) = 10 · 1.2786 · tanh(1.5643) = 11.71 kN·m²
+    //   σw = B·Wns/Cw = 11.71 · 0.01085 / 1.2638e-7 ≈ 1006 MPa
+    // On a short restrained member the warping stress is not "tens of MPa" —
+    // it is several times the yield stress, which is exactly why the restraint
+    // case cannot be omitted. A bare `> 10` would pass with a 50× error.
+    expect(r.sigmaW).toBeGreaterThan(1006 * 0.98);
+    expect(r.sigmaW).toBeLessThan(1006 * 1.02);
+    expect(r.bimoment).toBeCloseTo(11.71, 2);
   });
 
   it('grows with the torque, in proportion', () => {

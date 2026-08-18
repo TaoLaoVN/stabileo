@@ -26,8 +26,12 @@
     resolved: ResolvedSection | undefined;
     /** Member length, metres — warping depends on it, the section alone does not. */
     length: number;
-    /** Young's modulus, MPa. */
-    e: number;
+    /**
+     * Young's modulus, MPa. Omitted when the material does not carry one: the
+     * warping rows then render as unavailable rather than computed from a
+     * guessed steel value — the panel's policy is to omit, not to assume.
+     */
+    e?: number;
     nu: number;
   }
 
@@ -60,9 +64,9 @@
    * not of the section, so it is a control rather than an assumption.
    */
   let restraint = $state<'cantilever' | 'simple'>('cantilever');
-  const warp = $derived(resolved ? withLambda(warpingProperties(resolved), e, nu) : null);
+  const warp = $derived(resolved && e !== undefined ? withLambda(warpingProperties(resolved), e, nu) : null);
   const response = $derived(
-    resolved && warp ? warpingResponse(resolved, warp, torque, length, e, restraint, nu) : null,
+    resolved && warp && e !== undefined ? warpingResponse(resolved, warp, torque, length, e, restraint, nu) : null,
   );
 </script>
 
@@ -201,6 +205,14 @@
             <p class="ssp-tor-note ssp-tor-warn">{t('warp.addsToBending')}</p>
           {/if}
           <p class="ssp-tor-note">{t(warp.labelKey + 'Note')}</p>
+        </div>
+      {:else if resolved && e === undefined}
+        <!-- Warping needs E and the material does not carry one. Stated as
+             unavailable — the same "we decline" row the theory table uses —
+             rather than silently computed from a guessed steel modulus. -->
+        <div class="ssp-tor-warp">
+          <div class="ssp-tor-warp-head">{t('warp.title')}</div>
+          <div class="ssp-tt-value ssp-tt-na">{t('warp.noModulus')}</div>
         </div>
       {/if}
 

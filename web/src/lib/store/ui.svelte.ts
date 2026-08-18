@@ -5,6 +5,16 @@ import type { UnitSystem } from '../utils/units';
 import type { Element3DMetadata } from '../model/element-3d-metadata';
 
 export type Tool = 'select' | 'node' | 'element' | 'support' | 'load' | 'pan' | 'influenceLine';
+
+/**
+ * Tools that build the model, as opposed to selecting or panning.
+ *
+ * THE one list. The tool setter, the view-mode rules, the ribbon and the data
+ * table all decide "is this editing" from it; it had been re-spelled in four
+ * places, which is how the copies drift. It lives here — not in view-mode.ts —
+ * because this store cannot import that module without closing an import cycle.
+ */
+export const EDIT_TOOLS: readonly Tool[] = ['node', 'element', 'support', 'load'];
 export type ILQuantity = 'Rz' | 'Ry' | 'Rx' | 'My' | 'Mz' | 'V' | 'M';
 export type SupportTool = 'fixed' | 'pinned' | 'roller' | 'spring';
 export type LoadTool = 'nodal' | 'distributed' | 'thermal';
@@ -109,9 +119,6 @@ function createUIStore() {
   let panY = $state<number>(300);
 
   let selectMode = $state<SelectMode>('elements');
-
-  /** Tools that build the model, as opposed to selecting, panning or querying. */
-  const EDIT_TOOLS: string[] = ['node', 'element', 'support', 'load'];
 
   /**
    * Called when a build tool is armed, so the results view can stand down.

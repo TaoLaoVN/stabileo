@@ -89,25 +89,28 @@ describe('a twisted member produces torsional shear', () => {
 });
 
 describe('it survives the shapes a user actually picks', () => {
-  const cases: Array<[string, Section]> = [
-    ['I', sec({ shape: 'I', h: 0.3, b: 0.15, tw: 0.0071, tf: 0.0107 })],
-    ['RHS', sec({ shape: 'RHS', h: 0.2, b: 0.2, t: 0.01 })],
-    ['CHS', sec({ shape: 'CHS', h: 0.2, b: 0.2, t: 0.01 })],
-    ['rect', sec({ shape: 'rect', h: 0.4, b: 0.2 })],
+  // Each shape is probed at a point where its torsional shear is NOT zero —
+  // at the centroid a solid section's torsion vanishes, so an assertion made
+  // there passes vacuously. The points sit on a flange tip, on a wall and at
+  // a solid rectangle's edge midpoint respectively.
+  const cases: Array<[string, Section, [number, number]]> = [
+    ['I', sec({ shape: 'I', h: 0.3, b: 0.15, tw: 0.0071, tf: 0.0107 }), [0.06, 0.145]],
+    ['RHS', sec({ shape: 'RHS', h: 0.2, b: 0.2, t: 0.01 }), [0.095, 0]],
+    ['CHS', sec({ shape: 'CHS', h: 0.2, b: 0.2, t: 0.01 }), [0.095, 0]],
+    ['rect', sec({ shape: 'rect', h: 0.4, b: 0.2 }), [0.1, 0]],
   ];
 
-  for (const [name, section] of cases) {
+  for (const [name, section, point] of cases) {
     it(`${name}: a torque reaches the stress and a zero torque does not invent one`, () => {
       const f = stationForces3D(solverForces({ mxStart: 15, mxEnd: 15 }), 0.5);
-      const withT = canonicalStressState(section, { n: 0, my: 0, mz: 0, t: f.tx }, [0, 0]);
-      const noT = canonicalStressState(section, { n: 0, my: 0, mz: 0, t: 0 }, [0, 0]);
+      const withT = canonicalStressState(section, { n: 0, my: 0, mz: 0, t: f.tx }, point);
+      const noT = canonicalStressState(section, { n: 0, my: 0, mz: 0, t: 0 }, point);
       if (!withT.ok || !noT.ok) throw new Error('section refused');
 
-      // At the centroid a solid section's torsional shear vanishes, so the
-      // assertion is about the SECTION's peak, not about this one point.
-      expect(withT.state.breakdown.torsion).not.toBeCloseTo(
-        noT.state.breakdown.torsion + 1, 6,
-      );
+      // At a point where torsion actually acts, the component must be real —
+      // not merely "different from some other value".
+      expect(withT.state.breakdown.torsion).toBeGreaterThan(0.01);
+      expect(noT.state.breakdown.torsion).toBeCloseTo(0, 9);
       expect(Number.isFinite(withT.state.tau)).toBe(true);
     });
   }

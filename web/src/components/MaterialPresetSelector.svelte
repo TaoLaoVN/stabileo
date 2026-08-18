@@ -1,7 +1,7 @@
 <script lang="ts">
   import { MATERIAL_CATEGORIES, searchPresets, categoryFamily, type MaterialPreset } from '../lib/data/material-presets';
   import {
-    MATERIAL_DESIGN_CODES, codesForFamily, codesForMode, defaultCodeFor,
+    codesForFamily, codesForMode, defaultCodeFor,
   } from '../lib/data/structural-grades';
   import { concreteCodes, timberCodes } from '../lib/data/non-metal-grades';
   import { codeLore } from '../lib/data/code-lore';

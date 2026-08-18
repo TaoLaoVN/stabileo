@@ -362,9 +362,9 @@ function elementExtremesFromPointwise(
       for (const v of e.negValues) if (v < env[neg]) env[neg] = v;
     }
   };
-  apply(full.moment as never, 'mMaxPos', 'mMaxNeg');
-  apply(full.shear as never, 'vMaxPos', 'vMaxNeg');
-  apply(full.axial as never, 'nMaxPos', 'nMaxNeg');
+  apply(full.moment, 'mMaxPos', 'mMaxNeg');
+  apply(full.shear, 'vMaxPos', 'vMaxNeg');
+  apply(full.axial, 'nMaxPos', 'nMaxNeg');
 }
 
 export function solveMovingLoads(

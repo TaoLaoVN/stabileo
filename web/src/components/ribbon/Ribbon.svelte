@@ -3,7 +3,7 @@
   import { showDiagram, armTool } from '../../lib/store/view-mode';
   import { commandShowsQuantity } from '../../lib/store/result-view';
   import { TWO_D_INTERNAL_FORCE_LABELS as F2D } from '../../lib/geometry/coordinate-system';
-  import { uiStore } from '../../lib/store/ui.svelte';
+  import { uiStore, EDIT_TOOLS } from '../../lib/store/ui.svelte';
   import { historyStore } from '../../lib/store/history.svelte';
   import { resultsStore } from '../../lib/store/results.svelte';
   import Icon from './Icon.svelte';
@@ -277,8 +277,7 @@
    */
   /** Tools that only change how you LOOK at the model, never what it is. */
   const VIEW_TOOLS: string[] = ['select', 'pan'];
-
-  const EDIT_TOOLS = ['node', 'element', 'support', 'load'];
+  // The EDIT_TOOLS list is imported from ui.svelte.ts — the single source.
 
   function run(cmd: Cmd) {
     if (cmd.enabled && !cmd.enabled()) return;

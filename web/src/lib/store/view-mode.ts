@@ -27,15 +27,16 @@
  * and hoping they stay in step.
  */
 
-import { uiStore } from './ui.svelte';
+import { uiStore, EDIT_TOOLS } from './ui.svelte';
 import { resultsStore } from './results.svelte';
 import type { DiagramType } from './results.svelte';
 
-/** Tools that build the model, as opposed to selecting or panning. */
-export const EDIT_TOOLS = ['node', 'element', 'support', 'load'] as const;
+// The edit-tool list itself lives in ui.svelte.ts — this module imports that
+// store, so the list cannot be defined here without closing an import cycle.
+export { EDIT_TOOLS };
 
 function isEditing(): boolean {
-  return (EDIT_TOOLS as readonly string[]).includes(uiStore.currentTool);
+  return EDIT_TOOLS.includes(uiStore.currentTool);
 }
 
 /**
@@ -67,14 +68,21 @@ export function armTool(tool: string): void {
 }
 
 /**
- * Wire the store-level rule. Called once, from the store barrel.
+ * Wire the store-level rule, in both directions. Called once, from the store
+ * barrel.
  *
- * Registered rather than imported so `uiStore` need not know the results store
- * exists — the two would otherwise import each other.
+ * Registered rather than imported so neither store need know the other exists
+ * — the two would otherwise import each other. The first hook covers arming a
+ * tool; the second covers every direct `resultsStore.diagramType = …` write
+ * (keyboard shortcuts, mobile panel, toolbars, url-sharing), which used to
+ * leave an armed tool drawing on top of the diagram it had just asked for.
  */
 export function installViewModeRules(): void {
   uiStore.onEditToolArmed(() => {
     if (resultsStore.diagramType !== 'none') resultsStore.diagramType = 'none';
+  });
+  resultsStore._setOnDiagramShown(() => {
+    if (isEditing()) uiStore.currentTool = 'select';
   });
 }
 

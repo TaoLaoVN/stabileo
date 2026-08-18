@@ -213,4 +213,17 @@ describe('shape of the answer', () => {
     // Ip = pi/2 * 0.03^4 = 1.2723e-6; tau = 3*0.03/1.2723e-6 = 70 738 kPa
     expect(pick(bar, 3, 'cauchy').tauMax!).toBeCloseTo(70.7, 1);
   });
+
+  it('a degenerate section does not claim Saint-Venant applies', () => {
+    // No wall anywhere: computeTorsionFlow refuses it, and the entry must say
+    // so — applies: true with null values would draw a row asserting a result
+    // it does not have.
+    const degenerate = section({ shape: 'I', h: 0.3, b: 0.15, tw: 0, tf: 0 });
+    const sv = pick(degenerate, 5, 'saintVenant');
+    expect(sv.applies).toBe(false);
+    expect(sv.tauMax).toBeNull();
+    expect(sv.j).toBeNull();
+    expect(sv.governs).toBe(false);
+    expect(sv.reasonKey).toBe('stress.tt.na');
+  });
 });

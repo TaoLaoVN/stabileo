@@ -17,7 +17,9 @@
     const items: Array<{ source: string; type: string; message: string; severity: string }> = [];
     const asmDiags = uiStore.analysisMode === '3d' ? resultsStore.diagnostics3D : resultsStore.diagnostics;
     for (const d of asmDiags) {
-      const elemIds = d.elementIds && d.elementIds.length > 0 ? `Elem ${d.elementIds[0]}` : '';
+      const elemIds = d.elementIds && d.elementIds.length > 0
+        ? t('results.elemLabel').replace('{id}', String(d.elementIds[0]))
+        : '';
       items.push({ source: elemIds || d.source, type: d.code, message: d.message, severity: d.severity });
     }
     const solverDiags = uiStore.analysisMode === '3d' ? resultsStore.solverDiagnostics3D : resultsStore.solverDiagnostics;
@@ -226,7 +228,7 @@
   {#if resultsSubTab === 'diagnostics' && allDiagnostics.length > 0}
     <table>
       <thead>
-        <tr><th>Fuente</th><th>Tipo</th><th>Mensaje</th><th>Severidad</th></tr>
+        <tr><th>{t('results.diagSource')}</th><th>{t('results.diagType')}</th><th>{t('results.diagMessage')}</th><th>{t('results.diagSeverity')}</th></tr>
       </thead>
       <tbody>
         {#each allDiagnostics as d}

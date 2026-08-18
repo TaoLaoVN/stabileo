@@ -35,6 +35,9 @@
       a: full.a,
       iz: full.iz,
       iy: full.iy,
+      // The tabulated torsion constant travels too — dropping it left a stale
+      // j behind when a profile replaced another in place.
+      j: full.j,
       b: full.b,
       h: full.h,
       shape: full.shape,

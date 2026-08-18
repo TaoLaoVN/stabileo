@@ -24,7 +24,7 @@
  */
 
 import { describe, it, expect } from 'vitest';
-import { computeShearFlowPaths, type ResolvedSection } from '../section-stress';
+import { computeShearFlowPaths, shearStress, type ResolvedSection } from '../section-stress';
 
 /** A resolved section with the fields the shear-flow code reads. */
 function rs(over: Partial<ResolvedSection>): ResolvedSection {
@@ -91,6 +91,61 @@ describe('thin circular tube — twice the mean shear', () => {
     const mid = pts[Math.floor(pts.length / 2)];
     expect(Math.abs(mid.tau)).toBeGreaterThan(0);
     expect(Math.abs(mid.tau)).toBeCloseTo(peak([{ points: pts }]), 6);
+  });
+});
+
+/**
+ * The DESIGN path — `shearStress()` via `computeQandB`, which feeds von Mises
+ * and the utilisation ratio — must give the same answer the drawn diagram
+ * gives. It is a separate formula and once carried exactly the halved
+ * one-sided-Q/two-sided-b error the audit above guards against in the
+ * diagram; nothing cross-checked them, so they drifted. These tests pin the
+ * two against each other and against the closed forms.
+ */
+describe('CHS in the design path — shearStress must agree with the diagram', () => {
+  // 200 mm diameter, 5 mm wall: A = 2·π·R·t, I = π·R³·t.
+  const R = 0.1, t = 0.005;
+  const tube = () => rs({
+    shape: 'CHS', h: 2 * R, b: 2 * R, t,
+    a: 2 * Math.PI * R * t, iy: Math.PI * R ** 3 * t,
+  });
+
+  it('peaks at 2·V/A on the neutral axis, not V/A', () => {
+    const s = tube();
+    // Exact here, not to a few percent: A and I are the thin-wall closed
+    // forms, and τ_max = V·R²/I = V/(π·R·t) = 2V/A identically.
+    expect(shearStress(100, 0, s) / mean(100, s.a)).toBeCloseTo(2, 6);
+  });
+
+  it('follows the semi-ellipse τ(y) = τ_max·√(1−(y/R)²), not a parabola', () => {
+    // The shape is the other half of the fix: the old Q = t·(R²−y²) was a
+    // parabola, which at y = R/2 reads 0.75 of the peak instead of 0.866.
+    const s = tube();
+    const tau0 = shearStress(100, 0, s);
+    for (const f of [0.25, 0.5, 0.75, 0.9]) {
+      expect(shearStress(100, f * R, s) / tau0).toBeCloseTo(Math.sqrt(1 - f * f), 9);
+    }
+  });
+
+  it('matches the drawn diagram point for point', () => {
+    const s = tube();
+    for (const seg of computeShearFlowPaths(100, s)) {
+      for (const p of seg.points) {
+        expect(Math.abs(shearStress(100, p.y, s))).toBeCloseTo(Math.abs(p.tau), 9);
+      }
+    }
+  });
+
+  it('a solid round bar (t = 0) peaks at 4/3·V/A, in BOTH paths', () => {
+    // t = 0 is the solid-bar convention (a tube with no wall has no area).
+    // Extrapolating the thin-tube formula there reports 4V/A — three times
+    // the true 4V/3A peak of a solid circle.
+    const solid = rs({
+      shape: 'CHS', h: 2 * R, b: 2 * R, t: 0,
+      a: Math.PI * R * R, iy: Math.PI * R ** 4 / 4,
+    });
+    expect(shearStress(100, 0, solid) / mean(100, solid.a)).toBeCloseTo(4 / 3, 9);
+    expect(peak(computeShearFlowPaths(100, solid)) / mean(100, solid.a)).toBeCloseTo(4 / 3, 9);
   });
 });
 
