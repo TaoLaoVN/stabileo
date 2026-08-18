@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { MATERIAL_CATEGORIES, searchPresets, categoryFamily, type MaterialPreset } from '../lib/data/material-presets';
+  import { MATERIAL_CATEGORIES, searchPresets, categoryFamily, bandSummary, type MaterialPreset } from '../lib/data/material-presets';
   import {
     MATERIAL_DESIGN_CODES, codesForFamily, codesForMode, defaultCodeFor,
   } from '../lib/data/structural-grades';
@@ -152,6 +152,7 @@
 
       <div class="preset-list">
         {#each filtered as p}
+          {@const bands = bandSummary(p)}
           <button class="preset-item" onclick={() => onselect(p)}>
             <span class="preset-name">
               {p.name}
@@ -168,17 +169,21 @@
             </span>
             <span class="preset-props">
               E={p.e >= 1000 ? `${(p.e/1000).toFixed(0)}GPa` : `${p.e}MPa`}
-              <!-- The quoted fy is the THIN-PLATE value. Hot-rolled yield falls
-                   with thickness — S355 is 355 MPa to 40 mm and 335 beyond it —
-                   so a picker that shows one number lets someone size a thick
-                   plate 6 % unconservative without ever being told. The band is
-                   named where the number is, not in a tooltip nobody opens. -->
+              <!-- The quoted fy applies to the first thickness band only.
+                   Hot-rolled yield falls with thickness — S355 is 355 MPa to
+                   40 mm and 335 beyond it — so a picker that shows one number
+                   lets someone size a thick plate 6 % unconservative without
+                   ever being told.
+
+                   Both numbers go on screen, not just the bound: `title` is
+                   mouse-only and never reaches the button's accessible name,
+                   so anything left there is unreachable by touch or keyboard.
+                   What stays in the tooltip is the full table and the standard
+                   the bands come from — which is the DESIGN code, not the
+                   product standard shown beside the grade name. -->
               {#if p.fy}
-                fy={p.fy}MPa{#if p.thicknessBands?.length}<span
-                  class="preset-band"
-                  title={p.thicknessBands.map((b) =>
-                    `${b.overMm}–${b.upToMm} mm: fy ${b.fy} MPa`).join(' · ')}
-                >≤{p.thicknessBands[0].upToMm}mm</span>{/if}
+                fy={p.fy}MPa{#if bands}<span class="preset-band" title={bands.full}
+                >{bands.tail}</span>{/if}
               {/if}
               {#if p.fu} fu={p.fu}MPa{/if}
               ρ={p.rho}kN/m³
@@ -399,12 +404,15 @@
     font-size: 0.72rem;
     color: var(--st-text-3);
   }
-  /* Attached to the fy it qualifies, with no gap, so it reads as part of the
-     value rather than as a separate property. */
+  /* Sits on the baseline beside the fy it qualifies, not raised: this carries
+     a second number now, and ten superscript characters are a footnote mark,
+     not a value anyone reads. The parentheses do the grouping the raise used
+     to, so it still attaches to fy rather than reading as a property of its
+     own. */
   .preset-band {
+    margin-left: 3px;
     font-size: 0.68rem;
     color: var(--st-text-3);
-    vertical-align: super;
   }
   .preset-unver {
     margin-left: 5px;

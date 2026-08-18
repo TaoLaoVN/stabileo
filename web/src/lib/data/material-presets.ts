@@ -37,19 +37,61 @@ export interface MaterialPreset {
    */
   verification?: 'standard' | 'typical';
   /**
-   * The grade's thickness bands, where the product standard tabulates them.
+   * The grade's thickness bands, where they are tabulated.
    *
-   * `fy` above is the THIN-PLATE value, which is what `structural-grades.ts`
-   * warns about in its own header: hot-rolled yield falls with thickness, and a
-   * caller that quotes the headline number for a 60 mm plate is unconservative
-   * by about 6 %. Carrying the bands lets the picker say so instead of
-   * presenting one number as if the standard gave only one.
+   * `fy` above is the value for the FIRST band, which is what
+   * `structural-grades.ts` warns about in its own header: hot-rolled yield
+   * falls with thickness, and a caller that quotes the headline number for a
+   * 60 mm plate is unconservative by about 6 %. Carrying the bands lets the
+   * picker say so instead of presenting one number as if only one existed.
    *
    * This is disclosure, not selection: nothing here picks a band, because the
    * member's governing thickness is not known at this point. Choosing by
    * thickness is a larger change with its own decisions.
    */
   thicknessBands?: ThicknessBand[];
+  /**
+   * Which standard tabulates those bands — never the one in `standard`.
+   *
+   * Carried alongside them because the picker shows `standard` beside the
+   * grade name, so a band shown without its own source reads as coming from
+   * the product standard. It does not: see `bandStandard` in
+   * `structural-grades.ts`.
+   */
+  bandStandard?: string;
+}
+
+/**
+ * The thickness caveat as one short line, for a picker with no member in hand.
+ *
+ * Returns the headline value's upper bound and where the strength ends up
+ * beyond it — "(>40mm: 335)" — rather than only the bound. Naming just the
+ * bound would put the number that matters behind a hover, and `title` is
+ * mouse-only: absent on touch, and a child span's title never reaches the
+ * button's accessible name. The safety-relevant fact belongs on screen; the
+ * full table and its source can stay in the tooltip.
+ *
+ * Quoting the LAST band's value states the far end without asserting a
+ * direction, which matters because one grade here runs the other way: 6082-T6
+ * gets stronger with thickness, so it renders "(>5mm: 260)" and reads as the
+ * rise it is. A wording like "falls to" would have been wrong for it.
+ *
+ * Exact for two bands, which every banded grade currently has — a test pins
+ * that, so a three-band grade fails loudly here instead of silently skipping
+ * an intermediate step.
+ */
+export function bandSummary(
+  p: Pick<MaterialPreset, 'thicknessBands' | 'bandStandard'>,
+): { tail: string; full: string } | null {
+  const bands = p.thicknessBands;
+  if (!bands || bands.length === 0) return null;
+  const first = bands[0];
+  const last = bands[bands.length - 1];
+  const table = bands.map((b) => `${b.overMm}–${b.upToMm} mm: fy ${b.fy} MPa`).join(' · ');
+  return {
+    tail: `(>${first.upToMm}mm: ${last.fy})`,
+    full: p.bandStandard ? `${p.bandStandard} · ${table}` : table,
+  };
 }
 
 /**
@@ -72,6 +114,7 @@ function fromGrade(g: StructuralGrade, category: MaterialPreset['category']): Ma
     region: g.region,
     verification: g.verification,
     thicknessBands: g.byThickness,
+    bandStandard: g.bandStandard,
   };
 }
 

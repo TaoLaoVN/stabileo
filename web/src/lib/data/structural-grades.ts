@@ -96,11 +96,33 @@ export interface StructuralGrade {
   /** Ultimate tensile strength, MPa. */
   fu: number;
   /**
-   * Thickness dependence, where the product standard tabulates it. Absent
-   * means the standard quotes a single value for the usual range, not that
-   * thickness has no effect.
+   * Thickness dependence, where it is tabulated. Absent means the source
+   * quotes a single value for the usual range, not that thickness has no
+   * effect.
+   *
+   * Read `bandStandard` before quoting these anywhere: they do NOT come from
+   * `productStandard`.
    */
   byThickness?: ThicknessBand[];
+  /**
+   * Which standard tabulates `byThickness` — and it is never `productStandard`.
+   *
+   * Every band in this file is a DESIGN code's table, not a product standard's:
+   * EN 1993-1-1 table 3.1 for the EN steels, CIRSOC 301 for the IRAM ones,
+   * EN 1999-1-1 table 3.2b for 6082-T6. The product standards do tabulate
+   * thickness dependence, but more finely and with different numbers — EN
+   * 10025-2 steps at 16/40/63/80 mm and gives S355 as 345 MPa above 16 mm,
+   * where EN 1993-1-1 §3.2.1(1) permits the two-band simplification carried
+   * here. Both are legitimate; they are not interchangeable.
+   *
+   * Recorded per grade because separating the product standard from the design
+   * code is the entire point of this file, and a band displayed beside
+   * `productStandard` without naming its own source quietly implies the
+   * product standard tabulated it. A test requires this wherever `byThickness`
+   * is present, so a banded grade cannot be added without saying where its
+   * bands came from.
+   */
+  bandStandard?: string;
   /** Anything a user would otherwise have to know from outside the table. */
   note?: string;
   /**
@@ -179,16 +201,16 @@ export const HOT_ROLLED: StructuralGrade[] = [
   // rather than filled in with a plausible number.
   {
     id: 'iram-f24', designation: 'F-24', productStandard: 'IRAM-IAS U 500-503', region: 'AR', family: 'hot-rolled', ...IRAM_STEEL, fy: 240, fu: 370, verification: 'standard',
-    byThickness: [{ overMm: 0, upToMm: 30, fy: 240, fu: 370 }, { overMm: 30, upToMm: 100, fy: 220, fu: 370 }],
+    byThickness: [{ overMm: 0, upToMm: 30, fy: 240, fu: 370 }, { overMm: 30, upToMm: 100, fy: 220, fu: 370 }], bandStandard: 'CIRSOC 301',
     note: 'El grado más usado en perfiles argentinos (IPN, UPN, IPE, IPB, ángulos).',
   },
   {
     id: 'iram-f26', designation: 'F-26', productStandard: 'IRAM-IAS U 500-503', region: 'AR', family: 'hot-rolled', ...IRAM_STEEL, fy: 260, fu: 420, verification: 'standard',
-    byThickness: [{ overMm: 0, upToMm: 30, fy: 260, fu: 420 }, { overMm: 30, upToMm: 100, fy: 240, fu: 420 }],
+    byThickness: [{ overMm: 0, upToMm: 30, fy: 260, fu: 420 }, { overMm: 30, upToMm: 100, fy: 240, fu: 420 }], bandStandard: 'CIRSOC 301',
   },
   {
     id: 'iram-f36', designation: 'F-36', productStandard: 'IRAM-IAS U 500-503', region: 'AR', family: 'hot-rolled', ...IRAM_STEEL, fy: 360, fu: 520, verification: 'standard',
-    byThickness: [{ overMm: 0, upToMm: 30, fy: 360, fu: 520 }, { overMm: 30, upToMm: 100, fy: 340, fu: 520 }],
+    byThickness: [{ overMm: 0, upToMm: 30, fy: 360, fu: 520 }, { overMm: 30, upToMm: 100, fy: 340, fu: 520 }], bandStandard: 'CIRSOC 301',
     note: 'Perfiles W laminados y estructuras de alta solicitación.',
   },
 
@@ -210,21 +232,30 @@ export const HOT_ROLLED: StructuralGrade[] = [
   { id: 'astm-a913-65', designation: 'A913 Gr.65', productStandard: 'ASTM A913', region: 'US', family: 'hot-rolled', ...US_STEEL, fy: 450, fu: 550, verification: 'typical' },
 
   // ── EN 10025-2, with the thickness bands of EN 1993-1-1 table 3.1 ──
+  //
+  // The bands below are the DESIGN code's, not the product standard's, and the
+  // `fu` values are the tell: EN 10025-2 quotes Rm as a range (470–630 MPa for
+  // S355), never the single 490 that EN 1993-1-1 table 3.1 gives. EN 10025-2's
+  // own ReH table steps at 16/40/63/80 mm — S355 is 355 MPa only to 16 mm and
+  // 345 above it — while §3.2.1(1) permits the two-band simplification used
+  // here. `bandStandard` says so per grade so nothing downstream can show a
+  // 40 mm step beside the label "EN 10025-2" and imply that is where it came
+  // from.
   {
     id: 'en-s235', designation: 'S235', productStandard: 'EN 10025-2', region: 'EU', family: 'hot-rolled', ...EN_STEEL, fy: 235, fu: 360, verification: 'standard',
-    byThickness: [{ overMm: 0, upToMm: 40, fy: 235, fu: 360 }, { overMm: 40, upToMm: 80, fy: 215, fu: 360 }],
+    byThickness: [{ overMm: 0, upToMm: 40, fy: 235, fu: 360 }, { overMm: 40, upToMm: 80, fy: 215, fu: 360 }], bandStandard: 'EN 1993-1-1 t.3.1',
   },
   {
     id: 'en-s275', designation: 'S275', productStandard: 'EN 10025-2', region: 'EU', family: 'hot-rolled', ...EN_STEEL, fy: 275, fu: 430, verification: 'standard',
-    byThickness: [{ overMm: 0, upToMm: 40, fy: 275, fu: 430 }, { overMm: 40, upToMm: 80, fy: 255, fu: 410 }],
+    byThickness: [{ overMm: 0, upToMm: 40, fy: 275, fu: 430 }, { overMm: 40, upToMm: 80, fy: 255, fu: 410 }], bandStandard: 'EN 1993-1-1 t.3.1',
   },
   {
     id: 'en-s355', designation: 'S355', productStandard: 'EN 10025-2', region: 'EU', family: 'hot-rolled', ...EN_STEEL, fy: 355, fu: 490, verification: 'standard',
-    byThickness: [{ overMm: 0, upToMm: 40, fy: 355, fu: 490 }, { overMm: 40, upToMm: 80, fy: 335, fu: 470 }],
+    byThickness: [{ overMm: 0, upToMm: 40, fy: 355, fu: 490 }, { overMm: 40, upToMm: 80, fy: 335, fu: 470 }], bandStandard: 'EN 1993-1-1 t.3.1',
   },
   {
     id: 'en-s450', designation: 'S450', productStandard: 'EN 10025-2', region: 'EU', family: 'hot-rolled', ...EN_STEEL, fy: 440, fu: 550, verification: 'standard',
-    byThickness: [{ overMm: 0, upToMm: 40, fy: 440, fu: 550 }, { overMm: 40, upToMm: 80, fy: 410, fu: 550 }],
+    byThickness: [{ overMm: 0, upToMm: 40, fy: 440, fu: 550 }, { overMm: 40, upToMm: 80, fy: 410, fu: 550 }], bandStandard: 'EN 1993-1-1 t.3.1',
   },
   // EN 10025-3, normalised fine-grain — the grades used where toughness governs.
   { id: 'en-s275n', designation: 'S275N', productStandard: 'EN 10025-3', region: 'EU', family: 'hot-rolled', ...EN_STEEL, fy: 275, fu: 390, verification: 'typical' },
@@ -330,6 +361,7 @@ export const ALUMINIUM: StructuralGrade[] = [
       { overMm: 0, upToMm: 5, fy: 250, fu: 290 },
       { overMm: 5, upToMm: 15, fy: 260, fu: 310 },
     ],
+    bandStandard: 'EN 1999-1-1 t.3.2b',
     note: 'Extrusión. La resistencia SUBE con el espesor, al revés que las demás.',
   },
   { id: 'alu-7020-t6', designation: '7020-T6', productStandard: 'EN AW-7020', region: 'EU', family: 'aluminium', ...EN_ALU, fy: 280, fu: 350, verification: 'typical' },
