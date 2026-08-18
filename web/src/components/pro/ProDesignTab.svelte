@@ -453,6 +453,12 @@
    * is reachable by scrolling the thing the user is already looking at. The alternative —
    * making the control blocks shrink and scroll internally — would have put a second scroller
    * inside the first, which this codebase has already paid for once (see RebarStatusPanel).
+   *
+   * The PRO shell makes this MORE necessary, not less: a two-row ribbon and a panel heading
+   * take further height off the same 504 px. `DesignTable` grew its own 9rem floor for the
+   * related defect — a box shorter than its sticky header, so a click on row 1 lands on
+   * "select all". Both floors stand; this selector is the more specific one and wins inside
+   * the tab, and the 9rem still guards the table wherever else it is mounted.
    */
   .design-tab { display: flex; flex-direction: column; height: 100%; overflow: auto; }
   /* A table shorter than this is not a table you can work in; below it, the tab scrolls. */
