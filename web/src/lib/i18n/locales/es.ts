@@ -4068,6 +4068,17 @@ const es: Record<string, string> = {
   'proRibbon.groupDesign': 'Hormigón',
   // ─── PR21: Modelo → Generadores, y Diseño → Hormigón / Metálicas ───
   'proRibbon.groupGenerators': 'Generadores',
+  // ─── PR21: selector de perfiles (reutilizable por el selector general PRO) ───
+  'profileSelector.title': 'Perfiles del catálogo',
+  'profileSelector.search': 'Buscar perfil…',
+  'profileSelector.close': 'Cerrar',
+  'profileSelector.families': 'Familias',
+  'profileSelector.allFamilies': 'Todas',
+  'profileSelector.count': '{n} perfiles',
+  'profileSelector.empty': 'Ningún perfil coincide. Probá con menos texto, o quitá algún filtro de familia.',
+  'profileSelector.standard.euronorm': 'Euronorma',
+  'profileSelector.standard.iram': 'IRAM-IAS',
+  'profileSelector.standard.mixed': 'Euronorma + IRAM-IAS',
   'proRibbon.cmdSteelStructures': 'Estructuras metálicas',
   'proRibbon.cmdSteelStructuresDesc': 'Genera cabriadas, columnas reticuladas y naves a partir de parámetros. Sólo geometría: no diseña ni verifica.',
   'proRibbon.groupSteel': 'Metálicas',

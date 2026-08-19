@@ -9,7 +9,7 @@
    * for a single profile.
    */
   import { t } from '../../../lib/i18n';
-  import { FAMILY_LIST, PROFILE_FAMILIES } from '../../../lib/data/steel-profiles';
+  import ProfileSelectorPanel from './ProfileSelectorPanel.svelte';
   import { availableArrangements, canCompose, resolveProfile } from '../../../lib/engine/generators/profile-resolve';
   import { ARRANGEMENTS, isClosedArrangement } from '../../../lib/engine/generators/built-up-section';
   import { ROLE_COLOUR } from '../../../lib/engine/generators/preview-projection';
@@ -23,6 +23,9 @@
     onChange: (next: ProfileSpec) => void;
   }
   const { role, spec, onChange }: Props = $props();
+
+  /** The popover is per-row: two roles open at once would be two dialogs over one panel. */
+  let open = $state(false);
 
   const resolved = $derived(resolveProfile(spec.profileName));
   const arrangements = $derived(resolved ? availableArrangements(resolved) : (['single'] as const));
@@ -52,21 +55,36 @@
   />
   <label class="lbl" for={`prof-${role}`}>{t(`generator.role.${role}`)}</label>
 
-  <select
-    id={`prof-${role}`}
-    value={spec.profileName}
-    onchange={(e) => pickProfile((e.currentTarget as HTMLSelectElement).value)}
-  >
-    {#each FAMILY_LIST as fam (fam)}
-      {#if PROFILE_FAMILIES[fam]?.length}
-        <optgroup label={fam}>
-          {#each PROFILE_FAMILIES[fam] as p (p.name)}
-            <option value={p.name}>{p.name}</option>
-          {/each}
-        </optgroup>
-      {/if}
-    {/each}
-  </select>
+  <!--
+    A trigger, not a list.
+
+    The `<select>` this replaces held 100+ options across 15 groups, and finding `HEA 200` in
+    it meant opening it and scrolling. The button shows the current choice — which is the fact
+    a user reads ninety per cent of the time — and the panel behind it is where searching and
+    filtering happen.
+  -->
+  <div class="pick">
+    <button
+      id={`prof-${role}`}
+      type="button"
+      class="trigger"
+      aria-haspopup="dialog"
+      aria-expanded={open}
+      onclick={() => (open = !open)}
+      data-testid={`gen-profile-trigger-${role}`}
+    >{spec.profileName}</button>
+
+    {#if open}
+      <div class="pop">
+        <ProfileSelectorPanel
+          selected={spec.profileName}
+          label={t(`generator.role.${role}`)}
+          onPick={pickProfile}
+          onClose={() => { open = false; }}
+        />
+      </div>
+    {/if}
+  </div>
 
   <select
     aria-label={t('generator.ui.arrangement')}
@@ -119,6 +137,18 @@
 {/if}
 
 <style>
+  /* The popover is anchored to its row and floats over the panel, so opening it does not
+     reflow the eight rows underneath. */
+  .pick { position: relative; }
+  .trigger {
+    font-family: var(--st-mono, monospace); font-size: 0.68rem;
+    padding: 3px 7px; min-width: 7.5rem; text-align: left; cursor: pointer;
+    background: var(--st-surface); color: var(--st-text);
+    border: 1px solid var(--st-hair); border-radius: 3px;
+  }
+  .trigger:focus-visible { outline: 2px solid var(--st-focus, var(--st-accent)); outline-offset: 1px; }
+  .pop { position: absolute; z-index: 40; top: calc(100% + 4px); left: 0; }
+
   .row { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; margin-bottom: 4px; }
   .lbl { min-width: 6.5rem; font-size: 0.7rem; color: var(--st-text-2); }
   select, input {

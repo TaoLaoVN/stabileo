@@ -4452,6 +4452,17 @@ const pt: Translations = {
   'proRibbon.groupDesign': 'Concreto',
   // ─── PR21: Modelo → Geradores, e Projeto → Concreto / Metálicas ───
   'proRibbon.groupGenerators': 'Geradores',
+  // ─── PR21: seletor de perfis (reutilizável pelo seletor geral PRO) ───
+  'profileSelector.title': 'Perfis do catálogo',
+  'profileSelector.search': 'Buscar perfil…',
+  'profileSelector.close': 'Fechar',
+  'profileSelector.families': 'Famílias',
+  'profileSelector.allFamilies': 'Todas',
+  'profileSelector.count': '{n} perfis',
+  'profileSelector.empty': 'Nenhum perfil corresponde. Tente menos texto, ou remova um filtro de família.',
+  'profileSelector.standard.euronorm': 'Euronorma',
+  'profileSelector.standard.iram': 'IRAM-IAS',
+  'profileSelector.standard.mixed': 'Euronorma + IRAM-IAS',
   'proRibbon.cmdSteelStructures': 'Estruturas metálicas',
   'proRibbon.cmdSteelStructuresDesc': 'Gera treliças, colunas treliçadas e galpões a partir de parâmetros. Somente geometria: não dimensiona nem verifica.',
   'proRibbon.groupSteel': 'Metálicas',

@@ -4075,6 +4075,17 @@ const en: Record<string, string> = {
   'proRibbon.groupDesign': 'Concrete',
   // ─── PR21: Model → Generators, and Design → Concrete / Metallic ───
   'proRibbon.groupGenerators': 'Generators',
+  // ─── PR21: profile selector (reusable by the general PRO picker) ───
+  'profileSelector.title': 'Catalogue profiles',
+  'profileSelector.search': 'Search profile…',
+  'profileSelector.close': 'Close',
+  'profileSelector.families': 'Families',
+  'profileSelector.allFamilies': 'All',
+  'profileSelector.count': '{n} profiles',
+  'profileSelector.empty': 'No profile matches. Try less text, or drop a family filter.',
+  'profileSelector.standard.euronorm': 'Euronorm',
+  'profileSelector.standard.iram': 'IRAM-IAS',
+  'profileSelector.standard.mixed': 'Euronorm + IRAM-IAS',
   'proRibbon.cmdSteelStructures': 'Metallic structures',
   'proRibbon.cmdSteelStructuresDesc': 'Generates trusses, latticed columns and sheds from parameters. Geometry only: it designs and verifies nothing.',
   'proRibbon.groupSteel': 'Metallic',
