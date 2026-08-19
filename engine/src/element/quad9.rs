@@ -39,6 +39,13 @@ fn norm3(v: &[f64; 3]) -> f64 {
     (v[0] * v[0] + v[1] * v[1] + v[2] * v[2]).sqrt()
 }
 
+/// Unit vector, falling back to [0,0,1] on a degenerate input.
+/// Deliberately identical to `curved_shell::normalize3` — see the note in `quad.rs`.
+fn normalize3(v: &[f64; 3]) -> [f64; 3] {
+    let l = norm3(v);
+    if l > 1e-15 { [v[0] / l, v[1] / l, v[2] / l] } else { [0.0, 0.0, 1.0] }
+}
+
 fn sub3(a: &[f64; 3], b: &[f64; 3]) -> [f64; 3] {
     [a[0] - b[0], a[1] - b[1], a[2] - b[2]]
 }
@@ -750,10 +757,9 @@ pub fn quad9_nodal_von_mises(
         gp_vm[gp] = (sxx * sxx - sxx * syy + syy * syy + 3.0 * txy * txy).sqrt();
     }
 
-    // For 9-node element, 3×3 Gauss points are at the same parametric locations
-    // as a 9-node Lagrange grid, so we can directly interpolate using shape functions.
-    // The 3×3 Gauss point locations match the 9-node pattern, so project to nodes
-    // using shape function evaluation at node locations.
+    // Gauss points sit at ±√(3/5) (and 0), nodes at ±1 (and 0), so project
+    // GP values to nodes by tensor-product Lagrange extrapolation on the
+    // GP grid (see below).
     let node_coords_nat: [(f64, f64); 9] = [
         (-1.0, -1.0), (1.0, -1.0), (1.0, 1.0), (-1.0, 1.0),
         (0.0, -1.0), (1.0, 0.0), (0.0, 1.0), (-1.0, 0.0),
@@ -920,8 +926,7 @@ pub fn quad9_stress_at_nodes(
 
 /// Consistent pressure load for quad9 element (54-DOF).
 pub fn quad9_pressure_load(coords: &[[f64; 3]; 9], pressure: f64) -> Vec<f64> {
-    let (_ex, _ey, ez) = quad9_local_axes(coords);
-    let (ex, ey, _) = quad9_local_axes(coords);
+    let (ex, ey, ez) = quad9_local_axes(coords);
     let pts = project_to_2d_9(coords, &ex, &ey);
 
     let mut f = vec![0.0; 54];
@@ -1056,7 +1061,13 @@ pub fn quad9_edge_load(
     if l_edge < 1e-15 { return f; }
 
     let et = [edge_vec[0] / l_edge, edge_vec[1] / l_edge, edge_vec[2] / l_edge];
-    let en = cross3(&ez, &et);
+    // For CCW node ordering (viewed from +ez), et × ez points OUTWARD from the
+    // element, matching the documented "positive qn = outward" convention.
+    // NORMALIZED: et ⊥ ez holds only on a flat quad9. `ez` is diagonal-derived, so a
+    // warped element gives |et × ez| = sin θ < 1 and applies qn at that fraction of
+    // its stated magnitude — correct direction, silently wrong size, and invisible to
+    // a test built on a flat square. Matches curved_shell_edge_load.
+    let en = normalize3(&cross3(&et, &ez));
 
     let qx = qn * en[0] + qt * et[0];
     let qy = qn * en[1] + qt * et[1];
@@ -1393,6 +1404,33 @@ mod tests {
             (total_fz - 10.0).abs() < 0.01,
             "Total pressure force: got {}, expected 10.0", total_fz
         );
+    }
+
+    #[test]
+    fn test_edge_load_normal_points_outward() {
+        // Unit square, CCW ordering (viewed from +z).
+        // Documented convention (SolverQuadEdgeLoad): positive qn = outward.
+        let coords = make_unit_square_9();
+
+        // Edge 0 = nodes 0→4→1 (bottom edge): outward is −y.
+        let f = quad9_edge_load(&coords, 0, 2.0, 0.0);
+        let fy_total: f64 = (0..9).map(|i| f[i * 6 + 1]).sum();
+        assert!(
+            fy_total < 0.0,
+            "qn > 0 on bottom edge must push outward (−y), got total fy = {}",
+            fy_total
+        );
+        assert!((fy_total + 2.0).abs() < 1e-10, "total force = qn·L: {}", fy_total);
+
+        // Edge 1 = nodes 1→5→2 (right edge): outward is +x.
+        let f = quad9_edge_load(&coords, 1, 2.0, 0.0);
+        let fx_total: f64 = (0..9).map(|i| f[i * 6]).sum();
+        assert!(
+            fx_total > 0.0,
+            "qn > 0 on right edge must push outward (+x), got total fx = {}",
+            fx_total
+        );
+        assert!((fx_total - 2.0).abs() < 1e-10, "total force = qn·L: {}", fx_total);
     }
 
     /// Helper: n×n matrix-vector multiply
