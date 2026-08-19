@@ -136,11 +136,33 @@ export function generateLatticeColumn(params: Partial<LatticeColumnParams> = {})
   }
 
   // The cap: one node on the axis at the head, tied to both chord tops.
+  //
+  // ── Why these two are `frame` and not `webContinuity` ──────────────
+  //
+  // They were `truss`, like the rest of the web, and that made the cap node a mechanism.
+  // The two cap members are COLLINEAR — chord top, axis, chord top, all at z = heightM —
+  // so a pair of pin-ended bars gives the node stiffness along that one line and nothing
+  // else: no transverse stiffness, no rotational stiffness. The node was free to move in
+  // the two directions perpendicular to the cap and to spin about it.
+  //
+  // Measured on the default shed, which is where it showed: singular stiffness matrix, at
+  // every frame count from 2 to 7. With longitudinal beams switched on the matrix stopped
+  // being singular and started returning 2·10^11 m of displacement — a mechanism wearing a
+  // number. Rigid here, the same shed deflects 4.0 mm, against 3.2 mm for the same shed on
+  // solid columns. Two independent column types agreeing to within a millimetre is the
+  // check that this is a stiffness, not a coincidence.
+  //
+  // It is also what the doc comment on `capTop` already claimed the cap was: a cap PLATE.
+  // A plate is a rigid connection. Two pin-ended bars were never a model of one.
+  //
+  // The rest of the web keeps `webContinuity`. Posts and diagonals are triangulated, so
+  // pinning them is both conventional and stable; the cap is not triangulated, and that is
+  // the whole difference.
   if (p.capTop) {
     const cap = nodes.length;
     nodes.push({ i: cap, x: 0, y: 0, z: p.heightM });
-    members.push({ a: left[n], b: cap, role: 'post', type: p.webContinuity });
-    members.push({ a: right[n], b: cap, role: 'post', type: p.webContinuity });
+    members.push({ a: left[n], b: cap, role: 'post', type: 'frame' });
+    members.push({ a: right[n], b: cap, role: 'post', type: 'frame' });
   }
 
   const baseType = p.fixedBase ? 'fixed' as const : 'pinned' as const;

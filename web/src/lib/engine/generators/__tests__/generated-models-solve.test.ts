@@ -163,21 +163,44 @@ describe('a generated shed solves', () => {
 });
 
 describe('the configuration that is NOT stable, recorded rather than hidden', () => {
-  it('latticed columns on pinned bases have no out-of-plane restraint', () => {
-    // The lacing braces the column in its own plane and nothing else, so a pin under each
-    // chord leaves the pair free to rotate about the line joining them. This is why the
-    // shed defaults to fixed bases. Asserted so the behaviour is a recorded property of the
-    // model rather than a surprise the next reader rediscovers through a singular matrix.
+  /**
+   * This used to assert the opposite, and the reason it changed is worth more than the test.
+   *
+   * The claim was: latticed columns on pinned bases are a mechanism, because the lacing braces
+   * the column in its own plane and a pin under each chord leaves the pair free to fold
+   * sideways. The singular matrix that backed it was real. Its CAUSE was not the pins.
+   *
+   * The cap tying the two chord tops was built from two `truss` members, and those two members
+   * are COLLINEAR. A pair of pin-ended collinear bars restrains their node along one line and
+   * in no other direction, so the cap node had no transverse and no rotational stiffness — on
+   * fixed bases just as much as on pinned ones. The default shed was a mechanism at every frame
+   * count from 2 to 7, and nothing here caught it because the only test that solved a shed
+   * passed `longitudinalBeams: true`, which the default does not.
+   *
+   * With the cap modelled as the rigid plate its own doc comment always said it was, this
+   * configuration solves. So the recorded property is inverted, and the pins are exonerated.
+   *
+   * What is NOT claimed: that pinned bases are as good as fixed. This solves one vertical load
+   * case. Base fixity earns its default from lateral behaviour, which nothing here measures —
+   * see the handoff's note on longitudinal bracing.
+   */
+  it('latticed columns on pinned bases stand once the cap is a plate and not two pins', () => {
     const shed = generateShed({
       ...DEFAULT_SHED_PARAMS, frames: 3, roof: true, purlins: true,
       fixedBase: false, column: { ...DEFAULT_SHED_PARAMS.column, fixedBase: false },
     });
+    // The caution still travels with the model: this configuration has no longitudinal
+    // bracing, which is a real gap even though it is not a mechanism.
     expect(shed.assumptions).toContain('generator.assume.latticeBasesPinnedNoOutOfPlane');
 
     const g = emitModel(shed, { name: 'Nave articulada', profiles: PROFILES });
     const { res } = solveGenerated(g.json as never, highestNode(g.json), -10);
-    expect(typeof res).toBe('string');
-    expect(String(res)).toMatch(/mechanism|singular/i);
+    expect(typeof res, typeof res === 'string' ? String(res) : '').not.toBe('string');
+    const r = res as { displacements: Array<{ ux: number; uy: number; uz: number }> };
+    // A displacement bound, not just `isFinite`. The near-singular state this replaces
+    // returned 2·10^11 m and satisfied `isFinite` perfectly — which is how it survived.
+    const max = Math.max(...r.displacements.map((d) => Math.hypot(d.ux, d.uy, d.uz)));
+    expect(max).toBeLessThan(0.05);
   });
 
   it('and the default does not, which is the whole reason for the default', () => {
