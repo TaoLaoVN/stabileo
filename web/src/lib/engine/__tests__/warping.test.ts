@@ -191,3 +191,69 @@ describe('warping stress — the part that is not conservative to omit', () => {
       .toBeCloseTo(warpingResponse(s, p, 10, 3, 210000)!.sigmaW, 9);
   });
 });
+
+describe('a channel warps about its shear centre, not about its web', () => {
+  /** Mid-line walk: omega(s) = int r_t ds, normalised so int(omega dA) = 0. */
+  function sectorialByIntegration(h: number, b: number, tw: number, tf: number) {
+    const bm = b - tw / 2, h0 = h - tf;
+    const den = 6 * tf * bm + tw * h0;
+    const e = (3 * bm * bm * tf) / den;   // pole, outside the web
+    const N = 4000;
+    // Perpendicular distance from the pole to each wall's line: h0/2 for the
+    // flanges (horizontal), e for the web (vertical).
+    const walls = [
+      { rt: -h0 / 2, ds: bm / N, dA: (tf * bm) / N },  // top flange, tip -> web
+      { rt: e, ds: h0 / N, dA: (tw * h0) / N },        // web, top -> bottom
+      { rt: -h0 / 2, ds: bm / N, dA: (tf * bm) / N },  // bottom flange, web -> tip
+    ];
+    const om: number[] = [], dA: number[] = [];
+    let acc = 0;
+    for (const w of walls) {
+      for (let i = 0; i < N; i++) { acc += w.rt * w.ds; om.push(acc); dA.push(w.dA); }
+    }
+    const area = dA.reduce((s, v) => s + v, 0);
+    const mean = om.reduce((s, v, i) => s + v * dA[i], 0) / area;
+    const omN = om.map((v) => v - mean);
+    return {
+      e,
+      cw: omN.reduce((s, v, i) => s + v * v * dA[i], 0),
+      peak: Math.max(...omN.map(Math.abs)),
+    };
+  }
+
+  it('the integration reproduces the module\'s own Cw, so it is the same omega', () => {
+    const s = UPN200();
+    const ref = sectorialByIntegration(s.h, s.b, s.tw, s.tf);
+    // Relative: Cw is of order 1e-9 m⁶, so an absolute tolerance here would
+    // pass on almost anything of that magnitude and check nothing.
+    expect(Math.abs(ref.cw / warpingProperties(s).cw - 1)).toBeLessThan(1e-4);
+  });
+
+  it('puts the shear centre outside the web, where a channel\'s belongs', () => {
+    const s = UPN200();
+    const ref = sectorialByIntegration(s.h, s.b, s.tw, s.tf);
+    // ~27 mm from the web mid-line for a UPN 200 — a real arm, not a rounding.
+    expect(ref.e).toBeGreaterThan(0.02);
+    expect(ref.e).toBeLessThan(0.035);
+  });
+
+  it('the reported stress follows the integrated peak, not the web-measured one', () => {
+    const s = UPN200();
+    const p = withLambda(warpingProperties(s), 210000);
+    const ref = sectorialByIntegration(s.h, s.b, s.tw, s.tf);
+    const r = warpingResponse(s, p, 10, 2, 210000, 'cantilever')!;
+
+    // sigma_w = B·omega/Cw, in MPa. Compared relatively: the reference is a
+    // midpoint sum over N segments, so its peak carries an O(1/N) sampling
+    // error — around 3e-5 here. A tolerance of 1e-3 is loose against that and
+    // still tight against the error being checked for, which is 60%.
+    const expected = (r.bimoment * ref.peak) / p.cw / 1000;
+    expect(Math.abs(r.sigmaW / expected - 1)).toBeLessThan(1e-3);
+
+    // And the value it used to report, for the record: measuring the tip from
+    // the web gives h0·bm/2, which is 60% larger.
+    const fromWeb = ((s.h - s.tf) * (s.b - s.tw / 2)) / 2;
+    expect(fromWeb / ref.peak).toBeGreaterThan(1.5);
+    expect(r.sigmaW).toBeLessThan((r.bimoment * fromWeb) / p.cw / 1000);
+  });
+});
