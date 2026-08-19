@@ -162,7 +162,10 @@ describe('a roof with no purlins, and what is actually missing', () => {
   it('and it is not rotational, which is what rules out a joint-continuity explanation', () => {
     // The negative half. Restraining every rotation at the same nodes leaves it singular, so
     // the trusses are not folding about a hinge line — they are moving sideways bodily.
-    for (const dof of [{ rx: true }, { ry: true }, { rz: true }, { rx: true, ry: true, rz: true }]) {
+    const rotations: Array<Record<string, boolean>> = [
+      { rx: true }, { ry: true }, { rz: true }, { rx: true, ry: true, rz: true },
+    ];
+    for (const dof of rotations) {
       expect(typeof solveRestrained(aboveHeads, dof), JSON.stringify(dof)).toBe('string');
     }
   });

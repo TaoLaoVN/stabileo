@@ -4290,6 +4290,8 @@ const en: Record<string, string> = {
 
   // ─── Connection Design (CIRSOC 301) ───
   'conn.joints': 'Connection joints',
+  'conn.experimentalBanner': 'Experimental calculation. Bolt groups and fillet welds, with no tests, no mapped clauses and outside the app\'s maturity model. It is not a verification and cannot be used as one.',
+  'conn.nonMetallicHidden': '{n} joints with no metallic member are not listed: this panel only computes steel connections.',
   'conn.noJoints': 'No joints with multiple elements detected',
   'conn.elementsShort': 'elem.',
   'conn.support': 'support',

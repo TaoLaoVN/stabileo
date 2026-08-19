@@ -3485,6 +3485,8 @@ const pt: Translations = {
 
   // ─── Connection Design (CIRSOC 301) ───
   'conn.joints': 'Nós de conexão',
+  'conn.experimentalBanner': 'Cálculo experimental. Parafusos e soldas de filete, sem testes, sem cláusulas mapeadas e fora do modelo de maturidade do aplicativo. Não é uma verificação e não pode ser usado como tal.',
+  'conn.nonMetallicHidden': '{n} nós sem nenhum membro metálico não são listados: este painel só calcula ligações de aço.',
   'conn.noJoints': 'Não foram detectados nós com múltiplos elementos',
   'conn.elementsShort': 'elem.',
   'conn.support': 'apoio',

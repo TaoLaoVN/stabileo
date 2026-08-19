@@ -1,17 +1,50 @@
 <script lang="ts">
   import { modelStore, resultsStore, uiStore } from '../../lib/store';
-  import { t } from '../../lib/i18n';
+  import { steelStore } from '../../lib/store/steel.svelte';
+  import { isSteel } from '../../lib/engine/steel/material-family';
+  import { t, tp } from '../../lib/i18n';
   import {
     detectJoints, getJointForces, checkBoltGroup, checkFilletWeld,
     type BoltGrade, type BoltResult, type WeldResult,
     type JointInfo, type JointForces,
   } from '../../lib/engine/connection-design';
 
+  /**
+   * Which elements this panel is entitled to speak about.
+   *
+   * `checkBoltGroup` and `checkFilletWeld` are the only two calculations here, and both are
+   * steel. Before this filter the joint list was every joint in the model, so a
+   * reinforced-concrete beam-column joint was offered a bolt diameter, a grade 8.8 and an
+   * Fexx. The arithmetic was not wrong; it was being offered for a joint that has no bolts.
+   *
+   * The classification is the one the metallic inventory already computes — same verdict,
+   * same inference rules, same provenance — so this panel and the Profile design panel cannot
+   * disagree about what is metallic.
+   */
+  const metallicElementIds = $derived(new Set(
+    steelStore.members.filter((m) => isSteel(m.family)).map((m) => m.elementId),
+  ));
+
   // ─── Joint detection (reactive) ──────────────
   const joints = $derived.by(() => {
     void(modelStore.nodes.size + modelStore.elements.size + modelStore.supports.size);
-    return detectJoints(modelStore.nodes, modelStore.elements as any, modelStore.supports as any);
+    return detectJoints(modelStore.nodes, modelStore.elements as any, modelStore.supports as any, {
+      isMetallic: (id) => metallicElementIds.has(id),
+    });
   });
+
+  /**
+   * Joints the filter removed — counted, not silently dropped.
+   *
+   * A panel that quietly shows fewer rows than the model has joints is a panel a user will
+   * eventually distrust. Saying "14 non-metallic joints are not listed here" is both the
+   * honest version and the more useful one: it tells them the filter is working.
+   */
+  const allJointCount = $derived.by(() => {
+    void(modelStore.nodes.size + modelStore.elements.size + modelStore.supports.size);
+    return detectJoints(modelStore.nodes, modelStore.elements as any, modelStore.supports as any).length;
+  });
+  const hiddenJointCount = $derived(Math.max(0, allJointCount - joints.length));
 
   let selectedJointId = $state<number | null>(null);
 
@@ -110,11 +143,33 @@
 </script>
 
 <div class="conn-tab">
+  <!--
+    Stated before any number is shown, not after.
+
+    `connection-design.ts` has no tests, no mapped clauses and no external benchmark, and it
+    sits outside the app's maturity model. The bolt and weld arithmetic is offered because an
+    engineer who can see the assumptions can review it — the same bargain the metallic
+    inventory strikes in `steel.panel.experimentalBanner`. It is not a verification, and this
+    panel must never read as one.
+  -->
+  <div class="conn-banner" role="note" data-testid="conn-experimental-banner">
+    {t('conn.experimentalBanner')}
+  </div>
+
   <!-- Joint list -->
   <div class="conn-section">
     <div class="conn-section-header">
       <span class="conn-label-title">{t('conn.joints')} ({joints.length})</span>
     </div>
+    <!--
+      The filter says so. A list shorter than the model's joint count, with no explanation, is
+      the kind of thing a user discovers at the worst possible moment.
+    -->
+    {#if hiddenJointCount > 0}
+      <p class="conn-filtered" data-testid="conn-filtered-note">
+        {tp('conn.nonMetallicHidden', { n: hiddenJointCount })}
+      </p>
+    {/if}
     {#if joints.length === 0}
       <div class="conn-empty">{t('conn.noJoints')}</div>
     {:else}
@@ -256,6 +311,17 @@
 </div>
 
 <style>
+  /* Same role and same weight as the metallic panel's banner: this is a maturity statement,
+     not a decoration, and the two surfaces must not disagree about how loud it is. */
+  .conn-banner {
+    margin: 0 0 8px; padding: 7px 9px; border-radius: 4px;
+    background: rgba(221, 170, 0, 0.10); border: 1px solid var(--st-warn);
+    color: var(--st-text); font-size: 0.68rem; line-height: 1.45;
+  }
+  .conn-filtered {
+    margin: 4px 0 6px; font-size: 0.66rem; line-height: 1.4; color: var(--st-text-2);
+  }
+
   .conn-tab { display: flex; flex-direction: column; height: 100%; overflow-y: auto; }
   .conn-section { border-bottom: 1px solid var(--st-surface-3); }
   .conn-section-header { padding: 8px 10px; }

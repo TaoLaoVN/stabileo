@@ -4283,6 +4283,8 @@ const es: Record<string, string> = {
 
   // ─── Connection Design (CIRSOC 301) ───
   'conn.joints': 'Nudos de conexión',
+  'conn.experimentalBanner': 'Cálculo experimental. Bulones y soldaduras de filete, sin tests, sin cláusulas mapeadas y fuera del modelo de madurez de la app. No es una verificación y no puede usarse como tal.',
+  'conn.nonMetallicHidden': '{n} nudos sin ningún miembro metálico no se listan: este panel sólo calcula uniones de acero.',
   'conn.noJoints': 'No se detectaron nudos con múltiples elementos',
   'conn.elementsShort': 'elem.',
   'conn.support': 'apoyo',
