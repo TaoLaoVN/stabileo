@@ -63,6 +63,9 @@
     offsetValid ? cuts.find((c) => Math.abs(c.value - offset!) < 1e-6) ?? null : null,
   );
 
+  /** What the model carries, to say how much of it a cut leaves behind. */
+  const totalLoads = $derived(modelStore.loads.length);
+
   /* A plane change invalidates the distance — it was measured along the old
      normal, and silently reusing the number would cut somewhere nobody asked
      for. */
@@ -182,6 +185,16 @@
                       {#if c.elements > 0 && c.supports === 0}
                         <span class="s2d-cut-flag">· {t('switch2d.noSupports')}</span>
                       {/if}
+                      <!--
+                        And the opposite failure, which is the quiet one. No
+                        supports means the solver refuses and the user finds
+                        out. No load means it SOLVES, reports zero everywhere,
+                        and paints a uniformly safe utilisation map. Flagged on
+                        the chip for the same reason, in the same place.
+                      -->
+                      {#if c.elements > 0 && c.loads === 0}
+                        <span class="s2d-cut-flag">· {t('switch2d.noLoads')}</span>
+                      {/if}
                     </span>
                   </button>
                 {/each}
@@ -196,14 +209,29 @@
             {#if matching}
               <p class="s2d-outcome">
                 {matching.nodes} {t('switch2d.nodes')} · {matching.elements} {t('switch2d.members')}
+                · {matching.loads} {t('switch2d.loads')}
                 {#if modelStore.elements.size - matching.elements > 0}
                   <span class="s2d-dropped">
                     — {modelStore.elements.size - matching.elements} {t('switch2d.leftBehind')}
                   </span>
                 {/if}
+                <!--
+                  Load left behind is counted beside members left behind, because
+                  the two mislead in opposite directions: a member the cut missed
+                  makes the frame look weaker than it is, and a LOAD it missed
+                  makes it look stronger.
+                -->
+                {#if totalLoads - matching.loads > 0}
+                  <span class="s2d-dropped">
+                    — {totalLoads - matching.loads} {t('switch2d.loadsLeftBehind')}
+                  </span>
+                {/if}
               </p>
               {#if matching.supports === 0}
                 <p class="s2d-warn-line">{t('switch2d.noSupportsWarn')}</p>
+              {/if}
+              {#if matching.elements > 0 && matching.loads === 0}
+                <p class="s2d-warn-line">{t('switch2d.noLoadsWarn')}</p>
               {/if}
             {/if}
           </div>

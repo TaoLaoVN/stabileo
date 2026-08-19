@@ -87,6 +87,22 @@ export interface PlaneOffset {
    * afterwards.
    */
   supports: number;
+  /**
+   * How many loads the cut would bring with it.
+   *
+   * Reported for the same reason `supports` is, and against the opposite
+   * failure. A cut with no support fails LOUDLY: the solver refuses and the
+   * user is told. A cut with no load fails QUIETLY — the frame solves, every
+   * result is zero, and a utilisation map paints it uniformly safe. Across the
+   * shipped 3D models, 71 of the 75 cuts on offer discard some load and 16
+   * keep members while keeping none at all; `3d-nave-industrial` cut at
+   * `xy = 0` keeps eight members and none of its 242 loads.
+   *
+   * Dropping them is correct — a load on a member the cut did not take has
+   * nothing left to act on. Not saying so is what turns a modelling decision
+   * into a silent one.
+   */
+  loads: number;
 }
 
 /**
@@ -105,8 +121,9 @@ export interface PlaneOffset {
 export function planeOffsets(
   plane: DrawPlane,
   nodes: Iterable<{ id: number; x: number; y: number; z?: number }>,
-  elements: Iterable<{ nodeI: number; nodeJ: number }>,
+  elements: Iterable<{ id?: number; nodeI: number; nodeJ: number }>,
   supports: Iterable<{ nodeId: number }> = [],
+  loads: Iterable<{ data: Record<string, unknown> }> = [],
   tol = SLICE_TOL,
 ): PlaneOffset[] {
   const byNode = new Map<number, number>();
@@ -122,13 +139,19 @@ export function planeOffsets(
   }
 
   const counts = new Map<number, number>();
+  // Which group each in-plane member belongs to, so a load on it can be counted
+  // for the same cut without walking the elements a second time.
+  const elementGroup = new Map<number, number>();
   for (const el of elements) {
     const a = byNode.get(el.nodeI);
     const b = byNode.get(el.nodeJ);
     if (a === undefined || b === undefined) continue;
     if (Math.abs(a - b) > tol) continue;   // crosses the plane rather than lying in it
     const g = groups.find((x) => Math.abs(x.value - a) <= tol);
-    if (g) counts.set(g.value, (counts.get(g.value) ?? 0) + 1);
+    if (g) {
+      counts.set(g.value, (counts.get(g.value) ?? 0) + 1);
+      if (el.id !== undefined) elementGroup.set(el.id, g.value);
+    }
   }
 
   const sup = new Map<number, number>();
@@ -139,12 +162,30 @@ export function planeOffsets(
     if (g) sup.set(g.value, (sup.get(g.value) ?? 0) + 1);
   }
 
+  // Counted by the SAME rule `sliceModelAtPlane` keeps them by, so the number the
+  // dialog shows before the cut is the number the cut will honour. A load keyed by
+  // neither a node nor a member — a surface load carries `quadId` — belongs to no
+  // cut and is counted for none, which is what makes it show up as missing.
+  const loadCount = new Map<number, number>();
+  for (const l of loads) {
+    const d = l.data as { nodeId?: number; elementId?: number };
+    let value: number | undefined;
+    if (d.nodeId !== undefined) {
+      const o = byNode.get(d.nodeId);
+      if (o !== undefined) value = groups.find((x) => Math.abs(x.value - o) <= tol)?.value;
+    } else if (d.elementId !== undefined) {
+      value = elementGroup.get(d.elementId);
+    }
+    if (value !== undefined) loadCount.set(value, (loadCount.get(value) ?? 0) + 1);
+  }
+
   return groups
     .map((g) => ({
       value: g.value,
       nodes: g.nodes,
       elements: counts.get(g.value) ?? 0,
       supports: sup.get(g.value) ?? 0,
+      loads: loadCount.get(g.value) ?? 0,
     }))
     .sort((a, b) => a.value - b.value);
 }
@@ -158,6 +199,17 @@ export interface SliceStats {
   nodes: number;
   /** Members that came through the cut. */
   elements: number;
+  /** Loads that came through the cut. */
+  loads: number;
+  /**
+   * Loads left behind, because what they acted on did not survive the cut.
+   *
+   * The counterpart of `crossingElements`, and the one that matters more. A cut
+   * that loses its supports fails loudly — the solver refuses. A cut that loses
+   * its LOAD solves, reports zero everywhere, and reads as a safe structure.
+   * Reported so the caller can say so.
+   */
+  droppedLoads: number;
 }
 
 export type SliceResult =
@@ -220,10 +272,14 @@ export function sliceModelAtPlane(
    */
   const keptElementIds = new Set(keptElements.map((e) => e.id));
   const keptSupports = [...supports].filter((s) => inPlane.has(s.nodeId));
-  const keptLoads = [...loads].filter((l) => {
+  const allLoads = [...loads];
+  const keptLoads = allLoads.filter((l) => {
     const d = l.data as { nodeId?: number; elementId?: number };
     if (d.nodeId !== undefined) return inPlane.has(d.nodeId);
     if (d.elementId !== undefined) return keptElementIds.has(d.elementId);
+    // Keyed by neither: a surface load carries `quadId`, and a quad is not
+    // something a plane frame can carry. Dropped, and counted as dropped —
+    // silently losing the roof pressure is how a slice comes out looking safe.
     return false;
   });
 
@@ -246,6 +302,11 @@ export function sliceModelAtPlane(
       elsewhereElements: elsewhere,
       nodes: built.model.nodes.size,
       elements: built.model.elements.size,
+      // Counted off what the SLICE kept, not off `built.model`: the 2D build can
+      // drop a load of its own accord, and folding the two together would report
+      // one number for two different decisions.
+      loads: keptLoads.length,
+      droppedLoads: allLoads.length - keptLoads.length,
     },
   };
 }

@@ -77,10 +77,10 @@ describe('which axis a plane is cut along', () => {
 
 describe('the cuts on offer', () => {
   it('finds the two frames and counts what is in each', () => {
-    const offs = planeOffsets('xz', NODES, ELEMENTS, SUPPORTS);
+    const offs = planeOffsets('xz', NODES, ELEMENTS, SUPPORTS, LOADS);
     expect(offs.map((o) => o.value)).toEqual([0, 6]);
-    expect(offs[0]).toEqual({ value: 0, nodes: 4, elements: 3, supports: 2 });
-    expect(offs[1]).toEqual({ value: 6, nodes: 4, elements: 3, supports: 2 });
+    expect(offs[0]).toEqual({ value: 0, nodes: 4, elements: 3, supports: 2, loads: 2 });
+    expect(offs[1]).toEqual({ value: 6, nodes: 4, elements: 3, supports: 2, loads: 2 });
   });
 
   it('does not credit a plane with the members that merely pierce it', () => {
@@ -105,7 +105,8 @@ describe('the cuts on offer', () => {
   it('reports an offset that has nodes but no members joining them', () => {
     const stray = [...NODES, { id: 98, x: 4, y: 3, z: 2 }];
     const offs = planeOffsets('xz', stray, ELEMENTS, SUPPORTS);
-    expect(offs.find((o) => o.value === 3)).toEqual({ value: 3, nodes: 1, elements: 0, supports: 0 });
+    expect(offs.find((o) => o.value === 3))
+      .toEqual({ value: 3, nodes: 1, elements: 0, supports: 0, loads: 0 });
   });
 });
 
@@ -267,5 +268,81 @@ describe('what a cut would bring to stand on', () => {
     // The count is advisory; a caller that has no supports to hand must still
     // get the list of cuts rather than an exception.
     expect(planeOffsets('xz', NODES, ELEMENTS).every((o) => o.supports === 0)).toBe(true);
+  });
+});
+
+/**
+ * What the cut leaves behind in LOAD, which is the count that was missing.
+ *
+ * A cut that loses its supports fails loudly: the solver refuses and the user is
+ * told. A cut that loses its LOAD solves, reports zero everywhere, and reads as a
+ * safe structure — so it has to be said out loud instead, before and after.
+ */
+describe('load left behind', () => {
+  it('counts, per cut, the load that cut would bring', () => {
+    const offs = planeOffsets('xz', NODES, ELEMENTS, SUPPORTS, LOADS);
+    // The y = 0 frame carries the distributed load on rafter 11 and the nodal
+    // load at node 1. The purlin loads belong to no XZ cut at all.
+    expect(offs.find((o) => o.value === 0)?.loads).toBe(2);
+    expect(offs.find((o) => o.value === 6)?.loads).toBe(2);
+  });
+
+  it('agrees with what the cut actually keeps', () => {
+    // The number shown before the cut has to be the number the cut honours,
+    // or the warning is about a different operation than the one performed.
+    const before = planeOffsets('xz', NODES, ELEMENTS, SUPPORTS, LOADS)
+      .find((o) => o.value === 0)!;
+    const after = cut('xz', 0);
+    expect(after.ok).toBe(true);
+    if (!after.ok) return;
+    expect(after.slice.loads).toBe(before.loads);
+    expect(after.slice.droppedLoads).toBe(LOADS.length - before.loads);
+  });
+
+  it('reports a cut that keeps members and no load at all', () => {
+    // The quiet failure, in its purest form: every load sits on the purlins,
+    // which pierce every XZ plane and are never taken. The frame still has
+    // three members and four supports, so it solves — and means nothing.
+    const onPurlinsOnly = [
+      { type: 'distributed', data: { id: 300, elementId: 20, qI: -10, qJ: -10 } },
+      { type: 'distributed', data: { id: 301, elementId: 21, qI: -10, qJ: -10 } },
+    ];
+    const offs = planeOffsets('xz', NODES, ELEMENTS, SUPPORTS, onPurlinsOnly);
+    const frame = offs.find((o) => o.value === 0)!;
+    expect(frame.elements).toBeGreaterThan(0);
+    expect(frame.loads).toBe(0);
+
+    const r = sliceModelAtPlane(
+      'xz', 0, NODES, ELEMENTS, SUPPORTS, onPurlinsOnly, MATERIALS, SECTIONS,
+    );
+    expect(r.ok).toBe(true);
+    if (!r.ok) return;
+    expect(r.slice.elements).toBeGreaterThan(0);
+    expect(r.slice.loads).toBe(0);
+    expect(r.slice.droppedLoads).toBe(2);
+  });
+
+  it('counts a load keyed by neither a node nor a member as dropped', () => {
+    // A surface load carries `quadId`, and a quad is not something a plane frame
+    // can carry — so it is dropped by construction rather than by the cut. That
+    // is defensible; going unmentioned is not, because a roof pressure is exactly
+    // what the person reaching for this would have.
+    const withSurface = [
+      ...LOADS,
+      { type: 'surface3d', data: { id: 400, quadId: 1, q: -5 } },
+    ];
+    const r = sliceModelAtPlane(
+      'xz', 0, NODES, ELEMENTS, SUPPORTS, withSurface, MATERIALS, SECTIONS,
+    );
+    expect(r.ok).toBe(true);
+    if (!r.ok) return;
+    expect(r.slice.droppedLoads).toBe(withSurface.length - r.slice.loads);
+    // And it is not silently counted as belonging to some cut.
+    const offs = planeOffsets('xz', NODES, ELEMENTS, SUPPORTS, withSurface);
+    expect(offs.reduce((s, o) => s + o.loads, 0)).toBe(LOADS.length);
+  });
+
+  it('defaults to none rather than failing when loads are not passed', () => {
+    expect(planeOffsets('xz', NODES, ELEMENTS, SUPPORTS).every((o) => o.loads === 0)).toBe(true);
   });
 });
