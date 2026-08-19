@@ -117,6 +117,7 @@ const steelEn: Record<string, string> = {
   'generator.problem.centroidUnknown': 'The centroid of {profile} ({family}) is not known, so no built-up arrangement of it can be composed.',
   'generator.problem.profileMissing': 'No profile chosen for {role}.',
   'generator.problem.profileUnknown': 'The profile {name} is not in the catalogue.',
+  'generator.notice.roofWithoutPurlins': 'Without purlins the roof trusses have no out-of-plane restraint, so this model generates but cannot be solved. Turn Purlins on, or add roof bracing of your own.',
 
   // ─── Generators: assumptions ───
   'generator.assume.chordsContinuous': 'Chords continuous through the panel points.',
@@ -134,6 +135,7 @@ const steelEn: Record<string, string> = {
   'generator.assume.headBeamMakesPortal': 'Transverse head beam: with no truss, it is what forms the portal.',
   'generator.assume.purlinsRolledToPitch': 'Purlins rolled to the local roof pitch.',
   'generator.assume.noRoofStructure': 'No roof structure.',
+  'generator.assume.roofWithoutPurlins': 'Roof with no purlins: the trusses carry no restraint out of their own plane.',
   'generator.assume.latticeBasesPinnedNoOutOfPlane': 'Latticed columns on pinned bases: out-of-plane the frames are held only by the purlins and by base fixity, and this model carries no longitudinal bracing. It solves; it is not braced.',
   'generator.assume.solidColumns': 'Solid-web columns.',
   'generator.assume.placeholderGrade': 'Placeholder steel grade: not taken from the grade catalogue.',

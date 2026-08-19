@@ -79,6 +79,26 @@
   );
 
   /**
+   * A configuration that generates and then cannot be solved.
+   *
+   * Deliberately NOT a `ParamProblem`: those disable Generate, and this one must not. Every
+   * parameter here is individually valid, and a user may well want the bare geometry to brace
+   * it their own way. What they must not get is a model that looks finished and answers
+   * "mechanism" the first time they press Solve.
+   *
+   * The condition is measured, not guessed. Restraining out-of-plane TRANSLATION at the roof
+   * truss nodes turns the singular matrix into a 4.0 mm deflection; restraining rotations
+   * there does not. So the missing thing is lateral restraint on the trusses, and purlins are
+   * the members this generator has for it — which is why the notice names the switch to flip
+   * rather than telling the user to go and think about it.
+   */
+  const stabilityNotice = $derived(
+    kind === 'shed' && shed.roof && !shed.purlins
+      ? t('generator.notice.roofWithoutPurlins')
+      : null,
+  );
+
+  /**
    * The topology, or null while the parameters are invalid.
    *
    * The generators throw on bad input by design, so the guard is here rather than inside a
@@ -264,6 +284,15 @@
     </ul>
   {/if}
 
+  <!--
+    `status`, not `alert`: nothing is wrong yet and Generate stays available. It is announced
+    when it appears, which is the moment the user unticks Purlins — before Generate, not after
+    Solve refuses.
+  -->
+  {#if stabilityNotice}
+    <p class="notice" role="status" data-testid="gen-stability-notice">{stabilityNotice}</p>
+  {/if}
+
   <!-- ── Profiles, only for the roles this topology actually places ── -->
   {#if roles.length > 0}
     <h4>{t('generator.ui.profiles')}</h4>
@@ -395,6 +424,12 @@
   .fields label.check > span { min-width: 0; }
   .fields input:focus-visible, .fields select:focus-visible { outline: 2px solid var(--st-interactive); outline-offset: 1px; }
   .problems { margin: 0; padding-left: 16px; font-size: 0.68rem; color: var(--st-err); }
+  /* Warn, not error: the model will generate. `--st-warn` is the token that means exactly
+     "this is going to cost you something", which is what an unsolvable roof is. */
+  .notice {
+    margin: 6px 0 0; font-size: 0.68rem; line-height: 1.45; color: var(--st-warn);
+    border-left: 2px solid var(--st-warn); padding-left: 8px;
+  }
   .previews { display: flex; flex-direction: column; gap: 6px; }
   .preview { border: 1px solid var(--st-surface-3); border-radius: 4px; padding: 6px 8px; }
   .totals { margin: 0; font-size: 0.72rem; color: var(--st-text); font-variant-numeric: tabular-nums; }

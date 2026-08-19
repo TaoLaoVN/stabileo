@@ -123,6 +123,7 @@ const steelEs: Record<string, string> = {
   'generator.problem.centroidUnknown': 'No se conoce la posición del centroide de {profile} ({family}), así que no puede componerse un perfil múltiple con él.',
   'generator.problem.profileMissing': 'Falta elegir perfil para {role}.',
   'generator.problem.profileUnknown': 'El perfil {name} no está en el catálogo.',
+  'generator.notice.roofWithoutPurlins': 'Sin correas las cerchas no tienen restricción fuera del plano del pórtico, así que este modelo se genera pero no se puede calcular. Activá Correas, o agregá tu propio arriostramiento de cubierta.',
 
   // ─── Generadores: hipótesis ───
   'generator.assume.chordsContinuous': 'Cordones continuos a través de los nudos.',
@@ -140,6 +141,7 @@ const steelEs: Record<string, string> = {
   'generator.assume.headBeamMakesPortal': 'Viga transversal de cabezal: sin cercha, es lo que forma el pórtico.',
   'generator.assume.purlinsRolledToPitch': 'Correas giradas a la pendiente local del faldón.',
   'generator.assume.noRoofStructure': 'Sin estructura de techo.',
+  'generator.assume.roofWithoutPurlins': 'Cubierta sin correas: las cerchas no tienen restricción fuera de su propio plano.',
   'generator.assume.latticeBasesPinnedNoOutOfPlane': 'Columnas reticuladas con bases articuladas: fuera del plano los pórticos se sostienen sólo por las correas y por el empotramiento de base, y este modelo no lleva arriostramiento longitudinal. Resuelve; no está arriostrado.',
   'generator.assume.solidColumns': 'Columnas de alma llena.',
   'generator.assume.placeholderGrade': 'Grado de acero provisorio: no proviene del catálogo de grados.',

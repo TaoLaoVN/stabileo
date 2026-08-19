@@ -332,6 +332,20 @@ export function generateShed(params: Partial<ShedParams> = {}): ShedTopology {
   }
 
   if (!p.roof) b.assumptions.add('generator.assume.noRoofStructure');
+  /*
+   * A roof with no purlins is a set of planar trusses with nothing holding them sideways.
+   *
+   * Demonstrated rather than assumed: restraining `ty` — translation along the building — at
+   * the 33 roof nodes of a 3-frame shed turns a singular stiffness matrix into a 4.0 mm
+   * deflection, while restraining ANY combination of rotations at those same nodes leaves it
+   * singular. So what is missing is out-of-plane TRANSLATIONAL restraint at the truss nodes,
+   * and purlins are precisely the members that supply it — the eave beams do not, because
+   * they tie the column heads and every truss node sits above them.
+   *
+   * No bracing is invented here. Purlins are already a switch on this generator, and the user
+   * turned them off; the model records what that costs, and the panel says it before Generate.
+   */
+  if (p.roof && !p.purlins) b.assumptions.add('generator.assume.roofWithoutPurlins');
   if (p.columnKind === 'solid') b.assumptions.add('generator.assume.solidColumns');
   // Stated rather than left for the solver to discover: a latticed column on pinned chord
   // feet has no out-of-plane restraint, because the lacing only braces its own plane.

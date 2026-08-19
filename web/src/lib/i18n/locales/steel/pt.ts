@@ -129,6 +129,7 @@ const steelPt: Record<string, string> = {
   'generator.problem.centroidUnknown': 'A posição do centroide de {profile} ({family}) não é conhecida, portanto não se pode compor um perfil múltiplo com ele.',
   'generator.problem.profileMissing': 'Falta escolher perfil para {role}.',
   'generator.problem.profileUnknown': 'O perfil {name} não está no catálogo.',
+  'generator.notice.roofWithoutPurlins': 'Sem terças as treliças de cobertura não têm restrição fora do plano do pórtico, portanto este modelo é gerado mas não pode ser calculado. Ative Terças, ou acrescente seu próprio contraventamento de cobertura.',
 
   // ─── Geradores: hipóteses ───
   'generator.assume.chordsContinuous': 'Banzos contínuos através dos nós.',
@@ -146,6 +147,7 @@ const steelPt: Record<string, string> = {
   'generator.assume.headBeamMakesPortal': 'Viga transversal de cabeceira: sem treliça, é o que forma o pórtico.',
   'generator.assume.purlinsRolledToPitch': 'Terças giradas para a inclinação local da água.',
   'generator.assume.noRoofStructure': 'Sem estrutura de cobertura.',
+  'generator.assume.roofWithoutPurlins': 'Cobertura sem terças: as treliças não têm restrição fora do seu próprio plano.',
   'generator.assume.latticeBasesPinnedNoOutOfPlane': 'Colunas treliçadas com bases rotuladas: fora do plano os pórticos se sustentam apenas pelas terças e pelo engastamento da base, e este modelo não leva contraventamento longitudinal. Resolve; não está contraventado.',
   'generator.assume.solidColumns': 'Colunas de alma cheia.',
   'generator.assume.placeholderGrade': 'Grau de aço provisório: não vem do catálogo de graus.',
