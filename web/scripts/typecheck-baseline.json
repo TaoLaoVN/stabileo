@@ -1,5 +1,5 @@
 {
-	"total": 490,
+	"total": 479,
 	"entries": [
 		{
 			"file": "src/lib/ai/__tests__/build-model.test.ts",
@@ -800,30 +800,6 @@
 			"count": 1
 		},
 		{
-			"file": "src/lib/engine/calc-report.ts",
-			"code": "TS2339",
-			"message": "Property 'hingeEnd' does not exist on type 'Element'.",
-			"count": 1
-		},
-		{
-			"file": "src/lib/engine/calc-report.ts",
-			"code": "TS2339",
-			"message": "Property 'hingeStart' does not exist on type 'Element'.",
-			"count": 1
-		},
-		{
-			"file": "src/lib/engine/calc-report.ts",
-			"code": "TS2339",
-			"message": "Property 'rz' does not exist on type 'Displacement'.",
-			"count": 1
-		},
-		{
-			"file": "src/lib/engine/calc-report.ts",
-			"code": "TS2339",
-			"message": "Property 'uy' does not exist on type 'Displacement'.",
-			"count": 2
-		},
-		{
 			"file": "src/lib/engine/design/__tests__/autodesign-regression.test.ts",
 			"code": "TS2345",
 			"message": "Argument of type '{ elementId: number; elementType: \"beam\"; L: number; section: { id: number; name: string; b: number; h: number; }; material: { fc: number; fy: number; cover: number; stirrupDia: number; }; demands: undefined; ... 10 more ...; modelData: ContextModelData; }[]' is not assignable to parameter of type 'Iterable<MemberContext>'.",
@@ -1005,12 +981,6 @@
 		},
 		{
 			"file": "src/lib/engine/solver-detailed.ts",
-			"code": "TS2339",
-			"message": "Property 'y' does not exist on type 'SolverNode'.",
-			"count": 4
-		},
-		{
-			"file": "src/lib/engine/solver-detailed.ts",
 			"code": "TS2678",
 			"message": "Type '\"rollerY\"' is not comparable to type 'SupportType'.",
 			"count": 1
@@ -1172,12 +1142,6 @@
 			"count": 1
 		},
 		{
-			"file": "src/lib/three/deformed-shape-3d.ts",
-			"code": "TS2353",
-			"message": "Object literal may only specify known properties, and 'id' does not exist in type '{ x: number; y: number; z: number; }'.",
-			"count": 1
-		},
-		{
 			"file": "src/lib/utils/__tests__/url-sharing.test.ts",
 			"code": "TS2322",
 			"message": "Type '[any, { id: any; type: \"frame\" | \"truss\"; nodeI: any; nodeJ: any; materialId: any; sectionId: any; hingeStart: any; hingeEnd: any; }][]' is not assignable to type '[number, { id: number; type: \"frame\" | \"truss\"; nodeI: number; nodeJ: number; materialId: number; sectionId: number; releaseI: Release; releaseJ: Release; reinforcement?: ProvidedReinforcement | undefined; } & Element3DMetadata][]'.",
@@ -1217,12 +1181,6 @@
 			"file": "src/lib/viewport3d/__tests__/lod.test.ts",
 			"code": "TS2741",
 			"message": "Property 'localAxesParent' is missing in type '{ nodesParent: null; supportsParent: null; loadsParent: null; resultsParent: null; shellsParent: null; elementsParent: null; elementsBatchedMesh: null; renderMode: \"wireframe\"; }' but required in type 'LowDetailGroups'.",
-			"count": 1
-		},
-		{
-			"file": "src/lib/viewport3d/results-sync.ts",
-			"code": "TS6133",
-			"message": "'verificationColor' is declared but its value is never read.",
 			"count": 1
 		}
 	]

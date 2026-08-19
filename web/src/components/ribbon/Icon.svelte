@@ -68,6 +68,18 @@
     <path d="M6.6 17.4L17.4 6.6" />
     <circle cx="5" cy="19" r="2" />
     <circle cx="19" cy="5" r="2" />
+  {:else if name === 'material'}
+    <!-- A hatched square: the drafting convention for "this is material", and
+         the same mark the PRO ribbon uses. -->
+    <rect x="4.5" y="4.5" width="15" height="15" rx="1.5" />
+    <path d="M7 15.5L15.5 7" />
+    <path d="M10.5 17.5L17.5 10.5" />
+  {:else if name === 'section'}
+    <!-- An I-beam seen end-on. The section IS a shape, so the icon is one
+         rather than a document or a table. -->
+    <path d="M6 5.5h12" />
+    <path d="M6 18.5h12" />
+    <path d="M12 5.5v13" />
   {:else if name === 'support'}
     <!-- Pinned support: triangle on hatched ground. -->
     <path d="M12 6l6 9H6z" />

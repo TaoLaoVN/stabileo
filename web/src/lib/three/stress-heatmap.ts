@@ -13,7 +13,18 @@ const HEATMAP_SEGMENTS = 16; // Number of segments along each element
 const HEATMAP_RADIUS = 0.07; // Slightly larger than default cylinder (0.06)
 const RADIAL_SEGMENTS = 8;
 
-export type HeatmapVariable = 'moment' | 'shear' | 'axial' | 'stressRatio' | 'vonMises';
+/**
+ * What a heat map can paint.
+ *
+ * `moment` and `shear` are ENVELOPE metrics kept for the 2D viewport, where a
+ * frame has one bending axis and one shear: there, "the moment" is unambiguous.
+ * In 3D they would hide which axis a peak is about, so 3D names the axis —
+ * `momentY`, `shearZ` — and each is sampled on its own.
+ */
+export type HeatmapVariable =
+  | 'moment' | 'shear' | 'axial'
+  | 'momentY' | 'momentZ' | 'shearY' | 'shearZ' | 'torsion'
+  | 'stressRatio' | 'vonMises';
 
 interface SectionProps {
   A: number;
@@ -44,6 +55,14 @@ function sampleValue(ef: ElementForces3D, variable: HeatmapVariable, t: number, 
     }
     case 'axial':
       return Math.abs(evaluateDiagramAt(ef, 'axial', t));
+    // One axis at a time: the magnitude of that component, not an envelope of
+    // several. A peak is only useful if you know which axis it is about.
+    case 'momentY':
+    case 'momentZ':
+    case 'shearY':
+    case 'shearZ':
+    case 'torsion':
+      return Math.abs(evaluateDiagramAt(ef, variable, t));
     case 'stressRatio':
     case 'vonMises': {
       const N = evaluateDiagramAt(ef, 'axial', t);

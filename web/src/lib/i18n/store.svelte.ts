@@ -34,11 +34,34 @@ if (hasLocalStorage()) {
 	}
 }
 
+/**
+ * The locales the app OFFERS, as opposed to the ones it has files for.
+ *
+ * `dicts` still carries a dozen more, and they are kept rather than deleted:
+ * they hold real translation work, `t()` falls back to English for any key they
+ * lack, and re-enabling one is a single edit here. What they are not is
+ * complete — the parity test that guards `design.*` documents roughly 790
+ * missing keys in each — so offering them means offering a half-English UI
+ * under a flag that promises otherwise.
+ *
+ * Three fully maintained languages beat fourteen partial ones.
+ */
+export const OFFERED_LOCALES = ['es', 'en', 'pt'] as const;
+export type OfferedLocale = (typeof OFFERED_LOCALES)[number];
+
+function isOffered(code: string): code is OfferedLocale {
+	return (OFFERED_LOCALES as readonly string[]).includes(code);
+}
+
 function detectBrowserLocale(): string {
 	if (typeof navigator === 'undefined') return 'en';
 	for (const lang of navigator.languages ?? [navigator.language]) {
 		const code = lang.split('-')[0].toLowerCase();
-		if (code in dicts) return code;
+		// Matched against what is OFFERED, not against what exists: a German
+		// browser used to land on a German dictionary that is largely English,
+		// which reads as a broken translation rather than as an untranslated
+		// app. English is the honest answer.
+		if (isOffered(code)) return code;
 	}
 	return 'en';
 }
@@ -48,7 +71,10 @@ function getInitialLocale(): string {
 	// Only use stored locale if user explicitly chose it (flag set by setLocale)
 	if (localStorage.getItem('stabileo-lang-manual') === '1') {
 		const stored = localStorage.getItem('stabileo-lang');
-		if (stored && stored in dicts) return stored;
+		// A stored locale that is no longer offered — someone who picked German
+		// before this narrowed — falls through to detection rather than being
+		// honoured, which would resurrect exactly the half-translated UI.
+		if (stored && isOffered(stored)) return stored;
 	}
 	// Otherwise auto-detect from browser and clear any stale stored value
 	const detected = detectBrowserLocale();

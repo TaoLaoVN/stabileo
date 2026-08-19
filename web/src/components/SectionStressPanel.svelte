@@ -44,6 +44,12 @@
   import StressStateDetails from './stress/StressStateDetails.svelte';
   import MohrCircleDisplay from './stress/MohrCircleDisplay.svelte';
   import CentralCoreDetails from './stress/CentralCoreDetails.svelte';
+  import StressTensorDetails from './stress/StressTensorDetails.svelte';
+  import TorsionDetails from './stress/TorsionDetails.svelte';
+  import GeometricPropertyWorking from './stress/GeometricPropertyWorking.svelte';
+  import { resolveEccentric, snapShearCentre, kernLimits } from '../lib/section/eccentric';
+  import { computeTorsionFlow } from '../lib/engine/torsion-flow';
+  import { crossCheckShearPeak } from '../lib/section/shear-crosscheck';
 
   // Fiber position sliders: 0 = bottom/left, 1 = top/right
   let fiberRatioY = $state(1.0); // default to top fiber (extreme)
@@ -64,6 +70,43 @@
   let showPressureCenter = $state(false);      // CP: centro de presiones overlay
   let showCentralCoreInfo = $state(false);     // NC details section (closed by default)
   let useGlobalScale = $state(true);           // Local/global stress scaling toggle (global by default)
+  let showTensors = $state(false);
+  let showTorsion = $state(false);      // Torsional shear section (closed by default)
+  let showCentroidWork = $state(false);  // Step-by-step centroid
+  let showShearCentreWork = $state(false); // Step-by-step shear centre             // Stress/strain tensor section (closed by default)
+  let showStressMap = $state(false);           // MAP: paint sigma over the section instead of at a point
+  let showEccentric = $state(false);           // CE: eccentric application point
+  let showTorsionFlow = $state(false);         // T: torsional shear flow on the drawing
+  /**
+   * Where the eccentric load is applied, canonical `[y, z]` in metres.
+   *
+   * Starts at the centroid rather than at some corner: that is the position
+   * whose effect is nil, so the first drag reads as "moving it away from the
+   * reference does this", which is the relationship worth showing.
+   */
+  let eccentricPoint = $state<[number, number] | null>([0, 0]);
+  /**
+   * Where the load PARALLEL to the section acts, canonical `[y, z]` in metres.
+   *
+   * Separate from the perpendicular load's point, because they are eccentric
+   * about DIFFERENT references and do different things. N off the centroid
+   * bends; V off the shear centre twists. Forcing both through one marker
+   * meant a user could never pose the ordinary case — an axial force on one
+   * side of the section and a transverse load somewhere else entirely.
+   */
+  let eccentricPointV = $state<[number, number] | null>([0, 0]);
+  /**
+   * Where the eccentric load comes from.
+   *
+   * `model` relocates the forces the member ALREADY carries at this station to
+   * the chosen point — "what if this same load acted here instead of on the
+   * axis". `custom` adds a load of your own on top of everything the model
+   * produces. Both are legitimate questions and they are not the same one, so
+   * the panel asks which rather than guessing.
+   */
+  let eccSource = $state<'model' | 'custom' | 'isolated'>('model');
+  /** User-defined load components, kN. Only used when `eccSource` is 'custom'. */
+  let eccCustom = $state({ n: 0, vy: 0, vz: 0 });
 
   const is3D = $derived(uiStore.analysisMode === '3d' || uiStore.analysisMode === 'pro');
   const query = $derived(resultsStore.stressQuery);
@@ -152,7 +195,12 @@
     if (is3D) {
       const ef = resultsStore.getElementForces3D(query.elementId);
       if (!ef) return null;
-      return canonicalPanelResult(sec, stationForces3D(ef as never, query.t));
+      /*
+       * No cast. `as never` was here, and it is what let the panel read a
+       * torsion field the result object does not have: the compiler had the
+       * information and was told not to look.
+       */
+      return canonicalPanelResult(sec, stationForces3D(ef, query.t));
     }
     const ef = resultsStore.getElementForces(query.elementId);
     if (!ef) return null;
@@ -164,6 +212,10 @@
 
   // ── 2D analysis (skip if section is rotated → uses biaxial path instead) ──
   const analysis2D = $derived.by((): SectionStressResult | null => {
+    // An eccentric load is biaxial in general — moving an axial force sideways
+    // produces Mz, which a plane-frame result cannot represent — so that case
+    // is handed to the biaxial path below, exactly as a rotated section is.
+    if (eccentricActive) return null;
     if (is3D || isRotated2D || !query || !resultsStore.results || isAmorphous) return null;
     const elem = modelStore.elements.get(query.elementId);
     if (!elem) return null;
@@ -182,6 +234,34 @@
   // ── 3D analysis (also handles rotated 2D sections via force decomposition) ──
   const analysis3D = $derived.by((): SectionStressResult3D | null => {
     if (isAmorphous || !query) return null;
+
+    // ── Eccentric load: plot the RESOLVED forces ─────────────────
+    //
+    // This is what makes the eccentricity visible in the diagrams instead of
+    // only in the readout. It also has to run through the biaxial path even
+    // for a plane frame: an axial force moved off the vertical axis produces
+    // Mz, and bending about the weak axis simply does not exist in a 2D result.
+    //
+    // The two paths disagree on sign. `stationForces2D` reports `my = M`, while
+    // this function wants the opposite sign to place tension on the same fibre
+    // — the same inversion the rotated-2D branch below applies. The axes also
+    // swap names: `yFiber` here is the DEPTH, which is the canonical z, and
+    // `zFiber` is the width, which is the canonical y. Both were established by
+    // measurement, and `eccentric-diagrams.test.ts` pins them.
+    if (eccentricActive && eccentric && stateInputs) {
+      const elem = modelStore.elements.get(query.elementId);
+      const sec = elem ? modelStore.sections.get(elem.sectionId) : null;
+      const mat = elem ? modelStore.materials.get(elem.materialId) : null;
+      if (!sec || !mat) return null;
+      const f = eccentric.forces;
+      const [py, pz] = stateInputs.point;
+      return analyzeSectionStressFromForces(
+        f.n, f.vy, f.vz, f.t,
+        -f.my, -f.mz,
+        sec, mat.fy,
+        pz, py,
+      );
+    }
 
     // ── True 3D mode ──
     if (is3D) {
@@ -235,28 +315,6 @@
 
     return analyzeSectionStressFromForces(N_2d, Vy, Vz, 0, My, Mz, sec, mat.fy, yFiber, zFiber);
   });
-
-  // Unified accessors (panel uses these)
-  // When isRotated2D, analysis3D is populated (from decomposed forces), analysis2D is null
-  const uses3DPath = $derived(is3D || isRotated2D);
-  const hasAnalysis = $derived(uses3DPath ? analysis3D !== null : analysis2D !== null);
-  const resolved = $derived(uses3DPath ? analysis3D?.resolved : analysis2D?.resolved);
-
-  // Shear flow (2D only)
-  const shearFlow = $derived<ShearFlowSegment[]>(
-    analysis2D ? computeShearFlowPaths(analysis2D.V, analysis2D.resolved) : []
-  );
-
-  const isMassive = $derived(resolved ? isMassiveSection(resolved.shape) : false);
-
-  // Bending detection — enables EN button
-  const hasBending3D = $derived(
-    uses3DPath && analysis3D !== null &&
-    (Math.abs(analysis3D.My) > 0.01 || Math.abs(analysis3D.Mz) > 0.01)
-  );
-  const hasBending2D = $derived(
-    !uses3DPath && analysis2D !== null && Math.abs(analysis2D.M) > 0.01
-  );
 
   // Neutral axis for ⊥ distribution: moments-only or full (with N) depending on showTotalSigma
   // When showTotalSigma is off: NA passes through centroid (N=0), classic moment-only view
@@ -333,7 +391,8 @@
    * throughout; the legacy result stays only as the fallback for sections that
    * have no geometry at all.
    */
-  const canonicalState = $derived.by(() => {
+  /** The member's own section, material and canonical query point. */
+  const stateInputs = $derived.by(() => {
     if (!query || !canonical?.ok) return null;
     const elem = modelStore.elements.get(query.elementId);
     const sec = elem ? modelStore.sections.get(elem.sectionId) : null;
@@ -348,28 +407,363 @@
     const pz = zMin + fiberRatioY * (zMax - zMin);
 
     const f = canonical.forces as { n: number; my: number; mz: number; vy?: number; vz?: number; tx?: number };
-    const r = canonicalStressState(
+    return {
       sec,
-      { n: f.n, my: f.my, mz: f.mz, vy: f.vy, vz: f.vz, t: f.tx },
-      [py, pz],
-      mat?.fy,
-      // The panel already solved bending for these exact forces — reuse it
-      // rather than paying a second identical WASM call per slider tick.
-      { bending: canonical.bending },
+      fy: mat?.fy,
+      // Only pass elastic constants when the material actually carries them:
+      // the strain tensor is omitted rather than computed from a guess.
+      elastic: mat && mat.e > 0 ? { e: mat.e, nu: mat.nu ?? 0.3 } : undefined,
+      point: [py, pz] as [number, number],
+      forces: { n: f.n, my: f.my, mz: f.mz, vy: f.vy, vz: f.vz, t: f.tx },
+      /*
+       * The bending solve this panel already did for its own plot.
+       *
+       * From main: the state query used to re-run it with the identical
+       * forces, once per slider tick, which is a whole WASM round trip to
+       * recompute what is sitting in a variable.
+       */
+      bending: canonical.bending,
+    };
+  });
+
+  /**
+   * The stress state as the MODEL loads it — no eccentricity applied.
+   *
+   * Deliberately independent of `eccentricPoint`, so dragging the marker does
+   * not re-run this solve. It also carries the shear centre, which depends only
+   * on the geometry and so is the same regardless of where the load is put.
+   */
+  const canonicalState = $derived.by(() => {
+    if (!stateInputs) return null;
+    const r = canonicalStressState(
+      stateInputs.sec,
+      stateInputs.forces,
+      stateInputs.point,
+      stateInputs.fy,
+      { elastic: stateInputs.elastic, bending: stateInputs.bending },
     );
     return r.ok ? r.state : null;
   });
 
+  /**
+   * Whether the application point keeps the whole section in one sign.
+   *
+   * Tested against the SAME polygon the drawing paints, not against
+   * `kernLimits`. The two agree analytically where the comparison is valid at
+   * all — principal axes, i.e. `iyz = 0`; elsewhere `kernLimits` declines and
+   * there is nothing to agree with — but they are different code, and
+   * a marker that turns green while sitting outside the orange region reads as
+   * a bug whichever of the two is right. One source, one answer.
+   */
+  const eccentricInsideKern = $derived.by(() => {
+    if (!eccentricPoint) return true;
+    if (!centralCore || centralCore.vertices.length < 3) return true;
+    // The core polygon is stored (ez, ey) — horizontal, vertical — which is the
+    // canonical point's (y, z) in that order.
+    return isPointInConvexPolygon(eccentricPoint[0], eccentricPoint[1], centralCore.vertices);
+  });
+
+  /**
+   * What moving the load off the reference points adds.
+   *
+   * The shear centre comes from the base solve, so this is arithmetic: no
+   * meshing happens while the marker is dragged.
+   */
+  /**
+   * The shear centre, with solver noise cleared to zero.
+   *
+   * For a doubly-symmetric section the shear centre IS the centroid — exactly,
+   * by symmetry. The solver reaches that answer numerically and lands a few
+   * microns away, which is fine as a coordinate and poisonous as an arm: a
+   * 10 µm offset times a 60 kN shear is a torque that then made the panel think
+   * an eccentric case existed the instant the overlay was switched on, and
+   * switch analysis path accordingly.
+   *
+   * Snapped relative to the section's own size, so it holds for a 60 mm angle
+   * and a 900 mm girder alike. A real shear centre — a channel's, which sits
+   * outside the section entirely — is orders of magnitude beyond this and
+   * survives untouched.
+   */
+  const shearCentreClean = $derived.by((): [number, number] => {
+    if (!canonical?.ok) return [0, 0];
+    const [yMin, zMin, yMax, zMax] = canonical.geometry.bbox;
+    return snapShearCentre(canonicalState?.shearCentre, Math.max(yMax - yMin, zMax - zMin));
+  });
+
+  const eccentric = $derived.by(() => {
+    if (!showEccentric || !eccentricPoint || !stateInputs) return null;
+    const m = stateInputs.forces;
+    const sc = shearCentreClean;
+
+    // The two components are resolved SEPARATELY, each about its own reference
+    // and at its own point, then superposed. `resolveEccentric` is linear, so
+    // this is exact — and it is the only way to express the ordinary case of an
+    // axial force on one side of the section and a transverse load elsewhere.
+    const src = eccSource === 'model'
+      ? { n: m.n, vy: m.vy ?? 0, vz: m.vz ?? 0 }
+      : eccCustom;
+    // `isolated` studies the user's load ALONE: the member's own resultants are
+    // discarded rather than added, so the section shows what that one load does
+    // and nothing else. Useful for reading a single effect cleanly, and wrong
+    // to confuse with a verification — the member really does carry the rest.
+    const base = eccSource === 'isolated'
+      ? { n: 0, my: 0, mz: 0, vy: 0, vz: 0, t: 0 }
+      : { n: m.n, my: m.my, mz: m.mz, vy: m.vy ?? 0, vz: m.vz ?? 0, t: m.t ?? 0 };
+    const rN = resolveEccentric({ n: src.n, at: eccentricPoint }, sc);
+    const rV = resolveEccentric({ vy: src.vy, vz: src.vz, at: eccentricPointV ?? [0, 0] }, sc);
+
+    const effect = {
+      myFromN: rN.effect.myFromN,
+      mzFromN: rN.effect.mzFromN,
+      tFromShear: rV.effect.tFromShear,
+      shearArm: rV.effect.shearArm,
+    };
+
+    if (eccSource === 'model') {
+      // The member's own resultants, moved off the axis. The bending the model
+      // reports stays — it is the consequence of the external loads and does
+      // not go away — and the eccentricity adds to it. The forces themselves
+      // are not added twice: they are the same forces, relocated.
+      return {
+        forces: {
+          n: base.n,
+          my: base.my + effect.myFromN,
+          mz: base.mz + effect.mzFromN,
+          vy: base.vy,
+          vz: base.vz,
+          t: base.t + effect.tFromShear,
+        },
+        effect,
+      };
+    }
+
+    // `custom` superposes the user's load on the model's; `isolated` puts it on
+    // an empty base. One expression covers both, which is what keeps them from
+    // drifting apart.
+    return {
+      forces: {
+        n: base.n + src.n,
+        my: base.my + effect.myFromN,
+        mz: base.mz + effect.mzFromN,
+        vy: base.vy + src.vy,
+        vz: base.vz + src.vz,
+        t: base.t + effect.tFromShear,
+      },
+      effect,
+    };
+  });
+
+  /**
+   * Whether the eccentricity changes anything at all.
+   *
+   * Switching to the biaxial path is not free: it is a different solver entry
+   * point, and with identical forces the two do not produce byte-identical
+   * output — one reports quantities the other does not. So merely TURNING ON
+   * the overlay visibly perturbed the results, which is indefensible: opening
+   * a view must not change what it is a view of.
+   *
+   * The switch is now earned. No induced moment, no induced torsion and no
+   * load of the user's own means nothing to show, so the panel keeps the path
+   * it was already on and the numbers do not move.
+   */
+  const eccentricHasEffect = $derived.by(() => {
+    if (!eccentric) return false;
+    const e = eccentric.effect;
+    if (Math.abs(e.myFromN) > 1e-9) return true;
+    if (Math.abs(e.mzFromN) > 1e-9) return true;
+    if (Math.abs(e.tFromShear) > 1e-9) return true;
+    // A custom load still counts even when applied dead on the reference
+    // points: it adds to the forces, it just adds no eccentric effect.
+    return eccSource !== 'model' && (
+      Math.abs(eccCustom.n) > 1e-12 ||
+      Math.abs(eccCustom.vy) > 1e-12 ||
+      Math.abs(eccCustom.vz) > 1e-12
+    );
+  });
+
+  /**
+   * Whether the eccentric case is actually driving the panel.
+   *
+   * Every diagram below keys off this. Without it the eccentricity reached
+   * Mohr's circle, the tensors and the stress map but NOT the stress diagrams,
+   * which kept plotting the model's own forces — so the panel showed two
+   * different load cases at once and only the small print said which.
+   */
+  const eccentricActive = $derived(showEccentric && eccentric !== null && eccentricHasEffect);
+
+  // Unified accessors (panel uses these)
+  // When isRotated2D, analysis3D is populated (from decomposed forces), analysis2D is null
+  const uses3DPath = $derived(is3D || isRotated2D || eccentricActive);
+  const hasAnalysis = $derived(uses3DPath ? analysis3D !== null : analysis2D !== null);
+  const resolved = $derived(uses3DPath ? analysis3D?.resolved : analysis2D?.resolved);
+
+  // Shear flow (2D only)
+  const shearFlow = $derived<ShearFlowSegment[]>(
+    analysis2D ? computeShearFlowPaths(analysis2D.V, analysis2D.resolved) : []
+  );
+
+  const isMassive = $derived(resolved ? isMassiveSection(resolved.shape) : false);
+
+  // Bending detection — enables EN button
+  const hasBending3D = $derived(
+    uses3DPath && analysis3D !== null &&
+    (Math.abs(analysis3D.My) > 0.01 || Math.abs(analysis3D.Mz) > 0.01)
+  );
+  const hasBending2D = $derived(
+    !uses3DPath && analysis2D !== null && Math.abs(analysis2D.M) > 0.01
+  );
+
+  /**
+   * The load components on display, whichever source is active.
+   *
+   * Read by the editor so the model's own forces are visible (and not
+   * editable) under `model`, and the user's own under `custom`.
+   */
+  const eccentricComponents = $derived.by(() => {
+    if (eccSource !== 'model') return eccCustom;
+    const m = stateInputs?.forces;
+    return { n: m?.n ?? 0, vy: m?.vy ?? 0, vz: m?.vz ?? 0 };
+  });
+
+  /**
+   * Nothing at this station to relocate.
+   *
+   * Mid-span of a simply supported beam is exactly this case: the shear is zero
+   * and there is no axial force, so the only resultant is a bending moment —
+   * and a moment is a free vector, unchanged by where you apply it. Dragging
+   * the point then does nothing at all, which reads as a broken feature rather
+   * than as the correct answer it is. Saying so is the difference.
+   */
+  /** Is there a load parallel to the section — the one that can twist it. */
+  const eccentricHasParallel = $derived(
+    Math.abs(eccentricComponents.vy) > 1e-12 || Math.abs(eccentricComponents.vz) > 1e-12,
+  );
+
+  const eccentricNothingToMove = $derived(
+    eccSource === 'model' &&
+    Math.abs(eccentricComponents.n) < 1e-9 &&
+    Math.abs(eccentricComponents.vy) < 1e-9 &&
+    Math.abs(eccentricComponents.vz) < 1e-9,
+  );
+
+  /**
+   * A load normal to the section is what makes moving the point change the
+   * NORMAL stress. Without it, dragging can only produce torsion, and the
+   * bending diagrams correctly do not move — which looks like a broken control
+   * unless the panel says why. This is the commonest confusion the feature
+   * produces, because most 2D examples carry no axial force at all.
+   */
+  const eccentricNoAxial = $derived(
+    Math.abs(eccentricComponents.n) < 1e-12 && !eccentricNothingToMove,
+  );
+
+  /**
+   * The state under the eccentric forces — what the panel shows while the
+   * overlay is on, so the drawing, the tensors and Mohr's circle all describe
+   * the same load case rather than disagreeing with each other.
+   */
+  const eccentricState = $derived.by(() => {
+    if (!eccentric || !stateInputs) return null;
+    const r = canonicalStressState(
+      stateInputs.sec,
+      eccentric.forces,
+      stateInputs.point,
+      stateInputs.fy,
+      /*
+       * No `bending` here, deliberately. These are DIFFERENT forces — the
+       * eccentric case adds the moments the offset produces — so the cached
+       * response belongs to another load and reusing it would report the
+       * concentric answer under the eccentric one.
+       */
+      { elastic: stateInputs.elastic },
+    );
+    return r.ok ? r.state : null;
+  });
+
+  /**
+   * Length of the member being queried, metres.
+   *
+   * Warping needs it and the section cannot supply it: how a torque splits
+   * between uniform torsion and warping is a property of the MEMBER, not of its
+   * cross-section. Two beams of identical section and different length respond
+   * differently to the same torque.
+   */
+  const queryElementLength = $derived.by(() => {
+    if (!query) return 0;
+    const elem = modelStore.elements.get(query.elementId);
+    if (!elem) return 0;
+    const ni = modelStore.getNode(elem.nodeI);
+    const nj = modelStore.getNode(elem.nodeJ);
+    if (!ni || !nj) return 0;
+    return Math.hypot(nj.x - ni.x, nj.y - ni.y, (nj.z ?? 0) - (ni.z ?? 0));
+  });
+
+  /**
+   * Kern limits from the section's own moduli.
+   *
+   * A second, independent route to the same region the drawing paints as a
+   * polygon — so the numbers shown are a cross-check on the picture rather
+   * than a restatement of it. Only while the geometric axes are principal:
+   * with a nonzero product of inertia the closed form does not apply and
+   * `kernLimits` returns null, which leaves the polygon as the sole answer
+   * instead of showing a wrong one next to it.
+   */
+  const kern = $derived.by(() => {
+    if (!canonical?.ok || !stateInputs) return null;
+    const st = stateInputs.sec.canonical;
+    if (!st || st.kind !== 'geometry-backed') return null;
+    const [yMin, zMin, yMax, zMax] = canonical.geometry.bbox;
+    return kernLimits(st.a, st.iy, st.iz, st.iyz, { zMax, zMin, yMax, yMin });
+  });
+
+  /**
+   * The drawn shear diagram, checked against the canonical solve.
+   *
+   * The diagram comes from a hand-derived formula per shape; the solver meshes
+   * the real polygon. Both are legitimate — one gives the field a diagram needs,
+   * the other gives an exact value at a point — but only one is authoritative,
+   * and a wrong formula draws a picture that looks entirely reasonable. The
+   * circular tube reported half its true stress for exactly that reason.
+   *
+   * One solve, comparing the number the diagram claims most loudly.
+   */
+  const shearCheck = $derived.by(() => {
+    if (shearFlow.length === 0 || !canonical?.ok || !stateInputs) return null;
+    const st = stateInputs.sec.canonical;
+    if (!st || st.kind !== 'geometry-backed') return null;
+    const peak = Math.max(
+      ...shearFlow.flatMap((g) => g.points.map((pt) => Math.abs(pt.tau))), 0,
+    );
+    const f = stateInputs.forces;
+    return crossCheckShearPeak(st.geometry, peak, f.vy ?? 0, f.vz ?? 0);
+  });
+
+  /**
+   * Torque at the queried station, kN·m — used by the drawing and the panel.
+   *
+   * Gated on `eccentricActive`, not merely on the overlay being on: when the
+   * eccentricity changes nothing, the bending diagrams keep showing the model's
+   * own forces, and a torsion readout sourced from the eccentric case would
+   * disagree with them.
+   */
+  const activeTorque = $derived(
+    eccentricActive ? (eccentric?.forces.t ?? 0) : (stateInputs?.forces.t ?? 0),
+  );
+  const torsionFlow = $derived(resolved ? computeTorsionFlow(activeTorque, resolved) : null);
+
+  /** The state every downstream display reads. */
+  const activeState = $derived(showEccentric ? (eccentricState ?? canonicalState) : canonicalState);
+
   // Mohr circle data. Canonical where the section has geometry; the legacy
   // result only where it does not.
   const mohrData = $derived(
-    canonicalState?.mohr ?? (uses3DPath ? analysis3D?.mohr ?? null : analysis2D?.mohr ?? null),
+    activeState?.mohr ?? (uses3DPath ? analysis3D?.mohr ?? null : analysis2D?.mohr ?? null),
   );
   const mohrSigma = $derived(
-    canonicalState?.sigma ?? (uses3DPath ? (analysis3D?.sigmaAtFiber ?? 0) : (analysis2D?.sigmaAtY ?? 0)),
+    activeState?.sigma ?? (uses3DPath ? (analysis3D?.sigmaAtFiber ?? 0) : (analysis2D?.sigmaAtY ?? 0)),
   );
   const mohrTau = $derived(
-    canonicalState?.tau ?? (uses3DPath ? (analysis3D?.tauTotal ?? 0) : (analysis2D?.tauAtY ?? 0)),
+    activeState?.tau ?? (uses3DPath ? (analysis3D?.tauTotal ?? 0) : (analysis2D?.tauAtY ?? 0)),
   );
 
   const criticalSections = $derived.by(() => {
@@ -458,8 +852,22 @@
     return { maxSigmaY: maxSY, maxSigmaZ: maxSZ, maxTauY: maxTY };
   });
 
+  /**
+   * Close the panel AND leave the pointer usable.
+   *
+   * Opening this analysis switches the viewport into `selectMode = 'stress'`,
+   * where a click means "inspect the section at this station". Closing used to
+   * clear only the query, so the pointer stayed in a mode whose one gesture no
+   * longer had a panel to answer in: clicks selected nothing, dragging panned
+   * nothing, and the canvas read as frozen. There is no visible control for
+   * that mode either, so the state was unreachable as well as useless.
+   *
+   * Restoring 'elements' is what the user means by closing: back to selecting
+   * and panning.
+   */
   function close() {
     resultsStore.stressQuery = null;
+    if (uiStore.selectMode === 'stress') uiStore.selectMode = 'elements';
   }
 
   /** Update stressQuery to a new t position, recalculating world coordinates */
@@ -494,7 +902,7 @@
     style="{uiStore.isMobile && tourStore.isActive ? `bottom:auto; top:${uiStore.floatingToolsTopOffset}px; max-height:calc(100vh - ${uiStore.floatingToolsTopOffset}px - 45vh - 16px)` : ''}"
   >
     <div class="ssp-header">
-      <span class="ssp-title">{t('stress.panelTitle')} {is3D ? '3D ' : ''}{isRotated2D ? `(rot ${querySec?.rotation}°) ` : ''}</span>
+      <span class="ssp-title">{t('stress.panelTitle')} {is3D ? '3D ' : ''}{isRotated2D ? `${t('stress.rotSuffix').replace('{angle}', String(querySec?.rotation))} ` : ''}</span>
       <button class="ssp-close" onclick={close} title={t('stress.close')}>&#x2715;</button>
     </div>
 
@@ -537,7 +945,7 @@
       {/if}
       <!-- Element info + position slider (issue #12) -->
       <div class="ssp-info">
-        <span class="ssp-elem">Elem #{query.elementId}</span>
+        <span class="ssp-elem">{t('results.elemLabel').replace('{id}', String(query.elementId))}</span>
         <span class="ssp-pos">x/L = {(query.t * 100).toFixed(1)}%</span>
       </div>
       <div class="ssp-slider-row">
@@ -657,7 +1065,154 @@
         {pressureCenter}
         {globalScales}
         sectionRotation={is3D ? 0 : (querySec?.rotation ?? 0)}
+        bind:showStressMap
+        bind:showEccentric
+        bind:eccentricPoint
+        bind:eccentricPointV
+        hasParallelLoad={eccentricHasParallel}
+        hasPerpendicularLoad={Math.abs(eccentricComponents.n) > 1e-12}
+        stressField={activeState?.field ?? null}
+        shearCentre={shearCentreClean}
+        {eccentricInsideKern}
+        {torsionFlow}
+        bind:showTorsionFlow
       />
+
+      <!-- What the eccentricity produced. Shown next to the drawing rather
+           than folded into a collapsed section: it is the readout for a live
+           gesture, and a number that appears only after opening a panel cannot
+           be read while dragging. -->
+      {#if showEccentric && eccentric && eccentricPoint}
+        <div class="ssp-ecc">
+          <div class="ssp-ecc-head">
+            <span>{t('stress.eccentricTitle')}</span>
+            <button
+              class="ssp-ecc-reset"
+              onclick={() => { eccentricPoint = [0, 0]; eccentricPointV = [0, 0]; }}
+              title={t('stress.eccentricResetHelp')}
+            >{t('stress.eccentricReset')}</button>
+          </div>
+
+          <!-- Where the load comes from. Without this the panel showed forces
+               with no stated origin — on a simply supported beam with no axial
+               load, an "eccentric load" appeared from nowhere. -->
+          <div class="ssp-ecc-src">
+            <button
+              class="ssp-ecc-tab" class:active={eccSource === 'model'}
+              onclick={() => eccSource = 'model'}
+              title={t('stress.eccentricFromModelHelp')}
+            >{t('stress.eccentricFromModel')}</button>
+            <button
+              class="ssp-ecc-tab" class:active={eccSource === 'custom'}
+              onclick={() => eccSource = 'custom'}
+              title={t('stress.eccentricCustomHelp')}
+            >{t('stress.eccentricCustom')}</button>
+            <button
+              class="ssp-ecc-tab" class:active={eccSource === 'isolated'}
+              onclick={() => eccSource = 'isolated'}
+              title={t('stress.eccentricIsolatedHelp')}
+            >{t('stress.eccentricIsolated')}</button>
+          </div>
+          <!-- What the selected mode does, always visible rather than hidden in
+               a tooltip. The three differ in what they do with the member's own
+               forces — relocate, add to, or discard them — and that is not
+               guessable from a three-word label. -->
+          <p class="ssp-ecc-explain">
+            {eccSource === 'model'
+              ? t('stress.eccentricFromModelHelp')
+              : eccSource === 'custom'
+                ? t('stress.eccentricCustomHelp')
+                : t('stress.eccentricIsolatedHelp')}
+          </p>
+          {#if eccSource === 'isolated'}
+            <!-- A caveat, not a hint: the member is still carrying everything
+                 this mode is hiding. Reading these stresses as a verification
+                 would be unconservative. -->
+            <p class="ssp-ecc-note ssp-ecc-flag">{t('stress.eccentricIsolatedWarn')}</p>
+          {/if}
+
+          <!-- The components, named by their direction relative to the section
+               rather than by axis letters alone: which one twists the member
+               and which one bends it is the whole point. -->
+          <div class="ssp-ecc-fields">
+            <div class="ssp-ecc-field">
+              <span class="ssp-ecc-flabel">N <em>{t('stress.eccentricPerp')}</em></span>
+              {#if eccSource === 'custom'}
+                <input type="number" step="1" bind:value={eccCustom.n} />
+              {:else}
+                <span class="ssp-ecc-fixed">{fmtForce(eccentricComponents.n)}</span>
+              {/if}
+              <span class="ssp-ecc-unit">kN</span>
+            </div>
+            <div class="ssp-ecc-field">
+              <span class="ssp-ecc-flabel">V<sub>y</sub> <em>{t('stress.eccentricParH')}</em></span>
+              {#if eccSource === 'custom'}
+                <input type="number" step="1" bind:value={eccCustom.vy} />
+              {:else}
+                <span class="ssp-ecc-fixed">{fmtForce(eccentricComponents.vy)}</span>
+              {/if}
+              <span class="ssp-ecc-unit">kN</span>
+            </div>
+            <div class="ssp-ecc-field">
+              <span class="ssp-ecc-flabel">V<sub>z</sub> <em>{t('stress.eccentricParV')}</em></span>
+              {#if eccSource === 'custom'}
+                <input type="number" step="1" bind:value={eccCustom.vz} />
+              {:else}
+                <span class="ssp-ecc-fixed">{fmtForce(eccentricComponents.vz)}</span>
+              {/if}
+              <span class="ssp-ecc-unit">kN</span>
+            </div>
+          </div>
+
+          <!-- One row per application point: they are eccentric about
+               different references and moving them does different things. -->
+          <div class="ssp-ecc-row">
+            <span class="ssp-ecc-label">P<sub>⊥</sub> <em class="ssp-ecc-ref">{t('stress.eccentricRefG')}</em></span>
+            <span class="ssp-ecc-val">
+              y {fmtForce(eccentricPoint[0] * 1000)} · z {fmtForce(eccentricPoint[1] * 1000)} mm
+            </span>
+          </div>
+          {#if eccentricHasParallel && eccentricPointV}
+            <div class="ssp-ecc-row">
+              <span class="ssp-ecc-label">P<sub>∥</sub> <em class="ssp-ecc-ref">{t('stress.eccentricRefCC')}</em></span>
+              <span class="ssp-ecc-val">
+                y {fmtForce(eccentricPointV[0] * 1000)} · z {fmtForce(eccentricPointV[1] * 1000)} mm
+              </span>
+            </div>
+          {/if}
+
+          {#if eccentricNothingToMove}
+            <p class="ssp-ecc-note ssp-ecc-flag">{t('stress.eccentricNothingToMove')}</p>
+          {:else if eccentricNoAxial}
+            <p class="ssp-ecc-note ssp-ecc-flag">{t('stress.eccentricNoAxialNote')}</p>
+          {/if}
+
+          <div class="ssp-ecc-sep">{t('stress.eccentricProduces')}</div>
+          <div class="ssp-ecc-row">
+            <span class="ssp-ecc-label">&Delta;M<sub>y</sub> / &Delta;M<sub>z</sub></span>
+            <span class="ssp-ecc-val">
+              {fmtForce(eccentric.effect.myFromN)} / {fmtForce(eccentric.effect.mzFromN)} kN·m
+            </span>
+          </div>
+          <div class="ssp-ecc-row" class:ssp-ecc-warn={Math.abs(eccentric.effect.tFromShear) > 1e-6}>
+            <span class="ssp-ecc-label">&Delta;T</span>
+            <span class="ssp-ecc-val">{fmtForce(eccentric.effect.tFromShear)} kN·m</span>
+          </div>
+
+          <!-- Weak-axis bending on a plane frame is worth calling out: it is a
+               stress the 2D model cannot produce on its own, and seeing it
+               appear is the point of moving the load sideways. -->
+          {#if !is3D && Math.abs(eccentric.forces.mz) > 1e-9}
+            <p class="ssp-ecc-note ssp-ecc-flag">{t('stress.eccentricBiaxialNote')}</p>
+          {/if}
+          <p class="ssp-ecc-note">
+            {eccentricInsideKern ? t('stress.eccentricInKern') : t('stress.eccentricOutKern')}
+          </p>
+          {#if Math.hypot(...shearCentreClean) > 1e-9}
+            <p class="ssp-ecc-note">{t('stress.eccentricShearCentreNote')}</p>
+          {/if}
+        </div>
+      {/if}
 
       <!-- Stress state details -->
       <StressStateDetails
@@ -668,6 +1223,40 @@
         {analysis3D}
       />
 
+      <!-- The drawn diagram disagreeing with the solver is worth interrupting
+           for: it means the picture is not the physics. -->
+      {#if shearCheck && !shearCheck.agrees}
+        <div class="ssp-shear-warn" role="alert">
+          <span class="ssp-shear-warn-icon" aria-hidden="true">⚠</span>
+          <div>
+            <p class="ssp-shear-warn-text">{t('stress.shearMismatch')}</p>
+            <p class="ssp-shear-warn-nums">
+              {t('stress.shearDiagram')}: {fmtForce(shearCheck.closedForm)} MPa ·
+              {t('stress.shearSolved')}: {fmtForce(shearCheck.solved)} MPa
+            </p>
+          </div>
+        </div>
+      {/if}
+
+      <!-- Torsional shear: which theory applies and what it gives. Before the
+           tensors because it is a component OF the state they summarise. -->
+      <TorsionDetails
+        bind:showTorsion
+        torque={activeTorque}
+        {resolved}
+        length={queryElementLength}
+        e={stateInputs?.elastic?.e}
+        nu={stateInputs?.elastic?.nu ?? 0.3}
+      />
+
+      <!-- Stress and strain tensors. Above Mohr on purpose: the circle is a
+           construction on this state, so the state comes first. -->
+      <StressTensorDetails
+        bind:showTensors
+        tensors={activeState?.tensors ?? null}
+        fy={stateInputs?.fy}
+      />
+
       <!-- Mohr's circle -->
       <MohrCircleDisplay
         bind:showMohr
@@ -676,11 +1265,22 @@
         {mohrTau}
       />
 
+      <!-- How the centroid and the shear centre are found. Next to the core,
+           which is the other purely geometric property here — none of the three
+           depends on the load. -->
+      <GeometricPropertyWorking
+        bind:showCentroidWork
+        bind:showShearCentreWork
+        {resolved}
+        engineShearCentre={canonicalState?.shearCentre ? shearCentreClean : null}
+      />
+
       <!-- Central core details -->
       <CentralCoreDetails
         bind:showCentralCoreInfo
         {centralCore}
         {resolved}
+        {kern}
       />
 
       <!-- Critical sections -->
@@ -711,12 +1311,16 @@
   >
     <div class="ssp-header">
       <span class="ssp-title">{t('stress.panelTitle')}</span>
-      <button class="ssp-close" onclick={() => resultsStore.stressQuery = null}>&#x2715;</button>
+      <!-- Same `close()` as the main header: closing from the warning variant
+           left the pointer stuck in stress mode exactly as the other one did. -->
+      <button class="ssp-close" onclick={close}>&#x2715;</button>
     </div>
     <div class="ssp-amorph-msg">
       <span class="ssp-amorph-icon">⚠</span>
       {#if unavailableReason?.kind === 'noGeometryData'}
-        <p>{@html t('stress.noGeomMsg1').replace('{name}', unavailableReason.name)}</p>
+        <!-- The name is free text, so it is rendered AS text: interpolating it
+             into an {@html} string would hand a section name the markup. -->
+        <p>{t('stress.noGeomMsg1a')}<strong>{unavailableReason.name}</strong>{t('stress.noGeomMsg1b')}</p>
         <p>{t('stress.noGeomMsg2')}</p>
         <p>{t('stress.noGeomMsg3')}</p>
       {:else}
@@ -971,6 +1575,163 @@
     flex-wrap: wrap;
     gap: 4px;
     padding: 4px 0;
+  }
+
+  .ssp-shear-warn {
+    display: flex;
+    gap: 7px;
+    margin: 4px 0 6px;
+    padding: 7px 9px;
+    border-radius: 4px;
+    background: rgba(214, 69, 69, 0.1);
+    border-left: 2px solid var(--st-danger);
+  }
+  .ssp-shear-warn-icon { color: var(--st-danger); flex: none; }
+  .ssp-shear-warn-text {
+    margin: 0;
+    font-size: 0.63rem;
+    line-height: 1.45;
+    color: var(--st-text-2);
+  }
+  .ssp-shear-warn-nums {
+    margin: 3px 0 0;
+    font-family: 'Courier New', monospace;
+    font-size: 0.6rem;
+    color: var(--st-text-3);
+  }
+
+  /* Eccentric-load readout. Sits under the drawing, always expanded while the
+     overlay is on, because it is the feedback for a live drag. */
+  .ssp-ecc {
+    margin: 2px 0 8px;
+    padding: 6px 8px;
+    border-radius: 4px;
+    background: rgba(255, 140, 0, 0.06);
+    border: 1px solid rgba(255, 140, 0, 0.22);
+  }
+  .ssp-ecc-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 6px;
+    margin-bottom: 4px;
+    font-size: 0.63rem;
+    text-transform: uppercase;
+    letter-spacing: 0.4px;
+    color: var(--st-warn);
+  }
+  .ssp-ecc-reset {
+    padding: 1px 6px;
+    border-radius: 3px;
+    border: 1px solid rgba(255, 140, 0, 0.35);
+    background: none;
+    color: var(--st-warn);
+    font-size: 0.58rem;
+    cursor: pointer;
+    text-transform: none;
+    letter-spacing: 0;
+  }
+  .ssp-ecc-reset:hover { background: rgba(255, 140, 0, 0.15); }
+  .ssp-ecc-row {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 6px;
+    font-size: 0.67rem;
+    color: var(--st-text-2);
+  }
+  .ssp-ecc-label { color: var(--st-text-3); flex: none; }
+  /* Which reference the point is eccentric ABOUT — the distinction the whole
+     feature turns on, so it travels with the label. */
+  .ssp-ecc-ref { font-style: normal; opacity: 0.65; font-size: 0.9em; }
+  .ssp-ecc-val { font-family: 'Courier New', monospace; text-align: right; }
+  /* Torsion that the eccentricity created is the finding worth colouring:
+     it appears without anyone having applied a torque. */
+  .ssp-ecc-warn .ssp-ecc-val { color: var(--st-warn); font-weight: 600; }
+  .ssp-ecc-note {
+    margin: 4px 0 0;
+    font-size: 0.58rem;
+    line-height: 1.4;
+    color: var(--st-text-3);
+  }
+  .ssp-ecc-flag { color: var(--st-warn); opacity: 0.95; }
+
+  .ssp-ecc-src {
+    display: flex;
+    gap: 3px;
+    margin: 5px 0 6px;
+  }
+  .ssp-ecc-explain {
+    margin: 0 0 6px;
+    font-size: 0.59rem;
+    line-height: 1.45;
+    color: var(--st-text-3);
+  }
+  .ssp-ecc-tab {
+    flex: 1;
+    padding: 3px 4px;
+    border-radius: 3px;
+    border: 1px solid rgba(255, 140, 0, 0.25);
+    background: none;
+    color: var(--st-text-3);
+    font-size: 0.57rem;
+    cursor: pointer;
+  }
+  .ssp-ecc-tab:hover { color: var(--st-text-2); }
+  .ssp-ecc-tab.active {
+    background: rgba(255, 140, 0, 0.16);
+    border-color: var(--st-warn);
+    color: var(--st-warn);
+  }
+
+  .ssp-ecc-fields {
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+    margin-bottom: 5px;
+  }
+  .ssp-ecc-field {
+    display: flex;
+    align-items: baseline;
+    gap: 5px;
+    font-size: 0.65rem;
+  }
+  .ssp-ecc-flabel { flex: 1; color: var(--st-text-3); min-width: 0; }
+  /* The direction reminder, subordinate to the symbol it qualifies. */
+  .ssp-ecc-flabel em {
+    font-style: normal;
+    opacity: 0.7;
+    font-size: 0.9em;
+  }
+  .ssp-ecc-field input {
+    width: 62px;
+    padding: 1px 4px;
+    border-radius: 3px;
+    border: 1px solid rgba(255, 140, 0, 0.3);
+    background: rgba(0, 0, 0, 0.25);
+    color: var(--st-text);
+    font-family: 'Courier New', monospace;
+    font-size: 0.65rem;
+    text-align: right;
+  }
+  /* Model forces are shown in the same column as the inputs but visibly not
+     editable: they are a reading of the member, not a setting. */
+  .ssp-ecc-fixed {
+    width: 62px;
+    text-align: right;
+    font-family: 'Courier New', monospace;
+    color: var(--st-text-2);
+  }
+  .ssp-ecc-unit { color: var(--st-text-3); opacity: 0.7; width: 22px; }
+
+  .ssp-ecc-sep {
+    margin: 6px 0 3px;
+    padding-top: 5px;
+    border-top: 1px solid rgba(255, 140, 0, 0.2);
+    font-size: 0.58rem;
+    text-transform: uppercase;
+    letter-spacing: 0.4px;
+    color: var(--st-text-3);
   }
 
   .ssp-critical-chip {

@@ -161,6 +161,19 @@
 
   --st-hair: rgba(143, 163, 179, 0.22);
   --st-hair-strong: rgba(143, 163, 179, 0.38);
+  /*
+   * `--st-border` is what people write when they mean a hairline, and for a
+   * long time it was written 23 times across six components without ever being
+   * defined. An undefined custom property makes the whole declaration invalid,
+   * so those borders were silently not drawn: the section picker's preview card
+   * had no edge while the drawing inside it kept a hardcoded blue box of its
+   * own, which is the "untidy" the panel was repeatedly reported for.
+   *
+   * Defined as the alias it was always assumed to be. A test now checks that
+   * every `--st-*` referenced anywhere resolves here, because this failure mode
+   * is invisible: nothing errors, the style just does not happen.
+   */
+  --st-border: var(--st-hair);
 
   /* ── Semantic: text ──────────────────────────────────────────────────── */
 

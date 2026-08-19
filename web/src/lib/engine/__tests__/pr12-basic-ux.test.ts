@@ -116,3 +116,38 @@ describe('Task 2 — Select→Stresses removed, Advanced→Section Analysis kept
     expect(ui).toMatch(/SelectMode\s*=[^;]*'stress'/);
   });
 });
+
+/**
+ * Leaving stress mode.
+ *
+ * `selectMode = 'stress'` has no visible control: it is armed by Advanced →
+ * Section Analysis and disarmed only by closing the panel. So every close path
+ * must disarm it, or the pointer is left in a mode where clicking selects
+ * nothing and dragging pans nothing, with no way back — the canvas reads as
+ * frozen and the app as broken.
+ *
+ * Asserted against the source because the alternative is mounting the whole
+ * app; that is the same trade the tests above already make.
+ */
+describe('closing section analysis returns the pointer to selection', () => {
+  it("the panel's own close restores selectMode instead of only clearing the query", () => {
+    const panel = read('../../../components/SectionStressPanel.svelte');
+    expect(panel).toContain("if (uiStore.selectMode === 'stress') uiStore.selectMode = 'elements'");
+  });
+
+  it('both close buttons go through that path, not just the main one', () => {
+    const panel = read('../../../components/SectionStressPanel.svelte');
+    // The amorphous-section variant has its own header and used to clear the
+    // query inline, stranding the pointer exactly as the main one did.
+    expect(panel).not.toMatch(/onclick=\{\(\)\s*=>\s*resultsStore\.stressQuery\s*=\s*null\}/);
+  });
+
+  it('closing the whole right panel disarms it too', () => {
+    // The panel is where a stress click is answered. Dismissing it while the
+    // question mode stays armed is the state the user actually hit.
+    const app = read('../../../App.svelte');
+    expect(app).toContain('function closeBasicPanel()');
+    expect(app).toMatch(/closeBasicPanel[\s\S]{0,400}selectMode = 'elements'/);
+    expect(app).toContain('onClose={closeBasicPanel}');
+  });
+});

@@ -5,6 +5,16 @@ import type { UnitSystem } from '../utils/units';
 import type { Element3DMetadata } from '../model/element-3d-metadata';
 
 export type Tool = 'select' | 'node' | 'element' | 'support' | 'load' | 'pan' | 'influenceLine';
+
+/**
+ * Tools that build the model, as opposed to selecting or panning.
+ *
+ * THE one list. The tool setter, the view-mode rules, the ribbon and the data
+ * table all decide "is this editing" from it; it had been re-spelled in four
+ * places, which is how the copies drift. It lives here — not in view-mode.ts —
+ * because this store cannot import that module without closing an import cycle.
+ */
+export const EDIT_TOOLS: readonly Tool[] = ['node', 'element', 'support', 'load'];
 export type ILQuantity = 'Rz' | 'Ry' | 'Rx' | 'My' | 'Mz' | 'V' | 'M';
 export type SupportTool = 'fixed' | 'pinned' | 'roller' | 'spring';
 export type LoadTool = 'nodal' | 'distributed' | 'thermal';
@@ -109,6 +119,14 @@ function createUIStore() {
   let panY = $state<number>(300);
 
   let selectMode = $state<SelectMode>('elements');
+
+  /**
+   * Called when a build tool is armed, so the results view can stand down.
+   *
+   * A hook rather than a direct call: this store must not import the results
+   * store, and the alternative — every caller remembering — is what failed.
+   */
+  let _onEditToolArmed: (() => void) | null = null;
   let selectedNodes = $state<Set<number>>(new Set());
   let selectedElements = $state<Set<number>>(new Set());
   // True only when selectedElements was set by a genuine MANUAL element action
@@ -402,7 +420,25 @@ function createUIStore() {
 
   return {
     get currentTool() { return currentTool; },
-    set currentTool(v: Tool) { currentTool = v; },
+    /**
+     * Arming a tool is a MODE change, so it carries the rule with it.
+     *
+     * The rule — that building and reading results are exclusive — lived in the
+     * callers, and there turned out to be six of them: the ribbon, the results
+     * toolbar, the floating tools, the keyboard shortcuts, the data tabs and
+     * the selected-entity panel. Two coordinated. The other four armed a tool
+     * and left whatever diagram was on screen exactly where it was, so the app
+     * claimed you were placing nodes on a moment diagram — which is what a user
+     * kept seeing.
+     *
+     * Putting it here makes it unevadable. The dependency is inverted through a
+     * hook rather than importing the results store, which would make the two
+     * import each other.
+     */
+    set currentTool(v: Tool) {
+      currentTool = v;
+      if (EDIT_TOOLS.includes(v)) _onEditToolArmed?.();
+    },
 
     get supportType() { return supportType; },
     set supportType(v: SupportTool) { supportType = v; },
@@ -471,6 +507,9 @@ function createUIStore() {
     get panY() { return panY; },
     set panY(v: number) { panY = v; },
 
+    /** Register the reaction to arming a build tool. Called once, at startup. */
+    onEditToolArmed(fn: () => void) { _onEditToolArmed = fn; },
+
     get selectMode() { return selectMode; },
     set selectMode(v: SelectMode) { applySelectMode(v); },
 
@@ -486,6 +525,14 @@ function createUIStore() {
     },
 
     get selectedSupports() { return selectedSupports; },
+    /**
+     * Settable, like `selectedLoads` beside it.
+     *
+     * Box select needs to hand back a whole set at once; without a setter the
+     * only way in was one-at-a-time through `selectSupport`, which clears the
+     * others unless shift is held and would make a marquee select exactly one.
+     */
+    set selectedSupports(v: Set<number>) { selectedSupports = v; },
     clearSelectedSupports() { selectedSupports = new Set(); },
     get selectedShells() { return selectedShells; },
 

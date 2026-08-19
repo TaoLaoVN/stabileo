@@ -90,6 +90,20 @@ export function stationForces3D(
     mzStart: number; mzEnd: number;
     vyStart?: number; vyEnd?: number;
     vzStart?: number; vzEnd?: number;
+    /**
+     * Torsion about the local x axis.
+     *
+     * `mxStart` is what the 3D solver actually produces. This used to name the
+     * field `txStart`, which no result object has ever carried, so the optional
+     * read silently returned zero: the section panel showed "Mx = 8.00 kN·m" in
+     * its header and "no torque at this station" three rows below it, and every
+     * torsional and warping stress in the application was zero for that reason.
+     *
+     * The alias remains because a caller that assembles its own station forces
+     * may legitimately call the quantity T; what cannot happen again is only
+     * one spelling being read.
+     */
+    mxStart?: number; mxEnd?: number;
     txStart?: number; txEnd?: number;
   },
   t: number,
@@ -105,7 +119,7 @@ export function stationForces3D(
     // still works; absent means zero, never "unknown scaled to something".
     vy: opt(ef.vyStart, ef.vyEnd),
     vz: opt(ef.vzStart, ef.vzEnd),
-    tx: opt(ef.txStart, ef.txEnd),
+    tx: opt(ef.mxStart ?? ef.txStart, ef.mxEnd ?? ef.txEnd),
   };
 }
 

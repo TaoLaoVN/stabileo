@@ -56,6 +56,16 @@ export interface Material {
   rho: number; // kN/m³
   fy?: number; // MPa (yield stress for stress verification)
   /**
+   * Which catalogued grade this material came from, when it came from one.
+   *
+   * Stored rather than inferred from `name`: a user can rename a material to
+   * anything, and reading a designation back out of a label is the kind of
+   * guess this codebase avoids elsewhere. Absent means "not from the
+   * catalogue", which is a real state and not a missing value — nothing that
+   * reads this should warn about its absence.
+   */
+  gradeId?: string;
+  /**
    * Maximum nominal coarse-aggregate size, mm, or null when the project has not stated it.
    *
    * This lives on the MATERIAL, not on the regulation settings. It is a property of the
@@ -102,6 +112,14 @@ export interface Section {
   iy?: number;  // m⁴ — moment of inertia about Y-axis (horizontal) (3D only)
   j?: number;   // m⁴ — torsional constant Saint-Venant (3D only)
   rotation?: number;  // degrees — rotation of section profile around bar axis (0-360)
+  /**
+   * Which catalogue family this section was picked from (IPE, W, UPN...).
+   *
+   * Same reasoning as `Material.gradeId`: recorded at selection time, never
+   * parsed back out of the name. It is what lets the app tell whether a
+   * section/steel pairing matches what mills actually roll.
+   */
+  profileFamily?: string;
   /**
    * Explicit canonical outline, in metres, section coordinates.
    *

@@ -25,8 +25,16 @@
    * They live in the contextual bar under the ribbon instead.
    */
 
-  type Props = { panel: string; onClose: () => void };
-  let { panel, onClose }: Props = $props();
+  type Props = {
+    panel: string;
+    /**
+     * The open Model-data tab, BOUND. The ribbon lights whichever command
+     * matches it, so a change made inside the table has to travel back up.
+     */
+    dataTab?: string;
+    onClose: () => void;
+  };
+  let { panel, dataTab = $bindable('nodes'), onClose }: Props = $props();
 
   /**
    * Width is dragged and remembered.
@@ -176,7 +184,7 @@
       {#if dsmStepsStore.isOpen}
         <StepWizard />
       {:else}
-        <DataTable />
+        <DataTable bind:activeTab={dataTab} />
       {/if}
     {/if}
   </div>

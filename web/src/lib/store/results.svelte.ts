@@ -75,7 +75,7 @@ function createResultsStore() {
   let deformedScale = $state<number>(1); // Scale factor for deformed shape (applied directly to displacements)
   let diagramScale = $state<number>(1); // Multiplier for M/V/N diagram size (1 = default 60px height)
   let animateDeformed = $state<boolean>(false);
-  let colorMapKind = $state<'moment' | 'shear' | 'axial' | 'stressRatio' | 'vonMises' | 'shellVonMises' | 'shellBending'>('moment');
+  let colorMapKind = $state<'moment' | 'shear' | 'axial' | 'momentY' | 'momentZ' | 'shearY' | 'shearZ' | 'torsion' | 'stressRatio' | 'vonMises' | 'shellVonMises' | 'shellBending'>('moment');
   // Which shell quantity the shell contour paints (selectable in PRO results).
   let shellContourComponent = $state<import('../engine/shell-stress').ShellContourComponent>('vonMises');
   let showDiagramValues = $state<boolean>(true);
@@ -168,12 +168,23 @@ function createResultsStore() {
   // importing verificationStore (mirrors modelStore's `_onMutation` wiring).
   let _onResultsPublish: (() => void) | null = null;
 
+  // Diagram-shown notification — set by view-mode.ts so that putting a result
+  // on screen disarms an armed build tool, without this store importing the UI
+  // store (the mirror image of uiStore's `_onEditToolArmed`).
+  let _onDiagramShown: (() => void) | null = null;
+
   return {
     /** Wired in store/index.ts. Fired on every fresh-solve results publish
      *  (setResults3D / setCombinationResults3D) so verificationStore can advance
      *  its solve-generation counter — including a plain re-solve with no
      *  structural mutation (self-weight / axis-convention toggle). */
     _setOnResultsPublish(fn: () => void) { _onResultsPublish = fn; },
+
+    /** Wired by view-mode.ts's installViewModeRules(). Fired whenever the
+     *  diagramType setter puts a diagram on screen, so EVERY entry point —
+     *  keyboard shortcuts, mobile panel, toolbars, url-sharing — gets the
+     *  editing/reading exclusion, not just the ones that call showDiagram(). */
+    _setOnDiagramShown(fn: () => void) { _onDiagramShown = fn; },
 
     get results() { return results; },
     /** True when ANY result of any kind is present. Used by the mutation hook
@@ -208,9 +219,21 @@ function createResultsStore() {
       );
     },
     get diagramType() { return diagramType; },
+    /**
+     * Putting a diagram on screen is a MODE change, so it carries the rule
+     * with it — like `uiStore.currentTool`, the dependency is inverted through
+     * a hook rather than importing the UI store.
+     *
+     * Note the rule fires only through THIS setter. The store's own methods
+     * (setResults, setModalResult, …) write the field directly; those are
+     * fresh-solve publishes, which already reset the workspace around them.
+     */
     set diagramType(v: DiagramType) {
       diagramType = v;
-      if (v !== 'none') _lastDiagramType = v;
+      if (v !== 'none') {
+        _lastDiagramType = v;
+        _onDiagramShown?.();
+      }
     },
     get deformedScale() { return deformedScale; },
     set deformedScale(v: number) { deformedScale = v; },
@@ -219,7 +242,7 @@ function createResultsStore() {
     get animateDeformed() { return animateDeformed; },
     set animateDeformed(v: boolean) { animateDeformed = v; },
     get colorMapKind() { return colorMapKind; },
-    set colorMapKind(v: 'moment' | 'shear' | 'axial' | 'stressRatio' | 'vonMises' | 'shellVonMises' | 'shellBending') { colorMapKind = v; },
+    set colorMapKind(v: 'moment' | 'shear' | 'axial' | 'momentY' | 'momentZ' | 'shearY' | 'shearZ' | 'torsion' | 'stressRatio' | 'vonMises' | 'shellVonMises' | 'shellBending') { colorMapKind = v; },
     get shellContourComponent() { return shellContourComponent; },
     set shellContourComponent(v: import('../engine/shell-stress').ShellContourComponent) { shellContourComponent = v; },
     get showDiagramValues() { return showDiagramValues; },
@@ -563,13 +586,30 @@ function createResultsStore() {
       perCombo = pco;
       envelope = env;
       activeCaseId = null; // reset individual case selection
-      // Default: show "Cargas simples" (all loads ×1) if available
+      /*
+       * Default to "Cargas simples" — all loads at unit factor.
+       *
+       * The fallback used to be the ENVELOPE, which is the wrong thing to land
+       * on: an envelope is a summary of every case at once, so no single
+       * diagram it shows corresponds to a state the structure is ever in. It
+       * is what you check against at the end, not what you open on.
+       *
+       * With no base solve available the first individual CASE is the honest
+       * default — a real load state, and one whose diagram means something.
+       */
       if (singleResults) {
         results = singleResults;
         activeView = 'single';
       } else {
-        results = env.maxAbsResults;
-        activeView = 'envelope';
+        const firstCase = pc.keys().next().value;
+        if (firstCase !== undefined) {
+          results = pc.get(firstCase)!;
+          activeCaseId = firstCase;
+          activeView = 'single';
+        } else {
+          results = env.maxAbsResults;
+          activeView = 'envelope';
+        }
       }
       activeComboId = pco.keys().next().value ?? null;
       // Preserve current diagram type if it's a results-based view
@@ -729,6 +769,10 @@ function createResultsStore() {
         results3D = singleResults3D;
         activeView = 'single';
       } else if (activeComboId !== null && pco.has(activeComboId)) {
+        // TODO: deliberate divergence from the 2D path (setCombinationResults),
+        // which lands on the first individual CASE when no base solve exists —
+        // a combination is a factored mix, not a state the structure is ever
+        // in. Reconcile the two, most likely by porting the 2D fallback here.
         results3D = pco.get(activeComboId)!;
         activeView = 'combo';
       } else {

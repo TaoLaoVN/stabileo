@@ -1,4 +1,5 @@
 // Render loads on Canvas 2D
+import { createLabelCollector, type LabelCollector, type SegmentObstacle } from './label-layout';
 
 import { canvasTheme } from './theme';
 
@@ -7,6 +8,18 @@ interface DrawContext {
   worldToScreen: (wx: number, wy: number) => { x: number; y: number };
   getNode: (id: number) => { x: number; y: number } | undefined;
   getElement: (id: number) => { nodeI: number; nodeJ: number } | undefined;
+  /**
+   * Every member, in screen coordinates, so labels can avoid landing on the
+   * structure. Optional: a caller that does not supply them gets labels placed
+   * against each other only, which is still better than against nothing.
+   */
+  memberSegments?: () => SegmentObstacle[];
+  /**
+   * Shared label collector, when the caller wants ONE layout pass for the whole
+   * frame. Without it each renderer resolves its own labels, which is correct
+   * within that renderer and blind to every other one.
+   */
+  labels?: LabelCollector;
 }
 
 interface DistLoadInfo {
@@ -17,7 +30,6 @@ interface DistLoadInfo {
   isGlobal?: boolean; // false=local coords (default), true=global coords
   caseColor?: string;    // color for this load case
   caseName?: string;     // name prefix for labels (e.g. "D", "L")
-  labelYOffset?: number; // pixel offset for stacking overlapping labels
   a?: number; // start position from node I (m). Default: 0
   b?: number; // end position from node I (m). Default: element length
 }
@@ -33,7 +45,6 @@ interface PointLoadOnElemInfo {
   isGlobal?: boolean; // false=local coords (default), true=global coords
   caseColor?: string;    // color for this load case
   caseName?: string;     // name prefix for labels
-  labelYOffset?: number; // pixel offset for stacking overlapping labels
 }
 
 /**
@@ -79,6 +90,28 @@ function normalize(x: number, y: number): { x: number; y: number } {
 /**
  * Draw distributed loads as arrows perpendicular to elements with an envelope line.
  */
+
+/**
+ * Reading order for load cases of equal magnitude.
+ *
+ * Equal values are the common case, not the exception — the same UDL on every
+ * floor of a frame — and without a rule their order falls out of however the
+ * model stored them, so the same building can list them differently after an
+ * edit that changed nothing. Dead, live, wind, seismic is the order these are
+ * written in every code and every hand calculation.
+ *
+ * Matched on the case's own name. A name outside the list sorts after all of
+ * them rather than being guessed at: inventing a category for "Grúa" would be
+ * worse than putting it last.
+ */
+const LOAD_CASE_ORDER = ['D', 'L', 'W', 'E'];
+
+function loadCaseRank(caseName?: string): number {
+  if (!caseName) return LOAD_CASE_ORDER.length;
+  const i = LOAD_CASE_ORDER.indexOf(caseName.trim().charAt(0).toUpperCase());
+  return i < 0 ? LOAD_CASE_ORDER.length : i;
+}
+
 export function drawDistributedLoads(
   loads: DistLoadInfo[],
   dc: DrawContext,
@@ -94,6 +127,21 @@ export function drawDistributedLoads(
   if (maxQ < 1e-10) return;
 
   const ARROW_MAX_PX = 22; // max arrow length in screen px (shorter than point loads to visually distinguish)
+
+  /*
+   * Labels go to the frame's collector when there is one, so they are laid out
+   * against every other label on screen and not only against each other. A
+   * caller without one gets a private collector flushed at the end here, which
+   * is the same behaviour scoped to this renderer.
+   */
+  /*
+   * Label boxes below declare `width: 0` on purpose: the collector measures
+   * the text against the real font at draw time. A declared width is a guess,
+   * and a guess is wrong in both directions — too wide pushes a value clear of
+   * something it never touched, too narrow lets it land on something it does.
+   */
+  const labels = dc.labels ?? createLabelCollector();
+  const ownsFlush = !dc.labels;
 
   for (const load of loads) {
     const elem = dc.getElement(load.elementId);
@@ -172,6 +220,12 @@ export function drawDistributedLoads(
       const fromY = base.y + snY * arrowLen;
 
       arrowTips.push({ x: fromX, y: fromY });
+      /*
+       * The arrows are an obstacle too. Without this a small load's label sits
+       * correctly clear of ITS OWN short arrows — which is inside the taller
+       * arrows of the larger load next to it.
+       */
+      labels.block({ x1: base.x, y1: base.y, x2: fromX, y2: fromY });
 
       ctx.beginPath();
       ctx.moveTo(fromX, fromY);
@@ -230,35 +284,76 @@ export function drawDistributedLoads(
 
     const labelColor = loadColor;
     const casePrefix = load.caseName ? `${load.caseName}: ` : '';
-    const yOff = load.labelYOffset ?? 0;
     const coordLabel = loadIsGlobal ? ' [Y]' : (loadAngle !== 0 ? ` [⊥ ${loadAngle}°]` : '');
 
+    /*
+     * Labels are COLLECTED, not drawn.
+     *
+     * Two loads on one beam — a dead and a live, the ordinary case — put their
+     * values at the same midpoint and wrote one over the other. They are laid
+     * out together after the loop instead, by magnitude, so the larger keeps
+     * the spot nearest its arrows and the smaller stacks above it.
+     */
     if (isUniform) {
-      // Single label at midpoint of load span
       const midScreen = dc.worldToScreen(nodeI.x + tMid * dx, nodeI.y + tMid * dy);
       const tipW = dc.worldToScreen(
         nodeI.x + tMid * dx + arrowDirX * 0.01,
         nodeI.y + tMid * dy + arrowDirY * 0.01,
       );
       const sn = normalize(tipW.x - midScreen.x, tipW.y - midScreen.y);
-      ctx.font = '12px sans-serif';
-      ctx.fillStyle = labelColor;
-      ctx.fillText(`${casePrefix}${Math.abs(load.qI).toFixed(1)} kN/m${coordLabel}`, midScreen.x + sn.x * (maxArrowLen + 12), midScreen.y + sn.y * (maxArrowLen + 12) + yOff);
+      /*
+       * `fillText` measures from the BASELINE, so the glyphs sit above the
+       * point given. A label placed below the arrows therefore needs the text
+       * height added, or it is drawn back over the arrowheads it just cleared.
+       */
+      const baseline = sn.y > 0 ? 12 : 0;
+      labels.add({
+        text: `${casePrefix}${Math.abs(load.qI).toFixed(1)} kN/m${coordLabel}`,
+        colour: labelColor,
+        font: '12px sans-serif',
+        box: {
+          x: midScreen.x + sn.x * (maxArrowLen + 12),
+          y: midScreen.y + sn.y * (maxArrowLen + 12) + baseline,
+          width: 0, height: 14,
+          dirX: sn.x, dirY: sn.y,
+          priority: Math.abs(load.qI),
+          /*
+           * Every uniform load on this member is one list, laid out as a block
+           * with the largest on top. They are not independent annotations that
+           * happen to be near each other — they are that beam's load table.
+           */
+          group: `udl-${load.elementId}`,
+          rank: loadCaseRank(load.caseName),
+        },
+      });
     } else {
-      // Labels at both ends of load span
-      ctx.font = '11px sans-serif';
-      ctx.fillStyle = labelColor;
-      for (const [t, q] of [[tStart, load.qI], [tEnd, load.qJ]] as [number, number][]) {
+      for (const [t, q, end] of [[tStart, load.qI, 'i'], [tEnd, load.qJ, 'j']] as [number, number, string][]) {
         const wx = nodeI.x + t * dx;
         const wy = nodeI.y + t * dy;
         const s = dc.worldToScreen(wx, wy);
         const tipW = dc.worldToScreen(wx + arrowDirX * 0.01, wy + arrowDirY * 0.01);
         const sn = normalize(tipW.x - s.x, tipW.y - s.y);
         const aLen = ARROW_MAX_PX * Math.abs(q) / maxQ;
-        ctx.fillText(`${casePrefix}${Math.abs(q).toFixed(1)} kN/m${coordLabel}`, s.x + sn.x * (aLen + 10), s.y + sn.y * (aLen + 10) + yOff);
+        labels.add({
+          text: `${casePrefix}${Math.abs(q).toFixed(1)} kN/m${coordLabel}`,
+          colour: labelColor,
+          font: '11px sans-serif',
+          box: {
+            x: s.x + sn.x * (aLen + 10),
+            y: s.y + sn.y * (aLen + 10) + (sn.y > 0 ? 11 : 0),
+            width: 0, height: 13, dirX: sn.x, dirY: sn.y, priority: Math.abs(q),
+            // Grouped per END of the member: two trapezoidal loads list their
+            // start values together and their end values together, which is
+            // where each pair actually competes for room.
+            group: `udl-${load.elementId}-${end}`,
+            rank: loadCaseRank(load.caseName),
+          },
+        });
       }
     }
   }
+
+  if (ownsFlush) labels.flush(ctx, dc.memberSegments?.() ?? []);
 }
 
 /**
@@ -298,6 +393,7 @@ function drawForceArrow(
 
   return { fromX, fromY };
 }
+
 
 /**
  * Draw a moment symbol (curved arrow) at screen position.
@@ -363,6 +459,9 @@ export function drawPointLoadsOnElements(
 
   const ARROW_PX = 40;
 
+  const labels = dc.labels ?? createLabelCollector();
+  const ownsFlush = !dc.labels;
+
   for (const load of loads) {
     const elem = dc.getElement(load.elementId);
     if (!elem) continue;
@@ -388,7 +487,6 @@ export function drawPointLoadsOnElements(
     const base = dc.worldToScreen(wx, wy);
     const ptColor = load.caseColor ?? canvasTheme().accent;
     const ptCasePrefix = load.caseName ? `${load.caseName}: ` : '';
-    const ptYOff = load.labelYOffset ?? 0;
     const coordLabel = loadIsGlobal ? ' [Y]' : (loadAngle !== 0 ? ` [⊥ ${loadAngle}°]` : '');
 
     // 1) Draw perpendicular force (p)
@@ -405,14 +503,22 @@ export function drawPointLoadsOnElements(
       const snY = sPerpLen > 0 ? sPerpY / sPerpLen : -1;
 
       const { fromX, fromY } = drawForceArrow(ctx, base.x, base.y, snX, snY, ARROW_PX, ptColor);
+      labels.block({ x1: base.x, y1: base.y, x2: fromX, y2: fromY });
 
-      ctx.font = '12px sans-serif';
-      ctx.fillStyle = ptColor;
-      ctx.fillText(
-        `${ptCasePrefix}${Math.abs(load.p).toFixed(1)} kN${coordLabel}`,
-        fromX + 5,
-        fromY - 5 + ptYOff,
-      );
+      labels.add({
+        text: `${ptCasePrefix}${Math.abs(load.p).toFixed(1)} kN${coordLabel}`,
+        colour: ptColor,
+        font: '12px sans-serif',
+        box: {
+          x: fromX + 5, y: fromY - 5,
+          width: 0, height: 14,
+          // Leftward by preference — a value to the right of the arrow is the
+          // one that lands on the next column along. `both` so a member on the
+          // left does not simply trade one collision for another.
+          dirX: -1, dirY: 0, sweep: 'any', anchorX: 'left',
+          priority: Math.abs(load.p),
+        },
+      });
     }
 
     // 2) Draw axial force (px)
@@ -431,15 +537,21 @@ export function drawPointLoadsOnElements(
       const snY = sALen > 0 ? -sAy / sALen : 0;
 
       const { fromX, fromY } = drawForceArrow(ctx, base.x, base.y, snX, snY, ARROW_PX, ptColor);
+      labels.block({ x1: base.x, y1: base.y, x2: fromX, y2: fromY });
 
-      ctx.font = '12px sans-serif';
-      ctx.fillStyle = ptColor;
       const axLabel = loadIsGlobal ? 'Fx' : 'Fi';
-      ctx.fillText(
-        `${ptCasePrefix}${axLabel}=${Math.abs(px).toFixed(1)} kN`,
-        fromX + 5,
-        fromY - 5 + ptYOff + (Math.abs(load.p) > 1e-10 ? 14 : 0),
-      );
+      labels.add({
+        text: `${ptCasePrefix}${axLabel}=${Math.abs(px).toFixed(1)} kN`,
+        colour: ptColor,
+        font: '12px sans-serif',
+        box: {
+          x: fromX + 5,
+          y: fromY - 5 + (Math.abs(load.p) > 1e-10 ? 14 : 0),
+          width: 0, height: 14,
+          dirX: -1, dirY: 0, sweep: 'any', anchorX: 'left',
+          priority: Math.abs(px),
+        },
+      });
     }
 
     // 3) Draw moment (My in the Z-up 2D contract; keep mz as legacy alias)
@@ -447,16 +559,22 @@ export function drawPointLoadsOnElements(
     if (Math.abs(my) > 1e-10) {
       drawMomentSymbol(ctx, base.x, base.y, my, ptColor);
 
-      ctx.font = '12px sans-serif';
-      ctx.fillStyle = ptColor;
       const yOff = (Math.abs(load.p) > 1e-10 ? 14 : 0) + (Math.abs(px) > 1e-10 ? 14 : 0);
-      ctx.fillText(
-        `${ptCasePrefix}My=${Math.abs(my).toFixed(1)} kN·m`,
-        base.x + 18,
-        base.y - 18 + ptYOff + yOff,
-      );
+      labels.add({
+        text: `${ptCasePrefix}My=${Math.abs(my).toFixed(1)} kN·m`,
+        colour: ptColor,
+        font: '12px sans-serif',
+        box: {
+          x: base.x + 18, y: base.y - 18 + yOff,
+          width: 0, height: 14,
+          dirX: -1, dirY: 0, sweep: 'any', anchorX: 'left',
+          priority: Math.abs(my),
+        },
+      });
     }
   }
+
+  if (ownsFlush) labels.flush(ctx, dc.memberSegments?.() ?? []);
 }
 
 interface ThermalLoadInfo {
@@ -464,7 +582,6 @@ interface ThermalLoadInfo {
   dtUniform: number; // °C uniform ΔT
   dtGradient: number; // °C gradient ΔTg
   caseName?: string;     // name prefix for labels
-  labelYOffset?: number; // pixel offset for stacking overlapping labels
 }
 
 /**
@@ -479,6 +596,9 @@ export function drawThermalLoads(
 ): void {
   const { ctx } = dc;
   if (loads.length === 0) return;
+
+  const labels = dc.labels ?? createLabelCollector();
+  const ownsFlush = !dc.labels;
 
   const OFFSET_PX = 14; // offset from element axis
   const SYMBOL_SIZE = 5; // half-size of + or - symbol
@@ -533,13 +653,34 @@ export function drawThermalLoads(
         drawSymbol(ctx, botX, botY, sign, SYMBOL_SIZE);
       }
 
-      // Label at midpoint
-      const midX = sI.x + 0.5 * sDx + nx * (OFFSET_PX + 14);
-      const midY = sI.y + 0.5 * sDy + ny * (OFFSET_PX + 14);
-      ctx.font = '11px sans-serif';
+      // The two rows of symbols are strips a label must stay out of.
+      for (const side of [1, -1]) {
+        labels.block({
+          x1: sI.x + nx * OFFSET_PX * side, y1: sI.y + ny * OFFSET_PX * side,
+          x2: sJ.x + nx * OFFSET_PX * side, y2: sJ.y + ny * OFFSET_PX * side,
+          pad: SYMBOL_SIZE + 2,
+        });
+      }
+
+      /*
+       * The value goes to the same layout pass as every other load, so a
+       * thermal case on a member that also carries a UDL does not write over
+       * it. The +4 restores the visual centring the old `textBaseline =
+       * middle` gave, now that the layout measures from the baseline.
+       */
       const thermPrefix = load.caseName ? `${load.caseName}: ` : '';
-      const thermYOff = load.labelYOffset ?? 0;
-      ctx.fillText(`${thermPrefix}ΔT=${load.dtUniform > 0 ? '+' : ''}${load.dtUniform}°C`, midX, midY + thermYOff);
+      labels.add({
+        text: `${thermPrefix}ΔT=${load.dtUniform > 0 ? '+' : ''}${load.dtUniform}°C`,
+        colour: load.dtUniform > 0 ? '#e5482a' : '#4a8fd4',
+        font: '11px sans-serif',
+        box: {
+          x: sI.x + 0.5 * sDx + nx * (OFFSET_PX + 14),
+          y: sI.y + 0.5 * sDy + ny * (OFFSET_PX + 14) + 4,
+          width: 0, height: 13,
+          dirX: nx, dirY: ny, sweep: 'any',
+          priority: Math.abs(load.dtUniform),
+        },
+      });
     }
 
     // Draw gradient ΔTg: + on one side, - on other
@@ -571,17 +712,33 @@ export function drawThermalLoads(
         drawSymbol(ctx, botX, botY, botSign, SYMBOL_SIZE);
       }
 
+      for (const side of [1, -1]) {
+        labels.block({
+          x1: sI.x + nx * gradOffset * side, y1: sI.y + ny * gradOffset * side,
+          x2: sJ.x + nx * gradOffset * side, y2: sJ.y + ny * gradOffset * side,
+          pad: SYMBOL_SIZE + 2,
+        });
+      }
+
       // Label
       const labelOffset = Math.abs(load.dtUniform) > 0.01 ? gradOffset + 14 : OFFSET_PX + 14;
-      const midX = sI.x + 0.5 * sDx - nx * labelOffset;
-      const midY = sI.y + 0.5 * sDy - ny * labelOffset;
-      ctx.fillStyle = '#a88fd4';
-      ctx.font = '11px sans-serif';
       const gradPrefix = load.caseName ? `${load.caseName}: ` : '';
-      const gradYOff = load.labelYOffset ?? 0;
-      ctx.fillText(`${gradPrefix}ΔTg=${load.dtGradient > 0 ? '+' : ''}${load.dtGradient}°C`, midX, midY + gradYOff);
+      labels.add({
+        text: `${gradPrefix}ΔTg=${load.dtGradient > 0 ? '+' : ''}${load.dtGradient}°C`,
+        colour: '#a88fd4',
+        font: '11px sans-serif',
+        box: {
+          x: sI.x + 0.5 * sDx - nx * labelOffset,
+          y: sI.y + 0.5 * sDy - ny * labelOffset + 4,
+          width: 0, height: 13,
+          dirX: -nx, dirY: -ny, sweep: 'any',
+          priority: Math.abs(load.dtGradient),
+        },
+      });
     }
   }
+
+  if (ownsFlush) labels.flush(ctx, dc.memberSegments?.() ?? []);
 }
 
 // ─── Moving Load Axle Visualization ──────────────────────────────

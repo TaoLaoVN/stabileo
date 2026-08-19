@@ -1,5 +1,8 @@
 <script lang="ts">
   import { uiStore, resultsStore, modelStore } from '../../lib/store';
+  import { activeQuantity, activeRepresentation, representationsFor, showQuantityAs } from '../../lib/store/result-view';
+  import { showDiagram } from '../../lib/store/view-mode';
+  import ResultsTable from '../tables/ResultsTable.svelte';
   import { t } from '../../lib/i18n';
   import { hasInvalid2DDisplacements, hasInvalid3DDisplacements } from '../../lib/geometry/coordinate-system';
   import { runSolve } from '../../lib/actions/solve';
@@ -78,6 +81,8 @@
   // ─── State ─────────────────────────────────────────────────────
   let showResultsPanel = $state(true);
   let showResultsViewSub = $state(false);
+  /** The results table, folded away by default: it is long and this is a strip. */
+  let showResultsTable = $state(false);
 
   // ─── Handlers ──────────────────────────────────────────────────
   const handleSolve = () => runSolve();
@@ -124,22 +129,22 @@
     {#if resultsStore.results || resultsStore.results3D || resultsStore.influenceLine}
       {#if !hideDiagrams}
       <div class="diagram-grid">
-        <button class="diagram-btn" class:active={resultsStore.diagramType === 'none'} onclick={() => resultsStore.diagramType = 'none'} title={t('results.noDiagramTooltip')} use:tooltip={'diag-none'}>{t('results.none')}</button>
-        <button class="diagram-btn" class:active={resultsStore.diagramType === 'deformed'} onclick={() => resultsStore.diagramType = 'deformed'} title={t('results.deformedTooltip')} use:tooltip={'diag-deformed'}>{t('results.deformed')}</button>
+        <button class="diagram-btn" class:active={resultsStore.diagramType === 'none'} onclick={() => showDiagram('none')} title={t('results.noDiagramTooltip')} use:tooltip={'diag-none'}>{t('results.none')}</button>
+        <button class="diagram-btn" class:active={resultsStore.diagramType === 'deformed'} onclick={() => showDiagram('deformed')} title={t('results.deformedTooltip')} use:tooltip={'diag-deformed'}>{t('results.deformed')}</button>
         {#if uiStore.analysisMode !== '3d'}
-          <button class="diagram-btn" class:active={resultsStore.diagramType === 'moment'} onclick={() => resultsStore.diagramType = 'moment'} title={t('results.momentTooltip')} use:tooltip={'diag-moment'}>{t('results.moment')}</button>
-          <button class="diagram-btn" class:active={resultsStore.diagramType === 'shear'} onclick={() => resultsStore.diagramType = 'shear'} title={t('results.shearTooltip')} use:tooltip={'diag-shear'}>{t('results.shear')}</button>
-          <button class="diagram-btn" class:active={resultsStore.diagramType === 'axial'} onclick={() => resultsStore.diagramType = 'axial'} title={t('results.axialTooltip')} use:tooltip={'diag-axial'}>{t('results.axial')}</button>
-          <button class="diagram-btn" class:active={resultsStore.diagramType === 'axialColor'} onclick={() => resultsStore.diagramType = 'axialColor'} title={t('results.axialColorTooltip')} use:tooltip={'diag-axialColor'}>{t('results.axialColors')}</button>
+          <button class="diagram-btn" class:active={resultsStore.diagramType === 'moment'} onclick={() => showDiagram('moment')} title={t('results.momentTooltip')} use:tooltip={'diag-moment'}>{t('results.moment')}</button>
+          <button class="diagram-btn" class:active={resultsStore.diagramType === 'shear'} onclick={() => showDiagram('shear')} title={t('results.shearTooltip')} use:tooltip={'diag-shear'}>{t('results.shear')}</button>
+          <button class="diagram-btn" class:active={resultsStore.diagramType === 'axial'} onclick={() => showDiagram('axial')} title={t('results.axialTooltip')} use:tooltip={'diag-axial'}>{t('results.axial')}</button>
+          <button class="diagram-btn" class:active={resultsStore.diagramType === 'axialColor'} onclick={() => showDiagram('axialColor')} title={t('results.axialColorTooltip')} use:tooltip={'diag-axialColor'}>{t('results.axialColors')}</button>
         {:else}
-          <button class="diagram-btn" class:active={resultsStore.diagramType === 'shearZ'} onclick={() => resultsStore.diagramType = 'shearZ'} title={t('results.shearZTooltip')}>{t('results.shearZ')}</button>
-          <button class="diagram-btn" class:active={resultsStore.diagramType === 'momentY'} onclick={() => resultsStore.diagramType = 'momentY'} title={t('results.momentYTooltip')}>{t('results.momentY')}</button>
-          <button class="diagram-btn" class:active={resultsStore.diagramType === 'shearY'} onclick={() => resultsStore.diagramType = 'shearY'} title={t('results.shearYTooltip')}>{t('results.shearY')}</button>
-          <button class="diagram-btn" class:active={resultsStore.diagramType === 'momentZ'} onclick={() => resultsStore.diagramType = 'momentZ'} title={t('results.momentZTooltip')}>{t('results.momentZ')}</button>
-          <button class="diagram-btn" class:active={resultsStore.diagramType === 'axial'} onclick={() => resultsStore.diagramType = 'axial'} title={t('results.axialNTooltip')}>{t('results.axial')}</button>
-          <button class="diagram-btn" class:active={resultsStore.diagramType === 'torsion'} onclick={() => resultsStore.diagramType = 'torsion'} title={t('results.torsionTooltip')}>{t('results.torsion')}</button>
-          <button class="diagram-btn" class:active={resultsStore.diagramType === 'axialColor'} onclick={() => resultsStore.diagramType = 'axialColor'} title={t('results.axialColor3dTooltip')}>{t('results.axialColors')}</button>
-          <button class="diagram-btn" class:active={resultsStore.diagramType === 'colorMap'} onclick={() => resultsStore.diagramType = 'colorMap'} title={t('results.colorMapTooltip')}>{t('results.colorMap')}</button>
+          <button class="diagram-btn" class:active={resultsStore.diagramType === 'shearZ'} onclick={() => showDiagram('shearZ')} title={t('results.shearZTooltip')}>{t('results.shearZ')}</button>
+          <button class="diagram-btn" class:active={resultsStore.diagramType === 'momentY'} onclick={() => showDiagram('momentY')} title={t('results.momentYTooltip')}>{t('results.momentY')}</button>
+          <button class="diagram-btn" class:active={resultsStore.diagramType === 'shearY'} onclick={() => showDiagram('shearY')} title={t('results.shearYTooltip')}>{t('results.shearY')}</button>
+          <button class="diagram-btn" class:active={resultsStore.diagramType === 'momentZ'} onclick={() => showDiagram('momentZ')} title={t('results.momentZTooltip')}>{t('results.momentZ')}</button>
+          <button class="diagram-btn" class:active={resultsStore.diagramType === 'axial'} onclick={() => showDiagram('axial')} title={t('results.axialNTooltip')}>{t('results.axial')}</button>
+          <button class="diagram-btn" class:active={resultsStore.diagramType === 'torsion'} onclick={() => showDiagram('torsion')} title={t('results.torsionTooltip')}>{t('results.torsion')}</button>
+          <button class="diagram-btn" class:active={resultsStore.diagramType === 'axialColor'} onclick={() => showDiagram('axialColor')} title={t('results.axialColor3dTooltip')}>{t('results.axialColors')}</button>
+          <button class="diagram-btn" class:active={resultsStore.diagramType === 'colorMap'} onclick={() => showDiagram('colorMap')} title={t('results.colorMapTooltip')}>{t('results.colorMap')}</button>
         {/if}
       </div>
       {/if}
@@ -186,13 +191,21 @@
           </div>
         {/if}
       {/if}
-      {#if resultsStore.diagramType === 'colorMap'}
+      <!--
+        The DERIVED measures only.
+        
+        This used to list the internal forces too, which is now where the
+        contradiction would be: the quantity is chosen in the ribbon and its
+        representation right below, so a second control offering "moment" while
+        the ribbon says Vz would be two answers to one question. Resistance and
+        Von Mises are not internal forces — they are computed FROM all of them,
+        carry their own scale, and belong to no single ribbon command, so this
+        is the only place they can be picked.
+      -->
+      {#if resultsStore.diagramType === 'colorMap' && activeQuantity() === null}
         <div class="input-group">
           <label>{t('results.variable')}:</label>
           <select bind:value={resultsStore.colorMapKind}>
-            <option value="moment">{t('results.moment')}</option>
-            <option value="shear">{t('results.shear')}</option>
-            <option value="axial">{t('results.axial')}</option>
             <option value="stressRatio">{t('results.resistance')}</option>
             <option value="vonMises">Von Mises (σ)</option>
             {#if uiStore.analysisMode === '3d'}
@@ -215,26 +228,65 @@
           beside the scale rather than up in the ribbon. Only axial has it, so
           it only appears for axial.
         -->
-        {#if resultsStore.diagramType === 'axial' || resultsStore.diagramType === 'axialColor'}
+        <!--
+          Every quantity, not only axial.
+          
+          This offered Diagram / Member colour for axial alone, because member
+          colour existed for axial alone. A colour map is available for all of
+          them — it is a magnitude painted along the member — so the control is
+          now per-quantity and lists whatever that quantity supports. Member
+          colour stays axial-only on purpose: it is red/blue by SIGN, and a
+          moment's sign is a convention about which fibre is in tension, not
+          something a reader should decode from a colour.
+        -->
+        {@const shownQuantity = activeQuantity()}
+        {#if shownQuantity}
+          {@const how = activeRepresentation()}
           <div class="input-group">
-            <label>{t('results.axialShownAs')}:</label>
-            <div class="seg" role="group" aria-label={t('results.axialShownAs')}>
-              <button
-                class="seg-btn"
-                class:on={resultsStore.diagramType === 'axial'}
-                onclick={() => (resultsStore.diagramType = 'axial')}
-                data-testid="axial-as-diagram"
-              >{t('results.asDiagram')}</button>
-              <button
-                class="seg-btn"
-                class:on={resultsStore.diagramType === 'axialColor'}
-                onclick={() => (resultsStore.diagramType = 'axialColor')}
-                data-testid="axial-as-colour"
-              >{t('results.asMemberColour')}</button>
+            <label>{t('results.shownAs')}:</label>
+            <div class="seg" role="group" aria-label={t('results.shownAs')}>
+              {#each representationsFor(shownQuantity) as rep}
+                <button
+                  class="seg-btn"
+                  class:on={how === rep}
+                  onclick={() => showQuantityAs(shownQuantity, rep)}
+                  data-testid={rep === 'diagram' ? 'shown-as-diagram'
+                    : rep === 'memberColour' ? 'shown-as-colour' : 'shown-as-map'}
+                >{rep === 'diagram' ? t('results.asDiagram')
+                  : rep === 'memberColour' ? t('results.asMemberColour')
+                  : t('results.asColourMap')}</button>
+              {/each}
             </div>
           </div>
+          <!--
+            What the chosen representation actually shows.
+            
+            OUTSIDE the input-group, which lays its children out in a row: put
+            inside, the sentence competed with the buttons for the panel's
+            width and squeezed two of the three out of sight.
+            
+            The pair that needs explaining is axial. Member colour and a colour
+            map look alike and answer different questions — one is SIGN, the
+            other MAGNITUDE — so the same member can be red in one and blue in
+            the other with both being right. A line of text costs less than a
+            reader reaching that conclusion the hard way.
+          -->
+          <p class="rep-help">
+            {how === 'diagram' ? t('results.repDiagramHelp')
+              : how === 'memberColour' ? t('results.repMemberColourHelp')
+              : t('results.repColourMapHelp')}
+          </p>
         {/if}
-      {#if resultsStore.hasCombinations && (resultsStore.diagramType === 'moment' || resultsStore.diagramType === 'shear' || resultsStore.diagramType === 'axial' || resultsStore.diagramType === 'momentY' || resultsStore.diagramType === 'momentZ' || resultsStore.diagramType === 'shearY' || resultsStore.diagramType === 'shearZ' || resultsStore.diagramType === 'torsion' || resultsStore.diagramType === 'deformed' || resultsStore.diagramType === 'axialColor')}
+      <!--
+        Shown whenever a RESULT is on screen, whatever way it is drawn.
+        
+        This was a list of ten diagram names, and a list is a thing you forget
+        to add to: `colorMap` was missing, so choosing a colour map emptied the
+        panel — the load-case selector and the results table vanished together,
+        as if the model had stopped being solved. Asking whether a quantity is
+        being shown cannot go out of date when a representation is added.
+      -->
+      {#if resultsStore.hasCombinations && (activeQuantity() !== null || resultsStore.diagramType === 'deformed')}
         {@const is3D = uiStore.analysisMode === '3d'}
         {@const caseKeys = is3D ? [...resultsStore.perCase3D.keys()] : [...resultsStore.perCase.keys()]}
         {@const comboKeys = is3D ? [...resultsStore.perCombo3D.keys()] : [...resultsStore.perCombo.keys()]}
@@ -251,8 +303,15 @@
           <div class="sub-content">
             {#if uiStore.showPrimarySelector}
               <div class="input-group">
-                <label>{t('results.primary')}:</label>
-                <select value={resultsStore.activeView === 'envelope' ? 'envelope'
+                <!--
+                  No visible label: every option names itself ("Simple loads",
+                  a case, a combination), so the word in front of them spent a
+                  third of a narrow panel's width restating the obvious. The
+                  accessible name stays for anyone who cannot see that.
+                -->
+                <select
+                  aria-label={t('results.primary')}
+                  value={resultsStore.activeView === 'envelope' ? 'envelope'
                              : resultsStore.activeCaseId !== null ? `case_${resultsStore.activeCaseId}`
                              : resultsStore.activeView === 'combo' ? `combo_${resultsStore.activeComboId ?? ''}`
                              : 'single'}
@@ -288,7 +347,12 @@
                   <option value="envelope">{t('results.envelope')}</option>
                 </select>
               </div>
-              {#if uiStore.showSecondarySelector && resultsStore.diagramType !== 'deformed' && resultsStore.diagramType !== 'axialColor'}
+              <!--
+                Comparison overlays a second DIAGRAM on the first. There is
+                nothing to overlay when the result is painted onto the members
+                themselves: two colours on one bar is one colour.
+              -->
+              {#if uiStore.showSecondarySelector && resultsStore.diagramType !== 'deformed' && activeRepresentation() === 'diagram'}
                 <div class="input-group">
                   <label>{t('results.compare')}:</label>
                   <select onchange={(e) => {
@@ -343,6 +407,41 @@
                 </div>
               {/if}
             {/if}
+
+            <!--
+              The results TABLE, where the controls that choose a result are.
+              
+              It used to be a tab in the model-data panel, beside nodes and
+              loads — which put "what the structure is" and "what it did" in one
+              place and let the ribbon light a drawing tool and a diagram at
+              once. A result is not part of the model; it is the answer to it.
+            -->
+          </div>
+        {/if}
+
+        <!--
+          A SIBLING of "change results view", not a child of it.
+          
+          It was nested inside, which said the table was a way of changing what
+          you are looking at. It is not — it is the numbers behind whatever is
+          already on screen. Same level, same weight, and the reader can tell
+          the two apart.
+        -->
+        <!-- Same treatment as its sibling above: a heading in the panel, a
+             toggle in the compact bar. Matching form is what makes them read
+             as the same level rather than one nested in the other. -->
+        {#if !flat}
+          <button class="sub-toggle" onclick={() => showResultsTable = !showResultsTable}>
+            {showResultsTable ? '▾' : '▸'} {t('data.results')}
+          </button>
+        {:else}
+          <span class="sub-heading">{t('data.results')}</span>
+        {/if}
+        {#if showResultsTable || flat}
+          <div class="sub-content">
+            <div class="results-table-wrap">
+              <ResultsTable />
+            </div>
           </div>
         {/if}
       {/if}
@@ -354,6 +453,25 @@
 </div>
 
 <style>
+  .rep-help {
+    margin: 3px 0 0;
+    font-size: 0.66rem;
+    line-height: 1.4;
+    color: var(--st-text-3);
+    max-width: 300px;
+  }
+
+  .results-table-block { margin-top: 6px; }
+  /* The table brings its own scroll: the toolbar is a strip and a hundred rows
+     of member forces must not stretch it. */
+  .results-table-wrap {
+    max-height: 320px;
+    overflow: auto;
+    margin-top: 4px;
+    border-radius: var(--st-radius, 3px);
+    border: 1px solid var(--st-border);
+  }
+
   .toolbar-section {
     display: flex;
     flex-direction: column;

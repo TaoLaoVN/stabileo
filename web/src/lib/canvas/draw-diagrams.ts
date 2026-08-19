@@ -1,6 +1,7 @@
 // Render M, V, N diagrams on Canvas 2D
 
 import type { AnalysisResults, EnvelopeDiagramData } from '../engine/types';
+import { createLabelCollector, type LabelCollector } from './label-layout';
 import {
   computeMomentDiagram, computeShearDiagram, computeAxialDiagram,
   computeDiagramValueAt,
@@ -15,6 +16,8 @@ interface DrawContext {
   worldToScreen: (wx: number, wy: number) => { x: number; y: number };
   getNode: (id: number) => { x: number; y: number } | undefined;
   getElement: (id: number) => { nodeI: number; nodeJ: number } | undefined;
+  /** The frame's shared label layout, when the caller runs one. */
+  labels?: LabelCollector;
 }
 
 /*
@@ -207,28 +210,36 @@ function drawSingleDiagram(
 
   // Draw value labels at endpoints and max point (only when showAllValues is on)
   if (showAllValues) {
-    ctx.font = '11px sans-serif';
-    ctx.fillStyle = colors.text;
+    const labels = dc.labels ?? createLabelCollector();
 
     const startVal = pts[0].value;
     const endVal = pts[pts.length - 1].value;
 
     if (Math.abs(startVal) > 1e-3) {
-      drawValueLabel(ctx, screenDiagram[0], screenBaseline[0], formatValue(startVal, kind));
+      drawValueLabel(labels, colors.text, screenDiagram[0], screenBaseline[0], formatValue(startVal, kind));
     }
     if (Math.abs(endVal) > 1e-3) {
       const last = pts.length - 1;
-      drawValueLabel(ctx, screenDiagram[last], screenBaseline[last], formatValue(endVal, kind));
+      drawValueLabel(labels, colors.text, screenDiagram[last], screenBaseline[last], formatValue(endVal, kind));
     }
 
     // Label at max absolute value (if not at endpoints)
     if (diagram.maxAbsT > 0.05 && diagram.maxAbsT < 0.95 && Math.abs(diagram.maxAbsValue) > 1e-3) {
       const idx = Math.round(diagram.maxAbsT * (pts.length - 1));
-      drawValueLabel(ctx, screenDiagram[idx], screenBaseline[idx], formatValue(diagram.maxAbsValue, kind));
+      drawValueLabel(labels, colors.text, screenDiagram[idx], screenBaseline[idx], formatValue(diagram.maxAbsValue, kind));
     }
+
+    // A caller without a shared collector still gets its own labels resolved.
+    if (!dc.labels) labels.flush(ctx);
   }
 
-  // Auto max/min markers (filled circles at extremes)
+  /*
+   * Auto max/min markers (filled circles at extremes).
+   *
+   * Registered with the layout as well as drawn: the maximum's own value label
+   * is placed at the very point the marker occupies, so without this the dot
+   * lands on the first character of its own number.
+   */
   const threshold = globalMax * 0.05;
   let maxPosIdx = -1, maxPosVal = 0;
   let minNegIdx = -1, minNegVal = 0;
@@ -239,38 +250,62 @@ function drawSingleDiagram(
 
   // Draw max positive marker (if significant and not at endpoints)
   if (maxPosIdx > 0 && maxPosIdx < pts.length - 1 && maxPosVal > threshold) {
+    const m = screenDiagram[maxPosIdx];
     ctx.beginPath();
-    ctx.arc(screenDiagram[maxPosIdx].x, screenDiagram[maxPosIdx].y, 4, 0, Math.PI * 2);
+    ctx.arc(m.x, m.y, 4, 0, Math.PI * 2);
     ctx.fillStyle = colors.stroke;
     ctx.fill();
+    dc.labels?.block({ x1: m.x, y1: m.y, x2: m.x, y2: m.y, pad: 6 });
   }
 
   // Draw min negative marker (if significant and not at endpoints)
   if (minNegIdx > 0 && minNegIdx < pts.length - 1 && Math.abs(minNegVal) > threshold) {
+    const m = screenDiagram[minNegIdx];
     ctx.beginPath();
-    ctx.arc(screenDiagram[minNegIdx].x, screenDiagram[minNegIdx].y, 4, 0, Math.PI * 2);
+    ctx.arc(m.x, m.y, 4, 0, Math.PI * 2);
     ctx.fillStyle = colors.stroke;
     ctx.fill();
+    dc.labels?.block({ x1: m.x, y1: m.y, x2: m.x, y2: m.y, pad: 6 });
   }
 }
 
+/**
+ * Offer a diagram value to the frame's label layout.
+ *
+ * Diagram values collide with each other for a reason that has nothing to do
+ * with loads: two members meeting at a joint each label their end there, so the
+ * two values land within a few pixels — one hogging, one sagging, both
+ * unreadable. Pushing each one further along its own offset direction, away
+ * from the baseline, separates them without detaching either from its curve.
+ */
 function drawValueLabel(
-  ctx: CanvasRenderingContext2D,
+  labels: LabelCollector,
+  colour: string,
   diagramPt: { x: number; y: number },
   basePt: { x: number; y: number },
   text: string,
 ) {
-  // Draw a small line from diagram to label
   const offsetX = diagramPt.x - basePt.x;
   const offsetY = diagramPt.y - basePt.y;
   const dist = Math.sqrt(offsetX ** 2 + offsetY ** 2);
 
   if (dist < 3) return; // Too small to label
 
-  const labelX = diagramPt.x + (offsetX / dist) * 5;
-  const labelY = diagramPt.y + (offsetY / dist) * 5;
-
-  ctx.fillText(text, labelX, labelY);
+  const ux = offsetX / dist;
+  const uy = offsetY / dist;
+  labels.add({
+    text,
+    colour,
+    font: '11px sans-serif',
+    box: {
+      x: diagramPt.x + ux * 5, y: diagramPt.y + uy * 5,
+      // Measured by the collector against the real font; see there.
+      width: 0, height: 13,
+      dirX: ux, dirY: uy, sweep: 'any', anchorX: 'left',
+      // Bigger numbers keep their place: they are the ones being looked for.
+      priority: Math.abs(parseFloat(text)) || 0,
+    },
+  });
 }
 
 let _unitSystem: UnitSystem = 'SI';
@@ -335,6 +370,7 @@ export function drawEnvelopeDiagrams(
   const kind = envelopeData.kind;
   const colors = ENVELOPE_COLORS[kind];
   const sideFactor = diagramSideFactor(kind, towardLocalAxes);
+  const envLabels = dc.labels ?? createLabelCollector();
 
   for (const elemEnv of envelopeData.elements) {
     const elem = dc.getElement(elemEnv.elementId);
@@ -381,7 +417,7 @@ export function drawEnvelopeDiagrams(
     if (hasPos) {
       drawEnvelopeCurve(dc.ctx, screenBaseline, screenPos, colors.posFill, colors.posStroke);
       // Labels
-      drawEnvelopeLabels(dc.ctx, screenBaseline, screenPos, elemEnv.posValues, kind, colors.posText, showAllValues, envelopeData.globalMax);
+      drawEnvelopeLabels(dc.ctx, envLabels, screenBaseline, screenPos, elemEnv.posValues, kind, colors.posText, showAllValues, envelopeData.globalMax);
     }
 
     // Draw negative envelope curve (if any negative values)
@@ -389,9 +425,11 @@ export function drawEnvelopeDiagrams(
     if (hasNeg) {
       drawEnvelopeCurve(dc.ctx, screenBaseline, screenNeg, colors.negFill, colors.negStroke);
       // Labels
-      drawEnvelopeLabels(dc.ctx, screenBaseline, screenNeg, elemEnv.negValues, kind, colors.negText, showAllValues, envelopeData.globalMax);
+      drawEnvelopeLabels(dc.ctx, envLabels, screenBaseline, screenNeg, elemEnv.negValues, kind, colors.negText, showAllValues, envelopeData.globalMax);
     }
   }
+
+  if (!dc.labels) envLabels.flush(dc.ctx);
 }
 
 function drawEnvelopeCurve(
@@ -427,6 +465,7 @@ function drawEnvelopeCurve(
 
 function drawEnvelopeLabels(
   ctx: CanvasRenderingContext2D,
+  labels: LabelCollector,
   baseline: { x: number; y: number }[],
   curve: { x: number; y: number }[],
   values: number[],
@@ -438,15 +477,12 @@ function drawEnvelopeLabels(
   const nPts = values.length;
 
   if (showAllValues) {
-    ctx.font = '11px sans-serif';
-    ctx.fillStyle = textColor;
-
     // Label at endpoints if significant
     if (Math.abs(values[0]) > 1e-3) {
-      drawValueLabel(ctx, curve[0], baseline[0], formatValue(values[0], kind));
+      drawValueLabel(labels, textColor, curve[0], baseline[0], formatValue(values[0], kind));
     }
     if (Math.abs(values[nPts - 1]) > 1e-3) {
-      drawValueLabel(ctx, curve[nPts - 1], baseline[nPts - 1], formatValue(values[nPts - 1], kind));
+      drawValueLabel(labels, textColor, curve[nPts - 1], baseline[nPts - 1], formatValue(values[nPts - 1], kind));
     }
 
     // Find and label max absolute value (not at endpoints)
@@ -459,7 +495,7 @@ function drawEnvelopeLabels(
       }
     }
     if (maxAbsIdx > 0 && maxAbsVal > globalMax * 0.05) {
-      drawValueLabel(ctx, curve[maxAbsIdx], baseline[maxAbsIdx], formatValue(values[maxAbsIdx], kind));
+      drawValueLabel(labels, textColor, curve[maxAbsIdx], baseline[maxAbsIdx], formatValue(values[maxAbsIdx], kind));
       // Marker dot
       ctx.beginPath();
       ctx.arc(curve[maxAbsIdx].x, curve[maxAbsIdx].y, 4, 0, Math.PI * 2);
