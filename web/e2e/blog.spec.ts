@@ -11,11 +11,14 @@ import { test, expect, type Page } from '@playwright/test';
  * address bar staying on the post instead of being rewritten to /app/basic by
  * the editor's own URL sync, and the browser's back button.
  *
- * Tagging: `@landing`, matching landing.spec.ts — which CI's blocking job now
- * runs alongside `@smoke`.
+ * Tagging: `@smoke`, so CI's blocking job runs it. It sits with landing.spec.ts
+ * conceptually but not by tag: the landing suite wedges the browser in CI (see
+ * the note in .github/workflows/ci.yml), and these twelve cases passed there in
+ * the run that proved it. Twelve fast cases over the blog are worth having
+ * enforced; they are not worth attaching to a suite that cannot run yet.
  *
  * Run locally:
- *   npx playwright test --grep @landing
+ *   npx playwright test --grep "@smoke blog"
  */
 
 const SLUG = 'the-determinism-boundary';
@@ -33,7 +36,7 @@ async function boot(page: Page, path: string, locale = 'en') {
   await page.goto(path);
 }
 
-test.describe('@landing blog', () => {
+test.describe('@smoke blog', () => {
   test('renders the index at /blog', async ({ page }) => {
     await boot(page, '/blog');
 
