@@ -180,15 +180,32 @@ export function withLambda(
  * For a doubly-symmetric I this is `h0·b/4` — the corner of a flange, which is
  * where the flange's own bending stress is largest too, so the two add at the
  * worst place rather than at different ones.
+ *
+ * A channel needs the shear centre, and this is where it was skipped: the
+ * comment said "measured about the shear centre" and the arithmetic measured
+ * from the WEB. Its pole sits a distance `e` outside the web, so the sectorial
+ * coordinate runs from `h0·e/2` at the web-flange junction to `h0·(bm−e)/2` at
+ * the flange tip, and the peak is whichever is larger. Taking the tip from the
+ * web instead — `h0·bm/2` — is 60% high on a UPN 200, and `sigma_w = B·ω/Cw`
+ * carries that straight into the reported stress. Conservative, but a stress
+ * 60% high is not a usable number either.
+ *
+ * `e = 3·bm²·tf / (6·bm·tf + h0·tw)` is the thin-wall result, and its
+ * denominator is the same one the channel's `Cw` above already computes —
+ * which is the tell that the two belong to the same derivation.
  */
 function peakSectorialCoordinate(rs: ResolvedSection): number {
   switch (rs.shape) {
     case 'I': case 'H':
       return ((rs.h - rs.tf) * rs.b) / 4;
-    case 'U': case 'C':
-      // Approximate: the flange tip, measured about the shear centre. Adequate
-      // for the magnitude, which is what this reports.
-      return ((rs.h - rs.tf) * (rs.b - rs.tw / 2)) / 2;
+    case 'U': case 'C': {
+      const bm = rs.b - rs.tw / 2;
+      const h0 = rs.h - rs.tf;
+      const den = 6 * rs.tf * bm + rs.tw * h0;
+      if (bm <= 0 || h0 <= 0 || den <= 0) return 0;
+      const e = (3 * bm * bm * rs.tf) / den;
+      return (h0 / 2) * Math.max(e, bm - e);
+    }
     default:
       return 0;
   }
