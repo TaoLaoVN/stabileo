@@ -163,22 +163,24 @@ export const i18n = {
 // ─────────────────────────────────────────────────────────────────────────────
 // Public landing locales
 //
-// The application ships fourteen languages and keeps all of them. The public
-// landing page offers only the ones whose `landing.*` dictionary is complete,
-// because `t()` falls back to English silently: a locale that is ninety keys
-// short does not look broken, it looks like a page that switches to English
-// halfway down. Offering a language the marketing copy does not actually speak
-// is worse than not offering it.
+// The landing offers only the locales whose `landing.*` dictionary is
+// complete, because `t()` falls back to English silently: a locale that is
+// ninety keys short does not look broken, it looks like a page that switches
+// to English halfway down. Offering a language the marketing copy does not
+// actually speak is worse than not offering it.
 //
-// Portuguese joined on 2026-08-12, once all 321 landing keys were written, and
-// so were the ribbon and editor keys the live demo renders inside the page —
-// the demo is the real editor, so an English ribbon would sit in the middle of
-// a Portuguese landing. The rest of the application is still ~1,460 keys short
-// in Portuguese; `landing-locale-coverage.test.ts` is what keeps this list and
-// that promise in step.
+// Portuguese joined on 2026-08-12, once all 321 landing keys were written.
+// `landing-i18n-parity.test.ts` is what keeps this list and that promise in
+// step — it fails if a locale here is missing copy, quotes different figures,
+// names a different standard, or reads as a truncation of the English.
 //
-// Nothing here mutates the application's locale. A visitor whose browser is set
-// to French reads the landing in English and still gets a French editor.
+// NOTE (2026-08-19): this list is now identical to `OFFERED_LOCALES` above,
+// which arrived from main when the application itself narrowed to three
+// languages. They are not merged here on purpose: they answer different
+// questions — one gates marketing copy, the other gates the whole UI — and
+// collapsing them is the i18n workstream's call, not a side effect of a
+// landing change. If they are ever meant to be one thing, this is the comment
+// that should have said so.
 // ─────────────────────────────────────────────────────────────────────────────
 
 export const PUBLIC_LOCALES = ['en', 'es', 'pt'] as const;
