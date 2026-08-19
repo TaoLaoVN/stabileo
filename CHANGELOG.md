@@ -11,6 +11,37 @@ It should capture what changed, not what should be built next.
 
 ### Changed
 
+#### Shell edge loads: outward normal sign corrected (E6 audit, 2026-08-14)
+
+**BREAKING (saved models): `quadEdge` and `quad9Edge` loads reverse direction.**
+`quad_edge_load` and `quad9_edge_load` built their in-plane normal as `ez × et`, which
+points INWARD for the CCW node ordering `quad_local_axes` guarantees — the opposite of
+the convention documented on `SolverQuadEdgeLoad` ("positive `qn` = outward from
+element") and of `curved_shell_edge_load`, which has always used `t̂ × d̂`. The three
+shell elements disagreed, and the two quads contradicted their own documented input.
+
+The code now matches the documentation, so **the documentation did not change and the
+results did**. Any existing model carrying a `quadEdge`/`quad9Edge` load now produces
+forces in the opposite direction: a case that read as tension reads as compression.
+There is no version gate and no automatic migration — `qn` is passed through unmodified
+at every call site. Re-check any saved model that uses these load types, and negate `qn`
+where the previous (inward) direction was the intended one.
+
+Unaffected: `curved_shell` edge loads, which were already correct; pressure loads; and
+any model without edge loads.
+
+**Magnitude fix in the same place.** The normal was also unnormalized. `ez` is derived
+from the element diagonals, so it is perpendicular to the edge chord only when the quad
+is planar; on a warped element `|et × ez| = sin θ < 1` and `qn` was applied at that
+fraction of its stated value — correct direction, silently short, and invisible to any
+test built on a flat square. Both quads now normalize, matching `curved_shell`.
+
+#### Curved shell thermal gradient: 2× factor removed (E6 audit, 2026-08-14)
+
+`curved_shell_thermal_load` applied twice the thermal moment it should. The through
+-thickness gradient term now integrates to `M_T = Eα·ΔTg·t²/(12(1−ν))`, matching
+`quad_thermal_load`. Thermal-gradient results on curved shells change by a factor of 2.
+
 #### RC Design workflow rebuild — verified auto-design, honest invalidation (PR15, 2026-07-25)
 
 **BREAKING (verification results): `cirsoc201.provided.v1` → `cirsoc201.provided.v2`.**

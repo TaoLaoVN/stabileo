@@ -1,5 +1,6 @@
 <script lang="ts">
-  import { modelStore, resultsStore } from '../lib/store';
+  import { uiStore, modelStore } from '../lib/store';
+  import { EDIT_TOOLS } from '../lib/store/ui.svelte';
   import { t } from '../lib/i18n';
   import NodesTable from './tables/NodesTable.svelte';
   import ElementsTable from './tables/ElementsTable.svelte';
@@ -7,22 +8,51 @@
   import LoadsTable from './tables/LoadsTable.svelte';
   import MaterialsTable from './tables/MaterialsTable.svelte';
   import SectionsTable from './tables/SectionsTable.svelte';
-  import CombosTable from './tables/CombosTable.svelte';
-  import ResultsTable from './tables/ResultsTable.svelte';
 
-  type TabId = 'nodes' | 'elements' | 'supports' | 'loads' | 'materials' | 'sections' | 'combos' | 'results';
-  let activeTab = $state<TabId>('nodes');
+  type TabId = 'nodes' | 'elements' | 'supports' | 'loads' | 'materials' | 'sections';
+  interface Props {
+    /**
+     * The open tab, BOUND — the ribbon and this table are two views of one
+     * selection, so it lives above both rather than in either.
+     *
+     * It was a one-way `initialTab`, which made the connection asymmetric:
+     * pressing Elements on the ribbon moved the table, but moving the table
+     * left the ribbon lighting whatever it had lit before. Two controls
+     * disagreeing about what is selected is worse than one control.
+     */
+    activeTab?: string;
+  }
+  let { activeTab = $bindable('nodes') }: Props = $props();
 
-  const solved = $derived(resultsStore.results != null || resultsStore.results3D != null);
-
-  /*
-   * A solve going away must not leave the panel on a tab with nothing in it.
-   * The tab used to vanish, which moved the user off it as a side effect;
-   * greying it means the move has to be explicit.
+  /**
+   * The tool each tab corresponds to.
+   *
+   * Picking a tab arms its tool, which is what closes the loop: the ribbon
+   * lights editing commands by TOOL, so without this a tab change would move
+   * the table and leave the ribbon dark. Materials and sections have no tool —
+   * they are edited in the table itself — and the ribbon lights those by tab.
    */
-  $effect(() => {
-    if (!solved && activeTab === 'results') activeTab = 'nodes';
-  });
+  const TAB_TOOL: Record<string, string> = {
+    nodes: 'node', elements: 'element', supports: 'support', loads: 'load',
+  };
+
+  function pickTab(tab: string) {
+    activeTab = tab;
+    const tool = TAB_TOOL[tab];
+    /*
+     * Arming the tab's tool is the BASIC-mode ribbon sync — the ribbon lights
+     * editing commands by TOOL, so the tab and the ribbon only agree if the
+     * tab moves the tool. Outside Basic there is no ribbon to sync with and
+     * the table is reference browsing; arming a tool there is a side effect
+     * nobody asked for.
+     *
+     * Landing on Materials must not leave the pointer holding whatever tool
+     * was armed before, so that case falls back to selection.
+     */
+    if (tool) {
+      if (uiStore.appMode === 'basico') uiStore.currentTool = tool as never;
+    } else if (EDIT_TOOLS.includes(uiStore.currentTool)) uiStore.currentTool = 'select';
+  }
 
   function handleKeydown(e: KeyboardEvent) {
     e.stopPropagation();
@@ -31,41 +61,34 @@
 
 <div class="data-table" onkeydown={handleKeydown} role="region">
   <div class="tabs">
-    <button class:active={activeTab === 'nodes'} onclick={() => activeTab = 'nodes'}>
+    <button class:active={activeTab === 'nodes'} onclick={() => pickTab('nodes')}>
       {t('data.nodes')} ({modelStore.nodes.size})
     </button>
-    <button class:active={activeTab === 'elements'} onclick={() => activeTab = 'elements'}>
+    <button class:active={activeTab === 'elements'} onclick={() => pickTab('elements')}>
       {t('data.elements')} ({modelStore.elements.size})
     </button>
-    <button class:active={activeTab === 'supports'} onclick={() => activeTab = 'supports'}>
+    <button class:active={activeTab === 'supports'} onclick={() => pickTab('supports')}>
       {t('data.supports')} ({modelStore.supports.size})
     </button>
-    <button class:active={activeTab === 'loads'} onclick={() => activeTab = 'loads'}>
+    <button class:active={activeTab === 'loads'} onclick={() => pickTab('loads')}>
       {t('data.loads')} ({modelStore.loads.length})
     </button>
-    <button class:active={activeTab === 'materials'} onclick={() => activeTab = 'materials'}>
+    <button class:active={activeTab === 'materials'} onclick={() => pickTab('materials')}>
       {t('data.materials')} ({modelStore.materials.size})
     </button>
-    <button class:active={activeTab === 'sections'} onclick={() => activeTab = 'sections'}>
+    <button class:active={activeTab === 'sections'} onclick={() => pickTab('sections')}>
       {t('data.sections')} ({modelStore.sections.size})
     </button>
-    <button class:active={activeTab === 'combos'} onclick={() => activeTab = 'combos'}>
-      {t('data.combinations')}
-    </button>
     <!--
-      Always present, greyed until there is something in it — the same rule the
-      ribbon's Results group follows. Appearing only after a solve made the tab
-      strip change length under the cursor and gave a new user no clue that the
-      panel had a results view at all.
+      Results are NOT a tab here.
+      
+      This panel is the model: geometry, conditions, properties — the things you
+      build. Results are what the model produced, and they belong beside the
+      controls that choose which result to look at, which live in the results
+      toolbar. Having them here also let the ribbon show a construction tool and
+      a diagram lit at once, claiming you were editing and reading at the same
+      time.
     -->
-    <button
-      class:active={activeTab === 'results'}
-      disabled={!solved}
-      title={solved ? undefined : t('ribbon.needsSolve')}
-      onclick={() => activeTab = 'results'}
-    >
-      {t('data.results')}
-    </button>
   </div>
 
   <div class="table-wrapper">
@@ -81,10 +104,6 @@
       <MaterialsTable />
     {:else if activeTab === 'sections'}
       <SectionsTable />
-    {:else if activeTab === 'combos'}
-      <CombosTable />
-    {:else if activeTab === 'results' && solved}
-      <ResultsTable />
     {/if}
   </div>
 </div>

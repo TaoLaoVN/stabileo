@@ -38,6 +38,7 @@ import {
 } from '../engine/wasm-solver';
 import { computeMohrCircle, checkFailure } from '../engine/section-stress';
 import type { MohrCircle, FailureCheck } from '../engine/section-stress';
+import { stressTensorState, type StressTensorState } from './tensors';
 
 /** Internal forces at a station, in the section's own frame. */
 export interface SectionForces {
@@ -81,6 +82,30 @@ export interface CanonicalStressState {
    * which is not something a user can guess from the drawing.
    */
   shearCentre?: [number, number];
+  /**
+   * The normal-stress field over the WHOLE section, as the coefficients of the
+   * plane it lies on: `sigma(y, z) = axial + kz*z - ky*y`, MPa, with y and z
+   * centroid-relative in metres.
+   *
+   * Normal stress under axial force and bending is affine in the section
+   * coordinates — that is the Bernoulli hypothesis, not an approximation of it.
+   * So three numbers reproduce the field everywhere, exactly, and a panel can
+   * paint a stress map by evaluating a plane instead of asking the engine for a
+   * point at a time. The alternative — sampling and interpolating — would be
+   * both slower and less accurate than the closed form it approximates.
+   *
+   * Shear is NOT included here: it is a solved field on the mesh, not a plane,
+   * and no three coefficients describe it.
+   */
+  field: { axial: number; ky: number; kz: number };
+  /**
+   * The full stress and strain tensors at the point, with their principal
+   * values and invariants.
+   *
+   * Present only when elastic constants were supplied: strain needs E and nu,
+   * and inventing them would be worse than leaving this out.
+   */
+  tensors?: StressTensorState;
 }
 
 export type StressStateResult =
@@ -170,7 +195,22 @@ export function canonicalStressState(
   forces: SectionForces,
   point: [number, number],
   fy?: number,
-  opts: { bending?: BendingResponse } = {},
+  /**
+   * Everything optional, in one bag.
+   *
+   * Two branches each added a fifth parameter — elastic constants here, a
+   * pre-solved bending response on main — and two positional options are how a
+   * signature starts collecting them. One object takes both and has room for
+   * the next.
+   *
+   * `elastic`: needed only for the strain tensor. Without it the tensors are
+   * omitted rather than filled with a guessed modulus.
+   *
+   * `bending`: the caller's own solve, reused instead of repeated. The panel
+   * solves bending for its plot and then asks for a stress state at a point;
+   * passing it through is what stops a drag tick re-solving the same system.
+   */
+  opts: { elastic?: { e: number; nu: number }; bending?: BendingResponse } = {},
 ): StressStateResult {
   const st = sec.canonical;
   if (!st || st.kind !== 'geometry-backed') return { ok: false, reason: 'notResolved' };
@@ -287,6 +327,10 @@ export function canonicalStressState(
         mohr: computeMohrCircle(sMPa, tMPa),
         failure: checkFailure(sMPa, tMPa, fy),
         shearCentre,
+        field: { axial: toMPa(axial), ky: toMPa(bending.ky), kz: toMPa(bending.kz) },
+        tensors: opts.elastic
+          ? stressTensorState(sMPa, toMPa(tauXy), toMPa(tauXz), opts.elastic.e, opts.elastic.nu)
+          : undefined,
       },
     };
   } catch (err) {

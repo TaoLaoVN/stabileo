@@ -9,7 +9,23 @@ export type ShapeType =
   | 'T-custom' | 'U-custom' | 'C-custom'
   | 'concrete-square' | 'concrete-rect' | 'concrete-circular' | 'concrete-T' | 'concrete-invL';
 
-export type MaterialCategory = 'steel' | 'concrete';
+/**
+ * How the section is built, which is what changes the THEORY.
+ *
+ * This used to be 'steel' | 'concrete', which asked the wrong question. A
+ * rectangle is a rectangle whether it is concrete, timber or steel — the shape
+ * does not care. What does change with the shape is which analysis applies:
+ *
+ *   * a THIN-walled section buckles locally, carries shear as a flow along its
+ *     wall, and twists by Saint-Venant or Bredt depending on whether the wall
+ *     closes;
+ *   * a SOLID section does none of that. Its shear is the parabolic Jourawski
+ *     distribution and its torsion has no elementary closed form at all.
+ *
+ * Splitting by material also stranded the user: a timber beam is a solid
+ * rectangle, and nothing labelled "steel" or "concrete" told them so.
+ */
+export type MaterialCategory = 'thin' | 'solid';
 
 export interface ShapeDefinition {
   id: ShapeType;
@@ -28,12 +44,12 @@ export interface ShapeParam {
 }
 
 export const SECTION_SHAPES: ShapeDefinition[] = [
-  // ── Steel shapes ──
+  // ── Thin-walled ──
   {
     id: 'hollow-rect',
     label: 'shape.hollowRect',
     description: 'shape.hollowRect.desc',
-    category: 'steel',
+    category: 'thin',
     params: [
       { id: 'b', label: 'shape.param.extWidth', unit: 'm', step: 0.01, defaultValue: 0.20 },
       { id: 'h', label: 'shape.param.extHeight', unit: 'm', step: 0.01, defaultValue: 0.30 },
@@ -44,7 +60,7 @@ export const SECTION_SHAPES: ShapeDefinition[] = [
     id: 'hollow-circular',
     label: 'shape.hollowCircular',
     description: 'shape.hollowCircular.desc',
-    category: 'steel',
+    category: 'thin',
     params: [
       { id: 'd', label: 'shape.param.extDiam', unit: 'm', step: 0.01, defaultValue: 0.20 },
       { id: 't', label: 'shape.param.thickness', unit: 'm', step: 0.0001, defaultValue: 0.008 },
@@ -54,7 +70,7 @@ export const SECTION_SHAPES: ShapeDefinition[] = [
     id: 'I-custom',
     label: 'shape.iCustom',
     description: 'shape.iCustom.desc',
-    category: 'steel',
+    category: 'thin',
     params: [
       { id: 'h', label: 'shape.param.totalHeight', unit: 'm', step: 0.01, defaultValue: 0.30 },
       { id: 'b', label: 'shape.param.flangeWidth', unit: 'm', step: 0.01, defaultValue: 0.15 },
@@ -66,7 +82,7 @@ export const SECTION_SHAPES: ShapeDefinition[] = [
     id: 'T-custom',
     label: 'shape.tCustom',
     description: 'shape.tCustom.desc',
-    category: 'steel',
+    category: 'thin',
     params: [
       { id: 'h', label: 'shape.param.totalHeight', unit: 'm', step: 0.001, defaultValue: 0.20 },
       { id: 'bf', label: 'shape.param.flangeWidthBf', unit: 'm', step: 0.001, defaultValue: 0.15 },
@@ -78,7 +94,7 @@ export const SECTION_SHAPES: ShapeDefinition[] = [
     id: 'U-custom',
     label: 'shape.uCustom',
     description: 'shape.uCustom.desc',
-    category: 'steel',
+    category: 'thin',
     params: [
       { id: 'h', label: 'shape.param.totalHeight', unit: 'm', step: 0.001, defaultValue: 0.20 },
       { id: 'b', label: 'shape.param.flangeWidth', unit: 'm', step: 0.001, defaultValue: 0.075 },
@@ -90,7 +106,7 @@ export const SECTION_SHAPES: ShapeDefinition[] = [
     id: 'C-custom',
     label: 'shape.cCustom',
     description: 'shape.cCustom.desc',
-    category: 'steel',
+    category: 'thin',
     params: [
       { id: 'h', label: 'shape.param.totalHeight', unit: 'm', step: 0.001, defaultValue: 0.20 },
       { id: 'b', label: 'shape.param.flangeWidth', unit: 'm', step: 0.001, defaultValue: 0.075 },
@@ -105,7 +121,7 @@ export const SECTION_SHAPES: ShapeDefinition[] = [
     id: 'concrete-square',
     label: 'shape.concSquare',
     description: 'shape.concSquare.desc',
-    category: 'concrete',
+    category: 'solid',
     params: [
       { id: 'a', label: 'shape.param.side', unit: 'm', step: 0.01, defaultValue: 0.30 },
     ],
@@ -114,7 +130,7 @@ export const SECTION_SHAPES: ShapeDefinition[] = [
     id: 'concrete-rect',
     label: 'shape.concRect',
     description: 'shape.concRect.desc',
-    category: 'concrete',
+    category: 'solid',
     params: [
       { id: 'b', label: 'shape.param.width', unit: 'm', step: 0.01, defaultValue: 0.20 },
       { id: 'h', label: 'shape.param.height', unit: 'm', step: 0.01, defaultValue: 0.40 },
@@ -124,7 +140,7 @@ export const SECTION_SHAPES: ShapeDefinition[] = [
     id: 'concrete-circular',
     label: 'shape.concCircular',
     description: 'shape.concCircular.desc',
-    category: 'concrete',
+    category: 'solid',
     params: [
       { id: 'd', label: 'shape.param.diameter', unit: 'm', step: 0.01, defaultValue: 0.40 },
     ],
@@ -133,7 +149,7 @@ export const SECTION_SHAPES: ShapeDefinition[] = [
     id: 'concrete-T',
     label: 'shape.concT',
     description: 'shape.concT.desc',
-    category: 'concrete',
+    category: 'solid',
     params: [
       { id: 'bw', label: 'shape.param.webWidth', unit: 'm', step: 0.01, defaultValue: 0.25 },
       { id: 'hw', label: 'shape.param.webHeight', unit: 'm', step: 0.01, defaultValue: 0.50 },
@@ -145,7 +161,7 @@ export const SECTION_SHAPES: ShapeDefinition[] = [
     id: 'concrete-invL',
     label: 'shape.concInvL',
     description: 'shape.concInvL.desc',
-    category: 'concrete',
+    category: 'solid',
     params: [
       { id: 'bw', label: 'shape.param.webWidth', unit: 'm', step: 0.01, defaultValue: 0.25 },
       { id: 'hw', label: 'shape.param.webHeight', unit: 'm', step: 0.01, defaultValue: 0.50 },
@@ -156,9 +172,9 @@ export const SECTION_SHAPES: ShapeDefinition[] = [
 ];
 
 /** Steel shapes only */
-export const STEEL_SHAPES = SECTION_SHAPES.filter(s => s.category === 'steel');
-/** Concrete shapes only */
-export const CONCRETE_SHAPES = SECTION_SHAPES.filter(s => s.category === 'concrete');
+export const THIN_SHAPES = SECTION_SHAPES.filter(s => s.category === 'thin');
+/** Solid shapes only */
+export const SOLID_SHAPES = SECTION_SHAPES.filter(s => s.category === 'solid');
 
 export interface SectionProperties {
   a: number;   // m²

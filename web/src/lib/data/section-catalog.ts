@@ -117,21 +117,67 @@ export const DESIGN_CODES: DesignCode[] = [
     id: 'cirsoc-301',
     label: 'CIRSOC 301',
     region: 'AR',
-    families: ['W', 'HP', 'M', 'IPN', 'UPN', 'C', 'MC', 'L', 'T', 'CHS', 'RHS', 'SHS'],
+    families: ['IPN', 'UPN', 'W', 'HP', 'M', 'C', 'MC', 'L', 'T', 'CHS', 'RHS', 'SHS'],
     missingFamilies: [ 'L de alas desiguales', 'C/Z conformados en frío (CIRSOC 303)'],
     note: 'cat.note.cirsoc',
   },
+  /*
+   * The hollow families are listed here even though the shipped tubes are the
+   * IRAM ones, and the note says so.
+   *
+   * The note was already written — it explains that these are IRAM-IAS tubes
+   * and that EN 10219-2 leaves the corner radius as a range — but the families
+   * were not in the list, so a user working to Eurocode 3 saw no tube at all
+   * and read an explanation of something they could not select. A European
+   * frame without a hollow section is not a small gap.
+   *
+   * Listing them with the caveat is the honest option: the outside dimensions
+   * of the metric series are common to both standards, the corner radius is
+   * what differs, and the note says which is which. Silently relabelling them
+   * EN 10210/10219 would be the dishonest one.
+   */
   {
     id: 'eurocode-3',
     label: 'Eurocode 3',
     region: 'EU',
-    families: ['IPE', 'HEA', 'HEB', 'IPN', 'UPN', 'L'],
+    families: ['IPE', 'HEA', 'HEB', 'IPN', 'UPN', 'L', 'CHS', 'RHS', 'SHS'],
     note: 'cat.note.eurocodeTubes',
+  },
+  /*
+   * AISC was missing entirely, which is odd given that the W, HP, M, C and MC
+   * series shipped here ARE the American ones — the catalogue carried the
+   * shapes without naming the code they belong to, so a user working to AISC
+   * had no filter and no confirmation that these were their sections.
+   *
+   * The dimensional standard is ASTM A6/A6M; NBR 15980 is equivalent to it, so
+   * the same families serve Brazilian practice without duplicating a profile.
+   */
+  {
+    id: 'aisc-360',
+    label: 'AISC 360',
+    region: 'US',
+    families: ['W', 'HP', 'M', 'C', 'MC', 'L', 'T', 'CHS', 'RHS', 'SHS'],
+    note: 'cat.note.aisc',
+  },
+  {
+    id: 'nbr-8800',
+    label: 'NBR 8800',
+    region: 'BR',
+    families: ['W', 'HP', 'M', 'C', 'MC', 'L', 'CHS', 'RHS', 'SHS'],
+    note: 'cat.note.nbr',
   },
 ];
 
 /** Every family the app ships, in picker order. */
-export const ALL_FAMILIES: ProfileFamily[] = ['IPE', 'HEA', 'HEB', 'W', 'HP', 'M', 'IPN', 'UPN', 'C', 'MC', 'L', 'T', 'CHS', 'RHS', 'SHS'];
+/**
+ * Every family the app ships, in picker order.
+ *
+ * IPN leads the I-series because it leads in practice here: it is the section
+ * Argentine mills roll as standard and the one CIRSOC's own tables are built
+ * around, so it is what a local user reaches for first. The rest follow by
+ * series — European, American, then the rolled channels and angles.
+ */
+export const ALL_FAMILIES: ProfileFamily[] = ['IPN', 'IPE', 'HEA', 'HEB', 'W', 'HP', 'M', 'UPN', 'C', 'MC', 'L', 'T', 'CHS', 'RHS', 'SHS'];
 
 /** Design code by id. */
 export function designCode(id: string): DesignCode | undefined {

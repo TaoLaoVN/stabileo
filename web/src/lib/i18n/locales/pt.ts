@@ -1,772 +1,633 @@
 import type { Translations } from '../types';
 const pt: Translations = {
-  // ─── Auth / Login ───
-
-  // ─── Landing Page ───
-
-  'config.localAxesAlways': 'Todos',
-
-  'config.localAxesMembers': 'Eixos locais (barras)',
-
-  'config.localAxesNever': 'Nenhum',
-
-  'config.localAxesSelected': 'Seleção',
-
-  'config.localAxesShells': 'Eixos locais (lajes/paredes)',
-
-  'editor.slideEnd': 'Deslizante fim',
-
-  'editor.slideNone': 'Nenhuma',
-
-  'editor.slideStart': 'Deslizante início',
-
-  'editor.slideX': 'Desliz. X',
-
-  'editor.slideZ': 'Desliz. Z',
-
-  'ribbon.advanced': 'Avançado',
-
-  'ribbon.axial': 'Normal',
-
-  'ribbon.close': 'Fechar painel',
-
-  'ribbon.data': 'Dados do modelo',
-
-  'ribbon.deformed': 'Deformada',
-
-  'ribbon.examples': 'Exemplos',
-
-  'ribbon.groupConditions': 'Condições',
-
-  'ribbon.groupCreate': 'Criar',
-
-  'ribbon.groupData': 'Dados',
-
-  'ribbon.groupDiagrams': 'Diagramas',
-
-  'ribbon.groupDraw': 'Desenhar',
-
-  'ribbon.groupEdit': 'Editar',
-
-  'ribbon.groupInspect': 'Inspecionar',
-
-  'ribbon.groupProject': 'Projeto',
-
-  'ribbon.groupProperties': 'Propriedades',
-
-  'ribbon.groupSolve': 'Resolver',
-
-  'ribbon.groupView': 'Vista',
-
-  'ribbon.moment': 'Momento',
-
-  'ribbon.momentY': 'My',
-
-  'ribbon.momentZ': 'Mz',
-
-  'ribbon.nameAxial': 'Esforço normal',
-
-  'ribbon.nameMoment': 'Momento fletor',
-
-  'ribbon.nameMomentY': 'Momento fletor em torno de y',
-
-  'ribbon.nameMomentZ': 'Momento fletor em torno de z',
-
-  'ribbon.nameShear': 'Esforço cortante',
-
-  'ribbon.nameShearY': 'Cortante segundo y',
-
-  'ribbon.nameShearZ': 'Cortante segundo z',
-
-  'ribbon.nameTorsion': 'Torção',
-
-  'ribbon.needs3d': 'somente em análise 3D',
-
-  'ribbon.needsSolve': 'resolva o modelo primeiro',
-
-  'ribbon.noDiagram': 'Nenhum',
-
-  'ribbon.project': 'Projeto',
-
-  'ribbon.resize': 'Redimensionar painel',
-
-  'ribbon.results': 'Resultados',
-
-  'ribbon.sectionStress': 'Seção',
-
-  'ribbon.sections': 'Seções',
-
-  'ribbon.settings': 'Ajustes',
-
-  'ribbon.shear': 'Cortante',
-
-  'ribbon.shearZ': 'Vz',
-
-  'ribbon.tabAnalyse': 'Análise',
-
-  'ribbon.tabModel': 'Modelo',
-
-  'ribbon.tabResults': 'Resultados',
-
-  'ribbon.tabs': 'Abas',
-
-  'ribbon.tool': 'Opções',
-
-  'ribbon.torsion': 'Torção',
-
-  'ribbon.view2d': '2D',
-
-  'ribbon.view3d': '3D',
-
-  'landing.accessB': 'O Stabileo é software livre sob AGPL-3.0, e o solver roda na sua própria máquina. Não há preço, não há conta e não há licenças.',
-
-  'landing.accessEdu': 'A intenção é que a aplicação central siga gratuita para uso educacional, e as camadas Educativo e PRO crescem por cima.',
-
-  'landing.accessNote': 'Os serviços hospedados marcados como ROADMAP ainda estão à frente, e usar o Stabileo nunca vai depender deles.',
-
-  'landing.accessT': 'Livre e de código aberto',
-
-  'landing.aiFut1': 'Ajudar a criar e modificar modelos estruturais.',
-
-  'landing.aiFut2': 'Interpretar resultados estruturais.',
-
-  'landing.aiFut3': 'Explicar conceitos de engenharia e o que o solver devolveu.',
-
-  'landing.aiFut4': 'Acompanhar durante um fluxo de projeto.',
-
-  'landing.aiFut5': 'Apoiar decisões estruturais atentas à norma.',
-
-  'landing.aiFut6': 'Conectar a modelagem, a verificação e a documentação.',
-
-  'landing.aiFutKicker': 'EM DESENVOLVIMENTO',
-
-  'landing.aiFutTitle': 'O que a camada de agentes vai fazer',
-
-  'landing.aiStatus': 'O Stabileo AI está em desenvolvimento ativo. As rotas do agente já rodam em desenvolvimento e teste contra um backend próprio, sobre o mesmo solver e os mesmos números que todo o resto desta página. Esse backend ainda não faz parte do site público, então esta seção descreve a direção e não um serviço que você possa abrir hoje. O trabalho continua sendo assinado por um engenheiro.',
-
-  'landing.badgeDev': 'EM DESENVOLVIMENTO',
-
-  'landing.badgePartial': 'PARCIAL',
-
-  'landing.badgeRoadmap': 'ROADMAP',
-
-  'landing.badgeTesting': 'PARCIAL · EM TESTE',
-
-  'landing.badgeToday': 'DISPONÍVEL HOJE',
-
-  'landing.basicNote': 'O Básico é o modo mais desenvolvido do Stabileo. Educativo e PRO constroem mais fluxos sobre a mesma base de cálculo estrutural.',
-
-  'landing.basicH': 'Básico é o modo que já funciona hoje.',
-
-  'landing.basicP': 'Um ambiente de cálculo estrutural prático que você já pode usar: modelos 2D e 3D simples, as ferramentas essenciais de uma disciplina universitária de estruturas, e resultados que você pode ler, conferir e explicar.',
-
-  'landing.basicPt1': 'Modelos 2D e 3D simples: vigas, pórticos, treliças, arcos e pórticos espaciais.',
-
-  'landing.basicPt2': 'O raciocínio de um curso inicial e intermediário de estruturas: estabilidade, reações, esforços internos, deformações e tensões de seção.',
-
-  'landing.basicPt3': 'Explicações didáticas, não só um resultado: um assistente passo a passo do método da rigidez que mostra cada operação matricial.',
-
-  'landing.basicPt4': 'Resultados de engenharia à vista: diagramas de M, V, N e T, a deformada, as reações e as tensões em uma seção cortada.',
-
-  'landing.basicPt5': '55 modelos de exemplo vêm com a aplicação, e 37 estão a um clique no menu de exemplos.',
-
-  'landing.basicPt6': 'Recálculo ao vivo, como opção: ao ativá-lo o solver roda a cada edição e os diagramas seguem o modelo enquanto você o altera.',
-
-  'landing.capAltIndustrial': 'O Stabileo em 3D: um galpão industrial treliçado completo, com todas as suas barras coloridas por esforço normal, do azul ao vermelho.',
-
-  'landing.capShotIndustrialBody': 'Trinta e sete modelos vêm no menu de exemplos, de uma viga simples a um galpão industrial inteiro como este. Também não são um catálogo fechado: no Básico você modela e calcula a estrutura que quiser.',
-
-  'landing.capShotIndustrialTitle': 'E muitas outras possibilidades para modelar',
-
-  'landing.capAlt2d': 'O Stabileo em 2D: um pórtico resolvido com seu diagrama de momentos fletores, com cada ordenada rotulada em kN·m.',
-
-  'landing.capAlt3d': 'O Stabileo em 3D: um pórtico espacial com o diagrama de My desenhado como superfície sobre cada barra.',
-
-  'landing.capAltStress2d': 'O Stabileo em 2D: o estado de tensões da seção escolhida desenhado sobre o pórtico — a distribuição de Navier, a linha neutra, o núcleo central e o ponto de aplicação da carga.',
-
-  'landing.capAltStress3d': 'O Stabileo em 3D: tensões biaxiais de seção em uma barra escolhida, com o painel de análise de seção aberto ao lado.',
-
-  'landing.capColElements': 'ELEMENTOS',
-
-  'landing.capColLinear': 'LINEAR',
-
-  'landing.capColNonlinear': 'NÃO LINEAR',
-
-  'landing.capColTime': 'DEPENDENTE DO TEMPO',
-
-  'landing.capEl1': 'Vigas-coluna de fibras',
-
-  'landing.capEl2': 'Cascas MITC4 / MITC9',
-
-  'landing.capEl3': 'Solid-shells SHB8-ANS',
-
-  'landing.capEl4': 'Cabos',
-
-  'landing.capEl5': 'Protendido / pós-tracionado',
-
-  'landing.capH': 'Um motor, todo o espectro da análise.',
-
-  'landing.capLin1': 'Estático',
-
-  'landing.capLin2': 'Segunda ordem',
-
-  'landing.capLin3': 'Flambagem',
-
-  'landing.capLin4': 'Modal',
-
-  'landing.capLin5': 'Espectro de resposta',
-
-  'landing.capLin6': 'História temporal',
-
-  'landing.capLin7': 'Harmônico',
-
-  'landing.capLin8': 'Cargas móveis',
-
-  'landing.capNl1': 'Corrotacional',
-
-  'landing.capNl2': 'Não linearidade material',
-
-  'landing.capNl3': 'Análise plástica',
-
-  'landing.capNl4': 'Etapas construtivas',
-
-  'landing.capNl5': 'Contato / gap',
-
-  'landing.capNl6': 'Imperfeições iniciais',
-
-  'landing.capP': 'O mesmo motor serve aos três modos. As análises mais profundas fazem parte do modo PRO, e algumas capacidades do solver seguem sendo ampliadas.',
-
-  'landing.capShot2dBody': 'Diagramas de normal, momento e cortante, e a deformada.',
-
-  'landing.capShot2dTitle': '2D — Diagramas característicos',
-
-  'landing.capShot3dBody': 'Diagramas de N, My, Vz, Mz, Vy e T, com deformada em 3D.',
-
-  'landing.capShot3dTitle': '3D — seis graus de liberdade por nó',
-
-  'landing.capShotStress2dBody': 'Você clica em um ponto qualquer da estrutura e vê o estado de tensões completo, com a teoria que o produziu à vista, com desenvolvimentos conceituais para calcular baricentro, centro de cisalhamento, núcleo central e vários mais.',
-
-  'landing.capShotStress2dTitle': 'Tensões de seção, barra por barra',
-
-  'landing.capShotStress3dBody': 'N/A + Mz·y/Iz + My·z/Iy com componentes de cortante separadas, linha neutra oblíqua e a torção por três teorias.',
-
-  'landing.capShotStress3dTitle': 'Tensões biaxiais em 3D',
-
-  'landing.capTd1': 'Fluência (creep)',
-
-  'landing.capTd2': 'Retração (shrinkage)',
-
-  'landing.capTd3': 'Construção por etapas',
-
-  'landing.capTd4': 'Estados de carga acumulados',
-
-  'landing.cir101Body': 'Geradas a partir do modelo: peso próprio, incidência de alvenaria, as sobrecargas mínimas da Tabela 4.1, a redução de sobrecarga e as sete combinações de resistência textuais.',
-
-  'landing.cir101Limit': 'Outros tipos de carga serão somados mais adiante.',
-
-  'landing.cir101Scope': 'Cargas permanentes e sobrecargas, e combinações',
-
-  'landing.cir102Body': 'Pressão dinâmica, exposição e constantes de terreno, topografia, fator de rajada, classificação de fechamento e os coeficientes de pressão de paredes e cobertura, aplicados ao sistema principal resistente ao vento.',
-
-  'landing.cir102Limit': 'Os edifícios não rígidos e os casos de carga torcionais serão incorporados no futuro.',
-
-  'landing.cir102Scope': 'Ação do vento',
-
-  'landing.cir103Body': 'Já são gerados o peso sísmico efetivo e a distribuição em altura do cortante na base pelo método estático.',
-
-  'landing.cir103Limit': 'Fluxo sísmico regulamentar em desenvolvimento.',
-
-  'landing.cir103Scope': 'Ação sísmica e detalhamento sismorresistente',
-
-  'landing.cir201Body': 'A cobertura mais forte de todas as desta página. As vigas e os pilares são verificados e além disso gerados: flexão, cisalhamento, estribos, zonas de barras, espaçamentos, ancoragens e comprimentos de emenda, e cada resultado leva o seu artigo. As lajes, as paredes estruturais e as sapatas também são projetadas, são alcançadas a partir do fluxo de trabalho, e seus resultados são marcados como provisórios.',
-
-  'landing.cir201Limit': 'Finalizando seu desenvolvimento e sendo testado frente a casos reais.',
-
-  'landing.cir201Scope': 'Projeto de concreto armado, e geração de armaduras',
-
-  'landing.cir301Body': 'Um verificador de barras de aço sobre a base AISC 360 LRFD: tração, compressão, flexão com flambagem lateral com torção, cisalhamento e solicitações combinadas.',
-
-  'landing.cir301Limit': 'Projeto segundo a norma em desenvolvimento.',
-
-  'landing.cir301Scope': 'Verificação de barras de aço',
-
-  'landing.cirsocP': 'Stabileo é feito na Argentina, então CIRSOC vem primeiro: é o marco normativo argentino e o que este trabalho tem de cumprir, e é onde o projeto segundo a norma está mais avançado. O roadmap segue com os Eurocódigos, e depois com as normas dos Estados Unidos.',
-
-  'landing.codeCfs': 'Aço formado a frio',
-
-  'landing.codeEcConcrete': 'Eurocódigo · concreto',
-
-  'landing.codeEcSteel': 'Eurocódigo · aço',
-
-  'landing.codeRc': 'Concreto armado',
-
-  'landing.codeSteel': 'Aço',
-
-  'landing.codeTimberMasonry': 'Madeira e alvenaria',
-
-  'landing.codesH': 'Projeto e verificação contra as normas com as quais se trabalha.',
-
-  'landing.codesIntlLead': 'Hoje o solver qualifica contra cada uma destas uma barra que você dimensionou.',
-
-  'landing.codesIntlTitle': 'CÓDIGOS INTERNACIONAIS · VERIFICAÇÃO DE BARRAS',
-
-  'landing.codesLead': 'A verificação de barras já cobre as principais normas internacionais. O projeto segundo a norma, ou seja propor um dimensionamento e gerar armaduras, está sendo construído um marco de cada vez.',
-
-  'landing.codesRegionEu': 'Europa',
-
-  'landing.codesRegionUs': 'Estados Unidos',
-
-  'landing.ctaH': 'Abra o Stabileo e modele alguma coisa.',
-
-  'landing.ctaP': 'Sem instalar, sem conta. O primeiro modelo leva um minuto.',
-
-  'landing.ctaSource': 'Ver o código',
-
-  'landing.docs': 'Docs',
-
-  'landing.docsC1B': 'Modelar, resolver e ler resultados nos primeiros dez minutos.',
-
-  'landing.docsC1T': 'Início rápido',
-
-  'landing.docsC2B': 'Como um agente lida com o mesmo modelo estruturado que o engenheiro edita à mão.',
-
-  'landing.docsC2T': 'Fluxo de modelagem com IA',
-
-  'landing.docsC3B': 'Formulação, biblioteca de elementos, convenções de sinais e método de validação.',
-
-  'landing.docsC3T': 'Referência do solver',
-
-  'landing.docsH': 'O método está escrito.',
-
-  'landing.docsOpenNew': 'Abrir no GitHub',
-
-  'landing.docsP': 'Formulação, convenções e fluxo de trabalho, no repositório, versionados junto ao código.',
-
-  'landing.ebBasic': 'MODO BÁSICO',
-
-  'landing.ebCapabilities': 'CAPACIDADES DO SOLVER',
-
-  'landing.ebCodes': 'NORMAS E INTEROPERABILIDADE',
-
-  'landing.ebDocs': 'DOCUMENTAÇÃO',
-
-  'landing.ebEdu': 'MODO EDUCATIVO',
-
-  'landing.ebHero': 'LIVRE E ABERTO · CÁLCULO ESTRUTURAL',
-
-  'landing.ebPro': 'MODO PRO',
-
-  'landing.ebProblem': 'O PROBLEMA',
-
-  'landing.ebStatus': 'ESTADO DO PRODUTO',
-
-  'landing.ebThesis': 'A TESE',
-
-  'landing.ebValidation': 'VALIDAÇÃO E EVIDÊNCIA',
-
-  'landing.ebWhat': 'O QUE É STABILEO',
-
-  'landing.eduFree': 'A intenção é que o núcleo educacional siga gratuito para uso educacional.',
-
-  'landing.eduH': 'O modo Educativo se constrói sobre o Básico.',
-
-  'landing.eduNext1': 'Tarefas que agrupem vários exercícios, com data de entrega e uma turma para distribuí-las.',
-
-  'landing.eduNext2': 'Mais do exercício sob controle do professor: quais dicas aparecem, quando os resultados ficam visíveis, quantas tentativas.',
-
-  'landing.eduNext3': 'Fluxos para que o estudante inspecione, conserte e construa modelos, e não apenas leia um.',
-
-  'landing.eduNext4': 'Uma progressão com forma de disciplina: estabilidade, reações, deslocamentos, diagramas, cinemática, análise de seções.',
-
-  'landing.eduNext5': 'Ajuda com a terminologia, onde o aluno encontra uma palavra pela primeira vez.',
-
-  'landing.eduNext6': 'Onboarding separado para professores e para estudantes.',
-
-  'landing.eduNextKicker': 'EM DESENVOLVIMENTO',
-
-  'landing.eduNextTitle': 'Fluxos docentes em desenvolvimento',
-
-  'landing.eduNotYet': 'O que existe é o exercício e a volta completa em torno dele: o professor o escreve, distribui e lê as respostas. O que não existe é a cátedra em torno DISSO — tarefas, lista de turma, tentativas, uma nota que viva em algum lugar. O Stabileo não guarda nada em um servidor, então um exercício e uma entrega viajam como link, arquivo ou código, do jeito que já se entrega. As lições passo a passo do método da rigidez estão disponíveis como parte do Básico.',
-
-  'landing.eduNow4': 'O aluno DESENHA o diagrama — as ordenadas e a potência de cada trecho — e o traçado e as potências são corrigidos separadamente contra o cálculo. Cortante, momento, normal e a deformada.',
-
-  'landing.eduNow5': 'As respostas são verificadas com uma tolerância, com uma dica quando o que falhou foi o sinal ou a ordem de grandeza. Os resultados ficam ocultos enquanto você trabalha; se podem ser revelados ou não, quem decide é o professor.',
-
-  'landing.eduNow6': 'O professor escreve o exercício no app: desenha a estrutura com as ferramentas de sempre e depois diz o que perguntar sobre ela. Sem código e sem arquivos para editar.',
-
-  'landing.eduNow7': 'Distribuir é um link ou um arquivo, e abre um ambiente feito para o aluno. Ele devolve um arquivo ou um código curto, e o professor o abre como uma tabela corrigida.',
-
-  'landing.eduNowKicker': 'JÁ FUNCIONA',
-
-  'landing.eduNowTitleNew': 'A camada de exercícios do estudante',
-
-  'landing.eduP': 'Uma camada de exercícios para estudantes construída sobre o mesmo motor de cálculo. O professor escreve o exercício dentro do app, distribui como link e recebe as respostas; o que falta é a camada de cima: a cátedra.',
-
-  'landing.figCompression': 'COMPRESSÃO  −',
-
-  'landing.figDeformedNorm': 'DEFORMADA · NORMALIZADA',
-
-  'landing.figDesc': 'Treliça Pratt de seis painéis simplesmente apoiada: apoio fixo no nó esquerdo do banzo e móvel no direito. Uma única carga unitária descendente percorre o banzo; entre nós ela se distribui linearmente entre os dois adjacentes, de modo que a carga total sempre vale um. As barras são coloridas segundo o esforço axial resolvido (vermelho em tração, azul em compressão, cinza quando o esforço é quase nulo), com uma única escala compartilhada por todas as posições. O contorno cinza é a treliça sem deformar; a deformada está normalizada para que se leia.',
-
-  'landing.figTension': 'TRAÇÃO  +',
-
-  'landing.figTitle': 'Uma carga unitária percorrendo uma treliça Pratt de seis painéis',
-
-  'landing.figUndeformed': 'SEM DEFORMAR',
-
-  'landing.figZero': 'QUASE NULO  ≈0',
-
-  'landing.footDocs': 'Documentação',
-
-  'landing.footLaunch': 'Abrir o editor',
-
-  'landing.footRepo': 'GitHub',
-
-  'landing.footRights': 'Software livre sob AGPL-3.0.',
-
-  'landing.footTagline': 'Análise estrutural de código aberto que roda no seu navegador.',
-
-  'landing.footTour': 'Tour guiado',
-
-  'landing.heroCtaPrimary': 'Abrir o editor',
-
-  'landing.heroCtaSecondary': 'Fazer o tour guiado',
-
-  'landing.heroBlogLink': 'Ler o nosso blog',
-
-  'landing.heroH': 'Análise estrutural, em uma aba do navegador.',
-
-  'landing.heroMetaA': 'Sem instalar. Sem licenças. Sem conta.',
-
-  'landing.heroMetaB': 'Código aberto · AGPL-3.0',
-
-  'landing.heroMetaC': 'Feito na Argentina · FIUBA · Lambda Class',
-
-  'landing.heroModeBasic': 'Básico',
-
-  'landing.heroModeBasicSt': 'Disponível hoje',
-
-  'landing.heroModeEdu': 'Educativo',
-
-  'landing.heroModeEduSt': 'Em desenvolvimento',
-
-  'landing.heroModePro': 'PRO',
-
-  'landing.heroModeProSt': 'Em desenvolvimento',
-
-  'landing.heroP': 'Uma plataforma gratuita e aberta de cálculo estrutural com três modos: Básico, que já funciona, e Educativo e PRO, ainda em desenvolvimento. O solver roda no seu navegador, na sua própria máquina.',
-
-  'landing.modeAiLine': 'A camada de agentes em desenvolvimento, sobre o mesmo solver e os mesmos números. Está sendo construída para ajudar você a modelar, interpretar, explicar e, com o tempo, percorrer um projeto de ponta a ponta.',
-
-  'landing.modeAiName': 'Stabileo AI',
-
-  'landing.modeBasicLine': 'O modo de cálculo estrutural que já funciona, disponível hoje. Modelos 2D e 3D simples, e as ferramentas de que precisa uma disciplina universitária de estruturas.',
-
-  'landing.modeBasicName': 'Básico',
-
-  'landing.modeEduLine': 'Exercícios e fluxos de aprendizagem sobre o mesmo motor. Escrever um exercício, distribuí-lo e ler as respostas já funciona; a cátedra em volta — tarefas, turma, uma nota que viva em algum lugar — está em desenvolvimento.',
-
-  'landing.modeEduName': 'Educativo',
-
-  'landing.modeProLine': 'A camada avançada: elementos finitos, modelos complexos e projeto segundo a norma que você escolher. CIRSOC para concreto armado já tem suporte básico, e o projeto em aço está em desenvolvimento.',
-
-  'landing.modeProName': 'PRO',
-
-  'landing.modesLead': 'Os quatro crescem sobre o mesmo solver. Básico é o modo de cálculo estrutural que você já pode usar hoje; Educativo, PRO e Stabileo AI o estendem com aprendizagem, engenharia avançada e fluxos com agentes.',
-
-  'landing.modesTitle': 'Três modos e uma camada de agentes que se constrói sobre eles.',
-
-  'landing.navBasic': 'Básico',
-
-  'landing.navCodes': 'Normas',
-
-  'landing.navEducation': 'Educativo',
-
-  'landing.footNav': 'Rodapé',
-
-  'landing.navBackToTop': 'Voltar ao topo',
-
-  'landing.navGithubRepo': 'Repositório no GitHub',
-
-  'landing.navPrimary': 'Principal',
-
+  /*
+   * One flat, alphabetically sorted map.
+   *
+   * The section comments that used to head this file ("Auth / Login",
+   * "Landing Page", …) were lost when two branches translated overlapping keys
+   * and the union was re-sorted. They are not restored on purpose: a heading
+   * that no longer matches the block under it is worse than no heading, and
+   * this dictionary is read by key, never by region.
+   */
+  'advanced.despiece': "Detalhamento",
+  'advanced.jointsUnsupported': "As articulações internas 3D só são incluídas na análise estática linear e no detalhamento. Esta análise as ignora.",
+  'advanced.sliding3dUnsupported': "Os deslizadores (articulações deslizantes) só são admitidos por ora na análise estática linear 3D.",
+  'advanced.slidingUnsupported': "Os deslizadores (articulações deslizantes) são compatíveis com a análise estática linear e o detalhamento. Esta análise os ignora.",
+  'ai.affected': "IDs afetados",
+  'ai.noFindings': "Sem observações — o modelo parece bem.",
+  'ai.noResults': "Não há resultados para revisar.",
+  'ai.recommendation': "Recomendação",
+  'ai.reviewModel': "Revisar modelo",
+  'ai.reviewOrder': "Ordem de revisão sugerida",
+  'ai.reviewing': "Analisando…",
+  'ai.risk': "Risco",
+  'ai.riskyAssumptions': "Hipóteses arriscadas",
+  'ai.solveFirst': "Resolva primeiro para revisar com IA.",
+  'ai.title': "Stabileo AI",
+  'ai.unknownError': "Erro desconhecido ao consultar a IA.",
+  'autoLoad.after': "Depois",
+  'autoLoad.applied': "Cargas e combinações aplicadas.",
+  'autoLoad.appliedRegulations': "Normas de onde vêm estas cargas",
+  'autoLoad.apply': "Aplicar",
+  'autoLoad.applyInvalidates': "Aplicar substitui as cargas geradas e invalida a análise, o projeto, o detalhamento e os documentos.",
+  'autoLoad.applyLiveReduction': "Aplicar a redução de sobrecarga (artigo 4.7.2)",
+  'autoLoad.assumptions': "Hipóteses",
+  'autoLoad.back': "Voltar",
+  'autoLoad.before': "Antes",
+  'autoLoad.blocked': "Não é possível gerar as cargas:",
+  'autoLoad.caseWarnings': "Casos de carga que exigem sua atenção",
+  'autoLoad.combinations': "Combinações",
+  'autoLoad.derivation': "Derivação",
+  'autoLoad.designLive': "Sobrecarga de projeto",
+  'autoLoad.distributedLoads': "Cargas distribuídas",
+  'autoLoad.floorsSupported': "Pavimentos que o elemento reduzido suporta",
+  'autoLoad.loadCases': "Casos de carga",
+  'autoLoad.nodalLoads': "Cargas nodais",
+  'autoLoad.notCovered': "Não coberto por esta geração",
+  'autoLoad.openRegulations': "Abrir Normas do projeto",
+  'autoLoad.pendingRegulation': "Há uma mudança de norma pendente. Pré-visualize e aplique para regerar as cargas.",
+  'autoLoad.previewStale': "A pré-visualização já não corresponde à opção «substituir cargas existentes». Pré-visualize de novo.",
+  'autoLoad.previewTitle': "Antes e depois",
+  'autoLoad.quantity': "Quantidade",
+  'autoLoad.reductionElement': "Tipo de elemento para K_LL",
+  'autoLoad.seismicNeedsRole': "As cargas sísmicas exigem uma norma sísmica atribuída ao projeto.",
+  'autoLoad.tributaryWidth': "Largura tributária para cargas de superfície",
+  'autoLoad.windAltitude': "Altitude do terreno",
+  'autoLoad.windEnclosure': "Fechamento",
+  'autoLoad.windKztSurveyed': "Topografia levantada (K_zt)",
+  'autoLoad.windNeedsRole': "As cargas de vento exigem uma norma de vento atribuída ao projeto.",
+  'autoLoad.windRigid': "Edifício rígido (n₁ ≥ 1 Hz)",
+  'autoLoad.windRoofSlope': "Inclinação da cobertura",
   'blog.allPosts': 'Todas as notas',
-
   'blog.backHome': 'Voltar a stabileo.com',
-
   'blog.by': 'Por',
-
   'blog.empty': 'Ainda não há nada publicado.',
-
   'blog.eyebrow': 'BLOG',
-
   'blog.lead': 'Notas sobre o solver, as verificações normativas e as decisões por trás delas, escritas por quem escreve o código.',
-
   'blog.notFound': 'Essa nota não existe.',
-
   'blog.notFoundBody': 'Talvez o link seja antigo ou o endereço tenha um erro. Tudo o que foi publicado está no índice.',
-
   'blog.openEditor': 'Abrir o editor',
-
   'blog.readMore': 'Ler a nota',
-
   'blog.readingTime': '{n} min de leitura',
-
   'blog.tag.ai': 'IA',
-
   'blog.tag.research': 'Pesquisa',
-
   'blog.tag.solver': 'Solver',
-
   'blog.title': 'Blog',
-
+  'calcReport.cancel': "Cancelar",
+  'calcReport.companyName': "Empresa",
+  'calcReport.engineerName': "Engenheiro",
+  'calcReport.generate': "Gerar Relatório",
+  'calcReport.noResults': "Execute a análise primeiro — não há resultados disponíveis para relatar.",
+  'calcReport.notes': "Notas / hipóteses",
+  'calcReport.optional': "Opcional",
+  'calcReport.projectName': "Nome do projeto",
+  'calcReport.title': "Gerar memorial de cálculo",
+  'cat.allCodes': "Todas",
+  'cat.code': "Norma",
+  'cat.geomApprox': "contorno aproximado",
+  'cat.geomExact': "contorno exato",
+  'cat.geometry': "Geometria",
+  'cat.missing': "Ainda não incluídos",
+  'cat.note.aisc': "W, HP, M, C e MC são as séries americanas, dimensionadas conforme ASTM A6/A6M. O AISC 360 cobre os tubos por ASTM A500 e A1085.",
+  'cat.note.nbr': "Os perfis laminados brasileiros seguem a NBR 15980, dimensionalmente equivalente à ASTM A6/A6M — as mesmas formas, então as séries americanas também servem aqui.",
+  'cat.standard': "Norma",
+  'codes.provenance.assumed': "Suposto — verificar",
+  'combos.needsRecalcSolve': "As combinações já não correspondem ao modelo — pressione Calcular para resolvê-las de novo.",
+  'config.autoSplitElements': "Subdividir barras ao colocar nós sobre elas",
+  'config.autoSplitElementsHelp': "Quando ativo, clicar com a ferramenta de nó no interior de uma barra existente a subdivide nesse ponto.",
+  'config.drawPositiveTowardLocalAxes': "Desenhar resultados positivos no sentido dos eixos locais",
+  'config.gridExtent': "Extensão da grade",
+  'config.localAxesAlways': "Todos",
+  'config.localAxesMembers': "Eixos locais (barras)",
+  'config.localAxesNever': "Nenhum",
+  'config.localAxesSelected': "Seleção",
+  'config.localAxesShells': "Eixos locais (lajes/paredes)",
+  'config.smoothOrbit': "Órbita suave (baixo detalhe)",
+  'config.smoothOrbitHint': "Mostra um wireframe rápido enquanto você gira/desloca/dá zoom, e restaura o detalhe completo ao soltar.",
+  'despiece.basis': "Base:",
+  'despiece.basisGlobal': "Global",
+  'despiece.basisGlobalHint': "Componentes globais Fx / Fz / M (equilíbrio do nó)",
+  'despiece.basisLocal': "Local",
+  'despiece.basisLocalHint': "N / V / M local da barra (diagrama de corpo livre)",
+  'despiece.colMember': "Barra·Extremidade",
+  'despiece.combinedVectors': "Vetores combinados",
+  'despiece.inspectEmpty': "Sem forças aqui (resolver primeiro?)",
+  'despiece.inspectMember': "Barra {id} — ações de extremidade",
+  'despiece.inspectNode': "Nó {id} — ações concorrentes",
+  'despiece.labelSize': "Tamanho do valor",
+  'despiece.legendAxial': "N (normal)",
+  'despiece.legendMoment': "M / T (rótulo)",
+  'despiece.legendNote': "As setas são símbolos de tamanho fixo — as magnitudes estão nos rótulos",
+  'despiece.legendReaction': "Reação",
+  'despiece.legendShear': "V (cortante y/z)",
+  'despiece.loads': "Cargas",
+  'despiece.loadsAll': "Todas",
+  'despiece.loadsOff': "Desligadas",
+  'despiece.loadsResultant': "Resultante",
+  'despiece.reactions': "Reações",
+  'despiece.vAll': "Todos",
+  'despiece.vMembers': "Barras",
+  'despiece.vNodes': "Nós",
+  'despiece.vectorSize': "Tamanho do vetor",
+  'despiece.vectors': "Vetores:",
+  'detailing.floorRun.title': "Lajes, paredes e fundações",
+  'detailing.footingRun.activeResultSet': "Conjunto de resultados ativo (nenhuma combinação resolvida)",
+  'detailing.review.notRecorded': "Não foi possível registrar a revisão.",
+  'detailing.title': "Detalhamento coordenado",
+  'diag.model.transverseOnTruss': 'Esta barra está modelada como treliça (só esforço normal). Cargas transversais sobre ela não serão transferidas como flexão/cortante. Considere aplicar a carga nos nós adjacentes ou modelar a barra como pórtico.',
+  'dialog.catalogueIsRolledSteel': "Este catálogo é de AÇO laminado e formado a frio — são as formas que as siderúrgicas produzem. Para concreto, madeira ou alumínio use «Montar seção» e informe as dimensões: a forma independe do material.",
+  'editor.joint3dHint': "GDL relativos liberados em cada extremidade (articulação interna, não um apoio ao solo). dx/dy/dz translação, θx/θy/θz rotação.",
+  'editor.joint3dTitle': "Articulação interna — GDL relativos liberados",
+  'editor.slideEnd': "Deslizador final",
+  'editor.slideNone': "Nenhum",
+  'editor.slideStart': "Deslizador inicial",
+  'editor.slideX': "Desliz. X",
+  'editor.slideZ': "Desliz. Z",
+  'edu.author.exampleHint': 'Comece por um dos exemplos do app e adapte.',
+  'file.loadedNoAxisConvention': "Carregado sem metadados de convenção de eixos locais — agora é avaliado com a convenção corrigida.",
+  'float.joint3dDofHint': 'Escolha quais GDL relativos a junta libera (liberação interna, não um apoio ao solo)',
+  'float.joint3dHint': 'Selecione os GDL relativos a liberar e depois clique em uma barra perto de um extremo',
+  'float.joint3dRelease': 'Liberar (relativo):',
+  'float.jointAxis': 'Eixo:',
+  'float.jointAxisGlobal': "Global",
+  'float.jointAxisGlobalHint': 'Desliza pelos eixos X/Z do mundo',
+  'float.jointAxisLocal': "Local",
+  'float.jointAxisLocalHint': 'Desliza pelo eixo local da barra (funciona em barras inclinadas)',
+  'float.jointHinge': 'Rótula',
+  'float.jointHingeHint': 'Liberação de rotação — o momento é liberado, a translação continua ligada',
+  'float.jointPickDof': "Selecione primeiro ao menos um GDL (dx…θz) a liberar",
+  'float.jointSlideHint': 'Clique em uma barra perto de um extremo para adicionar/remover a junta deslizante',
+  'float.jointSlideX': 'Deslizante X',
+  'float.jointSlideXHint': 'Junta deslizante: libera a translação em X (modo de eixo abaixo), mantém Z + rotação ligados',
+  'float.jointSlideZ': 'Deslizante Z',
+  'float.jointSlideZHint': 'Junta deslizante: libera a translação em Z (modo de eixo abaixo), mantém X + rotação ligados',
+  'float.nodeJoints': 'Juntas',
+  'kin.slideExplain': "Barra {elem} ({end}): deslizador ({dir}, eixo {axis}) → libera 1 translação relativa → c += 1",
+  'kinematic.slideAxisNote': "Cada deslizador soma 1 a c. O eixo (X/Z global ou x/z local da barra) apenas define qual translação é liberada.",
+  'landing.accessB': 'O Stabileo é software livre sob AGPL-3.0, e o solver roda na sua própria máquina. Não há preço, não há conta e não há licenças.',
+  'landing.accessEdu': 'A intenção é que a aplicação central siga gratuita para uso educacional, e as camadas Educativo e PRO crescem por cima.',
+  'landing.accessNote': 'Os serviços hospedados marcados como ROADMAP ainda estão à frente, e usar o Stabileo nunca vai depender deles.',
+  'landing.accessT': 'Livre e de código aberto',
+  'landing.aiFut1': 'Ajudar a criar e modificar modelos estruturais.',
+  'landing.aiFut2': 'Interpretar resultados estruturais.',
+  'landing.aiFut3': 'Explicar conceitos de engenharia e o que o solver devolveu.',
+  'landing.aiFut4': 'Acompanhar durante um fluxo de projeto.',
+  'landing.aiFut5': 'Apoiar decisões estruturais atentas à norma.',
+  'landing.aiFut6': 'Conectar a modelagem, a verificação e a documentação.',
+  'landing.aiFutKicker': 'EM DESENVOLVIMENTO',
+  'landing.aiFutTitle': 'O que a camada de agentes vai fazer',
+  'landing.aiStatus': 'O Stabileo AI está em desenvolvimento ativo. As rotas do agente já rodam em desenvolvimento e teste contra um backend próprio, sobre o mesmo solver e os mesmos números que todo o resto desta página. Esse backend ainda não faz parte do site público, então esta seção descreve a direção e não um serviço que você possa abrir hoje. O trabalho continua sendo assinado por um engenheiro.',
+  'landing.badgeDev': 'EM DESENVOLVIMENTO',
+  'landing.badgePartial': 'PARCIAL',
+  'landing.badgeRoadmap': 'ROADMAP',
+  'landing.badgeTesting': 'PARCIAL · EM TESTE',
+  'landing.badgeToday': 'DISPONÍVEL HOJE',
+  'landing.basicH': 'Básico é o modo que já funciona hoje.',
+  'landing.basicNote': 'O Básico é o modo mais desenvolvido do Stabileo. Educativo e PRO constroem mais fluxos sobre a mesma base de cálculo estrutural.',
+  'landing.basicP': 'Um ambiente de cálculo estrutural prático que você já pode usar: modelos 2D e 3D simples, as ferramentas essenciais de uma disciplina universitária de estruturas, e resultados que você pode ler, conferir e explicar.',
+  'landing.basicPt1': 'Modelos 2D e 3D simples: vigas, pórticos, treliças, arcos e pórticos espaciais.',
+  'landing.basicPt2': 'O raciocínio de um curso inicial e intermediário de estruturas: estabilidade, reações, esforços internos, deformações e tensões de seção.',
+  'landing.basicPt3': 'Explicações didáticas, não só um resultado: um assistente passo a passo do método da rigidez que mostra cada operação matricial.',
+  'landing.basicPt4': 'Resultados de engenharia à vista: diagramas de M, V, N e T, a deformada, as reações e as tensões em uma seção cortada.',
+  'landing.basicPt5': '55 modelos de exemplo vêm com a aplicação, e 37 estão a um clique no menu de exemplos.',
+  'landing.basicPt6': 'Recálculo ao vivo, como opção: ao ativá-lo o solver roda a cada edição e os diagramas seguem o modelo enquanto você o altera.',
   'landing.blogBody': 'Notas longas sobre como o solver funciona, o que os módulos normativos realmente verificam e a arquitetura por trás da camada de IA. A primeira trata de por que um agente nunca deve produzir o número por conta própria.',
-
   'landing.blogEyebrow': 'BLOG',
-
   'landing.blogLink': 'Ir para o blog',
-
   'landing.blogTitle': 'Acesse o nosso blog',
-
+  'landing.capAlt2d': 'O Stabileo em 2D: um pórtico resolvido com seu diagrama de momentos fletores, com cada ordenada rotulada em kN·m.',
+  'landing.capAlt3d': 'O Stabileo em 3D: um pórtico espacial com o diagrama de My desenhado como superfície sobre cada barra.',
+  'landing.capAltIndustrial': 'O Stabileo em 3D: um galpão industrial treliçado completo, com todas as suas barras coloridas por esforço normal, do azul ao vermelho.',
+  'landing.capAltStress2d': 'O Stabileo em 2D: o estado de tensões da seção escolhida desenhado sobre o pórtico — a distribuição de Navier, a linha neutra, o núcleo central e o ponto de aplicação da carga.',
+  'landing.capAltStress3d': 'O Stabileo em 3D: tensões biaxiais de seção em uma barra escolhida, com o painel de análise de seção aberto ao lado.',
+  'landing.capColElements': 'ELEMENTOS',
+  'landing.capColLinear': 'LINEAR',
+  'landing.capColNonlinear': 'NÃO LINEAR',
+  'landing.capColTime': 'DEPENDENTE DO TEMPO',
+  'landing.capEl1': 'Vigas-coluna de fibras',
+  'landing.capEl2': 'Cascas MITC4 / MITC9',
+  'landing.capEl3': 'Solid-shells SHB8-ANS',
+  'landing.capEl4': 'Cabos',
+  'landing.capEl5': 'Protendido / pós-tracionado',
+  'landing.capH': 'Um motor, todo o espectro da análise.',
+  'landing.capLin1': 'Estático',
+  'landing.capLin2': 'Segunda ordem',
+  'landing.capLin3': 'Flambagem',
+  'landing.capLin4': 'Modal',
+  'landing.capLin5': 'Espectro de resposta',
+  'landing.capLin6': 'História temporal',
+  'landing.capLin7': 'Harmônico',
+  'landing.capLin8': 'Cargas móveis',
+  'landing.capNl1': 'Corrotacional',
+  'landing.capNl2': 'Não linearidade material',
+  'landing.capNl3': 'Análise plástica',
+  'landing.capNl4': 'Etapas construtivas',
+  'landing.capNl5': 'Contato / gap',
+  'landing.capNl6': 'Imperfeições iniciais',
+  'landing.capP': 'O mesmo motor serve aos três modos. As análises mais profundas fazem parte do modo PRO, e algumas capacidades do solver seguem sendo ampliadas.',
+  'landing.capShot2dBody': 'Diagramas de normal, momento e cortante, e a deformada.',
+  'landing.capShot2dTitle': '2D — Diagramas característicos',
+  'landing.capShot3dBody': 'Diagramas de N, My, Vz, Mz, Vy e T, com deformada em 3D.',
+  'landing.capShot3dTitle': '3D — seis graus de liberdade por nó',
+  'landing.capShotIndustrialBody': 'Trinta e sete modelos vêm no menu de exemplos, de uma viga simples a um galpão industrial inteiro como este. Também não são um catálogo fechado: no Básico você modela e calcula a estrutura que quiser.',
+  'landing.capShotIndustrialTitle': 'E muitas outras possibilidades para modelar',
+  'landing.capShotStress2dBody': 'Você clica em um ponto qualquer da estrutura e vê o estado de tensões completo, com a teoria que o produziu à vista, com desenvolvimentos conceituais para calcular baricentro, centro de cisalhamento, núcleo central e vários mais.',
+  'landing.capShotStress2dTitle': 'Tensões de seção, barra por barra',
+  'landing.capShotStress3dBody': 'N/A + Mz·y/Iz + My·z/Iy com componentes de cortante separadas, linha neutra oblíqua e a torção por três teorias.',
+  'landing.capShotStress3dTitle': 'Tensões biaxiais em 3D',
+  'landing.capTd1': 'Fluência (creep)',
+  'landing.capTd2': 'Retração (shrinkage)',
+  'landing.capTd3': 'Construção por etapas',
+  'landing.capTd4': 'Estados de carga acumulados',
+  'landing.cir101Body': 'Geradas a partir do modelo: peso próprio, incidência de alvenaria, as sobrecargas mínimas da Tabela 4.1, a redução de sobrecarga e as sete combinações de resistência textuais.',
+  'landing.cir101Limit': 'Outros tipos de carga serão somados mais adiante.',
+  'landing.cir101Scope': 'Cargas permanentes e sobrecargas, e combinações',
+  'landing.cir102Body': 'Pressão dinâmica, exposição e constantes de terreno, topografia, fator de rajada, classificação de fechamento e os coeficientes de pressão de paredes e cobertura, aplicados ao sistema principal resistente ao vento.',
+  'landing.cir102Limit': 'Os edifícios não rígidos e os casos de carga torcionais serão incorporados no futuro.',
+  'landing.cir102Scope': 'Ação do vento',
+  'landing.cir103Body': 'Já são gerados o peso sísmico efetivo e a distribuição em altura do cortante na base pelo método estático.',
+  'landing.cir103Limit': 'Fluxo sísmico regulamentar em desenvolvimento.',
+  'landing.cir103Scope': 'Ação sísmica e detalhamento sismorresistente',
+  'landing.cir201Body': 'A cobertura mais forte de todas as desta página. As vigas e os pilares são verificados e além disso gerados: flexão, cisalhamento, estribos, zonas de barras, espaçamentos, ancoragens e comprimentos de emenda, e cada resultado leva o seu artigo. As lajes, as paredes estruturais e as sapatas também são projetadas, são alcançadas a partir do fluxo de trabalho, e seus resultados são marcados como provisórios.',
+  'landing.cir201Limit': 'Finalizando seu desenvolvimento e sendo testado frente a casos reais.',
+  'landing.cir201Scope': 'Projeto de concreto armado, e geração de armaduras',
+  'landing.cir301Body': 'Um verificador de barras de aço sobre a base AISC 360 LRFD: tração, compressão, flexão com flambagem lateral com torção, cisalhamento e solicitações combinadas.',
+  'landing.cir301Limit': 'Projeto segundo a norma em desenvolvimento.',
+  'landing.cir301Scope': 'Verificação de barras de aço',
+  'landing.cirsocP': 'Stabileo é feito na Argentina, então CIRSOC vem primeiro: é o marco normativo argentino e o que este trabalho tem de cumprir, e é onde o projeto segundo a norma está mais avançado. O roadmap segue com os Eurocódigos, e depois com as normas dos Estados Unidos.',
+  'landing.codeCfs': 'Aço formado a frio',
+  'landing.codeEcConcrete': 'Eurocódigo · concreto',
+  'landing.codeEcSteel': 'Eurocódigo · aço',
+  'landing.codeRc': 'Concreto armado',
+  'landing.codeSteel': 'Aço',
+  'landing.codeTimberMasonry': 'Madeira e alvenaria',
+  'landing.codesH': 'Projeto e verificação contra as normas com as quais se trabalha.',
+  'landing.codesIntlLead': 'Hoje o solver qualifica contra cada uma destas uma barra que você dimensionou.',
+  'landing.codesIntlTitle': 'CÓDIGOS INTERNACIONAIS · VERIFICAÇÃO DE BARRAS',
+  'landing.codesLead': 'A verificação de barras já cobre as principais normas internacionais. O projeto segundo a norma, ou seja propor um dimensionamento e gerar armaduras, está sendo construído um marco de cada vez.',
+  'landing.codesRegionEu': 'Europa',
+  'landing.codesRegionUs': 'Estados Unidos',
+  'landing.ctaH': 'Abra o Stabileo e modele alguma coisa.',
+  'landing.ctaP': 'Sem instalar, sem conta. O primeiro modelo leva um minuto.',
+  'landing.ctaSource': 'Ver o código',
+  'landing.docs': 'Docs',
+  'landing.docsC1B': 'Modelar, resolver e ler resultados nos primeiros dez minutos.',
+  'landing.docsC1T': 'Início rápido',
+  'landing.docsC2B': 'Como um agente lida com o mesmo modelo estruturado que o engenheiro edita à mão.',
+  'landing.docsC2T': 'Fluxo de modelagem com IA',
+  'landing.docsC3B': 'Formulação, biblioteca de elementos, convenções de sinais e método de validação.',
+  'landing.docsC3T': 'Referência do solver',
+  'landing.docsH': 'O método está escrito.',
+  'landing.docsOpenNew': 'Abrir no GitHub',
+  'landing.docsP': 'Formulação, convenções e fluxo de trabalho, no repositório, versionados junto ao código.',
+  'landing.ebBasic': 'MODO BÁSICO',
+  'landing.ebCapabilities': 'CAPACIDADES DO SOLVER',
+  'landing.ebCodes': 'NORMAS E INTEROPERABILIDADE',
+  'landing.ebDocs': 'DOCUMENTAÇÃO',
+  'landing.ebEdu': 'MODO EDUCATIVO',
+  'landing.ebHero': 'LIVRE E ABERTO · CÁLCULO ESTRUTURAL',
+  'landing.ebPro': 'MODO PRO',
+  'landing.ebProblem': 'O PROBLEMA',
+  'landing.ebStatus': 'ESTADO DO PRODUTO',
+  'landing.ebThesis': 'A TESE',
+  'landing.ebValidation': 'VALIDAÇÃO E EVIDÊNCIA',
+  'landing.ebWhat': 'O QUE É STABILEO',
+  'landing.eduFree': 'A intenção é que o núcleo educacional siga gratuito para uso educacional.',
+  'landing.eduH': 'O modo Educativo se constrói sobre o Básico.',
+  'landing.eduNext1': 'Tarefas que agrupem vários exercícios, com data de entrega e uma turma para distribuí-las.',
+  'landing.eduNext2': 'Mais do exercício sob controle do professor: quais dicas aparecem, quando os resultados ficam visíveis, quantas tentativas.',
+  'landing.eduNext3': 'Fluxos para que o estudante inspecione, conserte e construa modelos, e não apenas leia um.',
+  'landing.eduNext4': 'Uma progressão com forma de disciplina: estabilidade, reações, deslocamentos, diagramas, cinemática, análise de seções.',
+  'landing.eduNext5': 'Ajuda com a terminologia, onde o aluno encontra uma palavra pela primeira vez.',
+  'landing.eduNext6': 'Onboarding separado para professores e para estudantes.',
+  'landing.eduNextKicker': 'EM DESENVOLVIMENTO',
+  'landing.eduNextTitle': 'Fluxos docentes em desenvolvimento',
+  'landing.eduNotYet': 'O que existe é o exercício e a volta completa em torno dele: o professor o escreve, distribui e lê as respostas. O que não existe é a cátedra em torno DISSO — tarefas, lista de turma, tentativas, uma nota que viva em algum lugar. O Stabileo não guarda nada em um servidor, então um exercício e uma entrega viajam como link, arquivo ou código, do jeito que já se entrega. As lições passo a passo do método da rigidez estão disponíveis como parte do Básico.',
+  'landing.eduNow4': 'O aluno DESENHA o diagrama — as ordenadas e a potência de cada trecho — e o traçado e as potências são corrigidos separadamente contra o cálculo. Cortante, momento, normal e a deformada.',
+  'landing.eduNow5': 'As respostas são verificadas com uma tolerância, com uma dica quando o que falhou foi o sinal ou a ordem de grandeza. Os resultados ficam ocultos enquanto você trabalha; se podem ser revelados ou não, quem decide é o professor.',
+  'landing.eduNow6': 'O professor escreve o exercício no app: desenha a estrutura com as ferramentas de sempre e depois diz o que perguntar sobre ela. Sem código e sem arquivos para editar.',
+  'landing.eduNow7': 'Distribuir é um link ou um arquivo, e abre um ambiente feito para o aluno. Ele devolve um arquivo ou um código curto, e o professor o abre como uma tabela corrigida.',
+  'landing.eduNowKicker': 'JÁ FUNCIONA',
+  'landing.eduNowTitleNew': 'A camada de exercícios do estudante',
+  'landing.eduP': 'Uma camada de exercícios para estudantes construída sobre o mesmo motor de cálculo. O professor escreve o exercício dentro do app, distribui como link e recebe as respostas; o que falta é a camada de cima: a cátedra.',
+  'landing.figCompression': 'COMPRESSÃO  −',
+  'landing.figDeformedNorm': 'DEFORMADA · NORMALIZADA',
+  'landing.figDesc': 'Treliça Pratt de seis painéis simplesmente apoiada: apoio fixo no nó esquerdo do banzo e móvel no direito. Uma única carga unitária descendente percorre o banzo; entre nós ela se distribui linearmente entre os dois adjacentes, de modo que a carga total sempre vale um. As barras são coloridas segundo o esforço axial resolvido (vermelho em tração, azul em compressão, cinza quando o esforço é quase nulo), com uma única escala compartilhada por todas as posições. O contorno cinza é a treliça sem deformar; a deformada está normalizada para que se leia.',
+  'landing.figTension': 'TRAÇÃO  +',
+  'landing.figTitle': 'Uma carga unitária percorrendo uma treliça Pratt de seis painéis',
+  'landing.figUndeformed': 'SEM DEFORMAR',
+  'landing.figZero': 'QUASE NULO  ≈0',
   'landing.footBlog': 'Blog',
-
-  'landing.waGreeting': 'Olá! Escrevo pelo stabileo.com.',
-
-  'landing.waLabel': 'Fale conosco pelo WhatsApp',
-
+  'landing.footDocs': 'Documentação',
+  'landing.footLaunch': 'Abrir o editor',
+  'landing.footNav': 'Rodapé',
+  'landing.footRepo': 'GitHub',
+  'landing.footRights': 'Software livre sob AGPL-3.0.',
+  'landing.footTagline': 'Análise estrutural de código aberto que roda no seu navegador.',
+  'landing.footTour': 'Tour guiado',
+  'landing.heroBlogLink': 'Ler o nosso blog',
+  'landing.heroCtaPrimary': 'Abrir o editor',
+  'landing.heroCtaSecondary': 'Fazer o tour guiado',
+  'landing.heroH': 'Análise estrutural, em uma aba do navegador.',
+  'landing.heroMetaA': 'Sem instalar. Sem licenças. Sem conta.',
+  'landing.heroMetaB': 'Código aberto · AGPL-3.0',
+  'landing.heroMetaC': 'Feito na Argentina · FIUBA · Lambda Class',
+  'landing.heroModeBasic': 'Básico',
+  'landing.heroModeBasicSt': 'Disponível hoje',
+  'landing.heroModeEdu': 'Educativo',
+  'landing.heroModeEduSt': 'Em desenvolvimento',
+  'landing.heroModePro': 'PRO',
+  'landing.heroModeProSt': 'Em desenvolvimento',
+  'landing.heroP': 'Uma plataforma gratuita e aberta de cálculo estrutural com três modos: Básico, que já funciona, e Educativo e PRO, ainda em desenvolvimento. O solver roda no seu navegador, na sua própria máquina.',
+  'landing.modeAiLine': 'A camada de agentes em desenvolvimento, sobre o mesmo solver e os mesmos números. Está sendo construída para ajudar você a modelar, interpretar, explicar e, com o tempo, percorrer um projeto de ponta a ponta.',
+  'landing.modeAiName': 'Stabileo AI',
+  'landing.modeBasicLine': 'O modo de cálculo estrutural que já funciona, disponível hoje. Modelos 2D e 3D simples, e as ferramentas de que precisa uma disciplina universitária de estruturas.',
+  'landing.modeBasicName': 'Básico',
+  'landing.modeEduLine': 'Exercícios e fluxos de aprendizagem sobre o mesmo motor. Escrever um exercício, distribuí-lo e ler as respostas já funciona; a cátedra em volta — tarefas, turma, uma nota que viva em algum lugar — está em desenvolvimento.',
+  'landing.modeEduName': 'Educativo',
+  'landing.modeProLine': 'A camada avançada: elementos finitos, modelos complexos e projeto segundo a norma que você escolher. CIRSOC para concreto armado já tem suporte básico, e o projeto em aço está em desenvolvimento.',
+  'landing.modeProName': 'PRO',
+  'landing.modesLead': 'Os quatro crescem sobre o mesmo solver. Básico é o modo de cálculo estrutural que você já pode usar hoje; Educativo, PRO e Stabileo AI o estendem com aprendizagem, engenharia avançada e fluxos com agentes.',
+  'landing.modesTitle': 'Três modos e uma camada de agentes que se constrói sobre eles.',
+  'landing.navBackToTop': 'Voltar ao topo',
+  'landing.navBasic': 'Básico',
+  'landing.navCodes': 'Normas',
+  'landing.navEducation': 'Educativo',
+  'landing.navGithubRepo': 'Repositório no GitHub',
   'landing.navLanguage': 'Idioma',
-
   'landing.navMenuOpen': 'Menu',
-
   'landing.navOpenEditor': 'Abrir o editor',
-
+  'landing.navPrimary': 'Principal',
   'landing.navPro': 'PRO',
-
   'landing.navStatus': 'Estado',
-
   'landing.proAltAxial': 'O mesmo edifício depois da análise, com o diagrama de esforço normal desenhado sobre cada pilar e seu valor rotulado em cada extremidade.',
-
   'landing.proAltModel': 'O Stabileo em 3D mostrando um edifício de concreto armado de sete pavimentos: pilares, vigas, lajes e as cargas distribuídas de cada piso, antes de rodar a análise.',
-
   'landing.proAltRebar': 'Detalhe em 3D de um nó viga-pilar com suas armaduras visíveis: barras longitudinais em vermelho e azul e estribos em laranja, dentro do concreto translúcido.',
-
-  'landing.proShotAxialBody': 'O esforço normal em cada pilar, lido sobre o modelo. Resolver por elementos finitos uma estrutura deste tamanho já funciona bem.',
-
-  'landing.proShotAxialTitle': 'O mesmo edifício, resolvido',
-
-  'landing.proShotModelBody': 'Pórticos, lajes e suas cargas, modelados no navegador. Barras e placas juntas, que é o que um edifício realmente é.',
-
-  'landing.proShotModelTitle': 'Um edifício inteiro, antes de calculá-lo',
-
-  'landing.proShotRebarBody': 'Barras longitudinais e estribos dispostos segundo a CIRSOC 201, sobre o modelo e não em um desenho à parte. Em desenvolvimento.',
-
-  'landing.proShotRebarTitle': 'Todas as armaduras, em 3D',
-
-  'landing.proShotsNote': 'Capturas reais da aplicação, não renders. A vista de armaduras está em desenvolvimento; todo o resto desta seção declara sua maturidade acima.',
-
   'landing.proH': 'PRO está em desenvolvimento, e já serve para cálculos complexos.',
-
   'landing.proNext1': 'Detalhamento de armaduras da estrutura completa.',
-
   'landing.proNext2': 'Plantas completas: locação e armadura de um pavimento inteiro.',
-
   'landing.proNext3': 'Armadura verificada segundo a norma em todas as famílias suportadas, à medida que os resultados provisórios de hoje forem promovidos com bancos de prova publicados.',
-
   'landing.proNext4': 'Exportação pronta para produção da documentação estrutural e das planilhas completas diretamente do Stabileo.',
-
   'landing.proNext5': 'Fluxos sísmicos segundo INPRES-CIRSOC 103.',
-
   'landing.proNext6': 'Torção, nós viga-pilar, diafragmas e seções não retangulares.',
-
   'landing.proNext7': 'Suporte a normas internacionais, depois do CIRSOC.',
-
   'landing.proNextKicker': 'EM DESENVOLVIMENTO',
-
   'landing.proNextTitle': 'O que ainda falta ao PRO',
-
   'landing.proNow1': 'Análise estrutural complexa: segunda ordem, flambagem, modal, espectro de resposta, história temporal e análise plástica.',
-
   'landing.proNow2': 'Modelagem e cálculo com elementos finitos, com elementos de placa, de casca e solid-shell, e seus resultados de tensões.',
-
   'landing.proNow3': 'Um painel de modelagem estruturado, com abas próprias para nós, elementos, seções, materiais, apoios, cargas, vínculos, ligações, resultados e diagnósticos.',
-
   'landing.proNow4': 'Geração automática de cargas segundo CIRSOC 101 e 102, com cada valor rastreável ao artigo de onde saiu.',
-
   'landing.proNow5': 'Projeto de concreto armado de vigas e pilares segundo CIRSOC 201-2025: verifica um dimensionamento e gera a armadura, e cada resultado leva o seu artigo e a sua maturidade de validação.',
-
   'landing.proNow6': 'As lajes em uma e em duas direções, as paredes estruturais e as sapatas também são projetadas, a partir de um comando real do fluxo de trabalho. Esses resultados são marcados como provisórios enquanto são testados frente a casos reais.',
-
   'landing.proNow7': 'Desenhos de armadura para cinco famílias de elementos: elevações de vigas e pilares com suas seções, plantas de sapatas com dois cortes, plantas de painéis de laje, e elevações e cortes de paredes estruturais. São exportados em DXF e SVG.',
-
   'landing.proNow8': 'Uma planilha de dobramento com marcas, diâmetros, formas, quantidades, comprimentos de corte medidos sobre a barra física incluindo os ganchos, peso, barras comerciais e sobras, mais uma nota sempre que uma barra excede o comprimento comercial e precisa de emenda. É exportada em XLSX.',
-
   'landing.proNowKicker': 'JÁ DÁ PARA USAR',
-
   'landing.proNowTitle': 'O que o PRO faz hoje',
-
   'landing.proP': 'A análise com elementos finitos e os modelos complexos já funcionam aqui, no nível que você esperaria de um programa profissional. O que está sendo lapidado é o projeto segundo a norma: o passo em que muitos programas de elementos finitos param, entregam os resultados e deixam a verificação regulamentar para você.',
-
+  'landing.proShotAxialBody': 'O esforço normal em cada pilar, lido sobre o modelo. Resolver por elementos finitos uma estrutura deste tamanho já funciona bem.',
+  'landing.proShotAxialTitle': 'O mesmo edifício, resolvido',
+  'landing.proShotModelBody': 'Pórticos, lajes e suas cargas, modelados no navegador. Barras e placas juntas, que é o que um edifício realmente é.',
+  'landing.proShotModelTitle': 'Um edifício inteiro, antes de calculá-lo',
+  'landing.proShotRebarBody': 'Barras longitudinais e estribos dispostos segundo a CIRSOC 201, sobre o modelo e não em um desenho à parte. Em desenvolvimento.',
+  'landing.proShotRebarTitle': 'Todas as armaduras, em 3D',
+  'landing.proShotsNote': 'Capturas reais da aplicação, não renders. A vista de armaduras está em desenvolvimento; todo o resto desta seção declara sua maturidade acima.',
   'landing.probBoxBody': 'Resultados sem rastreabilidade nem forma de auditar o método. O engenheiro precisa assinar algo que não pode inspecionar.',
-
   'landing.probBoxTerm': 'Caixa-preta',
-
   'landing.probCostBody': 'Onde as ferramentas dominantes publicam um preço, uma licença custa milhares por ano. Uma barreira real para escritórios pequenos, profissionais autônomos e para a formação.',
-
   'landing.probCostTerm': 'Milhares de USD',
-
   'landing.probH1': 'Durante décadas, o cálculo estrutural dependeu de software',
-
   'landing.probH2': 'caro, fechado e preso a um desktop.',
-
   'landing.probOsBody': 'Instalação pesada, licenças e um único sistema operacional. O cálculo não viaja: mora em uma máquina.',
-
   'landing.probOsTerm': 'Windows',
-
   'landing.roadmap': 'Roadmap',
-
   'landing.stD1': 'Modo Educativo — o exercício e a volta completa em torno dele já funcionam; a cátedra acima está em desenvolvimento',
-
   'landing.stD2': 'Modo PRO — hoje análise avançada e projeto de concreto, com o detalhamento e a exportação sendo ampliados',
-
   'landing.stD3': 'Stabileo AI — a camada de agentes, em desenvolvimento sobre o mesmo solver',
-
   'landing.stD4': 'Sismo INPRES-CIRSOC 103 — hoje geração de cargas, o fluxo regulamentar completo em desenvolvimento',
-
   'landing.stGroupDev': 'Em desenvolvimento',
-
   'landing.stGroupPartial': 'Parcial',
-
   'landing.stGroupRoadmap': 'Roadmap / proposto',
-
   'landing.stGroupToday': 'Disponível hoje, em stabileo.com',
-
   'landing.stH': 'Onde está hoje cada capacidade.',
-
   'landing.stP': 'Tudo o que está em produção figura como tal, tudo o que está em curso leva o seu estado, e nada disso é necessário para usar o Stabileo.',
-
   'landing.stPa1': 'Vento CIRSOC 102: hoje edifícios rígidos, com os não rígidos e os casos torcionais no futuro',
-
   'landing.stPa2': 'Aço CIRSOC 301: hoje verificação de barras, projeto segundo a norma em desenvolvimento',
-
   'landing.stPa3': 'Desenhos de armadura e planilhas de dobramento para vigas, pilares, sapatas, lajes e paredes estruturais, com exportação em DXF, SVG e XLSX; os desenhos da estrutura completa estão em desenvolvimento',
-
   'landing.stPa4': 'Os resultados são marcados como provisórios até ter registrado um banco de prova externo e independente',
-
   'landing.stPa5': 'As lajes, as paredes estruturais e as sapatas são projetadas e alcançadas a partir do fluxo de trabalho, e estão sendo testadas frente a casos reais',
-
   'landing.stR1': 'Maior cobertura CIRSOC, começando pelos fluxos sísmicos',
-
   'landing.stR2': 'Remote solving — serviço hospedado opcional para modelos grandes demais para resolver localmente',
-
   'landing.stR3': 'Stabileo AI credits — assistência com IA, paga e opcional',
-
   'landing.stR4': 'Cloud workspace — armazenamento e sincronização hospedados, opcionais',
-
   'landing.stR5': 'Camadas de processo: otimização, quantitativos e sequência construtiva',
-
   'landing.stT1': 'Solver 2D e 3D no navegador (Rust → WebAssembly), método direto da rigidez',
-
   'landing.stT2': 'Recálculo ao vivo a cada edição, disponível como opção',
-
   'landing.stT3': 'Análise linear, não linear, dinâmica e elementos avançados',
-
   'landing.stT4': 'Validado contra NAFEMS, ANSYS, Code_Aster, SAP2000 e OpenSees',
-
   'landing.stT5': 'Importação IFC (BIM), e importação e exportação DXF R12',
-
   'landing.stT6': 'Verificação de barras segundo AISC 360, ACI 318, os Eurocódigos, AISI S100, NDS e TMS 402',
-
   'landing.stT7': '55 modelos de exemplo vêm com a aplicação, 37 deles no menu de exemplos',
-
   'landing.stT8': 'Código aberto sob AGPL-3.0, sem conta e sem licenças',
-
   'landing.stT9': 'Projeto de concreto armado de vigas e pilares segundo CIRSOC 201-2025: verificado e gerado, não apenas qualificado',
-
   'landing.statExamplesHint': 'Vêm com a aplicação, de um balanço a um estádio · 37 no menu de exemplos',
-
   'landing.statExamplesLbl': 'Exemplos incluídos',
-
   'landing.statLicenseHint': 'Repositório público, método inspecionável',
-
   'landing.statLicenseLbl': 'Licença',
-
   'landing.statStarsHint': 'github.com/lambdaclass/stabileo',
-
   'landing.statStarsLbl': 'Estrelas no GitHub',
-
   'landing.statTestsHintNew': 'Passando, 0 falhas · medido em 6c3369d6 · 2026-08-01',
-
   'landing.statTestsLbl': 'Testes do motor',
-
   'landing.thAn1': 'Os agentes de programação funcionam porque algo diz se compila e se passa.',
-
   'landing.thAn1K': 'CÓDIGO + COMPILADOR/TESTES',
-
   'landing.thAn2': 'O AlphaProof prova teoremas porque um verificador formal não deixa passar um erro.',
-
   'landing.thAn2K': 'MATEMÁTICA + LEAN',
-
   'landing.thAn3': 'A IA pode projetar porque o solver valida cada resultado contra a física.',
-
   'landing.thAn3K': 'ESTRUTURAS + STABILEO',
-
   'landing.thClose': 'O solver do Stabileo é o compilador do mundo físico.',
-
   'landing.thGenB': 'Gera e edita o modelo estruturado: geometria, cargas, seções, hipóteses.',
-
   'landing.thGenK': 'GERADOR',
-
   'landing.thGenT': 'A IA propõe',
-
   'landing.thH1': 'A IA não projeta sozinha. Projeta sobre um modelo que',
-
   'landing.thH2': 'a verifica.',
-
   'landing.thP': 'A IA generativa produz o plausível, não o correto, e não distingue uma coisa da outra. O que a torna confiável é dar a ela um ambiente determinista que a valide. A arquitetura que já funciona é sempre a mesma: um gerador que explora e um verificador que garante.',
-
   'landing.thVerB': 'O solver determinista resolve a mecânica real. É a fonte de verdade, e não há mágica no prompt.',
-
   'landing.thVerK': 'VERIFICADOR',
-
   'landing.thVerT': 'O solver garante',
-
   'landing.valAgainst': 'VALIDADO CONTRA',
-
   'landing.valBook': 'Soluções de livro',
-
   'landing.valH': 'Contrastado com as referências da indústria.',
-
   'landing.valLocalBody': 'O solver é WebAssembly e é executado no seu navegador, de modo que seu modelo permanece na sua máquina durante a análise.',
-
   'landing.valLocalTitle': 'Roda na sua máquina',
-
   'landing.valP': 'Não é autocertificação: cada tipo de análise é validado contra bancos de prova publicados e software de referência.',
-
   'landing.valPerfBody': 'Fatoração 22–89× mais rápida em malhas de cascas, e 22× de ponta a ponta. Cholesky esparso com ordenamento AMD, medido neste repositório contra o próprio caminho denso do Stabileo, não contra outros fornecedores.',
-
   'landing.valPerfTitle': 'Montagem esparsa, medida',
-
+  'landing.waGreeting': 'Olá! Escrevo pelo stabileo.com.',
+  'landing.waLabel': 'Fale conosco pelo WhatsApp',
   'landing.whatAccess': 'A aplicação central é livre e de código aberto sob AGPL-3.0, e o solver roda na sua própria máquina. A ideia é que siga gratuita para uso educacional. Mais adiante pode haver serviços hospedados opcionais; nenhum será necessário para usá-la.',
-
   'landing.whatB1': 'Você entra em stabileo.com e começa. Sem download, sem licenças, sem conta. O modelo roda na sua máquina.',
-
   'landing.whatB2': 'Pórticos, treliças, placas e cascas. Diagramas de esforços, tensões, reações e deformada.',
-
   'landing.whatB3': 'O solver é escrito em Rust e compilado para WebAssembly. Roda localmente, na aba, sem instalar nada.',
-
   'landing.whatH': 'Você modela, resolve, inspeciona e compartilha, tudo em uma aba.',
-
   'landing.whatK1': 'ABRIR E COMEÇAR',
-
   'landing.whatK2': '2D E 3D',
-
   'landing.whatK3': 'RUST → WEBASSEMBLY',
-
   'landing.whatT1': 'Zero fricção',
-
   'landing.whatT2': 'Método direto da rigidez',
-
   'landing.whatT3': 'Motor nativo no navegador',
+  'lore.aci-318.body': "American Concrete Institute",
+  'lore.aci-318.since': "edição vigente 2019; a primeira é de 1910",
+  'lore.aci-318.trivia': "O “318” é apenas o número do comitê, e ficou. As resistências são especificadas em psi, então os equivalentes métricos dão valores estranhos: 4000 psi são 27,6 MPa, não 28.",
+  'lore.adm-2020.body': "The Aluminum Association, Estados Unidos",
+  'lore.adm-2020.since': "edição 2020 do Aluminum Design Manual",
+  'lore.adm-2020.trivia': "Usa E = 69 600 MPa e ν = 0,33, contra os 70 000 e 0,30 do Eurocódigo 9. O mesmo metal, duas normas, dois módulos — a diferença é de calibração, não de física.",
+  'lore.aisc-360-16.body': "American Institute of Steel Construction",
+  'lore.aisc-360-16.since': "edição 2016; a linha da especificação começa em 1923",
+  'lore.aisc-360-16.trivia': "Traz LRFD e ASD lado a lado num mesmo documento, com as mesmas resistências nominais e dois formatos de segurança diferentes. Essa unificação aconteceu em 2005; antes a profissão estava dividida entre duas especificações separadas e dois campos.",
+  'lore.aisc-360-22.body': "American Institute of Steel Construction",
+  'lore.aisc-360-22.since': "edição 2022",
+  'lore.aisc-360-22.trivia': "Acrescentou disposições para projeto dúctil e para aços de alta resistência acima de 100 ksi, que as edições anteriores simplesmente não cobriam.",
+  'lore.aisc-design-guide-27.body': "AISC, Estados Unidos",
+  'lore.aisc-design-guide-27.since': "2013",
+  'lore.aisc-design-guide-27.trivia': "Um guia de projeto e não uma especificação — os Estados Unidos não têm norma obrigatória para estruturas de inoxidável, então isto preenche a lacuna.",
+  'lore.aisi-s100-16.body': "American Iron and Steel Institute",
+  'lore.aisi-s100-16.since': "2016; a primeira especificação de perfis formados a frio é de 1946",
+  'lore.aisi-s100-16.trivia': "Introduziu o Método da Resistência Direta como alternativa completa às larguras efetivas — em vez de reduzir cada elemento de chapa, calculam-se as cargas de flambagem da seção inteira e projeta-se a partir delas.",
+  'lore.cirsoc-201.body': "INTI-CIRSOC, Argentina",
+  'lore.cirsoc-201.since': "2005, com revisão de 2025; a linha começa em 1982",
+  'lore.cirsoc-201.trivia': "Adaptado do ACI 318, e por isso compartilha sua expressão do módulo E = 4700·√f'c. O concreto argentino é especificado pela resistência característica em CORPO DE PROVA CILÍNDRICO, daí H-25 para 25 MPa.",
+  'lore.cirsoc-301-2005.body': "INTI-CIRSOC, Argentina",
+  'lore.cirsoc-301-2005.since': "2005; a primeira edição é de 1982",
+  'lore.cirsoc-301-2005.trivia': "É uma norma de VERIFICAÇÃO, não independente: adota o método do AISC 360 quase literalmente e o adapta aos aços e unidades argentinos. Por isso quem foi formado no AISC a reconhece de imediato — e por isso os perfis que usa são os que as siderúrgicas locais normalizam, graus IRAM ao lado dos ASTM.",
+  'lore.cirsoc-303-2009.body': "INTI-CIRSOC, Argentina",
+  'lore.cirsoc-303-2009.since': "2009",
+  'lore.cirsoc-303-2009.trivia': "O complemento do CIRSOC 301 para perfis formados a frio, seguindo o método do AISI. Paredes finas sofrem flambagem local antes de escoar, e por isso precisam de uma norma própria e não de um capítulo.",
+  'lore.cirsoc-701-2010.body': "INTI-CIRSOC, Argentina",
+  'lore.cirsoc-701-2010.since': "2010",
+  'lore.cirsoc-701-2010.trivia': "A norma argentina de alumínio, que segue a tradição americana do ADM e não a europeia.",
+  'lore.en-1992-1-1.body': "CEN",
+  'lore.en-1992-1-1.since': "2004",
+  'lore.en-1992-1-1.trivia': "Nomeia o concreto pela resistência em cilindro E em cubo — C25/30 é um único concreto, não uma escolha, porque o ensaio em cubo dá mais alto para o mesmo material. Seu módulo vem da resistência MÉDIA, e por isso fica bem acima do do ACI para a mesma classe.",
+  'lore.en-1993-1-1-2005.body': "CEN, o Comité Europeu de Normalização",
+  'lore.en-1993-1-1-2005.since': "2005, substituindo a versão de ensaio ENV de 1992",
+  'lore.en-1993-1-1-2005.trivia': "Cada país publica um Anexo Nacional que fixa os parâmetros deixados em aberto — coeficientes parciais, curvas de encurvadura, alguns limites — de modo que “EN 1993” sozinho não determina um cálculo. A mesma viga pode passar num país e não passar noutro, legitimamente.",
+  'lore.en-1993-1-3-2006.body': "CEN",
+  'lore.en-1993-1-3-2006.since': "2006",
+  'lore.en-1993-1-3-2006.trivia': "Cobre barras com paredes até cerca de 1 mm. Abaixo disso assumem a EN 1993-1-4 e as partes de chapa.",
+  'lore.en-1993-1-4-2006.body': "CEN",
+  'lore.en-1993-1-4-2006.since': "2006",
+  'lore.en-1993-1-4-2006.trivia': "O inoxidável também não tem patamar de escoamento: sua curva tensão-deformação arredonda gradualmente, então as curvas de flambagem do aço-carbono não se aplicam. Esse arredondamento é também a razão pela qual ele tolera melhor a flambagem local do que sua resistência sozinha sugere.",
+  'lore.en-1999-1-1-2007.body': "CEN",
+  'lore.en-1999-1-1-2007.since': "2007",
+  'lore.en-1999-1-1-2007.trivia': "O Eurocódigo 9 é o mais recente de todos. O alumínio não tem patamar de escoamento, então projeta-se sobre uma tensão de prova a 0,2%, e é preciso considerar a zona afetada pelo calor: soldar uma barra de alumínio pode reduzir sua resistência à metade localmente, algo que nenhuma norma de aço precisa dizer.",
+  'lore.en-338.body': "CEN",
+  'lore.en-338.since': "1995, revisada em 2016",
+  'lore.en-338.trivia': "CLASSES de resistência em vez de espécies: C24 significa as mesmas propriedades seja abeto ou pinho silvestre. O número é a resistência característica à flexão em MPa, C é conífera e D folhosa — por isso uma D30 e uma C30 fletem igual e pesam muito diferente.",
+  'lore.nbr-14762-2010.body': "ABNT, Brasil",
+  'lore.nbr-14762-2010.since': "2010",
+  'lore.nbr-14762-2010.trivia': "A norma brasileira de perfis formados a frio, escrita em torno dos graus galvanizados ZAR da NBR 7008.",
+  'lore.nbr-6118.body': "ABNT, Brasil",
+  'lore.nbr-6118.since': "2014, revisada em 2023",
+  'lore.nbr-6118.trivia': "Sua expressão do módulo varia com o tipo de AGREGADO — granito, basalto, calcário e arenito têm cada um seu fator. Nenhuma outra norma aqui faz isso, e pode mover E em 30%.",
+  'lore.nbr-8800-2008.body': "ABNT, Brasil",
+  'lore.nbr-8800-2008.since': "2008, substituindo a edição de 1986",
+  'lore.nbr-8800-2008.trivia': "A edição de 1986 era por tensões admissíveis; a de 2008 passou a estados limites e alinhou-se de perto com o AISC e o Eurocódigo. A NBR 8800:2024 é a revisão vigente.",
+  'matCode.aboutCode': "Sobre esta norma",
+  'matCode.body': "Escrita por",
+  'matCode.since': "Desde",
+  'material.spacingMargin': "Margem adicional entre barras",
+  'material.spacingMarginHelp': "Margem adicional definida pelo projeto acima do mínimo normativo. O CIRSOC não prescreve uma; é uma decisão do projeto.",
+  'material.spacingMarginShort': "Margem (mm)",
+  'materials.aggregate': "Dimensão máxima característica do agregado graúdo (mm)",
+  'materials.aggregateHelp': "Dimensão máxima característica do agregado graúdo. É usada pela regra de espaçamento mínimo entre barras.",
+  'materials.aggregateNotStated': "não indicado",
+  'materials.aggregateNote': "Deixe em branco quando a mistura não estiver definida. A superfície de projeto informa então uma hipótese em vez de um valor.",
+  'materials.aggregateShort': "d_agg (mm)",
+  'project.openDxfCadTooltip': "Importar uma planta DXF de arquitetura e gerar um rascunho de concreto armado (assistente)",
+  'regulations.title': "Normas do projeto",
+  'results.asColourMap': 'Mapa de cores',
+  'results.asDiagram': "Diagrama",
+  'results.asMemberColour': "Cor das barras",
+  'results.axialShownAs': "Normal mostrada como",
+  'results.repColourMapHelp': 'Barras coloridas por MAGNITUDE, de azul (pouco) a vermelho (muito), sem considerar o sinal. Diz onde estão os picos.',
+  'results.repDiagramHelp': 'O valor desenhado ao longo de cada barra, em escala.',
+  'results.repMemberColourHelp': 'Barras coloridas por SINAL: vermelho tracionado, azul comprimido. Diz em que sentido, não quanto.',
+  'results.shellContourNegligible': "≈ 0 neste modelo — componente desprezível frente ao campo governante (p. ex. tensão de membrana).",
+  'results.shellContourUnavailable': "Sem resultados de lajes/paredes para contornar — resolva um modelo com placas/quads primeiro.",
+  'results.shellContourUniform': "Campo uniforme (sem variação espacial) ≈ {v}.",
+  'results.shownAs': 'Mostrado como',
+  'results.verification': "Verificação",
+  'resultsTable.diagnostics': "Diagnóstico",
+  'ribbon.advanced': 'Avançado',
+  'ribbon.axial': 'Normal',
+  'ribbon.close': "Fechar painel",
+  'ribbon.data': 'Dados do modelo',
+  'ribbon.deformed': 'Deformada',
+  'ribbon.examples': 'Exemplos',
+  'ribbon.groupConditions': 'Condições',
+  'ribbon.groupCreate': 'Criar',
+  'ribbon.groupData': 'Dados',
+  'ribbon.groupDiagrams': 'Diagramas',
+  'ribbon.groupDraw': 'Desenhar',
+  'ribbon.groupEdit': 'Editar',
+  'ribbon.groupInspect': 'Inspecionar',
+  'ribbon.groupProject': 'Projeto',
+  'ribbon.groupProperties': "Propriedades",
+  'ribbon.groupSolve': 'Resolver',
+  'ribbon.groupView': 'Vista',
+  'ribbon.moment': 'Momento',
+  'ribbon.momentY': 'My',
+  'ribbon.momentZ': 'Mz',
+  'ribbon.nameAxial': 'Esforço normal',
+  'ribbon.nameMoment': 'Momento fletor',
+  'ribbon.nameMomentY': 'Momento fletor em torno de y',
+  'ribbon.nameMomentZ': 'Momento fletor em torno de z',
+  'ribbon.nameShear': 'Esforço cortante',
+  'ribbon.nameShearY': 'Cortante segundo y',
+  'ribbon.nameShearZ': 'Cortante segundo z',
+  'ribbon.nameTorsion': 'Torção',
+  'ribbon.needs3d': "só na análise 3D",
+  'ribbon.needsSolve': "resolva o modelo primeiro",
+  'ribbon.noDiagram': 'Nenhum',
+  'ribbon.project': "Projeto",
+  'ribbon.resize': "Redimensionar painel",
+  'ribbon.results': 'Resultados',
+  'ribbon.sectionStress': 'Seção',
+  'ribbon.sections': 'Seções',
+  'ribbon.settings': "Ajustes",
+  'ribbon.shear': 'Cortante',
+  'ribbon.shearZ': 'Vz',
+  'ribbon.tabAnalyse': 'Análise',
+  'ribbon.tabModel': 'Modelo',
+  'ribbon.tabResults': 'Resultados',
+  'ribbon.tabs': 'Abas',
+  'ribbon.tool': 'Opções',
+  'ribbon.torsion': 'Torção',
+  'ribbon.view2d': '2D',
+  'ribbon.view3d': '3D',
+  'status.loads': 'carga',
+  'status.loadsPlural': 'cargas',
+  'status.shells': 'casca',
+  'status.shellsPlural': 'cascas',
+  'stress.cpInKern': 'no NC: σ mesmo sinal',
+  'stress.devBody': "A tabela deste perfil publica dimensões nominais e deriva a área da massa nominal, então as propriedades podem afastar-se ligeiramente do contorno real.",
+  'stress.devTitle': "Dimensões nominais",
+  'stress.naOutside': 'EN {arrow} fora',
+  'stress.noGeomMsg1a': 'Ainda não está disponível o contorno exato de ',
+  'stress.noGeomMsg1b': ', portanto não é possível calcular as tensões detalhadas.',
+  'stress.noGeomMsg2': "É uma limitação de dados, não uma propriedade da seção: o perfil está perfeitamente definido e suas propriedades são corretas.",
+  'stress.noGeomMsg3': "Todas as famílias do catálogo admitem análise detalhada exceto RHS. Atribua um perfil de outra família para ver as tensões.",
+  'stress.rotSuffix': '(rot {angle}°)',
+  'stress.shearCentre': "Centro de cisalhamento fora do baricentro",
+  'stress.shearCentreMsg': "Uma carga transversal precisa passar por este ponto para fletir a seção sem torcê-la. Aplicada em outro lugar, ela também torce.",
+  'table.derivedFromGeometry': "Derivado da geometria do perfil — é o valor que o solver usa.",
+  'table.showProperties': "Ver propriedades e forma",
+  'table.torsionUnavailable': "Ainda não há uma constante de torção validada para esta seção.",
+  'toolbar.planeModal.simplified': "elementos simplificados",
+  'viewport.barSubdivided': "Barra subdividida",
+  'viewport.jointAdded': "Liberação de articulação adicionada",
+  'viewport.jointRemoved': "Liberação de articulação removida",
+  'viewport.sliderAdded': "Deslizador adicionado",
+  'viewport.sliderRemoved': "Deslizador removido",
   'landing.features': 'Recursos',
   'landing.pricing': 'Preços',
   'landing.heroTitle1': 'Análise Estrutural,',
@@ -1004,6 +865,11 @@ const pt: Translations = {
   'results.shellBending': 'Shell Bending',
   'results.changeResultsView': 'Alterar vista de resultados',
   'results.primary': 'Primário',
+  'results.elemLabel': 'Elem #{id}',
+  'results.diagSource': 'Fonte',
+  'results.diagType': 'Tipo',
+  'results.diagMessage': 'Mensagem',
+  'results.diagSeverity': 'Severidade',
   'results.compare': 'Comparar',
   'results.simpleLoads': 'Cargas simples',
   'results.noComparison': 'Sem comparação',
@@ -1560,6 +1426,10 @@ const pt: Translations = {
   'template.cancel': 'Cancelar',
 
   // ─── SectionShapeBuilder.svelte ───
+  'shapeBuilder.thin': "De parede fina",
+  'shapeBuilder.solid': "Maciças",
+  'shapeBuilder.thinHelp': "Paredes finas frente às outras dimensões da seção: sofrem flambagem local, absorvem o cisalhamento como um fluxo ao longo da parede, e torcem por Saint-Venant ou Bredt. Aço laminado e soldado, formado a frio, alumínio extrudado.",
+  'shapeBuilder.solidHelp': "Sem paredes finas: o cisalhamento segue a distribuição parabólica de Jouravsky e a torção não tem forma fechada elementar. Concreto, madeira, barra maciça — seja qual for o material.",
   'shapeBuilder.title': 'Construir seção',
   'shapeBuilder.steel': 'Aço',
   'shapeBuilder.concrete': 'Concreto',
@@ -2046,7 +1916,25 @@ const pt: Translations = {
   'matCat.concrete': 'Concretos',
   'matCat.wood': 'Madeiras',
   'matCat.aluminum': 'Alumínio',
-
+  'matCat.coldFormed': "Formados a frio",
+  'matCat.stainless': "Inoxidáveis",
+  'grade.typicalHelp': "Valores típicos deste material, não lidos da norma que o rege. Servem para modelar; confira-os com a norma antes de uma verificação profissional.",
+  'pairing.unusual': "Os perfis {family} normalmente não são laminados em {grade}. O que as siderúrgicas fornecem:",
+  'pairing.stillValid': "O modelo é válido de qualquer forma — isto é disponibilidade e prazo de entrega, não correção. Pedir outro grau implica uma corrida especial.",
+  'grade.src.iramAcindar': "IRAM-IAS U 500-503, catálogo de siderúrgica argentina",
+  'grade.src.iramAcindarAngle': "IRAM-IAS U 500-503 — até 2½\"; cantoneiras maiores em F-36",
+  'grade.src.iramW': "IRAM-IAS U 500-215-6, série W",
+  'grade.src.gerdau': "Gerdau, NBR 15980 / ASTM A6 (= AR 350 conforme NBR 7007)",
+  'grade.src.aisc': "AISC — o grau padrão para perfis W",
+  'grade.src.iram': 'IRAM-IAS U 500-503 — o grau seguinte da mesma norma',
+  'grade.src.en10025': 'EN 10025-2 — estocado em toda a Europa',
+  'grade.src.aiscLegacy': 'ASTM A36 — em que os perfis W eram laminados antes do A992 (1998)',
+  'grade.src.astmA36': 'ASTM A36 — o grau habitual para perfis U e cantoneiras',
+  'grade.src.astmTubeLegacy': 'ASTM A500 Gr.B — de longa data, ainda muito especificado',
+  'grade.src.nbr7007': 'NBR 7007 — aço estrutural brasileiro',
+  'grade.src.astmTube': "ASTM A500, tubo estrutural",
+  'matCode.label': "Norma de projeto",
+  'matCode.hint': "Filtra os graus que essa norma costuma referenciar. Não é uma restrição: qualquer grau pode ser verificado por qualquer norma.",
   // ─── Section Shape Labels ───
   'shape.hollowRect': 'Tubo retangular',
   'shape.hollowCircular': 'Tubo circular',
@@ -2140,6 +2028,8 @@ const pt: Translations = {
   'stress.centralCoreHelp': 'O NC é uma propriedade geométrica da seção.\nDefine onde N pode atuar sem mudança de sinal em σ.\nAtive o botão NC na seção transversal para visualizá-lo.',
   'stress.ccDesc1': 'O <strong>núcleo central</strong> é uma propriedade geométrica da seção transversal, independente das cargas aplicadas.',
   'stress.ccDesc2': 'Define a região ao redor do centroide onde uma força normal N pode atuar sem produzir mudança de sinal nas tensões normais σ. Se o centro de pressão cai dentro do NC, toda a seção está em tração ou compressão pura.',
+  'stress.ccLimitZ': "No eixo horizontal",
+  'stress.ccLimitY': "No eixo vertical",
   'stress.ccEquations': 'Equações',
   'stress.ccEqDesc': 'Para cada fibra extrema a uma distância <em>d</em> do centroide, o vértice do NC está em:',
   'stress.ccEqWhere': 'onde W = módulo de resistência, A = área, I = momento de inércia, d = distância à fibra extrema.',
@@ -2152,8 +2042,8 @@ const pt: Translations = {
   'stress.shapeT': 'T',
   'stress.shapeL': 'L (cantoneira)',
   'stress.shapeC': 'C (canal)',
-  'stress.coreCircular': 'Circular',
-  'stress.coreHexagonal': 'Hexagonal',
+  'stress.coreCircular': "Circular",
+  'stress.coreHexagonal': "Hexagonal",
   'stress.coreDiamond': 'Losango (rombo)',
   'stress.ccRectNote': 'Losango com semi-eixos e<sub>y</sub> = h/6 e e<sub>z</sub> = b/6',
   'stress.ccIHNote': 'Hexágono: vértices em (0, ±I<sub>z</sub>/(A·h/2)) e (±I<sub>y</sub>/(A·b/2), ±I<sub>z</sub>/(A·y<sub>alma</sub>))',
@@ -2315,8 +2205,147 @@ const pt: Translations = {
   'tmpl.topWidth': 'Largura topo',
 
   // ─── Stress analysis (P3) ───
-  'stress.mohrCircle': "Mohr's Circle",
+  'stress.mohrCircle': "Círculo de Mohr",
   'stress.mohrCircleHelp': "Graphical representation of the stress state in all planes.\n\nThe circle shows how σ and τ vary when rotating the analysis plane.\nThe red dot is the current state (σ, τ).\nThe points where the circle touches the σ axis are the principal stresses (σ1, σ2) where τ=0.\nThe circle radius is τmax (Tresca).",
+  'teach.centroidTitle': "Baricentro",
+  'teach.centroidHelp': "Onde a ÁREA se equilibra. Decorre de um momento estático e nada mais, então toda seção tem um e encontrá-lo não exige nenhuma noção de carga.\n\nA seção é dividida em retângulos; cada um contribui com sua área vezes seu braço, e o total dividido pela área total é a resposta.",
+  'teach.centroidLead': "Divide-se em retângulos; cada um contribui com sua área vezes sua distância a uma borda de referência.",
+  'teach.shearCentreTitle': "Centro de cisalhamento",
+  'teach.shearCentreHelp': "Onde uma carga transversal NÃO PRODUZ TORÇÃO. Diferente do baricentro, decorre do fluxo de cisalhamento, então depende de como o material está distribuído em torno do eixo, não só de quanto há.\n\nPor isso o de um U cai fora da seção — um lugar onde o baricentro nunca pode estar.",
+  'teach.shearCentreLead': "Qual regra se aplica é decidido pela simetria da seção, e saber qual é justamente o conteúdo.",
+  'teach.symBoth': "Dois eixos de simetria: o baricentro está sobre ambos, portanto é o centro da seção. A tabela abaixo confirma isso, não descobre.",
+  'teach.symVertical': "Simétrica em relação ao eixo vertical, então z̄ fica sobre ele. Só é preciso calcular a posição vertical.",
+  'teach.symHorizontal': "Simétrica em relação ao eixo horizontal, então ȳ fica a meia altura. Só é preciso calcular a posição horizontal.",
+  'teach.colPart': "Parte",
+  'teach.originBottomLeft': "Os braços são medidos a partir da quina inferior esquerda, assim todos são positivos e um erro de sinal não pode se esconder na soma.",
+  'teach.filletNote': "Os retângulos ignoram os raios de concordância, então num perfil laminado isto dá um pouco abaixo da integração do contorno real feita pelo motor. Essa diferença é uma propriedade do método manual, não um erro.",
+  'teach.unitsNote': "A em cm², y em mm, A·y em cm³.",
+  'teach.part.flangeTop': "Mesa superior",
+  'teach.part.flangeBot': "Mesa inferior",
+  'teach.part.flange': "Mesa",
+  'teach.part.web': "Alma",
+  'teach.part.legV': "Aba vertical",
+  'teach.part.legH': "Aba horizontal",
+  'teach.part.outer': "Retângulo externo",
+  'teach.part.void': "Vazio (subtraído)",
+  'teach.part.lipTop': "Enrijecedor superior",
+  'teach.part.lipBot': "Enrijecedor inferior",
+  'teach.part.whole': "Seção completa",
+  'teach.sc.doubly': "Dois eixos de simetria",
+  'teach.sc.doublyNote': "Com simetria em relação a ambos os eixos o fluxo de cisalhamento também é simétrico, então sua resultante só pode passar pelo centro. O centro de cisalhamento coincide com o baricentro — não é preciso calcular nada.",
+  'teach.sc.walls': "Paredes que se cruzam num ponto",
+  'teach.sc.wallsNote': "O fluxo de cisalhamento num retângulo fino corre ao longo da sua linha média, então a resultante de cada parede passa por essa linha. Duas linhas cruzam-se num único ponto, e uma força que passa por ele não produz momento em relação a ele — que é a definição do centro de cisalhamento.",
+  'teach.sc.channel': "Perfil U — e = b²h²t_f / (4I)",
+  'teach.sc.channelNote': "Os fluxos das duas mesas formam um binário que o fluxo da alma não consegue equilibrar de dentro da seção. O equilíbrio de momentos coloca a carga FORA, do lado da alma oposto às mesas. b e h são dimensões de linha média: medidas a partir do centro da alma e entre os centros das mesas.",
+  'teach.sc.numeric': "Do cálculo numérico",
+  'teach.sc.numericNote': "Esta forma não tem aqui uma regra elementar; o valor vem do cálculo de cisalhamento do motor sobre a malha da seção.",
+  'teach.sym.tv': "Espessura da parede vertical",
+  'teach.sym.th': "Espessura da parede horizontal",
+  'teach.sym.bm': "b (linha média)",
+  'teach.sym.hm': "h (linha média)",
+  'teach.sym.tf': "Espessura da mesa",
+  'teach.sym.iy': "I",
+  'teach.sym.e': "e",
+  'teach.scOffset': "Distância ao baricentro (z · y)",
+  'teach.scEngine': "Cálculo de cisalhamento do motor",
+  'teach.scOutside': "Este ponto cai FORA da seção. Ali não há material — e é exatamente por isso que carregar um U pela alma o torce: a alma não é onde a carga precisa atuar.",
+  'warp.title': "Empenamento (torção não uniforme)",
+  'warp.noModulus': 'Indisponível: o material não tem módulo de elasticidade (E).',
+  'warp.class.iBeam': "Perfil I — as mesas fletem em sentidos opostos",
+  'warp.class.iBeamNote': "Cw = Iz·h₀²/4 é exata para um perfil I duplamente simétrico: as mesas fletem em torno dos seus próprios eixos e h₀ é o braço do binário. Coincide com as tabelas publicadas dentro de 0,3%.",
+  'warp.class.channel': "Perfil U — empenamento em torno do centro de cisalhamento",
+  'warp.class.channelNote': "Teoria de parede fina, que ignora os raios de concordância e a mesa cônica que um U realmente tem. Espere cerca de 15% contra um valor de tabela.",
+  'warp.class.pointSymmetric': "Paredes que concorrem num ponto — sem empenamento",
+  'warp.class.pointSymmetricNote': "A linha média de cada parede passa por um mesmo ponto, então a coordenada setorial é quase nula em todos os lados e não há resistência ao empenamento digna de menção. Cantoneiras e perfis T resistem à torção só por Saint-Venant.",
+  'warp.class.closed': "Seção fechada — sem empenamento",
+  'warp.class.closedNote': "Uma seção fechada absorve o torsor circulando pelo seu perímetro e praticamente não empena. Esta é a outra razão pela qual os tubos são tão melhores à torção.",
+  'warp.case.cantilever': "Extremidade impedida",
+  'warp.case.simple': "Extremidades livres",
+  'warp.thinWallHelp': "Aproximação de parede fina: espere cerca de 15% contra um valor de tabela.",
+  'warp.splitHelp': "Como o torsor se reparte entre os dois mecanismos, para o comprimento e a vinculação desta barra.",
+  'warp.bySaintVenant': "{pct}% Saint-Venant",
+  'warp.byWarping': "{pct}% empenamento",
+  'warp.addsToBending': "σw é uma tensão NORMAL e SOMA-SE à de flexão nas pontas das mesas — justamente onde a flexão é máxima. Ignorar o empenamento fica do lado inseguro em tensões, ainda que seja conservador para o giro.",
+  'stress.torsionFlowOn': "Fluxo de torção ativo — o campo que o torsor produz",
+  'stress.torsionFlowOff': "Fluxo de torção desativado",
+  'stress.shearMismatch': "O diagrama de cisalhamento desenhado não coincide com o cálculo da seção. O diagrama usa uma fórmula fechada para esta forma; o motor malha o contorno real e é o que manda. Guie-se pelo valor calculado.",
+  'stress.shearDiagram': "Diagrama",
+  'stress.shearSolved': "Motor",
+  'stress.torsion': "Torção",
+  'stress.torsionHelp': "Tensão de cisalhamento produzida por um momento torsor.\n\nQual teoria se aplica é decidido pela topologia da parede, não pelo seu tamanho: maciça, parede fina fechada (Bredt) ou parede fina aberta (Saint-Venant). Diferem em ordens de grandeza para a mesma seção, então a que está em uso é nomeada em vez de aplicada em silêncio.",
+  'stress.torsionNone': "Não há momento torsor nesta seção, portanto não há tensões de torção. Ele aparece quando a barra é torcida, ou quando uma carga paralela à seção atua fora do centro de cisalhamento.",
+  'stress.torsionCircular': "Circular — exata",
+  'stress.torsionCircularNote': "O único caso em que a dedução elementar é exata: as seções planas permanecem planas. A tensão cresce linearmente de zero no centro até seu máximo na superfície externa.",
+  'stress.torsionBredt': "Bredt — parede fina fechada",
+  'stress.torsionBredtNote': "O torsor é absorvido por um fluxo de cisalhamento que circula em torno da área fechada, constante ao longo de uma parede de espessura constante. A área fechada é delimitada pela LINHA MÉDIA da parede, não pela sua face externa.",
+  'stress.torsionOpen': "Saint-Venant — parede fina aberta",
+  'stress.torsionOpenNote': "Sem circuito fechado por onde circular, o fluxo se inverte sobre si mesmo em cada parede: zero na linha média e sinais opostos nas duas faces. A espessura entra ao CUBO, por isso as seções abertas resistem tão mal à torção, e manda o elemento MAIS ESPESSO.",
+  'stress.tt.title': 'As três teorias',
+  'stress.tt.help': 'A torção tem três soluções com nome próprio, cada uma válida para um tipo de parede. Quando duas se aplicam à mesma seção NÃO dão o mesmo número, e essa diferença é o que custa a hipótese de parede fina.',
+  'stress.tt.cauchy': 'Cauchy',
+  'stress.tt.bredt': 'Bredt',
+  'stress.tt.saintVenant': 'Saint-Venant',
+  'stress.tt.formulaCauchy': 'τ = T·r / Iₚ',
+  'stress.tt.formulaBredt': 'τ = T / (2·Aₘ·t)',
+  'stress.tt.formulaSV': 'τ = T·t / J',
+  'stress.tt.governs': 'governa',
+  'stress.tt.na': 'não se aplica',
+  'stress.tt.vsGoverning': '{pct}% do valor que governa',
+  'stress.tt.svCircular': 'Aplica-se a qualquer forma. Para uma seção circular tem solução exata e coincide com Cauchy: por simetria circular a seção não empena.',
+  'stress.tt.svClosed': 'Aplica-se a qualquer forma. Para parede fechada fina sua solução É a de Bredt: Bredt não é uma teoria rival, mas o caso de parede fina desta.',
+  'stress.tt.svOpen': 'Aplica-se a qualquer forma. Para parede aberta fina, J = (1/3)·Σb·t³ e governa o elemento mais espesso. A espessura entra ao cubo, e por isso uma seção aberta resiste tão mal à torção.',
+  'stress.tt.svSolid': 'Aplica-se a qualquer forma. O retângulo maciço não tem solução elementar fechada, então J e τ vêm das aproximações padrão à solução em série.',
+  'stress.tt.bredtClosed': 'Aplica-se: a parede forma um circuito fechado. Um fluxo de cisalhamento q = τ·t percorre-o e é constante, portanto a parede MAIS FINA é a mais tensionada. Aₘ é a área delimitada pela linha média da parede.',
+  'stress.tt.bredtCircular': 'Aplica-se, mas aqui Cauchy é exata. Bredt supõe a tensão constante na espessura; Cauchy sabe que ela cresce com o raio, então Bredt fica ABAIXO: aproximada no sentido inseguro.',
+  'stress.tt.bredtOpen': 'Não se aplica: uma seção aberta não tem circuito fechado por onde o fluxo circule. Usá-la aqui subestimaria a tensão em duas ordens de grandeza.',
+  'stress.tt.bredtNoWall': 'Não se aplica: uma seção maciça não tem espessura de parede, portanto não há fluxo de cisalhamento de que falar.',
+  'stress.tt.cauchyTube': 'Aplica-se e é exata: tubo circular. A tensão cresce linearmente com o raio, mínima no diâmetro interno e máxima na superfície externa.',
+  'stress.tt.cauchySolid': 'Aplica-se e é exata: barra circular maciça. A tensão é nula no centro e máxima na superfície.',
+  'stress.tt.cauchyNotCircular': 'Não se aplica: a dedução depende da simetria circular, que é justamente o que a torna exata. Uma seção não circular empena e esta fórmula não consegue ver isso.',
+  'stress.torsionSolid': "Retângulo maciço",
+  'stress.torsionSolidNote': "Não existe forma fechada elementar; estas são as aproximações padrão da solução em série. O máximo fica no meio do lado longo — numa quina cruzam-se duas superfícies livres e a tensão deve se anular.",
+  'stress.torsionSlit': "Cortada ao longo, esta seção seria cerca de {factor}× menos rígida à torção — com a mesma área, a mesma parede e a mesma inércia à flexão. Fechar uma seção é o que a faz resistir ao torsor.",
+  'stress.tensors': "Tensores",
+  'stress.tensorsHelp': "O estado completo de tensão e deformação na fibra selecionada.\n\nA teoria de vigas dá uma tensão normal e duas de cisalhamento. São três componentes de um tensor cujas componentes restantes ela SUPÕE nulas — aqui os zeros são escritos para que a hipótese fique à vista.\n\nA deformação vem da lei de Hooke completa, incluindo as contrações de Poisson: uma fibra tracionada estreita a seção.",
+  'stress.tensorsNoElastic': "O tensor de deformações precisa do módulo de elasticidade e do coeficiente de Poisson. Atribua ao elemento um material que tenha ambos para ver esta seção.",
+  'stress.tensorStress': "Tensor de tensões",
+  'stress.tensorStrain': "Tensor de deformações",
+  'stress.tensorZerosNote': "Os zeros são uma hipótese da teoria de vigas: sem tensão normal transversal nem cisalhamento entre as direções do plano.",
+  'stress.tensorPoissonNote': "As deformações transversais são a contração de Poisson: a seção estreita quando a fibra se alonga.",
+  'stress.stressMapOn': "Mapa de tensões ativo — σ pintada sobre toda a seção",
+  'stress.stressMapOff': "Mapa de tensões desativado — σ lida na fibra selecionada",
+  'stress.eccentricOn': "Carga excêntrica ativa — arraste o ponto para movê-la",
+  'stress.eccentricOff': "Carga excêntrica desativada",
+  'stress.eccentricPlace': "Clique para posicionar o ponto de aplicação",
+  'stress.eccentricPoint': "Ponto de aplicação — arraste, ou use as setas",
+  'stress.eccentricTitle': "Carga excêntrica",
+  'stress.eccentricAt': "Aplicada em",
+  'stress.eccentricReset': "Centralizar",
+  'stress.eccentricResetHelp': "Devolver o ponto ao baricentro",
+  'stress.eccentricInKern': "Dentro do núcleo central: sob carga axial toda a seção mantém um único sinal.",
+  'stress.eccentricOutKern': "Fora do núcleo central: só a carga axial já traciona parte da seção.",
+  'stress.eccentricShearCentreNote': "O centro de cisalhamento (CC) não coincide com o baricentro (G): o cisalhamento aplicado fora de CC torce a barra.",
+  'stress.eccentricFromModel': "Do modelo",
+  'stress.eccentricFromModelHelp': "Toma as forças que a barra já tem aqui e as REALOCA nos pontos escolhidos. Não soma nada: a mesma carga, aplicada em outro lugar.",
+  'stress.eccentricCustom': "Própria",
+  'stress.eccentricCustomHelp': "SOMA uma carga sua nos pontos escolhidos, além de tudo o que a barra já suporta.",
+  'stress.eccentricIsolated': "Isolada",
+  'stress.eccentricIsolatedHelp': "Mostra o que a SUA carga faz sozinha. Os esforços que a barra já tem são descartados, não somados, de modo que a seção responde unicamente a esta carga.",
+  'stress.eccentricIsolatedWarn': "A barra continua suportando tudo o que este modo oculta. Estas tensões isolam um efeito para estudá-lo — lê-las como uma verificação ficaria do lado inseguro.",
+  'stress.eccentricPerp': "⟂ seção",
+  'stress.eccentricParH': "∥ seção, horiz.",
+  'stress.eccentricParV': "∥ seção, vert.",
+  'stress.eccentricProduces': "Produz",
+  'stress.eccentricNothingToMove': "Esta seção não tem força axial nem cisalhamento — só momento fletor, e um momento é um vetor livre: aplicá-lo em qualquer ponto da seção dá o mesmo. Passe para «Própria» para adicionar uma carga sua.",
+  'stress.eccentricPointN': "Ponto de aplicação da carga perpendicular à seção — arraste, ou use as setas",
+  'stress.eccentricPointV': "Ponto de aplicação da carga paralela à seção — arraste, ou use as setas",
+  'stress.eccentricRefG': "em relação a G",
+  'stress.eccentricRefCC': "em relação a CC",
+  'stress.eccentricNoAxialNote': "Não há força perpendicular à seção, então mover P⊥ não pode mudar a tensão normal: a flexão vem de N vezes seu braço, e N é zero. Mover P∥ para fora do centro de cisalhamento sim gera torção. Adicione um N em «Própria» para ver os diagramas de flexão responderem.",
+  'stress.pickHint': "Clique num ponto do modelo para ver suas tensões",
+  'stress.maximiseSection': "Maximizar a seção",
+  'stress.minimiseSection': "Voltar ao painel (Esc)",
+  'stress.eccentricBiaxialNote': "Apareceu flexão em torno do eixo fraco (Mz): uma tensão que o modelo plano não pode produzir sozinho, porque deslocar uma força axial para o lado flete a seção em torno do seu eixo vertical.",
   'stress.sigma1Help': "Maximum principal stress.\nPlane where shear is zero and normal stress is maximum.\nPositive = tension, negative = compression.",
   'stress.thetaPHelp': "Angle of the principal plane with respect to the element axis.\nThe rotation needed to find the plane where σ1 and σ2 act (no shear).",
   'stress.planeXY': 'Plano XY',
@@ -2448,6 +2477,13 @@ const pt: Translations = {
   // ─── File operations (file.ts) ───
   'file.invalidJson': 'O arquivo não é um JSON válido',
   'file.invalidFormat': 'Formato de arquivo inválido. Certifique-se de que é um arquivo .ded do Stabileo.',
+  'file.autosaveTooLarge': 'Este projeto ficou grande demais para o salvamento automático do navegador. O trabalho feito desde que o cálculo rodou NÃO está na cópia salva — use Salvar projeto para guardá-lo como arquivo .ded.',
+  'file.autosaveFailed': 'O salvamento automático falhou e seu trabalho recente NÃO foi armazenado. Use Salvar projeto para guardá-lo como arquivo .ded.',
+  'file.autosaveDegraded': 'O IndexedDB não está disponível, então o salvamento automático recorreu ao armazenamento do navegador, que tem um limite de poucos megabytes. Um projeto calculado pode não caber — use Salvar projeto para ter um .ded.',
+  'file.autosaveUnavailable': 'Este navegador não oferece nenhum armazenamento que o app possa usar, então NÃO há salvamento automático. Use Salvar projeto com frequência para guardar um arquivo .ded.',
+  'file.autosaveUnfinished': 'O último salvamento automático começou e nunca terminou — a aba provavelmente fechou no meio da escrita. A restauração oferecida abaixo é de um salvamento anterior.',
+  'file.autosaveOlderRestored': 'O salvamento automático mais recente não pôde ser lido, então um anterior é oferecido em seu lugar. Verifique a data do projeto antes de continuar.',
+  'file.autosaveCorrupt': 'Um salvamento automático foi encontrado, mas não pôde ser lido, então nada foi restaurado dele. Abra seu arquivo .ded.',
   'file.supportFixed': 'Engaste',
   'file.supportPinned': 'Articulação',
   'file.supportRollerX': 'Rolete X',
@@ -2739,9 +2775,8 @@ const pt: Translations = {
   'plastic.noHingesFormed': 'Nenhuma rótula plástica formada. Os momentos na estrutura não atingem a capacidade plástica Mp. Causas possíveis: cargas muito baixas em relação à resistência da seção, ou a seção tem capacidade muito alta.',
 
   // ─── IFC Import ───
-  'ifc.profileEstimated': 'Perfil estimado a partir das dimensões',
-  'ifc.profileUnknown': 'Perfil desconhecido',
-
+  'ifc.profileEstimated': "Perfil \"{n}\" estimado a partir das dimensões",
+  'ifc.profileUnknown': "Perfil \"{n}\" não reconhecido — usando genérico 200x200mm",
   // ─── Section Shapes ───
   'section.hollowRect': 'Caixão',
 
@@ -2958,6 +2993,28 @@ const pt: Translations = {
   'report.typeColumnShort': 'Pil.',
 
   // ─── Education Mode ───
+  'edu.author.askKinematic': 'Pedir a classificação ao aluno',
+  'edu.author.detected': 'O app detectou',
+  'edu.author.degree': 'grau',
+  'edu.author.kinUnavailable': 'Não foi possível classificar esta estrutura. Verifique se tem apoios suficientes e não é um mecanismo.',
+  'edu.author.member': 'Barra',
+  'edu.author.moment': 'Momento',
+  'edu.author.shear': 'Cortante',
+  'edu.author.axial': 'Normal',
+  'edu.author.steel': 'Aço',
+  'edu.author.pickSize': 'escolha o tamanho',
+  'edu.author.needsProfile': 'Escolha um perfil primeiro',
+  'edu.author.helpCharWhat': 'Valores que o aluno tem que calcular e digitar. O app resolve a estrutura e corrige a resposta contra ela.',
+  'edu.author.helpCharEx': 'O aluno vê:\\n  Mmax = [____] kN·m\\ne ao confirmar é corrigido contra o que o solver calcula.',
+  'edu.author.helpDiagWhat': 'Perguntas sobre o valor de um diagrama em um ponto específico de uma barra. Obrigam o aluno a LER o diagrama, não só achar o máximo.',
+  'edu.author.helpDiagEx': 'Por exemplo: qual é o momento no meio do vão, na barra 1, na metade dela. O aluno responde com um número.',
+  'edu.author.helpKinWhat': 'O aluno decide se a estrutura é isostática ou hiperestática, e de que grau. Você não precisa informar: o app calcula.',
+  'edu.author.helpKinEx': 'Isostática: as reações saem só do equilíbrio.\\nHiperestática de grau n: há n incógnitas a mais e são necessárias condições de compatibilidade.',
+  'edu.author.helpShapeWhat': 'O aluno escolhe qual FORMA tem cada diagrama, sem calcular valores. Treina reconhecer que uma carga distribuída dá momento parabólico e cortante linear.',
+  'edu.author.helpShapeEx': 'O aluno vê quatro opções — nula, constante, linear, parabólica — e escolhe uma por diagrama.',
+  'edu.author.helpProfileWhat': 'A seção das barras. Só é necessária se você for perguntar sobre tensões; um exercício de reações e diagramas não precisa.',
+  'edu.author.helpProfileEx': 'Com um perfil escolhido ficam disponíveis perguntas sobre sigma, tau e von Mises, calculadas sobre o contorno real do perfil, com os raios de concordância, e não sobre um retângulo equivalente.',
+  'edu.author.helpSteelWhat': 'A tensão de escoamento contra a qual as tensões calculadas são comparadas. É ela que decide se o aluno vê passa ou não passa.',
   'edu.title': 'Modo Educativo',
   // ─── Educational mode: the keys the mode actually renders ───
   'edu.author.atEnd': 'no fim',
@@ -2976,14 +3033,11 @@ const pt: Translations = {
   'edu.author.shapeZeroHint': 'O diagrama é nulo ao longo de toda a barra.',
   'cad.badgeTooltipView': 'Rascunho CAD de {file} ({date}). Clique para ver hipóteses, mapeamento de camadas e marcar como revisado.',
   'cad.draftBadge': 'Rascunho CAD — não revisado',
-  'diag.model.transverseOnTruss': 'Esta barra está modelada como treliça (só esforço normal). Cargas transversais sobre ela não serão transferidas como flexão/cortante. Considere aplicar a carga nos nós adjacentes ou modelar a barra como pórtico.',
   'edu.author.about': 'O que é',
   'edu.author.add': 'adicionar',
   'edu.author.allowReveal': 'Permitir que o aluno revele uma resposta',
   'edu.author.allowRevealHelpEx': 'desativado → o botão "Mostrar" ao lado de uma resposta errada não aparece',
   'edu.author.allowRevealHelpWhat': 'Ativado, o aluno que erra pode pedir o valor — bom para exercitar. Desativado, a resposta nunca é mostrada, que é o que uma avaliação precisa. A tentativa fica registrada de qualquer forma.',
-  'edu.author.askKinematic': 'Pedir a classificação ao aluno',
-  'edu.author.axial': 'Normal',
   'edu.author.cannotEvaluate': 'não pode ser avaliada',
   'edu.author.capture': 'Usar o que está desenhado',
   'edu.author.category': 'Categoria',
@@ -2992,9 +3046,7 @@ const pt: Translations = {
   'edu.author.chooseExerciseFile': 'Abrir um arquivo de exercício…',
   'edu.author.chooseModelFile': 'Abrir um arquivo de modelo…',
   'edu.author.deflected': 'Deformada',
-  'edu.author.degree': 'grau',
   'edu.author.delete': 'excluir',
-  'edu.author.detected': 'O app detectou',
   'edu.author.diagramQuestion': 'Pergunta de diagrama',
   'edu.author.diagramQuestions': 'Perguntas de diagrama',
   'edu.author.difficulty': 'Dificuldade',
@@ -3011,37 +3063,21 @@ const pt: Translations = {
   'edu.author.errNotShareLink': 'Esse link não é um modelo compartilhado do Stabileo.',
   'edu.author.exDesc': 'Enunciado',
   'edu.author.exTitle': 'Título',
-  'edu.author.exampleHint': 'Comece por um dos exemplos do app e adapte.',
   'edu.author.fileHint': 'Envie um arquivo .ded salvo no modo Básico.',
   'edu.author.fixFirst': 'Resolva os avisos acima antes de salvar.',
   'edu.author.givens': 'Dados fornecidos',
-  'edu.author.helpCharEx': 'O aluno vê:\\n  Mmax = [____] kN·m\\ne ao confirmar é corrigido contra o que o solver calcula.',
-  'edu.author.helpCharWhat': 'Valores que o aluno tem que calcular e digitar. O app resolve a estrutura e corrige a resposta contra ela.',
-  'edu.author.helpDiagEx': 'Por exemplo: qual é o momento no meio do vão, na barra 1, na metade dela. O aluno responde com um número.',
-  'edu.author.helpDiagWhat': 'Perguntas sobre o valor de um diagrama em um ponto específico de uma barra. Obrigam o aluno a LER o diagrama, não só achar o máximo.',
   'edu.author.helpExerciseFileEx': 'viga-1.stabileo-ej.json',
   'edu.author.helpExerciseFileWhat': 'Um exercício que você ou um colega salvou com "Baixar". Abre aqui para edição, com as perguntas.',
-  'edu.author.helpKinEx': 'Isostática: as reações saem só do equilíbrio.\\nHiperestática de grau n: há n incógnitas a mais e são necessárias condições de compatibilidade.',
-  'edu.author.helpKinWhat': 'O aluno decide se a estrutura é isostática ou hiperestática, e de que grau. Você não precisa informar: o app calcula.',
   'edu.author.helpModelFileEx': 'portico.ded',
   'edu.author.helpModelFileWhat': 'Uma estrutura salva no Básico ou no PRO como .ded. Só a geometria, os apoios e as cargas são lidos — seções e materiais não fazem parte de um exercício.',
-  'edu.author.helpProfileEx': 'Com um perfil escolhido ficam disponíveis perguntas sobre sigma, tau e von Mises, calculadas sobre o contorno real do perfil, com os raios de concordância, e não sobre um retângulo equivalente.',
-  'edu.author.helpProfileWhat': 'A seção das barras. Só é necessária se você for perguntar sobre tensões; um exercício de reações e diagramas não precisa.',
-  'edu.author.helpShapeEx': 'O aluno vê quatro opções — nula, constante, linear, parabólica — e escolhe uma por diagrama.',
-  'edu.author.helpShapeWhat': 'O aluno escolhe qual FORMA tem cada diagrama, sem calcular valores. Treina reconhecer que uma carga distribuída dá momento parabólico e cortante linear.',
-  'edu.author.helpSteelWhat': 'A tensão de escoamento contra a qual as tensões calculadas são comparadas. É ela que decide se o aluno vê passa ou não passa.',
   'edu.author.internalForce': 'esforço interno',
   'edu.author.intro': 'Desenhe a estrutura com as ferramentas de sempre e depois diga aqui o que quer perguntar sobre ela. Sem código e sem arquivos para editar.',
-  'edu.author.kinUnavailable': 'Não foi possível classificar esta estrutura. Verifique se tem apoios suficientes e não é um mecanismo.',
   'edu.author.kinematic': 'Classificação cinemática',
   'edu.author.linkCopied': 'Link copiado. Entregue aos seus alunos.',
   'edu.author.linkHint': 'Cole um link de compartilhamento gerado no modo Básico.',
   'edu.author.load': 'Carregar',
   'edu.author.marking': 'Correção',
-  'edu.author.member': 'Barra',
   'edu.author.mine': 'Meus exercícios',
-  'edu.author.moment': 'Momento',
-  'edu.author.needsProfile': 'Escolha um perfil primeiro',
   'edu.author.noQuestions': 'O exercício não tem perguntas.',
   'edu.author.nodes': 'nós',
   'edu.author.nothingDrawn': 'Você ainda não desenhou nada. Use as ferramentas acima: nó (N), barra (E), apoio (S) e carga (L).',
@@ -3049,7 +3085,6 @@ const pt: Translations = {
   'edu.author.oneMember': 'uma barra',
   'edu.author.open': 'Criar um exercício',
   'edu.author.openExisting': 'Abrir um exercício salvo',
-  'edu.author.pickSize': 'escolha o tamanho',
   'edu.author.previewAsStudent': 'Ver como aluno',
   'edu.author.previewHint': 'Estes são os valores contra os quais seus alunos vão ser corrigidos. Se algum não for o esperado, corrija agora.',
   'edu.author.profile': 'Perfil das barras (opcional)',
@@ -3065,8 +3100,7 @@ const pt: Translations = {
   'edu.author.saved': 'Salvo.',
   'edu.author.shapes': 'Formas dos diagramas',
   'edu.author.share': 'Copiar link',
-  'edu.author.shear': 'Cortante',
-  'edu.author.sketchHelpEx': 'Desenhe o diagrama de V: ▁╲▁\\ntrecho 1 · linear ✓   as potências ✓',
+  'edu.author.sketchHelpEx': 'Desenhe o diagrama de V: ▁╲▁\ntrecho 1 · linear ✓   as potências ✓',
   'edu.author.sketchHelpWhat': 'O aluno arrasta as ordenadas do diagrama e escolhe a potência de cada trecho — nula, constante, linear, quadrática ou cúbica. O desenho e as potências são corrigidos separadamente, contra o cálculo.',
   'edu.author.sketchTitle': 'Diagramas para desenhar',
   'edu.author.solveAndShow': 'Resolver e mostrar as respostas',
@@ -3075,7 +3109,6 @@ const pt: Translations = {
   'edu.author.srcExample': 'Exemplo',
   'edu.author.srcFile': 'Abrir arquivo',
   'edu.author.srcLink': 'Colar link',
-  'edu.author.steel': 'Aço',
   'edu.author.stress': 'tensão',
   'edu.author.structure': 'A estrutura',
   'edu.author.supports': 'apoios',
@@ -3150,26 +3183,6 @@ const pt: Translations = {
   'edu.sketch.verify': 'Verificar o desenho',
   'edu.sketch.worst': 'O desenho se afasta mais em x/L = {t}, onde você o traçou {side} do diagrama real.',
   'edu.solverInsight': 'Este sistema tem {dofs} graus de liberdade livres ({total} no total). Resolvido por fatoração {solver} em {time} ms.',
-  'float.joint3dDofHint': 'Escolha quais GDL relativos a junta libera (liberação interna, não um apoio ao solo)',
-  'float.joint3dHint': 'Selecione os GDL relativos a liberar e depois clique em uma barra perto de um extremo',
-  'float.joint3dRelease': 'Liberar (relativo):',
-  'float.jointAxis': 'Eixo:',
-  'float.jointAxisGlobal': 'Global',
-  'float.jointAxisGlobalHint': 'Desliza pelos eixos X/Z do mundo',
-  'float.jointAxisLocal': 'Local',
-  'float.jointAxisLocalHint': 'Desliza pelo eixo local da barra (funciona em barras inclinadas)',
-  'float.jointHinge': 'Rótula',
-  'float.jointHingeHint': 'Liberação de rotação — o momento é liberado, a translação continua ligada',
-  'float.jointSlideHint': 'Clique em uma barra perto de um extremo para adicionar/remover a junta deslizante',
-  'float.jointSlideX': 'Deslizante X',
-  'float.jointSlideXHint': 'Junta deslizante: libera a translação em X (modo de eixo abaixo), mantém Z + rotação ligados',
-  'float.jointSlideZ': 'Deslizante Z',
-  'float.jointSlideZHint': 'Junta deslizante: libera a translação em Z (modo de eixo abaixo), mantém X + rotação ligados',
-  'float.nodeJoints': 'Juntas',
-  'status.loads': 'carga',
-  'status.loadsPlural': 'cargas',
-  'status.shells': 'casca',
-  'status.shellsPlural': 'cascas',
   'edu.subtitle': 'Resolva exercícios de estruturas passo a passo',
   'edu.easy': 'Fácil',
   'edu.medium': 'Médio',

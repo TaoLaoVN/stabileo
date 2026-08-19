@@ -2545,6 +2545,24 @@
     </div>
   {/if}
 
+  <!--
+    Axial-as-member-colour legend.
+    
+    `diagramLegend` above returns null for this mode on purpose — it describes a
+    diagram drawn in ONE colour, and this mode has two. But two colours with no
+    key is worse than one with a name: red and blue on a shed tell a reader
+    nothing until somebody says which is which. The same pair of strings the 2D
+    viewport paints, so the two modes read identically.
+  -->
+  {#if resultsStore.diagramType === 'axialColor' && resultsStore.results3D}
+    <div class="diagram-legend">
+      <span class="legend-color" style="background: #e5482a;"></span>
+      <span class="legend-text">{t('viewport.tension')}</span>
+      <span class="legend-color" style="background: #2c6cb4; margin-left: 8px;"></span>
+      <span class="legend-text">{t('viewport.compression')}</span>
+    </div>
+  {/if}
+
   <!-- Despiece (free-body) legend -->
   {#if resultsStore.diagramType === 'despiece' && resultsStore.results3D}
     <div class="diagram-legend">

@@ -1,6 +1,6 @@
 <script lang="ts">
   import {
-    SECTION_SHAPES, STEEL_SHAPES, CONCRETE_SHAPES,
+    SECTION_SHAPES, THIN_SHAPES, SOLID_SHAPES,
     computeSectionProperties, generateSectionName,
     type ShapeType, type SectionProperties, type MaterialCategory,
   } from '../lib/data/section-shapes';
@@ -16,7 +16,7 @@
 
   let { open, onselect, onclose }: Props = $props();
 
-  let activeCategory = $state<MaterialCategory>('steel');
+  let activeCategory = $state<MaterialCategory>('thin');
   let activeShape = $state<ShapeType>('rect');
   let paramValues = $state<Record<string, number>>({});
 
@@ -31,7 +31,7 @@
   const izLabel = $derived(displayUnit === 'cm' ? 'cm⁴' : 'm⁴');
 
   const categoryShapes = $derived(
-    activeCategory === 'steel' ? STEEL_SHAPES : CONCRETE_SHAPES
+    activeCategory === 'thin' ? THIN_SHAPES : SOLID_SHAPES
   );
 
   // When category changes, reset to first shape in that category if current doesn't match
@@ -40,7 +40,7 @@
     const cat = activeCategory;
     if (cat !== prevCategory) {
       prevCategory = cat;
-      const shapes = cat === 'steel' ? STEEL_SHAPES : CONCRETE_SHAPES;
+      const shapes = cat === 'thin' ? THIN_SHAPES : SOLID_SHAPES;
       if (shapes.length > 0 && !shapes.find(s => s.id === activeShape)) {
         activeShape = shapes[0].id;
       }
@@ -142,13 +142,15 @@
       <!-- Material category toggle -->
       <div class="category-tabs">
         <button
-          class:active={activeCategory === 'steel'}
-          onclick={() => { activeCategory = 'steel'; }}
-        >{t('shapeBuilder.steel')}</button>
+          class:active={activeCategory === 'thin'}
+          onclick={() => { activeCategory = 'thin'; }}
+          title={t('shapeBuilder.thinHelp')}
+        >{t('shapeBuilder.thin')}</button>
         <button
-          class:active={activeCategory === 'concrete'}
-          onclick={() => { activeCategory = 'concrete'; }}
-        >{t('shapeBuilder.concrete')}</button>
+          class:active={activeCategory === 'solid'}
+          onclick={() => { activeCategory = 'solid'; }}
+          title={t('shapeBuilder.solidHelp')}
+        >{t('shapeBuilder.solid')}</button>
       </div>
 
       <!-- Shape sub-tabs (filtered by category) -->
@@ -170,12 +172,12 @@
               <path
                 d={previewPath}
                 fill="none"
-                stroke="#4ecdc4"
+                stroke="var(--st-value)"
                 stroke-width="1.5"
                 fill-rule="evenodd"
               />
               <!-- Centroid dot -->
-              <circle cx="0" cy="0" r="2" fill="#e94560" opacity="0.7" />
+              <circle cx="0" cy="0" r="2" fill="var(--st-accent)" opacity="0.7" />
             </svg>
           </div>
         {/if}
@@ -258,8 +260,8 @@
   }
 
   .shape-modal {
-    background: #16213e;
-    border: 1px solid #1a4a7a;
+    background: var(--st-surface);
+    border: 1px solid var(--st-border);
     border-radius: 8px;
     width: 400px;
     max-height: 80vh;
@@ -273,11 +275,11 @@
     justify-content: space-between;
     align-items: center;
     padding: 0.75rem 1rem;
-    border-bottom: 1px solid #1a4a7a;
+    border-bottom: 1px solid var(--st-border);
   }
 
   .shape-header h3 {
-    color: #4ecdc4;
+    color: var(--st-value);
     font-size: 0.9rem;
     margin: 0;
   }
@@ -285,13 +287,13 @@
   .close-btn {
     background: none;
     border: none;
-    color: #888;
+    color: var(--st-text-3);
     cursor: pointer;
     font-size: 1rem;
     padding: 0.2rem 0.4rem;
     border-radius: 4px;
   }
-  .close-btn:hover { color: #e94560; }
+  .close-btn:hover { color: var(--st-accent); }
 
   /* Category toggle (Acero / Hormigón) */
   .category-tabs {
@@ -303,9 +305,9 @@
   .category-tabs button {
     flex: 1;
     padding: 0.35rem 0.75rem;
-    border: 1px solid #1a4a7a;
+    border: 1px solid var(--st-border);
     background: transparent;
-    color: #888;
+    color: var(--st-text-3);
     font-size: 0.8rem;
     font-weight: 500;
     cursor: pointer;
@@ -319,19 +321,19 @@
     border-radius: 0 6px 6px 0;
   }
   .category-tabs button.active {
-    background: #0f3460;
-    color: #4ecdc4;
-    border-color: #4ecdc4;
+    background: var(--st-surface-3);
+    color: var(--st-value);
+    border-color: var(--st-value);
   }
   .category-tabs button:not(.active):hover {
     background: rgba(15, 52, 96, 0.4);
-    color: #ccc;
+    color: var(--st-text-2);
   }
 
   .shape-tabs {
     display: flex;
     flex-wrap: wrap;
-    border-bottom: 1px solid #0f3460;
+    border-bottom: 1px solid var(--st-surface-3);
     padding: 0 0.5rem;
   }
 
@@ -339,14 +341,14 @@
     padding: 0.4rem 0.5rem;
     border: none;
     background: transparent;
-    color: #888;
+    color: var(--st-text-3);
     cursor: pointer;
     font-size: 0.72rem;
     border-bottom: 2px solid transparent;
     white-space: nowrap;
   }
-  .tab-btn:hover { color: #eee; }
-  .tab-btn.active { color: #4ecdc4; border-bottom-color: #4ecdc4; }
+  .tab-btn:hover { color: var(--st-text); }
+  .tab-btn.active { color: var(--st-value); border-bottom-color: var(--st-value); }
 
   .shape-body {
     padding: 0.75rem 1rem;
@@ -369,7 +371,7 @@
 
   .shape-desc {
     font-size: 0.75rem;
-    color: #888;
+    color: var(--st-text-3);
     margin: 0 0 0.5rem;
     font-style: italic;
   }
@@ -383,14 +385,14 @@
   }
   .unit-toggle-label {
     font-size: 0.7rem;
-    color: #888;
+    color: var(--st-text-3);
     margin-right: 0.2rem;
   }
   .unit-btn {
     padding: 0.2rem 0.5rem;
-    border: 1px solid #1a4a7a;
+    border: 1px solid var(--st-border);
     background: transparent;
-    color: #888;
+    color: var(--st-text-3);
     font-size: 0.7rem;
     cursor: pointer;
     transition: all 0.15s;
@@ -403,13 +405,13 @@
     border-radius: 0 4px 4px 0;
   }
   .unit-btn.active {
-    background: #0f3460;
-    color: #4ecdc4;
-    border-color: #4ecdc4;
+    background: var(--st-surface-3);
+    color: var(--st-value);
+    border-color: var(--st-value);
   }
   .unit-btn:not(.active):hover {
     background: rgba(15, 52, 96, 0.4);
-    color: #ccc;
+    color: var(--st-text-2);
   }
 
   .param-grid {
@@ -423,7 +425,7 @@
     justify-content: space-between;
     align-items: center;
     font-size: 0.8rem;
-    color: #ccc;
+    color: var(--st-text-2);
   }
 
   .param-input {
@@ -435,31 +437,31 @@
   .param-input input {
     width: 80px;
     padding: 0.3rem 0.4rem;
-    background: #0f3460;
-    border: 1px solid #1a4a7a;
+    background: var(--st-surface-3);
+    border: 1px solid var(--st-border);
     border-radius: 4px;
-    color: #eee;
+    color: var(--st-text);
     font-size: 0.8rem;
     text-align: right;
   }
 
   .param-unit {
     font-size: 0.7rem;
-    color: #888;
+    color: var(--st-text-3);
     min-width: 1.5rem;
   }
 
   .results-box {
     margin-top: 0.75rem;
     padding: 0.6rem;
-    background: #0f3460;
-    border: 1px solid #1a4a7a;
+    background: var(--st-surface-3);
+    border: 1px solid var(--st-border);
     border-radius: 6px;
   }
 
   .results-box.error {
-    border-color: #e94560;
-    color: #e94560;
+    border-color: var(--st-accent);
+    color: var(--st-accent);
     text-align: center;
     font-size: 0.8rem;
   }
@@ -468,12 +470,12 @@
     display: flex;
     justify-content: space-between;
     font-size: 0.8rem;
-    color: #aaa;
+    color: var(--st-text-2);
     padding: 0.15rem 0;
   }
 
   .result-val {
-    color: #4ecdc4;
+    color: var(--st-value);
     font-family: monospace;
   }
 
@@ -481,10 +483,10 @@
     width: 100%;
     margin-top: 0.75rem;
     padding: 0.5rem;
-    background: #0f4a3a;
-    border: 1px solid #1a7a5a;
+    background: var(--st-accent);
+    border: 1px solid var(--st-accent);
     border-radius: 6px;
-    color: #4ecdc4;
+    color: var(--st-value);
     cursor: pointer;
     font-size: 0.85rem;
     font-weight: 600;
@@ -492,7 +494,7 @@
   }
 
   .confirm-btn:hover {
-    background: #1a7a5a;
+    background: var(--st-accent);
     color: white;
   }
 </style>

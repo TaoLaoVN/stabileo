@@ -7,9 +7,19 @@
     showCentralCoreInfo: boolean;
     centralCore: CentralCore | null;
     resolved: ResolvedSection | undefined;
+    /**
+     * Kern half-widths from the section's OWN moduli, metres, as
+     * `{ z: [min,max], y: [min,max] }`.
+     *
+     * The drawing shows the core as a polygon; these are the numbers behind it.
+     * Computed from the canonical properties rather than from the drawn shape,
+     * so they are a check on it as much as a readout — and for a rectangle they
+     * land on the familiar middle third.
+     */
+    kern: { z: [number, number]; y: [number, number] } | null;
   }
 
-  let { showCentralCoreInfo = $bindable(), centralCore, resolved }: Props = $props();
+  let { showCentralCoreInfo = $bindable(), centralCore, resolved, kern }: Props = $props();
 
   const shapeLabel = $derived.by((): string => {
     if (!resolved) return '';
@@ -44,6 +54,25 @@
   <div class="nc-detail">
     <p class="nc-desc">{@html t('stress.ccDesc1')}</p>
     <p class="nc-desc">{t('stress.ccDesc2')}</p>
+
+    {#if kern}
+      <!-- The limits themselves, in millimetres: how far the load can move
+           along each axis before some fibre goes into tension. -->
+      <div class="nc-limits">
+        <div class="nc-limit">
+          <span class="nc-limit-label">{t('stress.ccLimitZ')}</span>
+          <span class="nc-limit-val">
+            {(kern.z[0] * 1000).toFixed(1)} … {(kern.z[1] * 1000).toFixed(1)} mm
+          </span>
+        </div>
+        <div class="nc-limit">
+          <span class="nc-limit-label">{t('stress.ccLimitY')}</span>
+          <span class="nc-limit-val">
+            {(kern.y[0] * 1000).toFixed(1)} … {(kern.y[1] * 1000).toFixed(1)} mm
+          </span>
+        </div>
+      </div>
+    {/if}
 
     <div class="nc-divider"></div>
 
@@ -87,6 +116,22 @@
 {/if}
 
 <style>
+  .nc-limits {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    margin: 6px 0 2px;
+  }
+  .nc-limit {
+    display: flex;
+    justify-content: space-between;
+    gap: 6px;
+    font-size: 0.65rem;
+    color: var(--st-text-2);
+  }
+  .nc-limit-label { color: var(--st-text-3); }
+  .nc-limit-val { font-family: 'Courier New', monospace; }
+
   .ssp-section-toggle {
     display: flex;
     align-items: center;

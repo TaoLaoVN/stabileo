@@ -215,10 +215,25 @@ function computeQyAndWidth(z: number, rs: ResolvedSection): { Q: number; width: 
     }
 
     case 'CHS': {
+      // Same derivation as the CHS case of computeQandB in section-stress.ts,
+      // with z in place of y — a circle is axisymmetric, so the two copies
+      // must agree, and section-stress-3d.test.ts pins that they do. A
+      // vertical cut at z severs TWO walls, width = 2t, and Q is the first
+      // moment of the WHOLE area beyond the cut:
+      //   Q(z) = 2·t·R·√(R²−z²)  →  τ(z) = V·R·√(R²−z²)/I, τ_max = 2V/A.
+      // (The old Q = t·(R²−z²) was the one-sided moment against the two-sided
+      // width: half the magnitude and the wrong, parabolic, shape.)
+      // t = 0 reads as a SOLID round bar: Q(z) = (2/3)·(R²−z²)^{3/2} over the
+      // chord 2·√(R²−z²), so τ(z) = V·(R²−z²)/(3·I) and τ_max = 4V/3A.
       const R = rs.h / 2;
-      if (Math.abs(z) >= R) return { Q: 0, width: rs.t };
-      const Q = rs.t * (R * R - z * z);
-      return { Q, width: 2 * rs.t };
+      if (Math.abs(z) >= R) return { Q: 0, width: rs.t > 0 ? rs.t : R };
+      if (rs.t > 0) {
+        const Q = 2 * rs.t * R * Math.sqrt(R * R - z * z);
+        return { Q, width: 2 * rs.t };
+      }
+      const chord = Math.sqrt(R * R - z * z);
+      const Q = (2 / 3) * (R * R - z * z) * chord;
+      return { Q, width: 2 * chord };
     }
 
     case 'L': {

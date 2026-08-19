@@ -1,5 +1,6 @@
 <script lang="ts">
   import { modelStore, uiStore, historyStore, resultsStore } from '../../lib/store';
+  import CombosTable from './CombosTable.svelte';
   import { t } from '../../lib/i18n';
   import type { DistributedLoad, PointLoadOnElement, NodalLoad, ThermalLoad, NodalLoad3D, DistributedLoad3D } from '../../lib/store/model.svelte.ts';
   import { get2DDisplayNodalLoadMoment, get2DDisplayNodalLoadVertical } from '../../lib/geometry/coordinate-system';
@@ -51,6 +52,22 @@
   <input type="checkbox" bind:checked={uiStore.includeSelfWeight} />
   <span>{t('table.selfWeight')}</span>
 </label>
+
+<!--
+  Combinations live here, folded, above the loads they combine.
+  
+  They were a tab of their own beside Nodes and Sections, which put them among
+  the things a model is MADE of. A combination is not a thing in the model — it
+  is an arrangement of the loads, and it means nothing without them. Reading it
+  next to the loads is reading it in the only place it makes sense.
+-->
+<details class="combos-fold">
+  <summary>{t('data.combinations')}</summary>
+  <div class="combos-body">
+    <CombosTable />
+  </div>
+</details>
+
 <table>
   <thead>
     <tr><th>#</th><th>{t('table.case')}</th><th>{t('table.type')}</th><th>{t('table.target')}</th><th>{t('table.values')}</th><th></th></tr>
@@ -153,6 +170,22 @@
 </div>
 
 <style>
+  .combos-fold {
+    margin: 0 0 6px;
+    border: 1px solid var(--st-border);
+    border-radius: var(--st-radius, 3px);
+    background: var(--st-surface-2);
+  }
+  .combos-fold > summary {
+    padding: 5px 9px;
+    cursor: pointer;
+    font-size: 0.74rem;
+    color: var(--st-text-2);
+    user-select: none;
+  }
+  .combos-fold > summary:hover { color: var(--st-text); }
+  .combos-body { padding: 0 6px 6px; }
+
   table {
     width: max-content;
     min-width: 100%;

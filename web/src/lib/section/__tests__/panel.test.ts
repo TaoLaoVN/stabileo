@@ -212,6 +212,45 @@ describe('station selection reaches the calculation', () => {
     expect(mid.mz).toBeCloseTo(0, 12);
   });
 
+  it('reads the torsion the solver actually produces, which it calls mx', () => {
+    /*
+     * The regression this pins was silent and total. The reader named the
+     * field `txStart`; every 3D result object names it `mxStart`; the read was
+     * optional, so it returned zero. The panel showed "Mx = 8.00 kN·m" in its
+     * header and "no torque at this station" three rows below, and torsional
+     * and warping stress were zero everywhere in the application.
+     *
+     * A name that no producer uses cannot be caught by types once a cast is in
+     * the way, so it is caught here instead.
+     */
+    const e3 = {
+      nStart: 0, nEnd: 0, myStart: 0, myEnd: 0, mzStart: 0, mzEnd: 0,
+      mxStart: 8, mxEnd: 8,
+    };
+    expect(stationForces3D(e3, 0).tx).toBeCloseTo(8, 12);
+    expect(stationForces3D(e3, 0.5).tx).toBeCloseTo(8, 12);
+  });
+
+  it('interpolates a varying torque along the member', () => {
+    const e3 = {
+      nStart: 0, nEnd: 0, myStart: 0, myEnd: 0, mzStart: 0, mzEnd: 0,
+      mxStart: 10, mxEnd: -6,
+    };
+    expect(stationForces3D(e3, 0).tx).toBeCloseTo(10, 12);
+    expect(stationForces3D(e3, 0.5).tx).toBeCloseTo(2, 12);
+    expect(stationForces3D(e3, 1).tx).toBeCloseTo(-6, 12);
+  });
+
+  it('still accepts a caller that spells it T', () => {
+    // Not every caller assembles an ElementForces3D; one that builds its own
+    // station forces may legitimately call the quantity T.
+    const e3 = {
+      nStart: 0, nEnd: 0, myStart: 0, myEnd: 0, mzStart: 0, mzEnd: 0,
+      txStart: 4, txEnd: 4,
+    };
+    expect(stationForces3D(e3, 0.5).tx).toBeCloseTo(4, 12);
+  });
+
   it('an equivalent 2D and 3D case agree where they describe the same problem', () => {
     const s = resolved(fromCatalogue('IPE 300'));
     const twoD = canonicalPanelResult(s, { n: 15, my: 40, mz: 0 });

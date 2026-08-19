@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { modelStore, uiStore, resultsStore } from '../../lib/store';
+  import { modelStore, resultsStore } from '../../lib/store';
   import { t } from '../../lib/i18n';
 </script>
 
@@ -60,31 +60,18 @@
 
   {#if resultsStore.combinationsDirty}
     <div class="combo-warning">
-      &#9888; {t('combos.needsRecalc')}
+      &#9888; {t('combos.needsRecalcSolve')}
     </div>
   {/if}
-  <div class="table-footer">
-    <button class="add-btn solve-combos" onclick={() => {
-      if (uiStore.analysisMode === '3d' || uiStore.analysisMode === 'pro') {
-        const isPro = uiStore.analysisMode === 'pro';
-        const result = modelStore.solveCombinations3D(uiStore.includeSelfWeight, uiStore.axisConvention3D === 'leftHand', isPro);
-        if (typeof result === 'string') {
-          uiStore.toast(result, 'error');
-        } else if (result) {
-          resultsStore.setCombinationResults3D(result.perCase, result.perCombo, result.envelope);
-          uiStore.toast(t('combos.solved3d'), 'success');
-        }
-      } else {
-        const result = modelStore.solveCombinations(uiStore.includeSelfWeight, uiStore.drawPlane2D);
-        if (typeof result === 'string') {
-          uiStore.toast(result, 'error');
-        } else if (result) {
-          resultsStore.setCombinationResults(result.perCase, result.perCombo, result.envelope);
-          uiStore.toast(t('combos.solved'), 'success');
-        }
-      }
-    }}>{t('combos.solve')}</button>
-  </div>
+  <!--
+    No "solve combinations" button here.
+
+    It called `solveCombinations` — which is exactly what pressing Calculate
+    already does, on the same model, storing the same results through the same
+    store call. Two buttons for one action is two things to keep in step and two
+    answers to "did I run it?". The warning above still says the combinations
+    are stale; what clears it is the command that produced them.
+  -->
 </div>
 
 <style>
@@ -171,18 +158,6 @@
 
   .combos-section table {
     margin-bottom: 0.25rem;
-  }
-
-  .solve-combos {
-    margin-top: 0.5rem;
-    background: var(--st-surface-3) !important;
-    border-color: var(--st-ok) !important;
-    color: var(--st-value) !important;
-    font-weight: 600;
-  }
-  .solve-combos:hover {
-    background: var(--st-ok) !important;
-    color: white !important;
   }
 
   .combo-warning {

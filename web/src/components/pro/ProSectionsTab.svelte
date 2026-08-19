@@ -6,7 +6,7 @@
     type ProfileFamily, type SteelProfile,
   } from '../../lib/data/steel-profiles';
   import {
-    SECTION_SHAPES, STEEL_SHAPES, CONCRETE_SHAPES,
+    SECTION_SHAPES, THIN_SHAPES, SOLID_SHAPES,
     computeSectionProperties, generateSectionName,
     type ShapeType, type MaterialCategory,
   } from '../../lib/data/section-shapes';
@@ -53,12 +53,12 @@
   }
 
   // ─── Shape Builder state ──────────────────
-  let activeCategory = $state<MaterialCategory>('concrete');
+  let activeCategory = $state<MaterialCategory>('solid');
   let activeShape = $state<ShapeType>('concrete-rect');
   let paramValues = $state<Record<string, number>>({});
 
   const categoryShapes = $derived(
-    activeCategory === 'steel' ? STEEL_SHAPES : CONCRETE_SHAPES
+    activeCategory === 'thin' ? THIN_SHAPES : SOLID_SHAPES
   );
 
   let prevCategory = $state<MaterialCategory | null>(null);
@@ -66,7 +66,7 @@
     const cat = activeCategory;
     if (cat !== prevCategory) {
       prevCategory = cat;
-      const shapes = cat === 'steel' ? STEEL_SHAPES : CONCRETE_SHAPES;
+      const shapes = cat === 'thin' ? THIN_SHAPES : SOLID_SHAPES;
       if (shapes.length > 0 && !shapes.find(s => s.id === activeShape)) {
         activeShape = shapes[0].id;
       }
@@ -217,11 +217,11 @@
   {:else}
     <div class="tab-body builder-body">
       <div class="cat-toggle">
-        <button class:active={activeCategory === 'concrete'} onclick={() => { activeCategory = 'concrete'; }}>
-          {t('shapeBuilder.concrete')}
+        <button class:active={activeCategory === 'solid'} onclick={() => { activeCategory = 'solid'; }}>
+          {t('shapeBuilder.solid')}
         </button>
-        <button class:active={activeCategory === 'steel'} onclick={() => { activeCategory = 'steel'; }}>
-          {t('shapeBuilder.steel')}
+        <button class:active={activeCategory === 'thin'} onclick={() => { activeCategory = 'thin'; }}>
+          {t('shapeBuilder.thin')}
         </button>
       </div>
 

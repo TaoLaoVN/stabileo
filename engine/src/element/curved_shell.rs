@@ -1380,8 +1380,11 @@ pub fn curved_shell_thermal_load(
             let b = build_b_matrix_at_point(coords, dirs, h, xi, eta, zeta, &e1, &e2, &e3, &inv_j);
 
             // Thermal stress: σ_th = D · ε_th
-            // ε_th = α*(ΔT + ζ*ΔTg) * [1, 1, 0, 0, 0]
-            let thermal_strain = alpha * (dt_uniform + zeta * dt_gradient);
+            // ε_th = α*(ΔT + ζ*ΔTg/2) * [1, 1, 0, 0, 0]
+            // dt_gradient is the top-to-bottom temperature DIFFERENCE (same
+            // convention as quad_thermal_load: κ_th = α·ΔTg/t). With ζ ∈ [-1,1]
+            // the face temperatures are ΔT ± ΔTg/2.
+            let thermal_strain = alpha * (dt_uniform + zeta * dt_gradient / 2.0);
             let sigma_th = [
                 c * (1.0 + nu) * thermal_strain, // σ11
                 c * (1.0 + nu) * thermal_strain, // σ22
@@ -1499,6 +1502,39 @@ mod tests {
         let n = shape_functions(xi, eta);
         let sum: f64 = n.iter().sum();
         assert!((sum - 1.0).abs() < 1e-14, "Shape functions don't sum to 1: {sum}");
+    }
+
+    /// Thermal-gradient convention parity: dt_gradient is the top-to-bottom
+    /// temperature difference, so on a flat element the curved-shell thermal
+    /// load must match the (benchmark-validated) flat quad thermal load.
+    /// Guards the ζ·ΔTg/2 factor in curved_shell_thermal_load.
+    #[test]
+    fn thermal_gradient_load_matches_flat_quad() {
+        let coords = [
+            [0.0, 0.0, 0.0],
+            [1.0, 0.0, 0.0],
+            [1.0, 1.0, 0.0],
+            [0.0, 1.0, 0.0],
+        ];
+        let dirs = compute_element_directors(&coords);
+        let e = 200e6;
+        let nu = 0.3;
+        let h = 0.02;
+        let alpha = 1.2e-5;
+        let dt_gradient = 15.0;
+
+        let f_curved = curved_shell_thermal_load(&coords, &dirs, e, nu, h, alpha, 0.0, dt_gradient);
+        let f_quad = crate::element::quad::quad_thermal_load(&coords, e, nu, h, alpha, 0.0, dt_gradient);
+
+        let max_abs = f_quad.iter().cloned().fold(0.0f64, f64::max);
+        let tol = 1e-9 * max_abs;
+        for i in 0..24 {
+            assert!(
+                (f_curved[i] - f_quad[i]).abs() < tol,
+                "DOF {}: curved {} vs quad {} (tol {})",
+                i, f_curved[i], f_quad[i], tol
+            );
+        }
     }
 
     #[test]

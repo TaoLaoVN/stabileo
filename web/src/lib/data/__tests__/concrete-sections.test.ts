@@ -2,8 +2,8 @@ import { describe, it, expect } from 'vitest';
 import {
   computeSectionProperties,
   generateSectionName,
-  STEEL_SHAPES,
-  CONCRETE_SHAPES,
+  THIN_SHAPES,
+  SOLID_SHAPES,
   SECTION_SHAPES,
 } from '../section-shapes';
 
@@ -176,22 +176,25 @@ describe('generateSectionName — concrete shapes', () => {
 // ─── Category filtering ─────────────────────────────────────────────
 
 describe('Category filtering', () => {
-  it('STEEL_SHAPES contains only steel shapes', () => {
-    expect(STEEL_SHAPES.length).toBe(6);
-    expect(STEEL_SHAPES.every(s => s.category === 'steel')).toBe(true);
+  it('THIN_SHAPES contains only thin-walled shapes', () => {
+    expect(THIN_SHAPES.length).toBe(6);
+    expect(THIN_SHAPES.every(s => s.category === 'thin')).toBe(true);
   });
 
-  it('CONCRETE_SHAPES contains only concrete shapes', () => {
-    expect(CONCRETE_SHAPES.length).toBe(5);
-    expect(CONCRETE_SHAPES.every(s => s.category === 'concrete')).toBe(true);
+  it('SOLID_SHAPES contains only solid shapes', () => {
+    // Classified by how the section is BUILT, not by what it is made of: a
+    // rectangle is a rectangle whether it is concrete, timber or steel, and
+    // what changes with the shape is which analysis applies to it.
+    expect(SOLID_SHAPES.length).toBe(5);
+    expect(SOLID_SHAPES.every(s => s.category === 'solid')).toBe(true);
   });
 
   it('all shapes have a category', () => {
-    expect(SECTION_SHAPES.every(s => s.category === 'steel' || s.category === 'concrete')).toBe(true);
+    expect(SECTION_SHAPES.every(s => s.category === 'thin' || s.category === 'solid')).toBe(true);
   });
 
-  it('total shapes = steel + concrete', () => {
-    expect(SECTION_SHAPES.length).toBe(STEEL_SHAPES.length + CONCRETE_SHAPES.length);
+  it('total shapes = thin + solid', () => {
+    expect(SECTION_SHAPES.length).toBe(THIN_SHAPES.length + SOLID_SHAPES.length);
   });
 });
 

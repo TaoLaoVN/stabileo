@@ -1,7 +1,9 @@
 <script lang="ts">
   import { t } from '../../lib/i18n';
+  import { showDiagram, armTool } from '../../lib/store/view-mode';
+  import { commandShowsQuantity } from '../../lib/store/result-view';
   import { TWO_D_INTERNAL_FORCE_LABELS as F2D } from '../../lib/geometry/coordinate-system';
-  import { uiStore } from '../../lib/store/ui.svelte';
+  import { uiStore, EDIT_TOOLS } from '../../lib/store/ui.svelte';
   import { historyStore } from '../../lib/store/history.svelte';
   import { resultsStore } from '../../lib/store/results.svelte';
   import Icon from './Icon.svelte';
@@ -46,10 +48,12 @@
    */
 
   type Props = {
-    onOpenPanel: (panel: string | null, opts?: { toggle?: boolean }) => void;
+    onOpenPanel: (panel: string | null, opts?: { toggle?: boolean; dataTab?: string }) => void;
     activePanel: string | null;
+    /** Which data tab is showing, so only that command lights. */
+    activeDataTab?: string;
   };
-  let { onOpenPanel, activePanel }: Props = $props();
+  let { onOpenPanel, activePanel, activeDataTab }: Props = $props();
 
   type Cmd = {
     id: string;
@@ -61,6 +65,8 @@
     label?: string;
     /** Translation key for the human name, shown in the tooltip. */
     nameKey?: string;
+    /** Which Model-data tab to land on, for the Properties group. */
+    dataTab?: string;
     /** Degrees to turn the icon, for a force about a perpendicular axis. */
     rotate?: number;
     tool?: string;
@@ -187,23 +193,45 @@
       id: 'data',
       labelKey: 'ribbon.groupData',
       cmds: [
-        { id: 'data', icon: 'data', nameKey: 'ribbon.data', panel: 'data', prominent: true },
+        /*
+         * Opens on whichever tab the ribbon is already pointing at — Nodes if
+         * none. Landing on Nodes after the user had just picked Sections would
+         * discard the choice they had made a second earlier.
+         */
+        { id: 'data', icon: 'data', nameKey: 'ribbon.data', panel: 'data', prominent: true,
+          dataTab: activeDataTab || 'nodes' },
       ],
     },
     {
       id: 'draw',
       labelKey: 'ribbon.groupDraw',
       cmds: [
-        { id: 'node', icon: 'node', labelKey: 'float.node', tool: 'node' },
-        { id: 'element', icon: 'element', labelKey: 'float.element', tool: 'element' },
+        { id: 'node', icon: 'node', labelKey: 'float.node', tool: 'node', panel: 'data', dataTab: 'nodes' },
+        { id: 'element', icon: 'element', labelKey: 'float.element', tool: 'element', panel: 'data', dataTab: 'elements' },
       ],
     },
     {
       id: 'conditions',
       labelKey: 'ribbon.groupConditions',
       cmds: [
-        { id: 'support', icon: 'support', labelKey: 'float.support', tool: 'support' },
-        { id: 'load', icon: 'load', labelKey: 'float.load', tool: 'load' },
+        { id: 'support', icon: 'support', labelKey: 'float.support', tool: 'support', panel: 'data', dataTab: 'supports' },
+        { id: 'load', icon: 'load', labelKey: 'float.load', tool: 'load', panel: 'data', dataTab: 'loads' },
+      ],
+    },
+    {
+      /*
+       * Materials and sections had no home on the ribbon at all: they were
+       * reachable only by opening Model data and finding the right tab, or by
+       * going through an element. They are properties of the model in exactly
+       * the sense supports and loads are conditions of it, so they belong on
+       * the same row — between the conditions that act on the structure and the
+       * analysis that consumes both. PRO already groups them this way.
+       */
+      id: 'properties',
+      labelKey: 'ribbon.groupProperties',
+      cmds: [
+        { id: 'materials', icon: 'material', labelKey: 'pro.tabMaterials', panel: 'data', dataTab: 'materials' },
+        { id: 'sections', icon: 'section', labelKey: 'pro.tabSections', panel: 'data', dataTab: 'sections' },
       ],
     },
     {
@@ -247,23 +275,40 @@
    * while a diagram is shown, because reading a result means moving around it
    * and clicking things in it. They are how you LOOK, not how you edit.
    */
-  const EDIT_TOOLS = ['node', 'element', 'support', 'load'];
+  /** Tools that only change how you LOOK at the model, never what it is. */
+  const VIEW_TOOLS: string[] = ['select', 'pan'];
+  // The EDIT_TOOLS list is imported from ui.svelte.ts — the single source.
 
   function run(cmd: Cmd) {
     if (cmd.enabled && !cmd.enabled()) return;
     if (cmd.tool) {
+      armTool(cmd.tool);
       /*
-       * Arming a tool no longer opens a side panel: its options appear in the
-       * contextual bar directly below, where the eye already is. It does close
-       * whatever panel was open, because that panel belonged to a different
-       * task than the one just started.
+       * Arming a tool now OPENS the data panel on that tool's own tab.
+       *
+       * It used to close whatever panel was open, on the reasoning that the
+       * panel belonged to a different task. That was right when the panel could
+       * only be results or settings — and wrong once Materials and Sections
+       * joined the ribbon, because those DO open a table and the row then
+       * behaved two different ways for commands that look identical.
+       *
+       * The table is what you are editing when you place a node, so showing it
+       * is showing your work. `toggle: false`: arming a tool means "show me
+       * this", and a second press should re-show rather than hide.
        */
-      uiStore.currentTool = cmd.tool as never;
-      // Back to editing: put the diagram away rather than draw on top of it.
-      if (EDIT_TOOLS.includes(cmd.tool) && resultsStore.diagramType !== 'none') {
-        resultsStore.diagramType = 'none';
+      if (cmd.dataTab) {
+        onOpenPanel('data', { dataTab: cmd.dataTab, toggle: false });
+      } else if (!VIEW_TOOLS.includes(cmd.tool)) {
+        onOpenPanel(null);
       }
-      onOpenPanel(null);
+      /*
+       * Select and Pan leave the panel exactly as it was.
+       *
+       * They are not a task — they are how you look at whatever task you are
+       * in. Reaching for Pan to move the canvas and having the panel you were
+       * reading close underneath is a loss you did not ask for, and getting it
+       * back costs two clicks and the scroll position.
+       */
       return;
     }
     if (cmd.diagram) {
@@ -273,31 +318,77 @@
        * closed the panel — the command reads as "show me this", and "show" has
        * no off state.
        */
-      resultsStore.diagramType = cmd.diagram as never;
-      // Reading a result: fall back to Select, which is the tool for reading.
-      if (EDIT_TOOLS.includes(uiStore.currentTool)) uiStore.currentTool = 'select';
+      // One call, because the rule that reading a result leaves editing belongs
+      // to the app rather than to this component — the results toolbar used to
+      // write `diagramType` directly and forgot it entirely.
+      showDiagram(cmd.diagram as never);
       if (cmd.action) cmd.action();
       onOpenPanel(cmd.panel ?? null, { toggle: false });
       return;
     }
     if (cmd.action) cmd.action();
+    /*
+     * A Properties command opens a table, so it leaves editing too.
+     *
+     * Materials and Sections carry no `tool`, so they fell through the branch
+     * above and left whatever was armed still armed — pressing Sections while
+     * the element tool was up lit both, which is the same "editing and reading
+     * at once" contradiction wearing different clothes. There is nothing to
+     * draw on a properties table.
+     */
+    if (cmd.dataTab && !cmd.tool && EDIT_TOOLS.includes(uiStore.currentTool)) {
+      uiStore.currentTool = 'select';
+    }
     // `solve` shows its panel rather than toggling it: pressing it twice means
     // "solve again", not "solve and hide the answer".
-    if (cmd.panel) onOpenPanel(cmd.panel, cmd.id === 'solve' ? { toggle: false } : undefined);
+    if (cmd.panel) onOpenPanel(cmd.panel, {
+      ...(cmd.id === 'solve' ? { toggle: false } : {}),
+      ...(cmd.dataTab ? { dataTab: cmd.dataTab, toggle: false } : {}),
+    });
   }
 
   function isActive(cmd: Cmd): boolean {
     if (cmd.tool) return uiStore.currentTool === cmd.tool;
+    /*
+     * A command that names a data tab lights when THAT tab is showing.
+     *
+     * Materials, Sections and Data all opened `panel: 'data'`, so all three lit
+     * at once — the ribbon claiming three things were selected when one was.
+     * The tab is what distinguishes them, so the tab is what decides.
+     */
+    if (cmd.dataTab && cmd.id !== 'data') {
+      return activePanel === 'data' && activeDataTab === cmd.dataTab;
+    }
+    /*
+     * Data itself never lights. It is the container, not a selection: what is
+     * selected is the tab inside it, and lighting both said the same thing
+     * twice while suggesting they were separate choices.
+     */
+    if (cmd.id === 'data') return false;
     if (cmd.diagram) {
-      /*
-       * Axial stays lit whichever way it is being drawn. `axialColor` is the
-       * same quantity as `axial` presented differently — the choice lives in
-       * the panel — so treating it as a different diagram would leave N dark
-       * while the members are coloured by exactly N.
-       */
       const shown = resultsStore.diagramType;
-      if (cmd.diagram === 'axial') return solved && (shown === 'axial' || shown === 'axialColor');
-      return solved && shown === cmd.diagram;
+      /*
+       * "None" lights only while the Results panel is the one open.
+       *
+       * It is the empty option of the diagram radio group, and "no diagram" is
+       * also the state of every model you are still building — so lighting it
+       * on the plain condition `diagramType === 'none'` put a Results command
+       * on beside Materials or Node, which is the very thing the group is
+       * supposed to prevent. Inside Results it is a real selection; outside, it
+       * is just the absence of one.
+       */
+      if (cmd.diagram === 'none') return solved && activePanel === 'results' && shown === 'none';
+      /*
+       * A command names a QUANTITY, so it stays lit however that quantity is
+       * being drawn — diagram, member colour or colour map. The choice of
+       * representation lives in the panel beside the scale.
+       *
+       * Treating them as different diagrams left the ribbon dark the moment a
+       * user switched to a colour map, as if nothing were on screen, while the
+       * members were painted by exactly the quantity whose command had gone
+       * out.
+       */
+      return solved && commandShowsQuantity(cmd.diagram);
     }
     // Solve OPENS Results but is not a state — it is an action you run, and a
     // lit Solve while the panel happens to be open would read as "solving".
