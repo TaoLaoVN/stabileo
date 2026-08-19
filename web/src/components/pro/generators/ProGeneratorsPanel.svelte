@@ -423,7 +423,7 @@
   .fields select { text-align: left; width: auto; min-width: 8rem; }
   .fields label.check > span { min-width: 0; }
   .fields input:focus-visible, .fields select:focus-visible { outline: 2px solid var(--st-interactive); outline-offset: 1px; }
-  .problems { margin: 0; padding-left: 16px; font-size: 0.68rem; color: var(--st-err); }
+  .problems { margin: 0; padding-left: 16px; font-size: 0.68rem; color: var(--st-danger); }
   /* Warn, not error: the model will generate. `--st-warn` is the token that means exactly
      "this is going to cost you something", which is what an unsolvable roof is. */
   .notice {
