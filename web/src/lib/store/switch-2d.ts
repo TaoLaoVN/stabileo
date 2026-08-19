@@ -101,6 +101,10 @@ export function collapsedByPlane(): Record<DrawPlane, number> {
 export function cutsOn(plane: DrawPlane): PlaneOffset[] {
   return planeOffsets(
     plane, modelStore.nodes.values(), modelStore.elements.values(), modelStore.supports.values(),
+    // Loads too, so the dialog can warn about a cut that takes none BEFORE it is
+    // made. That is the failure the solver will not report: it solves, and every
+    // result is zero.
+    loadsForGeometry(),
   );
 }
 
