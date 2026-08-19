@@ -8,6 +8,9 @@
 
 import * as THREE from 'three';
 import { modelStore, uiStore, resultsStore } from '../store';
+import { forEachElementVisual } from './scene-sync';
+export { forEachElementVisual };
+import { colourScaleSource } from '../store/result-view';
 import { createDeformedLines, type ElementEI } from '../three/deformed-shape-3d';
 import { createDiagramGroup3D, createEnvelopeDiagramGroup3D } from '../three/diagram-render-3d';
 import { createDespiece3DGroup } from '../three/despiece-3d';
@@ -377,38 +380,6 @@ export function syncDiagrams3D(ctx: ResultsSyncContext): void {
 // ─── Color map (axialColor / colorMap) ──────────────────────
 
 
-/**
- * Every element that is on screen, with its group when it has one.
- *
- * `ctx.elementGroups` is a PARTIAL registry, and that is by design: in
- * wireframe render mode a plain member is a segment of the batched
- * `LineSegments2` and gets no group of its own. Only members that need extra
- * geometry — a section extrusion, a hinge glyph — are given one.
- *
- * Every flat colour map below iterated that map, so in wireframe they reached
- * almost nothing: the axial colour map left an industrial shed entirely white,
- * because 633 wireframe members have no group between them. The batched mesh
- * is where their colour actually lives.
- *
- * So iteration is driven off the batched mesh, which knows every element, and
- * the group is applied only where one exists.
- */
-export function forEachElementVisual(
-  ctx: ResultsSyncContext,
-  fn: (id: number, group: THREE.Group | undefined) => void,
-): void {
-  const seen = new Set<number>();
-  for (const id of ctx.elementsBatched.ids()) {
-    seen.add(id);
-    fn(id, ctx.elementGroups.get(id));
-  }
-  // A group with no batched segment should not exist, but if one does it is
-  // still on screen and still has to be coloured.
-  for (const [id, group] of ctx.elementGroups) {
-    if (!seen.has(id)) fn(id, group);
-  }
-}
-
 export function syncColorMap3D(ctx: ResultsSyncContext): void {
   if (!ctx.initialized) return;
 
@@ -438,6 +409,7 @@ export function syncColorMap3D(ctx: ResultsSyncContext): void {
       resetShellColors(ctx);
       ctx.colorMapApplied = false;
     }
+    resultsStore.setColourScale(null);
     return;
   }
 
@@ -462,6 +434,10 @@ export function syncColorMap3D(ctx: ResultsSyncContext): void {
     });
     eb.flush();
     resetShellColors(ctx);
+    // Member colour is a two-colour key, not a scale: the tension/compression
+    // legend says everything there is to say and a gradient bar would be a
+    // second, wrong story about the same picture.
+    resultsStore.setColourScale(null);
     ctx.colorMapApplied = true;
   } else if (dt === 'colorMap') {
     const cmKind = resultsStore.colorMapKind;
@@ -644,6 +620,14 @@ function getSectionProps(elemId: number) {
  * Apply continuous per-vertex heatmap on frame elements.
  * Creates overlay cylinder meshes with color gradients along length.
  */
+/** The unit of a heat-map variable; utilisation is a ratio and has none. */
+function heatmapUnit(v: HeatmapVariable): string {
+  if (v === 'stressRatio') return '';
+  if (v === 'vonMises' || v === 'sigmaMax' || v === 'tauMax') return 'MPa';
+  if (v === 'moment' || v === 'momentY' || v === 'momentZ' || v === 'torsion') return 'kN·m';
+  return 'kN';
+}
+
 function applyFrameHeatmap(
   ctx: ResultsSyncContext,
   forcesMap: Map<number, import('../engine/types-3d').ElementForces3D>,
@@ -681,6 +665,11 @@ function applyFrameHeatmap(
 
   // For stressRatio, fix scale at 1.0 (100% of fy)
   if (variable === 'stressRatio') globalMax = Math.max(globalMax, 1.0);
+
+  // What the legend shows, published from where the maximum is decided.
+  resultsStore.setColourScale(globalMax > 1e-10
+    ? { max: globalMax, unit: heatmapUnit(variable), source: colourScaleSource() }
+    : null);
 
   // Pass 2: create heatmap meshes (or restore visibility for skipped elements)
   // The textured cylinder is the solid-mode representation, so it is built

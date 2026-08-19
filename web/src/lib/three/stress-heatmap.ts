@@ -24,7 +24,7 @@ const RADIAL_SEGMENTS = 8;
 export type HeatmapVariable =
   | 'moment' | 'shear' | 'axial'
   | 'momentY' | 'momentZ' | 'shearY' | 'shearZ' | 'torsion'
-  | 'stressRatio' | 'vonMises';
+  | 'stressRatio' | 'vonMises' | 'sigmaMax' | 'tauMax';
 
 interface SectionProps {
   A: number;
@@ -63,8 +63,16 @@ function sampleValue(ef: ElementForces3D, variable: HeatmapVariable, t: number, 
     case 'shearZ':
     case 'torsion':
       return Math.abs(evaluateDiagramAt(ef, variable, t));
+    /*
+     * The four measures come from one section-stress evaluation, so offering
+     * them costs nothing beyond naming them. Normal and shear separately are
+     * what answer "is this member governed by bending or by shear" — a
+     * question the combined Von Mises deliberately blurs.
+     */
     case 'stressRatio':
-    case 'vonMises': {
+    case 'vonMises':
+    case 'sigmaMax':
+    case 'tauMax': {
       const N = evaluateDiagramAt(ef, 'axial', t);
       const Vy = evaluateDiagramAt(ef, 'shearY', t);
       const Vz = evaluateDiagramAt(ef, 'shearZ', t);
@@ -72,7 +80,10 @@ function sampleValue(ef: ElementForces3D, variable: HeatmapVariable, t: number, 
       const My = evaluateDiagramAt(ef, 'momentY', t);
       const Mz = evaluateDiagramAt(ef, 'momentZ', t);
       const stress = computeSectionStress(N, Vy, Vz, Mx, My, Mz, sec.A, sec.Iz, sec.Iy, sec.h, sec.b, sec.fy);
-      return variable === 'stressRatio' ? stress.ratio : stress.vonMises;
+      return variable === 'stressRatio' ? stress.ratio
+        : variable === 'vonMises' ? stress.vonMises
+        : variable === 'sigmaMax' ? stress.sigmaMax
+        : stress.tauMax;
     }
   }
 }
