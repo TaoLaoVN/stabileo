@@ -163,7 +163,6 @@
 
   /** Figure lifted to the centre of the screen. Local: nothing else needs it. */
   let maximized = $state(false);
-  let wrapEl = $state<HTMLDivElement | null>(null);
 
   /**
    * The area the enlarged figure occupies: the canvas, and only the canvas.
@@ -423,7 +422,6 @@
   <div
     class="ssp-cross-wrap"
     class:maximized
-    bind:this={wrapEl}
     style={maximized && overlayBox
       ? `top:${overlayBox.top}px; left:${overlayBox.left}px; width:${overlayBox.width}px; height:${overlayBox.height}px`
       : ''}
@@ -527,7 +525,7 @@
              map painted the compressed flange red and the tension flange blue,
              opposite to the sigma diagram drawn beside it from the same three
              numbers. -->
-        {@const ramp = stressMapRamp(stressField, canonicalGeometry.bbox, canonicalScale)}
+        {@const ramp = stressMapRamp(stressField, canonicalGeometry.bbox, canonicalScale, [...canonicalGeometry.solids, ...canonicalGeometry.holes].flat())}
         {@const dir = rampDirection(ramp)}
         <defs>
           {#if !ramp.uniform}
@@ -622,7 +620,7 @@
         <!-- Label -->
         <text x={clampX + 8} y={clampY - 4} fill="var(--st-value)" font-size={5.5 * textK} font-weight="600" text-anchor="start">CP</text>
         {#if pressureCenter.insideCore}
-          <text x={clampX + 8} y={clampY + 4} fill="var(--st-ok)" font-size={3.5 * textK} text-anchor="start">en NC: &sigma; mismo signo</text>
+          <text x={clampX + 8} y={clampY + 4} fill="var(--st-ok)" font-size={3.5 * textK} text-anchor="start">{t('stress.cpInKern')}</text>
         {/if}
         {#if isClamped}
           <text x={clampX + 8} y={clampY + (pressureCenter.insideCore ? 11 : 4)} fill="var(--st-value)" font-size={3 * textK} text-anchor="start" opacity="0.7">({t('stress.outOfView')})</text>
@@ -1200,7 +1198,7 @@
               x={-rs2en.b / 2 * sc2en - 10}
               y={arrowDir < 0 ? -rs2en.h / 2 * sc2en + 3 : rs2en.h / 2 * sc2en + 3}
               fill="var(--st-value)" font-size={5 * textK} text-anchor="end" opacity="0.7"
-            >EN {arrowDir < 0 ? '↑' : '↓'} fuera</text>
+            >{t('stress.naOutside').replace('{arrow}', arrowDir < 0 ? '↑' : '↓')}</text>
           {/if}
         {/if}
 

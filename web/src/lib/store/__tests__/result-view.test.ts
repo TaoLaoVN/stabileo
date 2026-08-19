@@ -14,11 +14,20 @@
 
 import { describe, it, expect, beforeEach } from 'vitest';
 import { resultsStore } from '../results.svelte';
+import { uiStore } from '../ui.svelte';
+import { installViewModeRules } from '../view-mode';
 import {
   activeQuantity, activeRepresentation, representationsFor,
   showQuantityAs, commandShowsQuantity,
   colourScaleSource, hasLiveColourScale, showStressMap,
 } from '../result-view';
+
+/*
+ * The editing/reading exclusion is wired by installViewModeRules(), normally
+ * called once from the store barrel. This file imports the stores directly, so
+ * it installs the rules itself — the invariant under test lives in that wiring.
+ */
+installViewModeRules();
 
 beforeEach(() => {
   resultsStore.diagramType = 'none' as never;
@@ -171,6 +180,67 @@ describe('the ribbon lights the quantity, not the representation', () => {
     for (const c of ['axial', 'momentY', 'shearZ']) {
       expect(commandShowsQuantity(c), c).toBe(false);
     }
+  });
+
+  it('lights a non-quantity view — deformed — only while it is on screen', () => {
+    /*
+     * The Deformed command names no internal force, so the quantity logic can
+     * never light it; it lights while exactly that view is shown, and goes out
+     * when a quantity replaces it.
+     */
+    resultsStore.diagramType = 'deformed' as never;
+    expect(commandShowsQuantity('deformed')).toBe(true);
+
+    resultsStore.diagramType = 'moment' as never;
+    expect(commandShowsQuantity('deformed')).toBe(false);
+  });
+});
+
+describe('editing and reading stay mutually exclusive', () => {
+  beforeEach(() => {
+    uiStore.currentTool = 'select';
+    resultsStore.diagramType = 'none' as never;
+  });
+
+  it('setting a diagram while a build tool is armed disarms the tool', () => {
+    /*
+     * The leak this closes: most entry points (keyboard 0–9, the mobile panel,
+     * the advanced toolbar) write `diagramType` directly rather than calling
+     * showDiagram — pressing "2" with the node tool armed left you placing
+     * nodes on a shear diagram. The store's own setter enforces the rule now.
+     */
+    uiStore.currentTool = 'node';
+    resultsStore.diagramType = 'shear' as never;
+    expect(uiStore.currentTool).toBe('select');
+    expect(resultsStore.diagramType).toBe('shear');
+  });
+
+  it('arming a build tool clears the diagram on screen', () => {
+    resultsStore.diagramType = 'momentY' as never;
+    uiStore.currentTool = 'element';
+    expect(resultsStore.diagramType).toBe('none');
+    expect(uiStore.currentTool).toBe('element');
+  });
+
+  it('clearing the diagram leaves the tool alone', () => {
+    uiStore.currentTool = 'node';
+    resultsStore.diagramType = 'none' as never;
+    expect(uiStore.currentTool).toBe('node');
+  });
+
+  it('view tools stay armed while a diagram is shown', () => {
+    // Select and Pan are how you LOOK at a result, not how you edit — picking
+    // a diagram must not knock the pointer out of them.
+    uiStore.currentTool = 'pan';
+    resultsStore.diagramType = 'deformed' as never;
+    expect(uiStore.currentTool).toBe('pan');
+  });
+
+  it('showQuantityAs disarms a build tool too', () => {
+    uiStore.currentTool = 'support';
+    showQuantityAs('torsion', 'colourMap');
+    expect(uiStore.currentTool).toBe('select');
+    expect(activeQuantity()).toBe('torsion');
   });
 });
 

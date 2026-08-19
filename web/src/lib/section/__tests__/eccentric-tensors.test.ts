@@ -96,14 +96,27 @@ describe('the kern', () => {
     const a = 0.2 * 0.4;
     const iy = (0.2 * 0.4 ** 3) / 12;
     const iz = (0.4 * 0.2 ** 3) / 12;
-    const k = kernLimits(a, iy, iz, { zMax: 0.2, zMin: -0.2, yMax: 0.1, yMin: -0.1 })!;
+    const k = kernLimits(a, iy, iz, 0, { zMax: 0.2, zMin: -0.2, yMax: 0.1, yMin: -0.1 })!;
     expect(Math.abs(k.z[0])).toBeCloseTo(0.4 / 6, 6);
     expect(Math.abs(k.y[0])).toBeCloseTo(0.2 / 6, 6);
   });
 
+  it('declines when the geometric axes are not principal (iyz ≠ 0)', () => {
+    // The σ = N/A(1 + e·c/r²) form assumes principal axes. An angle's product
+    // of inertia is a substantial fraction of its inertias, and the formula's
+    // limits are simply wrong there — null is the honest answer.
+    const a = 0.2 * 0.4;
+    const iy = (0.2 * 0.4 ** 3) / 12;
+    const iz = (0.4 * 0.2 ** 3) / 12;
+    const extremes = { zMax: 0.2, zMin: -0.2, yMax: 0.1, yMin: -0.1 };
+    expect(kernLimits(a, iy, iz, 0.05 * Math.sqrt(iy * iz), extremes)).toBeNull();
+    // Solver noise on a symmetric section must NOT trip the guard.
+    expect(kernLimits(a, iy, iz, 1e-9 * Math.sqrt(iy * iz), extremes)).not.toBeNull();
+  });
+
   it('refuses rather than dividing by zero on a degenerate section', () => {
-    expect(kernLimits(0, 1, 1, { zMax: 1, zMin: -1, yMax: 1, yMin: -1 })).toBeNull();
-    expect(kernLimits(1, 1, 1, { zMax: 0, zMin: 0, yMax: 0, yMin: 0 })).toBeNull();
+    expect(kernLimits(0, 1, 1, 0, { zMax: 1, zMin: -1, yMax: 1, yMin: -1 })).toBeNull();
+    expect(kernLimits(1, 1, 1, 0, { zMax: 0, zMin: 0, yMax: 0, yMin: 0 })).toBeNull();
   });
 });
 
@@ -174,6 +187,19 @@ describe('the strain tensor', () => {
     const G = E / (2 * (1 + NU));
     // Tensor component is half the engineering shear strain.
     expect(t.strain.xy).toBeCloseTo(60 / G / 2, 12);
+  });
+
+  it('uniaxial tension gives principal strains {σ/E, −νσ/E, −νσ/E} — the contraction is principal too', () => {
+    // The 2×2 reduction valid for stress is NOT valid for strain: the third
+    // principal value is the Poisson contraction, not zero. A reduction that
+    // dropped it would report a zero eigenvalue where the bar is actually
+    // getting thinner, and a maxShear too small by the contraction.
+    const sigma = 200;
+    const t = stressTensorState(sigma, 0, 0, E, NU);
+    expect(t.principalStrain.values[0]).toBeCloseTo(sigma / E, 12);
+    expect(t.principalStrain.values[1]).toBeCloseTo((-NU * sigma) / E, 12);
+    expect(t.principalStrain.values[2]).toBeCloseTo((-NU * sigma) / E, 12);
+    expect(t.principalStrain.maxShear).toBeCloseTo(((1 + NU) * sigma) / E / 2, 12);
   });
 
   it('volumetric strain vanishes as nu approaches 1/2, which is incompressibility', () => {

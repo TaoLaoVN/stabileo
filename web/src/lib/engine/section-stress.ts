@@ -426,14 +426,30 @@ function computeQandB(y: number, rs: ResolvedSection): { Q: number; bAtY: number
     }
 
     case 'CHS': {
-      // Circular hollow section — sinusoidal distribution
-      // τ_max = 2V/A at neutral axis, τ = 0 at top/bottom
-      // Approximate: τ(y) = τ_max · cos(π·y/h) → Q/b varies as cos
+      // Circular tube, mean radius R ≈ h/2, wall t. A horizontal cut at
+      // height y severs TWO walls, b(y) = 2t, and Q must then be the first
+      // moment of the WHOLE area above the cut — both sides. With θ measured
+      // from the crown (cos θ = y/R), integrating t·R dφ at height R·cos φ
+      // from the free edge down to θ gives, per side, t·R²·sin θ, so
+      //   Q(y) = 2·t·R²·sin θ = 2·t·R·√(R²−y²),
+      //   τ(y) = V·Q/(I·b) = V·R·√(R²−y²)/I  →  τ_max = V·R²/I = 2V/A,
+      // the classic thin-tube result — the same answer sfCHS draws, pinned
+      // against this path in shear-flow-audit.test.ts. The earlier form
+      // Q = t·(R²−y²) was the one-sided moment paired with the two-sided b:
+      // half the magnitude and the wrong (parabolic) shape.
       const R = rs.h / 2;
-      if (Math.abs(y) >= R) return { Q: 0, bAtY: rs.t };
-      // For CHS: Q(y) = (R² - y²)·t approximately, b(y) = 2t (two walls)
-      const Q = rs.t * (R * R - y * y);
-      return { Q, bAtY: 2 * rs.t };
+      if (Math.abs(y) >= R) return { Q: 0, bAtY: rs.t > 0 ? rs.t : R };
+      if (rs.t > 0) {
+        const Q = 2 * rs.t * R * Math.sqrt(R * R - y * y);
+        return { Q, bAtY: 2 * rs.t };
+      }
+      // t = 0 reads as a SOLID round bar (a tube with no wall has no area).
+      // Exact Jourawski pair for a solid circle: Q(y) = (2/3)·(R²−y²)^{3/2}
+      // over the chord b(y) = 2·√(R²−y²), so τ(y) = V·(R²−y²)/(3·I) and
+      // τ_max = 4V/3A — not the thin-tube 2V/A, which here would say 4V/A.
+      const chord = Math.sqrt(R * R - y * y);
+      const Q = (2 / 3) * (R * R - y * y) * chord;
+      return { Q, bAtY: 2 * chord };
     }
 
     case 'L': {
@@ -1243,7 +1259,7 @@ function sfRHS(absV: number, rs: ResolvedSection): ShearFlowSegment[] {
 
 function sfCHS(absV: number, rs: ResolvedSection): ShearFlowSegment[] {
   const R = rs.h / 2;
-  const t = rs.t || R * 0.05;
+  const t = rs.t;
   const N = 16;
 
   // Walking the wall from the crown, `Q(theta) = t·R²·sin(theta)` is the first
@@ -1261,13 +1277,24 @@ function sfCHS(absV: number, rs: ResolvedSection): ShearFlowSegment[] {
   // moment must be that of the whole area above the cut, `2t·R²·sin(theta)`.
   // Both give tau_max = 2·V/A, the classic thin-tube result. Mixing them does
   // not. See `shear-flow-audit.test.ts`, which pins the factor.
+  //
+  // t = 0 reads as a SOLID round bar (a tube with no wall has no area), and
+  // the thin-tube formula must not be extrapolated there: with t cancelling
+  // out it would report tau_max = 4V/A, where a solid circle peaks at 4V/3A —
+  // Jourawski on the solid circle gives tau(y) = V·(R²−y²)/(3·I), i.e.
+  // V·R²·sin²θ/(3·I) along the walk. Same convention as computeQandB.
+  const tauAt = (theta: number): number =>
+    t > 0
+      ? absV * t * R * R * Math.sin(theta) / (rs.iy * t) / 1000
+      : absV * R * R * Math.sin(theta) ** 2 / (3 * rs.iy) / 1000;
+
   const mkSemi = (signZ: number): ShearFlowSegment => ({
     points: Array.from({ length: N + 1 }, (_, i) => {
       const theta = (i / N) * Math.PI;
       return {
         z: signZ * R * Math.sin(theta),
         y: R * Math.cos(theta),
-        tau: absV * t * R * R * Math.sin(theta) / (rs.iy * t) / 1000,
+        tau: tauAt(theta),
       };
     }),
   });

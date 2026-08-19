@@ -63,7 +63,9 @@ export interface ShearCrossCheck {
  *
  * Returns null when the solve is unavailable, which is not a failure: a
  * properties-only section has no geometry to mesh, and the diagram is still
- * the best answer available.
+ * the best answer available. It also returns null under biaxial shear (vy and
+ * vz both nonzero): the two components peak at different points, so no single
+ * peak exists to compare the drawn one against.
  */
 export function crossCheckShearPeak(
   geometry: CanonicalGeometry,
@@ -73,11 +75,16 @@ export function crossCheckShearPeak(
   tolerance = 0.2,
 ): ShearCrossCheck | null {
   if (!(closedFormPeak > 0)) return null;
+  // Under BIAXIAL shear there is no peak to compare: the vy- and vz-response
+  // maxima occur at different points of the outline, so combining them (even
+  // vectorially) describes no point that exists. Decline rather than check a
+  // number against a fiction — the uniaxial case is where the cross-check
+  // earns its keep.
+  if (vy !== 0 && vz !== 0) return null;
   try {
     const sh = analyzeSectionShear({ geometry });
-    // Unit-force response scaled by the actual forces, then combined. The
-    // solver reports each axis separately because the solve is linear, so
-    // superposing them is exact rather than approximate.
+    // Unit-force response scaled by the actual force. The solve is linear, so
+    // the scale-up is exact; only one of the two is nonzero here (see above).
     const peak = Math.hypot(sh.vy.tauMax * vy, sh.vz.tauMax * vz);
     // kPa to MPa: the solver works in the geometry's own units, which are SI.
     const solved = peak / 1000;

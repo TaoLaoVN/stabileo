@@ -1300,6 +1300,41 @@ pub fn prepare_static_3d(input: &SolverInput3D) -> Result<PreparedStatic3D, Stri
     // Build prescribed displacement vector u_r for restrained DOFs
     let mut u_r = vec![0.0; nr];
     for sup in input.supports.values() {
+        // Inclined supports: prescribed translations are given in GLOBAL
+        // coords, but the restrained inclined DOF (local_dof 0) lives in the
+        // rotated frame where it is the normal direction. Project the global
+        // prescribed translation onto the normal — mirroring the 2D
+        // inclinedRoller handling in prepare_static_2d.
+        if sup.is_inclined.unwrap_or(false) {
+            if let (Some(nx), Some(ny), Some(nz)) = (sup.normal_x, sup.normal_y, sup.normal_z) {
+                let n_len = (nx * nx + ny * ny + nz * nz).sqrt();
+                if n_len > 1e-12 {
+                    let u_normal = (nx * sup.dx.unwrap_or(0.0)
+                        + ny * sup.dy.unwrap_or(0.0)
+                        + nz * sup.dz.unwrap_or(0.0)) / n_len;
+                    if u_normal.abs() > 1e-15 {
+                        if let Some(&d) = dof_num.map.get(&(sup.node_id, 0)) {
+                            if d >= nf {
+                                u_r[d - nf] = u_normal;
+                            }
+                        }
+                    }
+                    // Rotational prescribed values use the standard flags.
+                    for (i, pd) in [sup.drx, sup.dry, sup.drz].iter().enumerate() {
+                        if let Some(val) = pd {
+                            if val.abs() > 1e-15 {
+                                if let Some(&d) = dof_num.map.get(&(sup.node_id, 3 + i)) {
+                                    if d >= nf {
+                                        u_r[d - nf] = *val;
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    continue;
+                }
+            }
+        }
         let prescribed = [sup.dx, sup.dy, sup.dz, sup.drx, sup.dry, sup.drz];
         for (i, pd) in prescribed.iter().enumerate() {
             if let Some(val) = pd {
@@ -2484,15 +2519,18 @@ pub(crate) fn build_reactions_3d(
         let mut vals = [0.0f64; 6];
 
         // Handle each DOF individually: restrained DOFs from reactions_vec,
-        // spring DOFs (free with stiffness) from R = -k * u
+        // spring DOFs (free with stiffness) from R = -k * u. A spring DOF is
+        // free regardless of the restraint flags (DofNumbering gives springs
+        // precedence), so the flag is not consulted on the free branch —
+        // otherwise a support with both a flag and a stiffness would report
+        // zero reaction while the spring force is real.
         let spring_stiffs = [sup.kx, sup.ky, sup.kz, sup.krx, sup.kry, sup.krz];
-        let restrained_flags = [sup.rx, sup.ry, sup.rz, sup.rrx, sup.rry, sup.rrz];
         for i in 0..6.min(dof_num.dofs_per_node) {
             if let Some(&d) = dof_num.map.get(&(sup.node_id, i)) {
                 if d >= nf {
                     // Restrained DOF: reaction from solve
                     vals[i] = reactions_vec[d - nf];
-                } else if !restrained_flags[i] {
+                } else {
                     // Free DOF: check for spring stiffness
                     let k = spring_stiffs[i].unwrap_or(0.0);
                     if k > 0.0 {

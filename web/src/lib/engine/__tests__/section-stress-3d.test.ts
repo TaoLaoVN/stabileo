@@ -195,6 +195,61 @@ describe('analyzeSectionStress3D', () => {
     });
   });
 
+  describe('Pure shear Vy on a CHS — the weak-axis Jourawski copy', () => {
+    // Thin tube, 200 mm diameter, 5 mm wall, with A and I as the thin-wall
+    // closed forms (A = 2πRt, I = πR³t) so the classic factors are exact.
+    // This pins computeQyAndWidth — the LATERAL copy of the Jourawski formula,
+    // which once carried the same one-sided-Q/two-sided-b halving that
+    // computeQandB had (see shear-flow-audit.test.ts for the drawn and the
+    // strong-axis paths; the three copies must not drift apart).
+    const R = 0.1, th = 0.005;
+    const aThin = 2 * Math.PI * R * th;
+    const iThin = Math.PI * R ** 3 * th;
+    const tube: Section = {
+      id: 20, name: 'CHS thin check',
+      a: aThin, iy: iThin, iz: iThin, j: 2 * iThin,
+      b: 2 * R, h: 2 * R, shape: 'CHS', t: th,
+    };
+    // Lateral shear Vy at width-fiber z (fiber y = 0).
+    const tauAt = (z: number, V = 100, sec: Section = tube) =>
+      analyzeSectionStressFromForces(0, V, 0, 0, 0, 0, sec, undefined, 0, z).tauVyAtFiber;
+
+    it('peaks at 2·V/A at the centre of the width cut, not V/A', () => {
+      const mean = 100 / aThin / 1000; // MPa
+      expect(tauAt(0) / mean).toBeCloseTo(2, 6);
+    });
+
+    it('is axisymmetric: lateral and vertical shear give the same number', () => {
+      // A circle cannot tell Vy from Vz, so the two independent Jourawski
+      // implementations — computeQyAndWidth here and computeQandB (via
+      // shearStress) in section-stress.ts — must agree to the last digit.
+      const lateral = tauAt(0);
+      const vertical = analyzeSectionStressFromForces(
+        0, 0, 100, 0, 0, 0, tube, undefined, 0, 0,
+      ).tauVzAtFiber;
+      expect(lateral).toBeCloseTo(vertical, 9);
+    });
+
+    it('follows the semi-ellipse τ(z) = τ_max·√(1−(z/R)²), not a parabola', () => {
+      const tau0 = tauAt(0);
+      for (const f of [0.25, 0.5, 0.75]) {
+        expect(tauAt(f * R) / tau0).toBeCloseTo(Math.sqrt(1 - f * f), 9);
+      }
+    });
+
+    it('a solid round bar (t = 0) peaks at 4/3·V/A on the lateral cut too', () => {
+      // t = 0 is the solid-bar convention (a tube with no wall has no area);
+      // the thin-tube formula extrapolated there would say 4V/A.
+      const bar: Section = {
+        id: 21, name: 'solid round check',
+        a: Math.PI * R * R, iy: Math.PI * R ** 4 / 4,
+        iz: Math.PI * R ** 4 / 4, j: Math.PI * R ** 4 / 2,
+        b: 2 * R, h: 2 * R, shape: 'CHS', t: 0,
+      };
+      expect(tauAt(0, 100, bar) / (100 / bar.a / 1000)).toBeCloseTo(4 / 3, 9);
+    });
+  });
+
   describe('Torsion — closed section (CHS)', () => {
     it('should use Bredt formula: τ = Mx/(2·Am·t)', () => {
       const ef = makeEF({ mxStart: 10, mxEnd: 10 });

@@ -416,6 +416,45 @@ fn circular_constraint_depth_4_does_not_panic() {
     }
 }
 
+/// A circular chain must now fail loudly: solving it would disconnect the
+/// cycled DOFs (all-zero C rows) and silently drop their loads, presenting
+/// partial results as final.
+#[test]
+fn circular_constraint_returns_error_not_partial_results() {
+    let l = 4.0;
+    let nodes = vec![
+        (1, 0.0, 0.0, 0.0), (2, l, 0.0, 0.0),
+        (3, 0.0, 3.0, 0.0), (4, l, 3.0, 0.0),
+    ];
+    let elems = vec![
+        (1, "frame", 1, 2, 1, 1),
+        (2, "frame", 3, 4, 1, 1),
+    ];
+    let sups = vec![(1, fixed()), (3, fixed())];
+    let loads = vec![SolverLoad3D::Nodal(SolverNodalLoad3D {
+        node_id: 2, fx: 0.0, fy: 0.0, fz: -10.0,
+        mx: 0.0, my: 0.0, mz: 0.0, bw: None,
+    })];
+
+    let mut input = make_3d_input(
+        nodes,
+        vec![(1, E, NU)],
+        vec![(1, A, IY, IZ, J)],
+        elems, sups, loads,
+    );
+
+    input.constraints.push(Constraint::EqualDOF(EqualDOFConstraint {
+        master_node: 4, slave_node: 2, dofs: vec![2],
+    }));
+    input.constraints.push(Constraint::EqualDOF(EqualDOFConstraint {
+        master_node: 2, slave_node: 4, dofs: vec![2],
+    }));
+
+    let err = linear::solve_3d(&input).unwrap_err();
+    assert!(err.contains("Invalid constraints"),
+        "circular chain must be a hard error, got: {}", err);
+}
+
 /// Self-referencing constraint: A is slave and master of itself.
 #[test]
 fn self_referencing_constraint_does_not_panic() {

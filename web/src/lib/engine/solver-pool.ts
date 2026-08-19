@@ -11,6 +11,7 @@
  */
 
 import { getWasmBytes } from './wasm-solver';
+import { findUncloneablePath } from '../utils/plain-deep-copy';
 
 /** Thrown when the pool cannot be used (no Worker support, init failure). */
 export class PoolUnavailableError extends Error {
@@ -161,13 +162,34 @@ async function ensurePool(): Promise<void> {
   }
 }
 
-/** Route one solve job to the least-busy worker. */
+/**
+ * Route one solve job to the least-busy worker.
+ *
+ * A `DataCloneError` here is a defect in the payload, not a runtime condition, and the
+ * browser's own message names only the offending VALUE ("[object Array] could not be
+ * cloned") on a payload with hundreds of arrays in it. It is re-thrown naming the FIELD,
+ * because that is the difference between a five-minute fix and a five-hour bisect — and
+ * because the caller's fallback swallows the throw, so this string may be the only trace
+ * the failure ever leaves.
+ */
 function runJob(type: 'solve' | 'solve3d', input: any): Promise<any> {
   const pw = pool.reduce((a, b) => (a.pending.size <= b.pending.size ? a : b));
   const msgId = nextId++;
   return new Promise((resolve, reject) => {
     pw.pending.set(msgId, { resolve, reject });
-    pw.worker.postMessage({ type, id: msgId, input });
+    try {
+      pw.worker.postMessage({ type, id: msgId, input });
+    } catch (err: any) {
+      pw.pending.delete(msgId);
+      if (err?.name === 'DataCloneError') {
+        const path = findUncloneablePath(input) ?? 'input';
+        reject(new Error(
+          `Solver payload is not structured-cloneable at ${path} — ${err.message}`,
+        ));
+        return;
+      }
+      reject(err);
+    }
   });
 }
 

@@ -102,6 +102,35 @@ describe('degenerate and boundary cases', () => {
     expect(r.neutralInside).toBe(false);
   });
 
+  it('a neutral line crossing only the bbox — not the polygon — is not drawn', () => {
+    // An L-shape: material fills the bbox except the top-right quadrant. A
+    // field that is negative only near that MISSING corner crosses zero inside
+    // the bounding box but nowhere on the section. The bbox test says "crosses"
+    // and draws a line through one-signed material; the polygon test declines.
+    // σ(y,z) = 10 − 50z − 100y: positive at every vertex of the L below,
+    // negative at the absent corner (0.05, 0.15) where it reads −2.5.
+    const f: StressField = { axial: 10, ky: 100, kz: -50 };
+    const withoutPolygon = stressMapRamp(f, BBOX, SC);
+    expect(withoutPolygon.neutralInside).toBe(true); // the defect, shown
+
+    // The L: bbox [-0.05,0.05]×[-0.15,0.15] minus the quadrant y>0, z>0.
+    const lShape: Array<readonly [number, number]> = [
+      [-0.05, -0.15], [0.05, -0.15], [0.05, 0], [0, 0], [0, 0.15], [-0.05, 0.15],
+    ];
+    const r = stressMapRamp(f, BBOX, SC, lShape);
+    expect(r.sLo).toBeGreaterThan(0); // one-signed over the actual material
+    expect(r.neutralInside).toBe(false);
+  });
+
+  it('a neutral line that does cross the polygon is still drawn', () => {
+    const f: StressField = { axial: 0, ky: 0, kz: -100 };
+    const lShape: Array<readonly [number, number]> = [
+      [-0.05, -0.15], [0.05, -0.15], [0.05, 0], [0, 0], [0, 0.15], [-0.05, 0.15],
+    ];
+    const r = stressMapRamp(f, BBOX, SC, lShape);
+    expect(r.neutralInside).toBe(true);
+  });
+
   it('places the neutral axis where the stress is actually zero', () => {
     // `kz` is MPa per METRE, so it takes a large value to swing 150 MPa over
     // the 150 mm from the centroid to the fibre. Centroid at -50 with a ±150

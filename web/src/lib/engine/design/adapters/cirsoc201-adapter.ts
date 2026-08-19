@@ -216,6 +216,47 @@ function makeAdapter(edition: RegulationEdition): DesignCodeAdapter {
     // search run and come back empty would report SEARCH_EXHAUSTED, which asserts that the
     // code-permitted envelope was explored and found wanting — a different and false claim.
     if (!transverseSpacingSupportedForEdition(ctx.codeEdition)) out.push('unsupportedCheck');
+
+    /**
+     * A beam with significant bending about BOTH axes, refused here rather than searched.
+     *
+     * ── What the verifier actually does ────────────────────────────
+     *
+     * For a beam or a wall it checks the primary axis pair only; the secondary pair is never
+     * evaluated. When `resolveDesignAxes` finds the secondary moment above the biaxial
+     * threshold, the verifier declines to certify — correctly, because certifying would pass
+     * a member whose significant secondary bending nobody checked.
+     *
+     * ── Why that refusal belongs at THIS gate ──────────────────────
+     *
+     * Because it is a property of the MEMBER and the verifier, not of any candidate. Every
+     * arrangement the generator can produce fails it identically, so the search cannot
+     * succeed and cannot learn anything by trying: it spent its full budget — 50 candidates
+     * each on 117 members of `pro-edificio-7p`, some 5 800 verifier calls — to arrive at the
+     * answer that was available before the first one.
+     *
+     * And it arrived at the WRONG answer. `SEARCH_EXHAUSTED` means "a bounded search found
+     * nothing; feasibility is not established", which tells an engineer to try a bigger
+     * section or a longer run. Neither helps. The truth is the one this gate exists to state:
+     * a required check is not implemented for this member, so no arrangement can be
+     * certified — exactly the reasoning the transverse-spacing refusal above is written from.
+     *
+     * Columns are unaffected: their biaxial check IS implemented, and `ctx.axes.biaxial`
+     * drives it rather than refusing it.
+     *
+     * ── Not when the orientation is already in doubt ───────────────
+     *
+     * `axes.biaxial` is derived from the member's demands, so a model with gravity authored
+     * in the horizontal component produces a secondary moment that looks significant and is
+     * an artefact. This gate runs BEFORE the orientation refusal, so without this condition
+     * such a member would be told it has real biaxial bending — sending an engineer to brace
+     * a beam when what is wrong is the load case. Where the orientation is suspect, that is
+     * the finding, and it is the one the search reports.
+     */
+    if (ctx.elementType !== 'column' && ctx.axes.biaxial && !ctx.orientationSuspect) {
+      out.push('biaxial');
+    }
+
     return out;
   },
 

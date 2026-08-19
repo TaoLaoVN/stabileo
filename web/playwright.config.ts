@@ -1,4 +1,5 @@
 import { defineConfig, devices } from '@playwright/test';
+import { fileURLToPath } from 'node:url';
 
 /**
  * Playwright configuration (PR15).
@@ -8,7 +9,8 @@ import { defineConfig, devices } from '@playwright/test';
  *    there is no HMR race and no on-demand transform latency, and the artifact under
  *    test is the one users get.
  *  - 127.0.0.1, not localhost — avoids IPv4/IPv6 resolution races.
- *  - Port 4173, isolated from dev (4000) and the other app on this machine (3000).
+ *  - A per-worktree derived port (see `worktreePort` below), isolated from dev
+ *    (4000) and the other app on this machine (3000).
  *    `--strictPort` makes a collision a loud failure instead of a silent reassignment.
  *  - workers: 1. There is exactly one WebGL context and one WASM solver instance per
  *    page; serialising keeps timing and GPU behaviour deterministic.
@@ -44,11 +46,21 @@ const HOST = '127.0.0.1';
  */
 function worktreePort(): number {
   let h = 0;
-  for (const ch of process.cwd()) h = (h * 31 + ch.charCodeAt(0)) >>> 0;
-  // 4173 stays the base so the range is recognisable; 200 slots is far more
-  // than the number of worktrees anyone keeps, and stays clear of the
-  // 4000-4010 range this project uses for dev servers by hand.
-  return 4100 + (h % 200);
+  /*
+   * Hash THIS FILE'S directory, not process.cwd(): the port must be a property
+   * of the worktree, stable no matter which directory the run is invoked from,
+   * and the config file always sits at <worktree>/web/playwright.config.ts.
+   * (`import.meta.url` rather than `__dirname` — the config loads as ESM.)
+   */
+  const configDir = fileURLToPath(new URL('.', import.meta.url));
+  for (const ch of configDir) h = (h * 31 + ch.charCodeAt(0)) >>> 0;
+  /*
+   * 1000 slots in 5200–6199: the repo keeps 60+ worktrees, so 200 slots
+   * collided in practice. The band stays clear of everything this project
+   * binds by hand — dev on 4000, Vite's default preview on 4173 — and of the
+   * ephemeral range up at 49152+.
+   */
+  return 5200 + (h % 1000);
 }
 
 const PORT = Number(process.env.E2E_PORT ?? worktreePort());

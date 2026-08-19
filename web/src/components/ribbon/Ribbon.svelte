@@ -4,7 +4,7 @@
   import { commandShowsQuantity, showStressMap, activeStressMeasure } from '../../lib/store/result-view';
   import { needsPlaneChoice, switchPlain, hasBackup, restore3D } from '../../lib/store/switch-2d';
   import { TWO_D_INTERNAL_FORCE_LABELS as F2D } from '../../lib/geometry/coordinate-system';
-  import { uiStore } from '../../lib/store/ui.svelte';
+  import { uiStore, EDIT_TOOLS } from '../../lib/store/ui.svelte';
   import { historyStore } from '../../lib/store/history.svelte';
   import { resultsStore } from '../../lib/store/results.svelte';
   import Icon from './Icon.svelte';
@@ -322,7 +322,13 @@
    * The pointer modes are not here at all any more: Select and Pan live on
    * the model, so there is no "view tool" for this rule to exempt.
    */
-  const EDIT_TOOLS = ['node', 'element', 'support', 'load'];
+  /*
+   * EDIT_TOOLS comes from the store — main made it the single source while
+   * this branch was open, and a second copy here is the kind of list that
+   * drifts. VIEW_TOOLS is gone with the commands it described: select and pan
+   * are not ribbon commands any more, they are the pointer mode, and it lives
+   * on the model.
+   */
 
   function run(cmd: Cmd) {
     if (cmd.enabled && !cmd.enabled()) return;

@@ -40,6 +40,11 @@
       nu: preset.nu,
       rho: preset.rho,
       fy: preset.fy,
+      // The catalogue link must travel too. Without it the material looks
+      // ungraded, and the next profile picked for a member would overwrite
+      // this deliberate steel with the profile's commercial default — the
+      // exact interference `commercial-default.ts` exists to prevent.
+      gradeId: preset.gradeId,
     });
     resultsStore.clear();
     showMaterialPresetSelector = false;

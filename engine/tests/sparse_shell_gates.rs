@@ -298,7 +298,7 @@ fn diagnose_shell_pivots() {
 
     let num = numeric_cholesky(&sym, &asm.k_ff);
     match &num {
-        Some(n) => println!("Cholesky OK: perturbations={}, max_pert={:.2e}", n.pivot_perturbations, n.max_perturbation),
+        Some(_) => println!("Cholesky OK (strict, no shift)"),
         None => println!("Cholesky FAILED (no shift)"),
     }
 

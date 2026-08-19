@@ -38,6 +38,8 @@
  * which is why `productStandard` is stored per grade rather than assumed.
  */
 
+import { DESIGN_CODES } from './section-catalog';
+
 export type GradeFamily = 'hot-rolled' | 'cold-formed' | 'aluminium' | 'stainless';
 
 /** Where a grade's product standard comes from. */
@@ -96,11 +98,33 @@ export interface StructuralGrade {
   /** Ultimate tensile strength, MPa. */
   fu: number;
   /**
-   * Thickness dependence, where the product standard tabulates it. Absent
-   * means the standard quotes a single value for the usual range, not that
-   * thickness has no effect.
+   * Thickness dependence, where it is tabulated. Absent means the source
+   * quotes a single value for the usual range, not that thickness has no
+   * effect.
+   *
+   * Read `bandStandard` before quoting these anywhere: they do NOT come from
+   * `productStandard`.
    */
   byThickness?: ThicknessBand[];
+  /**
+   * Which standard tabulates `byThickness` — and it is never `productStandard`.
+   *
+   * Every band in this file is a DESIGN code's table, not a product standard's:
+   * EN 1993-1-1 table 3.1 for the EN steels, CIRSOC 301 for the IRAM ones,
+   * EN 1999-1-1 table 3.2b for 6082-T6. The product standards do tabulate
+   * thickness dependence, but more finely and with different numbers — EN
+   * 10025-2 steps at 16/40/63/80 mm and gives S355 as 345 MPa above 16 mm,
+   * where EN 1993-1-1 §3.2.1(1) permits the two-band simplification carried
+   * here. Both are legitimate; they are not interchangeable.
+   *
+   * Recorded per grade because separating the product standard from the design
+   * code is the entire point of this file, and a band displayed beside
+   * `productStandard` without naming its own source quietly implies the
+   * product standard tabulated it. A test requires this wherever `byThickness`
+   * is present, so a banded grade cannot be added without saying where its
+   * bands came from.
+   */
+  bandStandard?: string;
   /** Anything a user would otherwise have to know from outside the table. */
   note?: string;
   /**
@@ -113,13 +137,11 @@ export interface StructuralGrade {
    * Marking them beats deleting them — they are ordinary alloys and the values
    * are the usual ones — and beats leaving them looking as settled as the rest.
    *
-   * DELIBERATELY NOT SHOWN IN THE INTERFACE, and this is a decision rather than
-   * an omission. The field was filled in conservatively, so it currently marks
-   * 45 of 68 grades — including A572, A500 and the stainless family, whose
-   * values are perfectly tabulated. A caveat attached to two thirds of a
-   * catalogue is not a caveat, it is noise, and it would teach a reader to
-   * ignore the one place it means something. It stays as an internal record so
-   * the distinction is not lost; surfacing it needs the field audited first.
+   * Shown in the preset picker as a small `~` badge on the grades marked
+   * 'typical', with a tooltip saying what the mark means. The picker is the
+   * one place the distinction is acted on: someone choosing a grade for a
+   * calculation deserves to know which kind of number they are getting. The
+   * field was filled in conservatively, so it currently marks 45 of 68 grades.
    */
   verification?: 'standard' | 'typical';
 }
@@ -179,16 +201,16 @@ export const HOT_ROLLED: StructuralGrade[] = [
   // rather than filled in with a plausible number.
   {
     id: 'iram-f24', designation: 'F-24', productStandard: 'IRAM-IAS U 500-503', region: 'AR', family: 'hot-rolled', ...IRAM_STEEL, fy: 240, fu: 370, verification: 'standard',
-    byThickness: [{ overMm: 0, upToMm: 30, fy: 240, fu: 370 }, { overMm: 30, upToMm: 100, fy: 220, fu: 370 }],
+    byThickness: [{ overMm: 0, upToMm: 30, fy: 240, fu: 370 }, { overMm: 30, upToMm: 100, fy: 220, fu: 370 }], bandStandard: 'CIRSOC 301',
     note: 'El grado más usado en perfiles argentinos (IPN, UPN, IPE, IPB, ángulos).',
   },
   {
     id: 'iram-f26', designation: 'F-26', productStandard: 'IRAM-IAS U 500-503', region: 'AR', family: 'hot-rolled', ...IRAM_STEEL, fy: 260, fu: 420, verification: 'standard',
-    byThickness: [{ overMm: 0, upToMm: 30, fy: 260, fu: 420 }, { overMm: 30, upToMm: 100, fy: 240, fu: 420 }],
+    byThickness: [{ overMm: 0, upToMm: 30, fy: 260, fu: 420 }, { overMm: 30, upToMm: 100, fy: 240, fu: 420 }], bandStandard: 'CIRSOC 301',
   },
   {
     id: 'iram-f36', designation: 'F-36', productStandard: 'IRAM-IAS U 500-503', region: 'AR', family: 'hot-rolled', ...IRAM_STEEL, fy: 360, fu: 520, verification: 'standard',
-    byThickness: [{ overMm: 0, upToMm: 30, fy: 360, fu: 520 }, { overMm: 30, upToMm: 100, fy: 340, fu: 520 }],
+    byThickness: [{ overMm: 0, upToMm: 30, fy: 360, fu: 520 }, { overMm: 30, upToMm: 100, fy: 340, fu: 520 }], bandStandard: 'CIRSOC 301',
     note: 'Perfiles W laminados y estructuras de alta solicitación.',
   },
 
@@ -210,21 +232,30 @@ export const HOT_ROLLED: StructuralGrade[] = [
   { id: 'astm-a913-65', designation: 'A913 Gr.65', productStandard: 'ASTM A913', region: 'US', family: 'hot-rolled', ...US_STEEL, fy: 450, fu: 550, verification: 'typical' },
 
   // ── EN 10025-2, with the thickness bands of EN 1993-1-1 table 3.1 ──
+  //
+  // The bands below are the DESIGN code's, not the product standard's, and the
+  // `fu` values are the tell: EN 10025-2 quotes Rm as a range (470–630 MPa for
+  // S355), never the single 490 that EN 1993-1-1 table 3.1 gives. EN 10025-2's
+  // own ReH table steps at 16/40/63/80 mm — S355 is 355 MPa only to 16 mm and
+  // 345 above it — while §3.2.1(1) permits the two-band simplification used
+  // here. `bandStandard` says so per grade so nothing downstream can show a
+  // 40 mm step beside the label "EN 10025-2" and imply that is where it came
+  // from.
   {
     id: 'en-s235', designation: 'S235', productStandard: 'EN 10025-2', region: 'EU', family: 'hot-rolled', ...EN_STEEL, fy: 235, fu: 360, verification: 'standard',
-    byThickness: [{ overMm: 0, upToMm: 40, fy: 235, fu: 360 }, { overMm: 40, upToMm: 80, fy: 215, fu: 360 }],
+    byThickness: [{ overMm: 0, upToMm: 40, fy: 235, fu: 360 }, { overMm: 40, upToMm: 80, fy: 215, fu: 360 }], bandStandard: 'EN 1993-1-1 t.3.1',
   },
   {
     id: 'en-s275', designation: 'S275', productStandard: 'EN 10025-2', region: 'EU', family: 'hot-rolled', ...EN_STEEL, fy: 275, fu: 430, verification: 'standard',
-    byThickness: [{ overMm: 0, upToMm: 40, fy: 275, fu: 430 }, { overMm: 40, upToMm: 80, fy: 255, fu: 410 }],
+    byThickness: [{ overMm: 0, upToMm: 40, fy: 275, fu: 430 }, { overMm: 40, upToMm: 80, fy: 255, fu: 410 }], bandStandard: 'EN 1993-1-1 t.3.1',
   },
   {
     id: 'en-s355', designation: 'S355', productStandard: 'EN 10025-2', region: 'EU', family: 'hot-rolled', ...EN_STEEL, fy: 355, fu: 490, verification: 'standard',
-    byThickness: [{ overMm: 0, upToMm: 40, fy: 355, fu: 490 }, { overMm: 40, upToMm: 80, fy: 335, fu: 470 }],
+    byThickness: [{ overMm: 0, upToMm: 40, fy: 355, fu: 490 }, { overMm: 40, upToMm: 80, fy: 335, fu: 470 }], bandStandard: 'EN 1993-1-1 t.3.1',
   },
   {
     id: 'en-s450', designation: 'S450', productStandard: 'EN 10025-2', region: 'EU', family: 'hot-rolled', ...EN_STEEL, fy: 440, fu: 550, verification: 'standard',
-    byThickness: [{ overMm: 0, upToMm: 40, fy: 440, fu: 550 }, { overMm: 40, upToMm: 80, fy: 410, fu: 550 }],
+    byThickness: [{ overMm: 0, upToMm: 40, fy: 440, fu: 550 }, { overMm: 40, upToMm: 80, fy: 410, fu: 550 }], bandStandard: 'EN 1993-1-1 t.3.1',
   },
   // EN 10025-3, normalised fine-grain — the grades used where toughness governs.
   { id: 'en-s275n', designation: 'S275N', productStandard: 'EN 10025-3', region: 'EU', family: 'hot-rolled', ...EN_STEEL, fy: 275, fu: 390, verification: 'typical' },
@@ -330,6 +361,7 @@ export const ALUMINIUM: StructuralGrade[] = [
       { overMm: 0, upToMm: 5, fy: 250, fu: 290 },
       { overMm: 5, upToMm: 15, fy: 260, fu: 310 },
     ],
+    bandStandard: 'EN 1999-1-1 t.3.2b',
     note: 'Extrusión. La resistencia SUBE con el espesor, al revés que las demás.',
   },
   { id: 'alu-7020-t6', designation: '7020-T6', productStandard: 'EN AW-7020', region: 'EU', family: 'aluminium', ...EN_ALU, fy: 280, fu: 350, verification: 'typical' },
@@ -458,10 +490,10 @@ export function gradesForCode(code: DesignCode, family: GradeFamily): Structural
 /**
  * Restrict to what a mode offers.
  *
- * Basic ships European and American grades — plus Argentine, which is the
- * default and cannot sensibly be hidden. PRO adds the rest, which are already
- * loaded here rather than fetched later: the data is small, and gating it at
- * the query keeps one database instead of two that can disagree.
+ * Basic ships European, American and Brazilian grades — plus Argentine, which
+ * is the default and cannot sensibly be hidden. PRO adds the rest, which are
+ * already loaded here rather than fetched later: the data is small, and gating
+ * it at the query keeps one database instead of two that can disagree.
  */
 export function gradesForMode<T extends { region: GradeRegion }>(items: T[], pro: boolean): T[] {
   return pro ? items : items.filter((g) => BASIC_REGIONS.includes(g.region));
@@ -734,9 +766,9 @@ export function commercialGradesForRegion(family: string, region: GradeRegion): 
  * Every region for which a family has a recorded pairing.
  *
  * A caller with no particular region — the common case, since the model does
- * not carry one — uses this to ask whether a chosen grade matches ANY known
- * practice before warning about it. Warning on a combination that is standard
- * somewhere would be noise.
+ * not carry one — uses this for the default a new section takes and for the
+ * list of ordinary grades the pairing note names. Judging whether a chosen
+ * grade is unusual wants `isUnusualPairing`, which is region-scoped.
  */
 export function commercialGradesFor(family: string): CommercialPairing[] {
   const byRegion = COMMERCIAL[family];
@@ -757,14 +789,53 @@ export function commercialGradesFor(family: string): CommercialPairing[] {
 }
 
 /**
- * Whether a section/grade pairing departs from every recorded practice.
+ * Whether a section/grade pairing departs from the recorded practice of the
+ * GRADE'S OWN region.
  *
- * Returns null when nothing is recorded for the family, which is NOT the same
- * as "unusual" — most families have no entry, and treating silence as a warning
- * would make the warning meaningless.
+ * The judgement is region-scoped because recording that America rolls a family
+ * in A500 says nothing about Europe's tubes, whose product standards
+ * (EN 10210/10219) are not in this file. But region scoping alone went too far
+ * the other way: an IPN in A992 drew no comment because America records no IPN
+ * practice — when the real fact is that America OFFERS no IPN at all, so the
+ * pairing departs from every practice on record. Whether a region offers a
+ * family is the catalogue's knowledge (`DESIGN_CODES` in `section-catalog.ts`),
+ * and it is the second half of the rule:
+ *
+ *   * the grade is recorded as ordinary for the family ANYWHERE → false. Mills
+ *     sell across borders: Gerdau quotes perfis W in ASTM A572, an American
+ *     grade under Brazilian practice.
+ *   * no practice is recorded for the family anywhere → null. Silence is not a
+ *     claim that something is unusual.
+ *   * the grade's region does not offer the family in its catalogue → true.
+ *     Whatever steel it is, that family is not rolled there, and the recorded
+ *     practices are all someone else's — the case of an IPN (a DIN/CIRSOC
+ *     series) in A992.
+ *   * the region offers the family and records a practice for it, and this
+ *     grade is not in it → true: a special run, like an Argentine W in F-24.
+ *   * the region offers the family but records nothing for it → null. Europe's
+ *     tubes in S235 are the case: EN 10210/10219 are not in this file, and
+ *     unknown is not unusual.
+ *
+ * A grade that is not in the catalogue at all returns null.
  */
 export function isUnusualPairing(family: string, gradeId: string | undefined): boolean | null {
-  const known = commercialGradesFor(family);
-  if (known.length === 0 || !gradeId) return null;
-  return !known.some((k) => k.gradeId === gradeId);
+  if (!gradeId) return null;
+  const byRegion = COMMERCIAL[family];
+  if (byRegion) {
+    for (const list of Object.values(byRegion)) {
+      if (list?.some((p) => p.gradeId === gradeId)) return false;
+    }
+  }
+  const grade = gradeById(gradeId);
+  if (!grade) return null;
+  const anyRecorded =
+    byRegion !== undefined &&
+    Object.values(byRegion).some((list) => (list?.length ?? 0) > 0);
+  if (!anyRecorded) return null;
+  const offered = DESIGN_CODES.some(
+    (c) => c.region === grade.region && (c.families as string[]).includes(family),
+  );
+  if (!offered) return true;
+  const local = byRegion?.[grade.region];
+  return local && local.length > 0 ? true : null;
 }

@@ -113,11 +113,17 @@ function isQuantity(v: string): v is ResultQuantity {
 /**
  * Whether the ribbon command for `diagram` should light.
  *
- * A command names a QUANTITY, so it lights whenever that quantity is on
- * screen, in any representation. Without this the ribbon went dark the moment
- * a user switched a diagram to a heat map, as if nothing were being shown.
+ * A command that names a QUANTITY lights whenever that quantity is on screen,
+ * in any representation. Without this the ribbon went dark the moment a user
+ * switched a diagram to a heat map, as if nothing were being shown.
+ *
+ * A command that names a NON-quantity view — the deformed shape, a mode shape
+ * — has no representations to unify, so it lights only while exactly that view
+ * is on screen. (Recognising quantities alone left Deformed permanently dark:
+ * `activeQuantity()` is null for it, by the tests above.)
  */
 export function commandShowsQuantity(diagram: string): boolean {
+  if (!isQuantity(diagram)) return resultsStore.diagramType === diagram;
   const active = activeQuantity();
   if (active === null) return false;
   if (diagram === 'axial') return active === 'axial';

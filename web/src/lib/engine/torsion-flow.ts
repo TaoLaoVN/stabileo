@@ -384,7 +384,11 @@ function saintVenantEntry(absT: number, rs: ResolvedSection): TorsionTheoryResul
 
   return {
     id: 'saintVenant',
-    applies: true,
+    // A null `unit` means computeTorsionFlow refused the section outright —
+    // degenerate geometry with no wall, no area, no J. Claiming the theory
+    // applies while every value is null would draw a row that asserts a
+    // result it does not have.
+    applies: unit !== null,
     tauMax: unit ? unit.tauMax * absT : null,
     j: unit ? unit.j : null,
     terms,
@@ -393,11 +397,12 @@ function saintVenantEntry(absT: number, rs: ResolvedSection): TorsionTheoryResul
      * WHICH closed form evaluates it depends on the wall, so the note names
      * the one in use rather than pretending there is a single formula.
      */
-    reasonKey: circular ? 'stress.tt.svCircular'
+    reasonKey: !unit ? 'stress.tt.na'
+      : circular ? 'stress.tt.svCircular'
       : closed ? 'stress.tt.svClosed'
-      : unit?.theory === 'openThinWall' ? 'stress.tt.svOpen'
+      : unit.theory === 'openThinWall' ? 'stress.tt.svOpen'
       : 'stress.tt.svSolid',
-    governs: !closed && !circular,
+    governs: unit !== null && !closed && !circular,
   };
 }
 

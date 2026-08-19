@@ -5,7 +5,7 @@ import { t } from '../i18n';
 import {
   HOT_ROLLED, COLD_FORMED, ALUMINIUM, STAINLESS,
   BASIC_REGIONS, MATERIAL_DESIGN_CODES, gradesForCode,
-  type StructuralGrade, type GradeFamily, type GradeRegion,
+  type StructuralGrade, type GradeFamily, type GradeRegion, type ThicknessBand,
 } from './structural-grades';
 import { CONCRETE, TIMBER } from './non-metal-grades';
 
@@ -36,6 +36,62 @@ export interface MaterialPreset {
    * choosing a grade for a calculation deserves to know which they are getting.
    */
   verification?: 'standard' | 'typical';
+  /**
+   * The grade's thickness bands, where they are tabulated.
+   *
+   * `fy` above is the value for the FIRST band, which is what
+   * `structural-grades.ts` warns about in its own header: hot-rolled yield
+   * falls with thickness, and a caller that quotes the headline number for a
+   * 60 mm plate is unconservative by about 6 %. Carrying the bands lets the
+   * picker say so instead of presenting one number as if only one existed.
+   *
+   * This is disclosure, not selection: nothing here picks a band, because the
+   * member's governing thickness is not known at this point. Choosing by
+   * thickness is a larger change with its own decisions.
+   */
+  thicknessBands?: ThicknessBand[];
+  /**
+   * Which standard tabulates those bands — never the one in `standard`.
+   *
+   * Carried alongside them because the picker shows `standard` beside the
+   * grade name, so a band shown without its own source reads as coming from
+   * the product standard. It does not: see `bandStandard` in
+   * `structural-grades.ts`.
+   */
+  bandStandard?: string;
+}
+
+/**
+ * The thickness caveat as one short line, for a picker with no member in hand.
+ *
+ * Returns the headline value's upper bound and where the strength ends up
+ * beyond it — "(>40mm: 335)" — rather than only the bound. Naming just the
+ * bound would put the number that matters behind a hover, and `title` is
+ * mouse-only: absent on touch, and a child span's title never reaches the
+ * button's accessible name. The safety-relevant fact belongs on screen; the
+ * full table and its source can stay in the tooltip.
+ *
+ * Quoting the LAST band's value states the far end without asserting a
+ * direction, which matters because one grade here runs the other way: 6082-T6
+ * gets stronger with thickness, so it renders "(>5mm: 260)" and reads as the
+ * rise it is. A wording like "falls to" would have been wrong for it.
+ *
+ * Exact for two bands, which every banded grade currently has — a test pins
+ * that, so a three-band grade fails loudly here instead of silently skipping
+ * an intermediate step.
+ */
+export function bandSummary(
+  p: Pick<MaterialPreset, 'thicknessBands' | 'bandStandard'>,
+): { tail: string; full: string } | null {
+  const bands = p.thicknessBands;
+  if (!bands || bands.length === 0) return null;
+  const first = bands[0];
+  const last = bands[bands.length - 1];
+  const table = bands.map((b) => `${b.overMm}–${b.upToMm} mm: fy ${b.fy} MPa`).join(' · ');
+  return {
+    tail: `(>${first.upToMm}mm: ${last.fy})`,
+    full: p.bandStandard ? `${p.bandStandard} · ${table}` : table,
+  };
 }
 
 /**
@@ -57,6 +113,8 @@ function fromGrade(g: StructuralGrade, category: MaterialPreset['category']): Ma
     gradeId: g.id,
     region: g.region,
     verification: g.verification,
+    thicknessBands: g.byThickness,
+    bandStandard: g.bandStandard,
   };
 }
 
@@ -112,25 +170,6 @@ export function getMaterialPresets(): MaterialPreset[] {
   ];
 }
 
-/** @deprecated Use getMaterialPresets() instead */
-export const MATERIAL_PRESETS: MaterialPreset[] = [
-  { name: 'Acero A36',       category: 'acero', e: 200000, nu: 0.3, rho: 78.5, fy: 250 },
-  { name: 'Acero A572 Gr50', category: 'acero', e: 200000, nu: 0.3, rho: 78.5, fy: 345 },
-  { name: 'Acero A992',      category: 'acero', e: 200000, nu: 0.3, rho: 78.5, fy: 345 },
-  { name: 'Acero A500 Gr C', category: 'acero', e: 200000, nu: 0.3, rho: 78.5, fy: 317 },
-  { name: 'Acero ADN 420',   category: 'acero', e: 200000, nu: 0.3, rho: 78.5, fy: 420 },
-  { name: 'Hormigón H-20', category: 'hormigon', e: 21019, nu: 0.2, rho: 24.0, fy: 20 },
-  { name: 'Hormigón H-25', category: 'hormigon', e: 23500, nu: 0.2, rho: 24.0, fy: 25 },
-  { name: 'Hormigón H-30', category: 'hormigon', e: 25743, nu: 0.2, rho: 24.0, fy: 30 },
-  { name: 'Hormigón H-35', category: 'hormigon', e: 27806, nu: 0.2, rho: 24.0, fy: 35 },
-  { name: 'Hormigón H-40', category: 'hormigon', e: 29725, nu: 0.2, rho: 24.5, fy: 40 },
-  { name: 'Hormigón H-45', category: 'hormigon', e: 31529, nu: 0.2, rho: 24.5, fy: 45 },
-  { name: 'Hormigón H-50', category: 'hormigon', e: 33234, nu: 0.2, rho: 25.0, fy: 50 },
-  { name: 'Madera (pino)',   category: 'madera', e: 10000, nu: 0.3, rho: 5.0 },
-  { name: 'Madera (eucalipto)', category: 'madera', e: 15000, nu: 0.3, rho: 8.0 },
-  { name: 'Aluminio 6061-T6', category: 'aluminio', e: 69000, nu: 0.33, rho: 27.0, fy: 276 },
-];
-
 export const MATERIAL_CATEGORIES = [
   { id: 'acero', label: 'matCat.steel' },
   { id: 'conformado', label: 'matCat.coldFormed' },
@@ -160,7 +199,7 @@ export function categoryFamily(category: string): GradeFamily | null {
 export interface PresetFilter {
   /** Design code to narrow the grades to. Omitted means no code filter. */
   codeId?: string;
-  /** PRO shows every region; Basic shows European, American and Argentine. */
+  /** PRO shows every region; Basic shows European, American, Brazilian and Argentine. */
   pro?: boolean;
 }
 
@@ -172,9 +211,9 @@ export function searchPresets(
   let source = getMaterialPresets();
   if (category) source = source.filter(p => p.category === category);
 
-  // Region gating, then the code association. Both only bite on the graded
-  // metals: a preset with no region (concrete, timber, reinforcing bar) is
-  // never filtered out by a control that has no opinion about it.
+  // Region gating, then the code association. A preset with no region — the
+  // reinforcing bar; concrete and timber carry their code's region — is never
+  // filtered out by a control that has no opinion about it.
   if (!filter.pro) {
     source = source.filter(p => !p.region || BASIC_REGIONS.includes(p.region));
   }

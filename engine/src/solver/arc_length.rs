@@ -269,17 +269,21 @@ pub fn solve_arc_length(input: &ArcLengthInput) -> Result<ArcLengthResult, Strin
         }
 
         if !step_converged {
+            // Restore the last converged state FIRST, so that if the retry
+            // budget runs out the final results are built from the last
+            // converged equilibrium state — not from the failed step's
+            // unconverged iterate.
+            for i in 0..nf {
+                u_full[i] -= delta_u[i];
+            }
+            lambda -= delta_lambda;
+
             // Halve arc-length and retry (don't consume step budget)
             ds *= 0.5;
             if ds < input.min_ds {
                 overall_converged = false;
                 break;
             }
-            // Restore state
-            for i in 0..nf {
-                u_full[i] -= delta_u[i];
-            }
-            lambda -= delta_lambda;
             continue;
         }
 
@@ -712,6 +716,41 @@ mod tests {
         // Load factor should be positive after the first step
         if let Some(last) = result.steps.last() {
             assert!(last.load_factor > 0.0, "Load factor should be positive");
+        }
+    }
+
+    #[test]
+    fn test_arc_length_abort_returns_last_converged_state() {
+        // Force the abort path: max_iter = 1 cannot converge a genuinely
+        // nonlinear large-load step, and ds halves below min_ds quickly.
+        // The final results must reflect the last converged state (here:
+        // no converged step -> zero displacements, zero load factor), not
+        // the failed step's unconverged iterate.
+        let solver = make_cantilever();
+        let input = ArcLengthInput {
+            solver,
+            max_steps: 10,
+            max_iter: 1,
+            tolerance: 1e-6,
+            initial_ds: 0.5,
+            min_ds: 0.1,
+            max_ds: 2.0,
+            target_iter: 5,
+        };
+        let result = solve_arc_length(&input).unwrap();
+        assert!(!result.converged, "Should report non-convergence");
+        assert!(result.steps.is_empty(), "No step should have converged");
+        assert!(
+            result.final_load_factor == 0.0,
+            "Load factor should be restored to 0.0, got {}",
+            result.final_load_factor
+        );
+        for d in &result.results.displacements {
+            assert!(
+                d.ux.abs() < 1e-15 && d.uz.abs() < 1e-15 && d.ry.abs() < 1e-15,
+                "Displacements should be the last converged (zero) state, got ux={} uz={} ry={} at node {}",
+                d.ux, d.uz, d.ry, d.node_id
+            );
         }
     }
 }

@@ -3522,7 +3522,13 @@ fn benchmark_edge_load_tangential() {
     );
 
     assert!(avg_ux.abs() > 1e-15, "Edge load should produce displacement");
-    // Direction may differ from convention; check magnitude
+    // Positive qn is outward (SolverQuadEdgeLoad doc): on the right edge outward
+    // is +x, so the strip is in tension and avg_ux must be positive.
+    assert!(
+        avg_ux > 0.0,
+        "Positive qn on right edge must produce +x (outward) displacement, got {:.6e}",
+        avg_ux
+    );
     let ratio = avg_ux.abs() / ux_analytical;
     assert!(
         ratio > 0.5 && ratio < 2.0,

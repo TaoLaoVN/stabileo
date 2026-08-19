@@ -232,7 +232,8 @@ pub fn check_instability_risk_2d(input: &SolverInput) -> Vec<StructuredDiagnosti
     let mut rot_restrained: HashSet<usize> = HashSet::new();
     for sup in input.supports.values() {
         match sup.support_type.as_str() {
-            "fixed" | "guidedX" | "guidedY" => {
+            // guidedZ is a 2D alias of guidedY (dof::is_dof_restrained_2d): ux+ry fixed
+            "fixed" | "guidedX" | "guidedY" | "guidedZ" => {
                 rot_restrained.insert(sup.node_id);
             }
             _ => {

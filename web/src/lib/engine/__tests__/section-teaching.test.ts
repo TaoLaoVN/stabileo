@@ -121,9 +121,14 @@ describe('the shear centre, and why it is not the centroid', () => {
     expect(w.outsideSection).toBe(true);
     // Opposite side from the flanges, so negative in this convention.
     expect(w.ez).toBeLessThan(0);
-    // UPN 200's shear centre sits a few centimetres clear of the web.
-    expect(Math.abs(w.ez)).toBeGreaterThan(0.01);
-    expect(Math.abs(w.ez)).toBeLessThan(0.06);
+    // UPN 200, in the rectangle decomposition: e = bm²·hm²·tf/(4·Iy) =
+    // 26.77 mm measured from the web CENTRE LINE, and the centroid sits
+    // zBar = 22.01 mm from the web's outer face — so ez = tw/2 − e − zBar =
+    // −44.5 mm. The shear centre is therefore 22.5 mm clear of the web's
+    // outer face; the published UPN 200 value is ≈ 22.4 mm.
+    expect(w.ez).toBeCloseTo(-0.0445, 3);
+    const clearOfFace = -(w.ez + centroidWorking(upn()).zBar);
+    expect(clearOfFace).toBeCloseTo(0.0225, 3);
   });
 
   it('the channel formula scales as the flange width squared', () => {

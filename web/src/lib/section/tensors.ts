@@ -107,36 +107,40 @@ export function stressTensorState(
   return {
     stress,
     strain,
-    principalStress: principalOf(sigmaX, Math.hypot(tauXy, tauXz)),
+    principalStress: principalOf(sigmaX, 0, Math.hypot(tauXy, tauXz)),
     // For this stress state the principal strain directions coincide with the
     // principal stress directions — isotropy — so the same reduction applies to
-    // the strain expressed as (eps_x, gamma_resultant/2).
-    principalStrain: principalOf(strain.xx, Math.hypot(strain.xy, strain.xz)),
+    // the strain expressed as (eps_x, gamma_resultant/2). But the reduction is
+    // NOT the stress one: Poisson contraction makes the transverse strains
+    // eps_y = eps_z = -nu·sigma_x/E nonzero, so the out-of-plane principal
+    // strain is eps_t, not zero, and the in-plane block is (eps_x, eps_t).
+    principalStrain: principalOf(strain.xx, strain.yy, Math.hypot(strain.xy, strain.xz)),
     invariants: invariantsOf(sigmaX, Math.hypot(tauXy, tauXz)),
     volumetricStrain: strain.xx + strain.yy + strain.zz,
   };
 }
 
 /**
- * Principal values of a state with one normal component and one resultant shear.
+ * Principal values of a state with two normal components and one resultant
+ * shear in the plane between them.
  *
- * With `sigma_y = sigma_z = 0`, the tensor reduces to a 2×2 problem in the
- * plane containing the axis and the shear direction, plus a third principal
- * value that is identically zero — the out-of-plane direction carries nothing.
- * That third zero is why a beam under combined bending and shear is a
- * *biaxial* state and not a uniaxial one, which is the whole reason a failure
- * criterion is needed at all.
+ * The tensor reduces to a 2×2 problem in the plane containing the axis and the
+ * shear direction, plus a third principal value equal to the OTHER normal
+ * component — the out-of-plane direction carries no shear. For the stress
+ * state `otherNormal` is zero (beam theory's modelling assumption); for the
+ * strain state it is the Poisson contraction, which is NOT zero, and pretending
+ * otherwise misplaces both the principal values and the maximum shear.
  */
-function principalOf(sigma: number, tau: number): PrincipalState {
-  const centre = sigma / 2;
-  const radius = Math.hypot(centre, tau);
-  const raw: number[] = [centre + radius, centre - radius, 0];
+function principalOf(normal: number, otherNormal: number, shear: number): PrincipalState {
+  const centre = (normal + otherNormal) / 2;
+  const radius = Math.hypot((normal - otherNormal) / 2, shear);
+  const raw: number[] = [centre + radius, centre - radius, otherNormal];
   raw.sort((a, b) => b - a);
   return {
     values: [raw[0], raw[1], raw[2]],
     // Mohr's pole angle, halved because a rotation of 2θ in Mohr space is θ in
     // the material.
-    angleDeg: (0.5 * Math.atan2(2 * tau, sigma) * 180) / Math.PI,
+    angleDeg: (0.5 * Math.atan2(2 * shear, normal - otherNormal) * 180) / Math.PI,
     maxShear: (raw[0] - raw[2]) / 2,
   };
 }

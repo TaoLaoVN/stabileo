@@ -110,8 +110,11 @@ export function warpingProperties(rs: ResolvedSection): WarpingProperties {
 
   switch (rs.shape) {
     case 'I': case 'H': {
-      // Distance between flange centre lines.
+      // Distance between flange centre lines. tf ≥ h is a plate, not an I —
+      // without the guard the squared term would still report a bogus
+      // positive Cw for it (the channel branch below already refuses).
       const h0 = h - tf;
+      if (h0 <= 0) break;
       return {
         klass: 'openSignificant',
         cw: (iz * h0 * h0) / 4,
@@ -177,15 +180,32 @@ export function withLambda(
  * For a doubly-symmetric I this is `h0·b/4` — the corner of a flange, which is
  * where the flange's own bending stress is largest too, so the two add at the
  * worst place rather than at different ones.
+ *
+ * A channel needs the shear centre, and this is where it was skipped: the
+ * comment said "measured about the shear centre" and the arithmetic measured
+ * from the WEB. Its pole sits a distance `e` outside the web, so the sectorial
+ * coordinate runs from `h0·e/2` at the web-flange junction to `h0·(bm−e)/2` at
+ * the flange tip, and the peak is whichever is larger. Taking the tip from the
+ * web instead — `h0·bm/2` — is 60% high on a UPN 200, and `sigma_w = B·ω/Cw`
+ * carries that straight into the reported stress. Conservative, but a stress
+ * 60% high is not a usable number either.
+ *
+ * `e = 3·bm²·tf / (6·bm·tf + h0·tw)` is the thin-wall result, and its
+ * denominator is the same one the channel's `Cw` above already computes —
+ * which is the tell that the two belong to the same derivation.
  */
 function peakSectorialCoordinate(rs: ResolvedSection): number {
   switch (rs.shape) {
     case 'I': case 'H':
       return ((rs.h - rs.tf) * rs.b) / 4;
-    case 'U': case 'C':
-      // Approximate: the flange tip, measured about the shear centre. Adequate
-      // for the magnitude, which is what this reports.
-      return ((rs.h - rs.tf) * (rs.b - rs.tw / 2)) / 2;
+    case 'U': case 'C': {
+      const bm = rs.b - rs.tw / 2;
+      const h0 = rs.h - rs.tf;
+      const den = 6 * rs.tf * bm + rs.tw * h0;
+      if (bm <= 0 || h0 <= 0 || den <= 0) return 0;
+      const e = (3 * bm * bm * rs.tf) / den;
+      return (h0 / 2) * Math.max(e, bm - e);
+    }
     default:
       return 0;
   }
@@ -236,8 +256,14 @@ export function warpingResponse(
   // Saint-Venant part at the restrained end is 1 - 1/cosh(L/lambda), rising to
   // 1 for a long member and falling to 0 for a short one — which is the
   // statement that a short restrained member resists almost entirely by
-  // warping.
-  const saintVenantShare = Math.max(0, Math.min(1, 1 - 1 / Math.cosh(ratio)));
+  // warping. The simple case is that same solution mirrored about mid-span:
+  // each half-span is a cantilever of length L/2 (warping is restrained at
+  // mid-span by symmetry, where the bimoment peaks), so its parameter is the
+  // half-span L/(2·lambda) — the same argument the bimoment line above uses.
+  const share = restraint === 'cantilever'
+    ? 1 - 1 / Math.cosh(ratio)
+    : 1 - 1 / Math.cosh(ratio / 2);
+  const saintVenantShare = Math.max(0, Math.min(1, share));
 
   return {
     saintVenantShare,

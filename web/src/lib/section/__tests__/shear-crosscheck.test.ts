@@ -96,6 +96,17 @@ describe('it declines rather than guesses', () => {
     expect(crossCheckShearPeak(geometryOf(S), 0, 0, 100)).toBeNull();
   });
 
+  it('declines under biaxial shear — the two components peak at different points', () => {
+    // hypot(tauMax_y·vy, tauMax_z·vz) combines maxima that occur at DIFFERENT
+    // places on the outline, so it is not the stress at any point and there is
+    // nothing meaningful to compare the drawn peak against. Null, not a number.
+    const S = sec({ shape: 'rect', b: 0.2, h: 0.4, a: 0.08, iy: 1.0667e-3 });
+    const rs = rsOf({ shape: 'rect', b: 0.2, h: 0.4, a: 0.08, iy: 1.0667e-3 });
+    expect(crossCheckShearPeak(geometryOf(S), peakOf(rs, 120), 60, 120)).toBeNull();
+    // Either component alone stays comparable.
+    expect(crossCheckShearPeak(geometryOf(S), peakOf(rs, 120), 0, 120)).not.toBeNull();
+  });
+
   it('reports both numbers, so a disagreement can be judged rather than trusted', () => {
     const S = sec({ shape: 'rect', b: 0.2, h: 0.4, a: 0.08, iy: 1.0667e-3 });
     const rs = rsOf({ shape: 'rect', b: 0.2, h: 0.4, a: 0.08, iy: 1.0667e-3 });

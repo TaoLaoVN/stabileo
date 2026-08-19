@@ -153,14 +153,24 @@ export function snapShearCentre(
  *
  * `a`, `iy`, `iz` are the section's own properties in SI, and the extreme fibre
  * distances come from its bounding box.
+ *
+ * The formula σ = N/A (1 + e·c/r²) assumes the geometric axes are PRINCIPAL
+ * axes. With a nonzero product of inertia `iyz` — an angle, a Z profile — the
+ * neutral axis under an eccentric load is not parallel to either geometric
+ * axis and these limits are simply wrong, so the function declines (null)
+ * rather than report them. A relative threshold, because a symmetric section's
+ * iyz is solver noise orders of magnitude below its inertias, while a real
+ * product of inertia is a substantial fraction of them.
  */
 export function kernLimits(
   a: number,
   iy: number,
   iz: number,
+  iyz: number,
   extremes: { zMax: number; zMin: number; yMax: number; yMin: number },
 ): { z: [number, number]; y: [number, number] } | null {
   if (!(a > 0) || !(iy > 0) || !(iz > 0)) return null;
+  if (Math.abs(iyz) > 1e-6 * Math.sqrt(iy * iz)) return null;
   const safe = (v: number) => (Math.abs(v) > 1e-12 ? v : null);
   const zTop = safe(extremes.zMax);
   const zBot = safe(extremes.zMin);

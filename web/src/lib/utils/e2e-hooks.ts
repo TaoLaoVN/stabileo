@@ -33,6 +33,14 @@ import { designRunStore } from '../store/design-run.svelte';
 import { isSolverReady } from '../engine/wasm-solver';
 import { getStructuralSolveCount } from './solve-counter';
 import { runGlobalSolve } from '../engine/live-calc';
+import {
+  liveRebarSceneCensus, rebarSceneBuilds, type RebarSceneCensus,
+} from '../three/rebar-scene';
+import { sceneCacheStats } from '../engine/detailing/scene-cache';
+import { openTimeline, type OpenPhase } from './open-timeline';
+import { autosaveRevisions as storedAutosaveRevisions } from '../store/autosave-db';
+import { autosaveFingerprint, clearAutosave, loadAutosave } from '../store/file';
+import { lastAutosaveOutcome, requestAutosave } from '../store/autosave-service';
 
 export const E2E_QUERY_FLAG = 'e2e';
 
@@ -73,6 +81,27 @@ export interface StabileoTestHooks {
   hasCertificate(elementId: number): boolean;
   counts(): Record<string, number>;
   runCounts(): Record<string, number> | null;
+  /**
+   * The proposal a PROVISIONAL_BIAXIAL member carries, and the reason that qualifies it.
+   *
+   * Null for any member that is not a proposal — which is itself the assertion a spec makes
+   * about the other 386. Every field a reader needs in order to triage the member is here:
+   * WHICH axis nobody checked, how big its moment is in kN·m, what fraction of the primary
+   * that is, and which combination governs it. A ratio alone cannot be triaged — 12 % between
+   * 4,3 and 1,0 kN·m and 12 % between 430 and 100 kN·m are the same number and completely
+   * different engineering situations — which is why the absolute values travel with it.
+   */
+  provisionalBasis(elementId: number): {
+    method: string;
+    designedAxis: string;
+    uncheckedAxis: string;
+    uncheckedShear: string;
+    secondaryRatio: number;
+    primaryMoment: number;
+    secondaryMoment: number;
+    secondaryCombo: string | null;
+    reasonKeys: string[];
+  } | null;
   selection(): number[];
   /**
    * Everything selected, by kind.
@@ -103,6 +132,59 @@ export interface StabileoTestHooks {
   detailingAssemblies(): unknown;
   /** Bar-schedule totals for the selected assembly. */
   detailingSchedule(): unknown;
+  /**
+   * How many times the 3-D viewport has BUILT its tube geometry.
+   *
+   * The property the viewport benchmark asserts, rather than infers from a stopwatch: a layer
+   * switch, a selection, an isolate or an opacity change must not move this number. A timing can
+   * always be explained away as a busy runner; a counter that went up cannot.
+   */
+  rebarSceneBuilds(): number;
+  /**
+   * What the 3-D workspace is actually DRAWING, per family. Null when none is open.
+   *
+   * The counterpart of the on-screen tally, and deliberately a different observable. The tally
+   * is derived in Svelte from the filter; this is read off the meshes. Every layer switch in the
+   * rail once stopped reaching the meshes at all — the store changed, the filter recomputed, the
+   * tally updated, the scene did not — and the whole suite stayed green because nothing could
+   * see this side of the line.
+   */
+  rebarSceneCensus(): RebarSceneCensus | null;
+  /**
+   * Canvases in the page, of any kind. A layer switch must not add one.
+   *
+   * Every canvas, not only the WebGL ones: the 2-D viewport has one too, and a hook that
+   * counted a subset would report "nothing added" about the half it was not looking at.
+   */
+  canvasCount(): number;
+  /** Scene-projection cache hits and misses. A toggle must not produce a miss. */
+  sceneCacheStats(): { hits: number; misses: number };
+  /**
+   * Milliseconds from the "3-D" click to the end of each phase of the last open.
+   *
+   * The benchmark reports this as a table. Attributing an open from the outside guessed wrong
+   * twice — see `open-timeline.ts`.
+   */
+  openTimeline(): Partial<Record<OpenPhase, number>>;
+  /**
+   * Every autosave revision currently stored, newest first.
+   *
+   * The autosave moved to IndexedDB, which a spec cannot read the way it read a
+   * `localStorage` string. These three hooks are how a journey asserts the property that
+   * matters — that what is STORED after a design run contains the design — without reaching
+   * into the database's private layout.
+   */
+  autosaveRevisions(): Promise<Array<{ revision: number; timestamp: string; status: string }>>;
+  /** The family census of the newest readable stored project, plus how it was read. */
+  autosaveStored(): Promise<{
+    revision: number | null;
+    fingerprint: Record<string, number>;
+    backend: string;
+    rejected: number;
+    unfinishedRevision: number | null;
+  }>;
+  /** The last write attempt: what triggered it, whether it landed, and on which backend. */
+  autosaveOutcome(): unknown;
 }
 
 /**
@@ -126,6 +208,10 @@ export interface StabileoTestActions {
   autoDesign(ids: number[]): unknown;
   designAll(): unknown;
   cancel(): void;
+  /** The same save the 30 s timer and every post-design hook ask for. */
+  autosaveNow(): Promise<unknown>;
+  /** The same clear the restore banner's Descartar button performs. */
+  autosaveDiscard(): Promise<void>;
 }
 
 function rebarSummary(elementId: number): string {
@@ -194,8 +280,34 @@ export function installE2EHooks(): void {
       return {
         total: s.total, verified: s.verified, sectionInadequate: s.sectionInadequate,
         demandUnavailable: s.demandUnavailable, searchExhausted: s.searchExhausted,
-        unsupported: s.unsupported, provisionalRetained: s.provisionalRetained,
+        unsupported: s.unsupported,
+        /**
+         * The proposals, counted apart from everything else.
+         *
+         * It was missing here while the summary carried it, so a browser spec had no way to
+         * see the outcome that replaced UNSUPPORTED for these members and went on asserting
+         * the count that used to hold. A hook that omits a bucket makes the bucket invisible
+         * rather than absent.
+         */
+        provisionalBiaxial: s.provisionalBiaxial,
+        provisionalRetained: s.provisionalRetained,
         notReached: s.notReached, aborted: s.aborted ? 1 : 0,
+      };
+    },
+    provisionalBasis: (id: number) => {
+      const o = verificationStore.outcomeFor(id);
+      const b = o?.provisionalBasis;
+      if (!b) return null;
+      return {
+        method: b.method,
+        designedAxis: b.designedAxis,
+        uncheckedAxis: b.uncheckedAxis,
+        uncheckedShear: b.uncheckedShear,
+        secondaryRatio: b.secondaryRatio,
+        primaryMoment: b.primaryMoment,
+        secondaryMoment: b.secondaryMoment,
+        secondaryCombo: b.secondaryCombo,
+        reasonKeys: (o?.reasons ?? []).map((r) => r.key),
       };
     },
     selection: () => [...uiStore.selectedElements].sort((a, b) => a - b),
@@ -223,6 +335,24 @@ export function installE2EHooks(): void {
     detailingAssemblies: () =>
       JSON.parse(JSON.stringify(modelStore.model.detailing?.assemblies ?? [])),
     detailingSchedule: () => JSON.parse(JSON.stringify(detailingStore.schedule ?? null)),
+    rebarSceneBuilds,
+    rebarSceneCensus: liveRebarSceneCensus,
+    canvasCount: () => document.querySelectorAll('canvas').length,
+    sceneCacheStats,
+    openTimeline,
+    autosaveRevisions: async () => (await storedAutosaveRevisions())
+      .map(({ revision, timestamp, status }) => ({ revision, timestamp, status })),
+    autosaveStored: async () => {
+      const read = await loadAutosave();
+      return {
+        revision: read.revision,
+        fingerprint: autosaveFingerprint(read.value),
+        backend: read.backend,
+        rejected: read.rejected.length,
+        unfinishedRevision: read.unfinishedRevision,
+      };
+    },
+    autosaveOutcome: () => JSON.parse(JSON.stringify(lastAutosaveOutcome())),
   };
   const actions: StabileoTestActions = {
     /** Seed a coordinated assembly — the same shape the pipeline writes. */
@@ -245,6 +375,8 @@ export function installE2EHooks(): void {
     autoDesign: (ids: number[]) => designRunStore.autoDesign(ids),
     designAll: () => designRunStore.designAll(),
     cancel: () => designRunStore.cancel(),
+    autosaveNow: () => requestAutosave('manual'),
+    autosaveDiscard: () => clearAutosave(),
   };
   // Frozen so a spec (or anything else) cannot substitute a hook implementation.
   (window as unknown as { __stabileo?: StabileoTestHooks }).__stabileo = Object.freeze(hooks);

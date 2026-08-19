@@ -18,10 +18,12 @@
   import StepWizard from './components/dsm/StepWizard.svelte';
   import { resolveDeleteTargets } from './lib/store/delete-selection';
   import {
-    loadFromLocalStorage, saveToLocalStorage, clearLocalStorage,
+    loadAutosave, clearAutosave,
     loadWorkspaceFromLocalStorage, saveWorkspaceToLocalStorage,
     downloadCanvasPNG, noteAxisConventionMigrationIfNeeded,
+    type DedalFile,
   } from './lib/store/file';
+  import { requestAutosave } from './lib/store/autosave-service';
   import { loadFromURLHash } from './lib/utils/url-sharing';
   import DxfImportDialog from './components/DxfImportDialog.svelte';
   import CadImportWizard from './components/CadImportWizard.svelte';
@@ -109,6 +111,8 @@
   import KeyboardShortcuts from './components/KeyboardShortcuts.svelte';
   import Icon from './components/ribbon/Icon.svelte';
   import ProPanel from './components/pro/ProPanel.svelte';
+  import RebarWorkspace from './components/pro/design/RebarWorkspace.svelte';
+  import ProProjectFileActions from './components/pro/ProProjectFileActions.svelte';
   import ToolbarConfig from './components/toolbar/ToolbarConfig.svelte';
   import EducativePanel from './components/edu/EducativePanel.svelte';
   import { eduStore } from './components/edu/edu-store.svelte';
@@ -285,7 +289,9 @@
   const showResults = $derived(resultsStore.results !== null || resultsStore.results3D !== null);
   let showImportDialog = $state(false);
   let importText = $state('');
-  let autosaveData = $state<ReturnType<typeof loadFromLocalStorage>>(null);
+  let autosaveData = $state<DedalFile | null>(null);
+  /** When the offered save was written, and whether it is the newest one that exists. */
+  let autosaveStamp = $state<{ timestamp: string | null; older: boolean }>({ timestamp: null, older: false });
   /** True once the user has explicitly Restored or Discarded the pending save. */
   let autosaveDismissed = $state(false);
   let autosaveInterval: ReturnType<typeof setInterval> | null = null;
@@ -332,7 +338,7 @@
   }
 
   function discardAutosave() {
-    clearLocalStorage();
+    void clearAutosave();
     autosaveDismissed = true;
   }
 
@@ -531,20 +537,32 @@
       // Load autosave data if no workspace was restored.
       // Banner visibility is derived — it checks mode match, dismiss state,
       // and whether the user has started editing a different project.
+      //
+      // IndexedDB is asynchronous, so this cannot block the mount the way the
+      // localStorage read did. It resolves into `$state` instead, and the banner —
+      // already derived — appears when it arrives. `loadAutosave` has already told the
+      // user about anything it had to refuse; `autosaveStamp` carries the same fact into
+      // the banner, so "this is not your newest save" is on screen and not only in a toast.
       if (!savedWorkspace) {
-        const loaded = loadFromLocalStorage();
-        if (loaded && loaded.snapshot.nodes.length > 0) {
-          autosaveData = loaded;
-        }
+        void loadAutosave().then((result) => {
+          if (result.value && result.value.snapshot.nodes.length > 0) {
+            autosaveData = result.value;
+            autosaveStamp = { timestamp: result.timestamp, older: result.rejected.length > 0 };
+          }
+        });
       }
     }
 
     // Setup autosave every 30s. Never overwrite the (single, mode-shared)
-    // autosave key with an empty model: the loader ignores empty snapshots
-    // anyway, and an empty write would destroy a pending save from another
-    // mode whose restore banner is currently hidden by the mode-match gate.
+    // autosave with an empty model: the loader ignores empty snapshots anyway, and an
+    // empty write would destroy a pending save from another mode whose restore banner
+    // is currently hidden by the mode-match gate. `requestAutosave` enforces that.
+    //
+    // The timer is the FLOOR, not the mechanism. Every operation that produces minutes of
+    // computed state — solve, design, floor design, detailing — asks for a save when it
+    // finishes, because losing one of those to a 30 s window is losing the run.
     autosaveInterval = setInterval(() => {
-      if (modelStore.nodes.size > 0) saveToLocalStorage();
+      void requestAutosave('timer');
       saveWorkspaceToLocalStorage();
     }, 30_000);
 
@@ -767,8 +785,18 @@
       restore your last session simply stopped appearing.
     -->
     {#if showAutosaveBanner}
-      <div class="autosave-inline" data-testid="autosave-prompt">
-        <span class="autosave-text">{t('app.autosaveFound')} <strong>{autosaveData?.name}</strong></span>
+      <div class="autosave-inline" class:autosave-older={autosaveStamp.older} data-testid="autosave-prompt">
+        <span class="autosave-text">
+          {t('app.autosaveFound')} <strong>{autosaveData?.name}</strong>
+          {#if autosaveStamp.timestamp}
+            <span class="autosave-stamp">({new Date(autosaveStamp.timestamp).toLocaleString()})</span>
+          {/if}
+        </span>
+        {#if autosaveStamp.older}
+          <!-- Said here, not only in a toast: a user who dismissed the toast must still be
+               able to see that what they are about to restore is not their newest save. -->
+          <span class="autosave-warning">{t('file.autosaveOlderRestored')}</span>
+        {/if}
         <button class="banner-btn restore" onclick={restoreAutosave}>{t('app.restore')}</button>
         <button class="banner-btn discard" onclick={discardAutosave}>{t('app.discard')}</button>
       </div>
@@ -808,7 +836,6 @@
       {/if}
     </div>
   </header>
-
 
   {#if uiStore.appMode === 'basico' && !uiStore.isMobile}
     <Ribbon onOpenPanel={openBasicPanel} activePanel={basicPanel} activeDataTab={basicDataTab} />
@@ -902,6 +929,12 @@
         <span class="pb-divider"></span>
 
         <!-- Actions -->
+        <!--
+          Project file controls live here, beside the other PRO actions, because a PRO user
+          must not have to switch to Básico to open or save. They are the same `file.ts`
+          entry points the Básico toolbar drives.
+        -->
+        <ProProjectFileActions shortcuts={true} />
         <button class="pn-action pn-example" bind:this={proExBtnEl} onclick={() => proPanelRef?.examples(proExBtnEl)}>{t('pro.exampleBtn')}</button>
         <button class="pn-action pn-cad" onclick={() => window.dispatchEvent(new Event('stabileo-import-dxf'))} title={t('project.openDxfCadTooltip')}>{t('cad.proBarBtn')}</button>
         <button class="pn-action pn-solve" onclick={() => proPanelRef?.solve()} disabled={!proPanelRef?.canSolve()}>{proPanelRef?.isSolving() ? t('pro.solving') : t('pro.solve')}</button>
@@ -1147,6 +1180,19 @@
 <DespieceInspector />
 <MaterialEditor />
 <SectionEditor />
+
+<!--
+  The 3-D reinforcement workspace.
+
+  Mounted HERE, at the root, and not inside the PRO sidebar where its launcher lives. The
+  sidebar is `aside.pro-sidebar` with a fixed pixel width, so anything nested in it is capped
+  by that width no matter what it asks for — which is the entire reason the viewer was a few
+  hundred pixels wide. An overlay at this level is bounded by the window instead.
+
+  It renders nothing at all until opened, and its state lives in `rebarWorkspace`, so opening
+  and closing costs the model nothing.
+-->
+<RebarWorkspace />
 
 {#if uiStore.toasts.length > 0}
   <div class="toast-container">
@@ -1646,16 +1692,25 @@
     background: var(--st-surface-2);
   }
 
-  .autosave-banner {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    gap: 1rem;
-    padding: 0.5rem 1rem;
-    background: var(--st-surface-2);
-    border-bottom: 1px solid var(--st-hair);
-    font-size: 0.875rem;
-    color: var(--st-text);
+  /* An older-than-newest save is not the normal case and must not look like it.
+     Tinted in place rather than as a full-width band: the standalone banner this
+     replaced pushed the whole application down by its own height on load, which is
+     why it was removed upstream. */
+  .autosave-older {
+    background: #3e2a1a;
+    border: 1px solid #6e4a2a;
+    border-radius: 4px;
+    padding: 0.15rem 0.5rem;
+  }
+
+  .autosave-stamp {
+    color: #999;
+    font-variant-numeric: tabular-nums;
+  }
+
+  .autosave-warning {
+    color: #ffb347;
+    max-width: 46rem;
   }
 
   .banner-btn {

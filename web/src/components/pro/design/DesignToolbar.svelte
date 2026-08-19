@@ -184,6 +184,18 @@
     <span class="count c-ok" data-testid="summary-count-verified">✓ {counts.ok} {t('design.counts.verified')}</span>
     <span class="count c-warn" data-testid="summary-count-warn">⚠ {counts.warn} {t('design.counts.warn')}</span>
     <span class="count c-fail" data-testid="summary-count-fail">✗ {counts.fail} {t('design.counts.fail')}</span>
+    <!--
+      Beside `fail`, and no longer inside it.
+
+      These members' steel does fail the authoritative verifier — by construction, on the
+      biaxial refusal the outcome already declares. Reporting that as "✗ N no verifica" put
+      twenty-two red crosses on the bar that meant "we did not look" next to crosses that mean
+      "we looked and it does not hold". Same glyph, opposite claims.
+
+      Always rendered, like every other display chip, so "0 provisional" is a visible zero
+      rather than an absent count: the run-outcome chips below hide at zero, these do not.
+    -->
+    <span class="count c-prov" data-testid="summary-count-provisional">◐ {counts.provisional} {t('design.counts.provisional')}</span>
     <span class="count c-unavail" data-testid="summary-count-unavailable">○ {counts.unavailable} {t('design.counts.unavailable')}</span>
     <span class="count c-stale" data-testid="summary-count-stale">⌛ {counts.stale} {t('design.counts.stale')}</span>
     {#if run}
@@ -323,6 +335,8 @@
   .c-ok { color: #7ee2a8; } .c-warn { color: #f0cc66; } .c-fail { color: #ff8a8a; }
   .c-unavail { color: #99a; } .c-stale { color: #d8d4bb; }
   .c-sect { color: #ffb37a; } .c-exh { color: #d3b0e8; } .c-unsup { color: #99a; }
+  /* The same violet the 3-D view paints a proposal with. */
+  .c-prov { color: #a066d3; }
 
   .banner { display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
     padding: 5px 9px; border-radius: 4px; font-size: 0.73rem; line-height: 1.45; }

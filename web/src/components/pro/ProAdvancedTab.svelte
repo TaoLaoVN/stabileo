@@ -31,6 +31,10 @@
     solveConstrained3D,
   } from '../../lib/engine/wasm-solver';
   import { buildSolverInput3D } from '../../lib/engine/solver-service';
+  // Every solver below is a WASM export that throws a bare string, which has no
+  // `.message`. Reading it with `e.message` reported "Error" for every engine
+  // refusal and discarded the sentence the solver wrote.
+  import { errorText } from '../../lib/utils/error-text';
   import { cirsoc103Spectrum } from '../../lib/engine/result-types';
   import type { DesignSpectrum } from '../../lib/engine/result-types';
   import { applyRigidDiaphragm, detectFloorLevels } from '../../lib/engine/rigid-diaphragm';
@@ -143,7 +147,7 @@
       }
       advancedResults = { ...advancedResults, pdelta: { converged: res.converged, iterations: res.iterations, b2Factor: res.b2Factor } };
     } catch (e: any) {
-      solveError = `P-Delta: ${e.message ?? 'Error'}`;
+      solveError = `P-Delta: ${errorText(e, 'Error')}`;
     }
     solving = false;
   }
@@ -190,7 +194,7 @@
         advancedResults = { ...advancedResults, modal: { modes, totalMass: res.totalMass } };
       }
     } catch (e: any) {
-      solveError = `Modal: ${e.message ?? 'Error'}`;
+      solveError = `Modal: ${errorText(e, 'Error')}`;
     }
     solving = false;
   }
@@ -228,7 +232,7 @@
       spectralResult = res;
       advancedResults = { ...advancedResults, spectral: { baseShearX: res.baseShearX ?? res.baseShear, baseShearY: res.baseShearY, baseShearZ: res.baseShearZ } };
     } catch (e: any) {
-      solveError = `Espectral: ${e.message ?? 'Error'}`;
+      solveError = `Espectral: ${errorText(e, 'Error')}`;
     }
     solving = false;
   }
@@ -255,7 +259,7 @@
       const factors = res.factors ?? res.eigenvalues ?? (res.modes?.map((m: any) => m.loadFactor ?? m.factor ?? m.eigenvalue) ?? []);
       advancedResults = { ...advancedResults, buckling: { factors } };
     } catch (e: any) {
-      solveError = `Buckling: ${e.message ?? 'Error'}`;
+      solveError = `Buckling: ${errorText(e, 'Error')}`;
     }
     solving = false;
   }
@@ -318,7 +322,7 @@
       });
       thResult = res;
     } catch (e: any) {
-      solveError = `Time History: ${e.message ?? 'Error'}`;
+      solveError = `Time History: ${errorText(e, 'Error')}`;
     }
     solving = false;
   }
@@ -357,7 +361,7 @@
       harmonicElapsed = elapsed;
       harmResult = res;
     } catch (e: any) {
-      solveError = `Harmónico: ${e.message ?? 'Error'}`;
+      solveError = `Harmónico: ${errorText(e, 'Error')}`;
     }
     solving = false;
   }
@@ -425,7 +429,7 @@
         });
       }
     } catch (e: any) {
-      solveError = `No lineal: ${e.message ?? 'Error'}`;
+      solveError = `No lineal: ${errorText(e, 'Error')}`;
     }
     solving = false;
   }
@@ -450,7 +454,7 @@
         nIncrements: arcIncrements,
       });
     } catch (e: any) {
-      solveError = `Arc-Length: ${e.message ?? 'Error'}`;
+      solveError = `Arc-Length: ${errorText(e, 'Error')}`;
     }
     solving = false;
   }
@@ -477,7 +481,7 @@
         nIncrements: dcIncrements,
       });
     } catch (e: any) {
-      solveError = `Disp. Control: ${e.message ?? 'Error'}`;
+      solveError = `Disp. Control: ${errorText(e, 'Error')}`;
     }
     solving = false;
   }
@@ -500,7 +504,7 @@
         amplitude: imperfAmplitude,
       });
     } catch (e: any) {
-      solveError = `Imperfecciones: ${e.message ?? 'Error'}`;
+      solveError = `Imperfecciones: ${errorText(e, 'Error')}`;
     }
     solving = false;
   }
@@ -538,7 +542,7 @@
       winklerResult = res;
       if (res.results) resultsStore.setResults3D(res.results);
     } catch (e: any) {
-      solveError = `Winkler: ${e.message ?? 'Error'}`;
+      solveError = `Winkler: ${errorText(e, 'Error')}`;
     }
     solving = false;
   }
@@ -588,7 +592,7 @@
       ssiResult = res;
       if (res.results) resultsStore.setResults3D(res.results);
     } catch (e: any) {
-      solveError = `SSI: ${e.message ?? 'Error'}`;
+      solveError = `SSI: ${errorText(e, 'Error')}`;
     }
     solving = false;
   }
@@ -628,7 +632,7 @@
       contactResult = res;
       if (res.results) resultsStore.setResults3D(res.results);
     } catch (e: any) {
-      solveError = `Contacto: ${e.message ?? 'Error'}`;
+      solveError = `Contacto: ${errorText(e, 'Error')}`;
     }
     solving = false;
   }
@@ -658,7 +662,7 @@
       stagedResult = res;
       if (res.results) resultsStore.setResults3D(res.results);
     } catch (e: any) {
-      solveError = `Etapas: ${e.message ?? 'Error'}`;
+      solveError = `Etapas: ${errorText(e, 'Error')}`;
     }
     solving = false;
   }
@@ -695,7 +699,7 @@
         timeSteps: creepTimeSteps,
       });
     } catch (e: any) {
-      solveError = `Fluencia: ${e.message ?? 'Error'}`;
+      solveError = `Fluencia: ${errorText(e, 'Error')}`;
     }
     solving = false;
   }
@@ -715,7 +719,7 @@
       if (!input) { solveError = t('advanced.emptyModel'); solving = false; return; }
       cableResult = solveCable2D(input, cableMaxIter, cableTol);
     } catch (e: any) {
-      solveError = `Cable: ${e.message ?? 'Error'}`;
+      solveError = `Cable: ${errorText(e, 'Error')}`;
     }
     solving = false;
   }
@@ -738,7 +742,7 @@
         responseType: ilResponse,
       });
     } catch (e: any) {
-      solveError = `Influence Line 3D: ${e.message ?? 'Error'}`;
+      solveError = `Influence Line 3D: ${errorText(e, 'Error')}`;
     }
     solving = false;
   }
@@ -769,7 +773,7 @@
         reductionResult = craigBampton2D({ solver: input, retainedDofs: retained, numModes: numCBModes });
       }
     } catch (e: any) {
-      solveError = `Model Reduction: ${e.message ?? 'Error'}`;
+      solveError = `Model Reduction: ${errorText(e, 'Error')}`;
     }
     solving = false;
   }
@@ -799,7 +803,7 @@
         multiCaseResult = solveMultiCase2D({ solver: input2D, caseIds: cases.map(c => c.id) });
       }
     } catch (e: any) {
-      solveError = `Multi-Case: ${e.message ?? 'Error'}`;
+      solveError = `Multi-Case: ${errorText(e, 'Error')}`;
     }
     solving = false;
   }
@@ -838,7 +842,7 @@
       }
       secResult = analyzeSection(geometry);
     } catch (e: any) {
-      solveError = `Section: ${e.message ?? 'Error'}`;
+      solveError = `Section: ${errorText(e, 'Error')}`;
     }
   }
 
@@ -877,7 +881,7 @@
         is3DMode ? resultsStore.setResults3D(res.results) : resultsStore.setResults(res.results);
       }
     } catch (e: any) {
-      solveError = `Constrained: ${e.message ?? 'Error'}`;
+      solveError = `Constrained: ${errorText(e, 'Error')}`;
     }
     solving = false;
   }
