@@ -64,6 +64,15 @@ test.describe('switching a 3D model to 2D', () => {
     // The banner names the cut, because a frame's results read as the whole
     // building's is the mistake worth preventing.
     await expect(page.locator('.simplified-banner')).toContainText('Y = 10');
+    // And it names the LOAD the cut left behind, which is the count that has
+    // to survive to the standing context rather than stopping at the dialog:
+    // a frame short of members looks weaker than it is, and a frame short of
+    // LOAD looks stronger — it solves, reports zero, and reads as safe. The
+    // warehouse carries load on every frame, so a cut at Y = 10 leaves the
+    // rest of it behind and the banner has to say so.
+    const droppedLoads = page.getByTestId('s2d-dropped-loads');
+    await expect(droppedLoads).toBeVisible();
+    expect(Number(await droppedLoads.getAttribute('data-count'))).toBeGreaterThan(0);
 
     // Back up: the original returns, not the frame in a 3D viewport.
     await page.getByTestId('rb-cmd-dim').click();

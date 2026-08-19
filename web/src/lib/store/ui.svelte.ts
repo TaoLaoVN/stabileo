@@ -364,7 +364,7 @@ function createUIStore() {
    */
   let simplified2DStats = $state<{
     mergedNodes: number; removedElements: number; duplicateElements: number;
-    droppedCrossing?: number; droppedElsewhere?: number;
+    droppedCrossing?: number; droppedElsewhere?: number; droppedLoads?: number;
     plane?: 'xy' | 'xz' | 'yz'; offset?: number;
   } | null>(null);
   // Explicit 3D viewport presentation mode.

@@ -1020,6 +1020,21 @@
                 {(st.droppedCrossing ?? 0) + (st.droppedElsewhere ?? 0) > 0
                   ? ` · ${(st.droppedCrossing ?? 0) + (st.droppedElsewhere ?? 0)} ${t('switch2d.leftBehind')}`
                   : ''}
+                <!--
+                  And the load, which is the one that has to survive to HERE.
+                  The dialog warns before the cut; this banner is what stays on
+                  screen while the results are read. Missing members make a
+                  frame look weaker than it is, and a reader distrusts it.
+                  Missing LOAD makes it look stronger — it solves, reports zero,
+                  and reads as safe — so the count belongs in the standing
+                  context and not only in the moment before the decision.
+                -->
+                {#if (st.droppedLoads ?? 0) > 0}
+                  <!-- Its own element, with a test id, so the guard on it can
+                       be written without pinning a translated string. -->
+                  <span data-testid="s2d-dropped-loads" data-count={st.droppedLoads}
+                  >{' · '}{st.droppedLoads} {t('switch2d.loadsLeftBehind')}</span>
+                {/if}
               </span>
             {/if}
           </div>

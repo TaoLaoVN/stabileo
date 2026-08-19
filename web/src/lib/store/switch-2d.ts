@@ -147,6 +147,16 @@ export interface SwitchStats {
   /** Present only for a slice: what the cut left behind. */
   droppedCrossing?: number;
   droppedElsewhere?: number;
+  /**
+   * Load the cut left behind, which is the count this banner most needs.
+   *
+   * The dialog warns before the cut; this is what stays on screen while the
+   * results are read. A frame missing members looks weaker than it is and the
+   * reader distrusts it. A frame missing LOAD looks stronger, solves, and
+   * reports zero — so the standing context is exactly where the number has to
+   * survive, not just the moment before the decision.
+   */
+  droppedLoads?: number;
   /** Which plane and, for a slice, where. */
   plane: DrawPlane;
   offset?: number;
@@ -213,6 +223,7 @@ export function sliceAt(plane: DrawPlane, offset: number, tol = SLICE_TOL): Swit
     ...result.model.stats,
     droppedCrossing: result.slice.crossingElements,
     droppedElsewhere: result.slice.elsewhereElements,
+    droppedLoads: result.slice.droppedLoads,
     plane,
     offset,
   };
