@@ -331,7 +331,7 @@
   .frow[data-state='designed'] .fstate { color: var(--st-ok); }
   .frow[data-state='refused'] .fstate,
   .frow[data-state='provisional'] .fstate { color: var(--st-warn); }
-  .frow[data-state='failed'] .fstate { color: var(--st-err); }
+  .frow[data-state='failed'] .fstate { color: var(--st-danger); }
   .frow[data-state='noElements'] .fstate,
   .frow[data-state='skipped'] .fstate { color: var(--st-text-3); }
 

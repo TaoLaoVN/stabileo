@@ -361,7 +361,7 @@
   .state-pending { color: var(--st-warn); }
   .state-stale { color: var(--st-warn); }
   .maturity-implemented_provisional { color: var(--st-warn); }
-  .maturity-unsupported { color: var(--st-err); }
+  .maturity-unsupported { color: var(--st-danger); }
   .maturity-validated { color: var(--st-text-2); }
   .affects { border: 1px solid var(--st-hair-strong); background: none; color: var(--st-text-2); }
   .unavailable { color: var(--st-warn); }
@@ -394,7 +394,7 @@
     color: var(--st-text);
   }
   .notice.warning { border-left: 2px solid var(--st-warn); }
-  .notice.error { border-left: 2px solid var(--st-err); }
+  .notice.error { border-left: 2px solid var(--st-danger); }
   .notice p { margin: 0.25rem 0; }
   .notice strong { color: var(--st-text); }
   .req-solve { font-weight: 600; }
@@ -417,6 +417,6 @@
   .crossref strong { font-size: 0.7rem; color: var(--st-text); }
   .crossref p { margin: 0.2rem 0 0.35rem; font-size: 0.66rem; line-height: 1.35; color: var(--st-text-2); }
 
-  li.error { color: var(--st-err); }
+  li.error { color: var(--st-danger); }
   li.warning { color: var(--st-warn); }
 </style>

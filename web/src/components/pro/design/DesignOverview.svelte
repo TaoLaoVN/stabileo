@@ -282,7 +282,7 @@
   /* Colour is the third channel, after the glyph and the word. Never the only one. */
   .tone-ok .glyph { color: var(--st-ok); }
   .tone-warn .glyph { color: var(--st-warn); }
-  .tone-bad .glyph, .tone-bad .n { color: var(--st-err); }
+  .tone-bad .glyph, .tone-bad .n { color: var(--st-danger); }
   .tone-muted { color: var(--st-text-3); }
 
   .open3d { display: flex; flex-direction: column; gap: 0.2rem; }
@@ -307,5 +307,5 @@
     background: var(--st-surface); color: var(--st-text-2);
   }
   .need { margin: 0; font-size: 0.66rem; color: var(--st-text-2); }
-  .err { margin: 0; font-size: 0.66rem; color: var(--st-err); }
+  .err { margin: 0; font-size: 0.66rem; color: var(--st-danger); }
 </style>

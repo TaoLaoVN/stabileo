@@ -214,7 +214,7 @@
     background: var(--st-surface-3);
   }
   .chip.ok { color: var(--st-ok); }
-  .chip.err { color: var(--st-err); }
+  .chip.err { color: var(--st-danger); }
   .chip.warn { color: var(--st-warn); }
   .ok-line { margin: 0; font-size: 0.72rem; color: var(--st-text-2); }
 
@@ -226,7 +226,7 @@
     border-left: 2px solid var(--st-hair-strong);
     padding: 0.25rem 0 0.25rem 0.5rem;
   }
-  .group-err { border-left-color: var(--st-err); }
+  .group-err { border-left-color: var(--st-danger); }
   .group-warn { border-left-color: var(--st-warn); }
   .group-head {
     display: flex;
@@ -290,10 +290,10 @@
     outline: 2px solid var(--st-value);
     outline-offset: 1px;
   }
-  .sev { font-weight: 600; color: var(--st-err); white-space: nowrap; }
+  .sev { font-weight: 600; color: var(--st-danger); white-space: nowrap; }
   .bars { font-family: var(--st-mono, monospace); overflow: hidden; text-overflow: ellipsis; }
   .nums { margin-left: auto; white-space: nowrap; font-variant-numeric: tabular-nums; }
-  .short { color: var(--st-err); font-weight: 600; }
+  .short { color: var(--st-danger); font-weight: 600; }
 
   .actions { display: flex; gap: 0.2rem; flex-wrap: wrap; }
   .go {

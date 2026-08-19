@@ -316,7 +316,7 @@
   .badge { font-size: 0.66rem; font-weight: 600; padding: 0.02rem 0.35rem; border-radius: 3px; background: var(--st-surface-3); color: var(--st-text); }
   .muted { margin: 0; font-size: 0.7rem; color: var(--st-text-2); }
   .warn { margin: 0; font-size: 0.68rem; color: var(--st-warn); }
-  .err { margin: 0; font-size: 0.68rem; color: var(--st-err); }
+  .err { margin: 0; font-size: 0.68rem; color: var(--st-danger); }
 
   /*
     The exports, as one group on the tokens.
@@ -351,7 +351,7 @@
 
   .notice { padding: 0.35rem 0.5rem; border-radius: 4px; background: var(--st-surface-3); font-size: 0.68rem; }
   .notice.warning { border-left: 2px solid var(--st-warn); }
-  .notice.error { border-left: 2px solid var(--st-err); color: var(--st-err); }
+  .notice.error { border-left: 2px solid var(--st-danger); color: var(--st-danger); }
   .ack { display: flex; align-items: baseline; gap: 0.35rem; margin-top: 0.2rem; cursor: pointer; }
 
   /* Label above control, one spacing, nothing touching an edge. */
