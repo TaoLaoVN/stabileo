@@ -38,6 +38,8 @@
  * which is why `productStandard` is stored per grade rather than assumed.
  */
 
+import { DESIGN_CODES } from './section-catalog';
+
 export type GradeFamily = 'hot-rolled' | 'cold-formed' | 'aluminium' | 'stainless';
 
 /** Where a grade's product standard comes from. */
@@ -758,33 +760,50 @@ export function commercialGradesFor(family: string): CommercialPairing[] {
  * Whether a section/grade pairing departs from the recorded practice of the
  * GRADE'S OWN region.
  *
- * Region-scoped deliberately: recording that America rolls a family in A500
- * says nothing about Europe's tubes, whose product standards (EN 10210/10219)
- * are not in this file. Judging a European tube by an American list flagged
- * every ordinary pairing the file simply had not recorded — unknown is not
- * unusual.
+ * The judgement is region-scoped because recording that America rolls a family
+ * in A500 says nothing about Europe's tubes, whose product standards
+ * (EN 10210/10219) are not in this file. But region scoping alone went too far
+ * the other way: an IPN in A992 drew no comment because America records no IPN
+ * practice — when the real fact is that America OFFERS no IPN at all, so the
+ * pairing departs from every practice on record. Whether a region offers a
+ * family is the catalogue's knowledge (`DESIGN_CODES` in `section-catalog.ts`),
+ * and it is the second half of the rule:
  *
- * So a pairing is flagged only when the grade's region HAS a recorded practice
- * for the family and this grade is not in it. Returns null — unknown — when
- * nothing is recorded for the family, when the grade's own region records
- * nothing for it, or when the grade itself is not in the catalogue. Silence
- * is not a claim that something is unusual.
+ *   * the grade is recorded as ordinary for the family ANYWHERE → false. Mills
+ *     sell across borders: Gerdau quotes perfis W in ASTM A572, an American
+ *     grade under Brazilian practice.
+ *   * no practice is recorded for the family anywhere → null. Silence is not a
+ *     claim that something is unusual.
+ *   * the grade's region does not offer the family in its catalogue → true.
+ *     Whatever steel it is, that family is not rolled there, and the recorded
+ *     practices are all someone else's — the case of an IPN (a DIN/CIRSOC
+ *     series) in A992.
+ *   * the region offers the family and records a practice for it, and this
+ *     grade is not in it → true: a special run, like an Argentine W in F-24.
+ *   * the region offers the family but records nothing for it → null. Europe's
+ *     tubes in S235 are the case: EN 10210/10219 are not in this file, and
+ *     unknown is not unusual.
+ *
+ * A grade that is not in the catalogue at all returns null.
  */
 export function isUnusualPairing(family: string, gradeId: string | undefined): boolean | null {
   if (!gradeId) return null;
   const byRegion = COMMERCIAL[family];
-  if (!byRegion) return null;
-  // A grade recorded as ordinary ANYWHERE for the family is not unusual:
-  // mills sell across borders, and a region's record can name a foreign grade
-  // rolled locally — Gerdau quotes perfis W in ASTM A572, an American grade
-  // under Brazilian practice.
-  for (const list of Object.values(byRegion)) {
-    if (list?.some((p) => p.gradeId === gradeId)) return false;
+  if (byRegion) {
+    for (const list of Object.values(byRegion)) {
+      if (list?.some((p) => p.gradeId === gradeId)) return false;
+    }
   }
-  // Beyond the record, only the grade's own region can contradict it: its
-  // practice is the one this grade would actually be ordered under.
   const grade = gradeById(gradeId);
-  const local = grade ? byRegion[grade.region] : undefined;
-  if (!local || local.length === 0) return null;
-  return true;
+  if (!grade) return null;
+  const anyRecorded =
+    byRegion !== undefined &&
+    Object.values(byRegion).some((list) => (list?.length ?? 0) > 0);
+  if (!anyRecorded) return null;
+  const offered = DESIGN_CODES.some(
+    (c) => c.region === grade.region && (c.families as string[]).includes(family),
+  );
+  if (!offered) return true;
+  const local = byRegion?.[grade.region];
+  return local && local.length > 0 ? true : null;
 }

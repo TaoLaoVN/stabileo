@@ -17,7 +17,11 @@
    * W in A992 is standard in the United States even though Argentina rolls it
    * in F-36, and warning about that would make the warning worthless. Where no
    * practice is recorded at all — most families — it says nothing: silence is
-   * not a claim that something is unusual.
+   * not a claim that something is unusual. It also says nothing when the
+   * grade's own region offers the family but no practice is recorded there —
+   * a European tube in S235, whose product standards are not in the data —
+   * while it DOES speak when the region does not roll the family at all: an
+   * IPN in A992 departs from every practice on record and no mill ships it.
    */
   import {
     commercialGradesFor, isUnusualPairing, gradeById,
