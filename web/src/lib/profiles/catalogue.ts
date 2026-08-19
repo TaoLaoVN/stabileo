@@ -35,27 +35,37 @@ import {
   ALL_PROFILES, PROFILE_FAMILIES, FAMILY_LIST, familyToShape,
   type ProfileFamily, type SectionShape, type SteelProfile,
 } from '../data/steel-profiles';
+import {
+  FAMILY_CLASSIFICATION, DESIGN_CODES, familiesForCode,
+  type FamilyClassification, type SectionSeries, type GeometryFidelity,
+} from '../data/section-catalog';
 
 /** The catalogue name. What the model stores, and what `resolveProfile` looks up. */
 export type ProfileId = string;
 
 /**
- * Which published tables a family comes from.
+ * The standards axis is NOT defined here.
  *
- * `mixed` is not a hedge — it is the truth for `L`. `PROFILE_FAMILIES.L` is
- * `[...L, ...IRAM_L]`, two tables merged into one array with nothing on the entries saying
- * which row came from which. Inventing a per-entry provenance to make the axis look tidy
- * would be a guess presented as data, so the family is declared mixed and the filter treats
- * it as matching either standard.
+ * An earlier version of this module carried its own `FAMILY_STANDARD` map with three values —
+ * `euronorm`, `iram`, `mixed`. `section-catalog.ts` already had the real thing and had already
+ * outgrown it: the specific dimensional standard per family (`EN 10365`, `DIN 1025-1`,
+ * `IRAM-IAS U 500-215-6`), the body that publishes it, the country, hot-rolled against
+ * cold-formed, the series, and how faithfully the app can draw the outline. Its own comment
+ * records that `standard` "used to read 'Euronorm' for all eight, which was a placeholder" —
+ * which is precisely the axis this module had reinvented.
+ *
+ * So the classification is read from there and nothing about it is duplicated. Two maps of the
+ * same fact drift, and the one with real published standards in it is not the one to lose.
+ *
+ * ── One inherited imprecision, stated rather than smoothed ─────────
+ *
+ * `FAMILY_CLASSIFICATION.L` names `EN 10056-1`, while `PROFILE_FAMILIES.L` is
+ * `[...L, ...IRAM_L]` — two tables merged, with nothing on the rows saying which is which. The
+ * classification is therefore right about most of that family and optimistic about the rest.
+ * Reported here because a selector that quietly disagreed with the catalogue it reads would be
+ * worse than one that inherits a known gap, and fixing it means splitting the array, which is
+ * the catalogue's job and not this module's.
  */
-export type ProfileStandard = 'euronorm' | 'iram' | 'mixed';
-
-export const FAMILY_STANDARD: Record<ProfileFamily, ProfileStandard> = {
-  IPE: 'euronorm', IPN: 'euronorm', HEB: 'euronorm', HEA: 'euronorm', UPN: 'euronorm',
-  W: 'iram', HP: 'iram', M: 'iram', C: 'iram', MC: 'iram', T: 'iram',
-  RHS: 'iram', SHS: 'iram', CHS: 'iram',
-  L: 'mixed',
-};
 
 /**
  * One catalogue row, with its units in the field names.
@@ -68,7 +78,14 @@ export interface ProfileEntry {
   id: ProfileId;
   name: string;
   family: ProfileFamily;
-  standard: ProfileStandard;
+  /** The dimensional standard the numbers come from, e.g. `EN 10365`. Not a design code. */
+  standard: string;
+  /** Who publishes it, which is the axis worth grouping and filtering on. */
+  standardsBody: FamilyClassification['standardsBody'];
+  /** Shape family — the grouping main's own picker uses. */
+  series: SectionSeries;
+  /** How faithfully the outline can be drawn and analysed. */
+  fidelity: GeometryFidelity;
   shape: SectionShape;
   heightMm: number;
   widthMm: number;
@@ -85,8 +102,10 @@ export interface ProfileQuery {
   text?: string;
   /** Empty or absent means every family. */
   families?: readonly ProfileFamily[];
-  /** Empty or absent means every standard. `mixed` families match either. */
-  standards?: readonly Exclude<ProfileStandard, 'mixed'>[];
+  /** Empty or absent means every publishing body. */
+  standardsBodies?: readonly FamilyClassification['standardsBody'][];
+  /** A design code id from `DESIGN_CODES` — keeps only the families that code's practice uses. */
+  designCode?: string;
 }
 
 export interface ProfileGroup {
@@ -105,7 +124,8 @@ export interface ProfileSource {
   list(query?: ProfileQuery): ProfileEntry[];
   byId(id: ProfileId): ProfileEntry | null;
   families(): readonly ProfileFamily[];
-  standardOf(family: ProfileFamily): ProfileStandard;
+  classify(family: ProfileFamily): FamilyClassification;
+  designCodes(): readonly { id: string; label: string }[];
 }
 
 function toEntry(p: SteelProfile): ProfileEntry {
@@ -113,7 +133,10 @@ function toEntry(p: SteelProfile): ProfileEntry {
     id: p.name,
     name: p.name,
     family: p.family,
-    standard: FAMILY_STANDARD[p.family],
+    standard: FAMILY_CLASSIFICATION[p.family].standard,
+    standardsBody: FAMILY_CLASSIFICATION[p.family].standardsBody,
+    series: FAMILY_CLASSIFICATION[p.family].series,
+    fidelity: FAMILY_CLASSIFICATION[p.family].fidelity,
     shape: familyToShape(p.family),
     heightMm: p.h,
     widthMm: p.b,
@@ -134,12 +157,15 @@ const BY_ID = new Map<ProfileId, ProfileEntry>(ENTRIES.map((e) => [e.id, e]));
 export function queryProfiles(query: ProfileQuery = {}): ProfileEntry[] {
   const text = query.text ? norm(query.text) : '';
   const families = query.families?.length ? new Set(query.families) : null;
-  const standards = query.standards?.length ? new Set(query.standards) : null;
+  const bodies = query.standardsBodies?.length ? new Set(query.standardsBodies) : null;
+  // Delegated, not reimplemented: `familiesForCode` is where "this code's practice actually
+  // uses these dimensions" is decided, and it refuses a family whose shape merely looks right.
+  const byCode = query.designCode ? new Set(familiesForCode(query.designCode)) : null;
 
   return ENTRIES.filter((e) => {
     if (families && !families.has(e.family)) return false;
-    // A `mixed` family satisfies either standard, because it genuinely contains both.
-    if (standards && e.standard !== 'mixed' && !standards.has(e.standard)) return false;
+    if (bodies && !bodies.has(e.standardsBody)) return false;
+    if (byCode && !byCode.has(e.family)) return false;
     if (text && !norm(e.name).includes(text)) return false;
     return true;
   });
@@ -168,7 +194,8 @@ export const steelProfileSource: ProfileSource = {
   list: (query) => queryProfiles(query),
   byId: (id) => BY_ID.get(id) ?? null,
   families: () => FAMILY_LIST,
-  standardOf: (family) => FAMILY_STANDARD[family],
+  classify: (family) => FAMILY_CLASSIFICATION[family],
+  designCodes: () => DESIGN_CODES.map((c) => ({ id: c.id, label: c.label })),
 };
 
 /** Every family the catalogue actually has rows for. */

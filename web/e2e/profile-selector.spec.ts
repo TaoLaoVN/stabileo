@@ -82,9 +82,13 @@ test.describe('@smoke the profile selector opens and narrows', () => {
   test('groups are labelled with their family and their standard', async ({ pro: page }) => {
     await openPicker(page);
     await page.getByTestId('profile-search').fill('IPE');
-    // The standard is on the heading because IRAM and Euronorm tables live side by side and
-    // the name alone does not say which one you are in.
-    await expect(page.getByTestId('profile-group-IPE')).toContainText(/euronorm/i);
+    // The standard is on the heading because tables from different bodies live side by side
+    // and the profile name alone does not say which one you are in.
+    //
+    // Asserted as the published DESIGNATION, not as a translated word. It used to read
+    // /euronorm/i, from a three-value axis this branch had hardcoded; `section-catalog.ts`
+    // carries the real standard per family and `EN 10365` is a proper noun in every language.
+    await expect(page.getByTestId('profile-group-IPE')).toContainText('EN 10365');
   });
 
   test('an empty result says what to do about it', async ({ pro: page }) => {

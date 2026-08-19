@@ -7,8 +7,9 @@
 
 import { describe, it, expect } from 'vitest';
 import {
-  queryProfiles, groupByFamily, steelProfileSource, populatedFamilies, FAMILY_STANDARD,
+  queryProfiles, groupByFamily, steelProfileSource, populatedFamilies,
 } from '../catalogue';
+import { FAMILY_CLASSIFICATION } from '../../data/section-catalog';
 import { ALL_PROFILES, FAMILY_LIST } from '../../data/steel-profiles';
 import { resolveProfile } from '../../engine/generators/profile-resolve';
 
@@ -97,19 +98,36 @@ describe('filters', () => {
     }
   });
 
-  it('a standard filter keeps the mixed family, because it genuinely contains both', () => {
-    // `PROFILE_FAMILIES.L` is `[...L, ...IRAM_L]` with nothing on the rows saying which table
-    // each came from. Dropping L from a Euronorm filter would hide European angles; keeping it
-    // in both is the honest read of a merged table.
-    expect(FAMILY_STANDARD.L).toBe('mixed');
-    const euro = queryProfiles({ standards: ['euronorm'] });
-    const iram = queryProfiles({ standards: ['iram'] });
-    expect(euro.some((e) => e.family === 'L')).toBe(true);
-    expect(iram.some((e) => e.family === 'L')).toBe(true);
-    // And a family that belongs to one standard only appears under that one.
-    expect(euro.some((e) => e.family === 'W')).toBe(false);
+  it('a standards-body filter keeps only the families that body publishes', () => {
+    // The axis comes from `section-catalog.ts`, which carries the real dimensional standard
+    // per family. An earlier version of this module hardcoded a three-value axis of its own;
+    // this asserts the delegation, so reintroducing that map fails here.
+    const cen = queryProfiles({ standardsBodies: ['CEN'] });
+    expect(cen.length).toBeGreaterThan(0);
+    for (const e of cen) expect(FAMILY_CLASSIFICATION[e.family].standardsBody).toBe('CEN');
+    const iram = queryProfiles({ standardsBodies: ['IRAM-IAS'] });
+    expect(iram.some((e) => e.family === 'W')).toBe(true);
     expect(iram.some((e) => e.family === 'IPE')).toBe(false);
   });
+
+  it('carries the published standard by name, not a translated word', () => {
+    // `EN 10365` is a designation, not a label: it must survive verbatim into the row.
+    const ipe = steelProfileSource.byId('IPE 200')!;
+    expect(ipe.standard).toBe(FAMILY_CLASSIFICATION.IPE.standard);
+    expect(ipe.standard).toMatch(/EN 10365/);
+    expect(ipe.standardsBody).toBe('CEN');
+  });
+
+  it('a design-code filter delegates to the catalogue rather than guessing', () => {
+    // `familiesForCode` refuses a family whose shape merely looks plausible under a code, and
+    // that judgement is the catalogue's to make.
+    const cirsoc = queryProfiles({ designCode: 'cirsoc-301' });
+    expect(cirsoc.length).toBeGreaterThan(0);
+    const fams = new Set(cirsoc.map((e) => e.family));
+    expect(fams.has('IPN')).toBe(true);
+    expect(fams.has('UPN')).toBe(true);
+  });
+
 });
 
 describe('grouping', () => {
@@ -141,7 +159,8 @@ describe('the source seam', () => {
     expect(typeof steelProfileSource.list).toBe('function');
     expect(typeof steelProfileSource.byId).toBe('function');
     expect(typeof steelProfileSource.families).toBe('function');
-    expect(typeof steelProfileSource.standardOf).toBe('function');
+    expect(typeof steelProfileSource.classify).toBe('function');
+    expect(typeof steelProfileSource.designCodes).toBe('function');
   });
 
   it('an unknown id is null, not a throw', () => {

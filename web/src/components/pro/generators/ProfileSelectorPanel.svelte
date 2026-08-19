@@ -165,7 +165,16 @@
       {#each groups as g (g.key)}
         <p class="grp" data-testid="profile-group-{g.key}">
           {g.key}
-          <span class="std">{t(`profileSelector.standard.${source.standardOf(g.key as ProfileFamily)}`)}</span>
+          <!--
+            The published standard, by name.
+
+            This used to print a translated word from a three-value axis this component
+            owned. `section-catalog.ts` carries the real thing — `EN 10365`, `DIN 1025-1`,
+            `IRAM-IAS U 500-215-6` — and a standard's designation is a proper noun that must
+            not be translated. So it is read from there and shown verbatim.
+          -->
+          <span class="std" title={source.classify(g.key as ProfileFamily).standardsBody}
+                >{source.classify(g.key as ProfileFamily).standard}</span>
         </p>
         {#each g.entries as e (e.id)}
           {@const at = flat.indexOf(e)}
