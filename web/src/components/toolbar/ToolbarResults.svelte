@@ -1,6 +1,6 @@
 <script lang="ts">
   import { uiStore, resultsStore, modelStore } from '../../lib/store';
-  import { activeQuantity, activeRepresentation, representationsFor, showQuantityAs } from '../../lib/store/result-view';
+  import { activeQuantity, activeRepresentation, representationsFor, showQuantityAs, activeStressMeasure, showStressMap, hasLiveColourScale } from '../../lib/store/result-view';
   import { showDiagram } from '../../lib/store/view-mode';
   import ResultsTable from '../tables/ResultsTable.svelte';
   import { t } from '../../lib/i18n';
@@ -97,6 +97,26 @@
    * no room for: the scale, the animation and the view options.
    */
   let { hideDiagrams = false, flat = false }: { hideDiagrams?: boolean; flat?: boolean } = $props();
+
+  /**
+   * Whether any member's material carries a yield strength.
+   *
+   * Asked of the model rather than inferred from an empty picture: "nothing is
+   * painted" has two causes and only one of them is worth telling the user
+   * about.
+   */
+  /** Whether the model contains anything a shell measure could describe. */
+  function hasShells(): boolean {
+    return modelStore.model.plates.size > 0 || modelStore.model.quads.size > 0;
+  }
+
+  function anyMemberHasYield(): boolean {
+    for (const el of modelStore.elements.values()) {
+      const m = modelStore.materials.get(el.materialId);
+      if (m?.fy) return true;
+    }
+    return false;
+  }
 </script>
 
 <!--
@@ -202,17 +222,51 @@
         carry their own scale, and belong to no single ribbon command, so this
         is the only place they can be picked.
       -->
-      {#if resultsStore.diagramType === 'colorMap' && activeQuantity() === null}
+      <!--
+        Which stress the map is painting.
+        
+        Four measures out of one section-stress evaluation. Utilisation is the
+        default because it is the only one that means something on its own —
+        1.00 is the limit, whatever the steel and whatever the section. The
+        other three are absolute stresses, and an absolute stress says nothing
+        until you know what it is being compared against.
+      -->
+      {#if activeStressMeasure()}
+        {@const measure = activeStressMeasure()!}
         <div class="input-group">
-          <label>{t('results.variable')}:</label>
-          <select bind:value={resultsStore.colorMapKind}>
-            <option value="stressRatio">{t('results.resistance')}</option>
-            <option value="vonMises">Von Mises (σ)</option>
-            {#if uiStore.analysisMode === '3d'}
+          <label>{t('results.stressMeasure')}:</label>
+          <select value={measure} onchange={(e) => showStressMap(e.currentTarget.value as never)}>
+            <option value="stressRatio">{t('results.measureUtilisation')}</option>
+            <option value="vonMises">{t('results.measureVonMises')}</option>
+            <option value="sigmaMax">{t('results.measureSigmaMax')}</option>
+            <option value="tauMax">{t('results.measureTauMax')}</option>
+            <!--
+              Offered by the MODEL, not by the mode. It was gated on 3D alone,
+              so Basic — which has no way to create a plate or a quad — listed
+              a shell measure in every 3D model and painted nothing when it was
+              chosen. A measure for elements the model does not contain is not
+              a disabled option, it is a wrong one.
+            -->
+            {#if hasShells()}
               <option value="shellVonMises">{t('results.shellVonMises')}</option>
             {/if}
           </select>
         </div>
+        <!--
+          Utilisation divides by fy, so a model whose members are concrete —
+          or any material with no yield strength entered — cannot produce it.
+          Left alone the map simply painted nothing, which reads as "no stress
+          anywhere" rather than "this cannot be computed".
+        -->
+        {#if measure === 'stressRatio' && !anyMemberHasYield()}
+          <p class="rep-help rep-warn">{t('results.noYield')}</p>
+        {/if}
+        <p class="rep-help">
+          {measure === 'stressRatio' ? t('results.measureUtilisationHelp')
+            : measure === 'vonMises' ? t('results.measureVonMisesHelp')
+            : measure === 'sigmaMax' ? t('results.measureSigmaMaxHelp')
+            : t('results.measureTauMaxHelp')}
+        </p>
       {/if}
         <!--
           How the axial result is DRAWN, next to the result itself.
@@ -278,6 +332,17 @@
           </p>
         {/if}
       <!--
+        The scale is only worth a switch when there is one on screen, so the
+        control appears with it rather than sitting greyed out the rest of the
+        time.
+      -->
+      {#if hasLiveColourScale()}
+        <label class="checkbox-item">
+          <input type="checkbox" bind:checked={uiStore.showColourScale} />
+          {t('results.showScale')}
+        </label>
+      {/if}
+      <!--
         Shown whenever a RESULT is on screen, whatever way it is drawn.
         
         This was a list of ten diagram names, and a list is a thing you forget
@@ -286,7 +351,30 @@
         as if the model had stopped being solved. Asking whether a quantity is
         being shown cannot go out of date when a representation is added.
       -->
-      {#if resultsStore.hasCombinations && (activeQuantity() !== null || resultsStore.diagramType === 'deformed')}
+      <!--
+        The heading only appears with something under it.
+        ──────────────────────────────────────────────────────────
+        Both selectors can be switched off in Settings, and when they were the
+        section still drew "Change results view" over an empty box — a heading
+        for nothing, which reads as a panel that failed to load rather than as
+        a setting the reader chose. What the section shows is now part of
+        whether it is shown at all.
+
+        The secondary carries its own conditions because it overlays a second
+        DIAGRAM: there is nothing to overlay on a deformed shape or on members
+        painted by value, so it is absent there whatever the setting says. It
+        also depends on the primary, which is how the markup nests it and how
+        Settings presents it — the checkbox is disabled while the primary is
+        off, but the stored value survives, so the dependency has to be stated
+        here too rather than assumed from the UI.
+      -->
+      {@const showsPrimary = uiStore.showPrimarySelector}
+      {@const showsSecondary = showsPrimary
+        && uiStore.showSecondarySelector
+        && resultsStore.diagramType !== 'deformed'
+        && activeRepresentation() === 'diagram'}
+      {#if resultsStore.hasCombinations && (showsPrimary || showsSecondary)
+        && (activeQuantity() !== null || resultsStore.diagramType === 'deformed')}
         {@const is3D = uiStore.analysisMode === '3d'}
         {@const caseKeys = is3D ? [...resultsStore.perCase3D.keys()] : [...resultsStore.perCase.keys()]}
         {@const comboKeys = is3D ? [...resultsStore.perCombo3D.keys()] : [...resultsStore.perCombo.keys()]}
@@ -301,7 +389,7 @@
         {/if}
         {#if showResultsViewSub || flat}
           <div class="sub-content">
-            {#if uiStore.showPrimarySelector}
+            {#if showsPrimary}
               <div class="input-group">
                 <!--
                   No visible label: every option names itself ("Simple loads",
@@ -352,7 +440,7 @@
                 nothing to overlay when the result is painted onto the members
                 themselves: two colours on one bar is one colour.
               -->
-              {#if uiStore.showSecondarySelector && resultsStore.diagramType !== 'deformed' && activeRepresentation() === 'diagram'}
+              {#if showsSecondary}
                 <div class="input-group">
                   <label>{t('results.compare')}:</label>
                   <select onchange={(e) => {
@@ -453,6 +541,8 @@
 </div>
 
 <style>
+  .rep-warn { color: var(--st-warn); }
+
   .rep-help {
     margin: 3px 0 0;
     font-size: 0.66rem;
