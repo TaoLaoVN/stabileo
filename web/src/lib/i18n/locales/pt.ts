@@ -361,7 +361,7 @@ const pt: Translations = {
   'landing.navPro': 'PRO',
   'landing.navStatus': 'Estado',
   'landing.proAltAxial': 'O mesmo edifício depois da análise, com o diagrama de esforço normal desenhado sobre cada pilar e seu valor rotulado em cada extremidade.',
-  'landing.proAltModel': 'O Stabileo em 3D mostrando um edifício de concreto armado de sete pavimentos: pilares, vigas, lajes e as cargas distribuídas de cada piso, antes de rodar a análise.',
+  'landing.proAltModel': 'O Stabileo em 3D mostrando um edifício de concreto armado de vários pavimentos: pilares, vigas, lajes e as cargas distribuídas de cada piso, antes de rodar a análise.',
   'landing.proAltRebar': 'Detalhe em 3D de um nó viga-pilar com suas armaduras visíveis: barras longitudinais em vermelho e azul e estribos em laranja, dentro do concreto translúcido.',
   'landing.proH': 'PRO está em desenvolvimento, e já serve para cálculos complexos.',
   'landing.proNext1': 'Detalhamento de armaduras da estrutura completa.',

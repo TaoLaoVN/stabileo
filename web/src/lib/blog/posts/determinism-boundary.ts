@@ -110,6 +110,8 @@ export const determinismBoundary: Post = {
         { k: 'p', t: 'Conviene cerrar con lo que está y lo que no. El solver, el editor, la verificación CIRSOC, el modo educativo y la generación de memorias y planos funcionan hoy en el navegador, en stabileo.com, sin instalar nada y sin cuenta. La capa de agentes está en desarrollo activo: sus rutas corren en desarrollo y prueba contra un backend propio, sobre el mismo solver y los mismos números que todo lo demás, pero ese backend todavía no forma parte del sitio público.' },
         { k: 'p', t: 'El bucle solver-en-el-bucle —el agente propone, resuelve, evalúa y modifica sin intervención humana— está en la hoja de ruta y no está implementado. La cobertura normativa nativa se limita a CIRSOC 201 y 301; el resto es trabajo futuro.' },
         { k: 'p', t: 'El CAD se llevó la parte mecánica del dibujo y la planilla de cálculo la de la aritmética repetitiva, sin llevarse el criterio. El agente es el eslabón siguiente: absorbe el andamiaje mecánico y deja el juicio del lado del ingeniero. Ninguna de estas medidas transfiere la responsabilidad. El número firmado sigue siendo del ingeniero.' },
+
+        { k: 'note', t: 'Esta nota es una adaptación de «Desarrollo de un agente estructural de cálculo sobre un solver verificado» (Chesta, Bertero, Carrone y Kingston), presentado en las JAIE 2026. Los valores citados son salidas del solver de Stabileo y de su módulo CIRSOC 201, tomadas de ese trabajo.' }
       ],
     },
 
@@ -206,6 +208,8 @@ export const determinismBoundary: Post = {
         { k: 'p', t: 'It is worth closing with what exists and what does not. The solver, the editor, the CIRSOC checks, the education mode and the generation of reports and drawings work today in the browser, at stabileo.com, with no installation and no account. The agent layer is in active development: its routes run in development and test against our own backend, over the same solver and the same numbers as everything else, but that backend is not yet part of the public site.' },
         { k: 'p', t: 'The solver-in-the-loop cycle — the agent proposes, solves, evaluates and modifies without human intervention — is on the roadmap and is not implemented. Native code coverage is limited to CIRSOC 201 and 301; the rest is future work.' },
         { k: 'p', t: 'CAD took the mechanical part of drawing and the spreadsheet took the repetitive arithmetic, without taking the judgement. The agent is the next link: it absorbs the mechanical scaffolding and leaves the judgement on the engineer’s side. None of these measures transfers responsibility. The signed number is still the engineer’s.' },
+
+        { k: 'note', t: 'This piece is an adaptation of «Desarrollo de un agente estructural de cálculo sobre un solver verificado» (Chesta, Bertero, Carrone and Kingston), presented at JAIE 2026. The figures quoted are outputs of the Stabileo solver and its CIRSOC 201 module, taken from that work.' }
       ],
     },
 
@@ -302,6 +306,8 @@ export const determinismBoundary: Post = {
         { k: 'p', t: 'Vale fechar com o que existe e o que não existe. O solver, o editor, as verificações CIRSOC, o modo educativo e a geração de memoriais e desenhos funcionam hoje no navegador, em stabileo.com, sem instalar nada e sem conta. A camada de agentes está em desenvolvimento ativo: suas rotas rodam em desenvolvimento e teste contra um backend próprio, sobre o mesmo solver e os mesmos números que todo o resto, mas esse backend ainda não faz parte do site público.' },
         { k: 'p', t: 'O ciclo solver-no-laço — o agente propõe, resolve, avalia e modifica sem intervenção humana — está no roadmap e não está implementado. A cobertura normativa nativa se limita a CIRSOC 201 e 301; o resto é trabalho futuro.' },
         { k: 'p', t: 'O CAD levou a parte mecânica do desenho e a planilha levou a aritmética repetitiva, sem levar o critério. O agente é o elo seguinte: absorve o andaime mecânico e deixa o julgamento do lado do engenheiro. Nenhuma dessas medidas transfere a responsabilidade. O número assinado continua sendo do engenheiro.' },
+
+        { k: 'note', t: 'Esta nota é uma adaptação de «Desarrollo de un agente estructural de cálculo sobre un solver verificado» (Chesta, Bertero, Carrone e Kingston), apresentado nas JAIE 2026. Os valores citados são saídas do solver do Stabileo e do seu módulo CIRSOC 201, tomados desse trabalho.' }
       ],
     },
   },

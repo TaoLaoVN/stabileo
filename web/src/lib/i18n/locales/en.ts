@@ -262,7 +262,7 @@ const en: Record<string, string> = {
   'landing.eduFree': 'The educational core is intended to stay free for educational use.',
   'landing.ebPro': 'PRO MODE',
   'landing.proAltAxial': 'The same building after the analysis, with the axial-force diagram drawn along every column and its value labelled at each end.',
-  'landing.proAltModel': 'Stabileo in 3D showing a seven-storey reinforced-concrete building: columns, beams, slabs and the distributed loads on each floor, before running the analysis.',
+  'landing.proAltModel': 'Stabileo in 3D showing a multi-storey reinforced-concrete building: columns, beams, slabs and the distributed loads on each floor, before running the analysis.',
   'landing.proAltRebar': 'Close-up of a beam-column joint in 3D with its reinforcement visible: longitudinal bars in red and blue and stirrups in orange, inside translucent concrete.',
   'landing.proShotAxialBody': 'Axial force on every column, read straight off the model. Finite elements on a structure of this size already work.',
   'landing.proShotAxialTitle': 'The same building, solved',

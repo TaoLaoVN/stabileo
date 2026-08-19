@@ -9,10 +9,10 @@ import { test, expect, type Page } from '@playwright/test';
  * has no jsdom / happy-dom / testing-library dependency and this workstream may
  * not add one, so a real browser is the only way to assert any of it.
  *
- * Tagging: `@landing`, deliberately NOT `@smoke`. CI's blocking e2e job runs
- * `--grep @smoke` and its opt-in job runs `--grep @slow`, so nothing here
- * changes what CI does. Promoting the landing suite is a shared-workflow
- * decision that has not been taken.
+ * Tagging: `@landing`, which CI's blocking e2e job runs alongside `@smoke`
+ * since 2026-08-19 (see .github/workflows/ci.yml). Before that it ran nowhere
+ * in CI — green locally on every commit and enforced by nobody, which is the
+ * state a suite is in just before it starts rotting.
  *
  * Run locally:
  *   npx playwright test --grep @landing

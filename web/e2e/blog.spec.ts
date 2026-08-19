@@ -11,8 +11,8 @@ import { test, expect, type Page } from '@playwright/test';
  * address bar staying on the post instead of being rewritten to /app/basic by
  * the editor's own URL sync, and the browser's back button.
  *
- * Tagging: `@landing`, matching landing.spec.ts. CI's blocking job runs
- * `--grep @smoke`, so this changes nothing about what CI does.
+ * Tagging: `@landing`, matching landing.spec.ts — which CI's blocking job now
+ * runs alongside `@smoke`.
  *
  * Run locally:
  *   npx playwright test --grep @landing

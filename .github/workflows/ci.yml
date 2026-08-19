@@ -246,9 +246,17 @@ jobs:
         run: npx playwright install --with-deps chromium
 
       # BLOCKING: functional DOM + hook assertions.
-      - name: E2E smoke suite
+      #
+      # `@landing` joined the blocking grep on 2026-08-19. It covers the public
+      # pages — the landing and the blog — and it was green locally on every
+      # commit of the PR that added it while running nowhere in CI, which is
+      # the state a suite is in just before it starts rotting. What it catches
+      # is not cosmetic: a nav link pointing at a section that no longer
+      # exists, an image that 404s, a contact link with a `+` in the number,
+      # copy that fell back to English. It costs roughly two minutes.
+      - name: E2E smoke + landing suites
         working-directory: web
-        run: npx playwright test --grep @smoke
+        run: npx playwright test --grep "@smoke|@landing"
 
       # Heavier suite (408-member model): main + opt-in label only.
       - name: E2E slow suite

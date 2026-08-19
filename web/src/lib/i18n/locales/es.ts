@@ -262,7 +262,7 @@ const es: Record<string, string> = {
   'landing.eduFree': 'La intención es que el núcleo educativo siga siendo gratuito para uso educativo.',
   'landing.ebPro': 'MODO PRO',
   'landing.proAltAxial': 'El mismo edificio después del análisis, con el diagrama de esfuerzo normal dibujado sobre cada columna y su valor rotulado en cada extremo.',
-  'landing.proAltModel': 'Stabileo en 3D mostrando un edificio de hormigón armado de siete niveles: columnas, vigas, losas y las cargas distribuidas de cada piso, antes de correr el análisis.',
+  'landing.proAltModel': 'Stabileo en 3D mostrando un edificio de hormigón armado de varios niveles: columnas, vigas, losas y las cargas distribuidas de cada piso, antes de correr el análisis.',
   'landing.proAltRebar': 'Detalle en 3D de un nudo viga-columna con sus armaduras visibles: barras longitudinales en rojo y azul y estribos en naranja, dentro del hormigón traslúcido.',
   'landing.proShotAxialBody': 'El esfuerzo normal en cada columna, leído sobre el modelo. Resolver por elementos finitos una estructura de este tamaño ya funciona bien.',
   'landing.proShotAxialTitle': 'El mismo edificio, resuelto',
