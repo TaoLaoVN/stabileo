@@ -22,8 +22,9 @@
  *    reinforcement-only edit" directly, instead of inferring it from timing.
  *  - the revision counters replace arbitrary waits with `expect.poll` on real state.
  *
- * Nothing here mutates app state except `loadExample`, which is the same call the
- * examples menu makes. The bundle cost is trivial and the object is absent unless the
+ * Nothing here mutates app state except `loadExample` (the same call the
+ * examples menu makes) and `clearSelection` (the same call pressing Escape
+ * makes). The bundle cost is trivial and the object is absent unless the
  * query flag is present, so production pages never expose it.
  */
 

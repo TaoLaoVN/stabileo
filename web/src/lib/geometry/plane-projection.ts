@@ -92,12 +92,82 @@ export interface SimplifiedModel {
   materials: Map<number, any>;
   sections: Map<number, any>;
   /** Stats about the reduction */
-  stats: { mergedNodes: number; removedElements: number; duplicateElements: number };
+  stats: { mergedNodes: number; removedElements: number; duplicateElements: number; droppedLoads: number };
 }
 
 export type SimplifiedResult = { ok: true; model: SimplifiedModel } | { ok: false; error: string };
 
+/**
+ * The builder's one failure, as a named constant: the store maps it onto an
+ * i18n key for the dialog, while the legacy toolbar modal still toasts the
+ * sentence itself — which is why it stays an English string at the source.
+ */
+export const PROJECTION_COLLAPSE_ERROR =
+  'All elements collapse or are duplicates in this projection. Use 3D mode.';
+
 const MERGE_TOL = 1e-4;
+
+type ReleaseShape = { my: boolean; mz: boolean; t: boolean };
+
+/**
+ * Which local bending axis is the IN-PLANE one for a member, given the plane
+ * its 2D image will live in.
+ *
+ * The 2D solver reads only `release.mz` as the bending hinge, but a 3D model
+ * stores the in-plane hinge under whichever LOCAL axis is normal to the
+ * plane, and that is not always z: with the canonical auto-orient (local z =
+ * global up projected ⊥ the member; see engine/local-axes-3d.ts), a member
+ * lying in the XZ plane has local y as the plane normal, so its in-plane
+ * hinge is `my` — copying releases verbatim would lose it, and would invent
+ * a phantom hinge from the out-of-plane `mz`. YZ is split: horizontal members
+ * get the normal from local y, vertical (Z-aligned) ones from local z, via
+ * the same near-vertical fallback the solver uses.
+ */
+function inPlaneBendingAxis(
+  plane: DrawPlane,
+  dx: number, dy: number, dz: number,
+): 'my' | 'mz' {
+  const L = Math.sqrt(dx * dx + dy * dy + dz * dz);
+  if (L < 1e-10) return 'mz';
+  const ex = [dx / L, dy / L, dz / L];
+  // Plane normal: the axis the plane does not contain.
+  const n = plane === 'xy' ? [0, 0, 1] : plane === 'xz' ? [0, 1, 0] : [1, 0, 0];
+  // Replicate the auto-orient: ez = up projected ⊥ ex, horizontal fallback
+  // for near-vertical members, ey = ez × ex.
+  const up = [0, 0, 1];
+  const dotUp = ex[0] * up[0] + ex[1] * up[1] + ex[2] * up[2];
+  let ezRaw: number[];
+  if (Math.abs(dotUp) > 0.999) {
+    const ref = [1, 0, 0];
+    const dotH = ex[0] * ref[0] + ex[1] * ref[1] + ex[2] * ref[2];
+    ezRaw = [ref[0] - dotH * ex[0], ref[1] - dotH * ex[1], ref[2] - dotH * ex[2]];
+  } else {
+    ezRaw = [up[0] - dotUp * ex[0], up[1] - dotUp * ex[1], up[2] - dotUp * ex[2]];
+  }
+  const ezLen = Math.sqrt(ezRaw[0] ** 2 + ezRaw[1] ** 2 + ezRaw[2] ** 2);
+  if (ezLen < 1e-10) return 'mz';
+  const ez = [ezRaw[0] / ezLen, ezRaw[1] / ezLen, ezRaw[2] / ezLen];
+  const ey = [
+    ez[1] * ex[2] - ez[2] * ex[1],
+    ez[2] * ex[0] - ez[0] * ex[2],
+    ez[0] * ex[1] - ez[1] * ex[0],
+  ];
+  const eyDot = Math.abs(ey[0] * n[0] + ey[1] * n[1] + ey[2] * n[2]);
+  const ezDot = Math.abs(ez[0] * n[0] + ez[1] * n[1] + ez[2] * n[2]);
+  return eyDot >= ezDot ? 'my' : 'mz';
+}
+
+/**
+ * Rewrite a 3D release for the 2D model: the hinge about the plane normal
+ * lands in `mz`, where the 2D solver looks for it, and the out-of-plane
+ * bending release is dropped rather than left to masquerade as an in-plane
+ * hinge. Torsion passes through; it means nothing to the 2D solver either
+ * way, and dropping it would only hide what the 3D model said.
+ */
+function remapReleaseToPlane(r: ReleaseShape | undefined, axis: 'my' | 'mz'): ReleaseShape | undefined {
+  if (!r) return r;
+  return { ...r, my: false, mz: axis === 'my' ? r.my : r.mz };
+}
 
 /**
  * Build a simplified 2D model by projecting 3D geometry onto a plane.
@@ -118,8 +188,12 @@ export function buildSimplified2DModel(
 ): SimplifiedResult {
   // 1. Project nodes and merge coincident ones
   const projected = new Map<number, { x: number; y: number }>();
+  // Original 3D coordinates, kept for the release remap: which local axis is
+  // the in-plane one depends on the member's 3D direction (see step 3).
+  const orig3D = new Map<number, { x: number; y: number; z: number }>();
   for (const n of nodes) {
     projected.set(n.id, to2D(plane, n.x, n.y, n.z ?? 0));
+    orig3D.set(n.id, { x: n.x, y: n.y, z: n.z ?? 0 });
   }
 
   // Group nodes by proximity: map original ID → merged ID
@@ -165,11 +239,30 @@ export function buildSimplified2DModel(
     if (edgeSet.has(edgeKey)) { duplicateElements++; continue; } // duplicate
     edgeSet.add(edgeKey);
 
-    outElements.set(e.id, { ...e, nodeI: nI, nodeJ: nJ });
+    /*
+     * Releases cannot cross the projection verbatim: the 2D solver reads only
+     * `mz` as the bending hinge, and a 3D frame's IN-PLANE hinge lives under
+     * whichever local axis is normal to the plane (for an XZ frame that is
+     * `my`, not `mz`). Remap so the hinge survives and the out-of-plane
+     * release does not become a phantom in-plane one.
+     */
+    let releaseI = e.releaseI;
+    let releaseJ = e.releaseJ;
+    if (releaseI || releaseJ) {
+      const a = orig3D.get(e.nodeI);
+      const b = orig3D.get(e.nodeJ);
+      if (a && b) {
+        const axis = inPlaneBendingAxis(plane, b.x - a.x, b.y - a.y, b.z - a.z);
+        releaseI = remapReleaseToPlane(releaseI, axis);
+        releaseJ = remapReleaseToPlane(releaseJ, axis);
+      }
+    }
+
+    outElements.set(e.id, { ...e, nodeI: nI, nodeJ: nJ, releaseI, releaseJ });
   }
 
   if (outElements.size === 0) {
-    return { ok: false, error: 'All elements collapse or are duplicates in this projection. Use 3D mode.' };
+    return { ok: false, error: PROJECTION_COLLAPSE_ERROR };
   }
 
   // 4. Resolve supports — map to merged nodes, remap 3D types to 2D
@@ -208,6 +301,13 @@ export function buildSimplified2DModel(
   const nodalSums = new Map<number, { fx: number; fy: number; my: number; caseId?: number }>();
   const outLoads: Array<{ type: string; data: Record<string, unknown> }> = [];
   let loadId = 1;
+  /*
+   * Counted, not silently swallowed: a load attached to something the
+   * projection removed, or of a kind 2D cannot carry, is a modelling fact
+   * the user should hear about — "eight loads were left behind" is the
+   * difference between a clean reduction and a quietly weaker structure.
+   */
+  let droppedLoads = 0;
 
   for (const l of loads) {
     if (l.type === 'nodal' || l.type === 'nodal3d') {
@@ -233,7 +333,7 @@ export function buildSimplified2DModel(
     } else if (l.type === 'distributed' || l.type === 'distributed3d') {
       const d = l.data as any;
       const elemId = d.elementId;
-      if (!outElements.has(elemId)) continue; // element was removed
+      if (!outElements.has(elemId)) { droppedLoads++; continue; } // element was removed
       let qI: number, qJ: number;
       if (l.type === 'distributed3d') {
         if (plane === 'xz' || plane === 'yz') { qI = d.qZI ?? 0; qJ = d.qZJ ?? 0; }
@@ -244,14 +344,16 @@ export function buildSimplified2DModel(
       outLoads.push({ type: 'distributed', data: { id: loadId++, elementId: elemId, qI, qJ, angle: d.angle, isGlobal: d.isGlobal, caseId: d.caseId } });
     } else if (l.type === 'pointOnElement') {
       const d = l.data as any;
-      if (!outElements.has(d.elementId)) continue;
+      if (!outElements.has(d.elementId)) { droppedLoads++; continue; }
       outLoads.push({ type: 'pointOnElement', data: { ...d, id: loadId++ } });
     } else if (l.type === 'thermal') {
       const d = l.data as any;
-      if (!outElements.has(d.elementId)) continue;
+      if (!outElements.has(d.elementId)) { droppedLoads++; continue; }
       outLoads.push({ type: 'thermal', data: { ...d, id: loadId++ } });
+    } else {
+      // 3D-only load types (surface3d, pointOnElement3d, …) have no 2D form.
+      droppedLoads++;
     }
-    // Other 3D-only load types (surface3d, etc.) are silently dropped
   }
 
   // Emit summed nodal loads
@@ -271,7 +373,7 @@ export function buildSimplified2DModel(
       loads: outLoads,
       materials,
       sections,
-      stats: { mergedNodes: totalMergedAway, removedElements, duplicateElements },
+      stats: { mergedNodes: totalMergedAway, removedElements, duplicateElements, droppedLoads },
     },
   };
 }

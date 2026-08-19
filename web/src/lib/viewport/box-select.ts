@@ -17,11 +17,12 @@
  *
  * # Why the select mode decides what is collected
  *
- * The 2D viewport has a filter above the canvas — Nodes, Elements, Supports,
- * Loads — and box select only ever gathered nodes and elements, in the Elements
- * branch. In the other three modes dragging did nothing at all: no rectangle
- * appeared, because the drag was never started. The click handlers for those
- * modes ended at "nothing near the cursor, clear the selection".
+ * The viewports have a filter above the canvas — Nodes, Elements, Supports,
+ * Loads — and what a drag gathers follows it: the drag itself starts in every
+ * mode, only the gathering is filtered by kind. (That was not always so. 2D
+ * box select used to gather nodes and elements in the Elements branch alone,
+ * and in the other three modes dragging did nothing at all: no rectangle
+ * appeared, because the drag was never started.)
  *
  * The gathering is filtered by mode rather than done wholesale for a specific
  * reason: what is highlighted has to be what gets deleted. A marquee in

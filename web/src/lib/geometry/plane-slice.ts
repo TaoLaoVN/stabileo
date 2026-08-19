@@ -184,8 +184,8 @@ export function planeOffsets(
       value: g.value,
       nodes: g.nodes,
       elements: counts.get(g.value) ?? 0,
-      supports: sup.get(g.value) ?? 0,
       loads: loadCount.get(g.value) ?? 0,
+      supports: sup.get(g.value) ?? 0,
     }))
     .sort((a, b) => a.value - b.value);
 }
@@ -195,21 +195,24 @@ export interface SliceStats {
   crossingElements: number;
   /** Members left behind because they lie in a different plane entirely. */
   elsewhereElements: number;
+  /**
+   * Loads left behind: attached to nodes or members the cut did not take, or
+   * of a kind 2D cannot carry (a surface load on a quad, say). Counted
+   * because an unloaded frame solves beautifully and is quietly wrong.
+   *
+   * What this does NOT count: plates and quads themselves. They are never
+   * handed to the slice (the caller passes nodes/elements/supports/loads
+   * only), so a cut silently leaves them in the store rather than dropping
+   * them — and surface loads attached to one ARE counted above, by having no
+   * node or member the cut can follow.
+   */
+  droppedLoads: number;
   /** Nodes that came through the cut. */
   nodes: number;
   /** Members that came through the cut. */
   elements: number;
   /** Loads that came through the cut. */
   loads: number;
-  /**
-   * Loads left behind, because what they acted on did not survive the cut.
-   *
-   * The counterpart of `crossingElements`, and the one that matters more. A cut
-   * that loses its supports fails loudly — the solver refuses. A cut that loses
-   * its LOAD solves, reports zero everywhere, and reads as a safe structure.
-   * Reported so the caller can say so.
-   */
-  droppedLoads: number;
 }
 
 export type SliceResult =
@@ -268,11 +271,14 @@ export function sliceModelAtPlane(
   /*
    * Only what the cut keeps is handed on. Supports on nodes that did not
    * survive, and loads on members that did not, would otherwise arrive
-   * referring to things the 2D model has never heard of.
+   * referring to things the 2D model has never heard of. What is filtered
+   * out here is COUNTED — with what the builder itself cannot carry added
+   * on — because "the cut took one frame" is only half the story when the
+   * loads stayed behind.
    */
+  const allLoads = [...loads];
   const keptElementIds = new Set(keptElements.map((e) => e.id));
   const keptSupports = [...supports].filter((s) => inPlane.has(s.nodeId));
-  const allLoads = [...loads];
   const keptLoads = allLoads.filter((l) => {
     const d = l.data as { nodeId?: number; elementId?: number };
     if (d.nodeId !== undefined) return inPlane.has(d.nodeId);
@@ -300,13 +306,13 @@ export function sliceModelAtPlane(
     slice: {
       crossingElements: crossing,
       elsewhereElements: elsewhere,
+      droppedLoads: (allLoads.length - keptLoads.length) + built.model.stats.droppedLoads,
       nodes: built.model.nodes.size,
       elements: built.model.elements.size,
       // Counted off what the SLICE kept, not off `built.model`: the 2D build can
       // drop a load of its own accord, and folding the two together would report
       // one number for two different decisions.
       loads: keptLoads.length,
-      droppedLoads: allLoads.length - keptLoads.length,
     },
   };
 }

@@ -18,18 +18,18 @@
    */
   import { resultsStore, uiStore } from '../lib/store';
   import { colourScaleSource } from '../lib/store/result-view';
+  import { COLOUR_RAMP_STOPS, OVER_SCALE_RGB } from '../lib/three/colour-ramp';
   import { t } from '../lib/i18n';
 
-  /** Stops of the ramp the maps paint: blue → green → yellow → red. */
-  const STOPS = [
-    { at: 0, css: 'rgb(0,255,200)' },
-    { at: 0.25, css: 'rgb(0,255,0)' },
-    { at: 0.5, css: 'rgb(255,255,0)' },
-    { at: 0.75, css: 'rgb(255,128,0)' },
-    { at: 1, css: 'rgb(255,0,0)' },
-  ];
+  /**
+   * The gradient is drawn from the SAME stops the painters interpolate — one
+   * ramp, defined once in lib/three/colour-ramp. A legend with its own copy
+   * of the ramp is a legend describing a map nobody is showing.
+   */
+  const gradient = `linear-gradient(to top, ${COLOUR_RAMP_STOPS.map((s) => `rgb(${s.rgb.join(',')}) ${s.at * 100}%`).join(', ')})`;
 
-  const gradient = `linear-gradient(to top, ${STOPS.map((s) => `${s.css} ${s.at * 100}%`).join(', ')})`;
+  /** The "past the top of the scale" colour, same source as the painters. */
+  const OVER_SCALE_CSS = `rgb(${OVER_SCALE_RGB.join(',')})`;
 
   /**
    * The published scale, but only while it still describes what is on screen.
@@ -44,6 +44,15 @@
     const s = resultsStore.colourScale;
     return s && s.source === colourScaleSource() ? s : null;
   });
+
+  /**
+   * Utilisation tops out at 1.00 — 100% of fy — but a member can demand MORE
+   * than that, and the map paints it magenta, off the top of the bar. A bar
+   * that ends at red with no word about the magenta above it leaves the most
+   * important colour on screen unexplained, so the scale that can produce it
+   * gets a cap entry.
+   */
+  const overScale = $derived(scale?.source === 'colorMap:stressRatio');
 
   /**
    * Four labels rather than a continuous axis: a bar 90 px tall cannot carry
@@ -71,9 +80,17 @@
 </script>
 
 {#if scale && uiStore.showColourScale}
-  <div class="cs-legend" aria-label={t('results.showScale')}>
-    <div class="cs-bar" style="background: {gradient}"></div>
+  <div class="cs-legend" aria-label={t('results.colourScaleLegend')}>
+    <div class="cs-rail">
+      {#if overScale}
+        <div class="cs-cap" style="background: {OVER_SCALE_CSS}"></div>
+      {/if}
+      <div class="cs-bar" style="background: {gradient}"></div>
+    </div>
     <div class="cs-ticks">
+      {#if overScale}
+        <span class="cs-tick cs-cap-label">{t('results.overScale')}</span>
+      {/if}
       {#each ticks as tick}
         <span class="cs-tick" style="bottom: calc({tick.at * 100}% - 0.45em)">{tick.label}</span>
       {/each}
@@ -102,6 +119,26 @@
     height: 90px;
     border: 1px solid var(--st-hair-strong);
     border-radius: 2px;
+  }
+
+  /* Bar plus, for utilisation, the magenta "past fy" cap above it. */
+  .cs-rail {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+  }
+
+  .cs-cap {
+    width: 14px;
+    height: 10px;
+    border: 1px solid var(--st-hair-strong);
+    border-radius: 2px;
+  }
+
+  /* Sits above the 1.00 tick, level with the cap it names. */
+  .cs-cap-label {
+    bottom: calc(100% + 0.5em);
+    white-space: nowrap;
   }
 
   .cs-ticks {

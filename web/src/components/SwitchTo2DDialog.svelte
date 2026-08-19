@@ -27,6 +27,7 @@
     needsPlaneChoice, collapsedByPlane, cutsOn, projectOnto, sliceAt,
     eraseAndSwitch, switchPlain, type DrawPlane,
   } from '../lib/store/switch-2d';
+  import { PROJECTION_COLLAPSE_ERROR } from '../lib/geometry/plane-projection';
   import { t } from '../lib/i18n';
 
   let { open = $bindable(false) }: { open?: boolean } = $props();
@@ -60,7 +61,13 @@
 
   /** The cut the typed distance names, if it names one. */
   const matching = $derived(
-    offsetValid ? cuts.find((c) => Math.abs(c.value - offset!) < 1e-6) ?? null : null,
+    /*
+     * Tolerance matched to what the field SHOWS: fmt rounds to three
+     * decimals, so a chip for 2.5455 types "2.545"/"2.546" back and must
+     * still light up. 1e-3 is also the slice tolerance itself, so two
+     * distinct cuts can never sit inside it.
+     */
+    offsetValid ? cuts.find((c) => Math.abs(c.value - offset!) < 1e-3) ?? null : null,
   );
 
   /** What the model carries, to say how much of it a cut leaves behind. */
@@ -81,7 +88,16 @@
       ? projectOnto(plane)
       : offsetValid ? sliceAt(plane, offset!) : { ok: false as const, error: 'slice.noOffset' };
 
-    if (!outcome.ok) { error = outcome.error; return; }
+    /*
+     * The builder's failure arrives as an English sentence (the legacy toolbar
+     * modal toasts it verbatim, so it cannot become a key at the source). Here
+     * it becomes one, so every locale gets the translation instead of a raw
+     * `switch2d.All elements collapse…` fallback.
+     */
+    if (!outcome.ok) {
+      error = outcome.error === PROJECTION_COLLAPSE_ERROR ? 'slice.allCollapse' : outcome.error;
+      return;
+    }
     close();
   }
 
@@ -152,10 +168,16 @@
           <div class="s2d-slice">
             <label class="s2d-offset">
               <span class="s2d-offset-label">{normal} =</span>
+              <!--
+                NOT bind:value: on a numeric input Svelte coerces the binding
+                to number | null, and offsetText is a string everywhere else
+                (trim, fmt) — the first keystroke would crash the dialog.
+              -->
               <input
                 type="number"
                 step="any"
-                bind:value={offsetText}
+                value={offsetText}
+                oninput={(e) => (offsetText = e.currentTarget.value)}
                 placeholder={cuts.length ? fmt(cuts[0].value) : '0'}
                 data-testid="s2d-offset"
               />

@@ -1,3 +1,8 @@
+<script module lang="ts">
+  /* Unique ids for the tip → trigger association below. */
+  let helpTipSeq = 0;
+</script>
+
 <script lang="ts">
   /**
    * A hover explanation for a control that cannot explain itself.
@@ -40,6 +45,15 @@
   let open = $state(false);
   let timer: ReturnType<typeof setTimeout> | null = null;
 
+  /*
+   * role="tooltip" only reaches a screen reader if the trigger points at it,
+   * and the trigger here is whatever the caller wrapped — a snippet this
+   * component cannot put attributes on. So the association is made at the
+   * moment it matters: focus opens the tip, and the focused element gets
+   * aria-describedby for exactly as long as it keeps the focus.
+   */
+  const tipId = `helptip-${++helpTipSeq}`;
+
   function arm() {
     if (timer) clearTimeout(timer);
     timer = setTimeout(() => { open = true; }, delay);
@@ -48,6 +62,16 @@
   function disarm() {
     if (timer) { clearTimeout(timer); timer = null; }
     open = false;
+  }
+
+  function onFocusIn(e: FocusEvent) {
+    open = true;
+    (e.target as HTMLElement | null)?.setAttribute?.('aria-describedby', tipId);
+  }
+
+  function onFocusOut(e: FocusEvent) {
+    (e.target as HTMLElement | null)?.removeAttribute?.('aria-describedby');
+    disarm();
   }
 
   /* A pending timer that fires after the component is gone would set state on
@@ -60,12 +84,12 @@
   class="ht-wrap"
   onmouseenter={arm}
   onmouseleave={disarm}
-  onfocusin={() => (open = true)}
-  onfocusout={disarm}
+  onfocusin={onFocusIn}
+  onfocusout={onFocusOut}
 >
   {@render children?.()}
   {#if open}
-    <span class="ht-tip" class:right={side === 'right'} role="tooltip">{text}</span>
+    <span class="ht-tip" class:right={side === 'right'} id={tipId} role="tooltip">{text}</span>
   {/if}
 </span>
 

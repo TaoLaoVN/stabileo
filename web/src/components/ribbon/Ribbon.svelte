@@ -1,7 +1,7 @@
 <script lang="ts">
   import { t } from '../../lib/i18n';
   import { showDiagram, armTool } from '../../lib/store/view-mode';
-  import { commandShowsQuantity, showStressMap, activeStressMeasure } from '../../lib/store/result-view';
+  import { commandShowsQuantity, showStressMap, activeMapMeasure } from '../../lib/store/result-view';
   import { needsPlaneChoice, switchPlain, hasBackup, restore3D } from '../../lib/store/switch-2d';
   import { TWO_D_INTERNAL_FORCE_LABELS as F2D } from '../../lib/geometry/coordinate-system';
   import { uiStore, EDIT_TOOLS } from '../../lib/store/ui.svelte';
@@ -452,7 +452,10 @@
     }
     // Solve OPENS Results but is not a state — it is an action you run, and a
     // lit Solve while the panel happens to be open would read as "solving".
-    if (cmd.stressMap) return solved && activePanel === 'results' && activeStressMeasure() !== null;
+    // The Stress command owns the shell contours too: they are chosen in the
+    // same select, so a map it cannot claim would leave panel and ribbon
+    // disagreeing about whether anything is on screen.
+    if (cmd.stressMap) return solved && activePanel === 'results' && activeMapMeasure() !== null;
     if (cmd.id === 'solve') return false;
     if (cmd.panel) return activePanel === cmd.panel;
     return false;  // `dim` is a switch, not a state: it never lights up.

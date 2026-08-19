@@ -127,6 +127,10 @@ describe('every cut of every 3D model', { timeout: 120_000 }, () => {
   for (const name of MODELS) {
     it(`${name}: cuts on all three planes`, () => {
       const model = load(name);
+      // Counted per model, not against the accumulator: reports.length grows
+      // with every test, so asserting on it would pass vacuously from the
+      // second model on.
+      const before = reports.length;
       for (const plane of ['xy', 'xz', 'yz'] as DrawPlane[]) {
         const offs = planeOffsets(plane, model.nodes.values(), model.elements.values());
         for (const o of offs) {
@@ -139,7 +143,7 @@ describe('every cut of every 3D model', { timeout: 120_000 }, () => {
           });
         }
       }
-      expect(reports.length).toBeGreaterThan(0);
+      expect(reports.length).toBeGreaterThan(before);
     });
   }
 

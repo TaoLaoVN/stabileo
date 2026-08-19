@@ -19,6 +19,7 @@
   import { drawModeShape, drawPlasticHinges } from '../lib/canvas/draw-modes';
   import { computeElementStress } from '../lib/store/results.svelte';
   import { colourScaleSource } from '../lib/store/result-view';
+  import { colourRampCss, colourMapUnit } from '../lib/three/colour-ramp';
   import {
     drawGrid as _drawGrid,
     drawAxes as _drawAxes,
@@ -513,18 +514,17 @@
        * number derived twice is two numbers waiting to disagree.
        */
       resultsStore.setColourScale(globalMax > 1e-10
-        ? { max: globalMax, unit: colourScaleUnit(kind), source: colourScaleSource() }
+        ? { max: globalMax, unit: colourMapUnit(kind), source: colourScaleSource() }
         : null);
 
       if (globalMax > 1e-10) {
         for (const [eid, val] of elemMaxes) {
-          const ratio = Math.min(val / globalMax, 1.5); // clamp for stress ratio overflow
-          const norm = Math.min(ratio, 1.0);
-          // Blue (low) → Green → Yellow → Red (high)
-          const r = norm < 0.5 ? Math.round(norm * 2 * 255) : 255;
-          const g = norm < 0.5 ? 255 : Math.round((1 - (norm - 0.5) * 2) * 255);
-          const b = norm < 0.25 ? Math.round((1 - norm * 4) * 200) : 0;
-          colorMapOverrides.set(eid, ratio > 1.0 ? `rgb(255,0,255)` : `rgb(${r},${g},${b})`);
+          /*
+           * One ramp for both viewports and the legend (lib/three/colour-ramp).
+           * Unclamped on purpose: a utilisation past 1.00 comes back magenta —
+           * "past the limit", not "red, but more so".
+           */
+          colorMapOverrides.set(eid, colourRampCss(val / globalMax));
         }
       }
     }
@@ -1323,19 +1323,6 @@
     currentFrameLabels = undefined;
   }
 
-
-  /**
-   * The unit of whatever the colour map is painting.
-   *
-   * Utilisation is a ratio and has none — labelling it "1.00 MPa" would be
-   * worse than labelling it nothing at all.
-   */
-  function colourScaleUnit(kind: string): string {
-    if (kind === 'stressRatio') return '';
-    if (kind === 'vonMises' || kind === 'sigmaMax' || kind === 'tauMax') return 'MPa';
-    if (kind === 'moment' || kind === 'momentY' || kind === 'momentZ' || kind === 'torsion') return 'kN·m';
-    return 'kN';
-  }
 
   function drawGrid() {
     _drawGrid(ctx!, width, height, uiStore.gridSize, (wx, wy) => uiStore.worldToScreen(wx, wy), (sx, sy) => uiStore.screenToWorld(sx, sy));
@@ -2226,9 +2213,13 @@
            * select — it is a query about one point — so a marquee armed in
            * that mode falls back to elements rather than selecting nothing.
            */
-          kinds: (uiStore.selectMode === 'stress'
-            ? ['elements']
-            : [...uiStore.selectKinds]) as BoxSelectMode[],
+          kinds: uiStore.selectMode === 'stress'
+            ? (['elements'] as BoxSelectMode[])
+            // `SelectMode` is wider than `BoxSelectMode` (it adds 'shells' and
+            // 'stress'), so narrow with a type predicate rather than a cast.
+            : [...uiStore.selectKinds].filter(
+                (k): k is BoxSelectMode => k !== 'shells' && k !== 'stress',
+              ),
           toScreen: (p) => uiStore.worldToScreen(p.x, p.y),
           model: {
             nodes: [...modelStore.nodes.values()].map((n) => {

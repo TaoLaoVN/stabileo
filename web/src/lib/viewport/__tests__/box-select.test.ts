@@ -345,6 +345,40 @@ describe('a model with depth', () => {
     expect(run3d(lower, true, 'loads').loads.has(200)).toBe(false);
     expect(run3d(lower, false, 'loads').loads.has(200)).toBe(true);
   });
+
+  it('stations a partial load by the TRUE length, not the plan length', () => {
+    /*
+     * A member running (0,0,0) → (6,0,8): 10 m long, 6 m in plan. A
+     * distributed load over a = 3..6 m sits at t = 0.3..0.6 of the member —
+     * z = 2.4..4.8, screen y = 76..52 under this projection. Measured against
+     * the 6 m plan length instead, the same load would read as t = 0.5..1.0 —
+     * z = 4..8, screen y = 60..20 — and every assertion below flips. (The
+     * full-length loads in the neighbouring tests cannot catch this: t = 0..1
+     * is the whole member under ANY length.)
+     */
+    const inclined: BoxSelectModel = {
+      nodes: [{ id: 1, x: 0, y: 0, z: 0 }, { id: 2, x: 6, y: 0, z: 8 }],
+      elements: [{ id: 1, nodeI: 1, nodeJ: 2 }],
+      supports: [],
+      loads: [{ type: 'distributed', data: { id: 201, elementId: 1, a: 3, b: 6 } }],
+      getNode: (id) => [{ id: 1, x: 0, y: 0, z: 0 }, { id: 2, x: 6, y: 0, z: 8 }].find((n) => n.id === id),
+      getElement: (id) => (id === 1 ? { nodeI: 1, nodeJ: 2 } : undefined),
+    };
+    const runInc = (rect: ScreenRect, isWindow: boolean) =>
+      boxSelect({ rect, isWindow, kinds: ['loads'], model: inclined, toScreen: project });
+
+    // A window over the whole projected member takes the load (control: this
+    // fails only if the load is dropped outright, e.g. z ignored on a member
+    // with no plan length).
+    expect(runInc({ x1: -10, y1: 10, x2: 70, y2: 110 }, true).loads.has(201)).toBe(true);
+    // A net through the LOWER half of the projection (screen y 62..90) clips
+    // the true loaded stretch (y 52..76) — but would miss the plan-length one
+    // (y 20..60).
+    expect(runInc({ x1: -10, y1: 62, x2: 70, y2: 90 }, false).loads.has(201)).toBe(true);
+    // A net through the UPPER half (screen y 30..50) touches nothing of the
+    // true stretch — but would clip the plan-length one.
+    expect(runInc({ x1: -10, y1: 30, x2: 70, y2: 50 }, false).loads.has(201)).toBe(false);
+  });
 });
 
 describe('more than one kind at a time', () => {

@@ -47,13 +47,17 @@
   <p class="sel-intro">{uiStore.multiKindSelect ? t('selection.multiHelp') : t('selection.intro')}</p>
 
   <!--
-    Radios become checkboxes with the switch above, because the question
-    changes: "which one" and "which ones" are different questions and a control
-    that looks the same for both teaches the wrong thing about what it does.
+    Plain toggle buttons, not radios-that-become-checkboxes. A radiogroup
+    owes the keyboard roving tabindex and arrow-key movement, which this list
+    never implemented — and a role that promises behaviour it does not have
+    is worse than a plainer one that tells the truth. `aria-pressed` still
+    says which kinds are on; that exactly one is on in single-kind mode is
+    the store's invariant (applySelectMode / toggleSelectKind), not the
+    markup's.
   -->
   <div
     class="sel-list"
-    role={uiStore.multiKindSelect ? 'group' : 'radiogroup'}
+    role="group"
     aria-label={t('ribbon.selection')}
   >
     {#each MODES as m}
@@ -61,8 +65,7 @@
       <button
         class="sel-item"
         class:on
-        role={uiStore.multiKindSelect ? 'checkbox' : 'radio'}
-        aria-checked={on}
+        aria-pressed={on}
         onclick={() => uiStore.toggleSelectKind(m.id)}
         data-testid={`select-mode-${m.id}`}
       >
