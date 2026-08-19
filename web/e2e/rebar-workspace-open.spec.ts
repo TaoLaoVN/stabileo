@@ -190,8 +190,12 @@ test('@slow the 3-D workspace opens without freezing the window', async ({ pro: 
      * the click handler, synchronously, before the browser has a frame to give — so it is
      * blocked UI, millisecond for millisecond. The quadratic put 1 700 ms there. The per-row
      * tripwire of 1 500 ms stays just below that signature and far above the linear form
-     * (44–235 ms measured, isolated, across two machines); the 500 ms guard on the MEDIAN
-     * below is what watches the everyday cost.
+     * (44–235 ms measured, isolated, across two machines); the everyday cost is watched by
+     * the 500 ms guard on the MEDIAN of rows 2–4 below, which is where three samples of the
+     * same document make a median mean something.
+     *
+     * This assertion is also what makes a missing measurement loud: `expect(undefined)` fails
+     * here, so the median below can index `phases.document` without a sentinel.
      *
      * Everything after `geometry` is the GPU materialising 20 917 tubes and 39 240 markers,
      * which on this runner's software rasteriser costs several times what it costs on real
@@ -215,20 +219,39 @@ test('@slow the 3-D workspace opens without freezing the window', async ({ pro: 
   }
 
   /**
-   * The everyday-cost guard goes on the MEDIAN of the four opens, not on each row.
+   * The everyday-cost guard goes on the MEDIAN of the rows that measure the SAME
+   * document — which is rows 2–4, not all four.
    *
-   * Rows 2–4 assemble the same document, so the four rows are four samples of one
-   * operation. Asserting each row against 500 ms made the suite hostage to a single
-   * unlucky sample: this test failed on CI at 501.2 ms — 0.24 % over — because one
-   * synchronous page-side phase absorbs a CPU-steal or GC pause millisecond for
-   * millisecond, and a shared runner under full-suite load hands those out freely.
-   * One spiked row is load noise (isolated runs measure 44–235 ms on every row); a
-   * genuinely slower builder moves ALL four rows, and the median with it. A GC pause
-   * moves one. That is the distinction the median buys, and it is the whole reason
-   * this assertion has its shape — do not "fix" the next flake by raising the number.
+   * Row 1 assembles a different, smaller document: `global design only`, before the
+   * floor design adds slabs, walls and foundations. Rows 2–4 all assemble the model
+   * that exists after `runFloorDesign`, so those three are three samples of one
+   * operation and are the ones a median means anything over. Pooling row 1 with them
+   * would be averaging two different quantities and calling the result a baseline.
+   *
+   * Why a median at all: asserting each row against 500 ms made the suite hostage to a
+   * single unlucky sample. This test failed CI at 501.2 ms — 0.24 % over — because the
+   * phase is synchronous page-side JS and absorbs a CPU steal or GC pause millisecond
+   * for millisecond, which a shared runner under full-suite load hands out freely. One
+   * spiked row is load noise (isolated runs measure 44–235 ms on every row); a
+   * genuinely slower builder moves all three and the median with them. That is the
+   * distinction the median buys, and it is the whole reason this assertion has its
+   * shape — do not "fix" the next flake by raising the number.
+   *
+   * What this deliberately does NOT guard: an everyday-cost regression confined to row
+   * 1 alone, anywhere below the 1 500 ms tripwire. One cold sample of a different
+   * document cannot carry a tight bound without being exactly as flaky as the per-row
+   * 500 ms was, so it carries the tripwire only. The quadratic this suite exists to
+   * catch is in the shared assembly path and would move rows 2–4 as well.
    */
-  const documentTimes = rows.map(([, r]) => r.phases.document ?? Number.POSITIVE_INFINITY)
-    .sort((a, b) => a - b);
-  const median = (documentTimes[1] + documentTimes[2]) / 2;
-  expect(median, 'the median document assembly stays under 500 ms').toBeLessThan(500);
+  expect(rows, 'four opens, three of them of the same document').toHaveLength(4);
+  const sameDocument = rows.slice(1);
+
+  // No sentinel for a missing measurement: the per-row assertion above already fails
+  // on `undefined`, so a broken instrument cannot reach this line. The +Infinity this
+  // used to substitute was worse than nothing — with one row missing it sorts to the
+  // end and drops straight out of the median, which is the failure it claimed to catch.
+  const documentTimes = sameDocument.map(([, r]) => r.phases.document!).sort((a, b) => a - b);
+  const median = documentTimes[1];
+  expect(median, `the median of ${documentTimes.map(Math.round).join('/')} ms stays under 500 ms`)
+    .toBeLessThan(500);
 });
