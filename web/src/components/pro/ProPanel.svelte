@@ -751,7 +751,10 @@
     shells: 'pro.tabShells', materials: 'pro.tabMaterials', sections: 'pro.tabSections',
     supports: 'pro.tabSupports', constraints: 'pro.tabConstraints', loads: 'pro.tabLoads',
     advanced: 'ribbon.advanced', results: 'ribbon.results', design: 'pro.tabDesign',
-    connections: 'pro.tabConnections', diagnostics: 'pro.tabDiagnostics',
+    // The panel's heading follows the command that opens it. Leaving it at
+    // `pro.tabConnections` would have put "Uniones metálicas" on the ribbon and "Conexiones"
+    // on the panel it opens, which is two names for one place.
+    connections: 'proRibbon.cmdSteelJoints', diagnostics: 'pro.tabDiagnostics',
   };
 </script>
 
