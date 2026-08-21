@@ -177,3 +177,73 @@ describe('every cut of every 3D model', { timeout: 120_000 }, () => {
     expect(solved / total).toBeGreaterThan(0.3);
   });
 });
+
+/**
+ * Load accounting, over the same library.
+ *
+ * A cut that keeps its supports fails LOUDLY when it is wrong — the solver
+ * refuses. A cut that keeps no LOAD fails quietly: it solves, every result is
+ * zero, and the utilisation map paints it uniformly safe. The dialog warns
+ * about that, and the warning is only as good as the count it is gated on.
+ *
+ * That count used to be a count of load OBJECTS. A load survives a cut
+ * whenever the thing it acts on survives, but it carries only its in-plane
+ * component into the frame — so a roof load pointing down global Z survived a
+ * horizontal cut and acted on nothing. Seven cuts of this library advertised
+ * between one and forty loads and produced a frame carrying zero, with the
+ * warning silent on every one.
+ */
+describe('load accounting across the library', { timeout: 120_000 }, () => {
+  /** Everything the produced 2D model actually carries, summed. */
+  const magnitude = (loads: Array<{ data: Record<string, unknown> }>): number => {
+    let m = 0;
+    for (const l of loads) {
+      for (const k of ['qI', 'qJ', 'fx', 'fz', 'p', 'my']) {
+        m += Math.abs(Number((l.data as Record<string, unknown>)[k] ?? 0));
+      }
+    }
+    return m;
+  };
+
+  it('no cut advertises load and delivers a frame carrying none', () => {
+    let checked = 0;
+    for (const name of MODELS) {
+      const model = load(name);
+      if (!model.loads.length) continue;
+      for (const plane of ['xy', 'xz', 'yz'] as DrawPlane[]) {
+        for (const cut of planeOffsets(
+          plane, model.nodes.values(), model.elements.values(),
+          model.supports.values(), model.loads,
+        )) {
+          if (cut.elements === 0) continue;
+          const r = sliceModelAtPlane(
+            plane, cut.value, model.nodes.values(), model.elements.values(),
+            model.supports.values(), model.loads, model.materials, model.sections,
+          );
+          if (!r.ok) continue;
+          checked++;
+          const where = `${name} ${plane}=${cut.value}`;
+
+          // The one that matters: if the dialog says there is load, there is.
+          if (cut.loads > 0) {
+            expect(magnitude(r.model.loads), `${where} advertised ${cut.loads} loads`)
+              .toBeGreaterThan(0);
+          }
+
+          /*
+           * The preview is exact about ZERO and approximate above it — it runs
+           * before the projection, so it cannot know which members will
+           * collapse or duplicate away, and a load on one of those goes with
+           * it. Four cuts of this library differ by a few. What has to hold
+           * exactly is the equivalence the warning is gated on, both ways.
+           */
+          expect(cut.loads === 0, `${where}`).toBe(r.slice.loads === 0);
+
+          // And nothing may simply vanish from the accounting.
+          expect(r.slice.loads + r.slice.droppedLoads, `${where}`).toBe(model.loads.length);
+        }
+      }
+    }
+    expect(checked, 'the sweep actually examined cuts').toBeGreaterThan(50);
+  });
+});

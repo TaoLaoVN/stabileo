@@ -424,3 +424,78 @@ describe('a released member keeps its hinge through the cut', () => {
     expect(r.model.elements.get(10)!.releaseI).toEqual(rel(false, true));
   });
 });
+
+/**
+ * A load that survives the cut but carries nothing must not count as kept.
+ *
+ * This is the failure the dropped-load count was written to prevent and did
+ * not. A load survives whenever the thing it acts on survives, but it carries
+ * only its IN-PLANE component into the frame: a roof load pointing down the
+ * global Z is nothing at all to a horizontal frame. So a cut could advertise
+ * forty loads, "keep" all forty, and produce a model carrying zero — with the
+ * zero-load warning silent, because it is gated on that same count.
+ *
+ * Counting objects instead of effect is what made it invisible.
+ */
+describe('load is counted by what it carries, not by what survives', () => {
+  /** A vertical (global Z) distributed load on the y = 0 frame's rafter. */
+  const VERTICAL = [
+    { type: 'distributed3d', data: { id: 300, elementId: 11, qYI: 0, qYJ: 0, qZI: -10, qZJ: -10 } },
+  ];
+
+  it('an XZ cut keeps it, because Z lies in that plane', () => {
+    expect(planeOffsets('xz', NODES, ELEMENTS, SUPPORTS, VERTICAL).find((o) => o.value === 0)?.loads)
+      .toBe(1);
+    const r = sliceModelAtPlane('xz', 0, NODES, ELEMENTS, SUPPORTS, VERTICAL, MATERIALS, SECTIONS);
+    expect(r.ok).toBe(true);
+    if (!r.ok) return;
+    expect(r.slice.loads).toBe(1);
+    expect(r.slice.droppedLoads).toBe(0);
+  });
+
+  it('an XY cut does not, because a vertical load is nothing to a horizontal frame', () => {
+    // Same load, same members, a plane that cannot hold it. This has to read
+    // zero, or the warning gated on it never fires.
+    for (const o of planeOffsets('xy', NODES, ELEMENTS, SUPPORTS, VERTICAL)) {
+      expect(o.loads, `offset ${o.value}`).toBe(0);
+    }
+    const r = sliceModelAtPlane('xy', 4, NODES, ELEMENTS, SUPPORTS, VERTICAL, MATERIALS, SECTIONS);
+    if (r.ok) {
+      expect(r.slice.loads).toBe(0);
+      expect(r.slice.droppedLoads).toBe(1);
+    }
+  });
+
+  it('the preview is exact about ZERO, which is what the warning needs', () => {
+    /*
+     * Not "advertised equals kept" — that is false in general and I had
+     * claimed it. The preview runs before the projection, so it cannot know
+     * about members that collapse or duplicate away, and a load on one of
+     * those goes with it. Four cuts of the shipped library disagree by a few.
+     *
+     * What must hold exactly is the equivalence the zero-load warning is
+     * gated on, in both directions: a cut that will carry nothing has to
+     * count zero (or the warning stays silent when it is needed), and a cut
+     * that counts zero has to carry nothing (or it cries wolf).
+     */
+    for (const plane of ['xy', 'xz', 'yz'] as const) {
+      for (const cut of planeOffsets(plane, NODES, ELEMENTS, SUPPORTS, LOADS)) {
+        if (cut.elements === 0) continue;
+        const r = sliceModelAtPlane(plane, cut.value, NODES, ELEMENTS, SUPPORTS, LOADS, MATERIALS, SECTIONS);
+        if (!r.ok) continue;
+        expect(cut.loads === 0, `${plane} = ${cut.value}`).toBe(r.slice.loads === 0);
+      }
+    }
+  });
+
+  it('every load is either carried or counted as dropped — none vanish', () => {
+    for (const plane of ['xy', 'xz', 'yz'] as const) {
+      for (const cut of planeOffsets(plane, NODES, ELEMENTS, SUPPORTS, LOADS)) {
+        if (cut.elements === 0) continue;
+        const r = sliceModelAtPlane(plane, cut.value, NODES, ELEMENTS, SUPPORTS, LOADS, MATERIALS, SECTIONS);
+        if (!r.ok) continue;
+        expect(r.slice.loads + r.slice.droppedLoads, `${plane} = ${cut.value}`).toBe(LOADS.length);
+      }
+    }
+  });
+});
