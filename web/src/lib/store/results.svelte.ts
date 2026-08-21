@@ -80,8 +80,9 @@ function createResultsStore() {
    *
    * Published by whoever paints the map rather than recomputed for the legend.
    * The alternative — a second function deriving the same maximum — is two
-   * answers to one question, and they drift: the 3D heat map samples eight
-   * points per member through the section-stress evaluation, and reproducing
+   * answers to one question, and they drift: the 3D heat map samples each
+   * member at seventeen points (sixteen segments) through the section-stress
+   * evaluation, and reproducing
    * that in a legend would mean maintaining the same arithmetic twice.
    *
    * Null when nothing is painted.

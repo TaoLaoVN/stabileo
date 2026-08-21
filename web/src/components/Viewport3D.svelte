@@ -4,7 +4,7 @@
   import * as THREE from 'three';
   import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
   import { modelStore, uiStore, resultsStore, historyStore, dsmStepsStore, verificationStore } from '../lib/store';
-  import { boxSelect as boxSelectTargets } from '../lib/viewport/box-select';
+  import { boxSelect as boxSelectTargets, type BoxSelectMode } from '../lib/viewport/box-select';
   import PointerModeButton from './PointerModeButton.svelte';
   import Icon from './ribbon/Icon.svelte';
   import { COLORS, setGroupColor, findUserData, disposeObject, createTextSprite } from '../lib/three/selection-helpers';
@@ -1718,9 +1718,11 @@
           const picked = boxSelectTargets({
             rect: { x1, y1, x2, y2 },
             isWindow,
+            // `SelectMode` is wider than `BoxSelectMode` (it adds 'shells' and
+            // 'stress'), so narrow with a type predicate rather than a cast.
             kinds: [...uiStore.selectKinds].filter(
-              (k) => k === 'supports' || k === 'loads',
-            ) as never,
+              (k): k is BoxSelectMode => k === 'supports' || k === 'loads',
+            ),
             /*
              * The camera projection, with the node's own z. Flattening to
              * z = 0 — which a two-number signature forces — would have judged
@@ -1740,16 +1742,20 @@
               getElement: (id) => modelStore.elements.get(id),
             },
           });
-          if (picked.supports.size > 0) {
-            uiStore.selectedSupports = additive
-              ? new Set([...uiStore.selectedSupports, ...picked.supports])
-              : picked.supports;
-          }
-          if (picked.loads.size > 0) {
-            uiStore.selectedLoads = additive
-              ? new Set([...uiStore.selectedLoads, ...picked.loads])
-              : picked.loads;
-          }
+          /*
+           * Assigned unconditionally, exactly like nodes/elements below: a
+           * non-additive sweep REPLACES the selection, even with an empty
+           * result. Guarding on `size > 0` left a marquee over empty space
+           * keeping the old supports/loads selection — still highlighted,
+           * still what Delete would remove, and no longer what the user
+           * pointed at.
+           */
+          uiStore.selectedSupports = additive
+            ? new Set([...uiStore.selectedSupports, ...picked.supports])
+            : picked.supports;
+          uiStore.selectedLoads = additive
+            ? new Set([...uiStore.selectedLoads, ...picked.loads])
+            : picked.loads;
         }
 
         // Reassign sets to trigger Svelte reactivity (manual box-select)
@@ -1889,6 +1895,61 @@
         }
       }
       if (!addToSel) uiStore.clearSelection();
+      return;
+    }
+
+    /*
+     * ── Multi-kind: pick the nearest among ALL armed kinds ──
+     *
+     * Mirrors the 2D viewport's multi-kind click. Tried in the order a click
+     * identifies things — a node is a point, a member a line, a support a
+     * glyph — so the most specific answer wins at a joint, where all three
+     * sit on the same spot. Loads have no picking in 3D at all (they are
+     * selected from the Loads tab rows), so an armed 'loads' kind simply
+     * never hits here; the drag path DOES cover them via box-select.
+     * ('shells' is not re-checked: that mode returned just above.)
+     */
+    if (uiStore.multiKindSelect && sm !== 'stress') {
+      /*
+       * Clear up front, as the 2D branch does: selectNode/selectElement only
+       * reset the node/element/shell channels, so a hit on one kind would
+       * otherwise leave another kind's selection stale — still highlighted,
+       * still what Delete removes. The trailing clear-on-miss the single-kind
+       * branches need is covered by this.
+       */
+      if (!addToSel) uiStore.clearSelection();
+      let hit = false;
+      if (uiStore.selectsKind('nodes')) {
+        for (const h of raycaster.intersectObjects(nodesParent.children, true)) {
+          const ud = resolveHitUserData(h);
+          if (ud?.type === 'node') {
+            uiStore.selectNode(ud.id, addToSel);
+            hit = true;
+            break;
+          }
+        }
+      }
+      if (!hit && uiStore.selectsKind('elements')) {
+        for (const h of raycaster.intersectObjects(elementsParent.children, true)) {
+          const ud = resolveHitUserData(h);
+          if (ud?.type === 'element') {
+            uiStore.selectElement(ud.id, addToSel);
+            if (dsmStepsStore.isOpen) dsmStepsStore.selectElement(ud.id);
+            hit = true;
+            break;
+          }
+        }
+      }
+      if (!hit && uiStore.selectsKind('supports')) {
+        for (const h of raycaster.intersectObjects(supportsParent.children, true)) {
+          const ud = findUserData(h.object);
+          if (ud?.type === 'support') {
+            uiStore.selectSupport(ud.id, addToSel);
+            hit = true;
+            break;
+          }
+        }
+      }
       return;
     }
 

@@ -266,7 +266,26 @@ export function restore3D(): void {
   resultsStore.clear();
 }
 
-/** Test seam: forget the backup without touching the model. */
-export function _resetBackup(): void {
+/**
+ * Forget the backup and the simplified-2D flags because the MODEL they
+ * describe is gone.
+ *
+ * The backup is module-level, so without this it survives whatever model
+ * replaces the one it was taken from: slice model A, open project B, and the
+ * ribbon's dim-up button would "restore" A over B, wiping it. The reset is
+ * wired into the two funnels every wholesale replacement goes through —
+ * `modelStore.clear()` (new project, example load) and `deserializeProject()`
+ * in file.ts (file open). `modelStore.restore()` is deliberately NOT a hook:
+ * undo/redo and a cancelled CAD draft also go through it with snapshots of
+ * the SAME model, where the backup is still the only way back to the 3D
+ * original.
+ *
+ * The ui flags are written through the store's public setters, here rather
+ * than in ui.svelte.ts, so the invariant "no backup ⇒ not in simplified
+ * mode" has exactly one owner.
+ */
+export function resetSwitchBackup(): void {
   backup = null;
+  uiStore.simplified2DMode = false;
+  uiStore.simplified2DStats = null;
 }

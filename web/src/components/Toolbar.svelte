@@ -1,6 +1,6 @@
 <script lang="ts">
-  import { uiStore, resultsStore, modelStore, historyStore } from '../lib/store';
-  import { saveProject, loadFile, saveSession } from '../lib/store/file';
+  import { uiStore, historyStore } from '../lib/store';
+  import { loadFile } from '../lib/store/file';
   import { t } from '../lib/i18n';
   import { type DrawPlane } from '../lib/geometry/plane-projection';
   /*

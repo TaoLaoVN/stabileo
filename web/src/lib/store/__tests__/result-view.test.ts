@@ -19,7 +19,7 @@ import { installViewModeRules } from '../view-mode';
 import {
   activeQuantity, activeRepresentation, representationsFor,
   showQuantityAs, commandShowsQuantity,
-  colourScaleSource, hasLiveColourScale, showStressMap,
+  colourScaleSource, hasLiveColourScale, showStressMap, activeMapMeasure,
 } from '../result-view';
 
 /*
@@ -241,6 +241,43 @@ describe('editing and reading stay mutually exclusive', () => {
     showQuantityAs('torsion', 'colourMap');
     expect(uiStore.currentTool).toBe('select');
     expect(activeQuantity()).toBe('torsion');
+  });
+});
+
+/**
+ * The measure selector unmounting itself.
+ *
+ * The shell contours are offered INSIDE the stress-measure select, but the
+ * select was gated on the stress measures alone — choosing "Shell σ Von
+ * Mises" made the control vanish as a direct consequence of using it, and no
+ * ribbon command lit over a map that was plainly on screen. `activeMapMeasure`
+ * is the gate that knows the shells too.
+ */
+describe('the measure selector, shells included', () => {
+  beforeEach(() => {
+    resultsStore.diagramType = 'colorMap' as never;
+  });
+
+  it('names the stress measures AND the shell contours', () => {
+    for (const kind of ['stressRatio', 'vonMises', 'sigmaMax', 'tauMax', 'shellVonMises', 'shellBending'] as const) {
+      resultsStore.colorMapKind = kind;
+      expect(activeMapMeasure(), kind).toBe(kind);
+    }
+  });
+
+  it('says nothing for an internal force or for no map at all', () => {
+    resultsStore.colorMapKind = 'momentY';
+    expect(activeMapMeasure()).toBeNull();
+    resultsStore.diagramType = 'none' as never;
+    expect(activeMapMeasure()).toBeNull();
+  });
+
+  it('lets the select switch to a shell contour without unmounting itself', () => {
+    showStressMap('stressRatio');
+    expect(activeMapMeasure()).toBe('stressRatio');
+    showStressMap('shellVonMises');
+    expect(resultsStore.diagramType).toBe('colorMap');
+    expect(activeMapMeasure()).toBe('shellVonMises');
   });
 });
 

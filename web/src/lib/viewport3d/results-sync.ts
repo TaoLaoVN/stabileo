@@ -20,6 +20,7 @@ import { createReactionArrow, createConstraintForceArrow } from '../three/create
 import type { Diagram3DKind } from '../engine/diagrams-3d';
 import type { Displacement3D } from '../engine/types-3d';
 import { sampleElementValues, createHeatmapCylinder, orientHeatmapMesh, applyShellVertexColors, applyShellFlatColor, divergingColor, type HeatmapVariable } from '../three/stress-heatmap';
+import { colourMapUnit } from '../three/colour-ramp';
 import { restoreShellColor } from '../three/create-shell-mesh';
 import { shellComponentMeta, shellComponentValue, shellComponentRange } from '../engine/shell-stress';
 import { getCachedProjectModelToXZ, projectNodeToScene, shouldProjectModelToXZ } from '../geometry/coordinate-system';
@@ -600,7 +601,7 @@ function resetShellColors(ctx: ResultsSyncContext): void {
 }
 
 /** Build section props for an element */
-function getSectionProps(elemId: number) {
+export function getSectionProps(elemId: number) {
   const elem = modelStore.elements.get(elemId);
   if (!elem) return null;
   const sec = modelStore.sections.get(elem.sectionId);
@@ -612,7 +613,39 @@ function getSectionProps(elemId: number) {
     Iy: sec.iy ?? sec.iz,
     h: sec.h ?? 0,
     b: sec.b ?? 0,
-    fy: mat?.fy ?? 355_000,
+    /*
+     * fy arrives in MPa (the model store's unit) and the section-stress
+     * evaluation works in kPa (kN/m²) — feeding one into the other made every
+     * utilisation a thousand times too small. Null when the material has no
+     * yield strength: the stressRatio painter skips the member rather than
+     * grade it against a steel strength nobody entered.
+     */
+    fy: mat?.fy ? mat.fy * 1000 : null,
+  };
+}
+
+/**
+ * What the legend publishes for a frame heat map, or null when nothing is
+ * painted.
+ *
+ * The map normalises in the units the sampling produces — kN, kN·m, and kPa
+ * for the stresses, which come straight from `computeSectionStress`. The
+ * legend labels stresses MPa, so the conversion happens HERE, at publish
+ * time: the one place the number and its unit are decided together. Keeping
+ * the internal normalisation in kPa and converting only what is published is
+ * what keeps the painted gradient and the legend from drifting a factor of
+ * 1000 apart.
+ */
+export function publishedHeatmapScale(
+  variable: HeatmapVariable,
+  globalMax: number,
+): { max: number; unit: string; source: string } | null {
+  if (globalMax <= 1e-10) return null;
+  const isStress = variable === 'vonMises' || variable === 'sigmaMax' || variable === 'tauMax';
+  return {
+    max: isStress ? globalMax / 1000 : globalMax,
+    unit: colourMapUnit(variable),
+    source: colourScaleSource(),
   };
 }
 
@@ -620,14 +653,6 @@ function getSectionProps(elemId: number) {
  * Apply continuous per-vertex heatmap on frame elements.
  * Creates overlay cylinder meshes with color gradients along length.
  */
-/** The unit of a heat-map variable; utilisation is a ratio and has none. */
-function heatmapUnit(v: HeatmapVariable): string {
-  if (v === 'stressRatio') return '';
-  if (v === 'vonMises' || v === 'sigmaMax' || v === 'tauMax') return 'MPa';
-  if (v === 'moment' || v === 'momentY' || v === 'momentZ' || v === 'torsion') return 'kN·m';
-  return 'kN';
-}
-
 function applyFrameHeatmap(
   ctx: ResultsSyncContext,
   forcesMap: Map<number, import('../engine/types-3d').ElementForces3D>,
@@ -656,6 +681,13 @@ function applyFrameHeatmap(
     if (!ef) return;
     const sec = getSectionProps(id);
     if (!sec) return;
+    /*
+     * Utilisation divides by fy, so a member whose material has none cannot
+     * be painted honestly — substituting a default strength graded a concrete
+     * member against steel nobody entered, while the panel warned the measure
+     * "cannot be computed". Skip it, as the 2D map does.
+     */
+    if (variable === 'stressRatio' && sec.fy === null) return;
     const values = sampleElementValues(ef, variable, sec);
     elemSamples.set(id, values);
     for (const v of values) {
@@ -663,13 +695,17 @@ function applyFrameHeatmap(
     }
   });
 
-  // For stressRatio, fix scale at 1.0 (100% of fy)
-  if (variable === 'stressRatio') globalMax = Math.max(globalMax, 1.0);
+  /*
+   * Utilisation is read against a FIXED scale: 1.00 is the limit, whatever
+   * the model, and a ratio past it is off the scale — painted magenta by the
+   * shared ramp, never "red, but more so". Letting the maximum stretch the
+   * scale (as the other variables do) would paint a member at 140% of fy with
+   * the same red as one at 100%.
+   */
+  if (variable === 'stressRatio') globalMax = 1.0;
 
   // What the legend shows, published from where the maximum is decided.
-  resultsStore.setColourScale(globalMax > 1e-10
-    ? { max: globalMax, unit: heatmapUnit(variable), source: colourScaleSource() }
-    : null);
+  resultsStore.setColourScale(publishedHeatmapScale(variable, globalMax));
 
   // Pass 2: create heatmap meshes (or restore visibility for skipped elements)
   // The textured cylinder is the solid-mode representation, so it is built
@@ -723,7 +759,9 @@ function applyFrameHeatmap(
     }
     let peak = 0;
     for (const v of values) if (v > peak) peak = v;
-    const norm = globalMax > 0 ? Math.min(peak / globalMax, 1) : 0;
+    // Unclamped on purpose: past the top of the scale the shared ramp answers
+    // magenta (utilisation over fy), which clamping to 1 would paint as red.
+    const norm = globalMax > 0 ? peak / globalMax : 0;
     ctx.elementsBatched.setBaseColor(id, heatmapColor(norm));
   });
   ctx.elementsBatched.flush();

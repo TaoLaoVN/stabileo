@@ -32,7 +32,13 @@ interface SectionProps {
   Iy: number;
   h: number;
   b: number;
-  fy: number;
+  /**
+   * Yield strength in kPa (the solver's stress unit), or null when the
+   * material has none. The model store carries fy in MPa; the conversion is
+   * the caller's job. Null means "utilisation cannot be computed for this
+   * member" — the painters skip it rather than assume a steel strength.
+   */
+  fy: number | null;
 }
 
 /**
@@ -79,7 +85,13 @@ function sampleValue(ef: ElementForces3D, variable: HeatmapVariable, t: number, 
       const Mx = evaluateDiagramAt(ef, 'torsion', t);
       const My = evaluateDiagramAt(ef, 'momentY', t);
       const Mz = evaluateDiagramAt(ef, 'momentZ', t);
-      const stress = computeSectionStress(N, Vy, Vz, Mx, My, Mz, sec.A, sec.Iz, sec.Iy, sec.h, sec.b, sec.fy);
+      /*
+       * A null fy reaches the evaluation as the default only so the ABSOLUTE
+       * stresses still compute — they do not divide by anything. The ratio it
+       * then produces is fictitious, which is why the stressRatio painter
+       * skips a null-fy member upstream instead of sampling it.
+       */
+      const stress = computeSectionStress(N, Vy, Vz, Mx, My, Mz, sec.A, sec.Iz, sec.Iy, sec.h, sec.b, sec.fy ?? 355_000);
       return variable === 'stressRatio' ? stress.ratio
         : variable === 'vonMises' ? stress.vonMises
         : variable === 'sigmaMax' ? stress.sigmaMax

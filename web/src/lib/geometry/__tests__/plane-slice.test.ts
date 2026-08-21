@@ -346,3 +346,213 @@ describe('load left behind', () => {
     expect(planeOffsets('xz', NODES, ELEMENTS, SUPPORTS).every((o) => o.loads === 0)).toBe(true);
   });
 });
+
+/**
+ * Whether a hinge survives the cut.
+ *
+ * The 2D solver reads only `release.mz` as the bending hinge, but a 3D model
+ * stores the IN-PLANE hinge under whichever local axis is normal to the
+ * plane — and with the canonical auto-orient that is `mz` only for an XY
+ * frame. An XZ frame's in-plane hinge is `my`; copying releases verbatim
+ * would lose it, and would invent a phantom hinge from the out-of-plane `mz`.
+ * The remap lives in the shared builder, so the slice path and the project
+ * path get the same answer; these tests pin it per plane.
+ */
+describe('a released member keeps its hinge through the cut', () => {
+  const rel = (my: boolean, mz: boolean) => ({ my, mz, t: false });
+
+  // A portal frame lying wholly in the named plane, with the rafter released
+  // at the left end about the axis the plane calls in-plane.
+  function frameIn(plane: 'xy' | 'xz' | 'yz', releaseI: ReturnType<typeof rel>, releaseJ?: ReturnType<typeof rel>) {
+    const at = (a: number, b: number) =>
+      plane === 'xy' ? { x: a, y: b, z: 0 } : plane === 'xz' ? { x: a, y: 0, z: b } : { x: 0, y: a, z: b };
+    const nodes = [
+      { id: 0, ...at(0, 0) }, { id: 1, ...at(0, 4) },
+      { id: 2, ...at(8, 4) }, { id: 3, ...at(8, 0) },
+    ];
+    const elements = [
+      { id: 10, type: 'frame', nodeI: 0, nodeJ: 1, materialId: 1, sectionId: 1 },
+      { id: 11, type: 'frame', nodeI: 1, nodeJ: 2, materialId: 1, sectionId: 1, releaseI, releaseJ },
+      { id: 12, type: 'frame', nodeI: 2, nodeJ: 3, materialId: 1, sectionId: 1 },
+    ];
+    const supports = [
+      { id: 100, nodeId: 0, type: 'fixed' },
+      { id: 101, nodeId: 3, type: 'fixed' },
+    ];
+    const r = sliceModelAtPlane(plane, 0, nodes, elements, supports, [], MATERIALS, SECTIONS);
+    if (!r.ok) throw new Error(r.error);
+    return r.model.elements.get(11)!;
+  }
+
+  it('XZ: the in-plane hinge is my, and lands in mz', () => {
+    const rafter = frameIn('xz', rel(true, false));
+    expect(rafter.releaseI).toEqual(rel(false, true));
+  });
+
+  it('XZ: an out-of-plane mz release does not become a phantom hinge', () => {
+    const rafter = frameIn('xz', rel(false, true));
+    expect(rafter.releaseI).toEqual(rel(false, false));
+  });
+
+  it('XY: mz is already the in-plane hinge, and my is dropped', () => {
+    const rafter = frameIn('xy', rel(true, true));
+    expect(rafter.releaseI).toEqual(rel(false, true));
+  });
+
+  it('YZ: a horizontal member reads the hinge from my, a vertical one from mz', () => {
+    // The rafter of the frame above runs horizontally (along Y); with the
+    // auto-orient its plane normal is local y, so my is the in-plane hinge.
+    const rafter = frameIn('yz', rel(true, true));
+    expect(rafter.releaseI).toEqual(rel(false, true));
+    // A vertical member (along Z) hits the near-vertical fallback, whose
+    // local z IS the plane normal — so its mz survives instead.
+    const nodes = [
+      { id: 0, x: 0, y: 0, z: 0 }, { id: 1, x: 0, y: 0, z: 4 },
+      { id: 2, x: 0, y: 8, z: 4 }, { id: 3, x: 0, y: 8, z: 0 },
+    ];
+    const elements = [
+      { id: 10, type: 'frame', nodeI: 0, nodeJ: 1, materialId: 1, sectionId: 1, releaseI: rel(true, true) },
+      { id: 11, type: 'frame', nodeI: 1, nodeJ: 2, materialId: 1, sectionId: 1 },
+      { id: 12, type: 'frame', nodeI: 2, nodeJ: 3, materialId: 1, sectionId: 1 },
+    ];
+    const supports = [
+      { id: 100, nodeId: 0, type: 'fixed' },
+      { id: 101, nodeId: 3, type: 'fixed' },
+    ];
+    const r = sliceModelAtPlane('yz', 0, nodes, elements, supports, [], MATERIALS, SECTIONS);
+    if (!r.ok) throw new Error(r.error);
+    expect(r.model.elements.get(10)!.releaseI).toEqual(rel(false, true));
+  });
+});
+
+/**
+ * A load that survives the cut but carries nothing must not count as kept.
+ *
+ * This is the failure the dropped-load count was written to prevent and did
+ * not. A load survives whenever the thing it acts on survives, but it carries
+ * only its IN-PLANE component into the frame: a roof load pointing down the
+ * global Z is nothing at all to a horizontal frame. So a cut could advertise
+ * forty loads, "keep" all forty, and produce a model carrying zero — with the
+ * zero-load warning silent, because it is gated on that same count.
+ *
+ * Counting objects instead of effect is what made it invisible.
+ */
+describe('load is counted by what it carries, not by what survives', () => {
+  /** A vertical (global Z) distributed load on the y = 0 frame's rafter. */
+  const VERTICAL = [
+    { type: 'distributed3d', data: { id: 300, elementId: 11, qYI: 0, qYJ: 0, qZI: -10, qZJ: -10 } },
+  ];
+
+  it('an XZ cut keeps it, because Z lies in that plane', () => {
+    expect(planeOffsets('xz', NODES, ELEMENTS, SUPPORTS, VERTICAL).find((o) => o.value === 0)?.loads)
+      .toBe(1);
+    const r = sliceModelAtPlane('xz', 0, NODES, ELEMENTS, SUPPORTS, VERTICAL, MATERIALS, SECTIONS);
+    expect(r.ok).toBe(true);
+    if (!r.ok) return;
+    expect(r.slice.loads).toBe(1);
+    expect(r.slice.droppedLoads).toBe(0);
+  });
+
+  it('an XY cut does not, because a vertical load is nothing to a horizontal frame', () => {
+    // Same load, same members, a plane that cannot hold it. This has to read
+    // zero, or the warning gated on it never fires.
+    for (const o of planeOffsets('xy', NODES, ELEMENTS, SUPPORTS, VERTICAL)) {
+      expect(o.loads, `offset ${o.value}`).toBe(0);
+    }
+    const r = sliceModelAtPlane('xy', 4, NODES, ELEMENTS, SUPPORTS, VERTICAL, MATERIALS, SECTIONS);
+    if (r.ok) {
+      expect(r.slice.loads).toBe(0);
+      expect(r.slice.droppedLoads).toBe(1);
+    }
+  });
+
+  it('the preview is exact about ZERO, which is what the warning needs', () => {
+    /*
+     * Not "advertised equals kept" — that is false in general and I had
+     * claimed it. The preview runs before the projection, so it cannot know
+     * about members that collapse or duplicate away, and a load on one of
+     * those goes with it. Four cuts of the shipped library disagree by a few.
+     *
+     * What must hold exactly is the equivalence the zero-load warning is
+     * gated on, in both directions: a cut that will carry nothing has to
+     * count zero (or the warning stays silent when it is needed), and a cut
+     * that counts zero has to carry nothing (or it cries wolf).
+     */
+    for (const plane of ['xy', 'xz', 'yz'] as const) {
+      for (const cut of planeOffsets(plane, NODES, ELEMENTS, SUPPORTS, LOADS)) {
+        if (cut.elements === 0) continue;
+        const r = sliceModelAtPlane(plane, cut.value, NODES, ELEMENTS, SUPPORTS, LOADS, MATERIALS, SECTIONS);
+        if (!r.ok) continue;
+        expect(cut.loads === 0, `${plane} = ${cut.value}`).toBe(r.slice.loads === 0);
+      }
+    }
+  });
+
+  it('every load is either carried or counted as dropped — none vanish', () => {
+    for (const plane of ['xy', 'xz', 'yz'] as const) {
+      for (const cut of planeOffsets(plane, NODES, ELEMENTS, SUPPORTS, LOADS)) {
+        if (cut.elements === 0) continue;
+        const r = sliceModelAtPlane(plane, cut.value, NODES, ELEMENTS, SUPPORTS, LOADS, MATERIALS, SECTIONS);
+        if (!r.ok) continue;
+        expect(r.slice.loads + r.slice.droppedLoads, `${plane} = ${cut.value}`).toBe(LOADS.length);
+      }
+    }
+  });
+
+  /**
+   * Every KIND, including the ones no shipped fixture exercises at zero.
+   *
+   * The library sweep cannot see this: nothing that ships carries a
+   * zero-magnitude point or thermal load, so a rule applied to the
+   * distributed branch and forgotten on the other two passed it completely.
+   * It did — `pointOnElement` with p = 0 was advertised as nothing by the
+   * preview and counted as carried by the projection, which is the same lie
+   * this count exists to stop, wearing a rarer type.
+   *
+   * Enumerating the kinds is what catches a rule applied unevenly. A sweep
+   * over real models only ever proves things about the loads real models have.
+   */
+  const AT_ZERO: Array<[string, { type: string; data: Record<string, unknown> }]> = [
+    ['distributed', { type: 'distributed', data: { id: 1, elementId: 11, qI: 0, qJ: 0 } }],
+    ['distributed3d', { type: 'distributed3d', data: { id: 1, elementId: 11, qYI: 0, qYJ: 0, qZI: 0, qZJ: 0 } }],
+    ['pointOnElement', { type: 'pointOnElement', data: { id: 1, elementId: 11, a: 2, p: 0 } }],
+    ['thermal', { type: 'thermal', data: { id: 1, elementId: 11, dtUniform: 0, dtGradient: 0 } }],
+    ['nodal', { type: 'nodal', data: { id: 1, nodeId: 1, fx: 0, fz: 0 } }],
+    ['nodal3d', { type: 'nodal3d', data: { id: 1, nodeId: 1, fx: 0, fy: 0, fz: 0, mx: 0, my: 0, mz: 0 } }],
+  ];
+
+  for (const [kind, load] of AT_ZERO) {
+    it(`a ${kind} carrying nothing is dropped and counted, not "kept"`, () => {
+      const cut = planeOffsets('xz', NODES, ELEMENTS, SUPPORTS, [load]).find((o) => o.value === 0)!;
+      expect(cut.loads, 'the preview must not advertise it').toBe(0);
+
+      const r = sliceModelAtPlane('xz', 0, NODES, ELEMENTS, SUPPORTS, [load], MATERIALS, SECTIONS);
+      expect(r.ok).toBe(true);
+      if (!r.ok) return;
+      expect(r.slice.loads, 'nor may the slice report it as carried').toBe(0);
+      expect(r.slice.droppedLoads, 'and it has to be counted as dropped').toBe(1);
+    });
+  }
+
+  const CARRYING: Array<[string, { type: string; data: Record<string, unknown> }]> = [
+    ['distributed', { type: 'distributed', data: { id: 1, elementId: 11, qI: -10, qJ: -10 } }],
+    ['pointOnElement', { type: 'pointOnElement', data: { id: 1, elementId: 11, a: 2, p: -5 } }],
+    ['thermal', { type: 'thermal', data: { id: 1, elementId: 11, dtUniform: 20, dtGradient: 0 } }],
+    ['nodal', { type: 'nodal', data: { id: 1, nodeId: 1, fx: 3, fz: -7 } }],
+  ];
+
+  for (const [kind, load] of CARRYING) {
+    it(`a ${kind} that does carry something is not dropped`, () => {
+      // The other direction, so the rule cannot be satisfied by dropping
+      // everything — which would silence the warning just as effectively.
+      const cut = planeOffsets('xz', NODES, ELEMENTS, SUPPORTS, [load]).find((o) => o.value === 0)!;
+      expect(cut.loads, `${kind} should be advertised`).toBe(1);
+
+      const r = sliceModelAtPlane('xz', 0, NODES, ELEMENTS, SUPPORTS, [load], MATERIALS, SECTIONS);
+      expect(r.ok).toBe(true);
+      if (!r.ok) return;
+      expect(r.slice.loads, `${kind} should be carried`).toBe(1);
+      expect(r.slice.droppedLoads).toBe(0);
+    });
+  }
+});

@@ -1,6 +1,6 @@
 <script lang="ts">
   import { uiStore, resultsStore, modelStore } from '../../lib/store';
-  import { activeQuantity, activeRepresentation, representationsFor, showQuantityAs, activeStressMeasure, showStressMap, hasLiveColourScale } from '../../lib/store/result-view';
+  import { activeQuantity, activeRepresentation, representationsFor, showQuantityAs, activeMapMeasure, showStressMap, hasLiveColourScale, type MapMeasure } from '../../lib/store/result-view';
   import { showDiagram } from '../../lib/store/view-mode';
   import ResultsTable from '../tables/ResultsTable.svelte';
   import { t } from '../../lib/i18n';
@@ -99,21 +99,23 @@
   let { hideDiagrams = false, flat = false }: { hideDiagrams?: boolean; flat?: boolean } = $props();
 
   /**
-   * Whether any member's material carries a yield strength.
+   * Whether any member's material LACKS a yield strength.
    *
-   * Asked of the model rather than inferred from an empty picture: "nothing is
-   * painted" has two causes and only one of them is worth telling the user
-   * about.
+   * Utilisation divides by fy, so those members stay unpainted — and in a
+   * mixed steel/concrete model that is most of the picture, not an edge case.
+   * Asked of the model rather than inferred from the painting: "some members
+   * are missing" has two causes and only one of them is worth telling the
+   * user about.
    */
   /** Whether the model contains anything a shell measure could describe. */
   function hasShells(): boolean {
     return modelStore.model.plates.size > 0 || modelStore.model.quads.size > 0;
   }
 
-  function anyMemberHasYield(): boolean {
+  function anyMemberLacksYield(): boolean {
     for (const el of modelStore.elements.values()) {
       const m = modelStore.materials.get(el.materialId);
-      if (m?.fy) return true;
+      if (!m?.fy) return true;
     }
     return false;
   }
@@ -230,12 +232,17 @@
         1.00 is the limit, whatever the steel and whatever the section. The
         other three are absolute stresses, and an absolute stress says nothing
         until you know what it is being compared against.
+
+        The select stays mounted for the SHELL contours too: they are offered
+        inside it, so gating it on the stress measures alone made choosing one
+        unmount the very control that was used — and left no ribbon command
+        lit over a map that was plainly on screen.
       -->
-      {#if activeStressMeasure()}
-        {@const measure = activeStressMeasure()!}
+      {#if activeMapMeasure()}
+        {@const measure = activeMapMeasure()!}
         <div class="input-group">
           <label>{t('results.stressMeasure')}:</label>
-          <select value={measure} onchange={(e) => showStressMap(e.currentTarget.value as never)}>
+          <select value={measure} onchange={(e) => showStressMap(e.currentTarget.value as MapMeasure)}>
             <option value="stressRatio">{t('results.measureUtilisation')}</option>
             <option value="vonMises">{t('results.measureVonMises')}</option>
             <option value="sigmaMax">{t('results.measureSigmaMax')}</option>
@@ -253,20 +260,23 @@
           </select>
         </div>
         <!--
-          Utilisation divides by fy, so a model whose members are concrete —
-          or any material with no yield strength entered — cannot produce it.
-          Left alone the map simply painted nothing, which reads as "no stress
-          anywhere" rather than "this cannot be computed".
+          Utilisation divides by fy, so a member whose material has no yield
+          strength — every concrete member, or any material with fy left blank —
+          stays unpainted. Left alone the gap simply read as "no stress there",
+          and gating the warning on NO member having fy hid it in exactly the
+          mixed steel/concrete models where it matters most.
         -->
-        {#if measure === 'stressRatio' && !anyMemberHasYield()}
+        {#if measure === 'stressRatio' && anyMemberLacksYield()}
           <p class="rep-help rep-warn">{t('results.noYield')}</p>
         {/if}
-        <p class="rep-help">
-          {measure === 'stressRatio' ? t('results.measureUtilisationHelp')
-            : measure === 'vonMises' ? t('results.measureVonMisesHelp')
-            : measure === 'sigmaMax' ? t('results.measureSigmaMaxHelp')
-            : t('results.measureTauMaxHelp')}
-        </p>
+        {#if measure !== 'shellVonMises' && measure !== 'shellBending'}
+          <p class="rep-help">
+            {measure === 'stressRatio' ? t('results.measureUtilisationHelp')
+              : measure === 'vonMises' ? t('results.measureVonMisesHelp')
+              : measure === 'sigmaMax' ? t('results.measureSigmaMaxHelp')
+              : t('results.measureTauMaxHelp')}
+          </p>
+        {/if}
       {/if}
         <!--
           How the axial result is DRAWN, next to the result itself.
