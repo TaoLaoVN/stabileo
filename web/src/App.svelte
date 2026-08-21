@@ -933,15 +933,15 @@
     {#if uiStore.appMode === 'pro' && !uiStore.isMobile}
       <!-- svelte-ignore a11y_no_static_element_interactions -->
         <ProRibbon
-          onExamples={(btn) => proPanelRef?.examples(btn)}
-          onSolve={() => proPanelRef?.solve()}
-          onReport={() => proPanelRef?.report()}
+          onExamples={(btn) => { uiStore.proPanelVisible = true; proPanelRef?.examples(btn); }}
+          onSolve={() => { uiStore.proPanelVisible = true; proPanelRef?.solve(); }}
+          onReport={() => { uiStore.proPanelVisible = true; proPanelRef?.report(); }}
           canSolve={proPanelRef?.canSolve() ?? false}
           canReport={proPanelRef?.canReport() ?? false}
           isSolving={proPanelRef?.isSolving() ?? false}
           errorCount={proPanelRef?.errorCount() ?? 0}
           proPanel={uiStore.proActiveTab}
-          onOpenProject={() => (uiStore.proActiveTab = 'project')}
+          onOpenProject={() => { uiStore.proActiveTab = 'project'; uiStore.proPanelVisible = true; }}
         />
     {/if}
 
@@ -1079,8 +1079,24 @@
     {/if}
 
     {#if !uiStore.isMobile}
-      {#if uiStore.appMode === 'pro' && uiStore.proPanelVisible}
-        <aside class="sidebar right pro-sidebar" style:width="{uiStore.proPanelWidth}px" style:overflow="visible">
+      {#if uiStore.appMode === 'pro'}
+        <!--
+          Closed means hidden, not unmounted.
+          ─────────────────────────────────────
+          The ribbon is bound to this panel's instance (`bind:this`): Solve, Report,
+          the example menu and the MODEL badge's error count all live on it. The ✕
+          used to unmount the panel, which nulled that binding — the ribbon's
+          commands silently no-opped and the badge read "✓ clean" on a model with
+          errors. Hiding keeps the instance alive, so closing the panel changes
+          what you see and nothing else. Both viewports resize themselves with a
+          ResizeObserver, so the canvas follows without help.
+        -->
+        <aside
+          class="sidebar right pro-sidebar"
+          class:pro-sidebar-closed={!uiStore.proPanelVisible}
+          style:width="{uiStore.proPanelWidth}px"
+          style:overflow="visible"
+        >
           <!-- svelte-ignore a11y_no_static_element_interactions -->
           <div class="pro-resize-handle" onmousedown={(e) => startProResize(e)}></div>
           <!--
@@ -1103,20 +1119,21 @@
           >×</button>
           <ProPanel bind:this={proPanelRef} />
         </aside>
-      {:else if uiStore.appMode === 'pro' && !uiStore.proPanelVisible && !uiStore.isMobile}
-        <!-- A closed panel has to be reopenable from where it closed. -->
-        <!--
-          A bare chevron on the canvas edge is not a clue. It says what it
-          reopens, running up the tab, so a panel you closed is findable
-          without hunting for a 16 px strip.
-        -->
-        <button
-          class="pro-panel-reopen"
-          onclick={() => { uiStore.proPanelVisible = true; setTimeout(() => window.dispatchEvent(new Event('resize')), 50); }}
-          title={t('proRibbon.reopenPanel')}
-          aria-label={t('proRibbon.reopenPanel')}
-          data-testid="pro-panel-reopen"
-        ><span class="ppr-text">‹ {t('proRibbon.reopenPanel')}</span></button>
+        {#if !uiStore.proPanelVisible}
+          <!-- A closed panel has to be reopenable from where it closed. -->
+          <!--
+            A bare chevron on the canvas edge is not a clue. It says what it
+            reopens, running up the tab, so a panel you closed is findable
+            without hunting for a 16 px strip.
+          -->
+          <button
+            class="pro-panel-reopen"
+            onclick={() => { uiStore.proPanelVisible = true; setTimeout(() => window.dispatchEvent(new Event('resize')), 50); }}
+            title={t('proRibbon.reopenPanel')}
+            aria-label={t('proRibbon.reopenPanel')}
+            data-testid="pro-panel-reopen"
+          ><span class="ppr-text">‹ {t('proRibbon.reopenPanel')}</span></button>
+        {/if}
       {:else if uiStore.appMode === 'educativo'}
         <aside class="sidebar right edu-sidebar">
           <EducativePanel />
@@ -1569,6 +1586,11 @@
     position: relative;
     z-index: 40;
     flex-shrink: 0;
+  }
+
+  /* Hidden, not unmounted — see the aside's comment in the markup above. */
+  .pro-sidebar-closed {
+    display: none;
   }
 
   /* ─── PRO command bar with dropdowns ─── */

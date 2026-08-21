@@ -271,21 +271,36 @@
    * Two sources of truth for "where am I" is how a ribbon comes to show one
    * stage while the panel shows another — and the panel can be moved from
    * elsewhere (a toast action, an error banner's "go fix it" arrow).
+   *
+   * Project maps to no stage ('' above), and falling back to STAGES[0] showed
+   * MODEL's commands with no tab lit — the ribbon claimed you were somewhere
+   * you had never been. So the last real stage is remembered, and with Project
+   * open the row keeps showing the stage you actually came from.
    */
-  const activeStage = $derived(TAB_STAGE[uiStore.proActiveTab] ?? 'model');
+  let lastStage = $state('model');
+  const mappedStage = $derived(TAB_STAGE[uiStore.proActiveTab] ?? 'model');
+  $effect(() => { if (mappedStage) lastStage = mappedStage; });
+  const activeStage = $derived(mappedStage || lastStage);
   const stage = $derived(STAGES.find(s => s.id === activeStage) ?? STAGES[0]);
 
   function openStage(s: Stage) {
     // Landing on a stage lands on its first destination, so the panel always
     // agrees with the tab.
     if (TAB_STAGE[uiStore.proActiveTab] !== s.id) uiStore.proActiveTab = s.home;
+    uiStore.proPanelVisible = true;
     openMenu = null;
   }
 
   function run(c: Cmd) {
     if (c.enabled && !c.enabled()) return;
     if (c.diagram) resultsStore.diagramType = c.diagram as never;
-    if (c.tab) uiStore.proActiveTab = c.tab;
+    // A command that names a destination must SHOW it: the panel can be closed
+    // (it hides, it never unmounts), and a click that changes a hidden panel
+    // reads as a click that did nothing.
+    if (c.tab) {
+      uiStore.proActiveTab = c.tab;
+      uiStore.proPanelVisible = true;
+    }
     c.action?.();
     openMenu = null;
   }
