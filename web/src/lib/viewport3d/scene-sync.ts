@@ -205,12 +205,32 @@ export function syncElements(ctx: SceneSyncContext): void {
     // whole buffer dirty, and on a 2476-element model that forced a GPU upload
     // per sync even when nothing had changed.
     {
-      const isTruss = elem.type === 'truss';
-      const baseColor = (renderMode === 'wireframe')
-        ? (isTruss ? COLORS.truss : COLORS.frameWire)
-        : (isTruss ? COLORS.truss : COLORS.frame);
-      if (eb.getBaseColor(id) !== baseColor) {
-        eb.setBaseColor(id, baseColor);
+      /*
+       * Not while a colour map owns the members.
+       * ────────────────────────────────────────
+       * This writes the per-type base colour — frame grey, truss grey — on
+       * every element sync, including syncs that happen after
+       * `syncColorMap3D` has painted the axial map. The guard below only skips
+       * a write when the colour already MATCHES, and an axial colour never
+       * matches the type default, so every sync repainted the map away: member
+       * colouring turned on, was correct for a frame, and was grey again
+       * before anyone saw it.
+       *
+       * While axialColor / colorMap / verification is showing, the map owns
+       * these colours; `syncColorMap3D` sets them and turning the map off
+       * restores the type default on the next sync.
+       */
+      const mapDt = resultsStore.diagramType;
+      const mapOwnsColors = resultsStore.results3D != null
+        && (mapDt === 'axialColor' || mapDt === 'colorMap' || mapDt === 'verification');
+      if (!mapOwnsColors) {
+        const isTruss = elem.type === 'truss';
+        const baseColor = (renderMode === 'wireframe')
+          ? (isTruss ? COLORS.truss : COLORS.frameWire)
+          : (isTruss ? COLORS.truss : COLORS.frame);
+        if (eb.getBaseColor(id) !== baseColor) {
+          eb.setBaseColor(id, baseColor);
+        }
       }
     }
     // BVH-accelerated picking surface (invisible) — kept in sync with positions.

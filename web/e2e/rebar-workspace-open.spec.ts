@@ -47,7 +47,7 @@
  * several times its real cost, and a ceiling tuned to that is either a flake or meaningless.
  */
 
-import { test, expect, designAll, loadModel } from './fixtures';
+import { test, expect, designAll, loadModel, openDocumentsStage } from './fixtures';
 
 type Page = import('@playwright/test').Page;
 
@@ -79,6 +79,7 @@ interface OpenTiming {
 async function openAndTime(page: Page, label: string): Promise<OpenTiming> {
   const before = await counters(page);
   const t0 = Date.now();
+  await openDocumentsStage(page);
   await page.getByTestId('doc-3d').click();
 
   // The first thing the user must see: the app answered the click.

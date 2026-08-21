@@ -712,6 +712,9 @@ function applyFrameHeatmap(
   // only where there is a group to hang it on. Wireframe gets its colour from
   // the batched mesh below.
   for (const [id, group] of ctx.elementGroups) {
+    // The overlay cylinders can only hang off a Group; ids without one are
+    // covered by the batched-colour mirror below, which is what wireframe
+    // actually renders.
     const values = elemSamples.get(id);
     if (!values) {
       // Element has no sampled data — ensure originals stay visible (dimmed)

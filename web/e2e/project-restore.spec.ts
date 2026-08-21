@@ -310,6 +310,17 @@ async function tally(page: Page) {
  */
 async function openViewer(page: Page, step: string) {
   const before = await counters(page);
+  /**
+   * `doc-3d` moved into the Documents stage, which is collapsed like every other stage.
+   *
+   * Inlined rather than imported: this file deliberately uses Playwright's own `test` and not the
+   * `pro` fixture, so pulling in a fixtures helper here would give it a dependency it does not
+   * otherwise have. Two lines are cheaper than that.
+   */
+  const docs = page.getByTestId('documents-disclosure');
+  if (await docs.count() > 0 && await docs.getAttribute('open') === null) {
+    await docs.locator('> summary').click();
+  }
   await page.getByTestId('doc-3d').click();
   await expect(page.getByTestId('rebar-workspace')).toBeVisible({ timeout: 120_000 });
   await expect
