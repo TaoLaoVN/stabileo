@@ -389,10 +389,12 @@
                * concrete, timber or masonry path in `connection-design.ts`, which mentions
                * no material at all. So the narrower name hides nothing.
                *
-               * What it does NOT narrow: `detectJoints` still lists every joint in the model
-               * regardless of material, so the panel will offer to check a bolt group on a
-               * concrete joint. That is a real gap and it is reported in the handoff rather
-               * than papered over with a name.
+               * What it does NOT narrow: mixed joints. `ProConnectionsTab` hands
+               * `detectJoints` the metallic inventory's verdict, so a joint with no
+               * metallic member at all is not listed — and the panel says how many it
+               * hid. A steel beam framing into a concrete column still is listed, with
+               * its members split by material, because that is a real detail an
+               * engineer checks.
                */
               id: 'connections',
               labelKey: 'proRibbon.cmdSteelJoints',

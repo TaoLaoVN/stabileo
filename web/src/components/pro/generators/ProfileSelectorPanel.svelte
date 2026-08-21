@@ -29,6 +29,7 @@
    * general PRO section picker can hand it a different catalogue — a project library, a
    * server — without this file changing. That is the whole point of the seam.
    */
+  import { untrack } from 'svelte';
   import { t, tp } from '../../../lib/i18n';
   import {
     groupByFamily, steelProfileSource,
@@ -52,6 +53,7 @@
   let families = $state<ProfileFamily[]>([]);
   let input: HTMLInputElement | undefined = $state();
   let listEl: HTMLDivElement | undefined = $state();
+  let dialog: HTMLDivElement | undefined = $state();
 
   const results = $derived(source.list({ text, families }));
   const groups = $derived(groupByFamily(results));
@@ -63,19 +65,28 @@
    *
    * An id would survive a filter change and point at a row that is no longer shown, which is
    * how a highlight ends up invisible and Enter picks something the user cannot see. An index
-   * is clamped below on every change, so it always points at something on screen.
+   * is restarted at the first row on every filter change, so it always points at something on
+   * screen.
    */
   let cursor = $state(0);
   $effect(() => {
-    // Reading `flat.length` is what subscribes this to filter and search changes.
-    if (cursor > flat.length - 1) cursor = Math.max(0, flat.length - 1);
+    // Reading `flat.length` is what subscribes this to filter and search changes: a
+    // narrowed list restarts the cursor on its first row rather than leaving it on an
+    // index that now names a different profile.
+    void flat.length;
+    cursor = 0;
   });
 
+  /**
+   * Mount-intended, and `untrack` keeps it that way: subscribing to `flat` or `selected`
+   * would re-run this on every typed character, re-focusing the input and snapping the
+   * cursor back to the previous selection mid-search.
+   */
   $effect(() => {
     input?.focus();
     // Start on the current selection, so opening the panel and pressing Enter is a no-op
     // rather than a silent change to whatever happens to be first.
-    const at = flat.findIndex((e) => e.id === selected);
+    const at = untrack(() => flat.findIndex((e) => e.id === selected));
     if (at >= 0) cursor = at;
   });
 
@@ -102,11 +113,26 @@
     }
   }
 
+  /**
+   * Non-modal, so it must behave like one thing only: a popover. Keys are handled on the
+   * dialog itself (nothing outside it is preventDefault'd while it is open), and a click
+   * landing anywhere outside — back in the generator form, say — is a dismissal, not a
+   * background state the form keeps typing into.
+   *
+   * `click`, not `pointerdown`, on purpose: the trigger in `ProfilePicker` toggles on
+   * click, and its handler runs before this bubble-phase window listener — so clicking
+   * the trigger while open closes the panel there and this handler's `onClose` is a
+   * no-op, instead of a pointerdown close the trigger's toggle would instantly reopen.
+   */
+  function windowClick(e: MouseEvent) {
+    if (dialog && e.target instanceof Node && !dialog.contains(e.target)) onClose();
+  }
+
   const dims = (e: ProfileEntry) =>
     `${e.heightMm}×${e.widthMm} mm · ${e.areaCm2.toFixed(1)} cm² · ${e.massKgPerM.toFixed(1)} kg/m`;
 </script>
 
-<svelte:window onkeydown={keydown} />
+<svelte:window onclick={windowClick} />
 
 <div
   class="sel"
@@ -114,6 +140,9 @@
   aria-modal="false"
   aria-label={label || t('profileSelector.title')}
   data-testid="profile-selector"
+  bind:this={dialog}
+  onkeydown={keydown}
+  tabindex={-1}
 >
   <div class="head">
     <input
@@ -124,6 +153,7 @@
       role="combobox"
       aria-expanded="true"
       aria-controls="profile-selector-list"
+      aria-activedescendant={flat.length > 0 ? `profile-option-${cursor}` : undefined}
       placeholder={t('profileSelector.search')}
       data-testid="profile-search"
     />
@@ -180,6 +210,7 @@
           {@const at = flat.indexOf(e)}
           <button
             type="button"
+            id="profile-option-{at}"
             class="row"
             class:sel={e.id === selected}
             class:cur={at === cursor}
