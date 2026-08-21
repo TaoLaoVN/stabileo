@@ -86,7 +86,7 @@ export function activeRepresentation(): Representation | null {
 export function showQuantityAs(q: ResultQuantity, how: Representation): void {
   if (how === 'colourMap') {
     resultsStore.colorMapKind = q as never;
-    showDiagram('colorMap' as never);
+    showDiagram('colorMap');
     return;
   }
   if (how === 'memberColour' && SIGNED_QUANTITIES.has(q)) {
@@ -159,6 +159,25 @@ export function activeStressMeasure(): StressMeasure | null {
 }
 
 /**
+ * Everything the measure selector can be showing: the four section-stress
+ * measures AND the shell contours.
+ *
+ * The shells are chosen in the same select, so a gate that knows only the
+ * stress measures unmounts the select the moment a shell contour is picked —
+ * the control vanishing as a consequence of using it — and leaves the ribbon
+ * command dark over a picture it claims to own.
+ */
+export type MapMeasure = StressMeasure | 'shellVonMises' | 'shellBending';
+
+/** The measure on screen, shells included, or null for an internal force. */
+export function activeMapMeasure(): MapMeasure | null {
+  if (resultsStore.diagramType !== 'colorMap') return null;
+  const k = resultsStore.colorMapKind;
+  return (STRESS_MEASURES as string[]).includes(k) || k === 'shellVonMises' || k === 'shellBending'
+    ? k as MapMeasure : null;
+}
+
+/**
  * Paint a stress measure over the members.
  *
  * Defaults to utilisation — sigma over fy — because it is the one measure that
@@ -167,9 +186,9 @@ export function activeStressMeasure(): StressMeasure | null {
  * stresses, and an absolute stress means nothing until you know what it is
  * being compared against.
  */
-export function showStressMap(measure: StressMeasure = 'stressRatio'): void {
+export function showStressMap(measure: MapMeasure = 'stressRatio'): void {
   resultsStore.colorMapKind = measure;
-  showDiagram('colorMap' as never);
+  showDiagram('colorMap');
 }
 
 /**

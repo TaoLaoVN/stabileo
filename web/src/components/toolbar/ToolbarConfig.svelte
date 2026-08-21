@@ -91,7 +91,7 @@
               <option value="never">{t('config.localAxesNever')}</option>
             </select>
           </div>
-          <label class="checkbox-item" title={t('config.smoothOrbitHint')}>
+          <label class="checkbox-item">
             <HelpTip text={t('config.tip.smoothOrbit')}>
             <input type="checkbox" checked={uiStore.smoothOrbit3D}
               onchange={(e) => { uiStore.smoothOrbit3D = e.currentTarget.checked; }} />
@@ -189,7 +189,7 @@
           <label class="checkbox-item">
             <HelpTip text={t('config.tip.autoSplit')}>
             <input type="checkbox" bind:checked={uiStore.autoSplitOnNodePlace} />
-            <span title={t('config.autoSplitElementsHelp')}>{t('config.autoSplitElements')}</span>
+            <span>{t('config.autoSplitElements')}</span>
             </HelpTip>
           </label>
         {/if}

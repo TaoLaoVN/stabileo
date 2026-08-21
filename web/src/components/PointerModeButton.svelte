@@ -26,14 +26,47 @@
   import { t } from '../lib/i18n';
   import Icon from './ribbon/Icon.svelte';
 
-  const isPan = $derived(uiStore.currentTool === 'pan');
+  const tool = $derived(uiStore.currentTool);
+  const isPan = $derived(tool === 'pan');
+  const isSelect = $derived(tool === 'select');
 
+  /*
+   * A non-pointer tool (node, element, …) is NOT "Select", and showing the
+   * select icon plus a "Mode: Select" tip while placing nodes was the button
+   * lying about the state it claims to report. With a build tool armed the
+   * button shows THAT tool; a click still lands on select, the one sensible
+   * destination — sending a user mid node-placement to pan would strand the
+   * tool they picked. Labels come from the float.* tool names, so no new
+   * strings.
+   */
+  const TOOL_LABEL: Record<string, string> = {
+    node: 'float.node',
+    element: 'float.element',
+    support: 'float.support',
+    load: 'float.load',
+    influenceLine: 'float.influenceLine',
+  };
+  /*
+   * Icon.svelte has glyphs for the four build tools and nothing else — an
+   * unknown name renders an EMPTY svg, so the influence-line tool (labelled
+   * above) must not be passed through as an icon name.
+   */
+  const TOOL_ICON: Record<string, string> = {
+    node: 'node', element: 'element', support: 'support', load: 'load',
+  };
+  const iconName = $derived(isPan ? 'pan' : isSelect ? 'select' : (TOOL_ICON[tool] ?? 'select'));
   /** What the mode IS — present tense, because that is what the reader is in. */
-  const mode = $derived(isPan ? t('viewport.modePan') : t('viewport.modeSelect'));
+  const mode = $derived(
+    isPan ? t('viewport.modePan')
+    : isSelect ? t('viewport.modeSelect')
+    : t(TOOL_LABEL[tool] ?? 'float.select'),
+  );
   /** What the click WOULD do. Kept apart from the above: they are not the
       same tense and reading them as one sentence is how the old wording made
       people think the button described a state they were not in. */
-  const action = $derived(isPan ? t('viewport.clickToSelect') : t('viewport.clickToPan'));
+  const action = $derived(
+    isSelect ? t('viewport.clickToPan') : t('viewport.clickToSelect'),
+  );
 
   function toggle() {
     /*
@@ -42,7 +75,7 @@
      * tools, so nothing is put away here — which is the whole point of them
      * being persistent.
      */
-    uiStore.currentTool = isPan ? 'select' : 'pan';
+    uiStore.currentTool = isSelect ? 'pan' : 'select';
   }
 </script>
 
@@ -60,21 +93,22 @@
     class="pointer-mode"
     class:panning={isPan}
     onclick={toggle}
-    aria-label={isPan ? t('viewport.switchToSelect') : t('viewport.switchToPan')}
+    aria-label={isSelect ? t('viewport.switchToPan') : t('viewport.switchToSelect')}
     aria-pressed={isPan}
     data-testid="pointer-mode"
   >
-    <Icon name={isPan ? 'pan' : 'select'} size={17} />
+    <Icon name={iconName} size={17} />
   </button>
 
   <div class="pm-tip" role="tooltip">
     <p class="pm-tip-mode">{mode}</p>
     <!--
       Only while selecting: pointed at the panel that decides WHAT a drag
-      picks up. In pan mode there is no such setting in play and the sentence
-      would be advice about a mode the user is not in.
+      picks up. In pan mode — or with a build tool armed — there is no such
+      setting in play and the sentence would be advice about a mode the user
+      is not in.
     -->
-    {#if !isPan}
+    {#if isSelect}
       <p class="pm-tip-note">{t('viewport.selectKindHint')}</p>
     {/if}
     <p class="pm-tip-action">{action}</p>

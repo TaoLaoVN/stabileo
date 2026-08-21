@@ -36,7 +36,8 @@
  */
 
 import {
-  buildSimplified2DModel, type DrawPlane, type SimplifiedResult,
+  buildSimplified2DModel, inPlaneLoadMagnitude, LOAD_EPS,
+  type DrawPlane, type SimplifiedResult,
 } from './plane-projection';
 
 /**
@@ -123,7 +124,9 @@ export function planeOffsets(
   nodes: Iterable<{ id: number; x: number; y: number; z?: number }>,
   elements: Iterable<{ id?: number; nodeI: number; nodeJ: number }>,
   supports: Iterable<{ nodeId: number }> = [],
-  loads: Iterable<{ data: Record<string, unknown> }> = [],
+  // `type` as well as `data`: what a load carries into the plane depends on
+  // its kind, so the count cannot be taken from the payload alone.
+  loads: Iterable<{ type: string; data: Record<string, unknown> }> = [],
   tol = SLICE_TOL,
 ): PlaneOffset[] {
   const byNode = new Map<number, number>();
@@ -162,12 +165,29 @@ export function planeOffsets(
     if (g) sup.set(g.value, (sup.get(g.value) ?? 0) + 1);
   }
 
-  // Counted by the SAME rule `sliceModelAtPlane` keeps them by, so the number the
-  // dialog shows before the cut is the number the cut will honour. A load keyed by
-  // neither a node nor a member — a surface load carries `quadId` — belongs to no
-  // cut and is counted for none, which is what makes it show up as missing.
+  // A load keyed by neither a node nor a member — a surface load carries
+  // `quadId` — belongs to no cut and is counted for none, which is what makes
+  // it show up as missing.
+  //
+  // This is a PREVIEW, and it is exact about zero and approximate above it.
+  // It cannot be exact above zero without running the whole projection for
+  // every candidate offset: the builder also collapses members whose ends
+  // project together and drops duplicates, and a load on one of those goes
+  // with it. What it IS exact about is the only thing the warning depends on —
+  // a cut that will carry nothing counts zero here, and a cut that counts zero
+  // will carry nothing. A test pins that equivalence across the shipped
+  // library; the earlier claim that this equals the final count was wrong, and
+  // four cuts of that library disprove it.
+  //
+  // And counted by EFFECT, not by existence. A load survives the cut as an
+  // object whenever the thing it acts on survives, but what it carries into the
+  // 2D frame is only its in-plane component: a roof load pointing down global Z
+  // is nothing at all to a horizontal frame. Counting objects advertised forty
+  // loads on a cut that carried none, and the zero-load warning — gated on this
+  // number — stayed silent on exactly the cuts that needed it.
   const loadCount = new Map<number, number>();
   for (const l of loads) {
+    if (inPlaneLoadMagnitude(l, plane) < LOAD_EPS) continue;
     const d = l.data as { nodeId?: number; elementId?: number };
     let value: number | undefined;
     if (d.nodeId !== undefined) {
@@ -184,8 +204,8 @@ export function planeOffsets(
       value: g.value,
       nodes: g.nodes,
       elements: counts.get(g.value) ?? 0,
-      supports: sup.get(g.value) ?? 0,
       loads: loadCount.get(g.value) ?? 0,
+      supports: sup.get(g.value) ?? 0,
     }))
     .sort((a, b) => a.value - b.value);
 }
@@ -195,21 +215,24 @@ export interface SliceStats {
   crossingElements: number;
   /** Members left behind because they lie in a different plane entirely. */
   elsewhereElements: number;
+  /**
+   * Loads left behind: attached to nodes or members the cut did not take, or
+   * of a kind 2D cannot carry (a surface load on a quad, say). Counted
+   * because an unloaded frame solves beautifully and is quietly wrong.
+   *
+   * What this does NOT count: plates and quads themselves. They are never
+   * handed to the slice (the caller passes nodes/elements/supports/loads
+   * only), so a cut silently leaves them in the store rather than dropping
+   * them — and surface loads attached to one ARE counted above, by having no
+   * node or member the cut can follow.
+   */
+  droppedLoads: number;
   /** Nodes that came through the cut. */
   nodes: number;
   /** Members that came through the cut. */
   elements: number;
   /** Loads that came through the cut. */
   loads: number;
-  /**
-   * Loads left behind, because what they acted on did not survive the cut.
-   *
-   * The counterpart of `crossingElements`, and the one that matters more. A cut
-   * that loses its supports fails loudly — the solver refuses. A cut that loses
-   * its LOAD solves, reports zero everywhere, and reads as a safe structure.
-   * Reported so the caller can say so.
-   */
-  droppedLoads: number;
 }
 
 export type SliceResult =
@@ -268,11 +291,14 @@ export function sliceModelAtPlane(
   /*
    * Only what the cut keeps is handed on. Supports on nodes that did not
    * survive, and loads on members that did not, would otherwise arrive
-   * referring to things the 2D model has never heard of.
+   * referring to things the 2D model has never heard of. What is filtered
+   * out here is COUNTED — with what the builder itself cannot carry added
+   * on — because "the cut took one frame" is only half the story when the
+   * loads stayed behind.
    */
+  const allLoads = [...loads];
   const keptElementIds = new Set(keptElements.map((e) => e.id));
   const keptSupports = [...supports].filter((s) => inPlane.has(s.nodeId));
-  const allLoads = [...loads];
   const keptLoads = allLoads.filter((l) => {
     const d = l.data as { nodeId?: number; elementId?: number };
     if (d.nodeId !== undefined) return inPlane.has(d.nodeId);
@@ -300,13 +326,27 @@ export function sliceModelAtPlane(
     slice: {
       crossingElements: crossing,
       elsewhereElements: elsewhere,
+      droppedLoads: (allLoads.length - keptLoads.length) + built.model.stats.droppedLoads,
       nodes: built.model.nodes.size,
       elements: built.model.elements.size,
-      // Counted off what the SLICE kept, not off `built.model`: the 2D build can
-      // drop a load of its own accord, and folding the two together would report
-      // one number for two different decisions.
-      loads: keptLoads.length,
-      droppedLoads: allLoads.length - keptLoads.length,
+      /*
+       * What the 2D model CARRIES, not what the slice handed to the builder.
+       *
+       * This reported `keptLoads.length` — the loads whose node or member
+       * survived — and that is a count of objects, not of load. A load
+       * survives the cut whenever the thing it acts on does, but it carries
+       * only its in-plane component into the frame, and for a roof load on a
+       * horizontal cut that component is zero. Seven cuts of the shipped
+       * library advertised between one and forty loads, "kept" all of them,
+       * and produced a frame carrying nothing.
+       *
+       * `carriedLoads` counts SOURCE loads rather than emitted ones, because
+       * the builder sums nodal loads landing on a merged node — three loads
+       * can leave as one, and counting the output would report two missing
+       * when none are. That is what keeps `loads + droppedLoads` equal to the
+       * model's own total, which a test pins across the shipped library.
+       */
+      loads: built.model.stats.carriedLoads,
     },
   };
 }
