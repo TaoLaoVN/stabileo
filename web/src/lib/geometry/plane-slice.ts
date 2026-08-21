@@ -36,7 +36,8 @@
  */
 
 import {
-  buildSimplified2DModel, type DrawPlane, type SimplifiedResult,
+  buildSimplified2DModel, inPlaneLoadMagnitude, LOAD_EPS,
+  type DrawPlane, type SimplifiedResult,
 } from './plane-projection';
 
 /**
@@ -123,7 +124,9 @@ export function planeOffsets(
   nodes: Iterable<{ id: number; x: number; y: number; z?: number }>,
   elements: Iterable<{ id?: number; nodeI: number; nodeJ: number }>,
   supports: Iterable<{ nodeId: number }> = [],
-  loads: Iterable<{ data: Record<string, unknown> }> = [],
+  // `type` as well as `data`: what a load carries into the plane depends on
+  // its kind, so the count cannot be taken from the payload alone.
+  loads: Iterable<{ type: string; data: Record<string, unknown> }> = [],
   tol = SLICE_TOL,
 ): PlaneOffset[] {
   const byNode = new Map<number, number>();
@@ -162,12 +165,29 @@ export function planeOffsets(
     if (g) sup.set(g.value, (sup.get(g.value) ?? 0) + 1);
   }
 
-  // Counted by the SAME rule `sliceModelAtPlane` keeps them by, so the number the
-  // dialog shows before the cut is the number the cut will honour. A load keyed by
-  // neither a node nor a member — a surface load carries `quadId` — belongs to no
-  // cut and is counted for none, which is what makes it show up as missing.
+  // A load keyed by neither a node nor a member — a surface load carries
+  // `quadId` — belongs to no cut and is counted for none, which is what makes
+  // it show up as missing.
+  //
+  // This is a PREVIEW, and it is exact about zero and approximate above it.
+  // It cannot be exact above zero without running the whole projection for
+  // every candidate offset: the builder also collapses members whose ends
+  // project together and drops duplicates, and a load on one of those goes
+  // with it. What it IS exact about is the only thing the warning depends on —
+  // a cut that will carry nothing counts zero here, and a cut that counts zero
+  // will carry nothing. A test pins that equivalence across the shipped
+  // library; the earlier claim that this equals the final count was wrong, and
+  // four cuts of that library disprove it.
+  //
+  // And counted by EFFECT, not by existence. A load survives the cut as an
+  // object whenever the thing it acts on survives, but what it carries into the
+  // 2D frame is only its in-plane component: a roof load pointing down global Z
+  // is nothing at all to a horizontal frame. Counting objects advertised forty
+  // loads on a cut that carried none, and the zero-load warning — gated on this
+  // number — stayed silent on exactly the cuts that needed it.
   const loadCount = new Map<number, number>();
   for (const l of loads) {
+    if (inPlaneLoadMagnitude(l, plane) < LOAD_EPS) continue;
     const d = l.data as { nodeId?: number; elementId?: number };
     let value: number | undefined;
     if (d.nodeId !== undefined) {
@@ -309,10 +329,24 @@ export function sliceModelAtPlane(
       droppedLoads: (allLoads.length - keptLoads.length) + built.model.stats.droppedLoads,
       nodes: built.model.nodes.size,
       elements: built.model.elements.size,
-      // Counted off what the SLICE kept, not off `built.model`: the 2D build can
-      // drop a load of its own accord, and folding the two together would report
-      // one number for two different decisions.
-      loads: keptLoads.length,
+      /*
+       * What the 2D model CARRIES, not what the slice handed to the builder.
+       *
+       * This reported `keptLoads.length` — the loads whose node or member
+       * survived — and that is a count of objects, not of load. A load
+       * survives the cut whenever the thing it acts on does, but it carries
+       * only its in-plane component into the frame, and for a roof load on a
+       * horizontal cut that component is zero. Seven cuts of the shipped
+       * library advertised between one and forty loads, "kept" all of them,
+       * and produced a frame carrying nothing.
+       *
+       * `carriedLoads` counts SOURCE loads rather than emitted ones, because
+       * the builder sums nodal loads landing on a merged node — three loads
+       * can leave as one, and counting the output would report two missing
+       * when none are. That is what keeps `loads + droppedLoads` equal to the
+       * model's own total, which a test pins across the shipped library.
+       */
+      loads: built.model.stats.carriedLoads,
     },
   };
 }

@@ -55,6 +55,66 @@ export function remapNodalLoad2D(plane: DrawPlane, fx3d: number, fy3d: number, f
 }
 
 /**
+ * Below this, a projected load carries nothing and is not a load.
+ *
+ * Not a tolerance on geometry — a threshold on FORCE. A load whose in-plane
+ * component is this small acts on nothing, and the 2D solver would integrate
+ * it to zero anyway; the only question is whether anyone is told it is gone.
+ */
+export const LOAD_EPS = 1e-12;
+
+/**
+ * What a load still carries once projected onto a plane, as a magnitude.
+ *
+ * Existence is not the same question as effect, and for a slice they come
+ * apart: a roof load pointing down the global Z has no component in a
+ * HORIZONTAL frame, so it survives the cut as an object and acts on nothing.
+ * Counting objects made that invisible — the dialog advertised forty loads,
+ * the frame carried none, and the utilisation map painted it uniformly green.
+ *
+ * Summed componentwise rather than normed: this decides "is there anything
+ * here at all", and for that a sum of absolute values is both cheaper and
+ * strictly safer than a norm — it cannot cancel.
+ *
+ * Kinds with no 2D form (a surface load carries `quadId`, and a quad is not
+ * something a plane frame can hold) return 0, which is what makes them show
+ * up as dropped rather than vanish.
+ */
+export function inPlaneLoadMagnitude(
+  load: { type: string; data: Record<string, unknown> },
+  plane: DrawPlane,
+): number {
+  const d = load.data as Record<string, number | undefined>;
+  const abs = (v: number | undefined) => Math.abs(v ?? 0);
+
+  switch (load.type) {
+    case 'nodal3d': {
+      const f = remapNodalLoad2D(plane, d.fx ?? 0, d.fy ?? 0, d.fz ?? 0);
+      return Math.abs(f.fx) + Math.abs(f.fy)
+        + Math.abs(remapMoment2D(plane, d.mx ?? 0, d.my ?? 0, d.mz ?? 0));
+    }
+    case 'nodal': {
+      // The legacy 2D shape stores the vertical in `fz`, falling back to `fy`.
+      const f = remapNodalLoad2D(plane, d.fx ?? 0, d.fz ?? d.fy ?? 0, 0);
+      return Math.abs(f.fx) + Math.abs(f.fy)
+        + Math.abs(remapMoment2D(plane, 0, 0, d.my ?? d.mz ?? 0));
+    }
+    case 'distributed3d':
+      return plane === 'xy'
+        ? abs(d.qYI) + abs(d.qYJ)
+        : abs(d.qZI) + abs(d.qZJ);
+    case 'distributed':
+      return abs(d.qI) + abs(d.qJ);
+    case 'pointOnElement':
+      return abs(d.p) + abs(d.px) + abs(d.my);
+    case 'thermal':
+      return abs(d.dtUniform) + abs(d.dtGradient);
+    default:
+      return 0;
+  }
+}
+
+/**
  * Remap a 3D moment about each axis to the single 2D rotation (about the
  * out-of-plane axis).
  *   XY plane → rotation about Z
@@ -92,7 +152,20 @@ export interface SimplifiedModel {
   materials: Map<number, any>;
   sections: Map<number, any>;
   /** Stats about the reduction */
-  stats: { mergedNodes: number; removedElements: number; duplicateElements: number; droppedLoads: number };
+  stats: {
+    mergedNodes: number; removedElements: number; duplicateElements: number;
+    droppedLoads: number;
+    /**
+     * How many of the INPUT loads reached the 2D model carrying something.
+     *
+     * Not `loads.length`: the builder sums nodal loads that land on one merged
+     * node, so three loads can leave as one and counting the output would say
+     * two went missing when none did. Counting sources keeps
+     * `carriedLoads + droppedLoads` equal to what came in, which is the
+     * property that makes either number trustworthy.
+     */
+    carriedLoads: number;
+  };
 }
 
 export type SimplifiedResult = { ok: true; model: SimplifiedModel } | { ok: false; error: string };
@@ -298,7 +371,9 @@ export function buildSimplified2DModel(
   }
 
   // 5. Remap loads — sum nodal loads at merged nodes, remap types
-  const nodalSums = new Map<number, { fx: number; fy: number; my: number; caseId?: number }>();
+  // `sources` is how many of the model's loads fed each sum, so a sum that
+  // vanishes can report how many loads went with it rather than counting as one.
+  const nodalSums = new Map<number, { fx: number; fy: number; my: number; caseId?: number; sources: number }>();
   const outLoads: Array<{ type: string; data: Record<string, unknown> }> = [];
   let loadId = 1;
   /*
@@ -308,6 +383,25 @@ export function buildSimplified2DModel(
    * difference between a clean reduction and a quietly weaker structure.
    */
   let droppedLoads = 0;
+  // Counted in SOURCE loads, not emitted ones — see `carriedLoads` on the type.
+  let carriedLoads = 0;
+
+  /*
+   * ONE rule for "this carries nothing", shared with the preview.
+   *
+   * Applied per type it drifted immediately: the distributed branch got the
+   * check and `pointOnElement` and `thermal` did not, so a point load of 0 kN
+   * was advertised as nothing by the preview and counted as carried here.
+   * That is the same lie this whole count exists to stop, in a rarer type —
+   * and the library sweep could not see it, because no shipped fixture holds
+   * a zero-magnitude load of those kinds.
+   *
+   * Nodal loads are NOT checked here: several can land on one merged node, and
+   * two that individually carry something can still sum to nothing. That is
+   * decided on the sum, below.
+   */
+  const carriesNothing = (l: { type: string; data: Record<string, unknown> }) =>
+    inPlaneLoadMagnitude(l, plane) < LOAD_EPS;
 
   for (const l of loads) {
     if (l.type === 'nodal' || l.type === 'nodal3d') {
@@ -326,9 +420,9 @@ export function buildSimplified2DModel(
       const key = mergedId * 1000 + (d.caseId ?? 1);
       const prev = nodalSums.get(key);
       if (prev) {
-        prev.fx += fx; prev.fy += fy; prev.my += my;
+        prev.fx += fx; prev.fy += fy; prev.my += my; prev.sources++;
       } else {
-        nodalSums.set(key, { fx, fy, my, caseId: d.caseId });
+        nodalSums.set(key, { fx, fy, my, caseId: d.caseId, sources: 1 });
       }
     } else if (l.type === 'distributed' || l.type === 'distributed3d') {
       const d = l.data as any;
@@ -341,14 +435,20 @@ export function buildSimplified2DModel(
       } else {
         qI = d.qI ?? 0; qJ = d.qJ ?? 0;
       }
+      if (carriesNothing(l)) { droppedLoads++; continue; }
+      carriedLoads++;
       outLoads.push({ type: 'distributed', data: { id: loadId++, elementId: elemId, qI, qJ, angle: d.angle, isGlobal: d.isGlobal, caseId: d.caseId } });
     } else if (l.type === 'pointOnElement') {
       const d = l.data as any;
       if (!outElements.has(d.elementId)) { droppedLoads++; continue; }
+      if (carriesNothing(l)) { droppedLoads++; continue; }
+      carriedLoads++;
       outLoads.push({ type: 'pointOnElement', data: { ...d, id: loadId++ } });
     } else if (l.type === 'thermal') {
       const d = l.data as any;
       if (!outElements.has(d.elementId)) { droppedLoads++; continue; }
+      if (carriesNothing(l)) { droppedLoads++; continue; }
+      carriedLoads++;
       outLoads.push({ type: 'thermal', data: { ...d, id: loadId++ } });
     } else {
       // 3D-only load types (surface3d, pointOnElement3d, …) have no 2D form.
@@ -359,8 +459,15 @@ export function buildSimplified2DModel(
   // Emit summed nodal loads
   for (const [key, sum] of nodalSums) {
     const nodeId = Math.floor(key / 1000);
-    if (!outNodes.has(nodeId)) continue;
-    if (Math.abs(sum.fx) < 1e-15 && Math.abs(sum.fy) < 1e-15 && Math.abs(sum.my) < 1e-15) continue;
+    // Both of these are losses, and both are counted by how many of the
+    // model's loads went into the sum — a node that merged three loads and
+    // then dropped out took three with it, not one.
+    if (!outNodes.has(nodeId)) { droppedLoads += sum.sources; continue; }
+    if (Math.abs(sum.fx) < LOAD_EPS && Math.abs(sum.fy) < LOAD_EPS && Math.abs(sum.my) < LOAD_EPS) {
+      droppedLoads += sum.sources;
+      continue;
+    }
+    carriedLoads += sum.sources;
     outLoads.push({ type: 'nodal', data: { id: loadId++, nodeId, fx: sum.fx, fz: sum.fy, my: sum.my, caseId: sum.caseId } });
   }
 
@@ -373,7 +480,7 @@ export function buildSimplified2DModel(
       loads: outLoads,
       materials,
       sections,
-      stats: { mergedNodes: totalMergedAway, removedElements, duplicateElements, droppedLoads },
+      stats: { mergedNodes: totalMergedAway, removedElements, duplicateElements, droppedLoads, carriedLoads },
     },
   };
 }
