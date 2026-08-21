@@ -498,4 +498,61 @@ describe('load is counted by what it carries, not by what survives', () => {
       }
     }
   });
+
+  /**
+   * Every KIND, including the ones no shipped fixture exercises at zero.
+   *
+   * The library sweep cannot see this: nothing that ships carries a
+   * zero-magnitude point or thermal load, so a rule applied to the
+   * distributed branch and forgotten on the other two passed it completely.
+   * It did — `pointOnElement` with p = 0 was advertised as nothing by the
+   * preview and counted as carried by the projection, which is the same lie
+   * this count exists to stop, wearing a rarer type.
+   *
+   * Enumerating the kinds is what catches a rule applied unevenly. A sweep
+   * over real models only ever proves things about the loads real models have.
+   */
+  const AT_ZERO: Array<[string, { type: string; data: Record<string, unknown> }]> = [
+    ['distributed', { type: 'distributed', data: { id: 1, elementId: 11, qI: 0, qJ: 0 } }],
+    ['distributed3d', { type: 'distributed3d', data: { id: 1, elementId: 11, qYI: 0, qYJ: 0, qZI: 0, qZJ: 0 } }],
+    ['pointOnElement', { type: 'pointOnElement', data: { id: 1, elementId: 11, a: 2, p: 0 } }],
+    ['thermal', { type: 'thermal', data: { id: 1, elementId: 11, dtUniform: 0, dtGradient: 0 } }],
+    ['nodal', { type: 'nodal', data: { id: 1, nodeId: 1, fx: 0, fz: 0 } }],
+    ['nodal3d', { type: 'nodal3d', data: { id: 1, nodeId: 1, fx: 0, fy: 0, fz: 0, mx: 0, my: 0, mz: 0 } }],
+  ];
+
+  for (const [kind, load] of AT_ZERO) {
+    it(`a ${kind} carrying nothing is dropped and counted, not "kept"`, () => {
+      const cut = planeOffsets('xz', NODES, ELEMENTS, SUPPORTS, [load]).find((o) => o.value === 0)!;
+      expect(cut.loads, 'the preview must not advertise it').toBe(0);
+
+      const r = sliceModelAtPlane('xz', 0, NODES, ELEMENTS, SUPPORTS, [load], MATERIALS, SECTIONS);
+      expect(r.ok).toBe(true);
+      if (!r.ok) return;
+      expect(r.slice.loads, 'nor may the slice report it as carried').toBe(0);
+      expect(r.slice.droppedLoads, 'and it has to be counted as dropped').toBe(1);
+    });
+  }
+
+  const CARRYING: Array<[string, { type: string; data: Record<string, unknown> }]> = [
+    ['distributed', { type: 'distributed', data: { id: 1, elementId: 11, qI: -10, qJ: -10 } }],
+    ['pointOnElement', { type: 'pointOnElement', data: { id: 1, elementId: 11, a: 2, p: -5 } }],
+    ['thermal', { type: 'thermal', data: { id: 1, elementId: 11, dtUniform: 20, dtGradient: 0 } }],
+    ['nodal', { type: 'nodal', data: { id: 1, nodeId: 1, fx: 3, fz: -7 } }],
+  ];
+
+  for (const [kind, load] of CARRYING) {
+    it(`a ${kind} that does carry something is not dropped`, () => {
+      // The other direction, so the rule cannot be satisfied by dropping
+      // everything — which would silence the warning just as effectively.
+      const cut = planeOffsets('xz', NODES, ELEMENTS, SUPPORTS, [load]).find((o) => o.value === 0)!;
+      expect(cut.loads, `${kind} should be advertised`).toBe(1);
+
+      const r = sliceModelAtPlane('xz', 0, NODES, ELEMENTS, SUPPORTS, [load], MATERIALS, SECTIONS);
+      expect(r.ok).toBe(true);
+      if (!r.ok) return;
+      expect(r.slice.loads, `${kind} should be carried`).toBe(1);
+      expect(r.slice.droppedLoads).toBe(0);
+    });
+  }
 });

@@ -386,6 +386,23 @@ export function buildSimplified2DModel(
   // Counted in SOURCE loads, not emitted ones — see `carriedLoads` on the type.
   let carriedLoads = 0;
 
+  /*
+   * ONE rule for "this carries nothing", shared with the preview.
+   *
+   * Applied per type it drifted immediately: the distributed branch got the
+   * check and `pointOnElement` and `thermal` did not, so a point load of 0 kN
+   * was advertised as nothing by the preview and counted as carried here.
+   * That is the same lie this whole count exists to stop, in a rarer type —
+   * and the library sweep could not see it, because no shipped fixture holds
+   * a zero-magnitude load of those kinds.
+   *
+   * Nodal loads are NOT checked here: several can land on one merged node, and
+   * two that individually carry something can still sum to nothing. That is
+   * decided on the sum, below.
+   */
+  const carriesNothing = (l: { type: string; data: Record<string, unknown> }) =>
+    inPlaneLoadMagnitude(l, plane) < LOAD_EPS;
+
   for (const l of loads) {
     if (l.type === 'nodal' || l.type === 'nodal3d') {
       const d = l.data as any;
@@ -418,24 +435,19 @@ export function buildSimplified2DModel(
       } else {
         qI = d.qI ?? 0; qJ = d.qJ ?? 0;
       }
-      /*
-       * A load whose in-plane component is zero acts on nothing. It used to be
-       * pushed anyway, so a vertical roof load cut onto a HORIZONTAL frame
-       * survived as an object carrying nothing — and every counter said it was
-       * kept. That is the quiet failure this whole count exists to prevent:
-       * the frame solves, every result is zero, and it reads as safe.
-       */
-      if (Math.abs(qI) < LOAD_EPS && Math.abs(qJ) < LOAD_EPS) { droppedLoads++; continue; }
+      if (carriesNothing(l)) { droppedLoads++; continue; }
       carriedLoads++;
       outLoads.push({ type: 'distributed', data: { id: loadId++, elementId: elemId, qI, qJ, angle: d.angle, isGlobal: d.isGlobal, caseId: d.caseId } });
     } else if (l.type === 'pointOnElement') {
       const d = l.data as any;
       if (!outElements.has(d.elementId)) { droppedLoads++; continue; }
+      if (carriesNothing(l)) { droppedLoads++; continue; }
       carriedLoads++;
       outLoads.push({ type: 'pointOnElement', data: { ...d, id: loadId++ } });
     } else if (l.type === 'thermal') {
       const d = l.data as any;
       if (!outElements.has(d.elementId)) { droppedLoads++; continue; }
+      if (carriesNothing(l)) { droppedLoads++; continue; }
       carriedLoads++;
       outLoads.push({ type: 'thermal', data: { ...d, id: loadId++ } });
     } else {
