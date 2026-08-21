@@ -579,10 +579,10 @@
   }
   .conn-btn-auto:hover { background: rgba(127, 212, 204, 0.1); }
   .conn-btn-verify {
-    padding: 4px 12px; font-size: 0.72rem; font-weight: 600; color: var(--st-bg);
-    background: none; border:  1px solid var(--st-hair); border-radius: 4px; cursor: pointer;
+    padding: 4px 12px; font-size: 0.72rem; font-weight: 600; color: var(--st-text);
+    background: var(--st-surface-3); border:  1px solid var(--st-info); border-radius: 4px; cursor: pointer;
   }
-  .conn-btn-verify:hover { background: var(--st-surface-3); }
+  .conn-btn-verify:hover { background: var(--st-hair-strong); }
 
   .conn-result-card {
     padding: 6px 8px; border-radius: 4px; font-size: 0.7rem;
