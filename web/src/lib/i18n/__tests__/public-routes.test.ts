@@ -61,10 +61,22 @@ describe('alternateUrls', () => {
     expect(alts.map((a) => a.hreflang).sort()).toEqual(['en', 'es', 'pt', 'x-default']);
     // Relative hreflang is ignored by crawlers, silently.
     for (const a of alts) expect(a.href.startsWith('https://')).toBe(true);
-    // x-default names the English page, not the bare root: `/` declares `/en`
-    // as its canonical, so pointing the default at `/` would name a URL that
-    // is not canonical for itself.
-    expect(alts.find((a) => a.hreflang === 'x-default')!.href).toBe(`${SITE_ORIGIN}/en`);
+    // x-default names the English version OF THIS PAGE — `/en/blog/x`, not
+    // `/en`. The locale is English because `/` serves English and declares
+    // `/en` as its canonical, so pointing the default at `/` would name a URL
+    // that is not canonical for itself. The PATH has to follow the page, and
+    // it did not: this asserted `${SITE_ORIGIN}/en` while the site was telling
+    // crawlers that unmatched readers of every post belonged on the home page.
+    expect(alts.find((a) => a.hreflang === 'x-default')!.href).toBe(`${SITE_ORIGIN}/en/blog/x`);
+  });
+
+  it('keeps x-default on the page it is declared on, for every route', () => {
+    // The regression above was invisible on `/`, where the wrong answer and
+    // the right one are the same string. Only a sub-page can catch it.
+    for (const path of ['/', '/blog', '/blog/some-post']) {
+      const xd = alternateUrls(path).find((a) => a.hreflang === 'x-default')!.href;
+      expect(xd, `x-default for ${path}`).toBe(publicUrl(path, 'en'));
+    }
   });
 });
 

@@ -245,7 +245,12 @@ async function main() {
               (l) =>
                 `    <xhtml:link rel="alternate" hreflang="${l}" href="${ORIGIN}/${l}${path === '/' ? '' : path}"/>`,
             ).join('\n');
-            return `  <url>\n    <loc>${loc}</loc>\n    <lastmod>${TODAY}</lastmod>\n${alts}\n    <xhtml:link rel="alternate" hreflang="x-default" href="${ORIGIN}/en"/>\n  </url>`;
+            // x-default follows the page, exactly as it does in the pages'
+            // own <head> — see alternateUrls() in src/lib/i18n/public-routes.ts.
+            // This was `${ORIGIN}/en` for every entry, which pointed the
+            // default of all sixteen URLs at the English home page.
+            const xDefault = `${ORIGIN}/en${path === '/' ? '' : path}`;
+            return `  <url>\n    <loc>${loc}</loc>\n    <lastmod>${TODAY}</lastmod>\n${alts}\n    <xhtml:link rel="alternate" hreflang="x-default" href="${xDefault}"/>\n  </url>`;
           }),
         ).join('\n') +
         `\n</urlset>\n`,

@@ -246,10 +246,12 @@ test.describe('@smoke blog', () => {
       `en https://stabileo.com/en/blog/${SLUG}`,
       `es https://stabileo.com/es/blog/${SLUG}`,
       `pt https://stabileo.com/pt/blog/${SLUG}`,
-      // x-default names /en, not the bare root: the root declares /en as its
-      // canonical, so pointing the default at it would name a URL that is not
-      // canonical for itself.
-      'x-default https://stabileo.com/en',
+      // x-default names the English version of THIS POST. English because the
+      // root declares /en as its canonical, so pointing the default at the
+      // root would name a URL that is not canonical for itself — and this
+      // post's path because a default that jumps to the home page sends every
+      // unmatched reader away from the thing they were about to be shown.
+      `x-default https://stabileo.com/en/blog/${SLUG}`,
     ]);
   });
 

@@ -29,7 +29,7 @@ export const torsionTheories: Post = {
     es: {
       title: 'Bredt o Saint-Venant: qué teoría de torsión aplica, y qué cuesta elegir mal',
       excerpt:
-        'Tres fórmulas, una sección, tres números distintos. Cuál corresponde depende de cómo es la pared, no de su tamaño. Y cuando dos se aplican a la vez no coinciden: Bredt queda por debajo del valor exacto, entre 2 y 15 % según el espesor.',
+        'Tres fórmulas, una sección, tres números distintos. Cuál corresponde depende de cómo es la pared; y donde dos valen a la vez, Bredt queda 2 a 15 % por debajo.',
       blocks: [
         { k: 'p', t: 'Tres fórmulas distintas dan la tensión de corte por torsión. Para una misma sección pueden diferir en órdenes de magnitud, y cuál corresponde no depende del tamaño ni del material: depende de cómo es la pared.' },
         { k: 'p', t: 'Hasta ahí, lo que dice cualquier libro. Lo que casi no se explica es qué pasa cuando dos de las tres se aplican a la misma sección, porque ahí no dan lo mismo, y la diferencia siempre va para el mismo lado.' },
@@ -102,7 +102,7 @@ export const torsionTheories: Post = {
     en: {
       title: 'Bredt or Saint-Venant: which torsion theory applies, and what picking wrong costs',
       excerpt:
-        'Three formulas, one section, three different numbers. Which one applies depends on how the wall is built, not on its size. And where two apply at once they do not agree: Bredt lands below the exact value, by 2 to 15% depending on thickness.',
+        'Three formulas, one section, three different numbers. Which applies depends on how the wall is built; and where two apply at once, Bredt lands 2 to 15% low.',
       blocks: [
         { k: 'p', t: 'Three different formulas give the shear stress from torsion. For one section they can differ by orders of magnitude, and which one applies depends on how the wall is built rather than on its size or its material.' },
         { k: 'p', t: 'So far, what any textbook says. What is rarely spelt out is what happens when two of the three apply to the same section, because there they do not agree, and the difference always goes the same way.' },
@@ -175,7 +175,7 @@ export const torsionTheories: Post = {
     pt: {
       title: 'Bredt ou Saint-Venant: qual teoria de torção se aplica, e o que custa escolher errado',
       excerpt:
-        'Três fórmulas, uma seção, três números diferentes. Qual se aplica depende de como é a parede, não do seu tamanho. E quando duas valem ao mesmo tempo elas não coincidem: Bredt fica abaixo do valor exato, entre 2 e 15 % conforme a espessura.',
+        'Três fórmulas, uma seção, três números diferentes. Qual se aplica depende de como é a parede; e onde duas valem, Bredt fica 2 a 15 % abaixo do exato.',
       blocks: [
         { k: 'p', t: 'Três fórmulas diferentes dão a tensão de cisalhamento por torção. Para uma mesma seção podem diferir em ordens de grandeza, e qual delas corresponde depende de como é a parede, não do seu tamanho nem do material.' },
         { k: 'p', t: 'Até aí, o que diz qualquer livro. O que quase não se explica é o que acontece quando duas das três se aplicam à mesma seção, porque aí elas não dão o mesmo, e a diferença vai sempre para o mesmo lado.' },
