@@ -32,6 +32,49 @@ const META_TAGS = [
 
 const ALTERNATE = 'meta[property="og:locale:alternate"]';
 
+/** The one this module writes, so restoring can remove exactly it. */
+const JSONLD = 'script[type="application/ld+json"][data-page-meta]';
+
+/**
+ * What a post tells a search engine about itself, in Schema.org terms.
+ *
+ * This is the difference between a page of text and a result that shows an
+ * author and a date. It is also the only place the authorship of the post is
+ * machine-readable — the byline on screen is prose.
+ */
+export type ArticleMeta = {
+	headline: string;
+	description: string;
+	/** ISO day. */
+	datePublished: string;
+	authors: string[];
+	/** Absolute; the page's own canonical. */
+	url: string;
+	locale: PublicLocale;
+};
+
+function setArticleData(article: ArticleMeta | undefined) {
+	document.querySelector(JSONLD)?.remove();
+	if (!article) return;
+	const el = document.createElement('script');
+	el.setAttribute('type', 'application/ld+json');
+	el.setAttribute('data-page-meta', '');
+	el.textContent = JSON.stringify({
+		'@context': 'https://schema.org',
+		'@type': 'BlogPosting',
+		headline: article.headline,
+		description: article.description,
+		datePublished: article.datePublished,
+		inLanguage: article.locale,
+		author: article.authors.map((name) => ({ '@type': 'Person', name })),
+		publisher: { '@type': 'Organization', name: 'Stabileo', url: 'https://stabileo.com' },
+		mainEntityOfPage: { '@type': 'WebPage', '@id': article.url },
+		url: article.url,
+		image: 'https://stabileo.com/og/stabileo-social.png'
+	});
+	document.head.appendChild(el);
+}
+
 let original: {
 	title: string;
 	lang: string;
@@ -105,6 +148,8 @@ export function applyPageMeta(meta: {
 	locale: PublicLocale;
 	/** The route without its language prefix: '/', '/blog', '/blog/<slug>'. */
 	path: string;
+	/** Present on a post; absent everywhere else. */
+	article?: ArticleMeta;
 }) {
 	if (!original) {
 		original = {
@@ -125,6 +170,7 @@ export function applyPageMeta(meta: {
 	setMeta('meta[name="twitter:title"]', meta.title);
 	setMeta('meta[name="twitter:description"]', meta.description);
 	setLinks(meta.path, meta.locale);
+	setArticleData(meta.article);
 }
 
 export function restorePageMeta() {
@@ -139,4 +185,5 @@ export function restorePageMeta() {
 	for (const el of document.querySelectorAll('link[rel="alternate"][hreflang]')) el.remove();
 	const canonical = document.querySelector('link[rel="canonical"]');
 	if (canonical && original.canonical) canonical.setAttribute('href', original.canonical);
+	setArticleData(undefined);
 }

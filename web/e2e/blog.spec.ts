@@ -171,6 +171,51 @@ test.describe('@smoke blog', () => {
     await expect(page.locator('.post-title')).toHaveText(TITLES.es);
   });
 
+  test('a post describes itself to a search engine', async ({ page }) => {
+    // The byline on screen is prose; this is the only machine-readable
+    // statement of who wrote the post and when. Without it a result is a page
+    // of text; with it, it can carry an author and a date.
+    await boot(page, `/es/blog/${SLUG}`);
+
+    const raw = await page.locator('script[type="application/ld+json"]').textContent();
+    const data = JSON.parse(raw!);
+    expect(data['@type']).toBe('BlogPosting');
+    expect(data.inLanguage).toBe('es');
+    expect(data.datePublished).toMatch(/^\d{4}-\d{2}-\d{2}$/);
+    expect(data.author.map((a: { name: string }) => a.name)).toContain('Bautista Chesta');
+    // It must claim the address it is actually served at, in this language.
+    expect(data.url).toBe(`https://stabileo.com/es/blog/${SLUG}`);
+    expect(data.mainEntityOfPage['@id']).toBe(data.url);
+  });
+
+  test('the index is not an article, and the post is not the homepage', async ({ page }) => {
+    // Two mistakes that look like nothing and cost the whole point of the
+    // exercise: structured data on a page that is not an article, and a
+    // canonical that hands a post's credit to the front page.
+    await boot(page, '/es/blog');
+    await expect(page.locator('script[type="application/ld+json"]')).toHaveCount(0);
+    await expect(page.locator('link[rel="canonical"]')).toHaveAttribute(
+      'href',
+      'https://stabileo.com/es/blog',
+    );
+
+    await boot(page, `/pt/blog/${SLUG}`);
+    await expect(page.locator('link[rel="canonical"]')).toHaveAttribute(
+      'href',
+      `https://stabileo.com/pt/blog/${SLUG}`,
+    );
+    // And it points at its siblings, which is how they get discovered at all.
+    const alts = await page
+      .locator('link[rel="alternate"][hreflang]')
+      .evaluateAll((els) => els.map((e) => `${e.getAttribute('hreflang')} ${e.getAttribute('href')}`).sort());
+    expect(alts).toEqual([
+      `en https://stabileo.com/en/blog/${SLUG}`,
+      `es https://stabileo.com/es/blog/${SLUG}`,
+      `pt https://stabileo.com/pt/blog/${SLUG}`,
+      'x-default https://stabileo.com/',
+    ]);
+  });
+
   test('the tables render as tables, with every row filled', async ({ page }) => {
     await boot(page, `/blog/${SLUG}`);
 

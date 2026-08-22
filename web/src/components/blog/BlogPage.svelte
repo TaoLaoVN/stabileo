@@ -11,6 +11,7 @@
    */
   import { tPublic as t, tpPublic as tp, publicI18n } from '../../lib/i18n/store.svelte';
   import { applyPageMeta, restorePageMeta } from '../../lib/page-meta';
+  import { publicUrl } from '../../lib/i18n/public-routes';
   import { POSTS, findPost, formatPostDate } from '../../lib/blog';
   import { readingMinutes } from '../../lib/blog/types';
   import { enterApp } from '../landing/landing-utils';
@@ -39,6 +40,17 @@
       description: body ? body.excerpt : t('blog.lead'),
       locale: publicI18n.locale,
       path: post ? `/blog/${post.slug}` : '/blog',
+      article:
+        post && body
+          ? {
+              headline: body.title,
+              description: body.excerpt,
+              datePublished: post.date,
+              authors: post.authors,
+              url: publicUrl(`/blog/${post.slug}`, publicI18n.locale),
+              locale: publicI18n.locale,
+            }
+          : undefined,
     });
     return restorePageMeta;
   });
