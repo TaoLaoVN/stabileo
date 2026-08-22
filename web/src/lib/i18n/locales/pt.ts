@@ -227,6 +227,8 @@ const pt: Translations = {
   'blog.readMore': 'Ler a nota',
   'blog.readingTime': '{n} min de leitura',
   'blog.tag.cirsoc': 'CIRSOC',
+  'blog.tag.education': 'Educação',
+  'blog.tag.tools': 'Ferramentas',
   'blog.tag.concrete': 'Concreto',
   'blog.tag.ai': 'IA',
   'blog.tag.research': 'Pesquisa',

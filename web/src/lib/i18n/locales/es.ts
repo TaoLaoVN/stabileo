@@ -32,6 +32,8 @@ const es: Record<string, string> = {
   'blog.tag.sections': 'Secciones',
   'blog.tag.theory': 'Teoría',
   'blog.tag.cirsoc': 'CIRSOC',
+  'blog.tag.education': 'Educación',
+  'blog.tag.tools': 'Herramientas',
   'blog.tag.concrete': 'Hormigón',
   'blog.tag.ai': 'IA',
   'blog.tag.research': 'Investigación',

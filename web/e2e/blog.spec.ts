@@ -275,6 +275,68 @@ test.describe('@smoke blog', () => {
     await expect(table).not.toContainText('sin armadura');
   });
 
+  /*
+   * The kinematic embed, checked the way the CIRSOC one had to be: by driving
+   * it to the end and reading the panel back, not by asserting a button exists.
+   *
+   * Two real defects were found this way while writing the post. The fixture
+   * was missing `plates`, which threw inside the example loader and was
+   * swallowed by an empty catch — the model half-loaded and the deep link
+   * never ran. And `?kin=1` raised the panel flag without opening the Advanced
+   * tab that hosts the report on desktop Basic, so it worked on a phone and
+   * did nothing on a laptop.
+   */
+  test('the kinematic embed reaches the state its caption promises', async ({ page }) => {
+    test.slow();
+    await boot(page, '/es/blog/conceptual-side-advanced-tools', 'es');
+
+    const embed = page.locator('.post-embed');
+    await embed.scrollIntoViewIfNeeded();
+    await embed.locator('.post-embed-start').click();
+    await expect(embed.locator('iframe')).toHaveAttribute('src', /example=hidden-mechanism&kin=1/);
+
+    const app = page.frameLocator('.post-embed iframe');
+    // The report is docked in the Advanced tab; if the deep link fails to open
+    // it, nothing below this line can pass.
+    // 'Avanzado' in the DOM; the ribbon uppercases it in CSS.
+    await expect(app.getByTestId('bp-title')).toHaveText('Avanzado', { timeout: 60_000 });
+
+    const body = app.locator('body');
+    // The formula, and the app overruling it — the whole point of the post.
+    await expect(body).toContainText('g = 3×2 + 3 − 3×3 = 0');
+    await expect(body).toContainText('NO suficiente');
+    await expect(body).toContainText('1 modo de mecanismo');
+    // The verdict the post's table quotes, in the words the panel uses.
+    await expect(body).toContainText('no se puede resolver');
+  });
+
+  test('a post offers the way back to the index, and the index does not', async ({ page }) => {
+    /*
+     * There was no way back. The logo goes to the landing, so returning to the
+     * index from a post meant landing → scroll to the blog section → enter
+     * again. The link is deliberately absent on the index itself, which is
+     * what made the landing's "Blog" nav item useless here in the first place.
+     */
+    await boot(page, `/es/blog/${SLUG}`, 'es');
+    const back = page.locator('.landing.blog .nav-blog-link');
+    await expect(back).toBeVisible();
+    await expect(back).toHaveText('Blog');
+    // A real href, so it is crawlable and middle-clickable, not a button.
+    await expect(back).toHaveAttribute('href', '/es/blog');
+    // And it sits before the GitHub box, where the ask put it.
+    const order = await page.locator('.landing.blog .nav-actions > *').evaluateAll((els) =>
+      els.map((e) => e.className.toString().split(' ')[0]),
+    );
+    expect(order[0]).toBe('nav-blog-link');
+    expect(order[1]).toBe('nav-gh');
+
+    await back.click();
+    await expect(page).toHaveURL(/\/es\/blog$/);
+    await expect(page.locator('.post-card')).not.toHaveCount(0);
+    // Now on the index, it is gone.
+    await expect(page.locator('.landing.blog .nav-blog-link')).toHaveCount(0);
+  });
+
   test('a post describes itself to a search engine', async ({ page }) => {
     // The byline on screen is prose; this is the only machine-readable
     // statement of who wrote the post and when. Without it a result is a page

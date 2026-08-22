@@ -53,7 +53,8 @@ import type { Post } from '../types';
 
 export const cirsoc201Flexure: Post = {
   slug: 'verificacion-flexion-cirsoc-201',
-  date: '2026-08-22',
+  date: '2026-08-26',
+  order: 3,
   authors: ['Bautista Chesta'],
   tagKeys: ['blog.tag.cirsoc', 'blog.tag.concrete'],
   i18n: {

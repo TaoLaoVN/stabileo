@@ -14,6 +14,7 @@ import type { Post } from '../types';
 export const determinismBoundary: Post = {
   slug: 'the-determinism-boundary',
   date: '2026-08-12',
+  order: 1,
   authors: ['Bautista Chesta', 'Raúl Bertero', 'Federico Carrone', 'Diego Kingston'],
   tagKeys: ['blog.tag.ai', 'blog.tag.solver', 'blog.tag.research'],
   i18n: {
