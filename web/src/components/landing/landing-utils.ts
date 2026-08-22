@@ -38,35 +38,21 @@ export function switchPublicLocale(locale: PublicLocale) {
 }
 
 /**
- * Scroll to a section, and keep scrolling to it while the page settles.
+ * Scroll to a section.
  *
- * A single `scrollIntoView` lands short on this page, and measurably so:
- * clicking "Estado" left its section 2,418 px below the fold. The target is
- * computed when the click happens, but the page grows on the way there —
- * screenshots below the fold are lazy, and each one that decodes pushes
- * everything after it further down. The smooth scroll finishes at a position
- * that was correct when it started and is not any more.
+ * One smooth scroll, which is all this should ever have needed.
  *
- * So the intent is re-asserted rather than fired once: after the initial
- * scroll, the offset is re-checked a few times over a second and corrected if
- * it has drifted more than a few pixels. Cheap, and it stops as soon as the
- * element is where it should be — including immediately, when nothing moved.
+ * An earlier version re-asserted the target every 220 ms because clicking
+ * "Estado" landed 2,418 px short. That fixed the symptom and felt like a
+ * spring: each re-assertion restarted the animation, so the page arrived in
+ * visible steps. The cause was elsewhere — the screenshots reserved no height
+ * until they decoded, so the target moved while the scroll was travelling.
+ * Now they declare their intrinsic size (see Shot.svelte), the page stops
+ * growing underneath the scroll, and one call lands.
  */
 export function scrollToId(id: string, root?: HTMLElement | null) {
-  const find = () => (root ?? document).querySelector(`#${CSS.escape(id)}`) as HTMLElement | null;
-  const el = find();
-  if (!el) return;
-  el.scrollIntoView({ behavior: 'smooth', block: 'start' });
-
-  let tries = 0;
-  const settle = () => {
-    const target = find();
-    if (!target || tries++ > 6) return;
-    const off = target.getBoundingClientRect().top;
-    if (Math.abs(off) > 8) target.scrollIntoView({ behavior: 'smooth', block: 'start' });
-    setTimeout(settle, 220);
-  };
-  setTimeout(settle, 400);
+  const el = (root ?? document).querySelector(`#${CSS.escape(id)}`) as HTMLElement | null;
+  el?.scrollIntoView({ behavior: 'smooth', block: 'start' });
 }
 
 const GITHUB_API = `https://api.github.com/repos/lambdaclass/stabileo`;

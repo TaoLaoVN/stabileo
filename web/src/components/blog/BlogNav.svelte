@@ -21,10 +21,12 @@
       <span class="nav-name">Stabileo</span>
     </PublicLink>
 
-    <div class="nav-links blog-nav-links" id="nav-links">
-      <PublicLink to="/blog">{t('blog.title')}</PublicLink>
-    </div>
-
+    <!--
+      No section links here. The landing's nav scrolls to sections of the
+      landing, and on the blog the only one that survived was "Blog", which
+      pointed at the page the reader was already on. The logo goes home; that
+      is the whole navigation this page needs.
+    -->
     <div class="nav-actions">
       <a class="nav-gh" href={REPO_URL} target="_blank" rel="noreferrer" aria-label={t('landing.navGithubRepo')}>
         <span>GitHub</span>
