@@ -145,15 +145,18 @@
 <div data-tour="examples-section" class="ex-groups">
   {#if uiStore.analysisMode === 'pro'}
     {@render group('examples.titlePro', examplesPro, false, showExamples, () => showExamples = !showExamples)}
-  {:else if uiStore.analysisMode === '3d'}
-    <!--
-      The catalogue for the mode you are IN goes first. Both are offered in both
-      modes, but in 3D the 3D examples sat under nineteen 2D ones, far enough
-      down the panel to read as an afterthought.
-    -->
-    {@render group('examples.title3d', examples3D, true, showExamples3D, () => showExamples3D = !showExamples3D)}
-    {@render group('examples.title2d', [...examples], false, showExamples, () => showExamples = !showExamples)}
   {:else}
+    <!--
+      2D first, then 3D, in BOTH modes.
+
+      This used to put the catalogue for the mode you are in at the top, on the
+      reasoning that in 3D the 3D examples should not sit under nineteen 2D
+      ones. That was true when both lists were rendered open; now they are
+      disclosures, so neither is buried and the argument is gone — leaving only
+      the cost, which is that the two headings trade places when the mode
+      changes. A menu whose items move is one you have to read every time
+      instead of learning where things are.
+    -->
     {@render group('examples.title2d', [...examples], false, showExamples, () => showExamples = !showExamples)}
     {@render group('examples.title3d', examples3D, true, showExamples3D, () => showExamples3D = !showExamples3D)}
   {/if}

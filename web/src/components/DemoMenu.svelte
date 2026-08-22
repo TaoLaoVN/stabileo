@@ -42,6 +42,7 @@
 <div class="dm">
   <button class="dm-toggle" onclick={() => (open = !open)} data-testid="demo-menu-toggle">
     <span>{open ? '▾' : '▸'} {t('demo.menu.title')}</span>
+    <span class="dm-count">{DEMOS.length}</span>
   </button>
 
   {#if open}
@@ -69,23 +70,47 @@
 <style>
   .dm { display: flex; flex-direction: column; }
 
-  /* Shaped like the other sub-section toggles in this panel, because it is
-     one — not a feature announcing itself. */
+  /*
+   * The examples disclosure, exactly. It sits directly beneath one and does
+   * the same thing — a header you press to reveal a list, with a count of what
+   * is inside — so wearing a different shape would have claimed a difference
+   * that is not there.
+   */
   .dm-toggle {
-    padding: 0.3rem 0;
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 8px;
+    width: 100%;
+    padding: 0.4rem 0.5rem;
     background: none;
-    border: none;
+    border: 1px solid var(--st-hair);
+    border-radius: 4px;
     color: var(--st-text-2);
+    cursor: pointer;
     font-size: 0.75rem;
     font-weight: 600;
     text-align: left;
-    cursor: pointer;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    transition: all 0.2s;
   }
 
-  .dm-toggle:hover { color: var(--st-text); }
+  .dm-toggle:hover {
+    background: var(--st-bg);
+    color: var(--st-text);
+  }
+
+  .dm-count {
+    font-size: 0.6rem;
+    color: var(--st-text-3);
+    font-family: var(--st-mono, monospace);
+    text-transform: none;
+    letter-spacing: normal;
+  }
 
   .dm-sub {
-    margin: 0 0 8px;
+    margin: 8px 0;
     font-size: 0.66rem;
     line-height: 1.4;
     color: var(--st-text-3);
