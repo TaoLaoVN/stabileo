@@ -2901,6 +2901,8 @@ const pt: Translations = {
   'landing.whatT1': 'Zero fricção',
   'landing.whatT2': 'Método direto da rigidez',
   'landing.whatT3': 'Motor nativo no navegador',
+  'landing.footTour': 'Tour guiado',
+  'landing.heroCtaSecondary': 'Fazer o tour guiado',
   'lang.ar': 'العربية',
   'lang.de': 'Deutsch',
   'lang.en': 'English',
