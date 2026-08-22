@@ -101,15 +101,74 @@ test.describe('@smoke blog', () => {
     }
   });
 
-  test('switching language on a post keeps the reader on the post', async ({ page }) => {
-    await boot(page, `/blog/${SLUG}`, 'en');
+  /**
+   * Switching language has to move the ADDRESS, not only the text.
+   *
+   * This is the defect multilingual sites ship most often: the page translates
+   * and the URL keeps naming the language you left, so what the reader copies,
+   * shares and what a crawler stores all disagree with what is on screen. It
+   * is asserted in both directions and on all three surfaces because a
+   * one-directional fix reads as working right up until someone goes back.
+   */
+  const TITLES = {
+    en: 'The determinism boundary: why an AI agent must not do the arithmetic',
+    es: 'La frontera de determinismo: por qué un agente de IA no debe calcular',
+    pt: 'A fronteira de determinismo: por que um agente de IA não deve calcular',
+  } as const;
 
-    await page.locator('.landing.blog select.nav-lang').selectOption('pt');
+  for (const [from, to] of [['pt', 'es'], ['es', 'pt'], ['en', 'es']] as const) {
+    test(`a post switched from ${from} to ${to} moves both the page and the URL`, async ({ page }) => {
+      await boot(page, `/${from}/blog/${SLUG}`);
+      await expect(page.locator('.post-title')).toHaveText(TITLES[from]);
 
-    await expect(page.locator('.post-title')).toHaveText(
-      'A fronteira de determinismo: por que um agente de IA não deve calcular',
-    );
-    await expect(page).toHaveURL(new RegExp(`/blog/${SLUG}$`));
+      await page.locator('.landing.blog select.nav-lang').selectOption(to);
+
+      await expect(page.locator('.post-title')).toHaveText(TITLES[to]);
+      await expect(page).toHaveURL(new RegExp(`/${to}/blog/${SLUG}$`));
+      await expect(page.locator('html')).toHaveAttribute('lang', to);
+      // The picker reports where you are, not where you were.
+      await expect(page.locator('.landing.blog select.nav-lang')).toHaveValue(to);
+    });
+  }
+
+  test('the blog index switches language too, body and all', async ({ page }) => {
+    // The index's h1 is the word "Blog" in all three languages, so asserting
+    // the heading would pass on a page that never translated. The lead does
+    // the work here.
+    await boot(page, '/es/blog');
+    const lead = page.locator('.landing.blog .lead');
+    await expect(lead).toContainText(/verificaciones normativas/i);
+
+    await page.locator('.landing.blog select.nav-lang').selectOption('en');
+
+    await expect(page).toHaveURL(/\/en\/blog$/);
+    await expect(lead).toContainText(/code checks/i);
+    await expect(page.locator('.post-card-title')).toContainText(TITLES.en);
+  });
+
+  test('the browser back button undoes a language switch', async ({ page }) => {
+    await boot(page, `/pt/blog/${SLUG}`);
+    await page.locator('.landing.blog select.nav-lang').selectOption('es');
+    await expect(page).toHaveURL(new RegExp(`/es/blog/${SLUG}$`));
+
+    await page.goBack();
+
+    await expect(page).toHaveURL(new RegExp(`/pt/blog/${SLUG}$`));
+    await expect(page.locator('.post-title')).toHaveText(TITLES.pt);
+  });
+
+  test('the URL wins over a stored preference', async ({ page }) => {
+    // Someone whose last choice was Spanish opens a Portuguese link they were
+    // sent. They must get the page they were sent, not the one they last read.
+    await boot(page, `/pt/blog/${SLUG}`, 'es');
+    await expect(page.locator('.post-title')).toHaveText(TITLES.pt);
+    await expect(page.locator('html')).toHaveAttribute('lang', 'pt');
+  });
+
+  test('an unprefixed link still opens the post', async ({ page }) => {
+    // Every link shared before the prefixes existed looks like this.
+    await boot(page, `/blog/${SLUG}`, 'es');
+    await expect(page.locator('.post-title')).toHaveText(TITLES.es);
   });
 
   test('the tables render as tables, with every row filled', async ({ page }) => {
