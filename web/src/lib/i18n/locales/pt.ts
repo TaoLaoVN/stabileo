@@ -69,6 +69,8 @@ const pt: Translations = {
   'blog.openEditor': 'Abrir o editor',
   'blog.readMore': 'Ler a nota',
   'blog.readingTime': '{n} min de leitura',
+  'blog.tag.sections': 'Seções',
+  'blog.tag.theory': 'Teoria',
   'blog.tag.ai': 'IA',
   'blog.tag.research': 'Pesquisa',
   'blog.tag.solver': 'Solver',

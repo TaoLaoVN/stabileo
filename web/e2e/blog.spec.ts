@@ -51,7 +51,9 @@ test.describe('@smoke blog', () => {
   test('opens a post and keeps its address', async ({ page }) => {
     await boot(page, '/blog');
 
-    await page.locator('.post-card-title').first().click();
+    // By slug, not by position: the index is newest-first, so "the first card"
+    // is whatever was published last.
+    await page.locator(`.post-card[data-slug="${SLUG}"] .post-card-title`).click();
 
     await expect(page.locator('.post-title')).toBeVisible();
     // The editor syncs the URL to its own mode on every render. If that sync
@@ -143,7 +145,7 @@ test.describe('@smoke blog', () => {
 
     await expect(page).toHaveURL(/\/en\/blog$/);
     await expect(lead).toContainText(/code checks/i);
-    await expect(page.locator('.post-card-title')).toContainText(TITLES.en);
+    await expect(page.locator(`.post-card[data-slug="${SLUG}"] .post-card-title`)).toHaveText(TITLES.en);
   });
 
   test('the browser back button undoes a language switch', async ({ page }) => {

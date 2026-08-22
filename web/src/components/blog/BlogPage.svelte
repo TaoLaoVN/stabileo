@@ -126,7 +126,7 @@
             {#each POSTS as p (p.slug)}
               {@const b = p.i18n[publicI18n.locale]}
               <li>
-                <article class="post-card">
+                <article class="post-card" data-slug={p.slug}>
                   <div class="post-card-meta">
                     <time datetime={p.date}>{formatPostDate(p.date, publicI18n.locale)}</time>
                     <span aria-hidden="true">·</span>

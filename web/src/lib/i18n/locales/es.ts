@@ -26,6 +26,8 @@ const es: Record<string, string> = {
   'blog.openEditor': 'Abrir el editor',
   'blog.readMore': 'Leer la nota',
   'blog.readingTime': '{n} min de lectura',
+  'blog.tag.sections': 'Secciones',
+  'blog.tag.theory': 'Teoría',
   'blog.tag.ai': 'IA',
   'blog.tag.research': 'Investigación',
   'blog.tag.solver': 'Solver',
