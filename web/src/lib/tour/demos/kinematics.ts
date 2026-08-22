@@ -19,6 +19,8 @@ import { modelStore, uiStore } from '../../store';
 
 /** The support this demo removes, remembered so the exit can put it back. */
 let removed: { nodeId: number; type: string } | null = null;
+/** Whether the last card has already put it back, so stepping back can undo that. */
+let restored = false;
 
 export function buildKinematics(): TourStep[] {
   return [
@@ -31,6 +33,7 @@ export function buildKinematics(): TourStep[] {
       onEnter: () => {
         setDimension('2d');
         removed = null;
+        restored = false;
         void loadExample('simply-supported');
       },
     },
@@ -110,12 +113,23 @@ export function buildKinematics(): TourStep[] {
       title: t('demo.kinematics.doneTitle'),
       description: t('demo.kinematics.doneDesc'),
       position: 'center',
-      // Put the beam back. A walkthrough that leaves the model broken has
-      // handed the reader a mechanism to wonder about.
+      /*
+       * The support comes back here, and goes away again if the reader walks
+       * back. The previous card is about a mechanism; arriving at it with the
+       * beam repaired makes it describe something that is not on screen.
+       */
       onEnter: () => {
-        if (!removed) return;
+        if (!removed || restored) return;
         modelStore.addSupport(removed.nodeId, removed.type as never);
-        removed = null;
+        restored = true;
+      },
+      onExit: () => {
+        // Only meaningful going backwards: forward from here the tour ends.
+        if (!removed || !restored) return;
+        const again = [...modelStore.supports.values()]
+          .find((sp) => sp.nodeId === removed!.nodeId);
+        if (again) modelStore.removeSupport(again.id);
+        restored = false;
       },
     },
   ];

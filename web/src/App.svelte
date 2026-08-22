@@ -429,7 +429,15 @@
 
   function handleOpenPanelEvent(e: Event) {
     const panel = (e as CustomEvent<string>).detail;
-    if (typeof panel === 'string') openBasicPanel(panel);
+    /*
+     * `toggle: false` — "open" means open.
+     *
+     * The default is a toggle, which is right for a button that owns its panel
+     * and wrong for a walkthrough: two consecutive steps both asking for the
+     * results panel closed it on the second, and the card that followed
+     * pointed at a panel it had just dismissed.
+     */
+    if (typeof panel === 'string') openBasicPanel(panel, { toggle: false });
   }
 
   function handleExportPNG() {

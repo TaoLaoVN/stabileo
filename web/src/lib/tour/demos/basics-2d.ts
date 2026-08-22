@@ -15,7 +15,7 @@
 
 import type { TourStep } from '../../store/tour.svelte';
 import { t } from '../../i18n';
-import { ANCHORS, loadExample, solve, hasResults, setDimension, asideCard } from '../demo-helpers';
+import { ANCHORS, loadExample, solve, hasResults, setDimension } from '../demo-helpers';
 import { resultsStore } from '../../store';
 
 export function buildBasics2D(): TourStep[] {
@@ -61,33 +61,25 @@ export function buildBasics2D(): TourStep[] {
       actionButton: { label: t('demo.action.solve'), action: solve },
     },
 
+    /*
+     * The whole row, named but not explained.
+     *
+     * This step used to walk two diagrams — deformed shape, then bending —
+     * with a paragraph on each. That is the subject of "Leer los resultados",
+     * and teaching it twice makes the first walkthrough long and the fifth
+     * redundant. Forty seconds should end with the reader knowing the results
+     * are THERE and that one press produced all of them.
+     */
     {
-      id: 'deformed',
-      cardPosition: asideCard(),
-      target: ANCHORS.ribbonCommand('deformed'),
-      title: t('demo.basics2d.deformedTitle'),
-      description: t('demo.basics2d.deformedDesc'),
+      id: 'results-row',
+      target: ANCHORS.ribbonGroup('results'),
+      title: t('demo.basics2d.resultsTitle'),
+      description: t('demo.basics2d.resultsDesc'),
       position: 'bottom',
       allowInteraction: true,
       onEnter: () => { resultsStore.diagramType = 'deformed'; },
     },
 
-    {
-      id: 'moment',
-      cardPosition: asideCard(),
-      target: ANCHORS.ribbonCommand('momentY'),
-      title: t('demo.basics2d.momentTitle'),
-      description: t('demo.basics2d.momentDesc'),
-      position: 'bottom',
-      allowInteraction: true,
-      onEnter: () => { resultsStore.diagramType = 'moment'; },
-    },
-
-    /*
-     * The panel, last and briefly. It is where the rest of the app lives, so
-     * ending here is the handover: the demo stops and the reader is already
-     * looking at what they would use next.
-     */
     {
       id: 'panel',
       target: ANCHORS.rightPanel,

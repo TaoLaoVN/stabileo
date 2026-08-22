@@ -13,7 +13,7 @@
 
 import type { TourStep } from '../../store/tour.svelte';
 import { t } from '../../i18n';
-import { ANCHORS, loadExample, solve, hasResults, setDimension, asideCard } from '../demo-helpers';
+import { ANCHORS, loadExample, solve, hasResults, setDimension, asideCard, openPanel } from '../demo-helpers';
 import { resultsStore } from '../../store';
 import { showStressMap } from '../../store/result-view';
 
@@ -28,7 +28,12 @@ function diagram(id: string, kind: string, key: string): TourStep {
     description: t(`demo.results.${key}Desc`),
     position: 'bottom',
     allowInteraction: true,
-    onEnter: () => { resultsStore.diagramType = kind as never; },
+    /*
+     * The result AND the panel that explains it. Without the second half a
+     * reader can walk the whole tutorial with the Project panel still open,
+     * reading cards about a right-hand panel they are not looking at.
+     */
+    onEnter: () => { resultsStore.diagramType = kind as never; openPanel('results'); },
   };
 }
 
@@ -66,6 +71,9 @@ export function buildResults(): TourStep[] {
     {
       id: 'panel',
       target: ANCHORS.rightPanel,
+      // Opened here too: a card pointing at the results panel needs it open,
+      // and the reader may have closed it between steps.
+      onEnter: () => openPanel('results'),
       title: t('demo.results.panelTitle'),
       description: t('demo.results.panelDesc'),
       position: 'left',
@@ -84,6 +92,9 @@ export function buildResults(): TourStep[] {
     {
       id: 'compare',
       target: ANCHORS.rightPanel,
+      // Opened here too: a card pointing at the results panel needs it open,
+      // and the reader may have closed it between steps.
+      onEnter: () => openPanel('results'),
       title: t('demo.results.compareTitle'),
       description: t('demo.results.compareDesc'),
       position: 'left',
@@ -104,7 +115,7 @@ export function buildResults(): TourStep[] {
        * map while a bending diagram stayed on screen, and a reader following
        * along saw the words contradict the picture.
        */
-      onEnter: () => showStressMap('stressRatio'),
+      onEnter: () => { showStressMap('stressRatio'); openPanel('results'); },
     },
 
     {

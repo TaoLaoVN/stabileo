@@ -27,6 +27,15 @@ export function buildSectionAnalysis(): TourStep[] {
       onEnter: () => {
         setDimension('2d');
         void loadExample('simply-supported');
+        /*
+         * Close whatever analysis was left running. Doing this walkthrough
+         * after the kinematic one left its report in the right-hand panel
+         * while these cards described a section — the panel keeps the last
+         * analysis opened, and a walkthrough cannot assume it is the first
+         * thing the reader has done today.
+         */
+        uiStore.showKinematicPanel = false;
+        resultsStore.stressQuery = null;
       },
     },
 

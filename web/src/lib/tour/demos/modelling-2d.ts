@@ -38,7 +38,7 @@
 
 import type { TourStep } from '../../store/tour.svelte';
 import { t } from '../../i18n';
-import { ANCHORS, clearModel, solve, hasResults, setDimension, armTool, count } from '../demo-helpers';
+import { ANCHORS, clearModel, solve, hasResults, setDimension, armTool, count, openPanel } from '../demo-helpers';
 import { resultsStore } from '../../store';
 
 export function buildModelling2D(): TourStep[] {
@@ -75,7 +75,7 @@ export function buildModelling2D(): TourStep[] {
        * inside this step's own `onEnter` puts the emptying before the arming,
        * because `onEnter` runs first and the arming is an effect.
        */
-      onEnter: () => { clearModel(); armTool('node'); },
+      onEnter: () => { clearModel(); armTool('node'); openPanel('data'); },
       // Two is all a single-span beam needs, and asking for exactly what is
       // needed keeps the check honest.
       waitFor: () => count.nodes() >= 2,
@@ -91,7 +91,9 @@ export function buildModelling2D(): TourStep[] {
       description: t('demo.modelling.memberDesc'),
       position: 'bottom',
       allowInteraction: true,
-      onEnter: () => armTool('element'),
+      // The tool AND its data tab: a reader who is drawing should see the rows
+      // appear as they click, not the Project panel they opened the menu from.
+      onEnter: () => { armTool('element'); openPanel('data'); },
       waitFor: () => count.elements() >= 1,
       autoAdvance: true,
     },
@@ -105,7 +107,9 @@ export function buildModelling2D(): TourStep[] {
       description: t('demo.modelling.supportsDesc'),
       position: 'bottom',
       allowInteraction: true,
-      onEnter: () => armTool('support'),
+      // The tool AND its data tab: a reader who is drawing should see the rows
+      // appear as they click, not the Project panel they opened the menu from.
+      onEnter: () => { armTool('support'); openPanel('data'); },
       waitFor: () => count.supports() >= 2,
       autoAdvance: true,
     },
@@ -119,7 +123,9 @@ export function buildModelling2D(): TourStep[] {
       description: t('demo.modelling.loadDesc'),
       position: 'bottom',
       allowInteraction: true,
-      onEnter: () => armTool('load'),
+      // The tool AND its data tab: a reader who is drawing should see the rows
+      // appear as they click, not the Project panel they opened the menu from.
+      onEnter: () => { armTool('load'); openPanel('data'); },
       waitFor: () => count.loads() >= 1,
       autoAdvance: true,
     },

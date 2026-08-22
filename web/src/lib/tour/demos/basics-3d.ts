@@ -10,7 +10,7 @@
 
 import type { TourStep } from '../../store/tour.svelte';
 import { t } from '../../i18n';
-import { ANCHORS, loadExample, solve, hasResults, setDimension, asideCard } from '../demo-helpers';
+import { ANCHORS, loadExample, solve, hasResults, setDimension } from '../demo-helpers';
 import { resultsStore } from '../../store';
 
 export function buildBasics3D(): TourStep[] {
@@ -47,31 +47,25 @@ export function buildBasics3D(): TourStep[] {
       autoAdvance: true,
       actionButton: { label: t('demo.action.solve'), action: solve },
     },
+    /*
+     * The whole row, named but not explained.
+     *
+     * This step used to walk two diagrams — deformed shape, then bending —
+     * with a paragraph on each. That is the subject of "Leer los resultados",
+     * and teaching it twice makes the first walkthrough long and the fifth
+     * redundant. Forty seconds should end with the reader knowing the results
+     * are THERE and that one press produced all of them.
+     */
     {
-      id: 'deformed',
-      cardPosition: asideCard(),
-      target: ANCHORS.ribbonCommand('deformed'),
-      title: t('demo.basics3d.deformedTitle'),
-      description: t('demo.basics3d.deformedDesc'),
+      id: 'results-row',
+      target: ANCHORS.ribbonGroup('results'),
+      title: t('demo.basics3d.resultsTitle'),
+      description: t('demo.basics3d.resultsDesc'),
       position: 'bottom',
       allowInteraction: true,
       onEnter: () => { resultsStore.diagramType = 'deformed'; },
     },
-    /*
-     * My, and why the ribbon offers more diagrams here than in 2D: a 3D member
-     * bends about both of its local axes, so naming one is a choice the 2D
-     * model never had to make.
-     */
-    {
-      id: 'moment',
-      cardPosition: asideCard(),
-      target: ANCHORS.ribbonCommand('momentY'),
-      title: t('demo.basics3d.momentTitle'),
-      description: t('demo.basics3d.momentDesc'),
-      position: 'bottom',
-      allowInteraction: true,
-      onEnter: () => { resultsStore.diagramType = 'momentY' as never; },
-    },
+
     {
       id: 'done',
       target: 'none',
