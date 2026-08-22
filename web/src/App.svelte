@@ -799,7 +799,7 @@
 <svelte:window onkeydown={handleProKeydown} onclick={handleProBarClickOutside} />
 
 {#if showBlog}
-  <BlogPage path={blogPath} onNavigate={navigatePublic} />
+  <BlogPage path={blogPath} />
 {:else if showLanding}
   <LandingPage />
 {/if}

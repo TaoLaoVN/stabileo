@@ -31,6 +31,7 @@ const en: Record<string, string> = {
   'blog.tag.ai': 'AI',
   'blog.tag.research': 'Research',
   'blog.tag.solver': 'Solver',
+  'blog.indexTitle': 'Blog — notes on the solver | Stabileo',
   'blog.title': 'Blog',
   'landing.blogBody': 'Longer pieces on how the solver works, what the code checks actually verify, and the architecture behind the AI layer. The first one is about why an agent must never produce the number itself.',
   'landing.blogEyebrow': 'BLOG',

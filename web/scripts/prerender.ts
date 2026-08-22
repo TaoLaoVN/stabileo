@@ -46,6 +46,8 @@ const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
 const DIST = join(ROOT, 'dist');
 const ORIGIN = 'https://stabileo.com';
 const LOCALES = ['en', 'es', 'pt'] as const;
+/** Build day, for the sitemap's lastmod. */
+const TODAY = new Date().toISOString().slice(0, 10);
 type Locale = (typeof LOCALES)[number];
 
 const MIME: Record<string, string> = {
@@ -168,6 +170,17 @@ async function capture(browser: Browser, base: string, locale: Locale, path: str
  * the captured markup sits beside it, to be removed on mount.
  */
 function page(head: string, body: string, lang: string, extraScript = '') {
+  /*
+   * No script tag is added here. Vite puts its module script in the <head>,
+   * so the captured head already carries it — an earlier version emitted a
+   * second one in the body and every prerendered page declared the same
+   * 7 MB bundle twice. Modules are fetched once regardless, so nothing was
+   * slower; the HTML was simply lying, and a reader of it would have
+   * concluded the site downloads its application twice.
+   */
+  if (!/<script type="module"[^>]*src=/.test(head)) {
+    throw new Error('prerender: the captured head has no module script — the page would never boot');
+  }
   return `<!doctype html>
 <html lang="${lang}">
 <head>
@@ -177,22 +190,20 @@ ${extraScript ? `<script>${extraScript}</script>` : ''}
 <body>
 <div id="prerender">${body}</div>
 <div id="app"></div>
-<script type="module" src="${scriptSrc}"></script>
 </body>
 </html>
 `;
 }
 
-/** The hashed entry point Vite emitted, read out of the built index.html. */
-let scriptSrc = '/assets/index.js';
+/** Today, as an ISO day, for the sitemap. */
+function today(): string {
+  return new Date().toISOString().slice(0, 10);
+}
 
 async function main() {
   if (!existsSync(join(DIST, 'index.html'))) {
     throw new Error('prerender: dist/index.html is missing — run the build first');
   }
-  const built = await readFile(join(DIST, 'index.html'), 'utf8');
-  scriptSrc = built.match(/<script type="module"[^>]*src="([^"]+)"/)?.[1] ?? scriptSrc;
-
   const port = 4399;
   const stop = await serveDist(port);
   const base = `http://127.0.0.1:${port}`;
@@ -227,7 +238,7 @@ async function main() {
               (l) =>
                 `    <xhtml:link rel="alternate" hreflang="${l}" href="${ORIGIN}/${l}${path === '/' ? '' : path}"/>`,
             ).join('\n');
-            return `  <url>\n    <loc>${loc}</loc>\n${alts}\n    <xhtml:link rel="alternate" hreflang="x-default" href="${ORIGIN}/"/>\n  </url>`;
+            return `  <url>\n    <loc>${loc}</loc>\n    <lastmod>${TODAY}</lastmod>\n${alts}\n    <xhtml:link rel="alternate" hreflang="x-default" href="${ORIGIN}/en"/>\n  </url>`;
           }),
         ).join('\n') +
         `\n</urlset>\n`,

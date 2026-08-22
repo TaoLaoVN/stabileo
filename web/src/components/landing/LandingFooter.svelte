@@ -1,6 +1,7 @@
 <script lang="ts">
   import { tPublic as t } from '../../lib/i18n/store.svelte';
-  import { REPO_URL, DOCS_HUB_URL, enterApp, goPublic } from './landing-utils';
+  import { REPO_URL, DOCS_HUB_URL, enterApp } from './landing-utils';
+  import PublicLink from './PublicLink.svelte';
 
   const year = new Date().getFullYear();
 </script>
@@ -18,7 +19,7 @@
     <nav class="footer-links" aria-label={t('landing.footNav')}>
       <a href={DOCS_HUB_URL} target="_blank" rel="noreferrer">{t('landing.footDocs')}</a>
       <a href={REPO_URL} target="_blank" rel="noreferrer">{t('landing.footRepo')}</a>
-      <button onclick={() => goPublic('/blog')}>{t('landing.footBlog')}</button>
+      <PublicLink to="/blog">{t('landing.footBlog')}</PublicLink>
       <a href="/demo">{t('landing.footTour')}</a>
       <button onclick={() => enterApp()}>{t('landing.footLaunch')}</button>
     </nav>

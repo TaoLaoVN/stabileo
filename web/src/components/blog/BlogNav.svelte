@@ -9,21 +9,20 @@
    */
   import { tPublic as t, publicI18n, PUBLIC_LOCALES } from '../../lib/i18n/store.svelte';
   import { REPO_URL, enterApp, switchPublicLocale } from '../landing/landing-utils';
-
-  let { onNavigate }: { onNavigate: (path: string) => void } = $props();
+  import PublicLink from '../landing/PublicLink.svelte';
 
   const LOCALE_NAMES: Record<string, string> = { en: 'English', es: 'Español', pt: 'Português' };
 </script>
 
 <nav class="nav" aria-label={t('landing.navPrimary')}>
   <div class="wrap nav-inner">
-    <button class="nav-brand" onclick={() => onNavigate('/')} title={t('blog.backHome')}>
+    <PublicLink to="/" class="nav-brand" title={t('blog.backHome')}>
       <span class="nav-logo" aria-hidden="true">S</span>
       <span class="nav-name">Stabileo</span>
-    </button>
+    </PublicLink>
 
     <div class="nav-links blog-nav-links" id="nav-links">
-      <button onclick={() => onNavigate('/blog')}>{t('blog.title')}</button>
+      <PublicLink to="/blog">{t('blog.title')}</PublicLink>
     </div>
 
     <div class="nav-actions">

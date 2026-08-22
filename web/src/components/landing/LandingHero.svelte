@@ -1,6 +1,7 @@
 <script lang="ts">
   import { tPublic as t } from '../../lib/i18n/store.svelte';
-  import { enterApp, goPublic } from './landing-utils';
+  import { enterApp } from './landing-utils';
+  import PublicLink from './PublicLink.svelte';
   import Eyebrow from './Eyebrow.svelte';
   import TrussFigure from './TrussFigure.svelte';
 
@@ -34,7 +35,7 @@
         decision with a footnote, where three buttons would read as three
         equal choices.
       -->
-      <button class="link-arrow hero-blog" onclick={() => goPublic('/blog')}>{t('landing.heroBlogLink')}</button>
+      <PublicLink to="/blog" class="link-arrow hero-blog">{t('landing.heroBlogLink')}</PublicLink>
 
       <!--
         The three modes, named in the first screen.

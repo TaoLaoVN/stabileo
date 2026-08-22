@@ -74,6 +74,7 @@ const pt: Translations = {
   'blog.tag.ai': 'IA',
   'blog.tag.research': 'Pesquisa',
   'blog.tag.solver': 'Solver',
+  'blog.indexTitle': 'Blog — notas sobre o solver | Stabileo',
   'blog.title': 'Blog',
   'calcReport.cancel': "Cancelar",
   'calcReport.companyName': "Empresa",

@@ -1070,12 +1070,23 @@ test.describe('@landing landing page', () => {
       expect(h.headTitles).toBe(1);
       expect(h.title).toBe(EN_TITLE);
       expect(h.lang).toBe('en');
-      expect(h.canonicals).toEqual(['https://stabileo.com/']);
+      // The root serves English and consolidates into /en rather than
+      // competing with it: two URLs, one indexed page.
+      expect(h.canonicals).toEqual(['https://stabileo.com/en']);
 
-      expect(one(h, 'description')).toMatch(/free and open-source/i);
+      /*
+       * The description is the hero's own lead, not the fallback string
+       * index.html used to carry. Since the public pages are prerendered, the
+       * file a crawler receives already holds the page's real metadata — there
+       * is no longer a generic head to be refined later.
+       */
+      expect(one(h, 'description')).toMatch(/free and open structural-analysis platform/i);
       expect(one(h, 'theme-color')).toBe('#0c1620');
       expect(one(h, 'og:type')).toBe('website');
-      expect(one(h, 'og:url')).toBe('https://stabileo.com/');
+      // og:url names the page, and the page here is /en — the same address
+      // the canonical above declares. Sharing the root should produce a card
+      // for the English landing, not for a doorway.
+      expect(one(h, 'og:url')).toBe('https://stabileo.com/en');
       expect(one(h, 'og:site_name')).toBe('Stabileo');
       expect(one(h, 'og:locale')).toBe('en_US');
       // One tag per alternate language, which is how Open Graph reads them.
@@ -1114,7 +1125,9 @@ test.describe('@landing landing page', () => {
         'og:image', 'og:locale', 'twitter:card', 'twitter:title', 'twitter:description', 'twitter:image']) {
         one(h, k);
       }
-      expect(h.canonicals).toEqual(['https://stabileo.com/']);
+      // One canonical, and it names the language of the page rather than the
+      // bare root — the root is a doorway, /en is the page.
+      expect(h.canonicals).toEqual(['https://stabileo.com/en']);
       expect(h.title).toBe(EN_TITLE);
       expect(one(h, 'og:title')).toBe(EN_TITLE);
       // The description sharpens to the live hero copy.
@@ -1134,13 +1147,14 @@ test.describe('@landing landing page', () => {
       expect(one(h, 'og:title')).toBe(h.title);
       expect(one(h, 'og:locale')).toBe('es_AR');
       expect(h.meta['og:locale:alternate']).toEqual(['en_US', 'pt_BR']);
+      expect(h.canonicals).toEqual(['https://stabileo.com/es']);
       // The description is the hero lead, which now carries the positioning:
       // a free, open platform with three modes, rather than live re-solving.
       expect(one(h, 'description')).toMatch(/plataforma gratuita y abierta/);
       expect(one(h, 'description')).toMatch(/Básico.*Educativo.*PRO/);
       expect(one(h, 'twitter:description')).toBe(one(h, 'description'));
-      // The canonical and the social image do not vary by locale.
-      expect(h.canonicals).toEqual(['https://stabileo.com/']);
+      // The canonical DOES vary by locale now: each language is its own
+      // indexable page, which is the whole reason the prefixes exist.
       expect(one(h, 'og:image')).toBe(SOCIAL);
     });
 
@@ -1156,8 +1170,8 @@ test.describe('@landing landing page', () => {
       expect(one(h, 'og:title')).toBe(h.title);
       expect(one(h, 'og:locale')).toBe('pt_BR');
       expect(h.meta['og:locale:alternate']).toEqual(['en_US', 'es_AR']);
+      expect(h.canonicals).toEqual(['https://stabileo.com/pt']);
       expect(one(h, 'twitter:description')).toBe(one(h, 'description'));
-      expect(h.canonicals).toEqual(['https://stabileo.com/']);
     });
 
     test('leaving a translated page restores the static alternates', async ({ page }) => {
@@ -1196,7 +1210,13 @@ test.describe('@landing landing page', () => {
       expect(h.title, 'restored to the static English title').toBe(EN_TITLE);
       expect(h.lang).toBe('en');
       expect(one(h, 'og:locale')).toBe('en_US');
-      expect(one(h, 'description')).toMatch(/free and open-source/i);
+      /*
+       * The description is the hero's own lead, not the fallback string
+       * index.html used to carry. Since the public pages are prerendered, the
+       * file a crawler receives already holds the page's real metadata — there
+       * is no longer a generic head to be refined later.
+       */
+      expect(one(h, 'description')).toMatch(/free and open structural-analysis platform/i);
     });
 
     test('the social card exists, resolves, and is a 1200x630 PNG', async ({ page }) => {

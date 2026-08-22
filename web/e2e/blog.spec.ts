@@ -43,7 +43,9 @@ test.describe('@smoke blog', () => {
     await expect(page.locator('.landing.blog')).toBeVisible();
     await expect(page.locator('.landing.blog h1')).toHaveText('Blog');
     await expect(page.locator('.post-card')).not.toHaveCount(0);
-    await expect(page).toHaveTitle(/Blog — Stabileo/);
+    // The three index pages used to share one title, which made them
+    // indistinguishable in a result list. Each names its language's copy now.
+    await expect(page).toHaveTitle(/Blog — notes on the solver/);
     // The application stays mounted behind it, as it does behind the landing.
     await expect(page.locator('.app-container.hidden-behind-landing')).toHaveCount(1);
   });
@@ -214,7 +216,10 @@ test.describe('@smoke blog', () => {
       `en https://stabileo.com/en/blog/${SLUG}`,
       `es https://stabileo.com/es/blog/${SLUG}`,
       `pt https://stabileo.com/pt/blog/${SLUG}`,
-      'x-default https://stabileo.com/',
+      // x-default names /en, not the bare root: the root declares /en as its
+      // canonical, so pointing the default at it would name a URL that is not
+      // canonical for itself.
+      'x-default https://stabileo.com/en',
     ]);
   });
 

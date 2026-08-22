@@ -31,6 +31,7 @@ const es: Record<string, string> = {
   'blog.tag.ai': 'IA',
   'blog.tag.research': 'Investigación',
   'blog.tag.solver': 'Solver',
+  'blog.indexTitle': 'Blog — notas sobre el solver | Stabileo',
   'blog.title': 'Blog',
   'landing.blogBody': 'Notas largas sobre cómo funciona el solver, qué verifican realmente los módulos normativos y la arquitectura detrás de la capa de IA. La primera trata de por qué un agente nunca debe producir el número por su cuenta.',
   'landing.blogEyebrow': 'BLOG',

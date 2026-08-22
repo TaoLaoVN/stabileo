@@ -82,7 +82,14 @@ export function publicUrl(path: string, locale: PublicLocale): string {
 export function alternateUrls(path: string): Array<{ hreflang: string; href: string }> {
 	return [
 		...PUBLIC_LOCALES.map((l) => ({ hreflang: l, href: publicUrl(path, l) })),
-		{ hreflang: 'x-default', href: `${SITE_ORIGIN}/` }
+		/*
+		 * x-default points at the English page, not at `/`.
+		 *
+		 * `/` serves English and declares `/en` as its canonical, so naming `/`
+		 * here would point the default at a URL that is not canonical for
+		 * itself — an instruction that contradicts the one beside it.
+		 */
+		{ hreflang: 'x-default', href: publicUrl('/', DEFAULT_PUBLIC_LOCALE) }
 	];
 }
 

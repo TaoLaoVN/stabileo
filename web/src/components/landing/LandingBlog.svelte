@@ -1,7 +1,7 @@
 <script lang="ts">
   /** The way into the blog, at the foot of the deck, just above the footer. */
   import { tPublic as t, publicI18n } from '../../lib/i18n/store.svelte';
-  import { goPublic } from './landing-utils';
+  import PublicLink from './PublicLink.svelte';
   import { POSTS } from '../../lib/blog';
 
   const latest = $derived(POSTS[0]?.i18n[publicI18n.locale]);
@@ -20,7 +20,7 @@
         <p class="blog-cta-latest">{latest.title}</p>
       {/if}
       <div>
-        <button class="btn btn-primary" onclick={() => goPublic('/blog')}>{t('landing.blogLink')}</button>
+        <PublicLink to="/blog" class="btn btn-primary">{t('landing.blogLink')}</PublicLink>
       </div>
     </div>
   </div>

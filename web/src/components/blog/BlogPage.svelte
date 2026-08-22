@@ -5,9 +5,9 @@
    * There is no server. The site is a static bundle on GitHub Pages, so a
    * request for /blog/<slug> is a 404 that public/404.html turns into
    * `/?route=/blog/<slug>`; App.svelte restores the address and hands the path
-   * here. That means every internal link has to move through `onNavigate`
-   * rather than reloading the document — a reload would leave through the 404
-   * again and flash the redirect.
+   * here. Every internal link is a `PublicLink`: a real anchor a crawler can
+   * follow, whose plain left click is handled in history so the reader never
+   * pays for a reload.
    */
   import { tPublic as t, tpPublic as tp, publicI18n } from '../../lib/i18n/store.svelte';
   import { applyPageMeta, restorePageMeta } from '../../lib/page-meta';
@@ -16,12 +16,13 @@
   import { readingMinutes } from '../../lib/blog/types';
   import { enterApp } from '../landing/landing-utils';
   import BlogNav from './BlogNav.svelte';
+  import PublicLink from '../landing/PublicLink.svelte';
   import LandingFooter from '../landing/LandingFooter.svelte';
   import BlogBlocks from './BlogBlocks.svelte';
   import '../landing/landing.css';
   import './blog.css';
 
-  let { path, onNavigate }: { path: string; onNavigate: (path: string) => void } = $props();
+  let { path }: { path: string } = $props();
 
   /** `/blog/<slug>` → the slug; `/blog` and `/blog/` → null, the index. */
   const slug = $derived.by(() => {
@@ -36,7 +37,10 @@
 
   $effect(() => {
     applyPageMeta({
-      title: body ? `${body.title} — Stabileo` : `${t('blog.title')} — Stabileo`,
+      // The index used to be titled "Blog — Stabileo" in all three languages,
+      // so the three pages were indistinguishable to a search engine by the
+      // one line it shows above all others.
+      title: body ? `${body.title} — Stabileo` : t('blog.indexTitle'),
       description: body ? body.excerpt : t('blog.lead'),
       locale: publicI18n.locale,
       path: post ? `/blog/${post.slug}` : '/blog',
@@ -64,20 +68,20 @@
 </script>
 
 <div class="landing blog" bind:this={pageEl}>
-  <BlogNav {onNavigate} />
+  <BlogNav />
 
   {#if slug && !post}
     <section class="sec sec--ink blog-head">
       <div class="wrap">
         <h1 class="display">{t('blog.notFound')}</h1>
         <p class="lead">{t('blog.notFoundBody')}</p>
-        <button class="link-arrow" onclick={() => onNavigate('/blog')}>{t('blog.allPosts')}</button>
+        <PublicLink to="/blog" class="link-arrow">{t('blog.allPosts')}</PublicLink>
       </div>
     </section>
   {:else if post && body}
     <article class="sec sec--ink post">
       <div class="wrap post-wrap">
-        <button class="link-arrow post-back" onclick={() => onNavigate('/blog')}>{t('blog.allPosts')}</button>
+        <PublicLink to="/blog" class="link-arrow post-back">{t('blog.allPosts')}</PublicLink>
 
         <h1 class="display post-title">{body.title}</h1>
 
@@ -101,7 +105,7 @@
 
         <div class="post-foot">
           <button class="btn btn-primary" onclick={() => enterApp()}>{t('blog.openEditor')}</button>
-          <button class="link-arrow" onclick={() => onNavigate('/blog')}>{t('blog.allPosts')}</button>
+          <PublicLink to="/blog" class="link-arrow">{t('blog.allPosts')}</PublicLink>
         </div>
       </div>
     </article>
@@ -133,10 +137,10 @@
                     <span>{tp('blog.readingTime', { n: readingMinutes(b) })}</span>
                   </div>
                   <h2>
-                    <button class="post-card-title" onclick={() => onNavigate(`/blog/${p.slug}`)}>{b.title}</button>
+                    <PublicLink to={`/blog/${p.slug}`} class="post-card-title">{b.title}</PublicLink>
                   </h2>
                   <p>{b.excerpt}</p>
-                  <button class="link-arrow" onclick={() => onNavigate(`/blog/${p.slug}`)}>{t('blog.readMore')}</button>
+                  <PublicLink to={`/blog/${p.slug}`} class="link-arrow">{t('blog.readMore')}</PublicLink>
                 </article>
               </li>
             {/each}
