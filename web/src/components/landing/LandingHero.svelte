@@ -19,13 +19,16 @@
       <div class="hero-ctas">
         <button class="btn btn-primary btn-lg" onclick={() => enterApp()}>{t('landing.heroCtaPrimary')}</button>
         <!--
-          This used to scroll to the live-demo section. That section is gone,
-          so the button points at the guided tour instead — the closest thing
-          left to "show me it running". A real navigation, not a pushState:
-          /demo starts the tour from the application's onMount, which has
-          already run by the time anyone reads this page.
+          The hero had a second button here, pointing at /demo, the guided
+          tour. That route is being retired by the tutorials workstream, so
+          the button is gone rather than left aiming at a 404 — a dead link
+          looks exactly like a working one until it is pressed, and this one
+          sat in the first screen.
+
+          The hero keeps one action and the quiet blog link below it. When
+          /demo returns as the no-login entry point, a second button here is
+          a two-line change.
         -->
-        <a class="btn btn-ghost btn-lg" href="/demo">{t('landing.heroCtaSecondary')}</a>
       </div>
 
       <!--

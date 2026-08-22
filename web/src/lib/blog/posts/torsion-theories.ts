@@ -29,18 +29,18 @@ export const torsionTheories: Post = {
     es: {
       title: 'Bredt o Saint-Venant: qué teoría de torsión aplica, y qué cuesta elegir mal',
       excerpt:
-        'Tres fórmulas, una sección, tres números distintos. Cuál vale no lo decide el tamaño sino la topología de la pared — y cuando dos se aplican a la vez, la diferencia tiene signo: Bredt queda por debajo, que es el lado inseguro.',
+        'Tres fórmulas, una sección, tres números distintos. Cuál corresponde depende de cómo es la pared, no de su tamaño. Y cuando dos se aplican a la vez no coinciden: Bredt queda por debajo del valor exacto, entre 2 y 15 % según el espesor.',
       blocks: [
-        { k: 'p', t: 'La torsión es el lugar donde "depende de la sección" deja de ser una advertencia y pasa a ser el tema. Tres teorías con nombre propio se reparten el problema, dan respuestas que difieren en órdenes de magnitud para la misma área de sección, y cuál se aplica no lo decide el tamaño, ni el material, ni la inercia: lo decide la topología de la pared.' },
-        { k: 'p', t: 'Eso ya es incómodo. Lo que casi nunca se dice es lo que pasa cuando dos se aplican a la misma sección, porque entonces no dan el mismo número — y la diferencia tiene un signo.' },
+        { k: 'p', t: 'Tres fórmulas distintas dan la tensión de corte por torsión. Para una misma sección pueden diferir en órdenes de magnitud, y cuál corresponde no depende del tamaño ni del material: depende de cómo es la pared.' },
+        { k: 'p', t: 'Hasta ahí, lo que dice cualquier libro. Lo que casi no se explica es qué pasa cuando dos de las tres se aplican a la misma sección, porque ahí no dan lo mismo, y la diferencia siempre va para el mismo lado.' },
 
-        { k: 'h', t: 'Las tres, en una línea cada una' },
+        { k: 'h', t: 'Las tres fórmulas' },
         {
           k: 'ul',
           items: [
             'Cauchy, τ = T·r / Iₚ. Sólo para sección circular, y ahí es exacta: es el único caso en que las secciones planas siguen planas. La tensión crece linealmente con el radio, mínima adentro y máxima en la cara exterior.',
-            'Bredt, τ = T / (2·Aₘ·t). Para pared delgada CERRADA. El torsor lo toma un flujo de corte que circula alrededor del área encerrada. Aₘ es el área que encierra la LÍNEA MEDIA de la pared, no su cara exterior — confundirlas es el error clásico.',
-            'Saint-Venant, τ = T·t / J con J = (1/3)·Σb·t³. Para pared delgada ABIERTA. Sin circuito cerrado el flujo tiene que darse vuelta sobre sí mismo cruzando el espesor, y por eso el espesor entra al cubo.',
+            'Bredt, τ = T / (2·Aₘ·t). Para pared delgada cerrada. El torsor lo toma un flujo de corte que circula alrededor del área encerrada. Aₘ es el área que encierra la línea media de la pared, no su cara exterior; confundirlas es un error frecuente.',
+            'Saint-Venant, τ = T·t / J con J = (1/3)·Σb·t³. Para pared delgada abierta. Sin circuito cerrado, el flujo tiene que darse vuelta sobre sí mismo cruzando el espesor, y por eso el espesor entra al cubo.',
           ],
         },
         { k: 'note', t: 'Saint-Venant no es la teoría "de las secciones abiertas": es la teoría general, y las otras dos son sus casos particulares con solución cerrada. En una sección circular su solución coincide exactamente con Cauchy, porque por simetría circular la sección no alabea. En pared cerrada delgada, su solución ES la de Bredt.' },
@@ -58,12 +58,12 @@ export const torsionTheories: Post = {
             ['0,50', 'pared 25,0 mm', '0,850', '15,0 %'],
           ],
         },
-        { k: 'p', t: 'Mirá la última columna y fijate en el signo. Bredt no se equivoca de cualquier lado: se equivoca siempre para abajo. En un tubo de pared 5 mm sobre radio medio 50 mm —que por la regla habitual todavía cuenta como pared delgada— la tensión real es 4,5 % mayor que la que calculaste. Con pared 10 mm, 8,2 %.' },
-        { k: 'quote', t: 'Una aproximación que subestima la tensión no es conservadora. Es un margen de seguridad que creíste tener.' },
-        { k: 'p', t: 'No es un error grosero, y ése es el punto: 4,5 % no aparece en ninguna verificación como algo raro. Aparece como que verifica.' },
+        { k: 'p', t: 'En los cuatro casos Bredt queda por debajo. Para un tubo de 5 mm de pared sobre 50 mm de radio medio, que por la regla habitual todavía es pared delgada, la tensión real resulta 4,5 % mayor que la calculada. Con 10 mm de pared, 8,2 %.' },
+        { k: 'quote', t: 'El error de Bredt no reparte: va siempre hacia tensiones menores que las reales.' },
+        { k: 'p', t: 'Un 4,5 % no llama la atención en una verificación. Pasa como que verifica.' },
 
-        { k: 'h', t: 'Y cuando cambia la topología, cambia todo' },
-        { k: 'p', t: 'La diferencia entre teorías que se solapan es de unidades por ciento. La diferencia entre pared cerrada y abierta es de otro orden. Tomá un tubo cuadrado de 100×100 mm con 5 mm de pared y hacele una ranura a lo largo. No cambió el área, ni el peso, ni prácticamente la inercia a flexión.' },
+        { k: 'h', t: 'Abrir la pared cambia el orden de magnitud' },
+        { k: 'p', t: 'Entre teorías que se solapan la diferencia es de unidades por ciento. Entre pared cerrada y abierta es de otro orden. Un tubo cuadrado de 100×100 mm con 5 mm de pared, cortado a lo largo, conserva el área, el peso y casi toda la inercia a flexión.' },
         {
           k: 'table',
           caption: 'El mismo tubo cuadrado 100×100×5, cerrado y con una ranura longitudinal, bajo un torsor de 1 kN·m.',
@@ -73,15 +73,15 @@ export const torsionTheories: Post = {
             ['τ [MPa]', '11,08', '315,79', '29'],
           ],
         },
-        { k: 'p', t: 'La rigidez torsional cae 271 veces y la tensión se multiplica por 29. Un perfil C y un tubo cuadrado del mismo peso no son remotamente el mismo elemento en torsión, y la foto de la sección no te lo va a decir.' },
+        { k: 'p', t: 'La rigidez a torsión cae 271 veces y la tensión se multiplica por 29. Un perfil C y un tubo cuadrado del mismo peso no se comportan igual en torsión.' },
         { k: 'note', t: 'Falta un término que se omite más de lo que se debería: el alabeo. En una sección abierta que no puede alabear libremente —porque está empotrada, o porque el torsor varía a lo largo— aparece una torsión por alabeo que se suma a la de Saint-Venant. Omitirla también subestima.' },
 
         { k: 'h', t: 'Qué hace Stabileo con esto' },
-        { k: 'p', t: 'Muestra las tres. No la que corresponde: las tres, cada una con su fórmula, sus términos y su valor, incluidas las que NO se aplican, diciendo por qué no. Y cuando dos son válidas para la misma sección, muestra la diferencia entre ellas en vez de elegir en silencio.' },
-        { k: 'p', t: 'Eso último es la parte que no se suele encontrar en ningún lado. Un programa te da un número; acá podés ver el número, la hipótesis que hay atrás, y qué pasa cuando esa hipótesis deja de valer. Es lo mismo que hace con el baricentro, el centro de corte y el núcleo central: se derivan a la vista, paso a paso, sobre el polígono real de la sección y no sobre una fórmula por forma.' },
+        { k: 'p', t: 'Muestra las tres, cada una con su fórmula, sus términos y su valor. También las que no se aplican, con el motivo. Y cuando dos son válidas para la misma sección, muestra la diferencia entre ellas en lugar de elegir una en silencio.' },
+        { k: 'p', t: 'El baricentro, el centro de corte y el núcleo central se tratan igual: se derivan paso a paso y a la vista, sobre el polígono real de la sección y no sobre una fórmula por forma.' },
         { k: 'note', t: 'Para verlo: abrí el editor, dibujá o elegí una barra, y entrá en Avanzado → Análisis de sección → Torsión. Con un tubo circular vas a ver a Cauchy y a Bredt convivir, y el porcentaje entre las dos. Con un perfil C vas a ver a Bredt marcada como no aplicable, y por qué.' },
 
-        { k: 'h', t: 'La regla, corta' },
+        { k: 'h', t: 'En resumen' },
         {
           k: 'ol',
           items: [
@@ -91,7 +91,7 @@ export const torsionTheories: Post = {
             '¿Está impedido el alabeo? Entonces Saint-Venant sola no alcanza.',
           ],
         },
-        { k: 'p', t: 'Y la que vale para todo caso: la teoría que usaste es parte del resultado. Un número de torsión sin la hipótesis que lo produjo es medio resultado.' },
+        { k: 'p', t: 'Y en cualquier caso, conviene anotar qué teoría se usó junto con el valor.' },
 
         { k: 'note', t: 'Los valores de esta nota son fórmulas cerradas calculadas para las secciones que se indican, no estimaciones: tubo circular hueco con Aₘ sobre la línea media, y tubo cuadrado 100×100×5 con J cerrado por Bredt y J abierto por Saint-Venant. Podés reproducirlos en Stabileo con esas mismas secciones.' },
       ],
@@ -100,18 +100,18 @@ export const torsionTheories: Post = {
     en: {
       title: 'Bredt or Saint-Venant: which torsion theory applies, and what picking wrong costs',
       excerpt:
-        'Three formulas, one section, three different numbers. Which one holds is decided by the topology of the wall rather than its size — and where two apply at once, the difference has a sign: Bredt lands below, which is the unsafe side.',
+        'Three formulas, one section, three different numbers. Which one applies depends on how the wall is built, not on its size. And where two apply at once they do not agree: Bredt lands below the exact value, by 2 to 15% depending on thickness.',
       blocks: [
-        { k: 'p', t: 'Torsion is where "it depends on the section" stops being a caveat and becomes the subject. Three named theories share the problem, they give answers that differ by orders of magnitude for the same section area, and which one applies is not decided by size, material or inertia: it is decided by the topology of the wall.' },
-        { k: 'p', t: 'That much is awkward already. What is rarely said is what happens when two of them apply to the same section, because then they do not agree — and the disagreement has a sign.' },
+        { k: 'p', t: 'Three different formulas give the shear stress from torsion. For one section they can differ by orders of magnitude, and which one applies depends on how the wall is built rather than on its size or its material.' },
+        { k: 'p', t: 'So far, what any textbook says. What is rarely spelt out is what happens when two of the three apply to the same section, because there they do not agree, and the difference always goes the same way.' },
 
-        { k: 'h', t: 'The three, one line each' },
+        { k: 'h', t: 'The three formulas' },
         {
           k: 'ul',
           items: [
             'Cauchy, τ = T·r / Iₚ. Circular sections only, and there it is exact: the one case where plane sections stay plane. Stress grows linearly with radius, least on the inside and greatest at the outer face.',
-            'Bredt, τ = T / (2·Aₘ·t). For a CLOSED thin wall. The torque is carried by a shear flow circulating around the enclosed area. Aₘ is the area enclosed by the wall’s MID-LINE, not by its outer face — confusing the two is the classic error.',
-            'Saint-Venant, τ = T·t / J with J = (1/3)·Σb·t³. For an OPEN thin wall. With no closed circuit the flow has to turn back on itself across the thickness, which is why thickness enters cubed.',
+            'Bredt, τ = T / (2·Aₘ·t). For a closed thin wall. The torque is carried by a shear flow circulating around the enclosed area. Aₘ is the area enclosed by the wall’s mid-line, not by its outer face; confusing the two is a common error.',
+            'Saint-Venant, τ = T·t / J with J = (1/3)·Σb·t³. For an open thin wall. With no closed circuit, the flow has to turn back on itself across the thickness, which is why thickness enters cubed.',
           ],
         },
         { k: 'note', t: 'Saint-Venant is not "the open-section theory": it is the general one, and the other two are its closed-form special cases. On a circular section its solution coincides exactly with Cauchy, because circular symmetry means the section does not warp. On a closed thin wall, its solution IS Bredt’s.' },
@@ -129,12 +129,12 @@ export const torsionTheories: Post = {
             ['0.50', '25.0 mm wall', '0.850', '15.0 %'],
           ],
         },
-        { k: 'p', t: 'Look at the last column, and at its sign. Bredt does not err in either direction: it errs low, always. On a tube with a 5 mm wall over a 50 mm mean radius — still thin-walled by the usual rule of thumb — the real stress is 4.5% higher than the one you computed. At 10 mm, 8.2%.' },
-        { k: 'quote', t: 'An approximation that underestimates the stress is not conservative. It is a safety margin you believed you had.' },
-        { k: 'p', t: 'It is not a gross error, and that is the point: 4.5% does not show up in any check as something odd. It shows up as passing.' },
+        { k: 'p', t: 'In all four cases Bredt lands below. For a tube with a 5 mm wall over a 50 mm mean radius, still thin-walled by the usual rule of thumb, the real stress comes out 4.5% higher than the computed one. With a 10 mm wall, 8.2%.' },
+        { k: 'quote', t: 'Bredt’s error does not split either way: it always lands on stresses lower than the real ones.' },
+        { k: 'p', t: 'A 4.5% gap does not stand out in a check. It reads as passing.' },
 
-        { k: 'h', t: 'And when the topology changes, everything does' },
-        { k: 'p', t: 'The disagreement between overlapping theories is a few per cent. The difference between a closed and an open wall is another order entirely. Take a 100×100 mm square tube with a 5 mm wall and slit it lengthwise. The area has not changed, nor the weight, nor — to any useful precision — the bending inertia.' },
+        { k: 'h', t: 'Opening the wall changes the order of magnitude' },
+        { k: 'p', t: 'Between overlapping theories the difference is a few per cent. Between a closed and an open wall it is another order. A 100×100 mm square tube with a 5 mm wall, slit lengthwise, keeps its area, its weight and almost all of its bending inertia.' },
         {
           k: 'table',
           caption: 'The same 100×100×5 square tube, closed and slit lengthwise, under a 1 kN·m torque.',
@@ -144,15 +144,15 @@ export const torsionTheories: Post = {
             ['τ [MPa]', '11.08', '315.79', '29'],
           ],
         },
-        { k: 'p', t: 'Torsional stiffness falls by a factor of 271 and the stress multiplies by 29. A C-channel and a square tube of the same weight are not remotely the same member in torsion, and a picture of the section will not tell you.' },
+        { k: 'p', t: 'Torsional stiffness falls by a factor of 271 and the stress multiplies by 29. A C-channel and a square tube of the same weight do not behave the same way in torsion.' },
         { k: 'note', t: 'One term gets left out more than it should: warping. In an open section that cannot warp freely — because it is fixed, or because the torque varies along the member — a warping torsion appears on top of the Saint-Venant one. Leaving it out also underestimates.' },
 
         { k: 'h', t: 'What Stabileo does with this' },
-        { k: 'p', t: 'It shows all three. Not the one that applies: all three, each with its formula, its terms and its value, including the ones that do NOT apply, saying why not. And when two are valid for the same section, it shows the difference between them instead of choosing silently.' },
-        { k: 'p', t: 'That last part is the one that is hard to find anywhere. A program gives you a number; here you can see the number, the hypothesis behind it, and what happens when that hypothesis stops holding. It is the same treatment the centroid, the shear centre and the core get: derived in view, step by step, on the real polygon of the section rather than on a per-shape formula.' },
+        { k: 'p', t: 'It shows all three, each with its formula, its terms and its value. The ones that do not apply are shown too, with the reason. And when two are valid for the same section, it shows the difference between them rather than choosing one silently.' },
+        { k: 'p', t: 'The centroid, the shear centre and the core get the same treatment: derived step by step and in view, on the real polygon of the section rather than on a per-shape formula.' },
         { k: 'note', t: 'To see it: open the editor, draw or pick a member, and go to Advanced → Section analysis → Torsion. On a circular tube you will find Cauchy and Bredt side by side with the percentage between them. On a C-channel you will find Bredt marked as not applicable, and why.' },
 
-        { k: 'h', t: 'The rule, short' },
+        { k: 'h', t: 'In short' },
         {
           k: 'ol',
           items: [
@@ -162,7 +162,7 @@ export const torsionTheories: Post = {
             'Is warping restrained? Then Saint-Venant alone is not enough.',
           ],
         },
-        { k: 'p', t: 'And the one that holds in every case: the theory you used is part of the result. A torsion number without the hypothesis that produced it is half an answer.' },
+        { k: 'p', t: 'And in any case, it is worth recording which theory was used alongside the value.' },
 
         { k: 'note', t: 'The figures here are closed forms computed for the sections named, not estimates: a circular hollow tube with Aₘ on the mid-line, and a 100×100×5 square tube with J closed by Bredt and J open by Saint-Venant. You can reproduce them in Stabileo with those same sections.' },
       ],
@@ -171,18 +171,18 @@ export const torsionTheories: Post = {
     pt: {
       title: 'Bredt ou Saint-Venant: qual teoria de torção se aplica, e o que custa escolher errado',
       excerpt:
-        'Três fórmulas, uma seção, três números diferentes. Qual vale não é decidido pelo tamanho e sim pela topologia da parede — e quando duas se aplicam ao mesmo tempo, a diferença tem sinal: Bredt fica abaixo, que é o lado inseguro.',
+        'Três fórmulas, uma seção, três números diferentes. Qual se aplica depende de como é a parede, não do seu tamanho. E quando duas valem ao mesmo tempo elas não coincidem: Bredt fica abaixo do valor exato, entre 2 e 15 % conforme a espessura.',
       blocks: [
-        { k: 'p', t: 'A torção é o lugar onde "depende da seção" deixa de ser uma ressalva e passa a ser o assunto. Três teorias com nome próprio dividem o problema, dão respostas que diferem em ordens de grandeza para a mesma área de seção, e qual delas se aplica não é decidido pelo tamanho, nem pelo material, nem pela inércia: é decidido pela topologia da parede.' },
-        { k: 'p', t: 'Isso já é incômodo. O que quase nunca se diz é o que acontece quando duas se aplicam à mesma seção, porque então elas não dão o mesmo número — e a diferença tem sinal.' },
+        { k: 'p', t: 'Três fórmulas diferentes dão a tensão de cisalhamento por torção. Para uma mesma seção podem diferir em ordens de grandeza, e qual delas corresponde depende de como é a parede, não do seu tamanho nem do material.' },
+        { k: 'p', t: 'Até aí, o que diz qualquer livro. O que quase não se explica é o que acontece quando duas das três se aplicam à mesma seção, porque aí elas não dão o mesmo, e a diferença vai sempre para o mesmo lado.' },
 
-        { k: 'h', t: 'As três, uma linha cada' },
+        { k: 'h', t: 'As três fórmulas' },
         {
           k: 'ul',
           items: [
             'Cauchy, τ = T·r / Iₚ. Apenas para seção circular, e aí é exata: é o único caso em que as seções planas permanecem planas. A tensão cresce linearmente com o raio, mínima por dentro e máxima na face externa.',
-            'Bredt, τ = T / (2·Aₘ·t). Para parede fina FECHADA. O torque é absorvido por um fluxo de cisalhamento que circula ao redor da área fechada. Aₘ é a área delimitada pela LINHA MÉDIA da parede, não pela face externa — confundir as duas é o erro clássico.',
-            'Saint-Venant, τ = T·t / J com J = (1/3)·Σb·t³. Para parede fina ABERTA. Sem circuito fechado, o fluxo tem de se voltar sobre si mesmo atravessando a espessura, e por isso a espessura entra ao cubo.',
+            'Bredt, τ = T / (2·Aₘ·t). Para parede fina fechada. O torque é absorvido por um fluxo de cisalhamento que circula ao redor da área fechada. Aₘ é a área delimitada pela linha média da parede, não pela face externa; confundir as duas é um erro frequente.',
+            'Saint-Venant, τ = T·t / J com J = (1/3)·Σb·t³. Para parede fina aberta. Sem circuito fechado, o fluxo tem de se voltar sobre si mesmo atravessando a espessura, e por isso a espessura entra ao cubo.',
           ],
         },
         { k: 'note', t: 'Saint-Venant não é "a teoria das seções abertas": é a geral, e as outras duas são seus casos particulares com solução fechada. Numa seção circular sua solução coincide exatamente com Cauchy, porque por simetria circular a seção não empena. Em parede fechada fina, sua solução É a de Bredt.' },
@@ -200,12 +200,12 @@ export const torsionTheories: Post = {
             ['0,50', 'parede 25,0 mm', '0,850', '15,0 %'],
           ],
         },
-        { k: 'p', t: 'Olhe a última coluna e repare no sinal. Bredt não erra para qualquer lado: erra sempre para baixo. Num tubo de parede 5 mm sobre raio médio 50 mm — que pela regra prática ainda conta como parede fina — a tensão real é 4,5 % maior do que a que você calculou. Com parede 10 mm, 8,2 %.' },
-        { k: 'quote', t: 'Uma aproximação que subestima a tensão não é conservadora. É uma margem de segurança que você acreditou ter.' },
-        { k: 'p', t: 'Não é um erro grosseiro, e esse é justamente o ponto: 4,5 % não aparece em nenhuma verificação como algo estranho. Aparece como aprovado.' },
+        { k: 'p', t: 'Nos quatro casos Bredt fica abaixo. Para um tubo de 5 mm de parede sobre 50 mm de raio médio, que pela regra prática ainda é parede fina, a tensão real resulta 4,5 % maior que a calculada. Com 10 mm de parede, 8,2 %.' },
+        { k: 'quote', t: 'O erro de Bredt não se reparte: vai sempre para tensões menores que as reais.' },
+        { k: 'p', t: 'Um 4,5 % não chama atenção numa verificação. Passa como aprovado.' },
 
-        { k: 'h', t: 'E quando a topologia muda, muda tudo' },
-        { k: 'p', t: 'A discordância entre teorias que se sobrepõem é de alguns por cento. A diferença entre parede fechada e aberta é de outra ordem. Pegue um tubo quadrado de 100×100 mm com parede de 5 mm e faça um corte longitudinal. Não mudou a área, nem o peso, nem — com qualquer precisão útil — a inércia à flexão.' },
+        { k: 'h', t: 'Abrir a parede muda a ordem de grandeza' },
+        { k: 'p', t: 'Entre teorias que se sobrepõem a diferença é de alguns por cento. Entre parede fechada e aberta é de outra ordem. Um tubo quadrado de 100×100 mm com parede de 5 mm, cortado ao longo, mantém a área, o peso e quase toda a inércia à flexão.' },
         {
           k: 'table',
           caption: 'O mesmo tubo quadrado 100×100×5, fechado e com um corte longitudinal, sob um torque de 1 kN·m.',
@@ -215,15 +215,15 @@ export const torsionTheories: Post = {
             ['τ [MPa]', '11,08', '315,79', '29'],
           ],
         },
-        { k: 'p', t: 'A rigidez à torção cai 271 vezes e a tensão se multiplica por 29. Um perfil C e um tubo quadrado do mesmo peso não são nem de longe o mesmo elemento em torção, e a foto da seção não vai lhe dizer isso.' },
+        { k: 'p', t: 'A rigidez à torção cai 271 vezes e a tensão se multiplica por 29. Um perfil C e um tubo quadrado do mesmo peso não se comportam igual em torção.' },
         { k: 'note', t: 'Falta um termo que é omitido mais do que deveria: o empenamento. Numa seção aberta que não pode empenar livremente — porque está engastada, ou porque o torque varia ao longo da barra — surge uma torção por empenamento que se soma à de Saint-Venant. Omiti-la também subestima.' },
 
         { k: 'h', t: 'O que o Stabileo faz com isso' },
-        { k: 'p', t: 'Mostra as três. Não a que corresponde: as três, cada uma com sua fórmula, seus termos e seu valor, incluídas as que NÃO se aplicam, dizendo por que não. E quando duas são válidas para a mesma seção, mostra a diferença entre elas em vez de escolher em silêncio.' },
-        { k: 'p', t: 'Essa última parte é a que dificilmente se encontra em algum lugar. Um programa lhe dá um número; aqui você pode ver o número, a hipótese que está por trás, e o que acontece quando essa hipótese deixa de valer. É o mesmo tratamento que recebem o baricentro, o centro de cisalhamento e o núcleo central: derivados à vista, passo a passo, sobre o polígono real da seção e não sobre uma fórmula por forma.' },
+        { k: 'p', t: 'Mostra as três, cada uma com sua fórmula, seus termos e seu valor. As que não se aplicam também aparecem, com o motivo. E quando duas são válidas para a mesma seção, mostra a diferença entre elas em vez de escolher uma em silêncio.' },
+        { k: 'p', t: 'O baricentro, o centro de cisalhamento e o núcleo central recebem o mesmo tratamento: derivados passo a passo e à vista, sobre o polígono real da seção e não sobre uma fórmula por forma.' },
         { k: 'note', t: 'Para ver: abra o editor, desenhe ou escolha uma barra, e vá em Avançado → Análise de seção → Torção. Num tubo circular você vai encontrar Cauchy e Bredt lado a lado, com a porcentagem entre as duas. Num perfil C vai encontrar Bredt marcada como não aplicável, e por quê.' },
 
-        { k: 'h', t: 'A regra, curta' },
+        { k: 'h', t: 'Em resumo' },
         {
           k: 'ol',
           items: [
@@ -233,7 +233,7 @@ export const torsionTheories: Post = {
             'O empenamento está impedido? Então Saint-Venant sozinha não basta.',
           ],
         },
-        { k: 'p', t: 'E a que vale em todo caso: a teoria que você usou é parte do resultado. Um número de torção sem a hipótese que o produziu é meia resposta.' },
+        { k: 'p', t: 'E, em qualquer caso, vale registrar qual teoria foi usada junto com o valor.' },
 
         { k: 'note', t: 'Os valores desta nota são fórmulas fechadas calculadas para as seções indicadas, não estimativas: tubo circular vazado com Aₘ sobre a linha média, e tubo quadrado 100×100×5 com J fechado por Bredt e J aberto por Saint-Venant. Você pode reproduzi-los no Stabileo com essas mesmas seções.' },
       ],

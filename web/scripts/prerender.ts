@@ -244,11 +244,19 @@ async function main() {
         `\n</urlset>\n`,
     );
 
-    // The editor is not content and must not be indexed: its routes 404 for a
-    // crawler anyway, and a rule saying so is cheaper than explaining it later.
+    /*
+     * The editor is not content and must not be indexed: its routes 404 for a
+     * crawler anyway, and a rule saying so is cheaper than explaining later.
+     *
+     * `/demo` is deliberately NOT disallowed. It is being retired by the
+     * tutorials workstream and is expected back as the entry point someone can
+     * use without an account — which is a page we would want indexed. A stale
+     * Disallow is the kind of line nobody remembers to delete, and it would
+     * quietly keep that page out of search for as long as it survived.
+     */
     await writeFile(
       join(DIST, 'robots.txt'),
-      `User-agent: *\nAllow: /\nDisallow: /app/\nDisallow: /demo\n\nSitemap: ${ORIGIN}/sitemap.xml\n`,
+      `User-agent: *\nAllow: /\nDisallow: /app/\n\nSitemap: ${ORIGIN}/sitemap.xml\n`,
     );
 
     console.log(`✅ prerendered ${written.length} pages`);
