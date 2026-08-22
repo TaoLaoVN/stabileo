@@ -463,6 +463,17 @@
   color: var(--lp-paper-2);
 }
 
+/*
+   The blog's header has no section links — they pointed at sections of the
+   landing — and `.nav-links` was what carried the `margin-left: auto` that
+   pushes the actions to the right. Without it they ended up against the logo.
+   Scoped to the blog on purpose: a second auto margin on the landing would
+   share the free space with the first and float its links into the middle.
+*/
+.landing.blog .nav-actions {
+  margin-left: auto;
+}
+
 .landing .nav-actions {
   display: flex;
   align-items: center;
