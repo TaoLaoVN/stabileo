@@ -28,6 +28,10 @@ export const ANCHORS = {
   /** The right-hand panel a ribbon command opens. Already carries a testid. */
   rightPanel: '[data-testid="basic-panel"]',
   viewport: '.viewport-container',
+  /** The "structure changed — recompute" button in the kinematic report. */
+  kinematicStale: '[data-testid="kin-stale"]',
+  /** The two sliders that move the query along the member and across the section. */
+  sectionSliders: '[data-tour="ssp-sliders"]',
   /** A whole ribbon group — `results` is the row of diagrams. */
   ribbonGroup: (id: string) => `[data-group="${id}"]`,
   /** The 3D camera stack: fit, the three preset views, projection, clipping. */

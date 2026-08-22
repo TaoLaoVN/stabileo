@@ -15,7 +15,7 @@
 
 import type { TourStep } from '../../store/tour.svelte';
 import { t } from '../../i18n';
-import { ANCHORS, loadExample, setDimension } from '../demo-helpers';
+import { ANCHORS, loadExample, setDimension, openPanel } from '../demo-helpers';
 import { uiStore } from '../../store';
 
 export function buildNavigation(): TourStep[] {
@@ -36,6 +36,12 @@ export function buildNavigation(): TourStep[] {
     {
       id: 'pan-2d',
       target: ANCHORS.pointerMode,
+      /*
+       * The model stays lit. Every one of these cards asks the reader to drag
+       * on the drawing, and a dark canvas is one they cannot see the effect
+       * on — the step describes a gesture whose result is hidden.
+       */
+      overlayOpacity: 0.25,
       title: t('demo.navigation.pan2dTitle'),
       description: t('demo.navigation.pan2dDesc'),
       position: 'left',
@@ -51,6 +57,12 @@ export function buildNavigation(): TourStep[] {
     {
       id: 'pan-3d',
       target: ANCHORS.pointerMode,
+      /*
+       * The model stays lit. Every one of these cards asks the reader to drag
+       * on the drawing, and a dark canvas is one they cannot see the effect
+       * on — the step describes a gesture whose result is hidden.
+       */
+      overlayOpacity: 0.25,
       title: t('demo.navigation.pan3dTitle'),
       description: t('demo.navigation.pan3dDesc'),
       position: 'left',
@@ -70,6 +82,7 @@ export function buildNavigation(): TourStep[] {
     {
       id: 'views-3d',
       target: ANCHORS.cameraControls,
+      overlayOpacity: 0.25,
       title: t('demo.navigation.viewsTitle'),
       description: t('demo.navigation.viewsDesc'),
       position: 'left',
@@ -85,6 +98,12 @@ export function buildNavigation(): TourStep[] {
     {
       id: 'select-mode',
       target: ANCHORS.pointerMode,
+      /*
+       * The model stays lit. Every one of these cards asks the reader to drag
+       * on the drawing, and a dark canvas is one they cannot see the effect
+       * on — the step describes a gesture whose result is hidden.
+       */
+      overlayOpacity: 0.25,
       title: t('demo.navigation.selectTitle'),
       description: t('demo.navigation.selectDesc'),
       position: 'left',
@@ -111,6 +130,12 @@ export function buildNavigation(): TourStep[] {
     {
       id: 'kinds',
       target: ANCHORS.ribbonCommand('select'),
+      /*
+       * Opens the Selection panel rather than only pointing at the command.
+       * The next card is about what Delete removes and reads the panel; left
+       * unopened, it described a panel the reader was not looking at.
+       */
+      onEnter: () => openPanel('selection'),
       title: t('demo.navigation.kindsTitle'),
       description: t('demo.navigation.kindsDesc'),
       position: 'bottom',
@@ -120,6 +145,7 @@ export function buildNavigation(): TourStep[] {
     {
       id: 'delete',
       target: ANCHORS.rightPanel,
+      onEnter: () => openPanel('selection'),
       title: t('demo.navigation.deleteTitle'),
       description: t('demo.navigation.deleteDesc'),
       position: 'left',

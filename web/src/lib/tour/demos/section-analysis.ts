@@ -98,7 +98,12 @@ export function buildSectionAnalysis(): TourStep[] {
 
     {
       id: 'sliders',
-      target: '.ssp-panel',
+      /*
+       * The sliders themselves, not the panel they sit in. "Two sliders" with
+       * a highlight around the whole panel is a call to action with no
+       * address — the reader has to hunt for what the card is talking about.
+       */
+      target: ANCHORS.sectionSliders,
       title: t('demo.section.slidersTitle'),
       description: t('demo.section.slidersDesc'),
       position: 'left',
@@ -129,7 +134,12 @@ export function buildSectionAnalysis(): TourStep[] {
       title: t('demo.section.doneTitle'),
       description: t('demo.section.doneDesc'),
       position: 'center',
-      onEnter: () => { uiStore.selectMode = 'elements'; },
+      /*
+       * The analysis stays armed. Turning it off here meant the reader who
+       * pressed Back landed on cards describing a panel that had just been
+       * dismissed — and somebody who finished this walkthrough is the person
+       * most likely to want to keep querying sections.
+       */
     },
   ];
 }

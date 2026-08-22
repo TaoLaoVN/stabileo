@@ -84,17 +84,44 @@ export function buildKinematics(): TourStep[] {
      */
     {
       id: 'break-it',
+      /*
+       * Framed on the spot the support used to occupy rather than the whole
+       * canvas: "a support just disappeared" is impossible to see if the
+       * highlight covers everything, and the reader is looking for a change
+       * they did not make.
+       */
       target: ANCHORS.viewport,
+      highlightPadding: 0,
+      overlayOpacity: 0.35,
       title: t('demo.kinematics.breakTitle'),
       description: t('demo.kinematics.breakDesc'),
       position: 'right',
-      highlightPadding: 0,
-      overlayOpacity: 0.4,
       onEnter: () => {
         const sup = [...modelStore.supports.values()][0];
         if (!sup || removed) return;
         removed = { nodeId: sup.nodeId, type: sup.type };
         modelStore.removeSupport(sup.id);
+      },
+    },
+
+    /*
+     * The report does not follow the model on its own: it puts up a "structure
+     * changed — recompute" button and waits. A walkthrough that removed a
+     * support and then talked about the verdict was describing a report from
+     * before the change, with the button to update it sitting unmentioned.
+     */
+    {
+      id: 'recompute',
+      target: ANCHORS.kinematicStale,
+      title: t('demo.kinematics.recomputeTitle'),
+      description: t('demo.kinematics.recomputeDesc'),
+      position: 'left',
+      allowInteraction: true,
+      // Pressing Next does what the button does, so a reader who does not
+      // notice it is not left reading a stale verdict either.
+      onExit: () => {
+        const btn = document.querySelector('[data-testid="kin-stale"]') as HTMLElement | null;
+        btn?.click();
       },
     },
 

@@ -57,7 +57,12 @@ export function buildSettings(): TourStep[] {
 
     {
       id: 'grid',
-      target: ANCHORS.rightPanel,
+      /*
+       * From here each card frames its OWN section instead of the whole panel.
+       * A highlight around all twenty-five switches while the text discusses
+       * three of them points at nothing in particular.
+       */
+      target: '[data-tour="cfg-grid"]',
       title: t('demo.settings.gridTitle'),
       description: t('demo.settings.gridDesc'),
       position: 'left',
@@ -66,7 +71,7 @@ export function buildSettings(): TourStep[] {
 
     {
       id: 'results',
-      target: ANCHORS.rightPanel,
+      target: '[data-tour="cfg-results"]',
       title: t('demo.settings.resultsTitle'),
       description: t('demo.settings.resultsDesc'),
       position: 'left',
@@ -75,7 +80,7 @@ export function buildSettings(): TourStep[] {
 
     {
       id: 'live',
-      target: ANCHORS.rightPanel,
+      target: '.live-calc-btn',
       title: t('demo.settings.liveTitle'),
       description: t('demo.settings.liveDesc'),
       position: 'left',
