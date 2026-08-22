@@ -17,7 +17,29 @@
  *     L = 8 kN/m, governing 1.2D+1.6L → Mu = 92.5 kN·m, 2 Ø25, φMn = 115.2,
  *     D/C = 0.80. The application reports 0.81 through its own pipeline.
  *
- * The embed's caption names the two buttons the reader has to press, and it
+ * ── What the embed actually shows, which is not the same thing ──
+ *
+ * The 0.81 above is this post's beam WITH 2 Ø25. The embed does not assume a
+ * reinforcement, it designs one, and its own bars give D/C = 0.89. The caption
+ * quotes 0.89 and the closing note explains the two.
+ *
+ * Two things were wrong here before, both found by driving the frame rather
+ * than by reading it:
+ *
+ *   · The caption named two buttons. It takes three. After "Compute demands"
+ *     and "Run code check" the table still reads "no reinforcement / not
+ *     verified" — there is nothing to check until "Design all" places bars.
+ *   · It promised D/C = 0.81 on screen. Nothing on screen said 0.81 after the
+ *     full flow, and Mu = 92.5 is never displayed at all.
+ *
+ * The 5 m span is two elements, so there are two rows: 0.89 governed by
+ * positive bending and 0.86 governed by shear. Shear governs the summary line
+ * on essentially any beam here — six spans from 5 to 8 m and sections from
+ * 20×40 to 25×60 all came back shear-governed at 0.78–0.94, because stirrup
+ * spacing is designed right up against the demand while bars come in discrete
+ * areas. Do not retune the fixture chasing a flexure-governed summary row.
+ *
+ * The embed's caption names the buttons the reader has to press, and it
  * names them PER LANGUAGE. The editor inside the frame runs in the reader's
  * locale, so an English caption on a Spanish page sends someone looking for
  * "Compute demands" at a button that says "Calcular solicitaciones".
@@ -38,7 +60,7 @@ export const cirsoc201Flexure: Post = {
     es: {
       title: 'Verificación a flexión según CIRSOC 201, paso a paso',
       excerpt:
-        'Todos recuerdan φMn ≥ Mu. Esa es la última línea de la verificación, no la verificación. Los tres pasos que deciden el resultado son otros, y uno de ellos hace que φ no valga 0,9.',
+        'Todos recuerdan φMn ≥ Mu. Esa es la última línea de la verificación, no la verificación. Los pasos que deciden el resultado son otros, y uno hace que φ no valga 0,9.',
       blocks: [
         { k: 'p', t: 'Verificar una viga a flexión se resume, en la memoria de casi todos, en una desigualdad: φMn ≥ Mu. Es cierto, y es la última línea. Lo que decide el resultado pasa antes, en pasos que rara vez se miran con atención porque parecen trámite.' },
         { k: 'p', t: 'Esto es lo que devuelve el módulo CIRSOC 201 de Stabileo para una viga de 20×40 cm, H-25, con acero fy 420, 25 mm de recubrimiento y estribos de 8, bajo un momento de 60 kN·m:' },
@@ -116,7 +138,7 @@ export const cirsoc201Flexure: Post = {
           k: 'embed',
           mode: 'pro',
           query: 'example=rc-beam-flexure&proTab=design',
-          label: 'La viga en Stabileo, en el flujo de diseño de PRO. Apretá «Calcular solicitaciones» y después «Verificar según norma»: la combinación 1,2D+1,6L gobierna con Mu = 92,5 kN·m y la viga verifica con D/C = 0,81. Cambiá la carga y mirá de qué lado del cruce queda el mínimo. PRO está en desarrollo; el módulo de hormigón es la parte implementada y testeada.',
+          label: 'La viga en Stabileo, en el flujo de diseño de PRO. Tres botones y en este orden: «Calcular solicitaciones», «Verificar según norma» y «Diseñar todo» — recién el tercero elige las barras, y hasta que no hay barras no hay nada que verificar: la tabla dice «sin armadura». El tramo de 5 m está modelado con dos elementos; el primero cierra en D/C = 0,89 gobernado por la flexión positiva del tramo, el segundo en 0,86 gobernado por el corte, los dos con la combinación 1,2D+1,6L. Cambiá la carga y volvé a correrlo. PRO está en desarrollo; el módulo de hormigón es la parte implementada y testeada.',
         },
 
         { k: 'h', t: 'En resumen' },
@@ -130,14 +152,14 @@ export const cirsoc201Flexure: Post = {
           ],
         },
 
-        { k: 'note', t: 'Todas las cifras salen del módulo CIRSOC 201 de Stabileo, corrido sobre las secciones que se indican, y no de una tabla. Una advertencia que vale la pena, porque la primera versión de esta nota se equivocó ahí: el cálculo a mano daba D/C = 0,74 y la aplicación 0,81. La diferencia era el peso propio, 2 kN/m que la aplicación suma a la carga permanente. Tenía razón la aplicación. Si alguna vez un número de acá no coincide con lo que muestra el editor de arriba, creele al editor.' },
+        { k: 'note', t: 'Todas las cifras salen del módulo CIRSOC 201 de Stabileo, corrido sobre las secciones que se indican, y no de una tabla. Una advertencia que vale la pena, porque la primera versión de esta nota se equivocó ahí: el cálculo a mano daba D/C = 0,74 y la aplicación 0,81. La diferencia era el peso propio, 2 kN/m que la aplicación suma a la carga permanente. Tenía razón la aplicación. Y una aclaración sobre el editor de arriba, para que los dos números no se pisen: ese 0,81 supone 2 Ø25, que es la armadura con la que trabaja esta nota; el 0,89 que muestra el editor es con las barras que elige él mismo al diseñar. Misma viga, dos armaduras. Si alguna vez un número de acá no coincide con lo que muestra el editor, creele al editor.' },
       ],
     },
 
     en: {
       title: 'Flexural verification to CIRSOC 201, step by step',
       excerpt:
-        'Everyone remembers φMn ≥ Mu. That is the last line of the check, not the check. The three steps that decide the outcome are others, and one of them is why φ is not 0.9.',
+        'Everyone remembers φMn ≥ Mu. That is the last line of the check, not the check. The steps that decide the outcome are others, and one is why φ is not 0.9.',
       blocks: [
         { k: 'p', t: 'Checking a beam in bending reduces, in most people\'s memory, to one inequality: φMn ≥ Mu. It is true, and it is the last line. What decides the outcome happens earlier, in steps that are rarely read closely because they look like paperwork.' },
         { k: 'p', t: 'This is what Stabileo\'s CIRSOC 201 module returns for a 20×40 cm beam of H-25 concrete, fy 420 steel, 25 mm cover and 8 mm stirrups, under a moment of 60 kN·m:' },
@@ -215,7 +237,7 @@ export const cirsoc201Flexure: Post = {
           k: 'embed',
           mode: 'pro',
           query: 'example=rc-beam-flexure&proTab=design',
-          label: 'The beam in Stabileo, in PRO\'s design workflow. Press "Compute demands" and then "Run code check": the 1.2D+1.6L combination governs with Mu = 92.5 kN·m and the beam passes at D/C = 0.81. Change the load and watch which side of the crossover the minimum lands on. PRO is in development; the concrete module is the part that is implemented and tested.',
+          label: 'The beam in Stabileo, in PRO\'s design workflow. Three buttons, in this order: "Compute demands", "Run code check" and "Design all" — only the third one picks the bars, and until there are bars there is nothing to verify: the table says "no reinforcement". The 5 m span is modelled as two elements; the first closes at D/C = 0.89 governed by positive bending in the span, the second at 0.86 governed by shear, both under the 1.2D+1.6L combination. Change the load and run it again. PRO is in development; the concrete module is the part that is implemented and tested.',
         },
 
         { k: 'h', t: 'In short' },
@@ -229,14 +251,14 @@ export const cirsoc201Flexure: Post = {
           ],
         },
 
-        { k: 'note', t: 'Every figure here comes from Stabileo\'s CIRSOC 201 module, run on the sections named, and not from a table. One warning worth passing on, because the first draft of this post got it wrong: the hand calculation gave D/C = 0.74 and the application 0.81. The difference was self-weight, 2 kN/m that the application adds to the dead case. The application was right. If a number here ever stops matching the editor above, believe the editor.' },
+        { k: 'note', t: 'Every figure here comes from Stabileo\'s CIRSOC 201 module, run on the sections named, and not from a table. One warning worth passing on, because the first draft of this post got it wrong: the hand calculation gave D/C = 0.74 and the application 0.81. The difference was self-weight, 2 kN/m that the application adds to the dead case. The application was right. And one note on the editor above, so the two numbers do not collide: that 0.81 assumes 2 Ø25, the reinforcement this post works with; the 0.89 the editor shows is with the bars it chooses for itself when it designs. Same beam, two different reinforcements. If a number here ever stops matching the editor, believe the editor.' },
       ],
     },
 
     pt: {
       title: 'Verificação à flexão segundo a CIRSOC 201, passo a passo',
       excerpt:
-        'Todo mundo lembra de φMn ≥ Mu. Essa é a última linha da verificação, não a verificação. Os três passos que decidem o resultado são outros, e um deles é o motivo de φ não valer 0,9.',
+        'Todo mundo lembra de φMn ≥ Mu. Essa é a última linha da verificação, não a verificação. Os passos que decidem o resultado são outros, e um faz φ não valer 0,9.',
       blocks: [
         { k: 'p', t: 'Verificar uma viga à flexão se resume, na memória de quase todos, a uma desigualdade: φMn ≥ Mu. É verdade, e é a última linha. O que decide o resultado acontece antes, em passos que raramente são lidos com atenção porque parecem burocracia.' },
         { k: 'p', t: 'Isto é o que o módulo CIRSOC 201 do Stabileo devolve para uma viga de 20×40 cm, concreto H-25, aço fy 420, 25 mm de cobrimento e estribos de 8, sob um momento de 60 kN·m:' },
@@ -314,7 +336,7 @@ export const cirsoc201Flexure: Post = {
           k: 'embed',
           mode: 'pro',
           query: 'example=rc-beam-flexure&proTab=design',
-          label: 'A viga no Stabileo, no fluxo de projeto do PRO. Aperte «Calcular solicitações» e depois «Executar verificação normativa»: a combinação 1,2D+1,6L governa com Mu = 92,5 kN·m e a viga passa com D/C = 0,81. Mude a carga e veja de que lado do cruzamento o mínimo cai. O PRO está em desenvolvimento; o módulo de concreto é a parte implementada e testada.',
+          label: 'A viga no Stabileo, no fluxo de projeto do PRO. Três botões, nesta ordem: «Calcular solicitações», «Executar verificação normativa» e «Dimensionar tudo» — só o terceiro escolhe as barras, e enquanto não houver barras não há o que verificar: a tabela diz «sem armadura». O vão de 5 m está modelado com dois elementos; o primeiro fecha em D/C = 0,89 governado pela flexão positiva do vão, o segundo em 0,86 governado pelo cortante, ambos com a combinação 1,2D+1,6L. Mude a carga e rode de novo. O PRO está em desenvolvimento; o módulo de concreto é a parte implementada e testada.',
         },
 
         { k: 'h', t: 'Em resumo' },
@@ -328,7 +350,7 @@ export const cirsoc201Flexure: Post = {
           ],
         },
 
-        { k: 'note', t: 'Todos os valores vêm do módulo CIRSOC 201 do Stabileo, rodado sobre as seções indicadas, e não de uma tabela. Um aviso que vale a pena, porque a primeira versão desta nota errou nisso: o cálculo à mão dava D/C = 0,74 e a aplicação 0,81. A diferença era o peso próprio, 2 kN/m que a aplicação soma à carga permanente. A aplicação estava certa. Se algum número daqui deixar de coincidir com o editor acima, acredite no editor.' },
+        { k: 'note', t: 'Todos os valores vêm do módulo CIRSOC 201 do Stabileo, rodado sobre as seções indicadas, e não de uma tabela. Um aviso que vale a pena, porque a primeira versão desta nota errou nisso: o cálculo à mão dava D/C = 0,74 e a aplicação 0,81. A diferença era o peso próprio, 2 kN/m que a aplicação soma à carga permanente. A aplicação estava certa. E um esclarecimento sobre o editor acima, para que os dois números não se atropelem: esse 0,81 supõe 2 Ø25, que é a armadura com que esta nota trabalha; o 0,89 que o editor mostra é com as barras que ele mesmo escolhe ao dimensionar. Mesma viga, duas armaduras. Se algum número daqui deixar de coincidir com o editor, acredite no editor.' },
       ],
     },
   },

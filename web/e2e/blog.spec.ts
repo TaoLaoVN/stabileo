@@ -229,6 +229,7 @@ test.describe('@smoke blog', () => {
     const caption = await embed.locator('figcaption').innerText();
     expect(caption).toContain('Calcular solicitaciones');
     expect(caption).toContain('Verificar según norma');
+    expect(caption).toContain('Diseñar todo');
 
     await embed.locator('.post-embed-start').click();
     await expect(embed.locator('iframe')).toHaveAttribute('src', /\/app\/pro\?/);
@@ -238,6 +239,40 @@ test.describe('@smoke blog', () => {
     // The buttons the caption promises are really there, in this language.
     await expect(app.getByTestId('cmd-compute-demands')).toHaveText('Calcular solicitaciones');
     await expect(app.getByTestId('cmd-code-check')).toHaveText('Verificar según norma');
+  });
+
+  /*
+   * The caption promises a RESULT, not just two labelled buttons — and that is
+   * the half that broke. It used to name two buttons and quote D/C = 0.81; the
+   * two buttons leave the table reading "no reinforcement / not verified", and
+   * 0.81 never appeared on screen at all. Asserting the labels exist could not
+   * catch that. This runs the flow the caption describes, to the end, and reads
+   * the number back.
+   */
+  test('the CIRSOC embed reaches the state its caption promises', async ({ page }) => {
+    test.slow();
+    await boot(page, '/es/blog/verificacion-flexion-cirsoc-201', 'es');
+
+    const embed = page.locator('.post-embed');
+    await embed.scrollIntoViewIfNeeded();
+    await embed.locator('.post-embed-start').click();
+
+    const app = page.frameLocator('.post-embed iframe');
+    await expect(app.locator('body')).toContainText('CIRSOC 201', { timeout: 60_000 });
+
+    // Exactly the three presses the caption asks for, in its order.
+    for (const id of ['cmd-compute-demands', 'cmd-code-check']) {
+      await app.getByTestId(id).click();
+      await expect(app.locator('body')).toBeVisible();
+    }
+    await app.getByRole('button', { name: 'Diseñar todo', exact: true }).first().click();
+
+    // Verified, not "sin verificar", and at the utilisation the caption quotes.
+    const table = app.locator('body');
+    await expect(table).toContainText('0.89', { timeout: 90_000 });
+    await expect(table).toContainText('0.86');
+    await expect(table).toContainText('1.2D+1.6L');
+    await expect(table).not.toContainText('sin armadura');
   });
 
   test('a post describes itself to a search engine', async ({ page }) => {
