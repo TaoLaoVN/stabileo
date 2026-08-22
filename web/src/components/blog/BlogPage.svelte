@@ -38,6 +38,7 @@
       title: body ? `${body.title} — Stabileo` : `${t('blog.title')} — Stabileo`,
       description: body ? body.excerpt : t('blog.lead'),
       locale: publicI18n.locale,
+      path: post ? `/blog/${post.slug}` : '/blog',
     });
     return restorePageMeta;
   });
