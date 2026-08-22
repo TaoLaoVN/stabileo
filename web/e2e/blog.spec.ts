@@ -175,6 +175,36 @@ test.describe('@smoke blog', () => {
     await expect(page.locator('.post-title')).toHaveText(TITLES.es);
   });
 
+  test('the embedded editor waits to be asked, then shows the post’s own numbers', async ({ page }) => {
+    /*
+     * The landing carried an embed like this once and it taught two lessons:
+     * a second application booting on every visit, and an iframe under the
+     * pointer swallowing the wheel. So the first assertion here is that
+     * nothing loads until someone asks for it.
+     *
+     * The second is the one that makes the embed worth having: the figures on
+     * screen are the figures in the prose. If the fixture, the solver or the
+     * text ever drift apart, this fails.
+     */
+    await boot(page, '/es/blog/torsion-bredt-saint-venant');
+
+    const embed = page.locator('.post-embed');
+    await embed.scrollIntoViewIfNeeded();
+    await expect(embed.locator('iframe')).toHaveCount(0);
+    await expect(embed.locator('.post-embed-start')).toBeVisible();
+
+    await embed.locator('.post-embed-start').click();
+    await expect(embed.locator('iframe')).toHaveCount(1);
+
+    const app = page.frameLocator('.post-embed iframe');
+    // The model is the one the post describes: a tube under 1 kN·m.
+    await expect(app.locator('body')).toContainText('1.00', { timeout: 60_000 });
+    // And the three theories, with the two values the table quotes.
+    await expect(app.locator('body')).toContainText('Cauchy', { timeout: 60_000 });
+    await expect(app.locator('body')).toContainText('13.34');
+    await expect(app.locator('body')).toContainText('12.73');
+  });
+
   test('a post describes itself to a search engine', async ({ page }) => {
     // The byline on screen is prose; this is the only machine-readable
     // statement of who wrote the post and when. Without it a result is a page

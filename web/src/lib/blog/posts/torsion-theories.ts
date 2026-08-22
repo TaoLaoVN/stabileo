@@ -62,6 +62,8 @@ export const torsionTheories: Post = {
         { k: 'quote', t: 'El error de Bredt no reparte: va siempre hacia tensiones menores que las reales.' },
         { k: 'p', t: 'Un 4,5 % no llama la atención en una verificación. Pasa como que verifica.' },
 
+        { k: 'embed', query: 'example=torsion-tube&inspect=1&open=torsion', label: 'El mismo tubo, en Stabileo: CHS 105×5 en voladizo con 1 kN·m de torsor. El panel abre en Torsión y muestra Cauchy 13,34 MPa y Bredt 12,73 MPa, el 95 % de la tabla de arriba. Movés el punto, cambiás la sección, y los tres valores se recalculan.' },
+
         { k: 'h', t: 'Abrir la pared cambia el orden de magnitud' },
         { k: 'p', t: 'Entre teorías que se solapan la diferencia es de unidades por ciento. Entre pared cerrada y abierta es de otro orden. Un tubo cuadrado de 100×100 mm con 5 mm de pared, cortado a lo largo, conserva el área, el peso y casi toda la inercia a flexión.' },
         {
@@ -133,6 +135,8 @@ export const torsionTheories: Post = {
         { k: 'quote', t: 'Bredt’s error does not split either way: it always lands on stresses lower than the real ones.' },
         { k: 'p', t: 'A 4.5% gap does not stand out in a check. It reads as passing.' },
 
+        { k: 'embed', query: 'example=torsion-tube&inspect=1&open=torsion', label: 'The same tube, in Stabileo: a CHS 105×5 cantilever under 1 kN·m. The panel opens on Torsion and reads Cauchy 13.34 MPa and Bredt 12.73 MPa, the 95% from the table above. Move the point, change the section, and all three recompute.' },
+
         { k: 'h', t: 'Opening the wall changes the order of magnitude' },
         { k: 'p', t: 'Between overlapping theories the difference is a few per cent. Between a closed and an open wall it is another order. A 100×100 mm square tube with a 5 mm wall, slit lengthwise, keeps its area, its weight and almost all of its bending inertia.' },
         {
@@ -203,6 +207,8 @@ export const torsionTheories: Post = {
         { k: 'p', t: 'Nos quatro casos Bredt fica abaixo. Para um tubo de 5 mm de parede sobre 50 mm de raio médio, que pela regra prática ainda é parede fina, a tensão real resulta 4,5 % maior que a calculada. Com 10 mm de parede, 8,2 %.' },
         { k: 'quote', t: 'O erro de Bredt não se reparte: vai sempre para tensões menores que as reais.' },
         { k: 'p', t: 'Um 4,5 % não chama atenção numa verificação. Passa como aprovado.' },
+
+        { k: 'embed', query: 'example=torsion-tube&inspect=1&open=torsion', label: 'O mesmo tubo, no Stabileo: um CHS 105×5 em balanço sob 1 kN·m. O painel abre em Torção e mostra Cauchy 13,34 MPa e Bredt 12,73 MPa, os 95 % da tabela acima. Mova o ponto, troque a seção, e os três se recalculam.' },
 
         { k: 'h', t: 'Abrir a parede muda a ordem de grandeza' },
         { k: 'p', t: 'Entre teorias que se sobrepõem a diferença é de alguns por cento. Entre parede fechada e aberta é de outra ordem. Um tubo quadrado de 100×100 mm com parede de 5 mm, cortado ao longo, mantém a área, o peso e quase toda a inércia à flexão.' },

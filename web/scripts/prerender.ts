@@ -72,7 +72,7 @@ const MIME: Record<string, string> = {
  * fallback is wanted: we are asking the app to render each route.
  */
 function serveDist(port: number) {
-  return new Promise<() => Promise<void>>((resolve) => {
+  return new Promise<{ server: import('node:http').Server; port: number }>((resolve) => {
     const server = createServer(async (req, res) => {
       const url = new URL(req.url ?? '/', 'http://localhost');
       let file = join(DIST, decodeURIComponent(url.pathname));
@@ -85,9 +85,10 @@ function serveDist(port: number) {
         res.writeHead(404).end();
       }
     });
-    server.listen(port, '127.0.0.1', () =>
-      resolve(() => new Promise<void>((done) => server.close(() => done()))),
-    );
+    server.listen(port, '127.0.0.1', () => {
+      const addr = server.address();
+      resolve({ server, port: typeof addr === 'object' && addr ? addr.port : port });
+    });
   });
 }
 
@@ -204,8 +205,14 @@ async function main() {
   if (!existsSync(join(DIST, 'index.html'))) {
     throw new Error('prerender: dist/index.html is missing — run the build first');
   }
-  const port = 4399;
-  const stop = await serveDist(port);
+  /*
+   * Port 0 asks the OS for a free one. A fixed port made the build fail with
+   * `EADDRINUSE` whenever anything else happened to be listening — including
+   * the throwaway server used to check this very output — which is a confusing
+   * way for a build to break and has nothing to do with the build.
+   */
+  const { server, port } = await serveDist(0);
+  const stop = () => new Promise<void>((done) => server.close(() => done()));
   const base = `http://127.0.0.1:${port}`;
   const browser = await chromium.launch();
   const paths = await publicPaths();

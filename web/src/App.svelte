@@ -220,6 +220,59 @@
     history.replaceState(null, '', `${url.pathname}${url.search}${url.hash}`);
   }
 
+  /**
+   * `?inspect=<elementId>` opens the section analysis on that member.
+   *
+   * Written for the blog: a post about torsion can embed the editor already
+   * showing the section it is discussing, so the reader arrives at the figure
+   * instead of hunting for it through three menus. It composes with the
+   * existing `?embed` and `?example=` rather than adding a mode of its own.
+   *
+   * `t` is the station along the member, 0 to 1, and defaults to midspan.
+   *
+   * It waits for results, because the panel renders a stress state and there
+   * is none until the model has been solved. The solve is dispatched by the
+   * example loader just above, and finishes whenever the engine finishes;
+   * polling briefly is simpler than threading a promise through it, and it
+   * gives up rather than spinning if the solve never lands.
+   */
+  function openInspectFromUrl(params: URLSearchParams) {
+    const raw = params.get('inspect');
+    if (!raw) return;
+    const elementId = Number(raw);
+    if (!Number.isFinite(elementId)) return;
+    const t = Math.min(1, Math.max(0, Number(params.get('t') ?? '0.5') || 0.5));
+
+    let tries = 0;
+    const open = () => {
+      const element = modelStore.elements.get(elementId);
+      const solved = resultsStore.results !== null || resultsStore.results3D !== null;
+      if (element && solved) {
+        const a = modelStore.nodes.get(element.nodeI);
+        const b = modelStore.nodes.get(element.nodeJ);
+        if (!a || !b) return;
+        resultsStore.stressQuery = {
+          elementId,
+          t,
+          worldX: a.x + (b.x - a.x) * t,
+          worldY: a.y + (b.y - a.y) * t,
+          worldZ: (a.z ?? 0) + ((b.z ?? 0) - (a.z ?? 0)) * t,
+        };
+        /*
+         * On desktop Basic the section panel is docked inside the Advanced
+         * tab of the right panel, so the query alone sets up an answer with
+         * nowhere to appear. On mobile the panel floats and the query is
+         * enough — which is why this looked like it worked on a phone and did
+         * nothing on a laptop.
+         */
+        if (uiStore.appMode === 'basico' && !uiStore.isMobile) openBasicPanel('advanced');
+        return;
+      }
+      if (tries++ < 60) setTimeout(open, 120);
+    };
+    open();
+  }
+
   function findTabBySlug(tabSlug: string | null) {
     if (!tabSlug) return null;
     return tabManager.tabs.find(tab => slugifyTabName(tab.name) === tabSlug) ?? null;
@@ -549,6 +602,7 @@
             if (attempt < 40) setTimeout(() => tryFit(attempt + 1), 60);
           };
           tryFit(0);
+          openInspectFromUrl(queryParams);
         }).catch(() => {
           // Silently ignore unknown example ids
         });
