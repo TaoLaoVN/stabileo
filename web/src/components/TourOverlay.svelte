@@ -80,6 +80,7 @@
        * without listening for the answer to change.
        */
       autoAdvanceArmed = untrack(() => !!(step.autoAdvance && step.waitFor && !step.waitFor()));
+      (tourStore as unknown as { armedForTest: boolean }).armedForTest = autoAdvanceArmed;
       if (autoAdvanceTimer) { clearTimeout(autoAdvanceTimer); autoAdvanceTimer = null; }
       requestAnimationFrame(() => {
         tourStore.updateTargetRect();
@@ -88,20 +89,54 @@
     }
   });
 
-  // Auto-advance effect: only triggers when armed AND waitFor becomes true
+  /**
+   * Advance when the reader has done the thing, checked on a timer.
+   *
+   * This was an effect that read the step's condition and relied on Svelte
+   * waking it when the answer changed. Three separate hangs came out of that
+   * one assumption, each a different way for the wake-up not to arrive:
+   *
+   *   * the condition read `Map.size`, and `.set()` does not reliably notify;
+   *   * the condition read the DOM, which notifies nothing at all;
+   *   * the arming effect read the condition too, so it re-ran on the very
+   *     change it was waiting for and disarmed the advance a moment before it
+   *     was due to fire.
+   *
+   * Each was fixed on its own and a fourth shape appeared under load. The
+   * common cause is not any of them: it is that a walkthrough step's progress
+   * was made to depend on fine-grained reactivity, which every future step
+   * would also have to get right — a condition an author writes once and
+   * cannot test by reading.
+   *
+   * A poll cannot have this class of bug. Three hundred milliseconds is
+   * imperceptible next to the 800 ms pause the advance already takes for the
+   * reader to see what they did, and it costs one predicate call, on a step
+   * that is waiting by definition.
+   */
+  let pollTimer: ReturnType<typeof setInterval> | null = null;
+
   $effect(() => {
-    const step = tourStore.currentStep;
     const stepIndex = tourStore.currentStepIndex;
-    if (tourStore.isActive && autoAdvanceArmed && step?.autoAdvance && step?.waitFor?.()) {
-      if (autoAdvanceTimer) clearTimeout(autoAdvanceTimer);
+    const step = tourStore.currentStep;
+    if (pollTimer) { clearInterval(pollTimer); pollTimer = null; }
+    if (!tourStore.isActive || !step?.autoAdvance || !step.waitFor) return;
+
+    pollTimer = setInterval(() => {
+      if (!tourStore.isActive || tourStore.currentStepIndex !== stepIndex) return;
+      // `autoAdvanceArmed` still guards the case this was built for: a reader
+      // who walks BACK to a step they have already satisfied should be able to
+      // read it, not be bounced forward again.
+      if (!autoAdvanceArmed || !step.waitFor?.()) return;
+      if (autoAdvanceTimer) return;
       autoAdvanceTimer = setTimeout(() => {
-        // Only advance if still on the same step (prevents double-advance)
         if (tourStore.isActive && !tourStore.isLastStep && tourStore.currentStepIndex === stepIndex) {
           tourStore.next();
         }
         autoAdvanceTimer = null;
       }, 800);
-    }
+    }, 300);
+
+    return () => { if (pollTimer) { clearInterval(pollTimer); pollTimer = null; } };
   });
 
   function computeCardPosition() {

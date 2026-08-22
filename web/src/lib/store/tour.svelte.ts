@@ -58,6 +58,8 @@ function createTourStore() {
     get isActive() { return _isActive; },
     get currentStepIndex() { return _currentStepIndex; },
     get currentStep(): TourStep | null { return _steps[_currentStepIndex] ?? null; },
+    /** Set by the overlay; read by the walkthrough tests to explain a hang. */
+    armedForTest: false,
     get totalSteps() { return _steps.length; },
     get isFirstStep() { return _currentStepIndex === 0; },
     get isLastStep() { return _currentStepIndex === _steps.length - 1; },

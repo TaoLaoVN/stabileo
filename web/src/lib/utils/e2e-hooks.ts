@@ -338,7 +338,11 @@ export function installE2EHooks(): void {
     diagramType: () => String(resultsStore.diagramType),
     tourStep: () => {
       const st = tourStore.currentStep;
-      return st ? { id: st.id, target: st.target, allowInteraction: !!st.allowInteraction } : null;
+      return st ? {
+        id: st.id, target: st.target, allowInteraction: !!st.allowInteraction,
+        armed: (tourStore as unknown as { armedForTest?: boolean }).armedForTest ?? false,
+        waits: !!st.waitFor, met: st.waitFor ? !!st.waitFor() : null,
+      } as never : null;
     },
     currentTool: () => String(uiStore.currentTool),
     nodeScreenPos: (id: number) => {
