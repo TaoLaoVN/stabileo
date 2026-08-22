@@ -427,6 +427,11 @@
     }
   }
 
+  function handleOpenPanelEvent(e: Event) {
+    const panel = (e as CustomEvent<string>).detail;
+    if (typeof panel === 'string') openBasicPanel(panel);
+  }
+
   function handleExportPNG() {
     const canvas = document.querySelector('.viewport-container canvas') as HTMLCanvasElement | null;
     if (canvas) downloadCanvasPNG(canvas);
@@ -611,6 +616,16 @@
     // Cancel any pending debounced live calc so the manual solve supersedes it.
     const handleGlobalSolve = () => { cancelPendingLiveCalc(); runGlobalSolve(); };
     window.addEventListener('stabileo-solve', handleGlobalSolve);
+    /*
+     * Open a right-hand panel from outside the ribbon.
+     *
+     * The guided walkthroughs need this: a step that points at a button
+     * inside the Advanced panel has nothing to point at while the panel is
+     * shut, and reaching into `openBasicPanel` from a step definition would
+     * put a piece of the shell's layout inside a data structure that
+     * describes tour cards.
+     */
+    window.addEventListener('stabileo-open-panel', handleOpenPanelEvent);
 
     return () => {
       saveWorkspaceToLocalStorage();
@@ -622,6 +637,7 @@
       window.removeEventListener('stabileo-dxf-drop', handleDxfDropEvent);
       window.removeEventListener('stabileo-import-ifc', handleIfcImportEvent);
       window.removeEventListener('stabileo-solve', handleGlobalSolve);
+      window.removeEventListener('stabileo-open-panel', handleOpenPanelEvent);
       window.removeEventListener('popstate', onPopState);
     };
   });

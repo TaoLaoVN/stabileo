@@ -1,7 +1,7 @@
 <script lang="ts">
   import { tourStore } from '../lib/store/tour.svelte';
   import { t } from '../lib/i18n';
-  import { onMount, onDestroy } from 'svelte';
+  import { onMount, onDestroy, untrack } from 'svelte';
 
   const PADDING_DEFAULT = 8;
   const CARD_GAP = 14;
@@ -64,7 +64,22 @@
       // This way, if the user navigates back to a step whose condition is already met,
       // the tour won't auto-skip it (they can read it and click Next manually).
       const step = tourStore.currentStep;
-      autoAdvanceArmed = !!(step.autoAdvance && step.waitFor && !step.waitFor());
+      /*
+       * `untrack`, and it is load-bearing.
+       *
+       * This effect asks the step's condition whether it is ALREADY satisfied,
+       * to avoid auto-skipping a step the reader navigated back to. Asking
+       * subscribes it to whatever the condition reads — the model, for a step
+       * waiting on two nodes — so placing the second node re-ran this effect,
+       * found the condition now true, and set `autoAdvanceArmed = false`. The
+       * advance effect below was disarmed at the exact moment it was supposed
+       * to fire, and the walkthrough sat on "place two nodes" forever with
+       * both nodes on screen.
+       *
+       * The question is about the instant the step is entered, so it is asked
+       * without listening for the answer to change.
+       */
+      autoAdvanceArmed = untrack(() => !!(step.autoAdvance && step.waitFor && !step.waitFor()));
       if (autoAdvanceTimer) { clearTimeout(autoAdvanceTimer); autoAdvanceTimer = null; }
       requestAnimationFrame(() => {
         tourStore.updateTargetRect();

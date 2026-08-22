@@ -13,7 +13,7 @@
 
 import type { TourStep } from '../../store/tour.svelte';
 import { t } from '../../i18n';
-import { ANCHORS, loadExample, solve, hasResults, setDimension } from '../demo-helpers';
+import { ANCHORS, loadExample, solve, hasResults, setDimension, openPanel } from '../demo-helpers';
 import { uiStore } from '../../store';
 
 export function buildSectionAnalysis(): TourStep[] {
@@ -40,11 +40,15 @@ export function buildSectionAnalysis(): TourStep[] {
       waitFor: hasResults,
       autoAdvance: true,
       actionButton: { label: t('demo.action.solve'), action: solve },
+      // The next step points inside the Advanced panel, so it has to be open.
+      onExit: () => openPanel('advanced'),
     },
 
     {
       id: 'arm',
-      target: '[data-testid="adv-stress"]',
+      // Same as the kinematic walkthrough: arming the analysis takes its own
+      // button off the screen, so the step points at the panel instead.
+      target: ANCHORS.rightPanel,
       title: t('demo.section.armTitle'),
       description: t('demo.section.armDesc'),
       position: 'left',

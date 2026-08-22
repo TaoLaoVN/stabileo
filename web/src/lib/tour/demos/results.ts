@@ -15,6 +15,7 @@ import type { TourStep } from '../../store/tour.svelte';
 import { t } from '../../i18n';
 import { ANCHORS, loadExample, solve, hasResults, setDimension } from '../demo-helpers';
 import { resultsStore } from '../../store';
+import { showStressMap } from '../../store/result-view';
 
 /** Show a diagram and point at its ribbon command — the shape every step here shares. */
 function diagram(id: string, kind: string, key: string): TourStep {
@@ -94,6 +95,13 @@ export function buildResults(): TourStep[] {
       description: t('demo.results.stressDesc'),
       position: 'bottom',
       allowInteraction: true,
+      /*
+       * Switched on, like every other card here. It was the one result step
+       * that only POINTED at its command: the card described a utilisation
+       * map while a bending diagram stayed on screen, and a reader following
+       * along saw the words contradict the picture.
+       */
+      onEnter: () => showStressMap('stressRatio'),
     },
 
     {

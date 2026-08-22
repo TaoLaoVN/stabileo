@@ -28,6 +28,8 @@ export const ANCHORS = {
   /** The right-hand panel a ribbon command opens. Already carries a testid. */
   rightPanel: '[data-testid="basic-panel"]',
   viewport: '.viewport-container',
+  /** The 3D camera stack: fit, the three preset views, projection, clipping. */
+  cameraControls: '[data-tour="camera-controls"]',
 } as const;
 
 /**
@@ -79,10 +81,33 @@ export function armTool(tool: 'node' | 'element' | 'support' | 'load' | 'select'
   uiStore.currentTool = tool;
 }
 
-/** Counts the demos wait on, so a step can require "two nodes exist". */
+/**
+ * Open a right-hand panel.
+ *
+ * A step that points at a button inside the Advanced panel has nothing to
+ * point at while the panel is shut — the audit caught exactly that on two
+ * walkthroughs, where the spotlight was aimed at a selector that did not
+ * exist yet.
+ */
+export function openPanel(panel: 'advanced' | 'settings' | 'project' | 'results' | 'data' | 'selection'): void {
+  window.dispatchEvent(new CustomEvent('stabileo-open-panel', { detail: panel }));
+}
+
+/**
+ * Counts the demos wait on, so a step can require "two nodes exist".
+ *
+ * Each one touches `modelVersion` before reading the collection, and that is
+ * not decoration. These are read inside the overlay's auto-advance effect, and
+ * the collections are Maps: adding a node calls `.set()`, which this codebase
+ * documents as not reliably waking a reader. The step's condition became true
+ * and nothing re-evaluated it — the reader placed both nodes and the
+ * walkthrough sat there, which is precisely how it was reported.
+ */
+const version = () => { void modelStore.modelVersion; };
+
 export const count = {
-  nodes: () => modelStore.nodes.size,
-  elements: () => modelStore.elements.size,
-  supports: () => modelStore.supports.size,
-  loads: () => modelStore.loads.length,
+  nodes: () => { version(); return modelStore.nodes.size; },
+  elements: () => { version(); return modelStore.elements.size; },
+  supports: () => { version(); return modelStore.supports.size; },
+  loads: () => { version(); return modelStore.loads.length; },
 };

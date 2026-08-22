@@ -10,6 +10,17 @@
  * condition that either holds or does not, and the last step is guaranteed to
  * produce a result.
  *
+ * # Why the drawing steps spotlight the CANVAS
+ *
+ * They pointed at the ribbon command instead, which is where the tool is
+ * armed — and the overlay then darkened everything except a button the reader
+ * had no reason to press, while the model they were being asked to draw on
+ * sat behind the dark. The step cannot be completed and there is no way
+ * forward, because it is waiting for two nodes that cannot be placed.
+ *
+ * The tool is armed by the step itself, so the command needs no pointing at.
+ * What the reader needs to see is where to click.
+ *
  * # Why sections and materials come before solving
  *
  * They are model data, not an adjustment: a member has a section and a
@@ -46,7 +57,9 @@ export function buildModelling2D(): TourStep[] {
 
     {
       id: 'nodes',
-      target: ANCHORS.ribbonCommand('node'),
+      target: ANCHORS.viewport,
+      highlightPadding: 0,
+      overlayOpacity: 0.35,
       title: t('demo.modelling.nodesTitle'),
       description: t('demo.modelling.nodesDesc'),
       position: 'bottom',
@@ -60,7 +73,9 @@ export function buildModelling2D(): TourStep[] {
 
     {
       id: 'member',
-      target: ANCHORS.ribbonCommand('element'),
+      target: ANCHORS.viewport,
+      highlightPadding: 0,
+      overlayOpacity: 0.35,
       title: t('demo.modelling.memberTitle'),
       description: t('demo.modelling.memberDesc'),
       position: 'bottom',
@@ -72,7 +87,9 @@ export function buildModelling2D(): TourStep[] {
 
     {
       id: 'supports',
-      target: ANCHORS.ribbonCommand('support'),
+      target: ANCHORS.viewport,
+      highlightPadding: 0,
+      overlayOpacity: 0.35,
       title: t('demo.modelling.supportsTitle'),
       description: t('demo.modelling.supportsDesc'),
       position: 'bottom',
@@ -84,7 +101,9 @@ export function buildModelling2D(): TourStep[] {
 
     {
       id: 'load',
-      target: ANCHORS.ribbonCommand('load'),
+      target: ANCHORS.viewport,
+      highlightPadding: 0,
+      overlayOpacity: 0.35,
       title: t('demo.modelling.loadTitle'),
       description: t('demo.modelling.loadDesc'),
       position: 'bottom',

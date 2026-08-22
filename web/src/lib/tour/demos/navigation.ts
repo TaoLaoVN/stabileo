@@ -60,6 +60,22 @@ export function buildNavigation(): TourStep[] {
         void loadExample('3d-portal-frame');
         uiStore.currentTool = 'pan';
       },
+    },
+
+    /*
+     * The camera stack, while the 3D viewport is still up. It is the answer to
+     * "I have rotated this thing and now I cannot find it" — which is the next
+     * thing that happens to someone who has just been taught to orbit.
+     */
+    {
+      id: 'views-3d',
+      target: ANCHORS.cameraControls,
+      title: t('demo.navigation.viewsTitle'),
+      description: t('demo.navigation.viewsDesc'),
+      position: 'left',
+      allowInteraction: true,
+      // Back to 2D for the selection half: window-versus-crossing is easier to
+      // see on a flat drawing, and it behaves identically in both.
       onExit: () => {
         setDimension('2d');
         void loadExample('portal-frame');

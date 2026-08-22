@@ -14,7 +14,7 @@
 
 import type { TourStep } from '../../store/tour.svelte';
 import { t } from '../../i18n';
-import { ANCHORS, loadExample, setDimension } from '../demo-helpers';
+import { ANCHORS, loadExample, setDimension, openPanel } from '../demo-helpers';
 import { modelStore, uiStore } from '../../store';
 
 /** The support this demo removes, remembered so the exit can put it back. */
@@ -42,11 +42,20 @@ export function buildKinematics(): TourStep[] {
       description: t('demo.kinematics.openDesc'),
       position: 'bottom',
       allowInteraction: true,
+      // Opened here so the next step has a button to point at. Pointing at a
+      // control inside a shut panel spotlights nothing at all.
+      onEnter: () => openPanel('advanced'),
     },
 
     {
       id: 'panel',
-      target: '[data-testid="adv-kinematic"]',
+      /*
+       * The PANEL, not the button that opened it. Arming an analysis replaces
+       * its button with a "running" row — by design, and the audit caught the
+       * consequence: the spotlight was aimed at a selector that stops existing
+       * the moment the step's own `onEnter` runs.
+       */
+      target: ANCHORS.rightPanel,
       title: t('demo.kinematics.panelTitle'),
       description: t('demo.kinematics.panelDesc'),
       position: 'left',

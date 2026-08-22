@@ -59,6 +59,7 @@ import { buildNavigation } from './demos/navigation';
 import { buildResults } from './demos/results';
 import { buildKinematics } from './demos/kinematics';
 import { buildSectionAnalysis } from './demos/section-analysis';
+import { buildSettings } from './demos/settings';
 
 export const DEMOS: Demo[] = [
   {
@@ -100,6 +101,14 @@ export const DEMOS: Demo[] = [
     group: 'basics',
     seconds: 130,
     build: buildResults,
+  },
+  {
+    id: 'settings',
+    titleKey: 'demo.settings.title',
+    descKey: 'demo.settings.desc',
+    group: 'basics',
+    seconds: 85,
+    build: buildSettings,
   },
   {
     id: 'kinematics',
