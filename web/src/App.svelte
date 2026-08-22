@@ -122,6 +122,8 @@
   import { runLiveCalc, runGlobalSolve } from './lib/engine/live-calc';
   import LandingPage from './components/LandingPage.svelte';
   import BlogPage from './components/blog/BlogPage.svelte';
+  import { parsePublicPath, publicHref } from './lib/i18n/public-routes';
+  import { publicI18n } from './lib/i18n/store.svelte';
   import AiDrawer from './components/AiDrawer.svelte';
 
   if (typeof window !== 'undefined') {
@@ -139,10 +141,37 @@
     return pathname === '/demo' || pathname === '/demo/';
   }
 
-  /** `/blog`, `/blog/` and `/blog/<slug>`. See src/components/blog/BlogPage.svelte. */
-  function isBlogRoute(pathname: string) {
-    return pathname === '/blog' || pathname === '/blog/' || pathname.startsWith('/blog/');
+  /**
+   * The public routes, read through their language prefix.
+   *
+   * `/es/blog/x` and `/blog/x` are the same route; the first names its
+   * language and the second is an old link that still has to work. Everything
+   * below asks these two rather than matching `location.pathname` directly,
+   * because a prefix would otherwise turn every public page into an app route.
+   */
+  function publicRoute(pathname: string) {
+    return parsePublicPath(pathname);
   }
+
+  /** `/blog`, `/blog/` and `/blog/<slug>`, under any language prefix. */
+  function isBlogRoute(pathname: string) {
+    const { path } = publicRoute(pathname);
+    return path === '/blog' || path === '/blog/' || path.startsWith('/blog/');
+  }
+
+  /**
+   * The URL says which language the page is in, so on arrival the URL wins.
+   *
+   * Without this, opening a shared `/pt/blog/x` in a browser whose stored
+   * choice is Spanish would render the Spanish post at a Portuguese address —
+   * and the address is what was shared, indexed and quoted.
+   */
+  function adoptLocaleFromPath() {
+    if (typeof window === 'undefined') return;
+    const { locale } = publicRoute(location.pathname);
+    if (locale && locale !== publicI18n.locale) setLocale(locale);
+  }
+  adoptLocaleFromPath();
 
   type AppMode = 'basico' | 'educativo' | 'pro';
 
@@ -205,7 +234,7 @@
   let showLanding = $state(shouldShowLanding());
   let showBlog = $state(typeof window !== 'undefined' && isBlogRoute(location.pathname));
   /** The address the blog reads its slug from; kept in state so it is reactive. */
-  let blogPath = $state(typeof window !== 'undefined' ? location.pathname : '/blog');
+  let blogPath = $state(typeof window !== 'undefined' ? parsePublicPath(location.pathname).path : '/blog');
 
   /**
    * Move between the public pages without reloading the document.
@@ -215,7 +244,9 @@
    * blog entry, the blog's own links, the way back home — comes through here.
    */
   function navigatePublic(path: string) {
-    history.pushState(null, '', path);
+    // Public links are written unprefixed ('/blog') and land prefixed
+    // ('/pt/blog'), so a language never falls off mid-visit.
+    history.pushState(null, '', publicHref(path, publicI18n.locale));
     syncRouteState();
   }
 
@@ -228,8 +259,9 @@
   }
 
   function syncRouteState() {
+    adoptLocaleFromPath();
     showBlog = isBlogRoute(location.pathname);
-    blogPath = location.pathname;
+    blogPath = publicRoute(location.pathname).path;
     showLanding = shouldShowLanding();
     if (!showLanding && !showBlog) {
       const nextMode = pathToMode(location.pathname);

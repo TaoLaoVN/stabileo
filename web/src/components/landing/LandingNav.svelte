@@ -1,6 +1,6 @@
 <script lang="ts">
-  import { tPublic as t, publicI18n, setPublicLocale, PUBLIC_LOCALES } from '../../lib/i18n/store.svelte';
-  import { REPO_URL, enterApp, scrollToId, fetchGithubStars } from './landing-utils';
+  import { tPublic as t, publicI18n, PUBLIC_LOCALES } from '../../lib/i18n/store.svelte';
+  import { REPO_URL, enterApp, scrollToId, fetchGithubStars, switchPublicLocale } from './landing-utils';
 
   let stars = $state<number | null>(null);
   let open = $state(false);
@@ -55,7 +55,7 @@
         <select
           class="nav-lang"
           value={publicI18n.locale}
-          onchange={(e) => setPublicLocale((e.currentTarget as HTMLSelectElement).value as (typeof PUBLIC_LOCALES)[number])}
+          onchange={(e) => switchPublicLocale((e.currentTarget as HTMLSelectElement).value as (typeof PUBLIC_LOCALES)[number])}
         >
           {#each PUBLIC_LOCALES as code}
             <option value={code}>{LOCALE_NAMES[code]}</option>

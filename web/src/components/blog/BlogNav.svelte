@@ -7,8 +7,8 @@
    * row of links that do nothing. What carries over is the visual system —
    * every class below is a landing class.
    */
-  import { tPublic as t, publicI18n, setPublicLocale, PUBLIC_LOCALES } from '../../lib/i18n/store.svelte';
-  import { REPO_URL, enterApp } from '../landing/landing-utils';
+  import { tPublic as t, publicI18n, PUBLIC_LOCALES } from '../../lib/i18n/store.svelte';
+  import { REPO_URL, enterApp, switchPublicLocale } from '../landing/landing-utils';
 
   let { onNavigate }: { onNavigate: (path: string) => void } = $props();
 
@@ -36,7 +36,7 @@
         <select
           class="nav-lang"
           value={publicI18n.locale}
-          onchange={(e) => setPublicLocale((e.currentTarget as HTMLSelectElement).value as (typeof PUBLIC_LOCALES)[number])}
+          onchange={(e) => switchPublicLocale((e.currentTarget as HTMLSelectElement).value as (typeof PUBLIC_LOCALES)[number])}
         >
           {#each PUBLIC_LOCALES as code}
             <option value={code}>{LOCALE_NAMES[code]}</option>

@@ -1,3 +1,6 @@
+import { setPublicLocale, type PublicLocale } from '../../lib/i18n/store.svelte';
+import { parsePublicPath } from '../../lib/i18n/public-routes';
+
 export const REPO_URL = 'https://github.com/lambdaclass/stabileo';
 export const DOCS_HUB_URL = `${REPO_URL}/blob/main/docs/README.md`;
 export const QUICK_START_URL = `${REPO_URL}/blob/main/docs/QUICKSTART.md`;
@@ -19,6 +22,19 @@ export function enterApp() {
  */
 export function goPublic(path: string) {
   window.dispatchEvent(new CustomEvent('stabileo-navigate', { detail: path }));
+}
+
+/**
+ * Change language on a public page: set it, then move to the same route under
+ * the new prefix.
+ *
+ * Setting the locale alone would leave a Portuguese page at `/es/blog/x`. The
+ * address is the part that gets shared and indexed, so it is the part that has
+ * to be right — the rendering follows it, never the other way round.
+ */
+export function switchPublicLocale(locale: PublicLocale) {
+  setPublicLocale(locale);
+  goPublic(parsePublicPath(window.location.pathname).path);
 }
 
 export function scrollToId(id: string, root?: HTMLElement | null) {
