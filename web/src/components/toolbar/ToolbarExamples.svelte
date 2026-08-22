@@ -121,17 +121,24 @@
   </div>
 {/snippet}
 
+<!--
+  A disclosure in BOTH layouts.
+
+  The right panel used to render every catalogue open: nineteen 2D examples
+  followed by ten 3D ones, all expanded, with everything else in Project —
+  export, import, the tutorials — pushed below thirty rows nobody scrolled
+  past. A list that long is a wall, not a menu.
+
+  Closed by default and counted in the header, so the panel shows what it
+  holds without unrolling it, which is how PRO presents the same thing.
+-->
 {#snippet group(titleKey: string, items: { id: string; nameKey: string; descKey: string }[], to3D: boolean, open: boolean, toggle: () => void)}
   <div class="toolbar-section">
-    {#if flat}
-      <h3 class="ex-heading">{t(titleKey)}</h3>
-      {@render exampleList(items, to3D)}
-    {:else}
-      <button class="section-toggle" onclick={toggle}>
-        {open ? '▾' : '▸'} {t(titleKey)}
-      </button>
-      {#if open}{@render exampleList(items, to3D)}{/if}
-    {/if}
+    <button class="section-toggle" onclick={toggle} data-testid={`ex-group-${to3D ? '3d' : '2d'}`}>
+      <span>{open ? '▾' : '▸'} {t(titleKey)}</span>
+      <span class="ex-count">{items.length}</span>
+    </button>
+    {#if open}{@render exampleList(items, to3D)}{/if}
   </div>
 {/snippet}
 
@@ -172,7 +179,17 @@
     letter-spacing: 0.05em;
   }
 
+  .ex-count {
+    font-size: 0.6rem;
+    color: var(--st-text-3);
+    font-family: var(--st-mono, monospace);
+  }
+
   .section-toggle {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 8px;
     width: 100%;
     padding: 0.4rem 0.5rem;
     background: none;
@@ -210,13 +227,16 @@
     gap: 0;
   }
 
-  :global(.basic-panel) .example-item + .example-item {
-    border-top: 1px solid var(--st-hair);
+  :global(.basic-panel) .example-item {
+    padding: 6px 8px;
+    border: 1px solid var(--st-hair);
+    border-left: 2px solid transparent;
+    border-radius: var(--st-radius, 3px);
+    transition: background 0.12s, border-color 0.12s, color 0.12s;
   }
 
-  :global(.basic-panel) .example-item {
-    border-radius: 0;
-    padding: 0.45rem 0.35rem;
+  :global(.basic-panel) .example-item:hover {
+    border-left-color: var(--st-accent);
   }
 
   .ex-heading {

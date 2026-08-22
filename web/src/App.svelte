@@ -122,7 +122,7 @@
   import HelpOverlay from './components/HelpOverlay.svelte';
   import ContextMenu from './components/ContextMenu.svelte';
   import { tourStore } from './lib/store/tour.svelte';
-  import { buildTourSteps } from './lib/tour/tour-steps';
+  import { startDemo, DEFAULT_DEMO } from './lib/tour/demos';
   import { runLiveCalc, runGlobalSolve } from './lib/engine/live-calc';
   import LandingPage from './components/LandingPage.svelte';
   import AiDrawer from './components/AiDrawer.svelte';
@@ -462,7 +462,12 @@
     if (isDemoRoute(location.pathname)) {
       history.replaceState(null, '', modeToPath(currentAppMode));
       syncRouteState();
-      setTimeout(() => tourStore.start(buildTourSteps()), 600);
+      /*
+       * `/demo` opens the shortest walkthrough rather than the old fourteen-step
+       * tour of everything. The rest are in Project → Tutorials, where someone
+       * who wants one can pick the question they actually have.
+       */
+      setTimeout(() => startDemo(DEFAULT_DEMO), 600);
     }
 
     // Check for URL hash (shared model link or embed)
