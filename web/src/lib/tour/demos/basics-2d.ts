@@ -15,7 +15,7 @@
 
 import type { TourStep } from '../../store/tour.svelte';
 import { t } from '../../i18n';
-import { ANCHORS, loadExample, solve, hasResults, setDimension } from '../demo-helpers';
+import { ANCHORS, loadExample, solve, hasResults, setDimension, asideCard } from '../demo-helpers';
 import { resultsStore } from '../../store';
 
 export function buildBasics2D(): TourStep[] {
@@ -63,6 +63,7 @@ export function buildBasics2D(): TourStep[] {
 
     {
       id: 'deformed',
+      cardPosition: asideCard(),
       target: ANCHORS.ribbonCommand('deformed'),
       title: t('demo.basics2d.deformedTitle'),
       description: t('demo.basics2d.deformedDesc'),
@@ -73,6 +74,7 @@ export function buildBasics2D(): TourStep[] {
 
     {
       id: 'moment',
+      cardPosition: asideCard(),
       target: ANCHORS.ribbonCommand('momentY'),
       title: t('demo.basics2d.momentTitle'),
       description: t('demo.basics2d.momentDesc'),

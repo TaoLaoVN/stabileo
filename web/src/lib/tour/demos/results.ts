@@ -13,7 +13,7 @@
 
 import type { TourStep } from '../../store/tour.svelte';
 import { t } from '../../i18n';
-import { ANCHORS, loadExample, solve, hasResults, setDimension } from '../demo-helpers';
+import { ANCHORS, loadExample, solve, hasResults, setDimension, asideCard } from '../demo-helpers';
 import { resultsStore } from '../../store';
 import { showStressMap } from '../../store/result-view';
 
@@ -22,6 +22,8 @@ function diagram(id: string, kind: string, key: string): TourStep {
   return {
     id,
     target: ANCHORS.ribbonCommand(id),
+    // Out of the way of the picture it is talking about.
+    cardPosition: asideCard(),
     title: t(`demo.results.${key}Title`),
     description: t(`demo.results.${key}Desc`),
     position: 'bottom',
@@ -94,6 +96,7 @@ export function buildResults(): TourStep[] {
       title: t('demo.results.stressTitle'),
       description: t('demo.results.stressDesc'),
       position: 'bottom',
+      cardPosition: asideCard(),
       allowInteraction: true,
       /*
        * Switched on, like every other card here. It was the one result step

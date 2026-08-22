@@ -50,6 +50,17 @@ export function solve(): void {
   window.dispatchEvent(new Event('stabileo-solve'));
 }
 
+/**
+ * A note on `waitFor`, for whoever writes the next walkthrough.
+ *
+ * It is evaluated inside an effect, so it must read STORE state and nothing
+ * else. Querying the DOM to find out whether a panel opened looks like it
+ * works — the value is right the first time it is asked — and then never
+ * changes, because nothing tells the effect to ask again. Two steps were
+ * written that way and both hung with the reader staring at a condition they
+ * had already satisfied.
+ */
+
 /** Whether the model on screen has been solved, in whichever mode it is in. */
 export function hasResults(): boolean {
   return uiStore.analysisMode === '3d'
@@ -91,6 +102,22 @@ export function armTool(tool: 'node' | 'element' | 'support' | 'load' | 'select'
  */
 export function openPanel(panel: 'advanced' | 'settings' | 'project' | 'results' | 'data' | 'selection'): void {
   window.dispatchEvent(new CustomEvent('stabileo-open-panel', { detail: panel }));
+}
+
+/**
+ * Where to put the card when the step is ABOUT the drawing.
+ *
+ * A results step spotlights its ribbon command, and a card placed under that
+ * command lands in the middle of the canvas — on top of the very diagram the
+ * card is describing. "Where the frame bends hardest" reads badly over a card
+ * covering the place where it bends hardest.
+ *
+ * Bottom-left is the corner a 2D diagram rarely reaches, and it is clear of
+ * the right-hand panel too.
+ */
+export function asideCard(): { x: number; y: number } {
+  const h = typeof window === 'undefined' ? 900 : window.innerHeight;
+  return { x: 24, y: Math.max(120, h - 300) };
 }
 
 /**

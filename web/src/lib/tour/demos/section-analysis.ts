@@ -14,7 +14,7 @@
 import type { TourStep } from '../../store/tour.svelte';
 import { t } from '../../i18n';
 import { ANCHORS, loadExample, solve, hasResults, setDimension, openPanel } from '../demo-helpers';
-import { uiStore } from '../../store';
+import { uiStore, resultsStore } from '../../store';
 
 export function buildSectionAnalysis(): TourStep[] {
   return [
@@ -73,7 +73,17 @@ export function buildSectionAnalysis(): TourStep[] {
       highlightPadding: 0,
       overlayOpacity: 0.35,
       allowInteraction: true,
-      waitFor: () => document.querySelector('.ssp-panel') !== null,
+      /*
+       * The STORE, not the DOM.
+       *
+       * This asked `document.querySelector('.ssp-panel')`, which is a fact
+       * about the page and not a reactive read: the panel opened on the
+       * reader's click and nothing ever re-evaluated the condition, so the
+       * walkthrough sat on "click the beam" with the section already drawn
+       * beside it. A step's condition has to be something the app can wake it
+       * for.
+       */
+      waitFor: () => resultsStore.stressQuery !== null,
       autoAdvance: true,
     },
 
