@@ -158,7 +158,8 @@ export function buildModelling2D(): TourStep[] {
       waitFor: hasResults,
       autoAdvance: true,
       actionButton: { label: t('demo.action.solve'), action: solve },
-      onExit: () => { resultsStore.diagramType = 'deformed'; },
+      // Show what solving produced, in the panel solving opens.
+      onExit: () => { resultsStore.diagramType = 'deformed'; openPanel('results'); },
     },
 
     /*

@@ -99,11 +99,18 @@ export function buildSectionAnalysis(): TourStep[] {
     {
       id: 'sliders',
       /*
-       * The sliders themselves, not the panel they sit in. "Two sliders" with
-       * a highlight around the whole panel is a call to action with no
-       * address — the reader has to hunt for what the card is talking about.
+       * The panel, lit rather than spotlit.
+       *
+       * Framing one slider was worse than framing none: the card says "two
+       * sliders" and the highlight picked out one, and the dark backdrop hid
+       * the model where the effect of moving them is visible. The two live in
+       * different components — one is the station along the member, the other
+       * belongs to the section drawing — so there is no single element that
+       * contains both. Dimming barely and framing the panel shows both, and
+       * the member they act on.
        */
-      target: ANCHORS.sectionSliders,
+      target: '.ssp-panel',
+      overlayOpacity: 0.2,
       title: t('demo.section.slidersTitle'),
       description: t('demo.section.slidersDesc'),
       position: 'left',

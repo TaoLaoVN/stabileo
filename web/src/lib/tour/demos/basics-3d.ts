@@ -10,7 +10,7 @@
 
 import type { TourStep } from '../../store/tour.svelte';
 import { t } from '../../i18n';
-import { ANCHORS, loadExample, solve, hasResults, setDimension } from '../demo-helpers';
+import { ANCHORS, loadExample, solve, hasResults, setDimension , openPanel , count } from '../demo-helpers';
 import { resultsStore } from '../../store';
 
 export function buildBasics3D(): TourStep[] {
@@ -23,9 +23,31 @@ export function buildBasics3D(): TourStep[] {
       position: 'center',
       onEnter: () => {
         setDimension('3d');
-        void loadExample('3d-portal-frame');
       },
     },
+    /*
+     * Where models come from, before using one. A walkthrough that starts with
+     * a structure already on screen leaves the reader with no idea how it got
+     * there — and the examples are the fastest way to have something to press
+     * Solve on.
+     */
+    {
+      id: 'examples',
+      target: '[data-testid="ex-group-3d"]',
+      title: t('demo.basics3d.examplesTitle'),
+      description: t('demo.basics3d.examplesDesc'),
+      position: 'left',
+      allowInteraction: true,
+      onEnter: () => openPanel('project'),
+      /*
+       * Loads the portal frame on the way out — unless the reader already
+       * picked something, in which case theirs is kept. Overwriting a choice
+       * the tutorial just invited them to make is the rudest thing a
+       * walkthrough can do.
+       */
+      onExit: () => { if (count.elements() === 0) void loadExample('3d-portal-frame'); },
+    },
+
     {
       id: 'orbit',
       target: ANCHORS.viewport,
@@ -46,6 +68,12 @@ export function buildBasics3D(): TourStep[] {
       waitFor: hasResults,
       autoAdvance: true,
       actionButton: { label: t('demo.action.solve'), action: solve },
+      /*
+       * Pressing Solve through the ribbon opens the results panel; pressing it
+       * from this card did not, so the reader arrived at the results steps
+       * with the Project panel still showing.
+       */
+      onExit: () => openPanel('results'),
     },
     /*
      * The whole row, named but not explained.
