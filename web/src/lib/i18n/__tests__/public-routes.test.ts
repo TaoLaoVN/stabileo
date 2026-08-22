@@ -61,7 +61,10 @@ describe('alternateUrls', () => {
     expect(alts.map((a) => a.hreflang).sort()).toEqual(['en', 'es', 'pt', 'x-default']);
     // Relative hreflang is ignored by crawlers, silently.
     for (const a of alts) expect(a.href.startsWith('https://')).toBe(true);
-    expect(alts.find((a) => a.hreflang === 'x-default')!.href).toBe(`${SITE_ORIGIN}/`);
+    // x-default names the English page, not the bare root: `/` declares `/en`
+    // as its canonical, so pointing the default at `/` would name a URL that
+    // is not canonical for itself.
+    expect(alts.find((a) => a.hreflang === 'x-default')!.href).toBe(`${SITE_ORIGIN}/en`);
   });
 });
 
