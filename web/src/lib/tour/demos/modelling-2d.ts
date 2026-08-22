@@ -10,14 +10,19 @@
  * condition that either holds or does not, and the last step is guaranteed to
  * produce a result.
  *
- * # Why sections and materials come after solving
+ * # Why sections and materials come before solving
  *
- * They were going to come before, in the order the ribbon lists them. But
- * changing a section BEFORE there is a result is an abstraction: a name
- * changes in a panel. Changing it after, with the deflection on screen, is
- * cause and effect — and it sets up the one comparison that teaches the most
- * here: on a statically determinate beam the moment does not change and the
- * deflection does.
+ * They are model data, not an adjustment: a member has a section and a
+ * material from the moment it exists, and the solver reads both. An earlier
+ * draft of this walkthrough put them after Solve, to show the deflection
+ * changing as the section changed — a real effect, taught in the wrong order.
+ * Somebody learning this would come away believing the section is something
+ * you revisit afterwards, and the order a tutorial demonstrates is the order
+ * it teaches.
+ *
+ * The effect survives anyway, in the last card: change the section and press
+ * Solve again. That is also closer to the truth, because seeing it means
+ * running the analysis twice.
  */
 
 import type { TourStep } from '../../store/tour.svelte';
@@ -90,23 +95,6 @@ export function buildModelling2D(): TourStep[] {
     },
 
     {
-      id: 'solve',
-      target: ANCHORS.ribbonCommand('solve'),
-      title: t('demo.modelling.solveTitle'),
-      description: t('demo.modelling.solveDesc'),
-      position: 'bottom',
-      allowInteraction: true,
-      waitFor: hasResults,
-      autoAdvance: true,
-      actionButton: { label: t('demo.action.solve'), action: solve },
-      onExit: () => { resultsStore.diagramType = 'deformed'; },
-    },
-
-    /*
-     * Now that a result exists, the defaults are worth naming — and worth
-     * changing, because the effect is visible on screen rather than described.
-     */
-    {
       id: 'sections',
       target: ANCHORS.ribbonCommand('sections'),
       title: t('demo.modelling.sectionsTitle'),
@@ -124,6 +112,24 @@ export function buildModelling2D(): TourStep[] {
       allowInteraction: true,
     },
 
+    {
+      id: 'solve',
+      target: ANCHORS.ribbonCommand('solve'),
+      title: t('demo.modelling.solveTitle'),
+      description: t('demo.modelling.solveDesc'),
+      position: 'bottom',
+      allowInteraction: true,
+      waitFor: hasResults,
+      autoAdvance: true,
+      actionButton: { label: t('demo.action.solve'), action: solve },
+      onExit: () => { resultsStore.diagramType = 'deformed'; },
+    },
+
+    /*
+     * Before solving, because that is when they matter: the solver reads the
+     * section and the material, so a reader who meets them afterwards has
+     * already been shown an analysis of properties they were never told about.
+     */
     {
       id: 'done',
       target: 'none',

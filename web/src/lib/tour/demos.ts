@@ -32,7 +32,15 @@ export interface Demo {
   titleKey: string;
   descKey: string;
   group: DemoGroup;
-  /** Roughly how long it takes, shown in the menu. */
+  /**
+   * Roughly how long it takes, shown in the menu.
+   *
+   * Measured rather than guessed: the words in each card at 2.6 per second —
+   * slower than prose, because a reader is also looking at what the card
+   * points at — plus a click per step and the time each interaction actually
+   * takes. The first set of these numbers was invented and was out by about
+   * half, which is the kind of promise that makes the next number worthless.
+   */
   seconds: number;
   build: () => TourStep[];
 }
@@ -58,7 +66,7 @@ export const DEMOS: Demo[] = [
     titleKey: 'demo.basics2d.title',
     descKey: 'demo.basics2d.desc',
     group: 'basics',
-    seconds: 40,
+    seconds: 80,
     build: buildBasics2D,
   },
   {
@@ -66,7 +74,7 @@ export const DEMOS: Demo[] = [
     titleKey: 'demo.basics3d.title',
     descKey: 'demo.basics3d.desc',
     group: 'basics',
-    seconds: 45,
+    seconds: 75,
     build: buildBasics3D,
   },
   {
@@ -74,7 +82,7 @@ export const DEMOS: Demo[] = [
     titleKey: 'demo.modelling.title',
     descKey: 'demo.modelling.desc',
     group: 'basics',
-    seconds: 100,
+    seconds: 155,
     build: buildModelling2D,
   },
   {
@@ -82,7 +90,7 @@ export const DEMOS: Demo[] = [
     titleKey: 'demo.navigation.title',
     descKey: 'demo.navigation.desc',
     group: 'basics',
-    seconds: 75,
+    seconds: 125,
     build: buildNavigation,
   },
   {
@@ -90,7 +98,7 @@ export const DEMOS: Demo[] = [
     titleKey: 'demo.results.title',
     descKey: 'demo.results.desc',
     group: 'basics',
-    seconds: 90,
+    seconds: 130,
     build: buildResults,
   },
   {
@@ -98,7 +106,7 @@ export const DEMOS: Demo[] = [
     titleKey: 'demo.kinematics.title',
     descKey: 'demo.kinematics.desc',
     group: 'advanced',
-    seconds: 70,
+    seconds: 90,
     build: buildKinematics,
   },
   {
@@ -106,7 +114,7 @@ export const DEMOS: Demo[] = [
     titleKey: 'demo.section.title',
     descKey: 'demo.section.desc',
     group: 'advanced',
-    seconds: 100,
+    seconds: 120,
     build: buildSectionAnalysis,
   },
 ];
