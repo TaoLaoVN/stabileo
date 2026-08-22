@@ -13,6 +13,10 @@
     { id: 'education', key: 'landing.navEducation' },
     { id: 'pro', key: 'landing.navPro' },
     { id: 'status', key: 'landing.navStatus' },
+    // Scrolls to the section at the foot of the deck rather than leaving for
+    // /blog: the nav's job here is to say the blog exists, and the section
+    // below shows what is in it before asking anyone to leave the page.
+    { id: 'blog', key: 'landing.navBlog' },
   ];
 
   $effect(() => {
