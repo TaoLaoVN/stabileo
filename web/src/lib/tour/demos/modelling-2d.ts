@@ -64,7 +64,18 @@ export function buildModelling2D(): TourStep[] {
       description: t('demo.modelling.nodesDesc'),
       position: 'bottom',
       allowInteraction: true,
-      onEnter: () => armTool('node'),
+      /*
+       * Clears here as well as on the welcome card, and that is not belt and
+       * braces — it is a race.
+       *
+       * The auto-advance is armed only if the step's condition is UNMET when
+       * the step opens. If the previous model is still loaded at that moment,
+       * "two nodes exist" is already true, the advance is never armed, and the
+       * reader places two nodes into a walkthrough that will not move. Clearing
+       * inside this step's own `onEnter` puts the emptying before the arming,
+       * because `onEnter` runs first and the arming is an effect.
+       */
+      onEnter: () => { clearModel(); armTool('node'); },
       // Two is all a single-span beam needs, and asking for exactly what is
       // needed keeps the check honest.
       waitFor: () => count.nodes() >= 2,
