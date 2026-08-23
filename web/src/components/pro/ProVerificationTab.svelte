@@ -35,7 +35,9 @@
   import type { DiagramParams } from '../../lib/engine/codes/argentina/interaction-diagram';
   import { isDesignCheckAvailable, checkSteelMembers, checkRcMembers, checkEc2Members, checkEc3Members, checkTimberMembers, checkMasonryMembers, checkCfsMembers, checkBoltGroups, checkWeldGroups, checkSpreadFootings } from '../../lib/engine/wasm-solver';
   import { t } from '../../lib/i18n';
-  import * as XLSX from 'xlsx';
+  // xlsx on demand: 875 KB that only matters once someone exports a schedule.
+  // See lib/export/excel.ts for the same treatment and the reason.
+  type XlsxModule = typeof import('xlsx');
   import { computeStationDemands, runUnifiedVerification, runSteelVerification } from '../../lib/engine/verification-service';
 
   /** Normative code options for design checks */
@@ -940,8 +942,9 @@
   const barMarks = $derived(verifications.length > 0 ? computeBarMarks(verifications, elementLengthMap) : []);
 
   /** Export rebar schedule + quantities to XLSX */
-  function exportRebarSchedule() {
+  async function exportRebarSchedule() {
     if (rebarSchedule.length === 0) return;
+    const XLSX: XlsxModule = await import('xlsx');
     const wb = XLSX.utils.book_new();
 
     // Sheet 1: Grouped rebar schedule

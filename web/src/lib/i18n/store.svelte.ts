@@ -1,20 +1,24 @@
 import es from './locales/es';
 import en from './locales/en';
 import pt from './locales/pt';
-import de from './locales/de';
-import fr from './locales/fr';
-import it from './locales/it';
-import tr from './locales/tr';
-import hi from './locales/hi';
-import ja from './locales/ja';
-import ko from './locales/ko';
-import ru from './locales/ru';
-import zh from './locales/zh';
-import ar from './locales/ar';
-import id from './locales/id';
 import type { Translations } from './types';
 
-const dicts: Record<string, Translations> = { es, en, pt, de, fr, it, tr, hi, ja, ko, ru, zh, ar, id };
+/**
+ * The dictionaries the application actually speaks.
+ *
+ * This used to hold all fourteen on disk, so that re-enabling one was a single
+ * edit. Measured on the bundle, the eleven the app refuses to switch to came
+ * to 2.0 MB — the largest single item in it, ahead of the solver and ahead of
+ * Three.js — shipped to every reader of a blog page written in three
+ * languages. They were unreachable, not just unused: setLocale rejects an
+ * unoffered code, detectBrowserLocale only returns offered ones, and no
+ * production caller passes a locale to tAt.
+ *
+ * The other eleven now live in ./locales/all.ts, which only the gates import,
+ * so the translation work is still kept and still checked. Re-enabling one is
+ * still a single edit: add it here and to OFFERED_LOCALES.
+ */
+const dicts: Record<string, Translations> = { es, en, pt };
 
 /** Safe localStorage check — vitest defines localStorage but without working methods. */
 function hasLocalStorage(): boolean {
@@ -106,7 +110,13 @@ export function tAt(key: string, locale: string): string {
 	return (dict as any)[key] ?? (dicts.en as any)[key] ?? key;
 }
 
-/** Every locale the app ships. Used by the locale-parity gate. */
+/**
+ * Every locale the app ships — which is now exactly what it offers.
+ *
+ * For the full set on disk, including the ones not offered, use
+ * `allShippedLocales()` from ./locales/all.ts. That module is gate-only: see
+ * the note there about what importing it costs.
+ */
 export function shippedLocales(): string[] {
 	return Object.keys(dicts);
 }
