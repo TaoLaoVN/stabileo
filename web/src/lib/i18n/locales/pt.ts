@@ -2403,6 +2403,7 @@ const pt: Translations = {
   'kinematic.mechanismResult': '✗ Mecanismo — não pode ser resolvida',
   'kinematic.noHinges': 'Sem articulações internas (c = 0)',
   'kinematic.noMechanisms': '✓ Nenhum mecanismo detectado. A estrutura é estável.',
+  'kinematic.rankUnavailable': '⏳ Ainda não foi possível verificar: o motor de cálculo não terminou de carregar. A estabilidade não está confirmada.',
   'kinematic.noRestriction': '⚠ sem restrição',
   'kinematic.noSupports': 'Sem apoios definidos — estrutura é livre.',
   'kinematic.nodeDetail': 'Nó {id}: {type} → {dofs} reações ({restrained})',
