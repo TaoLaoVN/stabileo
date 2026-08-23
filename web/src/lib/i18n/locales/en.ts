@@ -1551,6 +1551,7 @@ const en: Record<string, string> = {
   'kinematic.step3Title': 'Step 3 \u2014 Verification with Stiffness Matrix',
   'kinematic.matrixExplanation': 'Stabileo solves structures by assembling a <strong style="color:#ddd">global stiffness matrix</strong>. Here we analyze that matrix ({n}\u00D7{n}) to detect mechanisms that the Step 2 equation misses \u2014 for example, when supports are poorly distributed or hinges create local instabilities.',
   'kinematic.noMechanisms': '\u2713 No mechanisms detected. The structure is stable.',
+  'kinematic.rankUnavailable': '⏳ Not verified yet: the calculation engine has not finished loading. Stability is not confirmed.',
   'kinematic.hiddenMechanism': '\u2717 Detected {n} mechanism mode{s} despite g = {degree} \u2265 0.',
   'kinematic.hiddenMechanismExplanation': 'The Step 2 equation counts constraints globally, but does not verify where they are located. In this case, one zone of the structure has excess constraints while another lacks sufficient ones.',
   'kinematic.mechanismDetected': '\u2717 Detected {n} mechanism mode{s}.',

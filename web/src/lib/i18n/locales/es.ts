@@ -1544,6 +1544,7 @@ const es: Record<string, string> = {
   'kinematic.step3Title': 'Paso 3 — Verificación con la Matriz de Rigidez',
   'kinematic.matrixExplanation': 'Stabileo resuelve estructuras armando una <strong style="color:#ddd">matriz de rigidez global</strong>. Acá se analiza esa matriz ({n}×{n}) para detectar mecanismos que la ecuación del Paso 2 no detecta — por ejemplo, cuando los apoyos están mal distribuidos o hay articulaciones que generan inestabilidades locales.',
   'kinematic.noMechanisms': '✓ No se detectaron mecanismos. La estructura es estable.',
+  'kinematic.rankUnavailable': '⏳ No se pudo verificar todavía: el motor de cálculo aún no terminó de cargar. La estabilidad no está confirmada.',
   'kinematic.hiddenMechanism': '✗ Se detectaron {n} modo{s} de mecanismo a pesar de que g = {degree} ≥ 0.',
   'kinematic.hiddenMechanismExplanation': 'La ecuación del Paso 2 cuenta restricciones de forma global, pero no verifica dónde están ubicadas. En este caso, una zona de la estructura tiene restricciones de sobra mientras otra no tiene las suficientes.',
   'kinematic.mechanismDetected': '✗ Se detectaron {n} modo{s} de mecanismo.',

@@ -302,10 +302,21 @@ test.describe('@smoke blog', () => {
     await expect(app.getByTestId('bp-title')).toHaveText('Avanzado', { timeout: 60_000 });
 
     const body = app.locator('body');
-    // The formula, and the app overruling it — the whole point of the post.
     await expect(body).toContainText('g = 3×2 + 3 − 3×3 = 0');
-    await expect(body).toContainText('NO suficiente');
-    await expect(body).toContainText('1 modo de mecanismo');
+    /*
+     * Generous timeouts on the rank check, and the reason is worth keeping.
+     *
+     * Step 3 needs the WASM engine, and `?kin=1` opens the panel before it has
+     * loaded. The panel says "not verified yet" and retries until the engine
+     * arrives — so this waits for the answer rather than for the first paint.
+     * CI failed here once with the panel claiming the structure was STABLE,
+     * which was the bug this timeout must not hide: see rankChecked in
+     * kinematic-report.ts.
+     */
+    await expect(body).toContainText('NO suficiente', { timeout: 30_000 });
+    await expect(body).toContainText('1 modo de mecanismo', { timeout: 30_000 });
+    // And it must never have settled on the opposite claim.
+    await expect(body).not.toContainText('La estructura es estable');
     // The verdict the post's table quotes, in the words the panel uses.
     await expect(body).toContainText('no se puede resolver');
   });
