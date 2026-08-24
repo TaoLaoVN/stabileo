@@ -31,6 +31,7 @@ const META_TAGS = [
 ] as const;
 
 const ALTERNATE = 'meta[property="og:locale:alternate"]';
+const HREFLANG = 'link[rel="alternate"][hreflang]';
 
 /** The one this module writes, so restoring can remove exactly it. */
 const JSONLD = 'script[type="application/ld+json"][data-page-meta]';
@@ -75,12 +76,15 @@ function setArticleData(article: ArticleMeta | undefined) {
 	document.head.appendChild(el);
 }
 
+type Hreflang = { hreflang: string; href: string };
+
 let original: {
 	title: string;
 	lang: string;
 	tags: (string | null)[];
 	alternates: string[];
 	canonical: string | null;
+	hreflangs: Hreflang[];
 } | null = null;
 
 function setMeta(selector: string, value: string) {
@@ -89,6 +93,36 @@ function setMeta(selector: string, value: string) {
 
 function readAlternates(): string[] {
 	return [...document.querySelectorAll(ALTERNATE)].map((el) => el.getAttribute('content') ?? '');
+}
+
+function readHreflangs(): Hreflang[] {
+	return [...document.querySelectorAll(HREFLANG)].map((el) => ({
+		hreflang: el.getAttribute('hreflang') ?? '',
+		href: el.getAttribute('href') ?? ''
+	}));
+}
+
+/**
+ * The `hreflang` set, rewritten in place after `anchor`.
+ *
+ * The cursor advances, exactly as `setAlternateLocales` does. Inserting every
+ * element after the SAME node emits them in reverse: each one lands between
+ * the anchor and the one written before it. No crawler reads them in order, so
+ * nothing was broken — but two functions in one file doing the same job by
+ * different means is how the one that matters eventually gets it wrong.
+ */
+function setHreflangs(values: Hreflang[], anchor: Element | null) {
+	for (const el of document.querySelectorAll(HREFLANG)) el.remove();
+	if (!anchor?.parentNode) return;
+	let after: Node = anchor;
+	for (const value of values) {
+		const el = document.createElement('link');
+		el.setAttribute('rel', 'alternate');
+		el.setAttribute('hreflang', value.hreflang);
+		el.setAttribute('href', value.href);
+		anchor.parentNode.insertBefore(el, after.nextSibling);
+		after = el;
+	}
 }
 
 /**
@@ -129,16 +163,7 @@ function setAlternateLocales(values: string[]) {
 function setLinks(path: string, locale: PublicLocale) {
 	const canonical = document.querySelector('link[rel="canonical"]');
 	if (canonical) canonical.setAttribute('href', publicUrl(path, locale));
-
-	for (const el of document.querySelectorAll('link[rel="alternate"][hreflang]')) el.remove();
-	const anchor = canonical ?? document.head.lastElementChild;
-	for (const alt of alternateUrls(path)) {
-		const el = document.createElement('link');
-		el.setAttribute('rel', 'alternate');
-		el.setAttribute('hreflang', alt.hreflang);
-		el.setAttribute('href', alt.href);
-		anchor?.parentNode?.insertBefore(el, anchor.nextSibling);
-	}
+	setHreflangs(alternateUrls(path), canonical ?? document.head.lastElementChild);
 	setMeta('meta[property="og:url"]', publicUrl(path, locale));
 }
 
@@ -157,7 +182,8 @@ export function applyPageMeta(meta: {
 			lang: document.documentElement.lang,
 			tags: META_TAGS.map(([sel, attr]) => document.querySelector(sel)?.getAttribute(attr) ?? null),
 			alternates: readAlternates(),
-			canonical: document.querySelector('link[rel="canonical"]')?.getAttribute('href') ?? null
+			canonical: document.querySelector('link[rel="canonical"]')?.getAttribute('href') ?? null,
+			hreflangs: readHreflangs()
 		};
 	}
 	document.title = meta.title;
@@ -182,8 +208,18 @@ export function restorePageMeta() {
 		if (v !== null) document.querySelector(sel)?.setAttribute(attr, v);
 	});
 	setAlternateLocales(original.alternates);
-	for (const el of document.querySelectorAll('link[rel="alternate"][hreflang]')) el.remove();
 	const canonical = document.querySelector('link[rel="canonical"]');
 	if (canonical && original.canonical) canonical.setAttribute('href', original.canonical);
+	/*
+	 * Put the hreflang set BACK, rather than only removing what was written.
+	 *
+	 * The docstring at the top of this file promises the document is left as a
+	 * crawler that never ran this code would have found it, and every other
+	 * pair here honours it. This one deleted the tags and restored nothing, so
+	 * on a prerendered page — which ships a complete hreflang set — entering
+	 * the editor stripped it. No crawler is watching by then, which is exactly
+	 * why it would have stayed wrong.
+	 */
+	setHreflangs(original.hreflangs, canonical ?? document.head.lastElementChild);
 	setArticleData(undefined);
 }
