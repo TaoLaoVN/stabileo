@@ -41,14 +41,42 @@ import { readFile, writeFile, mkdir } from 'node:fs/promises';
 import { existsSync } from 'node:fs';
 import { join, dirname, extname } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { rootHandoffScript } from './root-handoff';
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
 const DIST = join(ROOT, 'dist');
 const ORIGIN = 'https://stabileo.com';
 const LOCALES = ['en', 'es', 'pt'] as const;
+/**
+ * The language a browser we do not speak is sent to, and the one the root
+ * serves. Kept beside LOCALES because `ROOT_REDIRECT` is built from both.
+ */
+const DEFAULT_LOCALE = 'en';
 /** Build day, for the sitemap's lastmod. */
 const TODAY = new Date().toISOString().slice(0, 10);
 type Locale = (typeof LOCALES)[number];
+
+/**
+ * `LOCALES` above is the application's `PUBLIC_LOCALES`, restated.
+ *
+ * It cannot be imported: that constant lives in a `.svelte.ts` module full of
+ * runes, and this script runs under tsx with no Svelte compiler. So it is read
+ * out of the source instead — the same trick `publicPaths()` uses for the post
+ * slugs — and the build fails rather than silently prerendering a language the
+ * application no longer offers, or missing one it just gained.
+ */
+async function assertLocalesMatchTheApp() {
+  const source = await readFile(join(ROOT, 'src/lib/i18n/store.svelte.ts'), 'utf8');
+  const declared = source.match(/export const PUBLIC_LOCALES\s*=\s*\[([^\]]*)\]/);
+  if (!declared) throw new Error('prerender: could not find PUBLIC_LOCALES in store.svelte.ts');
+  const found = [...declared[1].matchAll(/'([a-z-]+)'/g)].map((m) => m[1]);
+  if (found.join(',') !== LOCALES.join(',')) {
+    throw new Error(
+      `prerender: PUBLIC_LOCALES is [${found}] but this script prerenders [${LOCALES}]. ` +
+        'Update LOCALES here — the pages, the sitemap and the root handoff all come from it.',
+    );
+  }
+}
 
 const MIME: Record<string, string> = {
   '.html': 'text/html; charset=utf-8',
@@ -107,27 +135,13 @@ async function publicPaths(): Promise<string[]> {
 }
 
 /**
- * The script the bare root carries.
+ * The script the bare root carries, to hand a reader on to their language.
  *
- * GitHub Pages cannot answer a 302, so the language handoff is JavaScript. It
- * must NOT fire when 404.html has bounced an application route through
- * `?route=`, or a person opening a shared model link would be thrown onto the
- * marketing page instead.
+ * Built by `scripts/root-handoff.ts`, which is where the reasoning and the
+ * tests for it live. The LIST comes from `LOCALES` above, which
+ * `assertLocalesMatchTheApp()` ties back to the application's own.
  */
-const ROOT_REDIRECT = `
-(function () {
-  var p = new URLSearchParams(location.search);
-  if (p.has('route') || p.has('embed') || location.pathname !== '/') return;
-  var want = 'en';
-  var langs = navigator.languages || [navigator.language || 'en'];
-  for (var i = 0; i < langs.length; i++) {
-    var code = String(langs[i]).split('-')[0].toLowerCase();
-    if (code === 'es' || code === 'pt') { want = code; break; }
-    if (code === 'en') break;
-  }
-  if (want !== 'en') location.replace('/' + want + location.hash);
-})();
-`.trim();
+const ROOT_REDIRECT = rootHandoffScript(LOCALES, DEFAULT_LOCALE);
 
 async function capture(browser: Browser, base: string, locale: Locale, path: string) {
   const page = await browser.newPage();
@@ -196,15 +210,11 @@ ${extraScript ? `<script>${extraScript}</script>` : ''}
 `;
 }
 
-/** Today, as an ISO day, for the sitemap. */
-function today(): string {
-  return new Date().toISOString().slice(0, 10);
-}
-
 async function main() {
   if (!existsSync(join(DIST, 'index.html'))) {
     throw new Error('prerender: dist/index.html is missing — run the build first');
   }
+  await assertLocalesMatchTheApp();
   /*
    * Port 0 asks the OS for a free one. A fixed port made the build fail with
    * `EADDRINUSE` whenever anything else happened to be listening — including
@@ -230,8 +240,9 @@ async function main() {
       }
     }
 
-    // The root: English content — the x-default — plus the handoff script.
-    const { head, body, lang } = await capture(browser, base, 'en', '/');
+    // The root: the default language's content — the x-default — plus the
+    // handoff script that sends everyone else on.
+    const { head, body, lang } = await capture(browser, base, DEFAULT_LOCALE, '/');
     await writeFile(join(DIST, 'index.html'), page(head, body, lang, ROOT_REDIRECT));
     written.push('/');
 
@@ -247,9 +258,10 @@ async function main() {
             ).join('\n');
             // x-default follows the page, exactly as it does in the pages'
             // own <head> — see alternateUrls() in src/lib/i18n/public-routes.ts.
-            // This was `${ORIGIN}/en` for every entry, which pointed the
-            // default of all sixteen URLs at the English home page.
-            const xDefault = `${ORIGIN}/en${path === '/' ? '' : path}`;
+            // This was `${ORIGIN}/${DEFAULT_LOCALE}` for every entry, which
+            // pointed the default of every URL in the file at the English home
+            // page instead of at the page declaring it.
+            const xDefault = `${ORIGIN}/${DEFAULT_LOCALE}${path === '/' ? '' : path}`;
             return `  <url>\n    <loc>${loc}</loc>\n    <lastmod>${TODAY}</lastmod>\n${alts}\n    <xhtml:link rel="alternate" hreflang="x-default" href="${xDefault}"/>\n  </url>`;
           }),
         ).join('\n') +
