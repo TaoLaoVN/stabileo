@@ -22,9 +22,17 @@
 
   let { path, onNavigate }: { path: string; onNavigate: (path: string) => void } = $props();
 
-  /** `/blog/<slug>` → the slug; `/blog` and `/blog/` → null, the index. */
+  /**
+   * `/blog/<slug>` → the slug; `/blog` and `/blog/` → null, the index.
+   *
+   * Everything after `/blog/` is taken, slashes included, so that a nested
+   * address is an unknown POST rather than an unrecognised route. `[^/]+`
+   * refused to match `/blog/a/b` at all, which fell through to `slug === null`
+   * and rendered the index under an address that promised a post — a page that
+   * looks like it worked. It is a missing post, and it should say so.
+   */
   const slug = $derived.by(() => {
-    const m = path.match(/^\/blog\/([^/]+)\/?$/);
+    const m = path.match(/^\/blog\/(.+?)\/?$/);
     return m ? decodeURIComponent(m[1]) : null;
   });
 

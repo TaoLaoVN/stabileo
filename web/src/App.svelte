@@ -145,7 +145,8 @@
 
   /** `/blog`, `/blog/` and `/blog/<slug>`. See src/components/blog/BlogPage.svelte. */
   function isBlogRoute(pathname: string) {
-    return pathname === '/blog' || pathname === '/blog/' || pathname.startsWith('/blog/');
+    // `/blog/` is covered by the prefix test; only the bare form needs naming.
+    return pathname === '/blog' || pathname.startsWith('/blog/');
   }
 
   type AppMode = 'basico' | 'educativo' | 'pro';
