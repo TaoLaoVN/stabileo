@@ -126,6 +126,8 @@
   import { runLiveCalc, runGlobalSolve } from './lib/engine/live-calc';
   import LandingPage from './components/LandingPage.svelte';
   import BlogPage from './components/blog/BlogPage.svelte';
+  import { parsePublicPath, publicHref } from './lib/i18n/public-routes';
+  import { publicI18n } from './lib/i18n/store.svelte';
   import AiDrawer from './components/AiDrawer.svelte';
 
   if (typeof window !== 'undefined') {
@@ -143,10 +145,38 @@
     return pathname === '/demo' || pathname === '/demo/';
   }
 
-  /** `/blog`, `/blog/` and `/blog/<slug>`. See src/components/blog/BlogPage.svelte. */
-  function isBlogRoute(pathname: string) {
-    return pathname === '/blog' || pathname === '/blog/' || pathname.startsWith('/blog/');
+  /**
+   * The public routes, read through their language prefix.
+   *
+   * `/es/blog/x` and `/blog/x` are the same route; the first names its
+   * language and the second is an old link that still has to work. Everything
+   * below asks these two rather than matching `location.pathname` directly,
+   * because a prefix would otherwise turn every public page into an app route.
+   */
+  function publicRoute(pathname: string) {
+    return parsePublicPath(pathname);
   }
+
+  /** `/blog`, `/blog/` and `/blog/<slug>`, under any language prefix. */
+  function isBlogRoute(pathname: string) {
+    const { path } = publicRoute(pathname);
+    // `/blog/` is covered by the prefix test; only the bare form needs naming.
+    return path === '/blog' || path.startsWith('/blog/');
+  }
+
+  /**
+   * The URL says which language the page is in, so on arrival the URL wins.
+   *
+   * Without this, opening a shared `/pt/blog/x` in a browser whose stored
+   * choice is Spanish would render the Spanish post at a Portuguese address —
+   * and the address is what was shared, indexed and quoted.
+   */
+  function adoptLocaleFromPath() {
+    if (typeof window === 'undefined') return;
+    const { locale } = publicRoute(location.pathname);
+    if (locale && locale !== publicI18n.locale) setLocale(locale);
+  }
+  adoptLocaleFromPath();
 
   type AppMode = 'basico' | 'educativo' | 'pro';
 
@@ -195,6 +225,68 @@
     history.replaceState(null, '', `${url.pathname}${url.search}${url.hash}`);
   }
 
+  /**
+   * `?inspect=<elementId>` opens the section analysis on that member.
+   *
+   * Written for the blog: a post about torsion can embed the editor already
+   * showing the section it is discussing, so the reader arrives at the figure
+   * instead of hunting for it through three menus. It composes with the
+   * existing `?embed` and `?example=` rather than adding a mode of its own.
+   *
+   * `t` is the station along the member, 0 to 1, and defaults to midspan.
+   *
+   * It waits for results, because the panel renders a stress state and there
+   * is none until the model has been solved. The solve is dispatched by the
+   * example loader just above, and finishes whenever the engine finishes;
+   * polling briefly is simpler than threading a promise through it, and it
+   * gives up rather than spinning if the solve never lands.
+   */
+  function openInspectFromUrl(params: URLSearchParams) {
+    const raw = params.get('inspect');
+    if (!raw) return;
+    const elementId = Number(raw);
+    // Integer, not merely finite: `?inspect=3.7` parsed fine and then polled
+    // sixty times for an element id that cannot exist.
+    if (!Number.isInteger(elementId)) return;
+    /*
+     * `?t=0` is the start of the member, and it used to become midspan.
+     * `Number('0') || 0.5` is 0.5, because 0 is falsy — so the one station a
+     * reader is most likely to ask for by hand was the one station this could
+     * not open. Only a value that is not a number falls back now.
+     */
+    const requested = Number(params.get('t') ?? '0.5');
+    const t = Number.isFinite(requested) ? Math.min(1, Math.max(0, requested)) : 0.5;
+
+    let tries = 0;
+    const open = () => {
+      const element = modelStore.elements.get(elementId);
+      const solved = resultsStore.results !== null || resultsStore.results3D !== null;
+      if (element && solved) {
+        const a = modelStore.nodes.get(element.nodeI);
+        const b = modelStore.nodes.get(element.nodeJ);
+        if (!a || !b) return;
+        resultsStore.stressQuery = {
+          elementId,
+          t,
+          worldX: a.x + (b.x - a.x) * t,
+          worldY: a.y + (b.y - a.y) * t,
+          worldZ: (a.z ?? 0) + ((b.z ?? 0) - (a.z ?? 0)) * t,
+        };
+        /*
+         * On desktop Basic the section panel is docked inside the Advanced
+         * tab of the right panel, so the query alone sets up an answer with
+         * nowhere to appear. On mobile the panel floats and the query is
+         * enough — which is why this looked like it worked on a phone and did
+         * nothing on a laptop.
+         */
+        if (uiStore.appMode === 'basico' && !uiStore.isMobile) openBasicPanel('advanced');
+        return;
+      }
+      if (tries++ < 60) setTimeout(open, 120);
+    };
+    open();
+  }
+
   function findTabBySlug(tabSlug: string | null) {
     if (!tabSlug) return null;
     return tabManager.tabs.find(tab => slugifyTabName(tab.name) === tabSlug) ?? null;
@@ -209,7 +301,7 @@
   let showLanding = $state(shouldShowLanding());
   let showBlog = $state(typeof window !== 'undefined' && isBlogRoute(location.pathname));
   /** The address the blog reads its slug from; kept in state so it is reactive. */
-  let blogPath = $state(typeof window !== 'undefined' ? location.pathname : '/blog');
+  let blogPath = $state(typeof window !== 'undefined' ? parsePublicPath(location.pathname).path : '/blog');
 
   /**
    * Move between the public pages without reloading the document.
@@ -219,7 +311,9 @@
    * blog entry, the blog's own links, the way back home — comes through here.
    */
   function navigatePublic(path: string) {
-    history.pushState(null, '', path);
+    // Public links are written unprefixed ('/blog') and land prefixed
+    // ('/pt/blog'), so a language never falls off mid-visit.
+    history.pushState(null, '', publicHref(path, publicI18n.locale));
     syncRouteState();
   }
 
@@ -232,8 +326,9 @@
   }
 
   function syncRouteState() {
+    adoptLocaleFromPath();
     showBlog = isBlogRoute(location.pathname);
-    blogPath = location.pathname;
+    blogPath = publicRoute(location.pathname).path;
     showLanding = shouldShowLanding();
     if (!showLanding && !showBlog) {
       const nextMode = pathToMode(location.pathname);
@@ -521,6 +616,7 @@
             if (attempt < 40) setTimeout(() => tryFit(attempt + 1), 60);
           };
           tryFit(0);
+          openInspectFromUrl(queryParams);
         }).catch(() => {
           // Silently ignore unknown example ids
         });
@@ -790,7 +886,7 @@
 <svelte:window onkeydown={handleProKeydown} onclick={handleProBarClickOutside} />
 
 {#if showBlog}
-  <BlogPage path={blogPath} onNavigate={navigatePublic} />
+  <BlogPage path={blogPath} />
 {:else if showLanding}
   <LandingPage />
 {/if}
