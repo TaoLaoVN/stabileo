@@ -124,7 +124,7 @@ export const cirsoc201Flexure: Post = {
             ['120', '2 Ø32', '2.76', '0.707', '133.5'],
           ],
         },
-        { k: 'p', t: 'En la última fila la sección entró en zona de transición y φ cayó a 0,707. La capacidad no creció como la armadura: entre las dos últimas filas el acero sube de 6,44 a 8,04 cm² de área nominal y φMn sólo pasa de 115,2 a 133,5 kN·m. Buena parte de lo que se agrega se pierde en el coeficiente.' },
+        { k: 'p', t: 'En la última fila la sección entró en zona de transición y φ cayó a 0,707. La capacidad no creció como la armadura: entre las dos últimas filas el acero sube de 9,82 a 16,08 cm² de área nominal y φMn sólo pasa de 115,2 a 133,5 kN·m. Buena parte de lo que se agrega se pierde en el coeficiente.' },
         { k: 'quote', t: 'Una sección sobrearmada no falla en la verificación. Falla en el φ, y el resultado sigue diciendo que verifica.' },
 
         { k: 'h', t: 'Por qué se pone armadura de compresión' },
@@ -223,7 +223,7 @@ export const cirsoc201Flexure: Post = {
             ['120', '2 Ø32', '2.76', '0.707', '133.5'],
           ],
         },
-        { k: 'p', t: 'In the last row the section entered the transition zone and φ dropped to 0.707. Capacity did not grow the way the steel did: between the last two rows the bar area goes from 6.44 to 8.04 cm² nominal and φMn only moves from 115.2 to 133.5 kN·m. A good part of what is added is lost in the factor.' },
+        { k: 'p', t: 'In the last row the section entered the transition zone and φ dropped to 0.707. Capacity did not grow the way the steel did: between the last two rows the bar area goes from 9.82 to 16.08 cm² nominal and φMn only moves from 115.2 to 133.5 kN·m. A good part of what is added is lost in the factor.' },
         { k: 'quote', t: 'An over-reinforced section does not fail the check. It fails in φ, and the result still says it passes.' },
 
         { k: 'h', t: 'Why compression steel goes in' },
@@ -322,7 +322,7 @@ export const cirsoc201Flexure: Post = {
             ['120', '2 Ø32', '2.76', '0.707', '133.5'],
           ],
         },
-        { k: 'p', t: 'Na última linha a seção entrou na zona de transição e φ caiu para 0,707. A capacidade não cresceu como o aço: entre as duas últimas linhas a área das barras vai de 6,44 para 8,04 cm² nominais e φMn só passa de 115,2 para 133,5 kN·m. Boa parte do que se acrescenta se perde no coeficiente.' },
+        { k: 'p', t: 'Na última linha a seção entrou na zona de transição e φ caiu para 0,707. A capacidade não cresceu como o aço: entre as duas últimas linhas a área das barras vai de 9,82 para 16,08 cm² nominais e φMn só passa de 115,2 para 133,5 kN·m. Boa parte do que se acrescenta se perde no coeficiente.' },
         { k: 'quote', t: 'Uma seção superarmada não reprova na verificação. Ela reprova no φ, e o resultado continua dizendo que passa.' },
 
         { k: 'h', t: 'Por que entra armadura de compressão' },

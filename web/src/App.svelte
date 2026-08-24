@@ -291,6 +291,8 @@
   function openProTabFromUrl(params: URLSearchParams) {
     const tab = params.get('proTab');
     if (!tab) return;
+    // Mirrors the `ProTab` union in components/pro/ProPanel.svelte — a tab added
+    // there but not here makes `?proTab=` silently no-op for it.
     const VALID = ['project', 'nodes', 'elements', 'shells', 'materials', 'sections', 'supports',
       'constraints', 'loads', 'advanced', 'results', 'design', 'connections', 'diagnostics'];
     if (!VALID.includes(tab)) return;

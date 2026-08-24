@@ -210,7 +210,7 @@ test.describe('@smoke blog', () => {
      * The other half of the embed contract: this post's subject lives in PRO's
      * design workflow, not in Basic's section panel, so it opens `/app/pro`.
      *
-     * The caption names the two buttons the reader has to press, and the
+     * The caption names the three buttons the reader has to press, and the
      * editor inside the frame runs in the reader's language — so the caption
      * has to name them in that language too. An English caption on a Spanish
      * page sends someone hunting for a button that says something else.
@@ -260,12 +260,15 @@ test.describe('@smoke blog', () => {
     const app = page.frameLocator('.post-embed iframe');
     await expect(app.locator('body')).toContainText('CIRSOC 201', { timeout: 60_000 });
 
-    // Exactly the three presses the caption asks for, in its order.
-    for (const id of ['cmd-compute-demands', 'cmd-code-check']) {
-      await app.getByTestId(id).click();
-      await expect(app.locator('body')).toBeVisible();
-    }
-    await app.getByRole('button', { name: 'Diseñar todo', exact: true }).first().click();
+    // Exactly the three presses the caption asks for, in its order. Each wait is
+    // the toolbar's own disabled state — the workflow's real gate: code check arms
+    // only once demands exist and the previous run is no longer busy. A bare
+    // `toBeVisible` on the body would wait on nothing.
+    await app.getByTestId('cmd-compute-demands').click();
+    await expect(app.getByTestId('cmd-code-check')).toBeEnabled({ timeout: 60_000 });
+    await app.getByTestId('cmd-code-check').click();
+    await expect(app.getByTestId('cmd-design-all')).toBeEnabled({ timeout: 60_000 });
+    await app.getByTestId('cmd-design-all').click();
 
     // Verified, not "sin verificar", and at the utilisation the caption quotes.
     const table = app.locator('body');
