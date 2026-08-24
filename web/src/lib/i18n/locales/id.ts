@@ -1775,6 +1775,7 @@ const id: Translations = {
   'excel.rollerY': 'Rol Y',
   'excel.spring': 'Pegas',
   'excel.total': 'TOTAL',
+  'excel.loadFailed': 'The spreadsheet library could not be loaded. Check your connection and try again.',
   'excel.name': 'Nama',
   'excel.shape': 'Bentuk',
   'excel.sheetSummary': 'Ringkasan',

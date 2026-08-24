@@ -2756,6 +2756,7 @@ const es: Record<string, string> = {
   'excel.rollerY': 'Móvil Y',
   'excel.spring': 'Resorte',
   'excel.total': 'TOTAL',
+  'excel.loadFailed': 'No se pudo cargar la librería de planillas. Revisá la conexión y probá de nuevo.',
   'excel.name': 'Nombre',
   'excel.shape': 'Forma',
   'excel.sheetSummary': 'Resumen',

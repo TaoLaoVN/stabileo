@@ -2030,6 +2030,7 @@ const pt: Translations = {
   'excel.maxVy': '|Vy| máx',
   'excel.maxVz': '|Vz| máx',
   'excel.model': 'MODELO',
+  'excel.loadFailed': 'Não foi possível carregar a biblioteca de planilhas. Verifique a conexão e tente de novo.',
   'excel.name': 'Nome',
   'excel.no': 'Não',
   'excel.noResults': 'Sem resultados — execute a análise primeiro',
