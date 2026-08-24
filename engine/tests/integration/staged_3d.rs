@@ -601,3 +601,116 @@ fn staged_3d_a_slab_no_stage_names_stays_out() {
         drift(&unnamed), drift(&named)
     );
 }
+
+/// The same, for `plates`.
+///
+/// `build_stage_solver_input_3d` filters plates and quads with two separate
+/// pieces of code, and only the quad half was exercised. Symmetric code is
+/// still untested code, and this change exists because a payload that merely
+/// parses proves nothing.
+#[test]
+fn staged_3d_plates_reach_the_stage_that_owns_them() {
+    let mut input = portal_with_slab();
+    // Two triangles over the roof panel the quad covered, and no quad.
+    input.quads.clear();
+    input.plates.insert("1".into(), SolverPlateElement {
+        id: 1, nodes: [2, 3, 6], material_id: 1, thickness: 0.2,
+    });
+    input.plates.insert("2".into(), SolverPlateElement {
+        id: 2, nodes: [2, 6, 5], material_id: 1, thickness: 0.2,
+    });
+
+    input.stages.push(ConstructionStage3D {
+        name: "frame".into(),
+        elements_added: vec![1, 2, 3, 4, 5],
+        load_indices: vec![0],
+        supports_added: vec![1, 4, 5, 6],
+        ..Default::default()
+    });
+    input.stages.push(ConstructionStage3D {
+        name: "slab cast".into(),
+        load_indices: vec![0],
+        plates_added: vec![1, 2],
+        ..Default::default()
+    });
+
+    let res = solve_staged_3d(&input).unwrap();
+    let drift = |s: &StageResult3D| s.results.displacements.iter()
+        .find(|d| d.node_id == 3).map(|d| d.ux.abs()).unwrap_or(0.0);
+
+    let increment_1 = drift(&res.stages[0]);
+    let increment_2 = (drift(&res.stages[1]) - increment_1).abs();
+
+    assert!(increment_1 > 0.0, "the bare frame must actually deflect: {increment_1}");
+    assert!(
+        increment_2 < increment_1 * 0.1,
+        "the plates must stiffen their own stage: bare={increment_1:.6}, with plates={increment_2:.6}"
+    );
+}
+
+/// Taking a slab out is a stage too.
+///
+/// `plates_removed`/`quads_removed` are in the struct and in the solver, and
+/// nothing drove either — so "a stage can remove a shell" was an assertion
+/// about code nobody had run. Shoring struck after it has done its work is the
+/// ordinary reason to need it.
+#[test]
+fn staged_3d_a_removed_slab_stops_stiffening() {
+    let mut input = portal_with_slab();
+    input.stages.push(ConstructionStage3D {
+        name: "frame".into(),
+        elements_added: vec![1, 2, 3, 4, 5],
+        load_indices: vec![0],
+        supports_added: vec![1, 4, 5, 6],
+        quads_added: vec![1],
+        ..Default::default()
+    });
+    input.stages.push(ConstructionStage3D {
+        name: "slab struck".into(),
+        load_indices: vec![0],
+        quads_removed: vec![1],
+        ..Default::default()
+    });
+
+    let res = solve_staged_3d(&input).unwrap();
+    let drift = |s: &StageResult3D| s.results.displacements.iter()
+        .find(|d| d.node_id == 3).map(|d| d.ux.abs()).unwrap_or(0.0);
+
+    let with_slab = drift(&res.stages[0]);
+    let after_removal = (drift(&res.stages[1]) - with_slab).abs();
+
+    // The same 50 kN, once with the slab and once without it. If
+    // `quads_removed` did nothing, the two increments would be equal.
+    assert!(
+        after_removal > with_slab * 2.0,
+        "removing the slab must soften the stage: with={with_slab:.6}, after removal={after_removal:.6}"
+    );
+}
+
+/// A shell no stage can name is refused, not dropped.
+///
+/// `ConstructionStage3D` has no list for nine-node shells, because nothing in
+/// the application builds one. That left the field on `StagedInput3D` in the
+/// state this whole change exists to abolish: accepted by serde, activated by
+/// nothing, gone without a word. The guard says so instead.
+#[test]
+fn staged_3d_rejects_quad9s_it_cannot_activate() {
+    let mut input = portal_with_slab();
+    input.quads.clear();
+    input.quad9s.insert("1".into(), SolverQuad9Element {
+        id: 1, nodes: [2, 3, 6, 5, 2, 3, 6, 5, 2], material_id: 1, thickness: 0.2,
+    });
+    input.stages.push(ConstructionStage3D {
+        name: "frame".into(),
+        elements_added: vec![1, 2, 3, 4, 5],
+        load_indices: vec![0],
+        supports_added: vec![1, 4, 5, 6],
+        ..Default::default()
+    });
+
+    let err = solve_staged_3d(&input).expect_err("a staged input with quad9s must be refused");
+    assert!(
+        err.contains("Nine-node shell"),
+        "the error must name what it refused: {err}"
+    );
+}

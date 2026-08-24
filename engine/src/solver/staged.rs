@@ -802,6 +802,26 @@ pub fn solve_staged_3d(input: &StagedInput3D) -> Result<StagedAnalysisResults3D,
                     (reactions would be reported in the rotated support frame)".to_string());
     }
 
+    /*
+     * A nine-node shell cannot be staged, and says so instead of vanishing.
+     *
+     * `ConstructionStage3D` has `plates_added` and `quads_added` but no list
+     * for quad9s, because nothing in the application builds one and so no
+     * stage could name it. That leaves the field in exactly the state this
+     * change exists to abolish: accepted by serde, activated by nothing,
+     * dropped in silence — which is how the plates and quads beside it were
+     * lost for as long as they were.
+     *
+     * Refusing is the choice the inclined-support guard above already makes,
+     * for the same reason: no answer beats a plausible wrong one. When a stage
+     * list arrives for them, this goes and the filter joins the two below.
+     */
+    if !input.quad9s.is_empty() {
+        return Err("Nine-node shell elements are not yet supported in staged construction \
+                    analysis (no stage can activate them, so they would be silently \
+                    omitted from every stage)".to_string());
+    }
+
     // Build DOF numbering from the full structure (all nodes, all elements)
     let full_input = staged_to_full_solver_input_3d(input);
     super::linear::validate_input_3d(&full_input)?;
@@ -994,9 +1014,26 @@ fn staged_to_full_solver_input_3d(input: &StagedInput3D) -> SolverInput3D {
         loads: input.loads.clone(),
         constraints: input.constraints.clone(),
         left_hand: None,
-        // EVERY shell, active or not: this input exists to number the DOFs, and
-        // a node that only a later-stage slab touches still needs a number, or
-        // the stage that finally adds that slab has nowhere to assemble it.
+        /*
+         * EVERY shell, active or not, because this input decides the DOF LAYOUT
+         * and the shells are what widen it.
+         *
+         * Not the node set: `DofNumbering::build_3d` takes its node ids from
+         * `input.nodes` unconditionally, so a node that only a later-stage slab
+         * touches already has a number either way. What the shells decide is
+         * `dofs_per_node`:
+         *
+         *     let has_plate = !plates.is_empty() || !quads.is_empty() || …;
+         *     let dofs_per_node = if has_warping { 7 }
+         *                         else if has_frame || has_plate { 6 }
+         *                         else { 3 };
+         *
+         * With frames present that is already 6 and nothing moves. With NONE —
+         * a model staged out of slabs and walls alone — passing empty maps here
+         * numbered three DOFs per node, which cannot carry plate bending at
+         * all. So the stage that finally adds a slab would have had nowhere to
+         * assemble its rotations.
+         */
         plates: input.plates.clone(),
         quads: input.quads.clone(),
         quad9s: input.quad9s.clone(),
@@ -1054,9 +1091,9 @@ fn build_stage_solver_input_3d(
         left_hand: None,
         plates,
         quads,
-        // quad9s carry no per-stage list yet: nothing in the app builds one, so
-        // there is no stage that could name it. Left empty rather than always
-        // active, which would silently stiffen every stage.
+        // quad9s carry no per-stage list yet, and `solve_staged_3d` refuses an
+        // input that has any — so this is empty because there are none, not
+        // because they were quietly left out.
         quad9s: HashMap::new(),
         solid_shells: HashMap::new(),
         curved_shells: HashMap::new(),
