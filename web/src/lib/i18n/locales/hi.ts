@@ -1769,6 +1769,7 @@ const hi: Translations = {
   'excel.rollerY': 'रोलर Y',
   'excel.spring': 'स्प्रिंग',
   'excel.total': 'कुल',
+  'excel.loadFailed': 'The spreadsheet library could not be loaded. Check your connection and try again.',
   'excel.name': 'नाम',
   'excel.shape': 'आकार',
   'excel.sheetSummary': 'सारांश',

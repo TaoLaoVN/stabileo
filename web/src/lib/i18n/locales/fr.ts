@@ -1769,6 +1769,7 @@ const fr: Translations = {
   'excel.rollerY': 'Rouleau Y',
   'excel.spring': 'Ressort',
   'excel.total': 'TOTAL',
+  'excel.loadFailed': 'The spreadsheet library could not be loaded. Check your connection and try again.',
   'excel.name': 'Nom',
   'excel.shape': 'Forme',
   'excel.sheetSummary': 'Résumé',

@@ -1769,6 +1769,7 @@ const ru: Translations = {
   'excel.rollerY': 'Подвижная Y',
   'excel.spring': 'Пружина',
   'excel.total': 'ИТОГО',
+  'excel.loadFailed': 'The spreadsheet library could not be loaded. Check your connection and try again.',
   'excel.name': 'Название',
   'excel.shape': 'Форма',
   'excel.sheetSummary': 'Сводка',

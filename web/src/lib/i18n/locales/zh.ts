@@ -1769,6 +1769,7 @@ const zh: Translations = {
   'excel.rollerY': 'Y 向滚动',
   'excel.spring': '弹簧',
   'excel.total': '合计',
+  'excel.loadFailed': 'The spreadsheet library could not be loaded. Check your connection and try again.',
   'excel.name': '名称',
   'excel.shape': '形状',
   'excel.sheetSummary': '摘要',

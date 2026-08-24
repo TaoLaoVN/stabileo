@@ -1769,6 +1769,7 @@ const it: Translations = {
   'excel.rollerY': 'Carrello Y',
   'excel.spring': 'Molla',
   'excel.total': 'TOTALE',
+  'excel.loadFailed': 'The spreadsheet library could not be loaded. Check your connection and try again.',
   'excel.name': 'Nome',
   'excel.shape': 'Forma',
   'excel.sheetSummary': 'Riepilogo',

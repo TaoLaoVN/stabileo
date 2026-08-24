@@ -1769,6 +1769,7 @@ const tr: Translations = {
   'excel.rollerY': 'Hareketli Y',
   'excel.spring': 'Yay',
   'excel.total': 'TOPLAM',
+  'excel.loadFailed': 'The spreadsheet library could not be loaded. Check your connection and try again.',
   'excel.name': 'Ad',
   'excel.shape': 'Şekil',
   'excel.sheetSummary': 'Özet',

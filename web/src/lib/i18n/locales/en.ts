@@ -2604,6 +2604,7 @@ const en: Record<string, string> = {
   'excel.rollerY': 'Roller Y',
   'excel.spring': 'Spring',
   'excel.total': 'TOTAL',
+  'excel.loadFailed': 'The spreadsheet library could not be loaded. Check your connection and try again.',
   'excel.name': 'Name',
   'excel.shape': 'Shape',
   'excel.sheetSummary': 'Summary',

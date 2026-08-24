@@ -1777,6 +1777,7 @@ const ja: Translations = {
   'excel.rollerY': 'Y方向ローラー',
   'excel.spring': 'ばね',
   'excel.total': '合計',
+  'excel.loadFailed': 'The spreadsheet library could not be loaded. Check your connection and try again.',
   'excel.name': '名前',
   'excel.shape': '形状',
   'excel.sheetSummary': '概要',

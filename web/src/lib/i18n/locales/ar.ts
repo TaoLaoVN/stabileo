@@ -1777,6 +1777,7 @@ const ar: Translations = {
   'excel.rollerY': 'متحرك Y',
   'excel.spring': 'نابض',
   'excel.total': 'المجموع',
+  'excel.loadFailed': 'The spreadsheet library could not be loaded. Check your connection and try again.',
   'excel.name': 'الاسم',
   'excel.shape': 'الشكل',
   'excel.sheetSummary': 'الملخص',

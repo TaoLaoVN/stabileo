@@ -1774,6 +1774,7 @@ const de: Translations = {
   'excel.rollerY': 'Rollenlager Y',
   'excel.spring': 'Feder',
   'excel.total': 'GESAMT',
+  'excel.loadFailed': 'The spreadsheet library could not be loaded. Check your connection and try again.',
   'excel.name': 'Name',
   'excel.shape': 'Form',
   'excel.sheetSummary': 'Zusammenfassung',

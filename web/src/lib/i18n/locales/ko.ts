@@ -1775,6 +1775,7 @@ const ko: Translations = {
   'excel.rollerY': 'Y방향 이동단',
   'excel.spring': '스프링',
   'excel.total': '합계',
+  'excel.loadFailed': 'The spreadsheet library could not be loaded. Check your connection and try again.',
   'excel.name': '이름',
   'excel.shape': '형상',
   'excel.sheetSummary': '요약',

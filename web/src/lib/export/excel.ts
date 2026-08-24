@@ -28,11 +28,6 @@
 import type * as Xlsx from 'xlsx';
 type XlsxModule = typeof import('xlsx');
 let XLSX!: XlsxModule;
-
-/** Resolve the library once, before any sheet builder runs. */
-async function loadXlsx(): Promise<void> {
-  XLSX ??= await import('xlsx');
-}
 import { modelStore, resultsStore, uiStore } from '../store';
 import { isMode3D } from '../store/file';
 import { t } from '../i18n';
@@ -65,6 +60,36 @@ interface ExcelExportOptions {
    * reaction tables makes it harder to use, not more complete.
    */
   onlyExtras?: boolean;
+}
+
+/**
+ * Resolve the spreadsheet library, or say that it could not be resolved.
+ *
+ * ── Why this returns null instead of throwing ──
+ *
+ * Splitting xlsx into its own chunk bought 142 KB off every public page, and
+ * it introduced a failure mode that bundled code does not have: the import can
+ * fail on its own. A deploy that replaced the hashed filename while a tab was
+ * still open, a dropped connection, a proxy that blocks the request — none of
+ * which could touch a library that was already in the chunk the app booted
+ * from.
+ *
+ * Every caller is a click handler that does not await (`onclick={downloadExcel}`
+ * and its two siblings), so a rejection here would surface as an unhandled
+ * promise and NOTHING on screen: the reader presses Excel and the application
+ * appears to ignore them. Reporting and returning null means every caller ends
+ * the same way — the user has been told, and no path throws into a handler
+ * that was never going to catch it.
+ */
+export async function loadXlsxModule(): Promise<XlsxModule | null> {
+  try {
+    XLSX ??= await import('xlsx');
+    return XLSX;
+  } catch (err) {
+    console.error('[stabileo] the spreadsheet library failed to load:', err);
+    uiStore.toast(t('excel.loadFailed'), 'error');
+    return null;
+  }
 }
 
 export const releaseLabel = (r?: { my: boolean; mz: boolean; t: boolean }): string => {
@@ -404,8 +429,18 @@ function createSectionsSheet(): Xlsx.WorkSheet {
 }
 
 export async function exportToExcel(options: ExcelExportOptions = {}): Promise<void> {
-  await loadXlsx();
+  if (!(await loadXlsxModule())) return;
 
+  /*
+   * Everything below reads the stores, and it reads them AFTER the await.
+   *
+   * Only the first export of a session actually waits — the module is cached
+   * afterwards — and nobody edits a model between pressing a button and the
+   * file arriving. But the workbook is a snapshot taken at resolution, not at
+   * the click, and in an application that spends this much effort on a result
+   * matching the model that produced it, that is worth saying out loud rather
+   * than leaving for someone to discover.
+   */
   const {
     filename = 'analisis-estructural.xlsx',
     includeResults = true,
