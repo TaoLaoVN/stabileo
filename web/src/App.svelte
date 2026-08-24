@@ -287,6 +287,28 @@
     open();
   }
 
+  /**
+   * `?proTab=<id>` opens PRO on one of its tabs.
+   *
+   * The companion of `?inspect` for the other half of the application. A post
+   * about CIRSOC verification has to land the reader on the verification, and
+   * that lives in PRO's `design` tab rather than in Basic's section panel.
+   *
+   * NOT named `tab`: that parameter already carries the project tab's slug
+   * (see `replaceAppUrl`), and quietly overloading it would make a shared
+   * link rename someone's project.
+   */
+  function openProTabFromUrl(params: URLSearchParams) {
+    const tab = params.get('proTab');
+    if (!tab) return;
+    // Mirrors the `ProTab` union in components/pro/ProPanel.svelte — a tab added
+    // there but not here makes `?proTab=` silently no-op for it.
+    const VALID = ['project', 'nodes', 'elements', 'shells', 'materials', 'sections', 'supports',
+      'constraints', 'loads', 'advanced', 'results', 'design', 'connections', 'diagnostics'];
+    if (!VALID.includes(tab)) return;
+    uiStore.proActiveTab = tab;
+  }
+
   function findTabBySlug(tabSlug: string | null) {
     if (!tabSlug) return null;
     return tabManager.tabs.find(tab => slugifyTabName(tab.name) === tabSlug) ?? null;
@@ -635,6 +657,7 @@
           };
           tryFit(0);
           openInspectFromUrl(queryParams);
+          openProTabFromUrl(queryParams);
         }).catch(() => {
           // Silently ignore unknown example ids
         });
