@@ -36,13 +36,14 @@ import type { Post } from '../types';
 export const determinismBoundary: Post = {
   slug: 'the-determinism-boundary',
   date: '2026-08-12',
+  order: 1,
   authors: ['Bautista Chesta', 'Raúl Bertero', 'Federico Carrone', 'Diego Kingston'],
   tagKeys: ['blog.tag.ai', 'blog.tag.solver', 'blog.tag.research'],
   i18n: {
     es: {
       title: 'La frontera de determinismo: por qué un agente de IA no debe calcular',
       excerpt:
-        'Un modelo de lenguaje no puede garantizar que un número esté bien. Un solver verificado sí. La arquitectura que hace útil a la IA en cálculo estructural consiste en separar esas dos cosas y no dejar que se crucen.',
+        'Un modelo de lenguaje no puede garantizar un número; un solver verificado sí. La arquitectura que hace útil a la IA en cálculo estructural separa esas dos cosas.',
       blocks: [
         { k: 'p', t: 'Décadas de software comercial volvieron veloz la parte estrictamente numérica del análisis estructural. Ensamblar una matriz de rigidez y resolver un sistema lineal es un problema bien comprendido y computacionalmente barato. El tiempo del ingeniero se va en otra parte: construir el modelo, rehacerlo cada vez que cambia la arquitectura, definir cargas y combinaciones, verificar elemento por elemento contra la normativa y producir la memoria de cálculo y los planos.' },
         { k: 'p', t: 'El cálculo es la parte rápida. El cuello de botella es el andamiaje manual que lo rodea. Y es exactamente ahí, en el andamiaje, donde un agente de IA puede aportar algo — siempre que no toque el cálculo.' },
@@ -140,7 +141,7 @@ export const determinismBoundary: Post = {
     en: {
       title: 'The determinism boundary: why an AI agent must not do the arithmetic',
       excerpt:
-        'A language model cannot guarantee that a number is right. A verified solver can. The architecture that makes AI useful in structural engineering is the one that separates those two things and never lets them cross.',
+        'A language model cannot guarantee a number is right; a verified solver can. The architecture that makes AI useful in structural engineering keeps the two apart.',
       blocks: [
         { k: 'p', t: 'Decades of commercial software made the strictly numerical part of structural analysis fast. Assembling a stiffness matrix and solving a linear system is a well-understood, computationally cheap problem. The engineer’s time goes somewhere else: building the model, rebuilding it every time the architecture changes, defining loads and combinations, checking element by element against the code, and producing the calculation report and the drawings.' },
         { k: 'p', t: 'The arithmetic is the fast part. The bottleneck is the manual scaffolding around it. And that is exactly where an AI agent can help — as long as it never touches the arithmetic.' },
@@ -238,7 +239,7 @@ export const determinismBoundary: Post = {
     pt: {
       title: 'A fronteira de determinismo: por que um agente de IA não deve calcular',
       excerpt:
-        'Um modelo de linguagem não pode garantir que um número esteja certo. Um solver verificado pode. A arquitetura que torna a IA útil no cálculo estrutural é a que separa essas duas coisas e não deixa que se cruzem.',
+        'Um modelo de linguagem não pode garantir um número; um solver verificado pode. A arquitetura que torna a IA útil no cálculo estrutural separa as duas coisas.',
       blocks: [
         { k: 'p', t: 'Décadas de software comercial tornaram rápida a parte estritamente numérica da análise estrutural. Montar uma matriz de rigidez e resolver um sistema linear é um problema bem compreendido e computacionalmente barato. O tempo do engenheiro vai para outro lugar: construir o modelo, refazê-lo cada vez que a arquitetura muda, definir cargas e combinações, verificar elemento por elemento contra a norma e produzir o memorial de cálculo e os desenhos.' },
         { k: 'p', t: 'O cálculo é a parte rápida. O gargalo é o andaime manual em volta dele. E é exatamente aí, no andaime, que um agente de IA pode contribuir — desde que não toque no cálculo.' },
