@@ -43,10 +43,31 @@ import ru from './ru';
 import zh from './zh';
 import ar from './ar';
 import id from './id';
+import steelEs from './steel/es';
+import steelEn from './steel/en';
+import steelPt from './steel/pt';
 
-/** Every dictionary that exists, offered or not. Gates only. */
+/**
+ * Every dictionary that exists, offered or not. Gates only.
+ *
+ * The steel spread mirrors `dicts` in store.svelte.ts, and it has to.
+ *
+ * The point of this module is that a gate reading it sees what the application
+ * ships. #135 folded `locales/steel/*` into es/en/pt without touching `es.ts`
+ * — those files hold zero `steel.*` keys — so listing the base dictionaries
+ * alone would hand every gate that walks this file a view of the three offered
+ * locales with an entire PRO namespace missing from it.
+ *
+ * Nothing reads a `steel.*` key through here today, so the divergence would
+ * not have shown up as a failure. It would have shown up as a gate quietly
+ * covering less than it claims, which is the failure mode this file was split
+ * out to avoid rather than to introduce.
+ */
 export const ALL_DICTS: Record<string, Translations> = {
-  es, en, pt, de, fr, it, tr, hi, ja, ko, ru, zh, ar, id,
+  es: { ...es, ...steelEs },
+  en: { ...en, ...steelEn },
+  pt: { ...pt, ...steelPt },
+  de, fr, it, tr, hi, ja, ko, ru, zh, ar, id,
 };
 
 /** Every locale with a dictionary on disk. Gates only. */

@@ -1,10 +1,15 @@
 import es from './locales/es';
 import en from './locales/en';
 import pt from './locales/pt';
+import steelEs from './locales/steel/es';
+import steelEn from './locales/steel/en';
+import steelPt from './locales/steel/pt';
 import type { Translations } from './types';
 
 /**
  * The dictionaries the application actually speaks.
+ *
+ * ── Why only three ──
  *
  * This used to hold all fourteen on disk, so that re-enabling one was a single
  * edit. Measured on the bundle, the eleven the app refuses to switch to came
@@ -17,8 +22,25 @@ import type { Translations } from './types';
  * The other eleven now live in ./locales/all.ts, which only the gates import,
  * so the translation work is still kept and still checked. Re-enabling one is
  * still a single edit: add it here and to OFFERED_LOCALES.
+ *
+ * ── Why the steel spread stays ──
+ *
+ * `steel/*` arrived from #135 while this branch was open, and the two changes
+ * rewrote the same object. The merge keeps BOTH halves, and the reason is
+ * worth recording because "take the shorter one" is the obvious mistake here:
+ * the metallic keys exist ONLY in `locales/steel/*` — `es.ts` has zero of
+ * them — so dropping the spread does not fall back to English, it renders the
+ * raw key. `pro-flow-coverage.test.ts` would catch it, but by then it reads as
+ * a puzzling red rather than as this decision.
+ *
+ * Folding steel into es/en/pt and nothing else is #135's rule, unchanged: they
+ * are the offered three, and a PRO surface must speak all of them.
  */
-const dicts: Record<string, Translations> = { es, en, pt };
+const dicts: Record<string, Translations> = {
+  es: { ...es, ...steelEs },
+  en: { ...en, ...steelEn },
+  pt: { ...pt, ...steelPt },
+};
 
 /** Safe localStorage check — vitest defines localStorage but without working methods. */
 function hasLocalStorage(): boolean {
