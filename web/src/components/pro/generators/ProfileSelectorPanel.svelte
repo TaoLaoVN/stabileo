@@ -119,10 +119,12 @@
    * landing anywhere outside — back in the generator form, say — is a dismissal, not a
    * background state the form keeps typing into.
    *
-   * `click`, not `pointerdown`, on purpose: the trigger in `ProfilePicker` toggles on
-   * click, and its handler runs before this bubble-phase window listener — so clicking
-   * the trigger while open closes the panel there and this handler's `onClose` is a
-   * no-op, instead of a pointerdown close the trigger's toggle would instantly reopen.
+   * This listener never sees the click that opened the panel: the trigger in
+   * `ProfilePicker` stops propagation, because a trusted click can still be bubbling while
+   * the state flush that mounts this panel runs (the browser checkpoints microtasks between
+   * listeners), and an opening click reaching window would read as an instant dismissal.
+   * Clicks on the trigger while open are likewise stopped there — the trigger's own toggle
+   * closes the panel, and this handler's `onClose` would be a no-op.
    */
   function windowClick(e: MouseEvent) {
     if (dialog && e.target instanceof Node && !dialog.contains(e.target)) onClose();
