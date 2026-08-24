@@ -3691,6 +3691,8 @@ const pt: Translations = {
   'pro.addElemIds': 'Adicionar elem (IDs separados por vírgula):',
   'pro.addPlateIds': 'Adicionar placas (IDs separados por vírgula):',
   'pro.addQuadIds': 'Adicionar cascas (IDs separados por vírgula):',
+  'pro.removePlateIds': 'Remover placas (IDs separados por vírgula):',
+  'pro.removeQuadIds': 'Remover cascas (IDs separados por vírgula):',
   'pro.removeElemIds': 'Remover elem (IDs):',
   'pro.loadIndices': 'Cargas (índices):',
   'pro.solveStaged': 'Resolver por etapas',

@@ -2688,6 +2688,8 @@ const ar: Translations = {
   'pro.addElemIds': 'إضافة عنصر (معرّفات مفصولة بفاصلة):',
   'pro.addPlateIds': 'Add plates (comma-separated IDs):',
   'pro.addQuadIds': 'Add shells (comma-separated IDs):',
+  'pro.removePlateIds': 'Remove plates (comma-separated IDs):',
+  'pro.removeQuadIds': 'Remove shells (comma-separated IDs):',
   'pro.removeElemIds': 'إزالة عنصر (معرّفات):',
   'pro.loadIndices': 'الأحمال (الفهارس):',
   'pro.solveStaged': 'حل مرحلي',

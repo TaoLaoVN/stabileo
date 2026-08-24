@@ -671,7 +671,8 @@
 
   let stages = $state<{
     name: string; elementsAdded: number[]; elementsRemoved: number[]; loadIndices: number[];
-    platesAdded: number[]; quadsAdded: number[];
+    platesAdded: number[]; platesRemoved: number[];
+    quadsAdded: number[]; quadsRemoved: number[];
   }[]>([]);
   let stagedResult = $state<any | null>(null);
 
@@ -695,6 +696,11 @@
        */
       platesAdded: stages.length === 0 ? [...plateIds] : [],
       quadsAdded: stages.length === 0 ? [...quadIds] : [],
+      // And they leave the same way. A slab struck after it has done its
+      // temporary work is as much a stage as a slab cast, and the engine
+      // takes `platesRemoved`/`quadsRemoved` for exactly that — leaving the
+      // fields unsent would have made half of what it accepts unreachable.
+      platesRemoved: [], quadsRemoved: [],
     }];
   }
 
@@ -720,7 +726,9 @@
           // Shells carry their OWN ids: a plate and a member can share a
           // number, so one combined list would activate the wrong thing.
           platesAdded: s.platesAdded,
+          platesRemoved: s.platesRemoved,
           quadsAdded: s.quadsAdded,
+          quadsRemoved: s.quadsRemoved,
         })),
       });
       stagedResult = res;
@@ -1517,6 +1525,16 @@
             {#if quadIds.length}
               <div class="adv-form">
                 <label class="adv-label">{t('pro.addQuadIds')} <input type="text" class="adv-text" value={stage.quadsAdded.join(',')} oninput={(e) => { stage.quadsAdded = (e.target as HTMLInputElement).value.split(',').map(Number).filter(n => !isNaN(n) && n > 0); stages = [...stages]; }} /></label>
+              </div>
+            {/if}
+            {#if plateIds.length}
+              <div class="adv-form">
+                <label class="adv-label">{t('pro.removePlateIds')} <input type="text" class="adv-text" value={stage.platesRemoved.join(',')} oninput={(e) => { stage.platesRemoved = (e.target as HTMLInputElement).value.split(',').map(Number).filter(n => !isNaN(n) && n > 0); stages = [...stages]; }} /></label>
+              </div>
+            {/if}
+            {#if quadIds.length}
+              <div class="adv-form">
+                <label class="adv-label">{t('pro.removeQuadIds')} <input type="text" class="adv-text" value={stage.quadsRemoved.join(',')} oninput={(e) => { stage.quadsRemoved = (e.target as HTMLInputElement).value.split(',').map(Number).filter(n => !isNaN(n) && n > 0); stages = [...stages]; }} /></label>
               </div>
             {/if}
             <div class="adv-form">

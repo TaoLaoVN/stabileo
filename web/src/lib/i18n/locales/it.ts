@@ -2841,6 +2841,8 @@ const it: Translations = {
   'pro.addElemIds': 'Aggiungi elem (ID separati da virgola):',
   'pro.addPlateIds': 'Add plates (comma-separated IDs):',
   'pro.addQuadIds': 'Add shells (comma-separated IDs):',
+  'pro.removePlateIds': 'Remove plates (comma-separated IDs):',
+  'pro.removeQuadIds': 'Remove shells (comma-separated IDs):',
   'pro.removeElemIds': 'Rimuovi elem (ID):',
   'pro.loadIndices': 'Carichi (indici):',
   'pro.solveStaged': 'Risolvi per fasi',

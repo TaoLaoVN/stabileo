@@ -2790,6 +2790,8 @@ const tr: Translations = {
   'pro.addElemIds': 'Eleman ekle (virgülle ayrılmış ID):',
   'pro.addPlateIds': 'Add plates (comma-separated IDs):',
   'pro.addQuadIds': 'Add shells (comma-separated IDs):',
+  'pro.removePlateIds': 'Remove plates (comma-separated IDs):',
+  'pro.removeQuadIds': 'Remove shells (comma-separated IDs):',
   'pro.removeElemIds': 'Eleman kaldır (ID):',
   'pro.loadIndices': 'Yükler (indeksler):',
   'pro.solveStaged': 'Aşamalı çöz',

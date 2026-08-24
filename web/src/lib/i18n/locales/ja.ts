@@ -2686,6 +2686,8 @@ const ja: Translations = {
   'pro.addElemIds': '要素を追加（カンマ区切りID）：',
   'pro.addPlateIds': 'Add plates (comma-separated IDs):',
   'pro.addQuadIds': 'Add shells (comma-separated IDs):',
+  'pro.removePlateIds': 'Remove plates (comma-separated IDs):',
+  'pro.removeQuadIds': 'Remove shells (comma-separated IDs):',
   'pro.removeElemIds': '要素を削除（ID）：',
   'pro.loadIndices': '荷重（インデックス）：',
   'pro.solveStaged': '段階解析を実行',

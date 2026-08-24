@@ -2829,6 +2829,8 @@ const zh: Translations = {
   'pro.addElemIds': '添加单元（逗号分隔 ID）：',
   'pro.addPlateIds': 'Add plates (comma-separated IDs):',
   'pro.addQuadIds': 'Add shells (comma-separated IDs):',
+  'pro.removePlateIds': 'Remove plates (comma-separated IDs):',
+  'pro.removeQuadIds': 'Remove shells (comma-separated IDs):',
   'pro.removeElemIds': '移除单元（ID）：',
   'pro.loadIndices': '荷载（索引）：',
   'pro.solveStaged': '求解分阶段',

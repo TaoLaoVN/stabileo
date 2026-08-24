@@ -2848,6 +2848,8 @@ const de: Translations = {
   'pro.addElemIds': 'Elemente hinzufügen (IDs kommagetrennt):',
   'pro.addPlateIds': 'Add plates (comma-separated IDs):',
   'pro.addQuadIds': 'Add shells (comma-separated IDs):',
+  'pro.removePlateIds': 'Remove plates (comma-separated IDs):',
+  'pro.removeQuadIds': 'Remove shells (comma-separated IDs):',
   'pro.removeElemIds': 'Elemente entfernen (IDs):',
   'pro.loadIndices': 'Lasten (Indizes):',
   'pro.solveStaged': 'Phasenweise lösen',

@@ -2826,6 +2826,8 @@ const id: Translations = {
   'pro.addElemIds': 'Tambah elem (ID dipisah koma):',
   'pro.addPlateIds': 'Add plates (comma-separated IDs):',
   'pro.addQuadIds': 'Add shells (comma-separated IDs):',
+  'pro.removePlateIds': 'Remove plates (comma-separated IDs):',
+  'pro.removeQuadIds': 'Remove shells (comma-separated IDs):',
   'pro.removeElemIds': 'Hapus elem (ID):',
   'pro.loadIndices': 'Beban (indeks):',
   'pro.solveStaged': 'Hitung bertahap',

@@ -3929,6 +3929,8 @@ const es: Record<string, string> = {
   'pro.addElemIds': 'Agregar elem (IDs separados por coma):',
   'pro.addPlateIds': 'Agregar placas (IDs separados por coma):',
   'pro.addQuadIds': 'Agregar cáscaras (IDs separados por coma):',
+  'pro.removePlateIds': 'Quitar placas (IDs separados por coma):',
+  'pro.removeQuadIds': 'Quitar cáscaras (IDs separados por coma):',
   'pro.removeElemIds': 'Remover elem (IDs):',
   'pro.loadIndices': 'Cargas (indices):',
   'pro.solveStaged': 'Resolver por etapas',

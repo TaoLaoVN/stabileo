@@ -2790,6 +2790,8 @@ const hi: Translations = {
   'pro.addElemIds': 'तत्व जोड़ें (अल्पविराम से अलग ID):',
   'pro.addPlateIds': 'Add plates (comma-separated IDs):',
   'pro.addQuadIds': 'Add shells (comma-separated IDs):',
+  'pro.removePlateIds': 'Remove plates (comma-separated IDs):',
+  'pro.removeQuadIds': 'Remove shells (comma-separated IDs):',
   'pro.removeElemIds': 'तत्व हटाएँ (ID):',
   'pro.loadIndices': 'भार (सूचकांक):',
   'pro.solveStaged': 'चरणबद्ध हल करें',

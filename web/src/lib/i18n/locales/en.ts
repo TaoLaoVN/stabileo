@@ -3936,6 +3936,8 @@ const en: Record<string, string> = {
   'pro.addElemIds': 'Add elem (comma-separated IDs):',
   'pro.addPlateIds': 'Add plates (comma-separated IDs):',
   'pro.addQuadIds': 'Add shells (comma-separated IDs):',
+  'pro.removePlateIds': 'Remove plates (comma-separated IDs):',
+  'pro.removeQuadIds': 'Remove shells (comma-separated IDs):',
   'pro.removeElemIds': 'Remove elem (IDs):',
   'pro.loadIndices': 'Loads (indices):',
   'pro.solveStaged': 'Solve staged',
