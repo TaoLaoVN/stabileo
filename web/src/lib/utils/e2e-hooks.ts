@@ -123,9 +123,18 @@ export interface StabileoTestHooks {
    *
    * Exposed for the walkthrough audit: checking that a step can reach what it
    * asks the reader to click means knowing which step it is and whether it
-   * allows interaction, and neither is visible in the DOM.
+   * allows interaction, and neither is visible in the DOM. `armed`/`waits`/`met`
+   * explain a hang — whether the advance was armed on entry, whether the step
+   * waits on the reader at all, and whether its condition currently holds.
    */
-  tourStep(): { id: string; target: string; allowInteraction: boolean } | null;
+  tourStep(): {
+    id: string;
+    target: string;
+    allowInteraction: boolean;
+    armed: boolean;
+    waits: boolean;
+    met: boolean | null;
+  } | null;
   /** Which tool is armed, for the same reason. */
   currentTool(): string;
   /**
@@ -340,9 +349,9 @@ export function installE2EHooks(): void {
       const st = tourStore.currentStep;
       return st ? {
         id: st.id, target: st.target, allowInteraction: !!st.allowInteraction,
-        armed: (tourStore as unknown as { armedForTest?: boolean }).armedForTest ?? false,
+        armed: tourStore.armedForTest,
         waits: !!st.waitFor, met: st.waitFor ? !!st.waitFor() : null,
-      } as never : null;
+      } : null;
     },
     currentTool: () => String(uiStore.currentTool),
     nodeScreenPos: (id: number) => {
