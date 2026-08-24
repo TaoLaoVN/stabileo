@@ -298,6 +298,31 @@
    * (see `replaceAppUrl`), and quietly overloading it would make a shared
    * link rename someone's project.
    */
+  /**
+   * `?kin=1` opens the kinematic analysis panel.
+   *
+   * The third of the deep links a post can use, beside `?inspect` and
+   * `?proTab`. Unlike those two it waits for nothing: the report is derived
+   * from geometry and supports alone, so it is ready before the solver is —
+   * and on the model this exists for, the solver never succeeds at all.
+   */
+  function openKinematicFromUrl(params: URLSearchParams) {
+    if (params.get('kin') !== '1') return;
+    uiStore.showKinematicPanel = true;
+    /*
+     * On desktop Basic the report is docked inside the Advanced tab of the
+     * right panel (see BasicPanel.svelte), so raising the flag on its own
+     * opens a panel that is never mounted. On mobile it floats and the flag
+     * is enough — the same asymmetry that made `?inspect` look like it
+     * worked on a phone and did nothing on a laptop.
+     *
+     * No retry loop, unlike `openInspectFromUrl`: that one waits for the
+     * solver, and this report needs only geometry and supports. By the time
+     * the example loader resolves, both are in place.
+     */
+    if (uiStore.appMode === 'basico' && !uiStore.isMobile) openBasicPanel('advanced', { toggle: false });
+  }
+
   function openProTabFromUrl(params: URLSearchParams) {
     const tab = params.get('proTab');
     if (!tab) return;
@@ -658,8 +683,20 @@
           tryFit(0);
           openInspectFromUrl(queryParams);
           openProTabFromUrl(queryParams);
-        }).catch(() => {
-          // Silently ignore unknown example ids
+          openKinematicFromUrl(queryParams);
+        }).catch((err) => {
+          /*
+           * Reported, not swallowed.
+           *
+           * This used to be an empty catch commented "silently ignore unknown
+           * example ids", and it did far more than that: a fixture missing
+           * `plates` threw `json.plates is not iterable` from inside the
+           * loader, the whole `then` above was skipped, and the page rendered
+           * a half-loaded model with no deep link applied and no sign that
+           * anything had failed. An unknown id is worth ignoring quietly; a
+           * broken one is not.
+           */
+          console.error(`[stabileo] example "${exampleId}" failed to load:`, err);
         });
       }, 80);
     }

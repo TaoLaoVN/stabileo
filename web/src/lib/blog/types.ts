@@ -51,6 +51,18 @@ export type Post = {
   slug: string;
   /** ISO date (YYYY-MM-DD). Publication, not last edit. */
   date: string;
+  /**
+   * Where the post sits in the series, lowest first. NOT the date.
+   *
+   * The index used to sort newest-first, which is right for a blog that
+   * accumulates and wrong for four posts that build on each other: the one
+   * that frames the whole argument is the oldest, so recency order buried it
+   * at the bottom and opened with the most specialised piece instead.
+   *
+   * The dates still run in the same direction, so nothing looks shuffled —
+   * this is what decides, and the dates are free to stop agreeing later.
+   */
+  order: number;
   /** People, not dictionary keys — names are not translated. */
   authors: string[];
   /** `blog.tag.*` dictionary keys, so the tags themselves translate. */
