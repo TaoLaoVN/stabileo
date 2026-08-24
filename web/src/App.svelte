@@ -160,7 +160,8 @@
   /** `/blog`, `/blog/` and `/blog/<slug>`, under any language prefix. */
   function isBlogRoute(pathname: string) {
     const { path } = publicRoute(pathname);
-    return path === '/blog' || path === '/blog/' || path.startsWith('/blog/');
+    // `/blog/` is covered by the prefix test; only the bare form needs naming.
+    return path === '/blog' || path.startsWith('/blog/');
   }
 
   /**
@@ -244,8 +245,17 @@
     const raw = params.get('inspect');
     if (!raw) return;
     const elementId = Number(raw);
-    if (!Number.isFinite(elementId)) return;
-    const t = Math.min(1, Math.max(0, Number(params.get('t') ?? '0.5') || 0.5));
+    // Integer, not merely finite: `?inspect=3.7` parsed fine and then polled
+    // sixty times for an element id that cannot exist.
+    if (!Number.isInteger(elementId)) return;
+    /*
+     * `?t=0` is the start of the member, and it used to become midspan.
+     * `Number('0') || 0.5` is 0.5, because 0 is falsy — so the one station a
+     * reader is most likely to ask for by hand was the one station this could
+     * not open. Only a value that is not a number falls back now.
+     */
+    const requested = Number(params.get('t') ?? '0.5');
+    const t = Number.isFinite(requested) ? Math.min(1, Math.max(0, requested)) : 0.5;
 
     let tries = 0;
     const open = () => {
