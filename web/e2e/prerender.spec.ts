@@ -32,6 +32,20 @@ import { test, expect, type Browser, type Page } from '@playwright/test';
  * `es/index.html` and fell back to the root — which is the production defect
  * this whole branch exists to fix, so it is worth failing on either way.
  *
+ * ── One thing this file does NOT settle ──
+ *
+ * Every address the site advertises — canonical, hreflang, sitemap, and the
+ * hrefs PublicLink renders — is the un-slashed form: `/es`, `/es/blog`. What
+ * the prerender writes is `dist/es/index.html`, a directory index. Whether
+ * `/es` reaches it is the HOST's business, and the two hosts disagree:
+ * `vite preview` falls through to the SPA fallback, while GitHub Pages is
+ * expected to redirect to `/es/`. If it does, then every canonical the site
+ * declares is a 301 away from the URL that answers it, which is worth
+ * confirming on a real deploy before this ships.
+ *
+ * These tests request the directory, so they pin the FILE regardless of how
+ * that question is settled.
+ *
  * Run locally:
  *   npm run build && npx playwright test --grep "@smoke prerender"
  */
@@ -67,6 +81,20 @@ type Locale = (typeof LOCALES)[number];
  *
  * A fresh context per page, because `javaScriptEnabled` is a context option:
  * the `page` fixture cannot be told to stop running scripts after the fact.
+ *
+ * ── The trailing slash is deliberate ──
+ *
+ * The prerender writes `dist/es/index.html`, and asking `vite preview` for
+ * `/es` does NOT reach it: the SPA fallback answers first and returns the root
+ * document. Measured against this build — `/es` came back 77,924 bytes, which
+ * is dist/index.html, while `/es/` came back 79,370, which is the Spanish
+ * page. So a test written without the slash passes at `/en` (the root IS
+ * English and does declare /en as its canonical) and fails everywhere else,
+ * for a reason that has nothing to do with the prerender.
+ *
+ * Requesting the directory is what pins the FILE. See the note in the describe
+ * block below about the address the site advertises, which is the un-slashed
+ * one and is a separate question from this.
  */
 async function crawl(browser: Browser, path: string): Promise<{ page: Page; close: () => Promise<void> }> {
   const ctx = await browser.newContext({ javaScriptEnabled: false });
@@ -103,7 +131,7 @@ async function expectLinks(page: Page, path: string, locale: Locale) {
 test.describe('@smoke prerender', () => {
   for (const locale of LOCALES) {
     test(`/${locale} is served as ${locale}, with text, to a crawler`, async ({ browser }) => {
-      const { page, close } = await crawl(browser, `/${locale}`);
+      const { page, close } = await crawl(browser, `/${locale}/`);
       try {
         await expectPrerenderedShape(page);
         await expect(page.locator('#prerender')).toContainText(HERO[locale]);
@@ -115,7 +143,7 @@ test.describe('@smoke prerender', () => {
     });
 
     test(`/${locale}/blog is served as ${locale}, with text, to a crawler`, async ({ browser }) => {
-      const { page, close } = await crawl(browser, `/${locale}/blog`);
+      const { page, close } = await crawl(browser, `/${locale}/blog/`);
       try {
         await expectPrerenderedShape(page);
         await expect(page.locator('#prerender')).toContainText(BLOG_LEAD[locale]);
@@ -130,7 +158,7 @@ test.describe('@smoke prerender', () => {
     });
 
     test(`/${locale}/blog/${SLUG} carries the post and its structured data`, async ({ browser }) => {
-      const { page, close } = await crawl(browser, `/${locale}/blog/${SLUG}`);
+      const { page, close } = await crawl(browser, `/${locale}/blog/${SLUG}/`);
       try {
         await expectPrerenderedShape(page);
         await expect(page.locator('#prerender .post-title')).toHaveText(POST_TITLE[locale]);
@@ -157,7 +185,7 @@ test.describe('@smoke prerender', () => {
      * internal link across the whole site. A page nothing links to is a page
      * discovered only through the sitemap.
      */
-    const { page, close } = await crawl(browser, '/es');
+    const { page, close } = await crawl(browser, '/es/');
     try {
       const hrefs = await page
         .locator('#prerender a[href^="/es"]')
