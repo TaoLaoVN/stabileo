@@ -1,5 +1,11 @@
 const es: Record<string, string> = {
   // ─── Auth / Login ───
+  'auth.login': 'Iniciar sesión',
+  'auth.logout': 'Cerrar sesión',
+  'auth.account': 'Cuenta',
+  'auth.loading': 'Verificando sesión...',
+  'auth.vault': 'Mahung.Space Vault',
+  'auth.profile': 'Perfil',
 
   // ─── Landing Page ───
   'combos.needsRecalcSolve': "Las combinaciones ya no corresponden al modelo — apretá Calcular para volver a resolverlas.",

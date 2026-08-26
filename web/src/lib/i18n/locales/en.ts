@@ -1,5 +1,11 @@
 const en: Record<string, string> = {
   // ─── Auth / Login ───
+  'auth.login': 'Log in',
+  'auth.logout': 'Log out',
+  'auth.account': 'Account',
+  'auth.loading': 'Checking account...',
+  'auth.vault': 'Mahung.Space Vault',
+  'auth.profile': 'Profile',
 
   // ─── Landing Page ───
   'combos.needsRecalcSolve': "The combinations no longer match the model — press Calculate to run them again.",

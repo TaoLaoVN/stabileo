@@ -129,6 +129,8 @@
   import { parsePublicPath, publicHref } from './lib/i18n/public-routes';
   import { publicI18n } from './lib/i18n/store.svelte';
   import AiDrawer from './components/AiDrawer.svelte';
+  import AccountMenu from './components/auth/AccountMenu.svelte';
+  import { authStore } from './lib/auth/store.svelte';
 
   const MAHUNG_HOME_URL = 'https://mahung.space';
   const ORIGINAL_SOURCE_URL = 'https://github.com/lambdaclass/stabileo';
@@ -640,6 +642,9 @@
       console.warn('WASM solver unavailable, using JS fallback');
     });
 
+    // Check shared Mahung.Space auth session
+    void authStore.checkAuth();
+
     // Initialize tab manager with current state
     tabManager.init();
 
@@ -1054,6 +1059,7 @@
     <div class="header-actions">
       <a class="mahung-link" href={MAHUNG_HOME_URL} target="_blank" rel="noreferrer">Mahung.Space</a>
       <a class="source-link" href={FORK_SOURCE_URL} target="_blank" rel="noreferrer" title="Based on Stabileo by LambdaClass. Modified source available under AGPL-3.0.">Source</a>
+      <AccountMenu />
       <button class="btn btn-help" onclick={() => uiStore.showHelp = true} title={t('app.keyboardShortcuts')}>
         ?
       </button>
