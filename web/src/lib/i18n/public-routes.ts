@@ -32,7 +32,7 @@
 import { PUBLIC_LOCALES, type PublicLocale } from './store.svelte';
 
 /** Where the site lives. Used for canonical and hreflang, which must be absolute. */
-export const SITE_ORIGIN = 'https://stabileo.com';
+export const SITE_ORIGIN = 'https://stabileo.mahung.space';
 
 /** The language a browser that speaks none of ours is sent to. */
 export const DEFAULT_PUBLIC_LOCALE: PublicLocale = 'en';

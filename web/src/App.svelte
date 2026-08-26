@@ -130,6 +130,10 @@
   import { publicI18n } from './lib/i18n/store.svelte';
   import AiDrawer from './components/AiDrawer.svelte';
 
+  const MAHUNG_HOME_URL = 'https://mahung.space';
+  const ORIGINAL_SOURCE_URL = 'https://github.com/lambdaclass/stabileo';
+  const FORK_SOURCE_URL = 'https://github.com/TaoLaoVN/stabileo';
+
   if (typeof window !== 'undefined') {
     const redirectedRoute = new URLSearchParams(location.search).get('route');
     if (redirectedRoute) {
@@ -985,7 +989,7 @@
     <div class="logo">
       <button class="logo-home" onclick={() => { history.pushState(null, '', '/'); syncRouteState(); }} title={t('app.backHome')}>
         <span class="logo-icon">△</span>
-        <span class="logo-text">Stabileo</span>
+        <span class="logo-text">Mahung Structural Lab</span>
       </button>
       <!--
         A handed-out exercise is not a session with three modes in it.
@@ -1048,6 +1052,8 @@
     {/if}
 
     <div class="header-actions">
+      <a class="mahung-link" href={MAHUNG_HOME_URL} target="_blank" rel="noreferrer">Mahung.Space</a>
+      <a class="source-link" href={FORK_SOURCE_URL} target="_blank" rel="noreferrer" title="Based on Stabileo by LambdaClass. Modified source available under AGPL-3.0.">Source</a>
       <button class="btn btn-help" onclick={() => uiStore.showHelp = true} title={t('app.keyboardShortcuts')}>
         ?
       </button>
@@ -1402,6 +1408,11 @@
   {#if !uiStore.isMobile}
     <footer class="app-footer">
       <StatusBar />
+      <div class="app-attribution">
+        <span>Based on <a href={ORIGINAL_SOURCE_URL} target="_blank" rel="noreferrer">Stabileo by LambdaClass</a>.</span>
+        <span>Modified source: <a href={FORK_SOURCE_URL} target="_blank" rel="noreferrer">TaoLaoVN/stabileo</a>.</span>
+        <span>Licensed under AGPL-3.0.</span>
+      </div>
     </footer>
   {/if}
 
@@ -1665,7 +1676,7 @@
   .logo-text {
     font-size: 1.25rem;
     font-weight: 600;
-    letter-spacing: 0.05em;
+    letter-spacing: 0;
   }
 
   .separator {
@@ -2148,8 +2159,32 @@
 
   .header-actions {
     display: flex;
+    align-items: center;
     gap: 0.5rem;
     flex-shrink: 0;
+  }
+
+  .mahung-link,
+  .source-link,
+  .app-attribution a {
+    color: var(--st-text-2);
+    text-decoration: none;
+  }
+
+  .mahung-link,
+  .source-link {
+    border: 1px solid var(--st-hair);
+    border-radius: var(--st-radius);
+    font-size: 0.74rem;
+    padding: 0.28rem 0.5rem;
+    white-space: nowrap;
+  }
+
+  .mahung-link:hover,
+  .source-link:hover,
+  .app-attribution a:hover {
+    color: var(--st-text);
+    background: var(--st-surface-3);
   }
 
   .btn {
@@ -2426,6 +2461,26 @@
   .app-footer {
     background: var(--st-surface);
     border-top: 1px solid var(--st-hair);
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 1rem;
+    min-width: 0;
+  }
+
+  .app-attribution {
+    display: flex;
+    align-items: center;
+    gap: 0.55rem;
+    color: var(--st-text-3);
+    font-size: 0.68rem;
+    padding: 0.3rem 0.9rem 0.3rem 0;
+    white-space: nowrap;
+  }
+
+  .app-attribution a {
+    border-radius: var(--st-radius);
+    padding: 0.08rem 0.2rem;
   }
 
   /* Toast notifications */
@@ -2786,7 +2841,8 @@
     }
 
     .header-actions .btn-help,
-    .header-actions .btn-toggle {
+    .header-actions .btn-toggle,
+    .mahung-link {
       display: none;
     }
 
@@ -2796,7 +2852,7 @@
     }
 
     .logo-text {
-      font-size: 0.9rem;
+      font-size: 0.82rem;
     }
 
     .logo-icon {
@@ -2959,7 +3015,7 @@
     font-family: var(--st-display);
     font-weight: 600;
     font-size: 1.05rem;
-    letter-spacing: -0.01em;
+    letter-spacing: 0;
   }
 
   .logo-icon { color: var(--st-accent); font-size: 1.15rem; }

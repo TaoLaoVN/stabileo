@@ -34,7 +34,7 @@
    */
   function syncMetadata() {
     applyPageMeta({
-      title: `Stabileo — ${t('landing.heroH')}`,
+      title: `Mahung Structural Lab — ${t('landing.heroH')}`,
       description: t('landing.heroP'),
       locale: publicI18n.locale,
       path: '/',

@@ -36,8 +36,8 @@
 <nav class="nav" aria-label={t('landing.navPrimary')}>
   <div class="nav-inner">
     <button class="nav-brand" onclick={() => go('top')} aria-label={t('landing.navBackToTop')}>
-      <span class="nav-logo" aria-hidden="true">S</span>
-      <span class="nav-name">Stabileo</span>
+      <span class="nav-logo" aria-hidden="true">M</span>
+      <span class="nav-name">Mahung Structural Lab</span>
     </button>
 
     <div class="nav-links" id="nav-links" class:open>

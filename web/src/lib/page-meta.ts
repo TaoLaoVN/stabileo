@@ -68,10 +68,10 @@ function setArticleData(article: ArticleMeta | undefined) {
 		datePublished: article.datePublished,
 		inLanguage: article.locale,
 		author: article.authors.map((name) => ({ '@type': 'Person', name })),
-		publisher: { '@type': 'Organization', name: 'Stabileo', url: 'https://stabileo.com' },
+		publisher: { '@type': 'Organization', name: 'Mahung.Space', url: 'https://mahung.space' },
 		mainEntityOfPage: { '@type': 'WebPage', '@id': article.url },
 		url: article.url,
-		image: 'https://stabileo.com/og/stabileo-social.png'
+		image: 'https://stabileo.mahung.space/og/stabileo-social.png'
 	});
 	document.head.appendChild(el);
 }
