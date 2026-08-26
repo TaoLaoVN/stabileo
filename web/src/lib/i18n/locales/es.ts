@@ -3214,6 +3214,7 @@ const es: Record<string, string> = {
   'lang.es': 'Español',
   'lang.en': 'English',
   'lang.pt': 'Português',
+  'lang.vi': 'Tiếng Việt',
   'lang.de': 'Deutsch',
   'lang.fr': 'Français',
   'lang.it': 'Italiano',

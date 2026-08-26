@@ -87,6 +87,6 @@ describe('the unoffered dictionaries stay out of the application', () => {
      */
     const src = readFileSync(join(SRC, 'lib/i18n/store.svelte.ts'), 'utf8');
     const imported = [...src.matchAll(/from '\.\/locales\/([\w/]+)'/g)].map((m) => m[1]).sort();
-    expect(imported).toEqual(['en', 'es', 'pt', 'steel/en', 'steel/es', 'steel/pt']);
+    expect(imported).toEqual(['en', 'es', 'pt', 'steel/en', 'steel/es', 'steel/pt', 'steel/vi', 'vi']);
   });
 });

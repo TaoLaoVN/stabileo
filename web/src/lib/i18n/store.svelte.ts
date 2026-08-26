@@ -1,45 +1,21 @@
 import es from './locales/es';
 import en from './locales/en';
 import pt from './locales/pt';
+import vi from './locales/vi';
 import steelEs from './locales/steel/es';
 import steelEn from './locales/steel/en';
 import steelPt from './locales/steel/pt';
+import steelVi from './locales/steel/vi';
 import type { Translations } from './types';
 
 /**
  * The dictionaries the application actually speaks.
- *
- * ── Why only three ──
- *
- * This used to hold all fourteen on disk, so that re-enabling one was a single
- * edit. Measured on the bundle, the eleven the app refuses to switch to came
- * to 2.0 MB — the largest single item in it, ahead of the solver and ahead of
- * Three.js — shipped to every reader of a blog page written in three
- * languages. They were unreachable, not just unused: setLocale rejects an
- * unoffered code, detectBrowserLocale only returns offered ones, and no
- * production caller passes a locale to tAt.
- *
- * The other eleven now live in ./locales/all.ts, which only the gates import,
- * so the translation work is still kept and still checked. Re-enabling one is
- * still a single edit: add it here and to OFFERED_LOCALES.
- *
- * ── Why the steel spread stays ──
- *
- * `steel/*` arrived from #135 while this branch was open, and the two changes
- * rewrote the same object. The merge keeps BOTH halves, and the reason is
- * worth recording because "take the shorter one" is the obvious mistake here:
- * the metallic keys exist ONLY in `locales/steel/*` — `es.ts` has zero of
- * them — so dropping the spread does not fall back to English, it renders the
- * raw key. `pro-flow-coverage.test.ts` would catch it, but by then it reads as
- * a puzzling red rather than as this decision.
- *
- * Folding steel into es/en/pt and nothing else is #135's rule, unchanged: they
- * are the offered three, and a PRO surface must speak all of them.
  */
 const dicts: Record<string, Translations> = {
   es: { ...es, ...steelEs },
   en: { ...en, ...steelEn },
   pt: { ...pt, ...steelPt },
+  vi: { ...vi, ...steelVi },
 };
 
 /** Safe localStorage check — vitest defines localStorage but without working methods. */
@@ -62,17 +38,8 @@ if (hasLocalStorage()) {
 
 /**
  * The locales the app OFFERS, as opposed to the ones it has files for.
- *
- * `dicts` still carries a dozen more, and they are kept rather than deleted:
- * they hold real translation work, `t()` falls back to English for any key they
- * lack, and re-enabling one is a single edit here. What they are not is
- * complete — the parity test that guards `design.*` documents roughly 790
- * missing keys in each — so offering them means offering a half-English UI
- * under a flag that promises otherwise.
- *
- * Three fully maintained languages beat fourteen partial ones.
  */
-export const OFFERED_LOCALES = ['es', 'en', 'pt'] as const;
+export const OFFERED_LOCALES = ['es', 'en', 'pt', 'vi'] as const;
 export type OfferedLocale = (typeof OFFERED_LOCALES)[number];
 
 /** Whether a bare language code is one the app offers. */
@@ -235,7 +202,7 @@ export const i18n = {
 // that should have said so.
 // ─────────────────────────────────────────────────────────────────────────────
 
-export const PUBLIC_LOCALES = ['en', 'es', 'pt'] as const;
+export const PUBLIC_LOCALES = ['en', 'es', 'pt', 'vi'] as const;
 export type PublicLocale = (typeof PUBLIC_LOCALES)[number];
 
 function isPublicLocale(loc: string): loc is PublicLocale {

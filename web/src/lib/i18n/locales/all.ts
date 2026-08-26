@@ -32,6 +32,7 @@ import type { Translations } from '../types';
 import es from './es';
 import en from './en';
 import pt from './pt';
+import vi from './vi';
 import de from './de';
 import fr from './fr';
 import it from './it';
@@ -46,6 +47,7 @@ import id from './id';
 import steelEs from './steel/es';
 import steelEn from './steel/en';
 import steelPt from './steel/pt';
+import steelVi from './steel/vi';
 
 /**
  * Every dictionary that exists, offered or not. Gates only.
@@ -67,6 +69,7 @@ export const ALL_DICTS: Record<string, Translations> = {
   es: { ...es, ...steelEs },
   en: { ...en, ...steelEn },
   pt: { ...pt, ...steelPt },
+  vi: { ...vi, ...steelVi },
   de, fr, it, tr, hi, ja, ko, ru, zh, ar, id,
 };
 

@@ -63,9 +63,9 @@ afterEach(() => { vi.unstubAllGlobals(); });
 describe('the languages the app offers', () => {
   beforeEach(() => { vi.resetModules(); });
 
-  it('is exactly English, Español and Português', async () => {
+  it('is exactly English, Español, Português and Tiếng Việt', async () => {
     const { store } = await boot(['en']);
-    expect([...store.OFFERED_LOCALES].sort()).toEqual(['en', 'es', 'pt']);
+    expect([...store.OFFERED_LOCALES].sort()).toEqual(['en', 'es', 'pt', 'vi']);
   });
 
   it('names each of them in its own language, so the picker is readable to its speaker',
@@ -74,6 +74,7 @@ describe('the languages the app offers', () => {
       expect(store.tAt('lang.en', 'en')).toBe('English');
       expect(store.tAt('lang.es', 'en')).toBe('Español');
       expect(store.tAt('lang.pt', 'en')).toBe('Português');
+      expect(store.tAt('lang.vi', 'en')).toBe('Tiếng Việt');
     });
 
   it('bundles exactly the dictionaries it offers, and keeps the rest on disk', async () => {
@@ -97,9 +98,9 @@ describe('the languages the app offers', () => {
 
 describe('detecting the browser language', () => {
   for (const [lang, expected] of [
-    ['en', 'en'], ['es', 'es'], ['pt', 'pt'],
+    ['en', 'en'], ['es', 'es'], ['pt', 'pt'], ['vi', 'vi'],
     ['en-US', 'en'], ['en-GB', 'en'], ['es-AR', 'es'], ['es-419', 'es'], ['pt-BR', 'pt'],
-    ['pt-PT', 'pt'],
+    ['pt-PT', 'pt'], ['vi-VN', 'vi'],
   ] as const) {
     it(`a browser set to ${lang} opens in ${expected}`, async () => {
       const { store } = await boot([lang]);

@@ -58,7 +58,7 @@ describe('publicHref / publicUrl', () => {
 describe('alternateUrls', () => {
   it('names every language plus x-default, absolutely', () => {
     const alts = alternateUrls('/blog/x');
-    expect(alts.map((a) => a.hreflang).sort()).toEqual(['en', 'es', 'pt', 'x-default']);
+    expect(alts.map((a) => a.hreflang).sort()).toEqual(['en', 'es', 'pt', 'vi', 'x-default']);
     // Relative hreflang is ignored by crawlers, silently.
     for (const a of alts) expect(a.href.startsWith('https://')).toBe(true);
     // x-default names the English version OF THIS PAGE — `/en/blog/x`, not

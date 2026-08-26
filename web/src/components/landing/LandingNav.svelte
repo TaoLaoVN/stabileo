@@ -5,7 +5,7 @@
   let stars = $state<number | null>(null);
   let open = $state(false);
 
-  const LOCALE_NAMES: Record<string, string> = { en: 'English', es: 'Español', pt: 'Português' };
+  const LOCALE_NAMES: Record<string, string> = { en: 'English', es: 'Español', pt: 'Português', vi: 'Tiếng Việt' };
 
   const links = [
     { id: 'basic', key: 'landing.navBasic' },

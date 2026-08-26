@@ -2993,6 +2993,7 @@ const pt: Translations = {
   'lang.ja': '日本語',
   'lang.ko': '한국어',
   'lang.pt': 'Português',
+  'lang.vi': 'Tiếng Việt',
   'lang.ru': 'Русский',
   'lang.tr': 'Türkçe',
   'lang.zh': '中文',
