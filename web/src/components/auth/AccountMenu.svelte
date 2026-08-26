@@ -14,23 +14,17 @@
   }
 
   function handleWindowClick(e: MouseEvent) {
-    if (menuOpen && menuEl && !menuEl.contains(e.target as Node)) {
-      closeMenu();
-    }
+    if (menuOpen && menuEl && !menuEl.contains(e.target as Node)) closeMenu();
   }
 
   function handleKeyDown(e: KeyboardEvent) {
-    if (e.key === 'Escape' && menuOpen) {
-      closeMenu();
-    }
+    if (e.key === 'Escape' && menuOpen) closeMenu();
   }
 
   function getInitials(name: string | null | undefined, email: string): string {
     if (name && name.trim()) {
       const parts = name.trim().split(/\s+/);
-      if (parts.length >= 2) {
-        return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
-      }
+      if (parts.length >= 2) return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
       return name.slice(0, 2).toUpperCase();
     }
     return email.slice(0, 2).toUpperCase();
@@ -45,13 +39,8 @@
       <span class="auth-spinner"></span>
     </div>
   {:else if !authStore.isAuthenticated}
-    <a
-      class="auth-btn login-btn"
-      href={getLoginUrl()}
-      title={t('auth.login')}
-      data-testid="auth-login-btn"
-    >
-      <span class="auth-icon">👤</span>
+    <a class="auth-btn login-btn" href={getLoginUrl()} title={t('auth.login')} data-testid="auth-login-btn">
+      <span class="auth-mark" aria-hidden="true">ID</span>
       <span class="auth-label">{t('auth.login')}</span>
     </a>
   {:else}
@@ -82,25 +71,15 @@
 
         <div class="dropdown-divider"></div>
 
-        <a
-          class="dropdown-item"
-          href={getProfileUrl()}
-          target="_blank"
-          rel="noreferrer"
-          role="menuitem"
-        >
-          <span class="item-icon">⚡</span>
+        <a class="dropdown-item" href={getProfileUrl()} target="_blank" rel="noreferrer" role="menuitem">
+          <span class="item-code">MS</span>
           <span>{t('auth.vault')}</span>
         </a>
 
         <div class="dropdown-divider"></div>
 
-        <button
-          class="dropdown-item logout-item"
-          onclick={() => authStore.logout()}
-          role="menuitem"
-        >
-          <span class="item-icon">🚪</span>
+        <button class="dropdown-item logout-item" onclick={() => authStore.logout()} role="menuitem">
+          <span class="item-code">OUT</span>
           <span>{t('auth.logout')}</span>
         </button>
       </div>
@@ -162,8 +141,16 @@
     color: var(--st-value);
   }
 
-  .auth-icon {
-    font-size: 0.85rem;
+  .auth-mark,
+  .item-code {
+    font-family: var(--st-mono);
+    letter-spacing: 0;
+    color: var(--st-value);
+  }
+
+  .auth-mark {
+    font-size: 0.68rem;
+    font-weight: 700;
   }
 
   .auth-user-btn {
@@ -190,18 +177,22 @@
     border-color: var(--st-interactive);
   }
 
-  .user-avatar {
-    width: 20px;
-    height: 20px;
+  .user-avatar,
+  .dropdown-avatar {
     border-radius: 50%;
     background: var(--st-accent);
     color: #fff;
-    font-size: 0.65rem;
     font-weight: 700;
     display: flex;
     align-items: center;
     justify-content: center;
     flex-shrink: 0;
+  }
+
+  .user-avatar {
+    width: 20px;
+    height: 20px;
+    font-size: 0.65rem;
   }
 
   .user-name {
@@ -241,15 +232,7 @@
   .dropdown-avatar {
     width: 32px;
     height: 32px;
-    border-radius: 50%;
-    background: var(--st-accent);
-    color: #fff;
     font-size: 0.8rem;
-    font-weight: 700;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    flex-shrink: 0;
   }
 
   .dropdown-info {
@@ -310,8 +293,10 @@
     color: var(--st-danger);
   }
 
-  .item-icon {
-    font-size: 0.85rem;
+  .item-code {
+    width: 2.1rem;
+    font-size: 0.62rem;
+    font-weight: 700;
   }
 
   @media (max-width: 768px) {
