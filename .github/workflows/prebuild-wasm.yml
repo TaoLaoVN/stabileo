@@ -48,12 +48,12 @@ jobs:
 
       - name: Commit prebuilt WASM artifacts
         run: |
-          if git diff --quiet -- web/src/lib/wasm; then
+          git add web/src/lib/wasm
+          if git diff --cached --quiet -- web/src/lib/wasm; then
             echo "No WASM artifact changes to commit."
             exit 0
           fi
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add web/src/lib/wasm
           git commit -m "Update prebuilt WASM artifacts"
           git push
