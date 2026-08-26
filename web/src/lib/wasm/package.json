@@ -1,0 +1,19 @@
+{
+  "name": "dedaliano-engine",
+  "type": "module",
+  "collaborators": [
+    "Dedaliano Team"
+  ],
+  "description": "High-performance 2D structural analysis engine",
+  "version": "0.1.0",
+  "files": [
+    "dedaliano_engine_bg.wasm",
+    "dedaliano_engine.js",
+    "dedaliano_engine.d.ts"
+  ],
+  "main": "dedaliano_engine.js",
+  "types": "dedaliano_engine.d.ts",
+  "sideEffects": [
+    "./snippets/*"
+  ]
+}
