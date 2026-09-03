@@ -1,7 +1,5 @@
 <script lang="ts">
-  import { onMount } from 'svelte';
   import { tPublic as t } from '../../lib/i18n/store.svelte';
-  import { REPO_URL, fetchGithubStars } from './landing-utils';
   import Eyebrow from './Eyebrow.svelte';
 
   /**
@@ -32,12 +30,6 @@
 
   const validatedAgainst = ['NAFEMS', 'ANSYS', 'Code_Aster', 'SAP2000', 'OpenSees'];
 
-  let stars = $state<number | null>(null);
-
-  onMount(() => {
-    fetchGithubStars().then((n) => { stars = n; });
-  });
-
   const fmt = (n: number) => n.toLocaleString('en-US');
 </script>
 
@@ -64,11 +56,6 @@
         <p class="stat-label">{t('landing.statExamplesLbl')}</p>
         <p class="stat-hint">{t('landing.statExamplesHint')}</p>
       </div>
-      <a class="stat" href={REPO_URL} target="_blank" rel="noreferrer">
-        <p class="stat-num">{stars == null ? '—' : fmt(stars)}</p>
-        <p class="stat-label">{t('landing.statStarsLbl')}</p>
-        <p class="stat-hint">{t('landing.statStarsHint')}</p>
-      </a>
       <div class="stat">
         <p class="stat-num stat-num-sm">AGPL-3.0</p>
         <p class="stat-label">{t('landing.statLicenseLbl')}</p>

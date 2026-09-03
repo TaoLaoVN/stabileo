@@ -3,6 +3,8 @@ import { parsePublicPath } from '../../lib/i18n/public-routes';
 
 export const REPO_URL = 'https://github.com/TaoLaoVN/stabileo';
 export const ORIGINAL_REPO_URL = 'https://github.com/lambdaclass/stabileo';
+export const MAHUNG_HOME_URL = 'https://mahung.space';
+export const MAHUNG_TOOLS_URL = 'https://mahung.space/tools';
 export const DOCS_HUB_URL = `${REPO_URL}/blob/main/docs/README.md`;
 export const QUICK_START_URL = `${REPO_URL}/blob/main/docs/QUICKSTART.md`;
 export const AI_WORKFLOW_URL = `${REPO_URL}/blob/main/docs/AI_MODELING_WORKFLOW.md`;

@@ -11,7 +11,7 @@
   import { REPO_URL, enterApp, switchPublicLocale, fetchGithubStars } from '../landing/landing-utils';
   import PublicLink from '../landing/PublicLink.svelte';
 
-  const LOCALE_NAMES: Record<string, string> = { en: 'English', es: 'Español', pt: 'Português' };
+  const LOCALE_NAMES: Record<string, string> = { vi: 'Tiếng Việt', en: 'English' };
 
   /**
    * Whether to offer a way back to the index.
@@ -45,8 +45,11 @@
 <nav class="nav" aria-label={t('landing.navPrimary')}>
   <div class="nav-inner">
     <PublicLink to="/" class="nav-brand" title={t('blog.backHome')}>
-      <span class="nav-logo" aria-hidden="true">S</span>
-      <span class="nav-name">Stabileo</span>
+      <span class="nav-logo" aria-hidden="true">M</span>
+      <span class="nav-brand-copy">
+        <span class="nav-name">Mahung Structural Lab</span>
+        <span class="nav-owner">{t('landing.ownerLine')}</span>
+      </span>
     </PublicLink>
 
     <!--

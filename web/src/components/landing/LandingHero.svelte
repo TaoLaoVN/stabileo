@@ -1,7 +1,6 @@
 <script lang="ts">
   import { tPublic as t } from '../../lib/i18n/store.svelte';
   import { enterApp } from './landing-utils';
-  import PublicLink from './PublicLink.svelte';
   import Eyebrow from './Eyebrow.svelte';
   import TrussFigure from './TrussFigure.svelte';
 
@@ -30,15 +29,6 @@
           a two-line change.
         -->
       </div>
-
-      <!--
-        The blog, on the first screen but deliberately at a third level: a mono
-        link on its own line, not a third button. The hero's job is to get
-        someone into the editor, and two buttons plus a link reads as one
-        decision with a footnote, where three buttons would read as three
-        equal choices.
-      -->
-      <PublicLink to="/blog" class="link-arrow hero-blog">{t('landing.heroBlogLink')}</PublicLink>
 
       <!--
         The three modes, named in the first screen.

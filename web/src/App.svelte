@@ -1058,7 +1058,7 @@
 
     <div class="header-actions">
       <a class="mahung-link" href={MAHUNG_HOME_URL} target="_blank" rel="noreferrer">Mahung.Space</a>
-      <a class="source-link" href={FORK_SOURCE_URL} target="_blank" rel="noreferrer" title="Based on Stabileo by LambdaClass. Modified source available under AGPL-3.0.">Source</a>
+      <a class="source-link" href={FORK_SOURCE_URL} target="_blank" rel="noreferrer" title="Stabileo của LambdaClass · Mã nguồn chỉnh sửa theo AGPL-3.0">{t('landing.sourceLabel')}</a>
       <AccountMenu />
       <button class="btn btn-help" onclick={() => uiStore.showHelp = true} title={t('app.keyboardShortcuts')}>
         ?

@@ -439,6 +439,21 @@
   letter-spacing: 0;
 }
 
+.landing .nav-brand-copy {
+  display: grid;
+  gap: 0.05rem;
+  text-align: left;
+}
+
+.landing .nav-owner {
+  color: var(--lp-slate-2);
+  font-family: var(--lp-mono);
+  font-size: 0.58rem;
+  letter-spacing: 0.08em;
+  line-height: 1.2;
+  text-transform: uppercase;
+}
+
 .landing .nav-links {
   display: flex;
   align-items: center;
@@ -503,6 +518,16 @@
   gap: 0.55rem;
   flex: none;
 }
+
+.landing .nav-mahung {
+  color: var(--lp-slate-2);
+  font-family: var(--lp-sans);
+  font-size: 0.8rem;
+  text-decoration: none;
+  white-space: nowrap;
+}
+
+.landing .nav-mahung:hover { color: var(--lp-paper-2); }
 
 .landing .nav-gh {
   display: inline-flex;
@@ -932,7 +957,7 @@
 
 .landing .cap-matrix {
   display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 1px;
   background: var(--hair);
   border: 1px solid var(--hair);
@@ -978,10 +1003,6 @@
   text-decoration: none;
   color: inherit;
   display: block;
-}
-
-.landing a.stat:hover .stat-num {
-  color: var(--lp-accent);
 }
 
 .landing .stat-num {
@@ -1619,7 +1640,8 @@
 }
 
 @media (max-width: 760px) {
-  .landing .nav-gh { display: none; }
+  .landing .nav-gh,
+  .landing .nav-mahung { display: none; }
   .landing .nav-actions > .btn-primary { display: none; }
 
   .landing .card-row.cols-2,
@@ -1649,7 +1671,7 @@
 }
 
 @media (max-width: 420px) {
-  .landing .nav-name { display: none; }
+  .landing .nav-brand-copy { display: none; }
   .landing .tf-legend { font-size: 0.6rem; gap: 0.3rem 0.8rem; }
 }
 

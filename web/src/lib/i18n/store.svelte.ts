@@ -46,25 +46,18 @@ export function isOfferedLocale(code: string): code is OfferedLocale {
   return (OFFERED_LOCALES as readonly string[]).includes(code);
 }
 
-function detectBrowserLocale(): OfferedLocale {
-  if (typeof navigator === 'undefined') return 'vi';
-  for (const lang of navigator.languages ?? [navigator.language]) {
-    if (!lang) continue;
-    const code = lang.split('-')[0].toLowerCase();
-    if (isOfferedLocale(code)) return code;
-  }
-  return 'vi';
-}
-
 function getInitialLocale(): string {
-  if (!hasLocalStorage()) return detectBrowserLocale();
+  if (!hasLocalStorage()) return 'vi';
   if (localStorage.getItem('stabileo-lang-manual') === '1') {
     const stored = localStorage.getItem('stabileo-lang');
     if (stored && isOfferedLocale(stored)) return stored;
   }
-  const detected = detectBrowserLocale();
-  localStorage.setItem('stabileo-lang', detected);
-  return detected;
+  // This deployment is a Vietnamese Mahung.Space tool. Browser language used
+  // to make first-time visitors land on English whenever their OS preferred
+  // English, even though Vietnamese is the product language and x-default.
+  // Keep an explicit user choice, but make every unconfigured visit Vietnamese.
+  localStorage.setItem('stabileo-lang', 'vi');
+  return 'vi';
 }
 
 let _locale = $state<string>(getInitialLocale());
